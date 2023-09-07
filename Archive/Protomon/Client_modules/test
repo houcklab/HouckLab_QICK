@@ -1,0 +1,27 @@
+%matplotlib notebook
+
+# Import the QICK drivers and auxiliary libraries
+import matplotlib
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
+# Import the QICK drivers and auxiliary libraries
+from qick import *
+from qick.helpers import gauss
+import time
+
+import os
+import sys
+sys.path.append('../PythonDrivers/')
+from setattens_remote import setatten
+from setYoko_remote import setyoko
+from setSignalCore_remote import setsignalcore
+from scipy.optimize import curve_fit
+from datetime import datetime
+from pylab import rcParams
+from tqdm import tqdm
+import pickle
+
+
+import E8257DGenerator
+E8257DGenerator.main(6.606e9, 'TCPIP0::192.168.1.116::inst0::INSTR')
