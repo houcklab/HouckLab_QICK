@@ -92,22 +92,22 @@ class SpecSlice(RAveragerProgram):
         "yokoVoltage": 0.25,
         ###### cavity
         "read_pulse_style": "const",  # --Fixed
-        "read_length": 10,  # us
-        "read_pulse_gain": 12000,  # [DAC units]
-        "read_pulse_freq": 5988.33,
+        "read_length": 5,  # us
+        "read_pulse_gain": 10000,  # [DAC units]
+        "read_pulse_freq": 6425.3,
         ##### spec parameters for finding the qubit frequency
-        "qubit_freq_start": 1716 - 20,
-        "qubit_freq_stop": 1716 + 20,
-        "SpecNumPoints": 41,  ### number of points
-        "qubit_pulse_style": "arb",
-        "sigma": 0.3,  ### units us
+        "qubit_freq_start": 2869 - 20,
+        "qubit_freq_stop": 2869 + 20,
+        "SpecNumPoints": 81,  ### number of points
+        "qubit_pulse_style": "flat_top",
+        "sigma": 0.050,  ### units us
         "qubit_length": 1,  ### units us, doesnt really get used though
         "flat_top_length": 0.300,  ### in us
         "relax_delay": 500,  ### turned into us inside the run function
         "qubit_gain": 20000,  # Constant gain to use
         # "qubit_gain_start": 18500, # shouldn't need this...
         "reps": 100,
-        "sets": 10,
+        "sets": 5,
     }
 
 
