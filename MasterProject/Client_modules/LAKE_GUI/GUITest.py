@@ -41,7 +41,7 @@ from PlotWidget import PlotWidget
 
 # RFSOC imports
 from MasterProject.Client_modules.LAKE_GUI.ExperimentThread import ExperimentThread
-from qick import RAveragerProgram, AveragerProgram
+from qick import RAveragerProgram, AveragerProgram, NDAveragerProgram
 
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
@@ -124,6 +124,7 @@ class Window(QMainWindow):
         cancelButton.setObjectName("STOP")
         cancelButton.setText("STOP!")
         cancelButton.clicked.connect(self.stopExperiment)
+        cancelButton.setStyleSheet("background-color : red")
 
         self.experimentNameLabel = QLabel(self)
         self.experimentNameLabel.setText('<html><b>Experiment: none</b></html>')
@@ -388,9 +389,9 @@ class Window(QMainWindow):
                     elif issubclass(obj, RAveragerProgram):
                         self.experiment_type = 'RAverager'
                         print('RAverager program, good to go!')
-                    # elif issubclass(obj, super2):
-                    #     self.experiment_type = 'super2'
-                    #     print('class type: super 2')
+                    elif issubclass(obj, NDAveragerProgram):
+                        self.experiment_type = 'NDAverager'
+                        print('RAverager program, good to go!')
                     else:
                         msgBox = QMessageBox()
                         msgBox.setText("Error. Unrecognised class: " + self.experiment_name + ". Restart program.")
@@ -412,24 +413,6 @@ class Window(QMainWindow):
         :param experiment_name: string containing name of the experiment
         :return: Nothing
         """
-        # # Dates/times for file names
-        # date_time_now = datetime.datetime.now()
-        # date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-        # date_string = date_time_now.strftime("%Y_%m_%d")
-        #
-        # # Create directories if they don't already exist
-        # if not Path(self.outerFolder + experiment_name).is_dir():
-        #     os.mkdir(self.outerFolder + experiment_name)
-        # if not Path(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string)).is_dir():
-        #     os.mkdir(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string))
-        #
-        # # Define filenames
-        # data_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-        #                           experiment_name + "_" + date_time_string + '.h5')
-        # config_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-        #                           experiment_name + "_" + date_time_string + '.json')
-        # image_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-        #                           experiment_name + "_" + date_time_string + '.png')
 
         # Save data
         data_file = h5py.File(data_filename, 'w') # Create file if does not exist, truncate mode if exists
@@ -454,7 +437,7 @@ class Window(QMainWindow):
         with open(config_filename, 'w') as config_file:
             json.dump(data['config'], config_file, cls=Window.NpEncoder), #TODO coul dump config directly from self
 
-        #TODO save image
+        #save image
         self.plotWidget.save_fig(image_filename)
 
     class NpEncoder(json.JSONEncoder):

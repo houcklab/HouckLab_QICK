@@ -55,6 +55,7 @@ class PlotWidget(QWidget):
             self.ax2.set_ylabel(labels["y label"])
 
     def drawCanvas(self):
+        #### note that using cavas.draw() is a very slow process and this should be changed to improve plotting speed
         self.canvas1.draw()
 
 
