@@ -15,8 +15,8 @@ class SpecSlice(RAveragerProgram):
 
         ### define the start and step for the dictionary
         self.cfg["start"] = self.cfg["qubit_freq_start"]
-        self.cfg["step"] = (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["SpecNumPoints"] - 1)
-        self.cfg["expts"] = self.cfg["SpecNumPoints"]
+        self.cfg["step"] = (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["qubit_freq_expts"] - 1)
+        self.cfg["expts"] = self.cfg["qubit_freq_expts"]
 
         ### define the start and step in dac values
         self.f_start = self.freq2reg(self.cfg["start"], gen_ch=self.cfg["qubit_ch"])
@@ -110,10 +110,9 @@ class SpecSlice(RAveragerProgram):
         "sets": 5,
     }
 
-
 # ====================================================== #
 
-class SpecSliceExperiment(ExperimentClass):
+class SpecSlice_Experiment(ExperimentClass):
     """
     Basic spec experiement that takes a single slice of data
     """
@@ -127,22 +126,23 @@ class SpecSliceExperiment(ExperimentClass):
             ### spec parameters
             "qubit_freq_start": self.cfg["qubit_freq_start"],
             "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-            "SpecNumPoints": self.cfg["SpecNumPoints"],  ### number of points
+            "qubit_freq_expts": self.cfg["qubit_freq_expts"],  ### number of points
         }
         # self.cfg["reps"] = self.cfg["spec_reps"]
         self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
-        self.cfg["expts"] = expt_cfg["SpecNumPoints"]
+        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["qubit_freq_expts"]
+        self.cfg["expts"] = expt_cfg["qubit_freq_expts"]
 
         ### define qubit frequency array
         self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
-                                       expt_cfg["SpecNumPoints"])
+                                       expt_cfg["qubit_freq_expts"])
 
         prog = SpecSlice(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
+
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
@@ -191,6 +191,8 @@ class SpecSliceExperiment(ExperimentClass):
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Qubit Frequency (GHz)")
         axs[3].legend()
+
+        plt.tight_layout()
 
         plt.savefig(self.iname)
 
