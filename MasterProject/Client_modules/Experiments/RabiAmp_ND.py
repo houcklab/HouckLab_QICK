@@ -159,7 +159,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
             self.xlabel = prog.sweep_var[1]
             self.ylabel = prog.sweep_var[0]
 
-        return data
+        return data 
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
