@@ -53,7 +53,7 @@ UpdateConfig = {
     ##### amplitude rabi parameters
     "qubit_gain_start": 1000,
     "qubit_gain_stop": 5000, ### stepping amount of the qubit gain
-    "qubit_gain_expts": 1, ### number of steps
+    "qubit_gain_expts": 2, ### number of steps
     "reps": 50,  # number of averages for the experiment
 }
 config = BaseConfig | UpdateConfig
@@ -64,7 +64,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 ### Note: This way of measuring uses the old 'Experiment' class that should be revised or retired
 Instance_RabiAmp_ND_Experiment = RabiAmp_ND_Experiment(path="dataRabiAmp_ND", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 data_RabiAmp_ND_Experiment = RabiAmp_ND_Experiment.acquire(Instance_RabiAmp_ND_Experiment)
-# RabiAmp_ND_Experiment.save_data(Instance_RabiAmp_ND_Experiment, data_RabiAmp_ND_Experiment)
+RabiAmp_ND_Experiment.save_data(Instance_RabiAmp_ND_Experiment, data_RabiAmp_ND_Experiment)
 # RabiAmp_ND_Experiment.save_config(Instance_RabiAmp_ND_Experiment)
 
 RabiAmp_ND_Experiment.display(Instance_RabiAmp_ND_Experiment, data_RabiAmp_ND_Experiment, plotDisp = True, figNum = 1)

@@ -143,6 +143,9 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         ### in the following the data are arrays in the dimensionality of of swept varibles
         x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True, debug=False)
 
+        print(avgi)
+        print(avgi[0][0])
+
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
@@ -169,9 +172,12 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
         labels = ["I (a.u.)", "Q (a.u.)", "Amp (a.u.)", "Phase (deg.)"]
 
+        while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
+            figNum += 1
+
         ### check if the sweep is 1D
         if len(expt_pts) == 1:
-            fig, axes = plt.subplots(4, 1, figsize=(8,12))
+            fig, axes = plt.subplots(4, 1, figsize=(8,12), num=figNum)
             for i, d in enumerate([avg_di, avg_dq, self.avg_abs, self.avg_angle]):
                 axes[i].plot(expt_pts[0], d[0][0])
                 axes[i].set_xlabel(self.xlabel)
@@ -180,7 +186,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
         else:
             ### create figure for the 2D sweep
-            fig, axes = plt.subplots(4, 1, figsize=(8, 12))
+            fig, axes = plt.subplots(4, 1, figsize=(8, 12), num=figNum)
             for i, d in enumerate([avg_di, avg_dq, self.avg_abs, self.avg_angle]):
                 pcm = axes[i].pcolormesh(expt_pts[1], expt_pts[0], d[0, 0].T, shading="Auto")
                 axes[i].set_xlabel(self.xlabel)
