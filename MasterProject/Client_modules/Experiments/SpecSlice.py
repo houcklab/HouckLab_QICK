@@ -98,7 +98,7 @@ class SpecSlice(RAveragerProgram):
         ##### spec parameters for finding the qubit frequency
         "qubit_freq_start": 2869 - 20,
         "qubit_freq_stop": 2869 + 20,
-        "SpecNumPoints": 81,  ### number of points
+        "qubit_freq_expts": 81,  ### number of points
         "qubit_pulse_style": "flat_top",
         "sigma": 0.050,  ### units us
         "qubit_length": 1,  ### units us, doesnt really get used though
