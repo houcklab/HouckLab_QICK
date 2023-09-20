@@ -4,7 +4,7 @@ import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-from MasterProject.Client_modules.Calib.initialize import BaseConfig
+from MasterProject.Client_modules.Initialization.initialize import BaseConfig
 from MasterProject.Client_modules.Experiments.RabiAmp_ND import RabiAmp_ND_Experiment
 from MasterProject.Client_modules.PythonDrivers.YOKOGS200 import YOKOGS200
 import pyvisa as visa
