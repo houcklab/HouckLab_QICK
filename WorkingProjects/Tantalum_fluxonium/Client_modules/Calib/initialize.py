@@ -1,22 +1,19 @@
 """
-file to create basic initialization of things used for RFSOC This will include:
-- defining names for the variable attneuators
+file to create basic initialization of things used for RFSOC This will include: 
+- defining names for the attneuators
 - defining yoko name
 - defining the basic config dict that will state the channels used for all subsequent code
-
-NOTE: this file is intended as a template on how to structure the initialize
-file. In order to use this file, you will need to update various parameters
-including the varible attenutor and yoko addresses (if you have those in your
-setup, by default those are commented out here). As well the BaseConfig dict
-needs to be adjusted to reflect the individual setup
 """
 
 ### import relevent libraries
-from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-from MasterProject.Client_modules.PythonDrivers.YOKOGS200 import YOKOGS200
+from STFU.Client_modules.CoreLib.socProxy import *
+from STFU.Client_modules.PythonDrivers.YOKOGS200 import *
 import os
 import pyvisa as visa
 from pathlib import Path
+
+
+# sys.path.append('..\\ClientModules')
 
 #### issue when adding PythonDrivers due to file location, adding a hacky solution for now
 DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
@@ -39,19 +36,18 @@ class attenuator:
         self.attenuation = attenuation
         setatten(attenu = attenuation, serial = self.serialNum, printv = printOut)
 
-# ##### define the varible attenuators
-# Atten_address = 27797
-# Atten = attenuator(Atten_address)
-#
-# ##### define yoko
-# yoko_GPIB = 'GPIB0::2::INSTR'
-# yoko1 = YOKOGS200(VISAaddress = yoko_GPIB, rm = visa.ResourceManager())
-# yoko1.SetMode('voltage')
+# ##### define the attenuators
+# cavityAtten = attenuator(27787)
+# qubitAtten = attenuator(27797)
+
+##### define yoko
+yoko1 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
+yoko1.SetMode('voltage')
 
 
 ###### define default configuration
 BaseConfig={
-        "res_ch": 0, # --Fixed
+        "res_ch":0, # --Fixed
         "qubit_ch": 1,  # --Fixed
         "mixer_freq":0.0, # MHz
         "ro_chs":[0] , # --Fixed
