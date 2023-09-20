@@ -6,9 +6,9 @@ class SpecSlice_GUI(RAveragerProgram):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-
         #### set the start, step, and other parameters
         self.cfg["x_pts_label"] = "qubit freq (MHz)"
+        self.cfg["y_pts_label"] = None
 
         ### define the start and step for the dictionary
         self.cfg["start"] = self.cfg["qubit_freq_start"]
@@ -20,11 +20,12 @@ class SpecSlice_GUI(RAveragerProgram):
         self.f_step = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_freq = self.sreg(cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
+        self.q_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
 
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
-        for ch in cfg["ro_chs"]:
+
+        for ch in self.cfg["ro_chs"]:
             self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
                                  freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
 
@@ -33,7 +34,7 @@ class SpecSlice_GUI(RAveragerProgram):
                                   ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
 
 
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=self.cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"]))
 
@@ -42,7 +43,7 @@ class SpecSlice_GUI(RAveragerProgram):
             self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_freq,
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
                                      phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
                                      waveform="qubit")
 
@@ -50,12 +51,12 @@ class SpecSlice_GUI(RAveragerProgram):
             self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_freq,
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
                                      phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
 
         elif self.cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_freq, phase=0,
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
                                      gain=self.cfg["qubit_gain"],
                                      length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]), )
             # mode="periodic")
@@ -63,6 +64,7 @@ class SpecSlice_GUI(RAveragerProgram):
             print("define arb, const, or flat top pulse")
 
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+
 
     def body(self):
 
@@ -77,7 +79,7 @@ class SpecSlice_GUI(RAveragerProgram):
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.cfg["step"])  # update freq of the Gaussian pi pulse
+        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.f_step)  # update freq of the Gaussian pi pulse
 
     ### define the template config
     ################################## code for running qubit spec on repeat
@@ -86,20 +88,20 @@ class SpecSlice_GUI(RAveragerProgram):
         "yokoVoltage": 0.25,
         ###### cavity
         "read_pulse_style": "const",  # --Fixed
-        "read_length": 5,  # us
-        "read_pulse_gain": 10000,  # [DAC units]
-        "read_pulse_freq": 6425.3,
+        "read_length": 10,  # us
+        "read_pulse_gain": 12000,  # [DAC units]
+        "read_pulse_freq": 5988.33,
         ##### spec parameters for finding the qubit frequency
-        "qubit_freq_start": 2869 - 20,
-        "qubit_freq_stop": 2869 + 20,
-        "SpecNumPoints": 81,  ### number of points
-        "qubit_pulse_style": "flat_top",
-        "sigma": 0.050,  ### units us
+        "qubit_freq_start": 1716 - 20,
+        "qubit_freq_stop": 1716 + 20,
+        "SpecNumPoints": 41,  ### number of points
+        "qubit_pulse_style": "arb",
+        "sigma": 0.3,  ### units us
         "qubit_length": 1,  ### units us, doesnt really get used though
         "flat_top_length": 0.300,  ### in us
         "relax_delay": 500,  ### turned into us inside the run function
         "qubit_gain": 20000,  # Constant gain to use
         # "qubit_gain_start": 18500, # shouldn't need this...
-        "spec_reps": 5,
-        "sets": 50,
+        "reps": 100,
+        "sets": 10,
     }

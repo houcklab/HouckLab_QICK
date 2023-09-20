@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WTF.Client_modules.CoreLib.Experiment import ExperimentClass
+from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
 from WTF.Client_modules.Helpers.hist_analysis import *
-from WTF.Client_modules.Helpers.MixedShots_analysis import *
+from STFU.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 from sklearn.cluster import KMeans
@@ -57,7 +57,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        ##### set up the expirement updates, only runs it once
+        ##### set up the experiment updates, only runs it once
         cfg["start"]= 0
         cfg["step"]= 0
         cfg["reps"]=cfg["shots"]
@@ -115,8 +115,6 @@ class LoopbackProgramT1_PS(RAveragerProgram):
 
     def body(self):
         ### intial pause
-        self.sync_all(self.us2cycles(0.010))
-
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
@@ -379,6 +377,9 @@ class T1_PS(ExperimentClass):
         for idx_plot in range(cen_num):
             #### loop over each final blob
             for idx_blob in range(cen_num):
+                # Plot the data before the fits
+                axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], 'o',
+                                   label='blob ' + str(idx_blob), color=colors[idx_blob])
 
                 #### find the T1 fit of the data
                 if idx_plot == idx_blob:
@@ -388,13 +389,8 @@ class T1_PS(ExperimentClass):
                     c_guess = np.min(pop_list)
                     guess = [a_guess, T1_guess, c_guess]
 
-                    #### attempt a T1 fit
-                    try:
-                        pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
-                        pErr = np.sqrt(np.diag(pCov))
-                    except:
-                        T1 = [0, 0, 0]
-                        T1_err = [0, 0, 0]
+                    pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
+                    pErr = np.sqrt(np.diag(pCov))
 
                     T1 = pOpt[1]
                     T1_err = pErr[1]
@@ -405,8 +401,7 @@ class T1_PS(ExperimentClass):
                     axs[idx_plot].plot(t_arr, fit, 'k-')
                 ######
 
-                axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], 'o',
-                                   label='blob ' + str(idx_blob), color=colors[idx_blob])
+
 
             #### label axes and title
             axs[idx_plot].set_xlabel('time (us)')

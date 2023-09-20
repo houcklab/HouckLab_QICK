@@ -8,7 +8,7 @@ from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
 
-prog_name = ""
+
 class LoopbackProgramT1Experiment(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -151,17 +151,14 @@ class T1Experiment(ExperimentClass):
 
         #### define T1 function
         mag = np.sqrt(avgi[0][0] ** 2 + avgq[0][0] ** 2) # Fit to magnitude rather than I quadrature -- Lev
-
-        mag_fit = avgi[0][0]
-
         def _expFit(x, a, T1, c):
             return a * np.exp(-1 * x / T1) + c
 
-        a_geuss = (np.max(mag_fit)-np.min(mag_fit))*-1
-        b_geuss = np.min(mag_fit)
-        T1_geuss = np.max(x_pts)/3
-        geuss = [a_geuss, T1_geuss, b_geuss]
-        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag_fit, p0=geuss)
+        a_guess = (np.max(mag)-np.min(mag))*-1
+        b_guess = np.min(mag)
+        T1_guess = np.max(x_pts)/3
+        guess = [a_guess, T1_guess, b_guess]
+        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag, p0=guess)
 
         self.T1_fit = _expFit(x_pts, *self.pOpt)
 
@@ -193,13 +190,13 @@ class T1Experiment(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
-        # axs[1].plot(times, self.T1_fit, label='fit')
+        axs[1].plot(times, self.T1_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
         ax2 = axs[2].plot(times, np.abs(avgi[0][0]) , 'o-', label="I - Data")
-        axs[2].plot(times, self.T1_fit, label='fit')
+        #axs[2].plot(times, self.T1_fit, label='fit')
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()

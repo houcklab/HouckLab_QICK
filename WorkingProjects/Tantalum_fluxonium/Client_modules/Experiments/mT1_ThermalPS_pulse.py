@@ -88,13 +88,22 @@ class LoopbackProgramT1_ThermalPS(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  )  # mode="periodic")
 
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                       sigma=self.us2cycles(self.cfg["sigma"]),
+                       length=self.us2cycles(self.cfg["sigma"]) * 4)
+        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])
+        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
+                                 phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                 waveform="qubit")
+
         self.synci(200)  # give processor some time to configure pulses
 
 
     def body(self):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
-
+        self.pulse(ch=self.cfg["qubit_ch"])  # play qubit pulse
+        self.sync_all(self.us2cycles(0.05))
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=[0],

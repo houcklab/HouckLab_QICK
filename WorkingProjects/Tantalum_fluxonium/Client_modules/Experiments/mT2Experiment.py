@@ -36,36 +36,12 @@ class LoopbackProgramT2Experiment(RAveragerProgram):
         f_res = self.freq2reg(cfg["f_res"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])  # conver f_res to dac register value
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
-        qubit_freq = f_ge
-
         # add qubit and readout pulses to respective channels
-        # self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-        #                sigma=self.us2cycles(self.cfg["sigma"]),
-        #                length=self.us2cycles(self.cfg["sigma"]) * 4)
-        # self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=self.cfg["pi2_qubit_gain"],
-        #                          waveform="qubit")
-        #
-
-        ### Declaration of Pulses
-        if cfg["qubit_pulse_style"] == "arb":
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
-                                     waveform="qubit")
-
-        elif cfg["qubit_pulse_style"] == "flat_top":
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
-                                     waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
-
-        else:
-            print("define pi or flat top pulse")
-
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                       sigma=self.us2cycles(self.cfg["sigma"]),
+                       length=self.us2cycles(self.cfg["sigma"]) * 4)
+        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=self.cfg["pi2_qubit_gain"],
+                                 waveform="qubit")
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=f_res, phase=0,
                                  gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"]))
@@ -116,7 +92,7 @@ class T2Experiment(ExperimentClass):
         mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
-        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase, 'volt':self.cfg["yokoVoltage"]}}
+        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase, 'volt':self.cfg["actVolt"]}}
 
         ## perform fit for T1 estimate
         mag = avgi[0][0]
@@ -125,15 +101,15 @@ class T2Experiment(ExperimentClass):
         # def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
         #     return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset) )
         #
-        # offset_geuss = (np.max(mag) + np.min(mag))/2
-        # amp_geuss = (np.max(mag) - np.min(mag))/2
-        # T2_geuss = np.max(x_pts)/3
-        # freq_geuss = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
-        # phaseOffset_geuss = np.pi
+        # offset_guess = (np.max(mag) + np.min(mag))/2
+        # amp_guess = (np.max(mag) - np.min(mag))/2
+        # T2_guess = np.max(x_pts)/3
+        # freq_guess = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
+        # phaseOffset_guess = np.pi
         #
-        # geuss = [offset_geuss, amp_geuss, T2_geuss, freq_geuss, phaseOffset_geuss]
+        # guess = [offset_guess, amp_guess, T2_guess, freq_guess, phaseOffset_guess]
         #
-        # self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=geuss)
+        # self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)
         #
         # self.T2_fit = _expCosFit(x_pts, *self.pOpt)
         #
@@ -180,7 +156,7 @@ class T2Experiment(ExperimentClass):
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        fig.suptitle('T2 Experiment | Voltage = ' + str(self.cfg["yokoVoltage"]))
+        fig.suptitle('T2 Experiment | Voltage = ' + str(self.cfg["actVolt"]))
         plt.savefig(self.iname)
 
         if plotDisp:

@@ -44,26 +44,20 @@ class LoopbackProgramTrans(AveragerProgram):
         elif style == "arb":
             self.set_pulse_registers(ch=res_ch, style=style, freq=freq, phase=0, gain=cfg["read_pulse_gain"],
                                      waveform="measure")
+        elif style == "cw":
+            self.set_pulse_registers(ch=res_ch, style="const", freq=freq, phase=0, gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"]),  mode="periodic")
 
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        # self.synci(200)  # give processor time to get ahead of the pulses
-        # self.trigger(adcs=self.ro_chs, pins=[0],
-        #              adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
-        # self.pulse(ch=self.cfg["res_ch"])  # play readout pulse
-        # # control should wait until the readout is over
-        # self.waiti(0, self.us2cycles(self.cfg["adc_trig_offset"]) + self.us2cycles(self.cfg["read_length"]) )
-        # self.sync_all(self.us2cycles(self.cfg["relax_delay"]))  # sync all channels
-
-        self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
-
-        #trigger measurement, play measurement pulse, wait for qubit to relax
-        self.measure(pulse_ch=self.cfg["res_ch"],
-             adcs=self.cfg["ro_chs"],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
-             wait=True,
-             syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+        self.synci(200)  # give processor time to get ahead of the pulses
+        self.trigger(adcs=self.ro_chs, pins=[0],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
+        self.pulse(ch=self.cfg["res_ch"])  # play readout pulse
+        # control should wait until the readout is over
+        self.waiti(0, self.us2cycles(self.cfg["adc_trig_offset"]) + self.us2cycles(self.cfg["read_length"]) )
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))  # sync all channels
 
 
 # ====================================================== #
