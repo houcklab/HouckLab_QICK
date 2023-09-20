@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from WTF.Client_modules.Helpers.hist_analysis import *
-from STFU.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 from sklearn.cluster import KMeans

@@ -5,8 +5,8 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
-from STFU.Client_modules.Experiments.mQubit_ef_spectroscopy import LoopbackProgramQubit_ef_spectroscopy
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_ef_spectroscopy import LoopbackProgramQubit_ef_spectroscopy
 from tqdm.notebook import tqdm
 import time
 import datetime

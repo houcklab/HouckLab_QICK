@@ -6,8 +6,8 @@ file to create basic initialization of things used for RFSOC This will include:
 """
 
 ### import relevent libraries
-from STFU.Client_modules.CoreLib.socProxy import *
-from STFU.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.socProxy import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.PythonDrivers.YOKOGS200 import *
 import os
 import pyvisa as visa
 from pathlib import Path

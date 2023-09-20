@@ -3,11 +3,11 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib.initialize import *
-from STFU.Client_modules.Experiments.mLoopback import Loopback
-from STFU.Client_modules.Experiments.mTransmission import Transmission
-from STFU.Client_modules.Experiments.mSpecSlice import SpecSlice
-from STFU.Client_modules.Experiments.mTransVsGain import TransVsGain
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mLoopback import Loopback
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission import Transmission
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransVsGain import TransVsGain
 from matplotlib import pyplot as plt
 
 #### define the saving path

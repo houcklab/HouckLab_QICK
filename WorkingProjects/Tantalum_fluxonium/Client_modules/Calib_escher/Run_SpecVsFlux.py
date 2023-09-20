@@ -2,9 +2,9 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib_escher.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
 from matplotlib import pyplot as plt
-from STFU.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 
 #### define the saving path
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_06_02_BF2_cooldown\\TF1SC1\\"

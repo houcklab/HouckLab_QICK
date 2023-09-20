@@ -23,8 +23,8 @@ import numpy as np
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib_escher.initialize import *
-from STFU.Client_modules.Experiments.mQubit_ef_spectroscopy_GUI import Qubit_ef_spectroscopy_GUI as Qubit_ef_spectroscopy
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_ef_spectroscopy_GUI import Qubit_ef_spectroscopy_GUI as Qubit_ef_spectroscopy
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF3SC1\\"
 soc, soccfg = makeProxy()
 ###

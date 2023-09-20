@@ -2,14 +2,14 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 import datetime
-from STFU.Client_modules.PythonDrivers.YOKOGS200 import *
-from STFU.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSlice
-from STFU.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
-from STFU.Client_modules.Calib_escher.initialize import yoko1
+from WorkingProjects.Tantalum_fluxonium.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import yoko1
 
 # class LoopbackProgramTrans(AveragerProgram):
 #     def __init__(self, soccfg, cfg):
