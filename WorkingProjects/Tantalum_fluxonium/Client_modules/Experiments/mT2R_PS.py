@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WTF.Client_modules.CoreLib.Experiment import ExperimentClass
-from WTF.Client_modules.Helpers.hist_analysis import *
-from WTF.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 from sklearn.cluster import KMeans
@@ -117,11 +117,11 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
 
-        # ######## play initial pulse to creat mixture of population
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-        # ########
+        ######## play initial pulse to creat mixture of population
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        ########
 
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -131,7 +131,7 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         self.sync_all(self.us2cycles(self.cfg["wait_length"]))
 

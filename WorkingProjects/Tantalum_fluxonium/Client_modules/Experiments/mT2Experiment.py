@@ -92,7 +92,7 @@ class T2Experiment(ExperimentClass):
         mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
-        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase, 'volt':self.cfg["actVolt"]}}
+        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
         ## perform fit for T1 estimate
         mag = avgi[0][0]
@@ -156,7 +156,7 @@ class T2Experiment(ExperimentClass):
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        fig.suptitle('T2 Experiment | Voltage = ' + str(self.cfg["actVolt"]))
+        fig.suptitle('T2 Experiment')
         plt.savefig(self.iname)
 
         if plotDisp:
