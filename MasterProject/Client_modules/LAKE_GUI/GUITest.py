@@ -45,7 +45,7 @@ from qick import RAveragerProgram, AveragerProgram, NDAveragerProgram
 
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from MasterProject.Client_modules.Initialization.initialize import BaseConfig
+from MasterProject.Client_modules.Init.initialize import BaseConfig
 
 #############
 #### this function should be moved elsewhere
