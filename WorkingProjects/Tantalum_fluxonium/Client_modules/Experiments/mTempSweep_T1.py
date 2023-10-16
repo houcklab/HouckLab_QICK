@@ -6,7 +6,7 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 import datetime
@@ -15,9 +15,9 @@ import matplotlib.dates as mdates
 
 
 
-from STFU.Client_modules.Experiments.mT1_PS import *
-from STFU.Client_modules.PythonDrivers.LS370 import *
-from STFU.Client_modules.Experiments.mQubitSpecRepeat import LoopbackProgramTwoToneFreqSweep
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_PS import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.PythonDrivers.LS370 import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubitSpecRepeat import LoopbackProgramTwoToneFreqSweep
 
 
 class TempSweep_T1(ExperimentClass):

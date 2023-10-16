@@ -2,11 +2,11 @@
 from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
-from STFU.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
-# from STFU.Client_modules.Experiments.mTransmission import LoopbackProgramTrans
-from STFU.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+# from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
 from tqdm.notebook import tqdm
 import time
 import datetime

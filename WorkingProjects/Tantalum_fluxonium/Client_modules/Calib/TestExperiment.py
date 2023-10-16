@@ -115,61 +115,61 @@ plt.ioff()
 #
 # ########################################################################################################################
 
-# #################################### code for transmission vs power
-UpdateConfig = {
-    "yokoVoltage": 0.25,
-    ##### change gain instead option
-    "trans_gain_start": 1000,
-    "trans_gain_stop": 20000,
-    "trans_gain_num": 20,
-    ###### cavity
-    "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
-    "read_pulse_style": "const",  # --Fixed
-    "readout_length": 10,  # [us]
-    # "read_pulse_gain": 10000,  # [DAC units]
-    "trans_freq_start": 6424.5 - 1,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 6424.5 + 2,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransNumPoints": 301,  ### number of points in the transmission frequecny
-    "relax_delay": 2,
-}
-config = BaseConfig | UpdateConfig
-
-
-#### update the qubit and cavity attenuation
-yoko1.SetVoltage(config["yokoVoltage"])
-
-# ##### run actual experiment
-
-#### change gain instead of attenuation
-Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
-TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
-TransVsGain.save_config(Instance_TransVsGain)
+# # #################################### code for transmission vs power
+# UpdateConfig = {
+#     "yokoVoltage": 0.25,
+#     ##### change gain instead option
+#     "trans_gain_start": 1000,
+#     "trans_gain_stop": 20000,
+#     "trans_gain_num": 20,
+#     ###### cavity
+#     "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
+#     "read_pulse_style": "const",  # --Fixed
+#     "readout_length": 10,  # [us]
+#     # "read_pulse_gain": 10000,  # [DAC units]
+#     "trans_freq_start": 6424.5 - 1,  # [MHz] actual frequency is this number + "cavity_LO"
+#     "trans_freq_stop": 6424.5 + 2,  # [MHz] actual frequency is this number + "cavity_LO"
+#     "TransNumPoints": 301,  ### number of points in the transmission frequecny
+#     "relax_delay": 2,
+# }
+# config = BaseConfig | UpdateConfig
+#
+#
+# #### update the qubit and cavity attenuation
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# # ##### run actual experiment
+#
+# #### change gain instead of attenuation
+# Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
+# TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
+# TransVsGain.save_config(Instance_TransVsGain)
 
 
 # # # ###########################################################################################################
 # ################################### code for running Amplitude rabi Blob
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": 0.3,
+#     "yokoVoltage": -2.97 - 0.0,
 #     ###### cavity
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 5, # us
+#     "read_length": 10, # us
 #     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 6425.3,
+#     "read_pulse_freq": 6437.5,
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 2870 - 5,
-#     "qubit_freq_stop": 2870 + 5,
-#     "RabiNumPoints": 21,  ### number of points
-#     "qubit_pulse_style": "flat_top",
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "flat_top_length": 0.300, ### in us
-#     "relax_delay": 500,  ### turned into us inside the run function
+#     "qubit_freq_start": 1916 - 50,
+#     "qubit_freq_stop": 1916 + 50,
+#     "RabiNumPoints": 51,  ### number of points
+#     "qubit_pulse_style": "arb",
+#     "sigma": 0.030,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.300, ### in us
+#     "relax_delay": 600,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
-#     "qubit_gain_start": 10000,
+#     "qubit_gain_start": 28000,
 #     "qubit_gain_step": 1000, ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 20, ### number of steps
-#     "AmpRabi_reps": 500,  # number of averages for the experiment
+#     "qubit_gain_expts": 2, ### number of steps
+#     "AmpRabi_reps": 600,  # number of averages for the experiment
 # }
 # config = BaseConfig | UpdateConfig
 #
@@ -263,37 +263,37 @@ TransVsGain.save_config(Instance_TransVsGain)
 
 # #######################################################################################################################
 # #
-# ########## T2 measurement
-# UpdateConfig = {
-#     ##### define flux point
-#     "yokoVoltage": 0.9,    ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 8000, # [DAC units]
-#     "read_pulse_freq": 6033.21, # [MHz] actual frequency is this number + "cavity_LO"
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 2773 - 0.05,
-#     "qubit_gain": 20000,
-#     "pi2_qubit_gain": 10000,
-#     "sigma": 0.250,  ### units us, define a 20ns sigma
-#     "qubit_pulse_style": "arb", #### arb means gaussain here
-#     # "flat_top_length": 0.080,
-#     "relax_delay": 1000,  ### turned into us inside the run function
-#     ##### T2 ramsey parameters
-#     "start": 0.00, ### us
-#     "step": 0.5, ### us
-#     "expts": 501, ### number of experiemnts
-#     "reps": 500, ### number of averages on each experiment
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# Instance_T2Experiment = T2Experiment(path="dataTestT2RExperiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# data_T2Experiment = T2Experiment.acquire(Instance_T2Experiment)
-# T2Experiment.display(Instance_T2Experiment, data_T2Experiment, plotDisp=True)
-# T2Experiment.save_data(Instance_T2Experiment, data_T2Experiment)
-# T2Experiment.save_config(Instance_T2Experiment)
+########## T2 measurement
+UpdateConfig = {
+    ##### define flux point
+    "yokoVoltage": -2.97 - 0.00,    ###### cavity
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 10, # us
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.5, # [MHz] actual frequency is this number + "cavity_LO"
+    ##### spec parameters for finding the qubit frequency
+    "qubit_freq": 1910 - 2.5,
+    "qubit_gain": 30000,
+    "pi2_qubit_gain": 29000,
+    "sigma": 0.030,  ### units us, define a 20ns sigma
+    "qubit_pulse_style": "arb", #### arb means gaussain here
+    # "flat_top_length": 0.080,
+    "relax_delay": 600,  ### turned into us inside the run function
+    ##### T2 ramsey parameters
+    "start": 0.00, ### us
+    "step": 0.02, ### us
+    "expts": 201, ### number of experiemnts
+    "reps": 2000, ### number of averages on each experiment
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+Instance_T2Experiment = T2Experiment(path="dataTestT2RExperiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_T2Experiment = T2Experiment.acquire(Instance_T2Experiment)
+T2Experiment.display(Instance_T2Experiment, data_T2Experiment, plotDisp=True)
+T2Experiment.save_data(Instance_T2Experiment, data_T2Experiment)
+T2Experiment.save_config(Instance_T2Experiment)
 
 
 ######################################################################################################################
@@ -512,39 +512,39 @@ TransVsGain.save_config(Instance_TransVsGain)
 
 
 ####################################################################################################################
-################################## code for running qubit spec on repeat
-UpdateConfig = {
-    ##### define attenuators
-    "yokoVoltage": 0.25,
-    ###### cavity
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 5, # us
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6425.3,
-    ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 2869 - 10,
-    "qubit_freq_stop": 2869 + 10,
-    "SpecNumPoints": 201,  ### number of points
-    "qubit_pulse_style": "flat_top",
-    "sigma": 0.050,  ### units us
-    "qubit_length": 1, ### units us, doesnt really get used though
-    "flat_top_length": 0.300, ### in us
-    "relax_delay": 500,  ### turned into us inside the run function
-    "qubit_gain": 20000, # Constant gain to use
-    # "qubit_gain_start": 18500, # shouldn't need this...
-    "reps": 500,
-    ##### time parameters
-    "delay": 2, # s
-    "repetitions": 2,  ### number of steps
-}
-config = BaseConfig | UpdateConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
+# ################################## code for running qubit spec on repeat
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": 0.25,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 5, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 6425.3,
+#     ##### spec parameters for finding the qubit frequency
+#     "qubit_freq_start": 2869 - 10,
+#     "qubit_freq_stop": 2869 + 10,
+#     "SpecNumPoints": 201,  ### number of points
+#     "qubit_pulse_style": "flat_top",
+#     "sigma": 0.050,  ### units us
+#     "qubit_length": 1, ### units us, doesnt really get used though
+#     "flat_top_length": 0.300, ### in us
+#     "relax_delay": 500,  ### turned into us inside the run function
+#     "qubit_gain": 20000, # Constant gain to use
+#     # "qubit_gain_start": 18500, # shouldn't need this...
+#     "reps": 500,
+#     ##### time parameters
+#     "delay": 2, # s
+#     "repetitions": 2,  ### number of steps
+# }
+# config = BaseConfig | UpdateConfig
 #
-Instance_QubitSpecRepeat = QubitSpecRepeat(path="dataQubitSpecRepeat", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_QubitSpecRepeat = QubitSpecRepeat.acquire(Instance_QubitSpecRepeat)
-QubitSpecRepeat.save_data(Instance_QubitSpecRepeat, data_QubitSpecRepeat)
-QubitSpecRepeat.save_config(Instance_QubitSpecRepeat)
+# yoko1.SetVoltage(config["yokoVoltage"])
+# #
+# Instance_QubitSpecRepeat = QubitSpecRepeat(path="dataQubitSpecRepeat", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+# data_QubitSpecRepeat = QubitSpecRepeat.acquire(Instance_QubitSpecRepeat)
+# QubitSpecRepeat.save_data(Instance_QubitSpecRepeat, data_QubitSpecRepeat)
+# QubitSpecRepeat.save_config(Instance_QubitSpecRepeat)
 
 # # #
 # for idx in range(5):
