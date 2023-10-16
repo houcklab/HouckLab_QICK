@@ -2,14 +2,13 @@ from qick import RAveragerProgram
 import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
-from tqdm.notebook import tqdm
 import time
 
 
 class Qubit_ef_spectroscopy(RAveragerProgram):
     """
     This class represents a RAveragerProgram for doing e-f spectroscopy on the qubit.
-    First, we perform a g-e pi pulse, followed by a gaussian pulse at scanning for the e-f frequency.
+    First, we perform a g-e pi pulse, followed by a gaussian pulse scanning for the e-f frequency.
     """
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
