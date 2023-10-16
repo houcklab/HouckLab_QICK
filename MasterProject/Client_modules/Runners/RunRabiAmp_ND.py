@@ -4,7 +4,7 @@ import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-from MasterProject.Client_modules.Initialization.initialize import BaseConfig
+from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.Experiments.RabiAmp_ND import RabiAmp_ND_Experiment
 from MasterProject.Client_modules.PythonDrivers.YOKOGS200 import YOKOGS200
 import pyvisa as visa
@@ -51,10 +51,10 @@ UpdateConfig = {
     # "flat_top_length": 0.300, ### in us
     "relax_delay": 500,  ### turned into us inside the run function
     ##### amplitude rabi parameters
-    "qubit_gain_start": 1000,
-    "qubit_gain_stop": 5000, ### stepping amount of the qubit gain
+    "qubit_gain_start": 0,
+    "qubit_gain_stop": 10, ### stepping amount of the qubit gain
     "qubit_gain_expts": 2, ### number of steps
-    "reps": 50,  # number of averages for the experiment
+    "reps": 5,  # number of averages for the experiment
 }
 config = BaseConfig | UpdateConfig
 

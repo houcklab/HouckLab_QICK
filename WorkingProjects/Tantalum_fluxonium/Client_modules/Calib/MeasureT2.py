@@ -2,17 +2,17 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib.initialize import *
-from STFU.Client_modules.Experiments.mTransmission_SaraTest import Transmission
-from STFU.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
-from STFU.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
-from STFU.Client_modules.Experiments.mTransVsGain import TransVsGain
-from STFU.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
-from STFU.Client_modules.Experiments.mAmplitudeRabi_CavityPower import AmplitudeRabi_CavityPower
-from STFU.Client_modules.Experiments.mT1Experiment import T1Experiment
-from STFU.Client_modules.Experiments.mT1Experiment2 import T1Experiment2
-from STFU.Client_modules.Experiments.mT2EchoExperiment import T2EchoExperiment
-from STFU.Client_modules.Experiments.mT2Experiment import T2Experiment
+from Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import Transmission
+from Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
+from Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
+from Tantalum_fluxonium.Client_modules.Experiments.mTransVsGain import TransVsGain
+from Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
+from Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_CavityPower import AmplitudeRabi_CavityPower
+from Tantalum_fluxonium.Client_modules.Experiments.mT1Experiment import T1Experiment
+from Tantalum_fluxonium.Client_modules.Experiments.mT1Experiment2 import T1Experiment2
+from Tantalum_fluxonium.Client_modules.Experiments.mT2EchoExperiment import T2EchoExperiment
+from Tantalum_fluxonium.Client_modules.Experiments.mT2Experiment import T2Experiment
 from matplotlib import pyplot as plt
 
 #### define the saving path

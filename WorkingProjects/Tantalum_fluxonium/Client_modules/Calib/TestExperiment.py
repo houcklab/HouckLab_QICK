@@ -3,27 +3,28 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib.initialize import *
-from STFU.Client_modules.Experiments.mTransmission_SaraTest import Transmission
-from STFU.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
-from STFU.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
-from STFU.Client_modules.Experiments.mTransVsGain import TransVsGain
-from STFU.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
-from STFU.Client_modules.Experiments.mAmplitudeRabi_CavityPower import AmplitudeRabi_CavityPower
-from STFU.Client_modules.Experiments.mT1Experiment import T1Experiment
-from STFU.Client_modules.Experiments.mT2Experiment import T2Experiment
-from STFU.Client_modules.Experiments.mT2EchoExperiment import T2EchoExperiment
-from STFU.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
-from STFU.Client_modules.Experiments.mSingleShot_2Dsweep import SingleShot_2Dsweep
-from STFU.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
-from STFU.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
-from STFU.Client_modules.Experiments.mQubitSpecRepeat import QubitSpecRepeat
-from STFU.Client_modules.Experiments.m2QubitFluxDrift import TwoQubitFluxDrift
+
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import Transmission
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransVsGain import TransVsGain
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_CavityPower import AmplitudeRabi_CavityPower
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1Experiment import T1Experiment
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT2Experiment import T2Experiment
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT2EchoExperiment import T2EchoExperiment
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_2Dsweep import SingleShot_2Dsweep
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubitSpecRepeat import QubitSpecRepeat
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.m2QubitFluxDrift import TwoQubitFluxDrift
 from matplotlib import pyplot as plt
 import datetime
 
 #### define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TF4\\"
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 
