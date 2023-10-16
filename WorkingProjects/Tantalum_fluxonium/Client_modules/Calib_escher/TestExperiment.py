@@ -672,10 +672,10 @@ UpdateConfig = {
     "sigma": 0.2,  ### units us, define a 20ns sigma
     # "qubit_length": 1, ### units us, doesnt really get used though
     # "flat_top_length": 0.025, ### in us
-    "relax_delay": 500,  ### turned into us inside the run function
+    "relax_delay": 1000,  ### turned into us inside the run function
     "qubit_gain": 25000, # Constant gain to use
     # "qubit_gain_start": 18500, # shouldn't need this...
-    "reps": 3000, # number of averages of every experiment
+    "reps": 1500, # number of averages of every experiment
 }
 config = BaseConfig | UpdateConfig
 

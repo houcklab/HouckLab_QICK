@@ -74,19 +74,26 @@ class LoopbackProgramQubit_ef_rabi(RAveragerProgram):
     def body(self):
         ge_freq = self.freq2reg(self.cfg["qubit_ge_freq"], gen_ch=self.cfg["qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
         ef_freq = self.freq2reg(self.cfg["qubit_ef_freq"], gen_ch=self.cfg["qubit_ch"])
-        # Set up g-e pi pulse
+        # Apply g-e pi pulse
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                  waveform="qubit")
         self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
 
-        # Set up e-f pulse
+        # Apply e-f gaussian pulse with increasing amplitude
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ef_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=0,
                                  waveform="qubit")
         self.mathi(self.q_rp, self.qreg_gain, self.qreg_gain_ef, '+', 0) # Hack to set the qreg_gain register page to qreg_gain_ef (+0)
         self.pulse(ch = self.cfg['qubit_ch']) # play ef probe pulse
 
+        # Apply g-e pi pulse to read the population of e state
+        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
+                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
+                                 waveform="qubit")
+        self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
+
+        # Syncing all pulses
         self.sync_all(self.us2cycles(0.05)) # align channels and wait /
 
         #trigger measurement, play measurement pulse, wait for qubit to relax
