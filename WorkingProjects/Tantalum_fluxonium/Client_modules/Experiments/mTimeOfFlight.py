@@ -95,17 +95,17 @@ hw_cfg={#"jpa_ch":6,
        }
 readout_cfg={
     "readout_length":soccfg.us2cycles(10.0, gen_ch=0), # [Clock ticks] # gen ch was 5
-    "f_res": 5988.3, # [MHz]
+    "f_res": 5753.5, # [MHz]
     "res_phase": 0,
     "adc_trig_offset":0, # [Clock ticks]
-    "res_gain":8000
+    "res_gain":4000
     }
 qubit_cfg={
-    "sigma":0.5, # [us]
-    "pi_gain": 12500,
-    "pi2_gain":11500//2, # // is floor division
-    "f_ge":4743.041802067813,
-    "relax_delay":500
+    "sigma":0.05, # [us]
+    "pi_gain": 25000,
+    "pi2_gain": 25000/2, # // is floor division
+    "f_ge": 4655.0,
+    "relax_delay": 1000
 }
 
 

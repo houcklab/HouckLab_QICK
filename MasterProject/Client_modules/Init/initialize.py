@@ -57,7 +57,7 @@ BaseConfig={
         "ro_chs":[0] , # --Fixed
         "reps":1000, # --Fixed
         "nqz": 2, #### refers to cavity
-        "qubit_nqz": 1,
+        "qubit_nqz": 2,
         "relax_delay":10, # us
         "res_phase":0, # --Fixed
         "pulse_style": "const", # --Fixed

@@ -21,7 +21,12 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRab
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubitSpecRepeat import QubitSpecRepeat
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_ef_spectroscopy import Qubit_ef_spectroscopy
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_rabi
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_g_e_f import SingleShotProgram_g_e_f
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_individual_state
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_ef
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_RPM
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
 #### define the saving path
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TT1\\"
@@ -37,8 +42,8 @@ soc, soccfg = makeProxy()
 
 plt.ioff()
 
-### Test Qubit Pulses
-
+###TITLE: Test Qubit Pulses
+# region Config for Testing Qubit Pulses
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0,
@@ -59,10 +64,12 @@ plt.ioff()
 # # #
 # Instance_Qubit_pulse_test = Qubit_Pulse_Test(path="path", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 # data_Qubit_ef_spectroscopy = Qubit_Pulse_Test.acquire(Instance_Qubit_pulse_test)
+# endregion
 
-
-# # # Configure for transmission experiment
-# UpdateConfig_transmission={
+###TITLE: Transmission + SpecSlice + AmplitudeRabi
+# region Config Files
+# UpdateConfig_transmission =
+# {
 #     "reps": 10,  # this will used for all experiements below unless otherwise changed in between trials
 #     "read_pulse_style": "const", # --Fixed
 #     "readout_length": 10, # us
@@ -94,51 +101,49 @@ plt.ioff()
 #     "yokoVoltage": 0.0,
 #     "relax_delay": 1500,
 # }
+
 #
 # UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 # config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
 #
-# # set the yoko frequency
+# endregion
+
+# region Transmission Experiment
+# ### set the yoko frequency
 # yoko1.SetVoltage(config["yokoVoltage"])
 # print("Voltage is ", yoko1.GetVoltage(), " Volts")
 #
-# #
-#
-# ##################################### code for runnning basic transmission and specSlice
-# # perform the cavity transmission experiment
-#
+# ### Performing the Cavity Transmission Experiment
 # Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 # data_trans= Transmission.acquire(Instance_trans)
 # Transmission.display(Instance_trans, data_trans, plotDisp=True)
 # Transmission.save_data(Instance_trans, data_trans)
-
 #
-# ## update the transmission frequency to be the peak
+# ### update the transmission frequency to be the peak
 # config["read_pulse_freq"] = Instance_trans.peakFreq
 # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+# endregion
+
+# region SpecSlice
+# Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+# data_specSlice= SpecSlice.acquire(Instance_specSlice)
+# SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
+# SpecSlice.save_data(Instance_specSlice, data_specSlice)
 #
-# # Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# # data_specSlice= SpecSlice.acquire(Instance_specSlice)
-# # SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
-# # SpecSlice.save_data(Instance_specSlice, data_specSlice)
-#
-# #
 # config["qubit_pulse_style"]= "arb"
 # config["sigma"] = 0.2 # 0.2 # us
-# #
-# # # #
-# # # # # print(config)
+# endregion
+
+# region AmplitudeRabi
 # Instance_AmplitudeRabi = AmplitudeRabi(path="dataTestAmplitudeRabi", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 # data_AmplitudeRabi = AmplitudeRabi.acquire(Instance_AmplitudeRabi)
 # AmplitudeRabi.display(Instance_AmplitudeRabi, data_AmplitudeRabi, plotDisp=True)
 # AmplitudeRabi.save_data(Instance_AmplitudeRabi, data_AmplitudeRabi)
 # AmplitudeRabi.save_config(Instance_AmplitudeRabi)
-#
-# #
-#
-# ########################################################################################################################
-#
-# ################################### code for transmission vs power
+# endregion
+
+###TITLE: Transmission vs Power
+# region Trans vs Power Config
 # UpdateConfig = {
 #     "yokoVoltage": 0.0, #3.1
 #     ##### change gain instead option
@@ -171,10 +176,10 @@ plt.ioff()
 # data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
 # TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
 # TransVsGain.save_config(Instance_TransVsGain)
+# endregion
 
-
-################################################################################################################
-################################# code for running Amplitude rabi Blob
+###TITLE: Amplitude Rabi Blob
+# region Amplitude Rabi Blob Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0.0,
@@ -206,9 +211,10 @@ plt.ioff()
 # data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
 # AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
 # AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
+# endregion
 
-
-####################################### code for running Amplitude rabi vs Cavity Power
+###TITLE: Amplitude Rabi vs Cavity Power
+# region Amplitude Rabi vs Cavity Power Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0,
@@ -245,10 +251,10 @@ plt.ioff()
 # data_AmplitudeRabi_CavityPower = AmplitudeRabi_CavityPower.acquire(Instance_AmplitudeRabi_CavityPower)
 # AmplitudeRabi_CavityPower.save_data(Instance_AmplitudeRabi_CavityPower, data_AmplitudeRabi_CavityPower)
 # AmplitudeRabi_CavityPower.save_config(Instance_AmplitudeRabi_CavityPower)
+# endregion
 
-
-# ####################################################################################################################
-# ######### T1 measurement
+###TITLE: Interleaved T1 measurement
+# region T1 Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0.0,
@@ -297,76 +303,10 @@ plt.ioff()
 # #     T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
 # #     T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
 # #     T1Experiment.save_config(Instance_T1Experiment)
+# endregion
 
-
-####################################################################################################################
-# ######## T2 Ramsey measurement doesn't work, the code does nothing
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": 0.0,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 4000, # [DAC units]
-#     "read_pulse_freq": 5747.5, # [MHz] actual frequency is this number + "cavity_LO"
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 4656 - 0.3,
-#     "pi_qubit_gain": 25000, # Gain of pi pulse
-#     "pi2_qubit_gain": 12500, # Gain of pi/2 pulse
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "qubit_pulse_style": "arb", #### arb means gaussain here
-#     "relax_delay": 500,  ### turned into us inside the run function
-#     ##### T1 parameters
-#     "start": 0, ### us
-#     "step": 0.5, ### us
-#     "expts": 101, ### number of experiemnts
-#     "reps": 1000, ### number of averages on each experiment
-# }
-# config = BaseConfig | UpdateConfig
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print("Voltage is ", yoko1.GetVoltage(), " Volts")
-#
-# Instance_T2Experiment = T2Experiment(path="dataTestT2Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
-# data_T2Experiment = T2Experiment.acquire(Instance_T2Experiment)
-# T2Experiment.display(Instance_T2Experiment, data_T2Experiment, plotDisp=True)
-# T2Experiment.save_data(Instance_T2Experiment, data_T2Experiment)
-# T2Experiment.save_config(Instance_T2Experiment)
-
-# #####################################################################################################################
-######## T2 echo measurement
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": 0.0,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 4000, # [DAC units]
-#     "read_pulse_freq": 5747.5, # [MHz] actual frequency is this number + "cavity_LO"
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 4656.0,
-#     "pi_qubit_gain": 25000, # Gain of pi pulse
-#     "pi2_qubit_gain": 12500, # Gain of pi/2 pulse
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "qubit_pulse_style": "arb", #### arb means gaussain here
-#     "relax_delay": 500,  ### turned into us inside the run function
-#     ##### T1 parameters
-#     "start": 0, ### us
-#     "step": 2, ### us
-#     "expts": 101, ### number of experiemnts
-#     "reps": 1000, ### number of averages on each experiment
-# }
-# config = BaseConfig | UpdateConfig
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print("Voltage is ", yoko1.GetVoltage(), " Volts")
-#
-# Instance_T2EchoExperiment = T2EchoExperiment(path="dataTestT2EchoExperiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
-# data_T2EchoExperiment = T2EchoExperiment.acquire(Instance_T2EchoExperiment)
-# T2EchoExperiment.display(Instance_T2EchoExperiment, data_T2EchoExperiment, plotDisp=True)
-# T2EchoExperiment.save_data(Instance_T2EchoExperiment, data_T2EchoExperiment)
-# T2EchoExperiment.save_config(Instance_T2EchoExperiment)
-
-# ######################################################################################################################
-# # # ####################################### code for running basic single shot exerpiment
+###TITLE: Basic single shot experiment looped with a variable of choice
+# region Single Shot Config
 # UpdateConfig = {
 #     ##### set yoko
 #     "yokoVoltage": 0.815,
@@ -442,10 +382,10 @@ plt.ioff()
 # SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 # SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
 # SingleShotProgram.save_config(Instance_SingleShotProgram)
+# endregion
 
-#####################################################################################################################
-
-# ####################################### code for running  2D single shot fidelity optimization
+###TITLE: 2D single shot fidelity optimization
+# region 2D single shot config
 # UpdateConfig = {
 #     ##### set yoko
 #     "yokoVoltage": 0.815,
@@ -485,10 +425,10 @@ plt.ioff()
 # data_SingleShot_2Dsweep = SingleShot_2Dsweep.acquire(Instance_SingleShot_2Dsweep)
 # SingleShot_2Dsweep.save_data(Instance_SingleShot_2Dsweep, data_SingleShot_2Dsweep)
 # SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
+# endregion
 
-
-#####################################################################################################################
-# ###################################### code for running Amplitude rabi Blob with post selection
+###TITLE: Amplitude rabi Blob with post selection
+# region Amplitude Rabi PS Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 3.125,
@@ -522,10 +462,10 @@ plt.ioff()
 # data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
 # AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
 # AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
+# endregion
 
-
-#
-# #################################### code for running Amplitude rabi Blob while sweeping flux
+###TITLE: Amplitude rabi Blob while sweeping flux
+# region Amplitude Rabi Blob vs Flux Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0.87,
@@ -560,10 +500,10 @@ plt.ioff()
 # data_AmplitudeRabiFlux_PS = AmplitudeRabiFlux_PS.acquire(Instance_AmplitudeRabiFlux_PS)
 # AmplitudeRabiFlux_PS.save_data(Instance_AmplitudeRabiFlux_PS, data_AmplitudeRabiFlux_PS)
 # AmplitudeRabiFlux_PS.save_config(Instance_AmplitudeRabiFlux_PS)
+# endregion
 
-
-#####################################################################################################################
-################################ code for running qubit spec on repeat
+###TITLE: Qubit spec on repeat
+# region Spec on repeat Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0.7,
@@ -605,10 +545,10 @@ plt.ioff()
 # #     data_QubitSpecRepeat = QubitSpecRepeat.acquire(Instance_QubitSpecRepeat)
 # #     QubitSpecRepeat.save_data(Instance_QubitSpecRepeat, data_QubitSpecRepeat)
 # #     QubitSpecRepeat.save_config(Instance_QubitSpecRepeat)
+# endregion
 
-
-#####################################################################################################################
-################################ code for running qubit ef spec
+###TITLE: Qubit ef spectroscopy
+# region EF Spec Config
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": 0,
@@ -644,12 +584,173 @@ plt.ioff()
 # Qubit_ef_spectroscopy.save_config(Instance_Qubit_ef_spectroscopy)
 # Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spectroscopy, plotDisp=True)
 
-
-
-#####################################################################################################################
 # plt.show()
-#####################################################################################################################
-################################ code for running qubit ef Rabi
+# endregion
+
+###TITLE: Qubit ef Rabi
+# region EF Rabi Config
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": 0,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # us
+#     "read_pulse_gain": 4000, # [DAC units]
+#     "read_pulse_freq": 5753.5,
+#     ###### qubit
+#     # g-e parameters
+#     "qubit_ge_freq": 4655, # MHz
+#     "qubit_ge_gain": 4*6500, # Gain for pi pulse in DAC units
+#     "apply_ge": False,
+#    # e-f parameters
+#     "qubit_ef_freq": 4487.6,
+#     "qubit_ef_gain_start": 0, #1167-10
+#     "qubit_ef_gain_step": 300,
+#     "RabiNumPoints": 101,  ### number of points
+#     "qubit_pulse_style": "arb",
+#     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
+#     "sigma": 0.2/4,  ### units us, define a 20ns sigma
+#     # "qubit_length": 1, ### units us, doesnt really get used though
+#     # "flat_top_length": 0.025, ### in us
+#     "relax_delay": 1000,  ### turned into us inside the run function
+#     "qubit_gain": 25000, # Constant gain to use
+#     # "qubit_gain_start": 18500, # shouldn't need this...
+#     "reps": 1500, # number of averages of every experiment
+# }
+# config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+# # #
+# Instance_Qubit_ef_rabi = Qubit_ef_rabi(path="dataQubit_ef_rabi", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+# data_Qubit_ef_rabi = Qubit_ef_rabi.acquire(Instance_Qubit_ef_rabi)
+# Qubit_ef_rabi.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
+# Qubit_ef_rabi.save_config(Instance_Qubit_ef_rabi)
+# Qubit_ef_rabi.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
+# endregion
+
+###TITLE: Single Shot of g-e-f
+# region Single Shot g-e-f Config
+# UpdateConfig = {
+#     # set yoko
+#     "yokoVoltage": 00,
+#     # cavity
+#     "reps": 1000,  # Repitions
+#     "read_pulse_style": "const",
+#     "read_length": 10, # [us]
+#     "read_pulse_gain": 4000, # [DAC units]
+#     "read_pulse_freq": 5753.5, # [MHz]
+#     # qubit g-e pulse
+#     "qubit_pulse_style": "arb",
+#     "qubit_ge_gain": 4*6500, # [DAC units]
+#     "sigma": 0.2/4,  # [us]
+#     "qubit_ge_freq": 4655, # [MHz]
+#     "relax_delay": 1000,  ### turned into us inside the run function
+#     "qubit_length": 1,
+#     # qubit e-f pulse
+#     "qubit_ef_freq": 4487.6,
+#     "qubit_ef_gain": 25244,
+#     # define shots
+#     "shots": 3000, ### this gets turned into "reps"
+# }
+# config = BaseConfig | UpdateConfig
+#
+# # Set the YOKO Voltage
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# # Run the experiment
+# Instance_SingleShotProgram = SingleShotProgram_g_e_f(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# data_SingleShot = SingleShotProgram_g_e_f.acquire(Instance_SingleShotProgram)
+# SingleShotProgram_g_e_f.save_data(Instance_SingleShotProgram, data_SingleShot)
+# SingleShotProgram_g_e_f.save_config(Instance_SingleShotProgram)
+# SingleShotProgram_g_e_f.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+# endregion
+
+###TITLE: Single Shot for individual states
+# region Single shot for individual states config
+# UpdateConfig = {
+#     # set yoko
+#     "yokoVoltage": 0,
+#     # cavity
+#     "reps": 1000,  # Repitions
+#     "read_pulse_style": "const",
+#     "read_length": 10, # [us]
+#     "read_pulse_gain": 4100, # [DAC units]
+#     "read_pulse_freq": 5743, # [MHz]
+#     # qubit g-e pulse
+#     "qubit_pulse_style": "arb",
+#     "qubit_ge_gain": 4*6500, # [DAC units]
+#     "sigma": 0.2/4,  # [us]
+#     "qubit_ge_freq": 4655, # [MHz]
+#     "relax_delay": 5000,  ### turned into us inside the run function
+#     "qubit_length": 1,
+#     # qubit e-f pulse
+#     "qubit_ef_freq": 4487.6,
+#     "qubit_ef_gain": 25244,
+#     # define shots
+#     "shots": 4000, ### this gets turned into "reps"
+# }
+# config = BaseConfig | UpdateConfig
+#
+# # Set the YOKO Voltage
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# # Run the experiment
+# Instance_SingleShotProgram = SingleShotProgram_individual_state(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# data_SingleShot = SingleShotProgram_individual_state.acquire(Instance_SingleShotProgram)
+# SingleShotProgram_individual_state.save_data(Instance_SingleShotProgram, data_SingleShot)
+# SingleShotProgram_individual_state.save_config(Instance_SingleShotProgram)
+# SingleShotProgram_individual_state.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+# endregion
+
+###TITLE: Single Shot E-F across different variables
+# region Single shot E-F across different variables
+# UpdateConfig = {
+#     # set yoko
+#     "yokoVoltage": 0,
+#     # cavity
+#     "reps": 1000,  # Repitions
+#     "read_pulse_style": "const",
+#     "read_length": 10, # [us]
+#     "read_pulse_gain": 4100, # [DAC units]
+#     "read_pulse_freq": 5743, # [MHz]
+#     # qubit g-e pulse
+#     "qubit_pulse_style": "arb",
+#     "qubit_ge_gain": 4*6500, # [DAC units]
+#     "sigma": 0.2/4,  # [us]
+#     "qubit_ge_freq": 4655, # [MHz]
+#     "relax_delay": 3000,  ### turned into us inside the run function
+#     "qubit_length": 1,
+#     # qubit e-f pulse
+#     "qubit_ef_freq": 4487.6,
+#     "qubit_ef_gain": 25244,
+#     # define shots
+#     "shots": 2000, ### this gets turned into "reps"
+# }
+# config = BaseConfig | UpdateConfig
+#
+# # Set the YOKO Voltage
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# # Parameter to vary
+# read_pulse_gain_arr = np.linspace(3500,4500, 6, dtype = int)
+#
+# # Run the experiment
+# plt.clf()
+# for i in tqdm(range(read_pulse_gain_arr.size)):
+#     config["read_pulse_gain"] = read_pulse_gain_arr[i]
+#     Instance_SingleShotProgram = SingleShotProgram_ef(path="dataTestSingleShot_ef_readgain", outerFolder=outerFolder, cfg=config,
+#                                                       soc=soc, soccfg=soccfg)
+#     data_SingleShot = SingleShotProgram_ef.acquire(Instance_SingleShotProgram)
+#     SingleShotProgram_ef.save_data(Instance_SingleShotProgram, data_SingleShot)
+#     SingleShotProgram_ef.save_config(Instance_SingleShotProgram)
+#     SingleShotProgram_ef.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+#     plt.clf()
+#     plt.close()
+
+# endregion
+
+###TITLE: Qubit RPM
+#region Qubit RPM Config File
 UpdateConfig = {
     ##### define attenuators
     "yokoVoltage": 0,
@@ -661,7 +762,8 @@ UpdateConfig = {
     ###### qubit
     # g-e parameters
     "qubit_ge_freq": 4655, # MHz
-    "qubit_ge_gain": 6500, # Gain for pi pulse in DAC units
+    "qubit_ge_gain": 4*6500, # Gain for pi pulse in DAC units
+    "apply_ge": False,
    # e-f parameters
     "qubit_ef_freq": 4487.6,
     "qubit_ef_gain_start": 0, #1167-10
@@ -669,7 +771,7 @@ UpdateConfig = {
     "RabiNumPoints": 101,  ### number of points
     "qubit_pulse_style": "arb",
     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
-    "sigma": 0.2,  ### units us, define a 20ns sigma
+    "sigma": 0.2/4,  ### units us, define a 20ns sigma
     # "qubit_length": 1, ### units us, doesnt really get used though
     # "flat_top_length": 0.025, ### in us
     "relax_delay": 1000,  ### turned into us inside the run function
@@ -681,18 +783,84 @@ config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 # #
-Instance_Qubit_ef_rabi = Qubit_ef_rabi(path="dataQubit_ef_rabi", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_Qubit_ef_rabi = Qubit_ef_rabi.acquire(Instance_Qubit_ef_rabi)
-Qubit_ef_rabi.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
-Qubit_ef_rabi.save_config(Instance_Qubit_ef_rabi)
-Qubit_ef_rabi.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
+Instance_Qubit_ef_rabi = Qubit_ef_RPM(path="dataQubit_ef_rabi", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_Qubit_ef_rabi = Qubit_ef_RPM.acquire(Instance_Qubit_ef_rabi)
+Qubit_ef_RPM.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
+Qubit_ef_RPM.save_config(Instance_Qubit_ef_rabi)
+Qubit_ef_RPM.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
+#endregion
 
+###TITLE: Legacy Code
 
+# region T2 Ramsey
+
+####################################################################################################################
+# ######## T2 Ramsey measurement doesn't work, the code does nothing
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": 0.0,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # us
+#     "read_pulse_gain": 4000, # [DAC units]
+#     "read_pulse_freq": 5747.5, # [MHz] actual frequency is this number + "cavity_LO"
+#     ##### spec parameters for finding the qubit frequency
+#     "qubit_freq": 4656 - 0.3,
+#     "pi_qubit_gain": 25000, # Gain of pi pulse
+#     "pi2_qubit_gain": 12500, # Gain of pi/2 pulse
+#     "sigma": 0.050,  ### units us, define a 20ns sigma
+#     "qubit_pulse_style": "arb", #### arb means gaussain here
+#     "relax_delay": 500,  ### turned into us inside the run function
+#     ##### T1 parameters
+#     "start": 0, ### us
+#     "step": 0.5, ### us
+#     "expts": 101, ### number of experiemnts
+#     "reps": 1000, ### number of averages on each experiment
+# }
+# config = BaseConfig | UpdateConfig
+# yoko1.SetVoltage(config["yokoVoltage"])
+# print("Voltage is ", yoko1.GetVoltage(), " Volts")
 #
-# #####################################################################################################################
+# Instance_T2Experiment = T2Experiment(path="dataTestT2Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
+# data_T2Experiment = T2Experiment.acquire(Instance_T2Experiment)
+# T2Experiment.display(Instance_T2Experiment, data_T2Experiment, plotDisp=True)
+# T2Experiment.save_data(Instance_T2Experiment, data_T2Experiment)
+# T2Experiment.save_config(Instance_T2Experiment)
+# endregion
+
+# region T2 Echo
+#####################################################################################################################
+######## T2 echo measurement
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": 0.0,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # us
+#     "read_pulse_gain": 4000, # [DAC units]
+#     "read_pulse_freq": 5747.5, # [MHz] actual frequency is this number + "cavity_LO"
+#     ##### spec parameters for finding the qubit frequency
+#     "qubit_freq": 4656.0,
+#     "pi_qubit_gain": 25000, # Gain of pi pulse
+#     "pi2_qubit_gain": 12500, # Gain of pi/2 pulse
+#     "sigma": 0.050,  ### units us, define a 20ns sigma
+#     "qubit_pulse_style": "arb", #### arb means gaussain here
+#     "relax_delay": 500,  ### turned into us inside the run function
+#     ##### T1 parameters
+#     "start": 0, ### us
+#     "step": 2, ### us
+#     "expts": 101, ### number of experiemnts
+#     "reps": 1000, ### number of averages on each experiment
+# }
+# config = BaseConfig | UpdateConfig
+# yoko1.SetVoltage(config["yokoVoltage"])
+# print("Voltage is ", yoko1.GetVoltage(), " Volts")
+#
+# Instance_T2EchoExperiment = T2EchoExperiment(path="dataTestT2EchoExperiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
+# data_T2EchoExperiment = T2EchoExperiment.acquire(Instance_T2EchoExperiment)
+# T2EchoExperiment.display(Instance_T2EchoExperiment, data_T2EchoExperiment, plotDisp=True)
+# T2EchoExperiment.save_data(Instance_T2EchoExperiment, data_T2EchoExperiment)
+# T2EchoExperiment.save_config(Instance_T2EchoExperiment)
+# endregion
+
 plt.show()
-
-
-
-# #
-# plt.show(block = True)

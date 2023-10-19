@@ -84,6 +84,7 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
                                  waveform="qubit")
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
+        self.sync_all(self.us2cycles(0.005))  # align channels and wait /
         self.mathi(self.q_rp, self.r_freq, self.r_freq_ef, '+', 0) # Hack to set the r_freq register page to r_freq_ef (+0)
         self.pulse(ch = self.cfg['qubit_ch']) # play ef probe pulse
 
