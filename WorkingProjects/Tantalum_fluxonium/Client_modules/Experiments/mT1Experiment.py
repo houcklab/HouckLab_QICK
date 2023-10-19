@@ -152,7 +152,7 @@ class T1Experiment(ExperimentClass):
         #### define T1 function
         mag = np.sqrt(avgi[0][0] ** 2 + avgq[0][0] ** 2) # Fit to magnitude rather than I quadrature -- Lev
 
-        mag_fit = avgi[0][0]
+        mag_fit = mag
 
         def _expFit(x, a, T1, c):
             return a * np.exp(-1 * x / T1) + c
@@ -193,13 +193,13 @@ class T1Experiment(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
-        # axs[1].plot(times, self.T1_fit, label='fit')
+        axs[1].plot(times, self.T1_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
         ax2 = axs[2].plot(times, np.abs(avgi[0][0]) , 'o-', label="I - Data")
-        axs[2].plot(times, self.T1_fit, label='fit')
+        # axs[2].plot(times, self.T1_fit, label='fit')
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()

@@ -2,9 +2,9 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 from matplotlib import pyplot as plt
-from Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 # from Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux_SPI import SpecVsFlux_SPI
 
 #### define the saving path
@@ -20,25 +20,25 @@ plt.ioff()
 UpdateConfig = {
     ##### define attenuators
     ##### define the yoko voltage
-    "yokoVoltageStart": 0.0, #-0.65,
-    "yokoVoltageStop": 0.5, #-0.63,
-    "yokoVoltageNumPoints": 51,
+    "yokoVoltageStart": -5.4, #-0.65,
+    "yokoVoltageStop": -5.0, #-0.63,
+    "yokoVoltageNumPoints": 21,
     ###### cavity
     "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     "read_length": 100,  # us
     "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6424.8 - 1.0,  # [MHz]
-    "trans_freq_stop": 6424.8 + 1.0,  # [MHz]
+    "trans_freq_start": 6066 - 1.0,  # [MHz]
+    "trans_freq_stop": 6066 + 1.0,  # [MHz]
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
     ##### qubit spec parameters
-    "spec_reps": 500,
+    "spec_reps": 5,
     "qubit_pulse_style": "const",
-    "qubit_gain": 10000,
+    "qubit_gain": 10,
     "qubit_length": 1, ### in units of us
-    "qubit_freq_start": 2870 - 30,
-    "qubit_freq_stop": 2870 + 10,
-    "SpecNumPoints": 121,  ### number of points
+    "qubit_freq_start": 125,
+    "qubit_freq_stop": 126,
+    "SpecNumPoints": 2,  ### number of points
     "sigma": None,
     "relax_delay": 2,
 }

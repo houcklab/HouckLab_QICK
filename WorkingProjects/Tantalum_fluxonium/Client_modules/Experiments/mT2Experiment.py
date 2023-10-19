@@ -120,7 +120,8 @@ class T2Experiment(ExperimentClass):
 
         ## perform fit for T2 estimate
         try:
-            mag =  avgq[0][0]
+            # mag =  avgq[0][0]
+            mag = mag
 
             ### define T2 function
             def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
@@ -177,6 +178,11 @@ class T2Experiment(ExperimentClass):
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
+        try:
+            axs[1].plot(times, self.T2_fit, '-', label="T2R fit")
+        except:
+            pass
+
         ax2 = axs[2].plot(times, avgi[0][0], 'o-', label="I - Data")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
@@ -184,10 +190,10 @@ class T2Experiment(ExperimentClass):
 
         ax3 = axs[3].plot(times, avgq[0][0], 'o-', label="Q - Data")
 
-        try:
-            axs[3].plot(times, self.T2_fit, '-', label="T2R fit")
-        except:
-            pass
+        # try:
+        #     axs[3].plot(times, self.T2_fit, '-', label="T2R fit")
+        # except:
+        #     pass
 
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Time (us)")
