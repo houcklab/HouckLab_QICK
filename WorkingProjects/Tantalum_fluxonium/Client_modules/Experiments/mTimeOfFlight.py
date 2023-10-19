@@ -1,8 +1,9 @@
 from qick import *
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 
 
 # helper functions
@@ -88,54 +89,83 @@ def hist(data=None, plot=True, ran=1.0):
 #soccfg = soc
 soc, soccfg = makeProxy()
 
-hw_cfg={#"jpa_ch":6,
-        "res_ch":0,
-        "qubit_ch":1,
-        #"storage_ch":0
-       }
-readout_cfg={
-    "readout_length":soccfg.us2cycles(10.0, gen_ch=0), # [Clock ticks] # gen ch was 5
-    "f_res": 5988.3, # [MHz]
-    "res_phase": 0,
-    "adc_trig_offset":0, # [Clock ticks]
-    "res_gain":8000
-    }
-qubit_cfg={
-    "sigma":0.5, # [us]
-    "pi_gain": 12500,
-    "pi2_gain":11500//2, # // is floor division
-    "f_ge":4743.041802067813,
-    "relax_delay":500
-}
+# hw_cfg={#"jpa_ch":6,
+#         "res_ch":0,
+#         "qubit_ch":1,
+#         #"storage_ch":0
+#        }
+# readout_cfg={
+#     "readout_length":soccfg.us2cycles(10.0, gen_ch=0), # [Clock ticks] # gen ch was 5
+#     "f_res": 5988.3, # [MHz]
+#     "res_phase": 0,
+#     "adc_trig_offset":0, # [Clock ticks]
+#     "res_gain":8000
+#     }
+# qubit_cfg={
+#     "sigma":0.5, # [us]
+#     "pi_gain": 12500,
+#     "pi2_gain":11500//2, # // is floor division
+#     "f_ge":4743.041802067813,
+#     "relax_delay":500
+# }
 
 
-class LoopbackProgram(AveragerProgram):
+class StateTrajectory(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
         #         self.declare_gen(ch=cfg["jpa_ch"], nqz=1) #JPA
-        self.declare_gen(ch=cfg["res_ch"], nqz=2)  # Readout
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=1) #Qubit
-        #         self.declare_gen(ch=cfg["storage_ch"], nqz=2) #Storage
+        res_ch = cfg["res_ch"]
+        #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
 
-        for ch in [0]:  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=cfg["readout_length"],
-                                 freq=cfg["frequency"], gen_ch=cfg["res_ch"])
+        # Qubit configuration
+        qubit_ch = cfg["qubit_ch"]
+        self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
 
-        freq = self.freq2reg(cfg["frequency"], gen_ch=cfg["res_ch"],
-                             ro_ch=0)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0, gain=cfg["pulse_gain"],
-                                 length=cfg["pulse_length"])
+        # configure the readout lengths and downconversion frequencies
+        for ro_ch in cfg["ro_chs"]:
+            # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
+            #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
+            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]), gen_ch=cfg["res_ch"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                       sigma=self.us2cycles(self.cfg["sigma"]),
-                       length=self.us2cycles(self.cfg["sigma"]) * 4)
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
-                                 phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]), gain=self.cfg["pi_gain"],
-                                 waveform="qubit")
+            """
+            length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0])
+            """
+
+        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
+        # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        qubit_freq = self.freq2reg(cfg["qubit_freq"],
+                                   gen_ch=qubit_ch)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+
+        # print("generator freq:", self.reg2freq(freq, gen_ch=res_ch))
+        if cfg["qubit_pulse_style"] == "arb":
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"]),
+                           length=self.us2cycles(self.cfg["sigma"]) * 4)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+                                     waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
+
+        elif cfg["qubit_pulse_style"] == "flat_top":
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"]),
+                           length=self.us2cycles(self.cfg["sigma"]) * 4)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+
+        else:
+            print("define pi or flat top pulse")
+
+        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                 gain=cfg["read_pulse_gain"],
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=qubit_ch),
+                                 )  # mode="periodic")
 
         self.synci(200)  # give processor some time to configure pulses
-
 
     def body(self):
         cfg = self.cfg
@@ -144,39 +174,64 @@ class LoopbackProgram(AveragerProgram):
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
         self.measure(pulse_ch=cfg["res_ch"],
                      adcs=[0],
-                     adc_trig_offset=cfg["adc_trig_offset"],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      t=0,
                      wait=True,
                      syncdelay=self.us2cycles(cfg["relax_delay"]))
 
 
 
-expt_config = {
-    "reps": 1,  # --Fixed
-    "pulse_length": 800,  # [Clock ticks]
-    "readout_length": 1000,  # [Clock ticks]
-    "pulse_gain": 11000,  # [DAC units]
-    "frequency": 5988.21,  # [MHz]
-    "adc_trig_offset": 200,  # [Clock ticks]
+# expt_config = {
+#     "reps": 1,  # --Fixed
+#     "pulse_length": 800,  # [Clock ticks]
+#     "readout_length": 1000,  # [Clock ticks]
+#     "pulse_gain": 11000,  # [DAC units]
+#     "frequency": 5988.21,  # [MHz]
+#     "adc_trig_offset": 200,  # [Clock ticks]
+#     "soft_avgs": 1000,
+#     "qubit_freq": 1715.6, # [MHz]
+# }
+
+# ####################################### code for running basic single shot exerpiment
+UpdateConfig = {
+    ##### set yoko
+    "yokoVoltage": 1.0,
+    ###### cavity
+    "reps": 1,  # this will used for all experiements below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 2.3, # [Clock ticks]
+    "read_pulse_gain": 11000, # [DAC units]
+    "read_pulse_freq": 6438.18, # [MHz]
+    ##### qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 12000,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.050,  ### units us
+    # "flat_top_length": 0.300,  ### in us
+    "qubit_freq": 2751.0,
+    "relax_delay": 10,  ### turned into us inside the run function
+
+    ######## misc
     "soft_avgs": 1000,
-    "qubit_freq": 1715.6, # [MHz]
+    "adc_trig_offset": 0.40 + 0.14, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
 }
+config = BaseConfig | UpdateConfig
 
 
-config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
+# config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
 config_nopulse = {"do_pulse": False, **config}
 config_pulse = {"do_pulse": True, **config}
 
-prog_nopulse = LoopbackProgram(soccfg, config_nopulse)
+prog_nopulse = StateTrajectory(soccfg, config_nopulse)
 adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
 # avgi_np, avgq_np = prog_nopulse.acquire(soc, threshold=None, angle=None, load_pulses=True,
 #                                  readouts_per_experiment=1, save_experiments=None,
-                                 # start_src="internal", progress=True, debug=False)
+#                                  start_src="internal", progress=True, debug=False)
 
 # print(avgi_np)
 # print(avgq_np)
 
-prog_pulse = LoopbackProgram(soccfg, config_pulse)
+prog_pulse = StateTrajectory(soccfg, config_pulse)
 adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
 # avgi_p, avgq_p = prog_pulse.acquire(soc, threshold=None, angle=None, load_pulses=True,
 #                                  readouts_per_experiment=1, save_experiments=None,
@@ -185,38 +240,82 @@ adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, 
 # print(avgi_p)
 # print(avgq_p)
 
-# Plot results.
-plt.figure()
-plt.subplot(2, 2, 1, title=f"Averages = {config['soft_avgs']}", xlabel="Clock ticks", ylabel="Transmission (adc levels)")
-plt.plot(adc1_nopulse[0, 0], label="I value; no pulse")
-plt.plot(adc1_nopulse[0, 1], label="Q value; no pulse")
-plt.plot(np.sqrt(np.square(adc1_nopulse[0, 1]) + np.square(adc1_nopulse[0, 1])), label="abs; no pulse")
-#plt.plt.plt.plot(adc2[0], label="I value; ADC 1")
-#plt.plot(adc2[1], label="Q value; ADC 1")
-plt.legend()
-# plt.axvline(readout_cfg["adc_trig_offset"])
+###### NOTE: clock tick is about 2.3ns
+### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+I_0 = adc1_nopulse[0][0]
+Q_0 = adc1_nopulse[0][1]
 
-plt.subplot(2, 2, 3, xlabel="Clock ticks", ylabel="Transmission (adc levels)")
-plt.plot(adc1_pulse[0, 0], label="I value; pulse")
-plt.plot(adc1_pulse[0, 1], label="Q value; pulse")
-plt.plot(np.sqrt(np.square(adc1_pulse[0, 1]) + np.square(adc1_pulse[0, 1])), label="abs; pulse")
-plt.legend()
+I_1 = adc1_pulse[0][0]
+Q_1 = adc1_pulse[0][1]
+
+#### create time vector given the number of samples
+time_vec = np.linspace(0, config["read_length"], len(I_0))
 
 
-plt.subplot(2, 2, 2, xlabel="I", ylabel="Q")
-plt.plot(adc1_nopulse[0, 0], adc1_nopulse[0, 1], label ='No pulse')
-plt.plot(adc1_pulse[0, 0], adc1_nopulse[0, 1], label ='Pulse')
-plt.legend()
+##### plot
+figNum = 111
+alpha = 0.9
+fig = plt.figure(layout="constrained", figsize = (12,8), num = figNum)
+gs = GridSpec(4, 4, figure=fig)
+ax1 = fig.add_subplot(gs[0:2, :2])
+# identical to ax1 = plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
+ax2 = fig.add_subplot(gs[2:4, :2])
+ax3 = fig.add_subplot(gs[:, 2:])
 
-plt.figure()
-plt.plot(adc1_pulse[0, 0] - adc1_nopulse[0, 0], label="I pulse - I no_pulse")
-plt.plot(adc1_pulse[0, 1] - adc1_nopulse[0, 1], label="Q pulse - Q no_pulse")
-plt.legend()
+ax1.plot(time_vec, I_0, '-', alpha = alpha)
+ax1.plot(time_vec, I_1, '-', alpha = alpha)
+ax1.set_xlabel("readout time (us)")
+ax1.set_ylabel("I value (adc units)")
 
+ax2.plot(time_vec, Q_0, '-', alpha = alpha)
+ax2.plot(time_vec, Q_1, '-', alpha = alpha)
+ax2.set_xlabel("readout time (us)")
+ax2.set_ylabel("Q value (adc units)")
+
+### plot the blobs
+ax3.plot(I_0, Q_0, alpha = alpha)
+ax3.plot(I_1, Q_1, alpha = alpha)
+ax3.set_xlabel("I value (adc units)")
+ax3.set_ylabel("Q value (adc units)")
+
+plt.tight_layout()
 plt.show()
 
-print('No pulse I:' + str(np.average(adc1_nopulse[0 ,0])))
-print('No pulse Q:' + str(np.average(adc1_nopulse[0 ,1])))
 
-print('Pulse I:' + str(np.average(adc1_pulse[0 ,0])))
-print('Pulse Q:' + str(np.average(adc1_pulse[0 ,1])))
+
+#
+# # Plot results.
+# plt.figure()
+# plt.subplot(2, 2, 1, title=f"Averages = {config['soft_avgs']}", xlabel="Clock ticks", ylabel="Transmission (adc levels)")
+# plt.plot(adc1_nopulse[0, 0], label="I value; no pulse")
+# plt.plot(adc1_nopulse[0, 1], label="Q value; no pulse")
+# plt.plot(np.sqrt(np.square(adc1_nopulse[0, 1]) + np.square(adc1_nopulse[0, 1])), label="abs; no pulse")
+# #plt.plt.plt.plot(adc2[0], label="I value; ADC 1")
+# #plt.plot(adc2[1], label="Q value; ADC 1")
+# plt.legend()
+# # plt.axvline(readout_cfg["adc_trig_offset"])
+#
+# plt.subplot(2, 2, 3, xlabel="Clock ticks", ylabel="Transmission (adc levels)")
+# plt.plot(adc1_pulse[0, 0], label="I value; pulse")
+# plt.plot(adc1_pulse[0, 1], label="Q value; pulse")
+# plt.plot(np.sqrt(np.square(adc1_pulse[0, 1]) + np.square(adc1_pulse[0, 1])), label="abs; pulse")
+# plt.legend()
+#
+#
+# plt.subplot(2, 2, 2, xlabel="I", ylabel="Q")
+# plt.plot(adc1_nopulse[0, 0], adc1_nopulse[0, 1], label ='No pulse')
+# plt.plot(adc1_pulse[0, 0], adc1_nopulse[0, 1], label ='Pulse')
+# plt.legend()
+#
+# plt.figure()
+# plt.plot(adc1_pulse[0, 0] - adc1_nopulse[0, 0], label="I pulse - I no_pulse")
+# plt.plot(adc1_pulse[0, 1] - adc1_nopulse[0, 1], label="Q pulse - Q no_pulse")
+# plt.legend()
+#
+# plt.show()
+#
+# print('No pulse I:' + str(np.average(adc1_nopulse[0 ,0])))
+# print('No pulse Q:' + str(np.average(adc1_nopulse[0 ,1])))
+#
+# print('Pulse I:' + str(np.average(adc1_pulse[0 ,0])))
+# print('Pulse Q:' + str(np.average(adc1_pulse[0 ,1])))
