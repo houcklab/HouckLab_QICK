@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 
 
 # helper functions
@@ -189,18 +190,124 @@ class StateTrajectory(AveragerProgram):
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
 
 
+class TimeOfFlight(ExperimentClass):
+    """
+    find the state trajecoty during the measurement
+    """
+
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+
+    def acquire(self, progress=False, debug=False):
+
+        #### config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
+        config_nopulse = {"do_pulse": False, **self.cfg}
+        config_pulse = {"do_pulse": True, **self.cfg}
+
+        prog_nopulse = StateTrajectory(self.soccfg, config_nopulse)
+        adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+        prog_pulse = StateTrajectory(self.soccfg, config_pulse)
+        adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+        ###### NOTE: clock tick is about 2.3ns
+        ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+        I_0 = adc1_nopulse[0][0]
+        Q_0 = adc1_nopulse[0][1]
+
+        I_1 = adc1_pulse[0][0]
+        Q_1 = adc1_pulse[0][1]
+
+        #### loop and add together trajectoires
+        loop_len = self.cfg["loop_num"]
+        for idx in range(loop_len):
+            self.cfg["adc_trig_offset"] += self.cfg["read_length"]
+
+            config_nopulse = {"do_pulse": False, **self.cfg}
+            config_pulse = {"do_pulse": True, **self.cfg}
+
+            prog_nopulse = StateTrajectory(soccfg, config_nopulse)
+            adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+            prog_pulse = StateTrajectory(soccfg, config_pulse)
+            adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+            ###### NOTE: clock tick is about 2.3ns
+            ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+            I_0 = np.append(I_0, adc1_nopulse[0][0])
+            Q_0 = np.append(Q_0, adc1_nopulse[0][1])
+
+            I_1 = np.append(I_1, adc1_pulse[0][0])
+            Q_1 = np.append(Q_1, adc1_pulse[0][1])
+
+        #### create time vector given the number of samples
+        time_vec = np.linspace(0, config["read_length"] * (loop_len + 1), len(I_0))
 
 
-# expt_config = {
-#     "reps": 1,  # --Fixed
-#     "pulse_length": 800,  # [Clock ticks]
-#     "readout_length": 1000,  # [Clock ticks]
-#     "pulse_gain": 11000,  # [DAC units]
-#     "frequency": 5988.21,  # [MHz]
-#     "adc_trig_offset": 200,  # [Clock ticks]
-#     "soft_avgs": 1000,
-#     "qubit_freq": 1715.6, # [MHz]
-# }
+        #### save the data
+        data = {'config': self.cfg, 'data': {
+            "time_vec": time_vec, 'I_0': I_0, 'Q_0': Q_0, 'I_1': I_1, 'Q_1': Q_1,
+        }
+                }
+
+        self.data = data
+
+        return data
+
+    def display(self, data=None, plotDisp=False, figNum=1, ran=None, **kwargs):
+        if data is None:
+            data = self.data
+
+        I_0 = data["data"]["I_0"]
+        Q_0 = data["data"]["Q_0"]
+
+        I_1 = data["data"]["I_1"]
+        Q_1 = data["data"]["Q_1"]
+
+        time_vec = data["data"]["time_vec"]
+
+        ##### plot
+        figNum = 111
+        alpha = 0.9
+        fig = plt.figure(layout="constrained", figsize=(12, 8), num=figNum)
+        gs = GridSpec(4, 4, figure=fig)
+        ax1 = fig.add_subplot(gs[0:2, :2])
+        # identical to ax1 = plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
+        ax2 = fig.add_subplot(gs[2:4, :2])
+        ax3 = fig.add_subplot(gs[:, 2:])
+
+        ax1.plot(time_vec, I_0, '-', alpha=alpha, label="no pulse")
+        ax1.plot(time_vec, I_1, '-', alpha=alpha, label="with pulse")
+        ax1.set_xlabel("readout time (us)")
+        ax1.set_ylabel("I value (adc units)")
+
+        ax2.plot(time_vec, Q_0, '-', alpha=alpha)
+        ax2.plot(time_vec, Q_1, '-', alpha=alpha)
+        ax2.set_xlabel("readout time (us)")
+        ax2.set_ylabel("Q value (adc units)")
+
+        ### plot the blobs
+        ax3.plot(I_0, Q_0, alpha=alpha)
+        ax3.plot(I_1, Q_1, alpha=alpha)
+        ax3.set_xlabel("I value (adc units)")
+        ax3.set_ylabel("Q value (adc units)")
+
+        plt.tight_layout()
+
+        plt.savefig(self.iname)
+
+        if plotDisp:
+            plt.show(block=False)
+            plt.pause(0.1)
+        else:
+            fig.clf(True)
+            plt.close(fig)
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])
+
+        #######################################
 
 # ####################################### code for looking at state trajecotry
 UpdateConfig = {
@@ -218,91 +325,107 @@ UpdateConfig = {
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.150,  ### units us
     # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 3582.5,
+    "qubit_freq": 2034.5,
     "relax_delay": 1000,  ### turned into us inside the run function
-    #### define shots
-    "shots": 2000, ### this gets turned into "reps"
+    # #### define shots
+    # "shots": 2000, ### this gets turned into "reps"
 
     ######## misc
-    "soft_avgs": 5000,
+    "soft_avgs": 10000,
     "adc_trig_offset": 0.40 + 0.14, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
+    "loop_num": 10, ### number of readouts to perform
 }
 config = BaseConfig | UpdateConfig
 
+#### update the qubit and cavity attenuation
+yoko1.SetVoltage(config["yokoVoltage"])
 
-#### config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
-config_nopulse = {"do_pulse": False, **config}
-config_pulse = {"do_pulse": True, **config}
+# ##### run actual experiment
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TF4\\"
 
-prog_nopulse = StateTrajectory(soccfg, config_nopulse)
-adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+#### change gain instead of attenuation
+Instance_TimeOfFlight = TimeOfFlight(path="dataTestTimeOfFlight", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_TimeOfFlight = TimeOfFlight.acquire(Instance_TimeOfFlight)
+TimeOfFlight.save_data(Instance_TimeOfFlight, data_TimeOfFlight)
+TimeOfFlight.save_config(Instance_TimeOfFlight)
+TimeOfFlight.display(Instance_TimeOfFlight, data_TimeOfFlight, plotDisp=True)
 
-prog_pulse = StateTrajectory(soccfg, config_pulse)
-adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-
-
-###### NOTE: clock tick is about 2.3ns
-### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
-I_0 = adc1_nopulse[0][0]
-Q_0 = adc1_nopulse[0][1]
-
-I_1 = adc1_pulse[0][0]
-Q_1 = adc1_pulse[0][1]
-
-#### loop and add together trajectoires
-loop_len = 5
-for idx in range(loop_len):
-    config["adc_trig_offset"] += config["read_length"]
-
-    config_nopulse = {"do_pulse": False, **config}
-    config_pulse = {"do_pulse": True, **config}
-
-    prog_nopulse = StateTrajectory(soccfg, config_nopulse)
-    adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-
-    prog_pulse = StateTrajectory(soccfg, config_pulse)
-    adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-
-
-    ###### NOTE: clock tick is about 2.3ns
-    ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
-    I_0 = np.append(I_0, adc1_nopulse[0][0])
-    Q_0 = np.append(Q_0, adc1_nopulse[0][1])
-
-    I_1 = np.append(I_1, adc1_pulse[0][0])
-    Q_1 = np.append(Q_1, adc1_pulse[0][1])
-#######################################
-
-#### create time vector given the number of samples
-time_vec = np.linspace(0, config["read_length"]*(loop_len+1), len(I_0))
-
-
-##### plot
-figNum = 111
-alpha = 0.9
-fig = plt.figure(layout="constrained", figsize = (12,8), num = figNum)
-gs = GridSpec(4, 4, figure=fig)
-ax1 = fig.add_subplot(gs[0:2, :2])
-# identical to ax1 = plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
-ax2 = fig.add_subplot(gs[2:4, :2])
-ax3 = fig.add_subplot(gs[:, 2:])
-
-ax1.plot(time_vec, I_0, '-', alpha = alpha, label = "no pulse")
-ax1.plot(time_vec, I_1, '-', alpha = alpha, label = "with pulse")
-ax1.set_xlabel("readout time (us)")
-ax1.set_ylabel("I value (adc units)")
-
-ax2.plot(time_vec, Q_0, '-', alpha = alpha)
-ax2.plot(time_vec, Q_1, '-', alpha = alpha)
-ax2.set_xlabel("readout time (us)")
-ax2.set_ylabel("Q value (adc units)")
-
-### plot the blobs
-ax3.plot(I_0, Q_0, alpha = alpha)
-ax3.plot(I_1, Q_1, alpha = alpha)
-ax3.set_xlabel("I value (adc units)")
-ax3.set_ylabel("Q value (adc units)")
-
-plt.tight_layout()
 plt.show()
 
+
+# #### config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
+# config_nopulse = {"do_pulse": False, **config}
+# config_pulse = {"do_pulse": True, **config}
+#
+# prog_nopulse = StateTrajectory(soccfg, config_nopulse)
+# adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+#
+# prog_pulse = StateTrajectory(soccfg, config_pulse)
+# adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+
+# ###### NOTE: clock tick is about 2.3ns
+# ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+# I_0 = adc1_nopulse[0][0]
+# Q_0 = adc1_nopulse[0][1]
+#
+# I_1 = adc1_pulse[0][0]
+# Q_1 = adc1_pulse[0][1]
+#
+# #### loop and add together trajectoires
+# loop_len = 5
+# for idx in range(loop_len):
+#     config["adc_trig_offset"] += config["read_length"]
+#
+#     config_nopulse = {"do_pulse": False, **config}
+#     config_pulse = {"do_pulse": True, **config}
+#
+#     prog_nopulse = StateTrajectory(soccfg, config_nopulse)
+#     adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+#
+#     prog_pulse = StateTrajectory(soccfg, config_pulse)
+#     adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+#
+#
+#     ###### NOTE: clock tick is about 2.3ns
+#     ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+#     I_0 = np.append(I_0, adc1_nopulse[0][0])
+#     Q_0 = np.append(Q_0, adc1_nopulse[0][1])
+#
+#     I_1 = np.append(I_1, adc1_pulse[0][0])
+#     Q_1 = np.append(Q_1, adc1_pulse[0][1])
+# #######################################
+
+# #### create time vector given the number of samples
+# time_vec = np.linspace(0, config["read_length"]*(loop_len+1), len(I_0))
+
+#
+# ##### plot
+# figNum = 111
+# alpha = 0.9
+# fig = plt.figure(layout="constrained", figsize = (12,8), num = figNum)
+# gs = GridSpec(4, 4, figure=fig)
+# ax1 = fig.add_subplot(gs[0:2, :2])
+# # identical to ax1 = plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
+# ax2 = fig.add_subplot(gs[2:4, :2])
+# ax3 = fig.add_subplot(gs[:, 2:])
+#
+# ax1.plot(time_vec, I_0, '-', alpha = alpha, label = "no pulse")
+# ax1.plot(time_vec, I_1, '-', alpha = alpha, label = "with pulse")
+# ax1.set_xlabel("readout time (us)")
+# ax1.set_ylabel("I value (adc units)")
+#
+# ax2.plot(time_vec, Q_0, '-', alpha = alpha)
+# ax2.plot(time_vec, Q_1, '-', alpha = alpha)
+# ax2.set_xlabel("readout time (us)")
+# ax2.set_ylabel("Q value (adc units)")
+#
+# ### plot the blobs
+# ax3.plot(I_0, Q_0, alpha = alpha)
+# ax3.plot(I_1, Q_1, alpha = alpha)
+# ax3.set_xlabel("I value (adc units)")
+# ax3.set_ylabel("Q value (adc units)")
+#
+# plt.tight_layout()
+# plt.show()
+#

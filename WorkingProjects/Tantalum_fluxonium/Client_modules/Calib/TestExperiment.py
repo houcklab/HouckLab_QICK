@@ -115,36 +115,36 @@ plt.ioff()
 #
 # ########################################################################################################################
 
-# # #################################### code for transmission vs power
-# UpdateConfig = {
-#     "yokoVoltage": -3.1,
-#     ##### change gain instead option
-#     "trans_gain_start": 1000,
-#     "trans_gain_stop": 20000,
-#     "trans_gain_num": 20,
-#     ###### cavity
-#     "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
-#     "read_pulse_style": "const",  # --Fixed
-#     "readout_length": 10,  # [us]
-#     # "read_pulse_gain": 10000,  # [DAC units]
-#     "trans_freq_start": 6438 - 2,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "trans_freq_stop": 6438 + 2,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "TransNumPoints": 401,  ### number of points in the transmission frequecny
-#     "relax_delay": 2,
-# }
-# config = BaseConfig | UpdateConfig
-#
-#
-# #### update the qubit and cavity attenuation
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# # ##### run actual experiment
-#
-# #### change gain instead of attenuation
-# Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
-# TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
-# TransVsGain.save_config(Instance_TransVsGain)
+# #################################### code for transmission vs power
+UpdateConfig = {
+    "yokoVoltage": -3.5,
+    ##### change gain instead option
+    "trans_gain_start": 1000,
+    "trans_gain_stop": 20000,
+    "trans_gain_num": 20,
+    ###### cavity
+    "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
+    "read_pulse_style": "const",  # --Fixed
+    "readout_length": 10,  # [us]
+    # "read_pulse_gain": 10000,  # [DAC units]
+    "trans_freq_start": 6438 - 2,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6438 + 2,  # [MHz] actual frequency is this number + "cavity_LO"
+    "TransNumPoints": 401,  ### number of points in the transmission frequecny
+    "relax_delay": 2,
+}
+config = BaseConfig | UpdateConfig
+
+
+#### update the qubit and cavity attenuation
+yoko1.SetVoltage(config["yokoVoltage"])
+
+# ##### run actual experiment
+
+#### change gain instead of attenuation
+Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
+TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
+TransVsGain.save_config(Instance_TransVsGain)
 
 
 # # # # # # ###########################################################################################################

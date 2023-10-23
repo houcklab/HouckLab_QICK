@@ -117,10 +117,11 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
 
-        # ######## play initial pulse to creat mixture of population
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        # ######## play initial pulse to create mixture of population
+        if self.cfg["pre_pulse"]:
+            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+            self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
         # ########
 
         #### measure beginning thermal state
