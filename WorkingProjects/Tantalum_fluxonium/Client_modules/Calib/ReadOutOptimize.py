@@ -26,37 +26,37 @@ plt.ioff()
 
 
 
-# ####################################### code for running basic single shot exerpiment
-UpdateConfig = {
-    ##### set yoko
-    "yokoVoltage": 1.0,
-    ###### cavity
-    "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 2, # [Clock ticks]
-    "read_pulse_gain": 11000, # [DAC units]
-    "read_pulse_freq": 6438.18, # [MHz]
-    ##### qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 12000,
-    # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.050,  ### units us
-    # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 2751.0,
-    "relax_delay": 1000,  ### turned into us inside the run function
-    #### define shots
-    "shots": 2000, ### this gets turned into "reps"
-}
-config = BaseConfig | UpdateConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
-
-Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
-                                               soc=soc, soccfg=soccfg)
-data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
-SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-SingleShotProgram.save_config(Instance_SingleShotProgram)
+# # ####################################### code for running basic single shot exerpiment
+# UpdateConfig = {
+#     ##### set yoko
+#     "yokoVoltage": -3.1,
+#     ###### cavity
+#     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # [Clock ticks]
+#     "read_pulse_gain": 7000, # [DAC units]
+#     "read_pulse_freq": 6437.5 - 0.0, # [MHz]
+#     ##### qubit spec parameters
+#     "qubit_pulse_style": "arb",
+#     "qubit_gain": 0,
+#     # "qubit_length": 10,  ###us, this is used if pulse style is const
+#     "sigma": 0.200,  ### units us
+#     # "flat_top_length": 0.300,  ### in us
+#     "qubit_freq": 1789.5 - 0.5,
+#     "relax_delay": 1000,  ### turned into us inside the run function
+#     #### define shots
+#     "shots": 500000, ### this gets turned into "reps"
+# }
+# config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
+#                                                soc=soc, soccfg=soccfg)
+# data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+# SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+# SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+# SingleShotProgram.save_config(Instance_SingleShotProgram)
 
 
 

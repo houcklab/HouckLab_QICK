@@ -39,23 +39,23 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TF4\\"
 # ####################################### code for running basic single shot exerpiment
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": 1.0,
+    "yokoVoltage": -2.8,
     ###### cavity
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
     "read_length": 5, # [Clock ticks]
     "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6438.18, # [MHz]
+    "read_pulse_freq": 6437.2, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 12000,
+    "qubit_gain": 16000*0,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.050,  ### units us
+    "sigma": 0.150,  ### units us
     # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 2751.0,
+    "qubit_freq": 3582.5,
     "relax_delay": 1000,  ### turned into us inside the run function
     #### define shots
-    "shots": 2000, ### this gets turned into "reps"
+    "shots": 500000, ### this gets turned into "reps"
 }
 config = BaseConfig | UpdateConfig
 
@@ -70,8 +70,8 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 
 
 # # ##### run the single shot experiment
-# loop_len = 21
-# freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
+# loop_len = 11
+# freq_vec = config["read_pulse_freq"] + np.linspace(-0.25, 0.25, loop_len)
 # # qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
 # # read_gain_vec = np.linspace(4000, 5000, loop_len, dtype=int)
 # # yoko_vec = config["yokoVoltage"] + np.linspace(-0.02, 0.02, 21)
@@ -102,7 +102,7 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 #     ###### cavity
 #     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 2, # [Clock ticks]
+#     "read_length": 5, # [Clock ticks]
 #     "read_pulse_gain": 10000, # [DAC units]
 #     "read_pulse_freq": 6438.18, # [MHz]
 #     ##### qubit spec parameters
@@ -114,18 +114,18 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 #     "qubit_freq": 2751.0,
 #     "relax_delay": 1000,  ### turned into us inside the run function
 #     #### define shots
-#     "shots": 2000, ### this gets turned into "reps"
+#     "shots": 4000, ### this gets turned into "reps"
 #     #### define the loop parameters
 #
-#     "x_var": "qubit_freq",
-#     "x_start": 2751.0 - 2.5,
-#     "x_stop": 2751.0 + 2.5,
-#     "x_num": 21,
+#     "x_var": "read_pulse_freq",
+#     "x_start": 6438.18 - 1.5,
+#     "x_stop": 6438.18 + 1.5,
+#     "x_num": 31,
 #
-#     "y_var": "qubit_gain",
-#     "y_start": 10000,
-#     "y_stop": 14000,
-#     "y_num": 7,
+#     "y_var": "read_pulse_gain",
+#     "y_start": 7000,
+#     "y_stop": 12000,
+#     "y_num": 11,
 # }
 # config = BaseConfig | UpdateConfig
 #
@@ -275,33 +275,33 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 # AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 
 
-################################################################################
+# ###############################################################################
 # ################## code finding T1 of a thermal state using pulses
 # UpdateConfig = {
 #     ##### set yoko
-#     "yokoVoltage": 0.3,
+#     "yokoVoltage": -2.8,
 #     ###### cavity
 #     #"reps": 0,  # this line does nothing, is overwritten with "shots"
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # [Clock ticks]
+#     "read_length": 5, # [Clock ticks]
 #     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 6425.3, # [MHz]
+#     "read_pulse_freq": 6437.2, # [MHz]
 #     ##### qubit spec parameters
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 20000, #12000,
+#     "qubit_pulse_style": "arb",
+#     "qubit_gain": 16000, #12000,
 #     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "flat_top_length": 0.300,
-#     "qubit_freq": 2869,
-#     "relax_delay": 200,  ### turned into us inside the run function
+#     "sigma": 0.150,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.300,
+#     "qubit_freq": 3582.5,
+#     "relax_delay": 100,  ### turned into us inside the run function
 #     #### define shots
-#     "shots": 5000, ### this gets turned into "reps"
+#     "shots": 6000, ### this gets turned into "reps"
 #     ### define the wait times
 #     "wait_start": 0,
-#     "wait_stop": 2000,
-#     "wait_num": 101,
+#     "wait_stop": 1500,
+#     "wait_num": 301,
 #     ##### define number of clusters to use
-#     "cen_num": 2,
+#     "cen_num": 3,
 # }
 # config = BaseConfig | UpdateConfig
 #

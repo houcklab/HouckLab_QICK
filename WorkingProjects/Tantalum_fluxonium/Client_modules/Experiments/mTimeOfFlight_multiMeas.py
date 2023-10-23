@@ -160,15 +160,15 @@ class StateTrajectory(AveragerProgram):
         else:
             print("define pi or flat top pulse")
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                 gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=qubit_ch),
-                                 )  # mode="periodic")
-
         # self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
         #                          gain=cfg["read_pulse_gain"],
-        #                          length=self.us2cycles(30.0, gen_ch=qubit_ch),
+        #                          length=self.us2cycles(self.cfg["read_length"], gen_ch=qubit_ch),
         #                          )  # mode="periodic")
+
+        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                 gain=cfg["read_pulse_gain"],
+                                 length=self.us2cycles(30.0, gen_ch=qubit_ch),
+                                 )  # mode="periodic")
 
         self.synci(200)  # give processor some time to configure pulses
 
@@ -177,12 +177,17 @@ class StateTrajectory(AveragerProgram):
         if cfg["do_pulse"]:
             self.pulse(ch=self.cfg["qubit_ch"])  # play qubit pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
-        self.measure(pulse_ch=cfg["res_ch"],
-                     adcs=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     t=0,
-                     wait=True,
-                     syncdelay=self.us2cycles(cfg["relax_delay"]))
+        # self.measure(pulse_ch=cfg["res_ch"],
+        #              adcs=[0],
+        #              adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+        #              t=0,
+        #              wait=True,
+        #              syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+        self.pulse(ch=self.cfg["res_ch"])  # play readout pulse
+        self.trigger(adcs=self.ro_chs, pins=[0],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
+
 
 
 
@@ -197,53 +202,44 @@ class StateTrajectory(AveragerProgram):
 #     "qubit_freq": 1715.6, # [MHz]
 # }
 
-# ####################################### code for running basic single shot exerpiment
+# ####################################### code for looking at state trajecotry
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": 1.0,
+    "yokoVoltage": -2.8,
     ###### cavity
     "reps": 1,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
     "read_length": 2.3, # [Clock ticks]
-    "read_pulse_gain": 11000, # [DAC units]
-    "read_pulse_freq": 6438.2, # [MHz]
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.2, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 12000,
+    "qubit_gain": 16000,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.050,  ### units us
+    "sigma": 0.150,  ### units us
     # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 2751.0,
+    "qubit_freq": 3582.5,
     "relax_delay": 1000,  ### turned into us inside the run function
+    #### define shots
+    "shots": 2000, ### this gets turned into "reps"
 
     ######## misc
-    "soft_avgs": 2000,
+    "soft_avgs": 5000,
     "adc_trig_offset": 0.40 + 0.14, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
 }
 config = BaseConfig | UpdateConfig
 
 
-# config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
+#### config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
 config_nopulse = {"do_pulse": False, **config}
 config_pulse = {"do_pulse": True, **config}
 
 prog_nopulse = StateTrajectory(soccfg, config_nopulse)
 adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-# avgi_np, avgq_np = prog_nopulse.acquire(soc, threshold=None, angle=None, load_pulses=True,
-#                                  readouts_per_experiment=1, save_experiments=None,
-#                                  start_src="internal", progress=True, debug=False)
-
-# print(avgi_np)
-# print(avgq_np)
 
 prog_pulse = StateTrajectory(soccfg, config_pulse)
 adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-# avgi_p, avgq_p = prog_pulse.acquire(soc, threshold=None, angle=None, load_pulses=True,
-#                                  readouts_per_experiment=1, save_experiments=None,
-#                                  start_src="internal", progress=True, debug=False)
-#
-# print(avgi_p)
-# print(avgq_p)
+
 
 ###### NOTE: clock tick is about 2.3ns
 ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
@@ -253,8 +249,32 @@ Q_0 = adc1_nopulse[0][1]
 I_1 = adc1_pulse[0][0]
 Q_1 = adc1_pulse[0][1]
 
+#### loop and add together trajectoires
+loop_len = 5
+for idx in range(loop_len):
+    config["adc_trig_offset"] += config["read_length"]
+
+    config_nopulse = {"do_pulse": False, **config}
+    config_pulse = {"do_pulse": True, **config}
+
+    prog_nopulse = StateTrajectory(soccfg, config_nopulse)
+    adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+    prog_pulse = StateTrajectory(soccfg, config_pulse)
+    adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+
+    ###### NOTE: clock tick is about 2.3ns
+    ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
+    I_0 = np.append(I_0, adc1_nopulse[0][0])
+    Q_0 = np.append(Q_0, adc1_nopulse[0][1])
+
+    I_1 = np.append(I_1, adc1_pulse[0][0])
+    Q_1 = np.append(Q_1, adc1_pulse[0][1])
+#######################################
+
 #### create time vector given the number of samples
-time_vec = np.linspace(0, config["read_length"], len(I_0))
+time_vec = np.linspace(0, config["read_length"]*(loop_len+1), len(I_0))
 
 
 ##### plot
@@ -267,8 +287,8 @@ ax1 = fig.add_subplot(gs[0:2, :2])
 ax2 = fig.add_subplot(gs[2:4, :2])
 ax3 = fig.add_subplot(gs[:, 2:])
 
-ax1.plot(time_vec, I_0, '-', alpha = alpha)
-ax1.plot(time_vec, I_1, '-', alpha = alpha)
+ax1.plot(time_vec, I_0, '-', alpha = alpha, label = "no pulse")
+ax1.plot(time_vec, I_1, '-', alpha = alpha, label = "with pulse")
 ax1.set_xlabel("readout time (us)")
 ax1.set_ylabel("I value (adc units)")
 
@@ -286,41 +306,3 @@ ax3.set_ylabel("Q value (adc units)")
 plt.tight_layout()
 plt.show()
 
-
-
-#
-# # Plot results.
-# plt.figure()
-# plt.subplot(2, 2, 1, title=f"Averages = {config['soft_avgs']}", xlabel="Clock ticks", ylabel="Transmission (adc levels)")
-# plt.plot(adc1_nopulse[0, 0], label="I value; no pulse")
-# plt.plot(adc1_nopulse[0, 1], label="Q value; no pulse")
-# plt.plot(np.sqrt(np.square(adc1_nopulse[0, 1]) + np.square(adc1_nopulse[0, 1])), label="abs; no pulse")
-# #plt.plt.plt.plot(adc2[0], label="I value; ADC 1")
-# #plt.plot(adc2[1], label="Q value; ADC 1")
-# plt.legend()
-# # plt.axvline(readout_cfg["adc_trig_offset"])
-#
-# plt.subplot(2, 2, 3, xlabel="Clock ticks", ylabel="Transmission (adc levels)")
-# plt.plot(adc1_pulse[0, 0], label="I value; pulse")
-# plt.plot(adc1_pulse[0, 1], label="Q value; pulse")
-# plt.plot(np.sqrt(np.square(adc1_pulse[0, 1]) + np.square(adc1_pulse[0, 1])), label="abs; pulse")
-# plt.legend()
-#
-#
-# plt.subplot(2, 2, 2, xlabel="I", ylabel="Q")
-# plt.plot(adc1_nopulse[0, 0], adc1_nopulse[0, 1], label ='No pulse')
-# plt.plot(adc1_pulse[0, 0], adc1_nopulse[0, 1], label ='Pulse')
-# plt.legend()
-#
-# plt.figure()
-# plt.plot(adc1_pulse[0, 0] - adc1_nopulse[0, 0], label="I pulse - I no_pulse")
-# plt.plot(adc1_pulse[0, 1] - adc1_nopulse[0, 1], label="Q pulse - Q no_pulse")
-# plt.legend()
-#
-# plt.show()
-#
-# print('No pulse I:' + str(np.average(adc1_nopulse[0 ,0])))
-# print('No pulse Q:' + str(np.average(adc1_nopulse[0 ,1])))
-#
-# print('Pulse I:' + str(np.average(adc1_pulse[0 ,0])))
-# print('Pulse Q:' + str(np.average(adc1_pulse[0 ,1])))
