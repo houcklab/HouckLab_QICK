@@ -20,16 +20,16 @@ plt.ioff()
 UpdateConfig = {
     ##### define attenuators
     ##### define the yoko voltage
-    "yokoVoltageStart": -5.4, #-0.65,
-    "yokoVoltageStop": -5.0, #-0.63,
+    "yokoVoltageStart": -3.825 - 0.2, #-0.65,
+    "yokoVoltageStop": -3.825 + 0.2, #-0.63,
     "yokoVoltageNumPoints": 21,
     ###### cavity
     "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     "read_length": 100,  # us
     "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6066 - 1.0,  # [MHz]
-    "trans_freq_stop": 6066 + 1.0,  # [MHz]
+    "trans_freq_start": 6436.92 - 1.0,  # [MHz]
+    "trans_freq_stop": 6436.92 + 1.0,  # [MHz]
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
     ##### qubit spec parameters
     "spec_reps": 5,
