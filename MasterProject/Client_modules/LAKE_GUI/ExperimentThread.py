@@ -36,7 +36,7 @@ class ExperimentThread(QObject):
         idx_set = 0
 
         ### loop over all the sets for the data taking
-        while self.running and idx_set <= self.config["sets"]:
+        while self.running and idx_set < self.config["sets"]:
 
             #### check what kind of experiment it is
             if issubclass(type(self.experiment_instance), AveragerProgram):
