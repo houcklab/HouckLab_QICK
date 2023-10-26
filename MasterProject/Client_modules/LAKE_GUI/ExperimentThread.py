@@ -12,6 +12,7 @@ class ExperimentThread(QObject):
     """
     finished = pyqtSignal() # Signal to send when done running
     updateData = pyqtSignal(object) # Signal to send when receiving new data, including the new data dictionary
+    updateProgress = pyqtSignal(int) # Signal to send when finishing a set to update the setsComplete bar
     RFSOC_error = pyqtSignal(Exception) # Signal to send when the RFSOC encounters an error
 
     def __init__(self, config, soccfg, exp, soc, parent = None):
@@ -54,6 +55,8 @@ class ExperimentThread(QObject):
 
             # Emit the signal with new data
             self.updateData.emit(data)
+            # Update the setsComplete bar
+            self.updateProgress.emit(idx_set + 1)
             self.finished.emit()
 
             idx_set += 1

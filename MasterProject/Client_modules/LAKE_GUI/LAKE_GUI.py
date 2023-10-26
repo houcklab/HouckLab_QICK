@@ -3,6 +3,7 @@ import json
 
 import datetime
 import importlib
+import math
 import sys, os, inspect
 import time
 from time import sleep
@@ -15,7 +16,7 @@ soc, soccfg = makeProxy()
 
 # Qt imports
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
-from PyQt5.QtCore import Qt, QRect, QMutex
+from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
     QLabel,
@@ -28,6 +29,7 @@ from PyQt5.QtWidgets import (
     QErrorMessage,
     QMessageBox,
     QSplitter,
+    QProgressBar,
 )
 from PyQt5.QtGui import QIcon
 from QDictEdit import QDictEdit
@@ -126,6 +128,12 @@ class Window(QMainWindow):
         cancelButton.clicked.connect(self.stopExperiment)
         cancelButton.setStyleSheet("background-color : red")
 
+        self.progressBar = QProgressBar(self)
+        #progressBar.setValue(50)
+        self.progressBar.setAlignment(Qt.AlignCenter)
+        self.progressBar.setMaximumSize(QSize(400, 40))
+
+
         self.experimentNameLabel = QLabel(self)
         self.experimentNameLabel.setText('<html><b>Experiment: none</b></html>')
 
@@ -150,6 +158,7 @@ class Window(QMainWindow):
         topButtonsLayout.addWidget(loadConfigButton)
         topButtonsLayout.addWidget(self.experimentNameLabel)
         topButtonsLayout.addWidget(cancelButton)
+        topButtonsLayout.addWidget(self.progressBar)
         layout.addLayout(topButtonsLayout)
         # layout.addWidget(self.plotWidget, 1)
 
@@ -211,8 +220,12 @@ class Window(QMainWindow):
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
         self.worker.updateData.connect(self.updateData)
+        self.worker.updateProgress.connect(self.updateProgress)
         self.worker.RFSOC_error.connect(self.RFSOC_error)
         self.thread.start() # Start the thread
+
+        # Change progress bar
+        self.updateProgress(0)
 
         # Final resets
         self.runExperimentButton.setEnabled(False)
@@ -309,6 +322,18 @@ class Window(QMainWindow):
         self._updateCanvas(data['data']['x_pts'], data['data']['avgi'][0][0], data['data']['avgq'][0][0], plot_labels)
         self.save_data(data, self.data_filename, self.config_filename, self.image_filename)
 
+
+    def updateProgress(self, setsComplete):
+        """
+        Function to run to update the progress bar. Changes the display value to the correct fraction,
+        and changes the text to reps complete / total.
+        :param setsComplete int for how many sets are complete
+        :return Nothing
+        """
+        # Floor so that we don't show more than has been done
+        self.progressBar.setValue(math.floor(float(setsComplete) / self.config["sets"] * 100))
+        self.progressBar.setFormat(
+            str(setsComplete * self.config["reps"]) + "/" + str(self.config["sets"] * self.config["reps"]))
 
     def RFSOC_error(self, e):
         """
