@@ -310,27 +310,27 @@ plt.ioff()
 
 ###TITLE: Basic single shot experiment looped with a variable of choice
 # region Single Shot Config
-# UpdateConfig = {
-#     # set yoko
-#     "yokoVoltage": 0,
-#     # cavity
-#     "reps": 1000,  # Repitions
-#     "read_pulse_style": "const",
-#     "read_length": 15,  # [us]
-#     "read_pulse_gain": 4800,  # [DAC units]
-#     "read_pulse_freq": 5749.4,  # [MHz]
-#     # qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 0, # 4 * 6500,  # [DAC units]
-#     "sigma": 0.2 / 4,  # [us]
-#     "qubit_freq": 4655,  # [MHz]
-#     "relax_delay": 1000,  ### turned into us inside the run function
-#     # define shots
-#     "shots": 1000000,  ### this gets turned into "reps"
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
+UpdateConfig = {
+    # set yoko
+    "yokoVoltage": 0,
+    # cavity
+    "reps": 1000,  # Repitions
+    "read_pulse_style": "const",
+    "read_length": 15,  # [us]
+    "read_pulse_gain": 4800,  # [DAC units]
+    "read_pulse_freq": 5749.4,  # [MHz]
+    # qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 15000, # 4 * 6500,  # [DAC units]
+    "sigma": 0.088,  # [us]
+    "qubit_freq": 4655,  # [MHz]
+    "relax_delay": 1000,  ### turned into us inside the run function
+    # define shots
+    "shots": 5000,  ### this gets turned into "reps"
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
 
 ##### run the single shot experiment on loop
 # loop_len = 18
@@ -376,12 +376,12 @@ plt.ioff()
 # name = "fidvsreadlength"+datetimenow.strftime("_%Y_%m_%d_%H_%M_%S")
 # plt.savefig(outerFolder + "dataTestSingleShotProgram\\" + name, dpi = 600)
 
-# Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-# SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
-# SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-# SingleShotProgram.save_config(Instance_SingleShotProgram)
+Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+SingleShotProgram.save_config(Instance_SingleShotProgram)
 # endregion
 
 ###TITLE: 2D single shot fidelity optimization
@@ -761,43 +761,43 @@ plt.ioff()
 # print("sleeping 7200, zzz...")
 # time.sleep(7200)
 # print("rise and shine!")
-print(time.localtime())
-UpdateConfig = {
-    ##### define attenuators
-    "yokoVoltage": 0,
-    ###### cavity
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 10, # us
-    "read_pulse_gain": 6400, # [DAC units]
-    "read_pulse_freq": 5745.5,
-    ###### qubit
-    # g-e parameters
-    "qubit_ge_freq": 4655.75, # MHz
-    "qubit_ge_gain": 15000, # Gain for pi pulse in DAC units
-    "apply_ge": False,
-   # e-f parameters
-    "qubit_ef_freq": 4487.8,
-    "qubit_ef_gain_start": 0, #1167-10
-    "qubit_ef_gain_step": 1500,
-    "RabiNumPoints": 21,  ### number of points
-    "qubit_pulse_style": "arb",
-    "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
-    "sigma": 0.088,  ### units us, define a 20ns sigma
-    "relax_delay": 2000,  ### turned into us inside the run function
-    "g_reps": 5000, # number of averages of every experiment
-    "e_reps": 400000, # number of averages of every experiment
-    "reps": 1
-}
-config = BaseConfig | UpdateConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
-# #
-Instance_Qubit_ef_rabi = Qubit_ef_RPM(path="dataQubit_ef_RPM", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_Qubit_ef_rabi = Qubit_ef_RPM.acquire(Instance_Qubit_ef_rabi)
-print(time.localtime())
-Qubit_ef_RPM.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
-Qubit_ef_RPM.save_config(Instance_Qubit_ef_rabi)
-Qubit_ef_RPM.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
+# print(time.localtime())
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": 0,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # us
+#     "read_pulse_gain": 6400, # [DAC units]
+#     "read_pulse_freq": 5745.5,
+#     ###### qubit
+#     # g-e parameters
+#     "qubit_ge_freq": 4655.75, # MHz
+#     "qubit_ge_gain": 15000, # Gain for pi pulse in DAC units
+#     "apply_ge": False,
+#    # e-f parameters
+#     "qubit_ef_freq": 4487.8,
+#     "qubit_ef_gain_start": 0, #1167-10
+#     "qubit_ef_gain_step": 1500,
+#     "RabiNumPoints": 21,  ### number of points
+#     "qubit_pulse_style": "arb",
+#     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
+#     "sigma": 0.088,  ### units us, define a 20ns sigma
+#     "relax_delay": 2000,  ### turned into us inside the run function
+#     "g_reps": 5000, # number of averages of every experiment
+#     "e_reps": 400000, # number of averages of every experiment
+#     "reps": 1
+# }
+# config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+# # #
+# Instance_Qubit_ef_rabi = Qubit_ef_RPM(path="dataQubit_ef_RPM", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+# data_Qubit_ef_rabi = Qubit_ef_RPM.acquire(Instance_Qubit_ef_rabi)
+# print(time.localtime())
+# Qubit_ef_RPM.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
+# Qubit_ef_RPM.save_config(Instance_Qubit_ef_rabi)
+# Qubit_ef_RPM.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
 #endregion
 
 ###TITLE: Legacy Code

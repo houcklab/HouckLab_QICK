@@ -271,7 +271,7 @@ class LoopbackProgramSingleShot_g(RAveragerProgram):
 
         # Declare the pulses
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]),
+                                 length=self.us2cycles(self.cfg["read_length"],  gen_ch=cfg["ro_chs"][0]),
                                  ) # mode="periodic")
 
         self.synci(200)  # give processor some time to configure pulses
@@ -282,7 +282,7 @@ class LoopbackProgramSingleShot_g(RAveragerProgram):
 
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=[0],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 

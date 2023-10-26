@@ -44,7 +44,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
             #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
@@ -74,7 +74,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             print("define pi or flat top pulse")
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]),
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=cfg["ro_chs"][0]),
                                  ) # mode="periodic")
 
         self.synci(200)  # give processor some time to configure pulses
@@ -90,7 +90,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=[0],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 

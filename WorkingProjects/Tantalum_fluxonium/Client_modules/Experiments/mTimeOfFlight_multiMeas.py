@@ -3,7 +3,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 
 
@@ -166,10 +166,16 @@ class StateTrajectory(AveragerProgram):
         #                          length=self.us2cycles(self.cfg["read_length"], gen_ch=qubit_ch),
         #                          )  # mode="periodic")
 
+        # self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+        #                          gain=cfg["read_pulse_gain"],
+        #                          length=self.us2cycles(30.0, gen_ch=qubit_ch),
+        #                          )  # mode="periodic")
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(30.0, gen_ch=qubit_ch),
+                                 length = self.us2cycles(self.cfg["read_length"], gen_ch=cfg["ro_chs"][0]),
                                  )  # mode="periodic")
+
+
 
         self.synci(200)  # give processor some time to configure pulses
 
@@ -187,7 +193,8 @@ class StateTrajectory(AveragerProgram):
 
         self.pulse(ch=self.cfg["res_ch"])  # play readout pulse
         self.trigger(adcs=self.ro_chs, pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0])
+                     )  # trigger the adc acquisition
 
 
 class TimeOfFlight(ExperimentClass):
@@ -312,36 +319,36 @@ class TimeOfFlight(ExperimentClass):
 # ####################################### code for looking at state trajecotry
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -2.8,
+    "yokoVoltage": 0,
     ###### cavity
     "reps": 1,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
     "read_length": 2.3, # [Clock ticks]
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6437.2, # [MHz]
+    "read_pulse_gain": 4000, # [DAC units]
+    "read_pulse_freq": 5753.5, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 16000,
+    "qubit_gain": 15000,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.150,  ### units us
+    "sigma": 0.088,  ### units us
     # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 2033.0,
+    "qubit_freq": 4655.75,
     "relax_delay": 1000,  ### turned into us inside the run function
     # #### define shots
     # "shots": 2000, ### this gets turned into "reps"
 
     ######## misc
-    "soft_avgs": 1,
-    "adc_trig_offset": 0.40 + 0.14, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
+    "soft_avgs": 10000,
+    "adc_trig_offset": 0.40 + 0.14 + 0.15, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
     "loop_num": 0, ### number of readouts to perform
 }
 config = BaseConfig | UpdateConfig
 
 #### update the qubit and cavity attenuation
-yoko1.SetVoltage(config["yokoVoltage"])
+# yoko1.SetVoltage(config["yokoVoltage"])
 
 # ##### run actual experiment
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TF4\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_09_BF2_cooldown_5\\TT1\\"
 
 #### change gain instead of attenuation
 Instance_TimeOfFlight = TimeOfFlight(path="dataTestTimeOfFlight", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)

@@ -65,7 +65,7 @@ BaseConfig={
         # In this program the signal is up and downconverted digitally so you won't see any frequency
         # components in the I/Q traces below. But since the signal gain depends on frequency,
         # if you lower pulse_freq you will see an increased gain.
-        "adc_trig_offset": 0.468+0.02, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
+        "adc_trig_offset": 0.40 + 0.14 + 0.15, ###0.468+0.02, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
         # Try varying adc_trig_offset from 100 to 220 clock ticks
         "cavity_LO": 0.0,
        }
