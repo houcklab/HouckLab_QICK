@@ -325,15 +325,15 @@ UpdateConfig = {
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.150,  ### units us
     # "flat_top_length": 0.300,  ### in us
-    "qubit_freq": 2034.5,
+    "qubit_freq": 2033.0,
     "relax_delay": 1000,  ### turned into us inside the run function
     # #### define shots
     # "shots": 2000, ### this gets turned into "reps"
 
     ######## misc
-    "soft_avgs": 10000,
+    "soft_avgs": 1,
     "adc_trig_offset": 0.40 + 0.14, #0.475, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
-    "loop_num": 10, ### number of readouts to perform
+    "loop_num": 0, ### number of readouts to perform
 }
 config = BaseConfig | UpdateConfig
 
@@ -351,81 +351,3 @@ TimeOfFlight.save_config(Instance_TimeOfFlight)
 TimeOfFlight.display(Instance_TimeOfFlight, data_TimeOfFlight, plotDisp=True)
 
 plt.show()
-
-
-# #### config = {**hw_cfg, **readout_cfg, **qubit_cfg, **expt_config}
-# config_nopulse = {"do_pulse": False, **config}
-# config_pulse = {"do_pulse": True, **config}
-#
-# prog_nopulse = StateTrajectory(soccfg, config_nopulse)
-# adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-#
-# prog_pulse = StateTrajectory(soccfg, config_pulse)
-# adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-
-
-# ###### NOTE: clock tick is about 2.3ns
-# ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
-# I_0 = adc1_nopulse[0][0]
-# Q_0 = adc1_nopulse[0][1]
-#
-# I_1 = adc1_pulse[0][0]
-# Q_1 = adc1_pulse[0][1]
-#
-# #### loop and add together trajectoires
-# loop_len = 5
-# for idx in range(loop_len):
-#     config["adc_trig_offset"] += config["read_length"]
-#
-#     config_nopulse = {"do_pulse": False, **config}
-#     config_pulse = {"do_pulse": True, **config}
-#
-#     prog_nopulse = StateTrajectory(soccfg, config_nopulse)
-#     adc1_nopulse = prog_nopulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-#
-#     prog_pulse = StateTrajectory(soccfg, config_pulse)
-#     adc1_pulse = prog_pulse.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
-#
-#
-#     ###### NOTE: clock tick is about 2.3ns
-#     ### extract out the I and Q trajectoires, 0 means no pulse, 1 means pulse
-#     I_0 = np.append(I_0, adc1_nopulse[0][0])
-#     Q_0 = np.append(Q_0, adc1_nopulse[0][1])
-#
-#     I_1 = np.append(I_1, adc1_pulse[0][0])
-#     Q_1 = np.append(Q_1, adc1_pulse[0][1])
-# #######################################
-
-# #### create time vector given the number of samples
-# time_vec = np.linspace(0, config["read_length"]*(loop_len+1), len(I_0))
-
-#
-# ##### plot
-# figNum = 111
-# alpha = 0.9
-# fig = plt.figure(layout="constrained", figsize = (12,8), num = figNum)
-# gs = GridSpec(4, 4, figure=fig)
-# ax1 = fig.add_subplot(gs[0:2, :2])
-# # identical to ax1 = plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
-# ax2 = fig.add_subplot(gs[2:4, :2])
-# ax3 = fig.add_subplot(gs[:, 2:])
-#
-# ax1.plot(time_vec, I_0, '-', alpha = alpha, label = "no pulse")
-# ax1.plot(time_vec, I_1, '-', alpha = alpha, label = "with pulse")
-# ax1.set_xlabel("readout time (us)")
-# ax1.set_ylabel("I value (adc units)")
-#
-# ax2.plot(time_vec, Q_0, '-', alpha = alpha)
-# ax2.plot(time_vec, Q_1, '-', alpha = alpha)
-# ax2.set_xlabel("readout time (us)")
-# ax2.set_ylabel("Q value (adc units)")
-#
-# ### plot the blobs
-# ax3.plot(I_0, Q_0, alpha = alpha)
-# ax3.plot(I_1, Q_1, alpha = alpha)
-# ax3.set_xlabel("I value (adc units)")
-# ax3.set_ylabel("Q value (adc units)")
-#
-# plt.tight_layout()
-# plt.show()
-#

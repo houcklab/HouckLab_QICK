@@ -158,16 +158,16 @@ UpdateConfig = {
     "read_pulse_gain": 10000, # [DAC units]
     "read_pulse_freq": 6437.2,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 3582 - 5,
-    "qubit_freq_stop": 3582 + 5,
-    "RabiNumPoints": 41,  ### number of points
+    "qubit_freq_start": 2033 - 5,
+    "qubit_freq_stop": 2033 + 5,
+    "RabiNumPoints": 21,  ### number of points
     "qubit_pulse_style": "arb",
-    "sigma": 0.150,  ### units us, define a 20ns sigma
+    "sigma": 0.300,  ### units us, define a 20ns sigma
     # "flat_top_length": 0.100, ### in us
     "relax_delay": 500,  ### turned into us inside the run function
     ##### amplitude rabi parameters
     "qubit_gain_start": 0,
-    "qubit_gain_step": 1000, ### stepping amount of the qubit gain
+    "qubit_gain_step": 500, ### stepping amount of the qubit gain
     "qubit_gain_expts": 31, ### number of steps
     "AmpRabi_reps": 500,  # number of averages for the experiment
 }
