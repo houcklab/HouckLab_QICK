@@ -439,7 +439,7 @@ class SingleShotProgram_ef(ExperimentClass):
             plt.pause(0.1)
 
         if save_fig:
-            plt.savefig(self.iname)
+            plt.savefig(self.iname, dpi = 600)
 
 
         # else:

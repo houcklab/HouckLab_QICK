@@ -175,13 +175,16 @@ class SingleShotProgram(ExperimentClass):
         self.threshold = threshold
         self.angle = angle
 
+
         if plotDisp:
             plt.show(block = False)
             plt.pause(0.1)
 
         if save_fig:
             plt.savefig(self.iname)
+            plt.close()
 
+        plt.clf()
 
         # else:
             # fig.clf(True)

@@ -233,13 +233,16 @@ class Qubit_ef_RPM(ExperimentClass):
 
         ## Acquire the data when g-e pi pulse is applied
         self.cfg["apply_ge"] = True
+        self.cfg["reps"] = self.cfg["g_reps"]
         prog = LoopbackProgramQubit_ef_rabi(self.soccfg, self.cfg)
         g_x_pts, g_avgi, g_avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
 
-        ## Acquire the daya when no g-e pi pulse is applied
+        ## Acquire the data when no g-e pi pulse is applied
         self.cfg["apply_ge"] = False
+        self.cfg["reps"] = self.cfg["e_reps"]
+        print(self.cfg["reps"])
         prog = LoopbackProgramQubit_ef_rabi(self.soccfg, self.cfg)
         e_x_pts, e_avgi, e_avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                                readouts_per_experiment=1, save_experiments=None,
@@ -284,8 +287,8 @@ class Qubit_ef_RPM(ExperimentClass):
         # Fitting for amplitude for e-state with bounds on the frequency (b) set by the frequency (b) found for g-state
         # This is basically like a lock-in amplifier
         e_poptsig, e_pcov = curve_fit(fitfunc, e_x_pts, e_avgsig,
-                                  [np.ptp(e_avgsig), g_poptsig[1], 1,
-                                   np.average(g_avgsig)], bounds = ((-np.inf,g_poptsig[1], -np.inf, -np.inf),(np.inf, g_poptsig[1], np.inf, np.inf)))
+                                  [np.ptp(e_avgsig), g_poptsig[1], g_poptsig[2],
+                                   np.average(e_avgsig)], bounds = ((-np.inf, g_poptsig[1]-np.abs(g_poptsig[1]/10), -np.inf, -np.inf),(np.inf, g_poptsig[1], np.inf, np.inf)))
 
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
@@ -297,7 +300,7 @@ class Qubit_ef_RPM(ExperimentClass):
         # ax0 = axs[0].plot(x_pts, fitfunc(x_pts, *poptphase))
         axs[0].set_ylabel("Degrees")
         axs[0].set_xlabel("Amplitude (in dac units)")
-        axs[1].set_title("Phase")
+        axs[0].set_title("Phase")
         axs[0].legend()
 
         ax1 = axs[1].plot(g_x_pts, g_avgsig, 'o-', label="g state")
@@ -306,21 +309,21 @@ class Qubit_ef_RPM(ExperimentClass):
         ax1 = axs[1].plot(e_x_pts, fitfunc(e_x_pts,*e_poptsig))
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Amplitude (in dac units)")
-        axs[1].set_title("Amplitude || RPM A_e/A_g = " + str(e_poptsig[0]/g_poptsig[0]))
+        axs[1].set_title("Amplitude || RPM : A_e/A_g = " + str(np.abs(e_poptsig[0]/g_poptsig[0])))
         axs[1].legend()
 
         ax2 = axs[2].plot(g_x_pts, np.abs(g_avgi[0][0]), 'o-', label="g state")
         ax2 = axs[2].plot(e_x_pts, np.abs(e_avgi[0][0]), 'o-', label="e state")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Amplitude (in dac units)")
-        axs[1].set_title("I-Data")
+        axs[2].set_title("I-Data")
         axs[2].legend()
 
         ax3 = axs[3].plot(g_x_pts, np.abs(g_avgq[0][0]), 'o-', label="g state")
         ax3 = axs[3].plot(e_x_pts, np.abs(e_avgq[0][0]), 'o-', label="e state")
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Amplitude (in dac units)")
-        axs[1].set_title("Q-Data")
+        axs[3].set_title("Q-Data")
         axs[3].legend()
 
         fig.tight_layout()
