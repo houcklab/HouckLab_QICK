@@ -191,14 +191,14 @@ class Qubit_ef_rabi(ExperimentClass):
         # axs[1].set_title("Pi Pulse at " + str(np.pi/poptsig[1]))
         axs[1].legend()
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I")
+        ax2 = axs[2].plot(x_pts, avgi[0][0], 'o-', label="I")
         # ax2 = axs[2].plot(x_pts, fitfunc(x_pts,*poptavgi))
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Amplitude (in dac units)")
         # axs[1].set_title("Pi Pulse at " + str(np.pi /  poptavgi[1]))
         axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q")
+        ax3 = axs[3].plot(x_pts, avgq[0][0], 'o-', label="Q")
         # ax3 = axs[2].plot(x_pts, fitfunc(x_pts, *poptavg1))
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Amplitude (in dac units)")
@@ -260,17 +260,17 @@ class Qubit_ef_RPM(ExperimentClass):
 
         # Import the data for measuring the g-state population
         g_x_pts = data['data']['g_x_pts']
-        g_avgi = data['data']['g_avgi']
-        g_avgq = data['data']['g_avgq']
-        g_sig  = g_avgi[0][0] + 1j * g_avgq[0][0]
+        g_avgi = data['data']['g_avgi'][0][0]
+        g_avgq = data['data']['g_avgq'][0][0]
+        g_sig  = g_avgi + 1j * g_avgq
         g_avgsig = np.abs(g_sig)
         g_avgphase = np.remainder(np.angle(g_sig,deg=True)+360,360)
 
         # Import the data for measuring the e-state
         e_x_pts = data['data']['e_x_pts']
-        e_avgi = data['data']['e_avgi']
-        e_avgq = data['data']['e_avgq']
-        e_sig  = e_avgi[0][0] + 1j * e_avgq[0][0]
+        e_avgi = data['data']['e_avgi'][0][0]
+        e_avgq = data['data']['e_avgq'][0][0]
+        e_sig  = e_avgi + 1j * e_avgq
         e_avgsig = np.abs(e_sig)
         e_avgphase = np.remainder(np.angle(e_sig,deg=True)+360,360)
 
@@ -280,15 +280,15 @@ class Qubit_ef_RPM(ExperimentClass):
             return a*np.sin(x*b+c) + d
 
         # Fitting for amplitude for g-state
-        g_poptsig, g_pcov = curve_fit(fitfunc, g_x_pts, g_avgsig,
-                                  [np.ptp(g_avgsig), 1/(g_x_pts[np.argmax(g_avgsig)] -g_x_pts[np.argmin(g_avgsig)]), 1,
-                                   np.average(g_avgsig) ])
+        g_popti, g_pcov = curve_fit(fitfunc, g_x_pts, g_avgi,
+                                  [np.ptp(g_avgi), 1/(g_x_pts[np.argmax(g_avgi)] -g_x_pts[np.argmin(g_avgi)]), 1,
+                                   np.average(g_avgi) ])
 
         # Fitting for amplitude for e-state with bounds on the frequency (b) set by the frequency (b) found for g-state
         # This is basically like a lock-in amplifier
-        e_poptsig, e_pcov = curve_fit(fitfunc, e_x_pts, e_avgsig,
-                                  [np.ptp(e_avgsig), g_poptsig[1], g_poptsig[2],
-                                   np.average(e_avgsig)], bounds = ((-np.inf, g_poptsig[1]-np.abs(g_poptsig[1]/10), -np.inf, -np.inf),(np.inf, g_poptsig[1], np.inf, np.inf)))
+        e_popti, e_pcov = curve_fit(fitfunc, e_x_pts, e_avgi,
+                                  [np.ptp(e_avgi), g_popti[1], g_popti[2],
+                                   np.average(e_avgi)], bounds = ((-np.inf, g_popti[1]-np.abs(g_popti[1]/10), -np.inf, -np.inf),(np.inf, g_popti[1], np.inf, np.inf)))
 
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
@@ -304,24 +304,27 @@ class Qubit_ef_RPM(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(g_x_pts, g_avgsig, 'o-', label="g state")
-        ax1 = axs[1].plot(g_x_pts, fitfunc(g_x_pts,*g_poptsig))
+
         ax1 = axs[1].plot(e_x_pts, e_avgsig, 'o-', label="e state")
-        ax1 = axs[1].plot(e_x_pts, fitfunc(e_x_pts,*e_poptsig))
+
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Amplitude (in dac units)")
-        axs[1].set_title("Amplitude || RPM : A_e/A_g = " + str(np.abs(e_poptsig[0]/g_poptsig[0])))
+
         axs[1].legend()
 
-        ax2 = axs[2].plot(g_x_pts, np.abs(g_avgi[0][0]), 'o-', label="g state")
-        ax2 = axs[2].plot(e_x_pts, np.abs(e_avgi[0][0]), 'o-', label="e state")
-        axs[2].set_ylabel("a.u.")
+        ax2 = axs[2].plot(g_x_pts, g_avgi, 'o-', label="g state")
+        ax1 = axs[2].plot(g_x_pts, fitfunc(g_x_pts, *g_popti))
+        ax2 = axs[2].plot(e_x_pts, e_avgi, 'o-', label="e state")
+        ax1 = axs[2].plot(e_x_pts, fitfunc(e_x_pts, *e_popti))
+        axs[2].set_ylabel("Amplitude")
         axs[2].set_xlabel("Amplitude (in dac units)")
         axs[2].set_title("I-Data")
+        axs[2].set_title("Amplitude || RPM : A_e/A_g = " + str(np.abs(e_popti[0] / g_popti[0])))
         axs[2].legend()
 
-        ax3 = axs[3].plot(g_x_pts, np.abs(g_avgq[0][0]), 'o-', label="g state")
-        ax3 = axs[3].plot(e_x_pts, np.abs(e_avgq[0][0]), 'o-', label="e state")
-        axs[3].set_ylabel("a.u.")
+        ax3 = axs[3].plot(g_x_pts,  g_avgq, 'o-', label="g state")
+        ax3 = axs[3].plot(e_x_pts,  e_avgq, 'o-', label="e state")
+        axs[3].set_ylabel("Amplitude")
         axs[3].set_xlabel("Amplitude (in dac units)")
         axs[3].set_title("Q-Data")
         axs[3].legend()

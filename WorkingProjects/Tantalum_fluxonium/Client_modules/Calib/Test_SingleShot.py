@@ -48,9 +48,9 @@ UpdateConfig = {
     "read_pulse_freq": 6437.2, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 16000,
+    "qubit_gain": 10000,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.150,  ### units us
+    "sigma": 0.025,  ### units us
     # "flat_top_length": 0.300,  ### in us
     "qubit_freq": 2033.0,
     "relax_delay": 1000,  ### turned into us inside the run function
@@ -95,47 +95,47 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 
 #
 # ####################################### code for running  2D single shot fidelity optimization
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": 1.0,
-#     #### define basic parameters
-#     ###### cavity
-#     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 5, # [Clock ticks]
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 6438.18, # [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 12000,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     # "flat_top_length": 0.250,
-#     "qubit_freq": 2751.0,
-#     "relax_delay": 1000,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 4000, ### this gets turned into "reps"
-#     #### define the loop parameters
-#
-#     "x_var": "read_pulse_freq",
-#     "x_start": 6438.18 - 1.5,
-#     "x_stop": 6438.18 + 1.5,
-#     "x_num": 31,
-#
-#     "y_var": "read_pulse_gain",
-#     "y_start": 7000,
-#     "y_stop": 12000,
-#     "y_num": 11,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# Instance_SingleShot_2Dsweep = SingleShot_2Dsweep(path="dataTestSingleShot_2Dsweep", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_SingleShot_2Dsweep = SingleShot_2Dsweep.acquire(Instance_SingleShot_2Dsweep)
-# SingleShot_2Dsweep.save_data(Instance_SingleShot_2Dsweep, data_SingleShot_2Dsweep)
-# SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
+UpdateConfig = {
+    ##### set yoko
+    "yokoVoltage": -2.8,
+    #### define basic parameters
+    ###### cavity
+    "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 5, # [Clock ticks]
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.2, # [MHz]
+    ##### qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 10000,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.025,  ### units us, define a 20ns sigma
+    # "flat_top_length": 0.250,
+    "qubit_freq": 2033.0,
+    "relax_delay": 1500,  ### turned into us inside the run function
+    #### define shots
+    "shots": 4000, ### this gets turned into "reps"
+    #### define the loop parameters
+
+    "x_var": "qubit_freq",
+    "x_start": 2033.0 - 2.5,
+    "x_stop": 2033.0 + 2.5,
+    "x_num": 11,
+
+    "y_var": "qubit_gain",
+    "y_start": 8000,
+    "y_stop": 12000,
+    "y_num": 5,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+Instance_SingleShot_2Dsweep = SingleShot_2Dsweep(path="dataTestSingleShot_2Dsweep", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_SingleShot_2Dsweep = SingleShot_2Dsweep.acquire(Instance_SingleShot_2Dsweep)
+SingleShot_2Dsweep.save_data(Instance_SingleShot_2Dsweep, data_SingleShot_2Dsweep)
+SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
 
 # #
 # ##################################################################################

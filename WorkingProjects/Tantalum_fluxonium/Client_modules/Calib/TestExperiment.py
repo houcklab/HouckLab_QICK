@@ -149,36 +149,36 @@ plt.ioff()
 
 # # # # # ###########################################################################################################
 ################################### code for running Amplitude rabi Blob
-UpdateConfig = {
-    ##### define attenuators
-    "yokoVoltage": -2.80,
-    ###### cavity
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 5, # us
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6437.2,
-    ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 2033 - 5,
-    "qubit_freq_stop": 2033 + 5,
-    "RabiNumPoints": 21,  ### number of points
-    "qubit_pulse_style": "arb",
-    "sigma": 0.300,  ### units us, define a 20ns sigma
-    # "flat_top_length": 0.100, ### in us
-    "relax_delay": 500,  ### turned into us inside the run function
-    ##### amplitude rabi parameters
-    "qubit_gain_start": 0,
-    "qubit_gain_step": 500, ### stepping amount of the qubit gain
-    "qubit_gain_expts": 31, ### number of steps
-    "AmpRabi_reps": 500,  # number of averages for the experiment
-}
-config = BaseConfig | UpdateConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
-
-Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
-AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
-AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": -2.80,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 5, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 6437.2,
+#     ##### spec parameters for finding the qubit frequency
+#     "qubit_freq_start": 2033 - 1,
+#     "qubit_freq_stop": 2033 + 1,
+#     "RabiNumPoints": 5,  ### number of points
+#     "qubit_pulse_style": "arb",
+#     "sigma": 0.025,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.100, ### in us
+#     "relax_delay": 500,  ### turned into us inside the run function
+#     ##### amplitude rabi parameters
+#     "qubit_gain_start": 0,
+#     "qubit_gain_step": 1000, ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 31, ### number of steps
+#     "AmpRabi_reps": 500,  # number of averages for the experiment
+# }
+# config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+# data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
+# AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
+# AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
 
 # #
 # #
