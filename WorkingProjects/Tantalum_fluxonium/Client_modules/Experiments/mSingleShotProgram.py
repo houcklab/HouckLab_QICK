@@ -182,9 +182,9 @@ class SingleShotProgram(ExperimentClass):
 
         if save_fig:
             plt.savefig(self.iname)
-            plt.close()
+            # plt.close()
 
-        plt.clf()
+        # plt.clf()
 
         # else:
             # fig.clf(True)
