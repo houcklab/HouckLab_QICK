@@ -44,7 +44,7 @@ class Transmission(ExperimentClass):
         expt_cfg = {
                 "center": self.cfg["read_pulse_freq"],
                 "span": self.cfg["TransSpan"],
-                "expts": self.cfg["TransNumPoitns"]
+                "expts": self.cfg["TransNumPoints"]
         }
         expt_cfg["step"] = 2 * expt_cfg["span"] / expt_cfg["expts"]
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
