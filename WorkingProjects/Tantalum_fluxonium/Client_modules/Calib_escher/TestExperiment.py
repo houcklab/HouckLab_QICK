@@ -145,73 +145,73 @@ plt.ioff()
 # AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # endregion
 
-###TITLE: Transmission vs Power
-# # # region Trans vs Power Config
-# UpdateConfig = {
-#     "yokoVoltage": -0.5, #3.1
-#     ##### change gain instead option
-#     "trans_gain_start": 0,
-#     "trans_gain_stop": 30000,
-#     "trans_gain_num": 31,
-#     ###### cavity
-#     "reps": 100,
-#     "trans_reps": 100,  # this will used for all experiments below unless otherwise changed in between trials
-#     "read_pulse_style": "const",  # --Fixed
-#     "readout_length": 20,  # [us]
-#     # "read_pulse_gain": 10000,  # [DAC units]
-#     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-#     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "trans_freq_start": 7392 - 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "trans_freq_stop": 7392 + 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "TransNumPoints": 251,  ### number of points in the transmission frequecny
-#     "relax_delay": 10, # us
-# }
-# #
-# config = BaseConfig | UpdateConfig
-# #
-# # #### update the qubit and cavity attenuation
-# yoko1.SetVoltage(config["yokoVoltage"])
-# #
-# Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
-# TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
-# TransVsGain.save_config(Instance_TransVsGain)
+##TITLE: Transmission vs Power
+# # region Trans vs Power Config
+UpdateConfig = {
+    "yokoVoltage": -0.42, #3.1
+    ##### change gain instead option
+    "trans_gain_start": 0,
+    "trans_gain_stop": 30000,
+    "trans_gain_num": 31,
+    ###### cavity
+    "reps": 100,
+    "trans_reps": 100,  # this will used for all experiments below unless otherwise changed in between trials
+    "read_pulse_style": "const",  # --Fixed
+    "readout_length": 20,  # [us]
+    # "read_pulse_gain": 10000,  # [DAC units]
+    # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
+    # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_start": 7392 - 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 7392 + 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
+    "TransNumPoints": 251,  ### number of points in the transmission frequecny
+    "relax_delay": 10, # us
+}
+#
+config = BaseConfig | UpdateConfig
+#
+# #### update the qubit and cavity attenuation
+yoko1.SetVoltage(config["yokoVoltage"])
+#
+Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
+TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)
+TransVsGain.save_config(Instance_TransVsGain)
 # endregion
 
 ###TITLE: Amplitude Rabi Blob
-# # # # region Amplitude Rabi Blob Config
-UpdateConfig = {
-    ##### define attenuators
-    "yokoVoltage": -0.5,
-    ###### cavity
-    "read_pulse_style": "const",  # --Fixed
-    "read_length": 5,  # us
-    "read_pulse_gain": 10000,  # [DAC units]
-    "read_pulse_freq": 7392.6,  # MHz
-    ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 4800,
-    "qubit_freq_stop": 5000,
-    "RabiNumPoints": 201,  ### number of points
-    "qubit_pulse_style": "const",
-    "sigma": 0.050,  ### units us, define a 20ns sigma
-    # "flat_top_length": 0.025, ### in us
-    "qubit_length": 1,
-    "relax_delay": 200,  ### turned into us inside the run function
-    ##### amplitude rabi parameters
-    "qubit_gain_start": 10000,
-    "qubit_gain_step": 5000,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 5,  ### number of steps
-    "AmpRabi_reps": 500,  # number of averages for the experiment
-    "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
-}
-config = BaseConfig | UpdateConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
-
-Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
-AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
-AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
+# # # # # region Amplitude Rabi Blob Config
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": -0.5,
+#     ###### cavity
+#     "read_pulse_style": "const",  # --Fixed
+#     "read_length": 10,  # us
+#     "read_pulse_gain": 10000,  # [DAC units]
+#     "read_pulse_freq": 7392.6,  # MHz
+#     ##### spec parameters for finding the qubit frequency
+#     "qubit_freq_start": 4825 - 10,
+#     "qubit_freq_stop": 4825 + 10,
+#     "RabiNumPoints": 21,  ### number of points
+#     "qubit_pulse_style": "arb",
+#     "sigma": 0.050,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.025, ### in us
+#     # "qubit_length": 1,
+#     "relax_delay": 500,  ### turned into us inside the run function
+#     ##### amplitude rabi parameters
+#     "qubit_gain_start": 0,
+#     "qubit_gain_step": 2000,  ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 15,  ### number of steps
+#     "AmpRabi_reps": 1000,  # number of averages for the experiment
+#     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
+# }
+# config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+#
+# Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+# data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
+# AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
+# AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
 # endregion
 
 ###TITLE: Amplitude Rabi vs Cavity Power
@@ -254,26 +254,27 @@ AmplitudeRabi_Blob.save_config(Instance_AmplitudeRabi_Blob)
 # AmplitudeRabi_CavityPower.save_config(Instance_AmplitudeRabi_CavityPower)
 # endregion
 
-###TITLE: Interleaved T1 measurement
+# ###TITLE: Interleaved T1 measurement
 # ######region T1 Config
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -0.7,
+#     "yokoVoltage": -0.5,
 #     ###### cavity
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 1, # us
-#     "read_pulse_gain": 15000, # [DAC units]
-#     "read_pulse_freq": 7392.8 , # [MHz] actual frequency is this number + "cavity_LO"
+#     "read_length": 10, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 7392.6 , # [MHz] actual frequency is this number + "cavity_LO"
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 5442.5,
-#     "qubit_gain": 15000,
-#     "sigma": 0.150,  ### units us, define a 20ns sigma
+#     "qubit_freq": 4830.0,
+#     "qubit_gain": 22500,
+#     "sigma": 0.005,  ### units us, define a 20ns sigma
+#     "flat_top_length": 0.025,  ### in us
 #     "qubit_pulse_style": "arb", #### arb means gaussain here
-#     "relax_delay": 50,  ### turned into us inside the run function
+#     "relax_delay": 500,  ### turned into us inside the run function
 #     ##### T1 parameters
 #     "start": 0, ### us
-#     "step": 0.25, ### us
-#     "expts": 51, ### number of experiemnts
+#     "step": 10, ### us
+#     "expts": 101, ### number of experiemnts
 #     "reps": 2000, ### number of averages on each experiment
 # }
 # config = BaseConfig | UpdateConfig

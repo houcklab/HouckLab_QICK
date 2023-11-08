@@ -28,6 +28,8 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\"
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
 # # print(soccfg)
+
+print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 #
 # plt.ioff()
 #
@@ -35,38 +37,39 @@ soc, soccfg = makeProxy()
 # ####################################### code for running basic single shot exerpiment
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.7,
+    "yokoVoltage": -0.22,
     ###### cavity
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
-    "read_length": 1, # [Clock ticks]
-    "read_pulse_gain":  15000, # [DAC units]
-    "read_pulse_freq": 7392.8, # [MHz]
+    "read_length": 20, # [Clock ticks]
+    "read_pulse_gain":  10000, # [DAC units]
+    "read_pulse_freq": 7392.35, # [MHz]
     ##### qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 15000,
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 0,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.150,  ### units us, define a 20ns sigma
-    "qubit_freq": 5445.0,
-    "relax_delay": 500,  ### turned into us inside the run function
+    "sigma": 0.005,  ### units us, define a 20ns sigma
+    "flat_top_length": 0.025, ### in us
+    "qubit_freq": 4830.0,
+    "relax_delay": 10000,  ### turned into us inside the run function
     #### define shots
-    "shots": 2000, ### this gets turned into "reps"
+    "shots": 50000, ### this gets turned into "reps"
 }
 config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
-
+#
 Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
                                                soc=soc, soccfg=soccfg)
 data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
 SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
 SingleShotProgram.save_config(Instance_SingleShotProgram)
 SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
-#
-#
+
+# #
 # ##### run the single shot experiment
 # loop_len = 21
-# freq_vec = config["read_pulse_freq"] + np.linspace(-1.0, 1.0, loop_len)
+# freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
 # # qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
 # # read_gain_vec = np.linspace(4000, 5000, loop_len, dtype=int)
 # for idx in range(loop_len):
@@ -83,7 +86,7 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 #     SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 #     plt.clf()
 #     print(idx)
-
+#
 # # # #
 
 
@@ -91,34 +94,35 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 # ##################################### code for running  2D single shot fidelity optimization
 # UpdateConfig = {
 #     ##### set yoko
-#     "yokoVoltage": 0.0,
+#     "yokoVoltage": -0.5,
 #     #### define basic parameters
 #     ###### cavity
 #     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 100, # [Clock ticks]
+#     "read_length": 10, # [Clock ticks]
 #     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 5747.5, # [MHz]
+#     "read_pulse_freq": 7392.6, # [MHz]
 #     ##### qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 25000,
+#     "qubit_pulse_style": "flat_top",
+#     "qubit_gain": 10000,
 #     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "qubit_freq": 4655.0,
+#     "sigma": 0.005,  ### units us, define a 20ns sigma
+#     "flat_top_length": 0.025, ### in us
+#     "qubit_freq": 4825.0,
 #     "relax_delay": 1000,  ### turned into us inside the run function
 #     #### define shots
 #     "shots": 2000, ### this gets turned into "reps"
 #     #### define the loop parameters
 #
 #     "x_var": "qubit_freq",
-#     "x_start": 4654,
-#     "x_stop": 4658,
-#     "x_num": 18,
+#     "x_start": 4825 - 5,
+#     "x_stop": 4825 + 5,
+#     "x_num": 11,
 #
 #     "y_var": "qubit_gain",
-#     "y_start": 20000,
+#     "y_start": 15000,
 #     "y_stop": 30000,
-#     "y_num": 11,
+#     "y_num": 5,
 # }
 # config = BaseConfig | UpdateConfig
 #
@@ -131,30 +135,30 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 # SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
 
 
-# ###################################################################################
+# ##################################################################################
 # ################## code finding T1 of a thermal state
 # UpdateConfig = {
 #     ##### set yoko
-#     "yokoVoltage": -0.18,
+#     "yokoVoltage": -0.21,
 #     ###### cavity
 #     #"reps": 0,  # this line does nothing, is overwritten with "shots"
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 5, # [Clock ticks]
-#     "read_pulse_gain": 30000, # [DAC units]
-#     "read_pulse_freq": 7391.85, # [MHz]
+#     "read_length": 20, # [Clock ticks]
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 7392.25, # [MHz]
 #     ##### qubit spec parameters
 #     "qubit_pulse_style": "arb",
 #     "qubit_gain": 0,
 #     # "qubit_length": 10,  ###us, this is used if pulse style is const
 #     "sigma": 0.3,  ### units us, define a 20ns sigma
 #     "qubit_freq": 1715.6,
-#     "relax_delay": 100,  ### turned into us inside the run function
+#     "relax_delay": 2000,  ### turned into us inside the run function
 #     #### define shots
 #     "shots": 5000, ### this gets turned into "reps"
 #     ### define the wait times
 #     "wait_start": 0,
-#     "wait_stop": 200,
-#     "wait_num": 51,
+#     "wait_stop": 20000,
+#     "wait_num": 41,
 #     ##### define number of clusters to use
 #     "cen_num": 2,
 # }
@@ -380,4 +384,5 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 
 
 #####################################################################################################################
+print('program complete: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 plt.show()
