@@ -51,17 +51,20 @@ UpdateConfig = {
     "sigma": 0.005,  ### units us, define a 20ns sigma
     "flat_top_length": 0.025, ### in us
     "qubit_freq": 0.0,
-    "relax_delay": 20000,  ### turned into us inside the run function
+    "relax_delay": 500,  ### turned into us inside the run function
     #### define shots
-    "shots": 50000, ### this gets turned into "reps"
+    "shots": 150000, ### this gets turned into "reps"
 }
 config = BaseConfig | UpdateConfig
 
 ##### define loop vectors
-relax_delay = 5000
-yoko_vec = np.array([-0.21, -0.22, -0.24, -0.29, -0.37, -0.434, -0.46, -0.5])
-read_freq_vec = np.array([7392.25, 7392.35, 7392.3, 7391.8, 7392.7, 7392.4, 7392.4, 7392.6])
-read_length_vec = np.array([40, 40, 40, 40, 40, 40, 40, 20])
+yoko_vec = np.array([-0.21, -0.22, -0.24, -0.29, -0.38, -0.434, -0.46, -0.5])
+read_freq_vec = np.array([7392.2, 7392.05, 7392.0, 7392.15, 7392.4, 7391.65, 7392.05, 7392.25 ])
+read_gain_vec = np.array([6000, 5000, 6000, 5000, 6000, 6000, 5000, 6000])
+read_length_vec = np.array([40, 20, 20, 20, 20, 20, 20, 15])
+wait_vec = np.array([25000, 25000, 25000, 25000, 25000, 25000, 20000, 10000])
+
+print(yoko_vec)
 
 for idx in range(len(yoko_vec)):
     ##### keep track of scans
@@ -70,16 +73,17 @@ for idx in range(len(yoko_vec)):
     ##### set new parameters
     config["yokoVoltage"] = yoko_vec[idx]
     config["read_pulse_freq"] = read_freq_vec[idx]
+    config["read_pulse_gain"] = read_gain_vec[idx]
     config["read_length"] = read_length_vec[idx]
-    config["relax_delay"] = relax_delay
+    config["relax_delay"] = wait_vec[idx]
 
     ##### set the yoko voltage
     yoko1.SetVoltage(config["yokoVoltage"])
 
     ###### pause for some seconds to let yoko settle
-    time.sleep(15)
+    time.sleep(30)
 
-    Instance_SingleShotProgram = SingleShotProgram(path="dataSingleShot_TempMeas", outerFolder=outerFolder,
+    Instance_SingleShotProgram = SingleShotProgram(path="dataSingleShot_TempMeas_20mK_overnight", outerFolder=outerFolder,
                                                    cfg=config,
                                                    soc=soc, soccfg=soccfg)
     data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
@@ -91,7 +95,7 @@ for idx in range(len(yoko_vec)):
 
     ####### run scan for measuring the rates with markov model
     config["relax_delay"] = 100 ### set 100us delay
-    Instance_SingleShotProgram = SingleShotProgram(path="dataSingleShot_RateMeas", outerFolder=outerFolder,
+    Instance_SingleShotProgram = SingleShotProgram(path="dataSingleShot_RateMeas_20mK_overnight", outerFolder=outerFolder,
                                                    cfg=config,
                                                    soc=soc, soccfg=soccfg)
     data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)

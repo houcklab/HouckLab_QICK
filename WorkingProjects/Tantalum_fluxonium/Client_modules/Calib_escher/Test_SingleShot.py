@@ -37,23 +37,23 @@ print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S
 # ####################################### code for running basic single shot exerpiment
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.22,
+    "yokoVoltage": -0.21,
     ###### cavity
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
-    "read_length": 20, # [Clock ticks]
-    "read_pulse_gain":  10000, # [DAC units]
-    "read_pulse_freq": 7392.35, # [MHz]
+    "read_length": 40, # [Clock ticks]
+    "read_pulse_gain":  6000, # [DAC units]
+    "read_pulse_freq": 7392.0, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 0,
+    "qubit_gain": 30000*0,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.005,  ### units us, define a 20ns sigma
-    "flat_top_length": 0.025, ### in us
-    "qubit_freq": 4830.0,
-    "relax_delay": 10000,  ### turned into us inside the run function
+    "flat_top_length": 1.0, ### in us
+    "qubit_freq": 2980.0,
+    "relax_delay": 500,  ### turned into us inside the run function
     #### define shots
-    "shots": 50000, ### this gets turned into "reps"
+    "shots": 10000, ### this gets turned into "reps"
 }
 config = BaseConfig | UpdateConfig
 
@@ -66,8 +66,9 @@ SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
 SingleShotProgram.save_config(Instance_SingleShotProgram)
 SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 
-# #
+# ########
 # ##### run the single shot experiment
+# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\singleShotSweeps\\"
 # loop_len = 21
 # freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
 # # qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
@@ -76,7 +77,7 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 #     config["read_pulse_freq"] = freq_vec[idx]
 #     # config["qubit_gain"] = qubit_gain_vec[idx]
 #     # config["read_pulse_gain"] = read_gain_vec[idx]
-#     Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram_sweeps", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+#     Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_sweeps_yoko_"+str(config["yokoVoltage"]), outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 #     data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
 #     # SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=False)
 #     # ## SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
@@ -86,8 +87,7 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 #     SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 #     plt.clf()
 #     print(idx)
-#
-# # # #
+# ###########
 
 
 
@@ -135,45 +135,45 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 # SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
 
 
-# ##################################################################################
-# ################## code finding T1 of a thermal state
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -0.21,
-#     ###### cavity
-#     #"reps": 0,  # this line does nothing, is overwritten with "shots"
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 20, # [Clock ticks]
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 7392.25, # [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 0,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.3,  ### units us, define a 20ns sigma
-#     "qubit_freq": 1715.6,
-#     "relax_delay": 2000,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 5000, ### this gets turned into "reps"
-#     ### define the wait times
-#     "wait_start": 0,
-#     "wait_stop": 20000,
-#     "wait_num": 41,
-#     ##### define number of clusters to use
-#     "cen_num": 2,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# Instance_T1_ThermalPS = T1_ThermalPS(path="dataTestT1_ThermalPS", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_T1_ThermalPS = T1_ThermalPS.acquire(Instance_T1_ThermalPS)
-# # T1_ThermalPS.display(Instance_T1_ThermalPS, data_T1_ThermalPS, plotDisp=True, save_fig=True)
-# T1_ThermalPS.save_data(Instance_T1_ThermalPS, data_T1_ThermalPS)
-#
-# print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+##################################################################################
+################## code finding T1 of a thermal state
+UpdateConfig = {
+    ##### set yoko
+    "yokoVoltage": -0.29,
+    ###### cavity
+    #"reps": 0,  # this line does nothing, is overwritten with "shots"
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 20, # [Clock ticks]
+    "read_pulse_gain": 8000, # [DAC units]
+    "read_pulse_freq": 7392.15, # [MHz]
+    ##### qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 0,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.3,  ### units us, define a 20ns sigma
+    "qubit_freq": 1715.6,
+    "relax_delay": 1000,  ### turned into us inside the run function
+    #### define shots
+    "shots": 7000, ### this gets turned into "reps"
+    ### define the wait times
+    "wait_start": 0,
+    "wait_stop": 20000,
+    "wait_num": 21,
+    ##### define number of clusters to use
+    "cen_num": 2,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+Instance_T1_ThermalPS = T1_ThermalPS(path="dataTestT1_ThermalPS", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_T1_ThermalPS = T1_ThermalPS.acquire(Instance_T1_ThermalPS)
+# T1_ThermalPS.display(Instance_T1_ThermalPS, data_T1_ThermalPS, plotDisp=True, save_fig=True)
+T1_ThermalPS.save_data(Instance_T1_ThermalPS, data_T1_ThermalPS)
+
+print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 # #### loop over different flux points
 # yoko_vec = np.linspace(0.10, 0.45, 15)

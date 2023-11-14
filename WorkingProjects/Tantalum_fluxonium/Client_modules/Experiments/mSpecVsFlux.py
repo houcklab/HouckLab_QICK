@@ -393,7 +393,8 @@ class SpecVsFlux(ExperimentClass):
         #### find the frequency corresponding to the cavity peak and set as cavity transmission number
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmin(avgamp0)
+        # peak_loc = np.argmin(avgamp0)
+        peak_loc = np.argmax(avgamp0)
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]
 
         return data_I, data_Q
