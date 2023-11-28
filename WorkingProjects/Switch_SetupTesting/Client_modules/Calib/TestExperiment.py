@@ -2,14 +2,15 @@
 #### import packages
 import os
 path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+# os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 from WorkingProjects.Switch_SetupTesting.Client_modules.Calib.initialize import *
 from WorkingProjects.Switch_SetupTesting.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
 from matplotlib import pyplot as plt
 import datetime
 
 #### define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+outerFolder = "C:\\Users\\pemedina\\Documents"
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 
@@ -19,7 +20,7 @@ print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
-# print(soccfg)
+print(soccfg)
 
 print('proxy made!!!!!')
 
@@ -109,16 +110,24 @@ UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const", # --Fixed
     "read_length": 5, # us
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6437.2,
+    "read_pulse_gain": 15000, # [DAC units]
+    "read_pulse_freq": 10000,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq": 2033,
+    "qubit_freq": 2000,
     "qubit_pulse_style": "arb",
-    "sigma": 0.300,  ### units us, define a 20ns sigma
+    "sigma": 1.300,  ### units us, define a 20ns sigma
+    "qubit_length": 1.0,
     # "flat_top_length": 0.100, ### in us
-    "relax_delay": 500,  ### turned into us inside the run function
-    "qubit_gain": 15000,
-    "AmpRabi_reps": 10,
+    "relax_delay": 25,  ### turned into us inside the run function
+    "qubit_gain": 5000,
+    "AmpRabi_reps": 100000,
+
+    # added params
+    "qubit_gain_start": 20000,
+    "qubit_gain_step": 1,
+    "qubit_gain_expts": 2,
+
+
 }
 config = BaseConfig | UpdateConfig
 

@@ -31,6 +31,8 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])    # conver f_res to dac register value
         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
+        # self.trigger(pins=[0], t=0, width=self.us2cycles(3e6))
+
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]),
@@ -47,6 +49,11 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
 
+        elif cfg["qubit_pulse_style"] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
+                                    length=self.us2cycles(self.cfg["qubit_length"]), mode='periodic')
+
         else:
             print("define pi or flat top pulse")
 
@@ -59,8 +66,10 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
 
     def body(self):
 
+        self.trigger(pins=[0], t=0, width=self.us2cycles(15))
+        self.synci(self.us2cycles(5)) # delay between switch trigger and qubit pulse
         self.pulse(ch=self.cfg["qubit_ch"])  #play probe pulse
-        self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
+        self.sync_all(self.us2cycles(0.2)) # align channels and wait 50ns
 
         #trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
