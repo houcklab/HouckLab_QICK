@@ -413,25 +413,25 @@ class T1_ThermalPS(ExperimentClass):
 
         fig, axs = plt.subplots(1, 2, figsize=(10, 6), num=figNum)
 
-        axs[0].plot(wait_vec, pop_arr[:,0], 'o-',
+        axs[0].plot(wait_vec, pop_arr[0,0], 'o-',
                     color='g')
 
-        axs[0].plot(wait_vec, pop_arr[:,2], 'o-',
+        axs[0].plot(wait_vec, pop_arr[0,1], 'o-',
                     color='m')
 
-        axs[0].plot(wait_vec, self.T1_fit1, label='fit 1')
-        axs[0].plot(wait_vec, self.T1_fit2, label='fit 2')
+        # axs[0].plot(wait_vec, self.T1_fit1, label='fit 1')
+        # axs[0].plot(wait_vec, self.T1_fit2, label='fit 2')
 
         axs[0].set_ylim([-0.05, 1.05])
         axs[0].set_xlabel('wait time (us)')
         axs[0].set_ylabel('population (%)')
-        axs[0].set_title("T1_1 = " + str(round(self.T1_est1, 3)) + " us, T1_2 = " + str(round(self.T1_est2, 3)))
+        # axs[0].set_title("T1_1 = " + str(round(self.T1_est1, 3)) + " us, T1_2 = " + str(round(self.T1_est2, 3)))
 
         #### plot the excited state populations
-        axs[1].plot(wait_vec, pop_arr[:,1], 'o-',
+        axs[1].plot(wait_vec, pop_arr[1,0], 'o-',
                     color='g')
 
-        axs[1].plot(wait_vec, pop_arr[:,3], 'o-',
+        axs[1].plot(wait_vec, pop_arr[1,1], 'o-',
                     color='m')
 
         axs[1].set_ylim([-0.05, 1.05])

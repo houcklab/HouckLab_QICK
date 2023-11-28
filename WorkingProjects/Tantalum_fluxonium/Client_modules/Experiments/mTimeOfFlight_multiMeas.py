@@ -312,7 +312,7 @@ class TimeOfFlight(ExperimentClass):
 # ####################################### code for looking at state trajecotry
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -2.8,
+    "yokoVoltage": -3.9,
     ###### cavity
     "reps": 1,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed

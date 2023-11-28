@@ -278,7 +278,7 @@ class AmplitudeRabi_PS(ExperimentClass):
                                     (Centers[idx_cen][0] - i_raw[idx_shot]) ** 2 +
                                     (Centers[idx_cen][1] - q_raw[idx_shot]) ** 2)
 
-                    # # ############################################### plot out a slice for visual
+                    #region plot out a slice for visual
                     # if idx_amp == 0 and idx_freq ==0:
                     #     ##### plot out
                     #     fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
@@ -312,6 +312,7 @@ class AmplitudeRabi_PS(ExperimentClass):
                     #     plt.tight_layout()
                     #
                     #     plt.show()
+                    #endregion
 
 
                 # ####################################################
