@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotProgram import LoopbackProgramSingleShot
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotProgram_switch import LoopbackProgramSingleShot_Switch
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
@@ -21,7 +22,7 @@ class SingleShot_2Dsweep(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False, plotDisp = True, figNum = 1):
+    def acquire(self, progress=False, debug=False, plotDisp = True, figNum = 1, switch=False):
 
         ### define variables to sweep over
         expt_cfg = {
@@ -84,7 +85,11 @@ class SingleShot_2Dsweep(ExperimentClass):
                 self.cfg[self.cfg["x_var"]] = x_vec[idx_x]
 
                 #### pull the data from the single hots
-                prog = LoopbackProgramSingleShot(self.soccfg, self.cfg)
+                if not switch:
+                    prog = LoopbackProgramSingleShot(self.soccfg, self.cfg)
+                else:
+                    prog = LoopbackProgramSingleShot_Switch(self.soccfg, self.cfg)
+
                 shots_i0,shots_q0 = prog.acquire(self.soc, load_pulses=True)
 
                 i_g = shots_i0[0]
