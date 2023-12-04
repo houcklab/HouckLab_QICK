@@ -409,9 +409,10 @@ class T1_PS(ExperimentClass):
             # axs[idx_plot].set_title(
             #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
             axs[idx_plot].set_title(
-                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
+                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err, 1)) + ' us')
         #     axs[idx_plot].set_ylim([0.0,0.8])
 
+        plt.suptitle(self.outerFolder +'\n' + self.path_wDate)
         plt.tight_layout()
         plt.legend()
         # plt.show()

@@ -7,6 +7,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis imp
 from tqdm.notebook import tqdm
 import time
 
+
 class LoopbackProgramSingleShot(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -167,21 +168,23 @@ class SingleShotProgram(ExperimentClass):
         q_e = data["data"]["q_e"]
 
         #### plotting is handled by the helper histogram
-        title = ('Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) )
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp, ran=ran, title = title)
+        title = (self.outerFolder +'\n' + self.path_wDate + '\n Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
+                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + "\n" +
+                 " Qubit Frequency: " + str(self.cfg["qubit_freq"]) + " MHz, Qubit Gain: " + str(self.cfg["qubit_gain"]) + ", Flat top length = " + str(self.cfg["flat_top_length"]) + ".")
+        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp or save_fig, ran=ran, title = title)
 
         self.fid = fid
         self.threshold = threshold
         self.angle = angle
 
+        if save_fig:
+            plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block = False)
             plt.pause(0.1)
 
-        if save_fig:
-            plt.savefig(self.iname)
+
             # plt.close()
 
         # plt.clf()

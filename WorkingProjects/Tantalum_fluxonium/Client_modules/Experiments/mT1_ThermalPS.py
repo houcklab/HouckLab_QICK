@@ -378,12 +378,13 @@ class T1_ThermalPS(ExperimentClass):
             #### label axes and title
             axs[idx_plot].set_xlabel('time (us)')
             axs[idx_plot].set_ylabel('population')
-            # axs[idx_plot].set_title(
-            #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
             axs[idx_plot].set_title(
-                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
+                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
+            # axs[idx_plot].set_title(
+            #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
         #     axs[idx_plot].set_ylim([0.0,0.8])
 
+        plt.suptitle(self.outerFolder + '\n' + self.path_wDate)
         plt.tight_layout()
         plt.legend()
         # plt.show()

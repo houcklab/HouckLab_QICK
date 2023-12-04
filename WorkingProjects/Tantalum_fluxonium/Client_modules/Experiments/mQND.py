@@ -4,6 +4,8 @@ import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.QND_analysis import QND_analysis
+import WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.SingleShot_ErrorCalc_2 as sse2
 from tqdm.notebook import tqdm
 import time
 
@@ -37,7 +39,7 @@ import time
 
 ####################################################################################################################
 
-class LoopbackProgramSingleShotPS(RAveragerProgram):
+class LoopbackProgramQND(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
@@ -105,6 +107,11 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
     def body(self):
         ### intial pause
         self.sync_all(self.us2cycles(0.05))
+
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
+        self.sync_all(self.us2cycles(0.05))
+
         #### measure starting ground states
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=[0],
@@ -113,7 +120,6 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
         #### wait 10us
         self.sync_all(self.us2cycles(0.01))
 
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -152,7 +158,7 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
 
 # ====================================================== #
 
-class SingleShotPS(ExperimentClass):
+class QNDmeas(ExperimentClass):
     """
     run a single shot expirement that utilizes a post selection process to handle thermal starting state
     """
@@ -161,22 +167,81 @@ class SingleShotPS(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        #### pull the data from the single shots
-        prog = LoopbackProgramSingleShotPS(self.soccfg, self.cfg)
-        ie_0, ie_1, qe_0, qe_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])
-        ### run ground state experiment
-        self.cfg["qubit_gain"] = 0
-        prog = LoopbackProgramSingleShotPS(self.soccfg, self.cfg)
-        ig_0, ig_1, qg_0, qg_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])
+        #### pull the data from the single hots
+        prog = LoopbackProgramQND(self.soccfg, self.cfg)
+        i_0, i_1, q_0, q_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])
 
+        ###### calculate the QND fidelity
+        # Changing the way data is stored for kmeans
+        iq_data = np.stack((i_0, q_0), axis=0)
+
+        # Get centers of the data
+        cen_num = 2
+        centers = sse2.getCenters(
+            iq_data, cen_num, plot=False, fname="Wait_Arr_0_0",
+            loc="plots_QND/")
+
+        (state0_probs, state0_probs_err, state0_num,
+         state1_probs, state1_probs_err, state1_num) = QND_analysis(
+            i_0, q_0, i_1, q_1, centers,
+            confidence_selection = 0.999
+        )
+
+        ##### print out results
+        print(
+            'Note: labeling of states does not necessarily reflect actual qubit state'
+        )
+
+        #### print the number of samples
+        print('Number of 0 state samples ' + str(round(state0_num, 1)))
+        print('Number of 1 state samples ' + str(round(state1_num, 1)))
+
+        ### Print probability and std for each gaussian in different lines.
+        for idx in range(2):
+            print("Probability of state 0 in state {} is {} +/- {}".format(
+                idx, round(100 * state0_probs[idx], 8), round(100 * state0_probs_err[0], 8))
+            )
+
+            print("Probability of state 1 state {} is {} +/- {}".format(
+                idx, round(100 * state1_probs[idx], 8), round(100 * state1_probs_err[0], 8))
+            )
+
+        QND = (state0_probs[0] + state1_probs[1]) / 2
+        QND_err = np.sqrt(state0_probs_err[0] ** 2 + state1_probs_err[0] ** 2)
+
+        print("QND fidelity is {} +/- {}".format(
+            round(100 * QND, 8), round(100 * QND_err, 8))
+        )
+
+        #### save the data
+        data = {'config': self.cfg, 'data': {
+                                                'i_0': i_0, 'q_0': q_0,
+                                                'i_1': i_1, 'q_1': q_1,
+                        'state0_probs': state0_probs, 'state0_probs_err': state0_probs_err, 'state0_num': state0_num,
+                        'state1_probs': state1_probs, 'state1_probs_err': state1_probs_err, 'state1_num': state1_num,
+                        'QND': QND, 'QND_err': QND_err,
+                                            }
+                }
+        self.data = data
+
+        return data
+
+    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
+        if data is None:
+            data = self.data
+
+        i_0 = data["data"]["i_0"]
+        q_0 = data["data"]["q_0"]
+        i_1 = data["data"]["i_1"]
+        q_1 = data["data"]["q_1"]
 
         ##### number of clusters to use
-        cen_num = self.cfg["cen_num"]
+        cen_num = 2
 
         ########## using the initial ground state data, cluster into blobs
         ### store the data for clustering
-        i_raw = ig_0
-        q_raw = qg_0
+        i_raw = i_0
+        q_raw = q_0
 
         iqData = np.stack((i_raw, q_raw), axis=1)
 
@@ -190,57 +255,71 @@ class SingleShotPS(ExperimentClass):
         blobNums = kmeans.labels_
         ### create an array to store all seperated blobs
         ### indexed as blobs[BLOB NUMBER][0 for I, 1 for Q][shot number]
-        blobs = np.full([cen_num, 2, len(i_raw)], np.nan)
-        dists = np.full([cen_num, len(i_raw)], np.nan)
+        blobs_0 = np.full([cen_num, 2, len(i_raw)], np.nan)
+        dists_0 = np.full([cen_num, len(i_raw)], np.nan)
 
         for idx_shot in range(len(i_raw)):
             for idx_cen in range(cen_num):
                 if blobNums[idx_shot] == idx_cen:
                     #### fill blob with I and Q data
-                    blobs[idx_cen][0][idx_shot] = i_raw[idx_shot]
-                    blobs[idx_cen][1][idx_shot] = q_raw[idx_shot]
+                    blobs_0[idx_cen][0][idx_shot] = i_raw[idx_shot]
+                    blobs_0[idx_cen][1][idx_shot] = q_raw[idx_shot]
                     #### fill with distance info
-                    dists[idx_cen][idx_shot] = np.sqrt(
+                    dists_0[idx_cen][idx_shot] = np.sqrt(
                         (Centers[idx_cen][0] - i_raw[idx_shot]) ** 2 +
                         (Centers[idx_cen][1] - q_raw[idx_shot]) ** 2)
 
         #### create new set of blobs for each experiement
-        blobs_0g = np.full([cen_num, 2, len(ig_0)], np.nan)
-        blobs_1g = np.full([cen_num, 2, len(ig_0)], np.nan)
-        blobs_0e = np.full([cen_num, 2, len(ig_0)], np.nan)
-        blobs_1e = np.full([cen_num, 2, len(ig_0)], np.nan)
+        blobs_1_0 = np.full([2, len(i_0)], np.nan)
+        blobs_1_1 = np.full([2, len(i_0)], np.nan)
 
-        for idx_shot in range(len(ig_0)):
+        for idx_shot in range(len(i_0)):
             for idx_cen in range(cen_num):
                 #### find the distance of the point to the center of its cluster
-                pt_dist_g = np.sqrt((ig_0[idx_shot] - Centers[idx_cen][0]) ** 2
-                                  + (qg_0[idx_shot] - Centers[idx_cen][1]) ** 2)
-                pt_dist_e = np.sqrt((ie_0[idx_shot] - Centers[idx_cen][0]) ** 2
-                                    + (qe_0[idx_shot] - Centers[idx_cen][1]) ** 2)
-                size_select = np.nanmean(dists[idx_cen])
+                pt_dist = np.sqrt((i_0[idx_shot] - Centers[idx_cen][0]) ** 2
+                                  + (q_0[idx_shot] - Centers[idx_cen][1]) ** 2)
+                size_select = np.nanmean(dists_0[idx_cen])
 
-                if pt_dist_g <= size_select:
-                    #### fill blob with I and Q data for "g" experiment
-                    blobs_0g[idx_cen][0][idx_shot] = ig_0[idx_shot]
-                    blobs_0g[idx_cen][1][idx_shot] = qg_0[idx_shot]
+                if pt_dist <= size_select and idx_cen == 0:
+                    #### fill blob with I and Q data for 2nd measurement
 
-                    blobs_1g[idx_cen][0][idx_shot] = ig_1[idx_shot]
-                    blobs_1g[idx_cen][1][idx_shot] = qg_1[idx_shot]
+                    blobs_1_0[0][idx_shot] = i_1[idx_shot]
+                    blobs_1_0[1][idx_shot] = q_1[idx_shot]
 
-                if pt_dist_e <= size_select:
-                    #### fill blob with I and Q data for "e" experiment
-                    blobs_0e[idx_cen][0][idx_shot] = ie_0[idx_shot]
-                    blobs_0e[idx_cen][1][idx_shot] = qe_0[idx_shot]
+                if pt_dist <= size_select and idx_cen == 1:
+                    #### fill blob with I and Q data for 2nd measurement
 
-                    blobs_1e[idx_cen][0][idx_shot] = ie_1[idx_shot]
-                    blobs_1e[idx_cen][1][idx_shot] = qe_1[idx_shot]
+                    blobs_1_1[0][idx_shot] = i_1[idx_shot]
+                    blobs_1_1[1][idx_shot] = q_1[idx_shot]
+
+        #### pull out centers for rotation
+        numbins = 100
+        x0, y0 = Centers[0][0], Centers[0][1]
+        x1, y1 = Centers[1][0], Centers[1][1]
+
+        """Compute the rotation angle"""
+        theta = -np.arctan2((y1 - y0), (x1 - x0))
+
+        #### rotate the data
+        i0_new = i_0 * np.cos(theta) - q_0 * np.sin(theta)
+
+        i0_0_new = ( blobs_0[0][0][~np.isnan(blobs_0[0][0])] * np.cos(theta) -
+                     blobs_0[0][1][~np.isnan(blobs_0[0][1])] * np.sin(theta) )
+
+        i0_1_new = ( blobs_0[1][0][~np.isnan(blobs_0[1][0])] * np.cos(theta) -
+                     blobs_0[1][1][~np.isnan(blobs_0[1][1])] * np.sin(theta) )
+
 
         #### try plotting stuff out
         alpha_val = 0.5
         colors = ['b', 'r', 'm', 'c', 'g']
 
         ##### plot out raw initial data showing cluster locations
-        fig0, axs0 = plt.subplots(1, 2, figsize=[10, 10], num=111)
+        fig0, axs0 = plt.subplots(1, 3, figsize=[10, 6], num=111)
+
+        title = (self.outerFolder + '\n' + self.path_wDate + '\n Read Length: ' + str(
+            self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
+                 + "MHz, gain: " + str(self.cfg["read_pulse_gain"]))
 
         #### plot raw data only
         axs0[0].plot(i_raw, q_raw, '.', alpha=alpha_val)
@@ -250,14 +329,14 @@ class SingleShotPS(ExperimentClass):
 
         #### plot the sorted blobs
         for idx in range(cen_num):
-            axs0[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val,
+            axs0[1].plot(blobs_0[idx][0], blobs_0[idx][1], '.', alpha=alpha_val,
                             color=colors[idx], label = 'blob '+str(idx))
             axs0[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
 
         ### plot circle around each center with radius of average blob size
         for idx in range(cen_num):
             axs0[1].add_patch(
-                plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
+                plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists_0[idx]),
                            color='k', fill=False, zorder=2)
             )
 
@@ -267,6 +346,23 @@ class SingleShotPS(ExperimentClass):
         axs0[1].set_ylim(axs0[0].get_ylim())
         axs0[1].set_xlim(axs0[0].get_xlim())
 
+        ##### plot histogram
+        i0_n, i0_bins, i0_p = axs0[2].hist(i0_new, bins=numbins, color='m', label='initial measurement',
+                                                   alpha=0.5)
+
+        xlims = [min(i0_bins), max(i0_bins)]
+        thresh = np.median(i0_bins)
+
+        i0_0_n, i0_0_bins, i0_0_p = axs0[2].hist(i0_0_new, bins=numbins, range=xlims, color='r', label='initial measurement',
+                                                   alpha=0.5)
+
+        i0_1_n, i0_1_bins, i0_1_p = axs0[2].hist(i0_1_new, bins=numbins, range=xlims, color='b', label='initial measurement',
+                                                   alpha=0.5)
+
+        axs0[2].axvline(thresh, color = 'k')
+        axs0[2].set_xlabel('I')
+        axs0[2].set_ylabel('Q')
+
         plt.legend()
         plt.tight_layout()
 
@@ -275,135 +371,57 @@ class SingleShotPS(ExperimentClass):
 
         for idx_cen in range(cen_num):
 
-            ig = blobs_1g[idx_cen][0]
-            ie = blobs_1e[idx_cen][0]
+            i1_0 = blobs_1_0[0]
+            i1_1 = blobs_1_1[0]
 
-            qg = blobs_1g[idx_cen][1]
-            qe = blobs_1e[idx_cen][1]
+            q1_0 = blobs_1_0[1]
+            q1_1 = blobs_1_1[1]
 
             #### remove the nan values
-            ig = ig[~np.isnan(ig)]
-            ie = ie[~np.isnan(ie)]
+            i1_0 = i1_0[~np.isnan(i1_0)]
+            i1_1 = i1_1[~np.isnan(i1_1)]
 
-            qg = qg[~np.isnan(qg)]
-            qe = qe[~np.isnan(qe)]
-
-            ### filter arrays to be same size for each blob and experiement
-            if len(ig) > len(ie):
-                ig = ig[0:len(ie)]
-                qg = qg[0:len(ie)]
-            else:
-                ie = ie[0:len(ig)]
-                qe = qe[0:len(ig)]
+            q1_0 = q1_0[~np.isnan(q1_0)]
+            q1_1 = q1_1[~np.isnan(q1_1)]
 
             #### plot the sorted data
-            # axs[idx_cen, 0].plot(blobs_1g[idx_cen][0], blobs_1g[idx_cen][1], 'r.', alpha = alpha_val, label = 'no pulse')
-            # axs[idx_cen, 0].plot(blobs_1e[idx_cen][0], blobs_1e[idx_cen][1], 'b.', alpha = alpha_val, label='with pulse')
-            axs[idx_cen, 0].plot(ig, qg, 'r.', alpha = alpha_val, label = 'no pulse')
-            axs[idx_cen, 0].plot(ie, qe, 'b.', alpha = alpha_val, label = 'with pulse')
+            #
+            if idx_cen == 0:
+                axs[idx_cen, 0].plot(i1_0, q1_0, 'r.', alpha = alpha_val, label = 'pulse')
+            if idx_cen == 1:
+                axs[idx_cen, 0].plot(i1_1, q1_1, 'r.', alpha = alpha_val, label = 'pulse')
 
             axs[idx_cen, 0].set_xlabel("I (AU)")
             axs[idx_cen, 0].set_ylabel("Q (AU)")
             axs[idx_cen, 0].set_title('blob '+str(idx_cen))
 
-            #### rotate data and fit to histogram
-            numbins = 200
-            # ig = blobs_1g[idx_cen][0]
-            # ie = blobs_1e[idx_cen][0]
-            #
-            # qg = blobs_1g[idx_cen][1]
-            # qe = blobs_1e[idx_cen][1]
-
-            xg, yg = np.median(ig), np.median(qg)
-            xe, ye = np.median(ie), np.median(qe)
-
-            """Compute the rotation angle"""
-            theta = -np.arctan2((ye - yg), (xe - xg))
             """Rotate the IQ data"""
-            ig_new = ig * np.cos(theta) - qg * np.sin(theta)
-            qg_new = ig * np.sin(theta) + qg * np.cos(theta)
-            ie_new = ie * np.cos(theta) - qe * np.sin(theta)
-            qe_new = ie * np.sin(theta) + qe * np.cos(theta)
+            i1_1_new = i1_1 * np.cos(theta) - q1_1 * np.sin(theta)
+            i1_0_new = i1_0 * np.cos(theta) - q1_0 * np.sin(theta)
 
-            """New means of each blob"""
-            xg, yg = np.median(ig_new), np.median(qg_new)
-            xe, ye = np.median(ie_new), np.median(qe_new)
-
-            #### set the limits on the x bounds
-            if np.min(ig_new) < np.min(ie_new):
-                x_min = np.min(ig_new) - 0.1
-            else:
-                x_min = np.min(ie_new) - 0.1
-
-            if np.max(ig_new) > np.max(ie_new):
-                x_max = np.max(ig_new) + 0.1
-            else:
-                x_max = np.max(ie_new) + 0.1
-
-            xlims = [x_min, x_max]
 
             #### plot
-            ng, binsg, pg = axs[idx_cen, 1].hist(ig_new, bins=numbins, range=xlims, color='r', label='no pulse', alpha=0.5)
-            ne, binse, pe = axs[idx_cen, 1].hist(ie_new, bins=numbins, range=xlims, color='b', label='with pulse', alpha=0.5)
+            if idx_cen == 0:
+                n1_0, bins1_0, p1_0 = axs[idx_cen, 1].hist(i1_0_new, bins=numbins, range=xlims, color='r', label='no pulse', alpha=0.5)
+            if idx_cen == 1:
+                n1_1, bins1_1, p1_0 = axs[idx_cen, 1].hist(i1_1_new, bins=numbins, range=xlims, color='b', label='with pulse', alpha=0.5)
             axs[idx_cen, 1].set_xlabel('I(a.u.)')
+            axs[idx_cen, 1].axvline(thresh, color='k')
 
-            """Compute the fidelity using overlap of the histograms"""
-            contrast = np.abs(((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum())))
-            tind = contrast.argmax()
-            threshold = binsg[tind]
-            fid = contrast[tind]
+            # """Compute the fidelity using overlap of the histograms"""
+            # contrast = np.abs(((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum())))
+            # tind = contrast.argmax()
+            # threshold = binsg[tind]
+            # fid = contrast[tind]
 
             #### set title to fidelity
-            axs[idx_cen, 1].set_title(f"Fidelity = {fid * 100:.2f}%")
+            # axs[idx_cen, 1].set_title(f"Fidelity = {fid * 100:.2f}%")
             plt.legend()
 
         plt.tight_layout()
         #### plot and save the figure
         plt.savefig(self.iname, dpi=600)  #### save the figure
-        plt.show()
 
-
-
-        #### save the data
-        data = {'config': self.cfg, 'data': {
-                                                'ig_0': ig_0, 'qg_0': qg_0, 'ie_0': ie_0, 'qe_0': qe_0,
-                                                'ig_1': ig_1, 'qg_1': qg_1, 'ie_1': ie_1, 'qe_1': qe_1,
-                                                'blobs_0g':blobs_0g, 'blobs_0e':blobs_0e,
-                                                'blobs_1g': blobs_1g, 'blobs_1e': blobs_1e,
-                                            }
-                }
-        self.data = data
-
-        return data
-
-    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
-        if data is None:
-            data = self.data
-
-        i_g = data["data"]["i_g"]
-        q_g = data["data"]["q_g"]
-        i_e = data["data"]["i_e"]
-        q_e = data["data"]["q_e"]
-
-        ig_1 = data["data"]["ig_1"]
-        qg_1 = data["data"]["qg_1"]
-        ie_1 = data["data"]["ie_1"]
-        qe_1 = data["data"]["qe_1"]
-
-        #### plotting is handled by the helper histogram
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp, ran=ran, figNum=1)
-        plt.suptitle('selected data')
-        plt.savefig(self.iname)
-
-        fid, threshold, angle = hist_process(data=[ig_1, qg_1, ie_1, qe_1], plot=plotDisp, ran=ran, figNum=2)
-        plt.suptitle('raw data')
-
-        if plotDisp:
-            plt.show(block=False)
-            plt.pause(0.1)
-        else:
-            fig.clf(True)
-            plt.close(fig)
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

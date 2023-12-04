@@ -392,9 +392,10 @@ class T1_ThermalPS(ExperimentClass):
             axs[idx_plot].set_title(
                 'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
         #     axs[idx_plot].set_ylim([0.0,0.8])
-
+        plt.suptitle(self.outerFolder + '\n' + self.path_wDate)
         plt.tight_layout()
         plt.legend()
+        plt.tight_layout()
         # plt.show()
 
         plt.savefig(self.iname, dpi=600)  #### save the figure
@@ -447,6 +448,10 @@ class T1_ThermalPS(ExperimentClass):
         axs[1].set_xlabel('wait time (us)')
         axs[1].set_ylabel('population (%)')
         axs[1].set_title('blob 2')
+
+        title = (self.outerFolder +'\n' + self.path_wDate + '\n Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
+                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) )
+        fig.suptitle(title)
 
         if plotDisp:
             plt.show(block=False)

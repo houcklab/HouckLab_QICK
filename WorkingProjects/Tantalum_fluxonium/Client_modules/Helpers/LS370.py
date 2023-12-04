@@ -210,7 +210,7 @@ class Lakeshore370:
         self.LS370.write('RAMP ' + str(o) + ',' + str(r))
 
     def is_setpoint_ramping(self):
-        """Returns whether the setpoint is currently ramping."""
+        """Returns whether the the setpoint is currently ramping."""
         return self.LS370.query('RAMPST?').rsplit()
 
     def get_temp(self, chan):
@@ -322,13 +322,11 @@ class Lakeshore370:
 
             if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < 0.001:
 
-                print('almost there! \n'
-                      'current temp: ' + str(self.get_temp(7)))
+                print('almost there! \n current temp: ' + str(self.get_temp(7)))
                 time.sleep(60)
                 temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
                 if temp_diff < 0.001:
-                    print('congrats! \n'
-                          'current temp: ' + str(self.get_temp(7)))
+                    print('congrats! \n current temp: ' + str(self.get_temp(7)))
                     break
                 else:
                     continue

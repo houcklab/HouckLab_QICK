@@ -17,7 +17,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     xe, ye = np.median(ie), np.median(qe)
 
     if plot == True:
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(20, 10), num=figNum)
 
         # fig.tight_layout()
         fig.suptitle(title)
@@ -72,6 +72,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
         ne, binse, pe = axs[2].hist(ie_new, bins=numbins, range=xlims, color='b', label=label_ie, alpha=0.5)
         axs[2].set_xlabel('I(a.u.)')
         axs[2].legend(loc='upper right')
+        plt.tight_layout()
 
     else:
         ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)

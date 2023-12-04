@@ -253,11 +253,11 @@ soc, soccfg = makeProxy()
 plt.ioff()
 
 #### setup the lakeshore
-# rm = pyvisa.ResourceManager()
-#
-# LS370_connection = rm.open_resource('GPIB0::12::INSTR')
-#
-# Lakeshore = Lakeshore370(LS370_connection)
+rm = pyvisa.ResourceManager()
+
+LS370_connection = rm.open_resource('GPIB0::12::INSTR')
+
+Lakeshore = Lakeshore370(LS370_connection)
 
 ################################## code for running qubit spec on repeat
 UpdateConfig = {
