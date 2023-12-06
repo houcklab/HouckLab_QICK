@@ -43,20 +43,20 @@ config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 #
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# time_required = np.sum((np.linspace(config["offset"], config["offset_end"],config["offset_num"]) + 2*config["max_pulse_length"])*config["shots"])*1e-6/60
-# print("Time required is " + str(time_required) + " min")
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_" + str(
-#     config["yokoVoltage_freqPoint"]) + "\\"
-# Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_TimeOfFlightPS = Instance_TimeOfFlightPS.acquire()
-# data_TimeOfFlightPS = Instance_TimeOfFlightPS.processData(data_TimeOfFlightPS, save_all=False)
-# Instance_TimeOfFlightPS.save_data(data_TimeOfFlightPS)
-# Instance_TimeOfFlightPS.save_config()
-# Instance_TimeOfFlightPS.display(data = data_TimeOfFlightPS, plotDisp=True, save_all=False)
-# print('stopping scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+time_required = np.sum((np.linspace(config["offset"], config["offset_end"],config["offset_num"]) + 2*config["max_pulse_length"])*config["shots"])*1e-6/60
+print("Time required is " + str(time_required) + " min")
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_" + str(
+    config["yokoVoltage_freqPoint"]) + "\\"
+Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_TimeOfFlightPS = Instance_TimeOfFlightPS.acquire()
+data_TimeOfFlightPS = Instance_TimeOfFlightPS.processData(data_TimeOfFlightPS, save_all=False)
+Instance_TimeOfFlightPS.save_data(data_TimeOfFlightPS)
+Instance_TimeOfFlightPS.save_config()
+Instance_TimeOfFlightPS.display(data = data_TimeOfFlightPS, plotDisp=True, save_all=False)
+print('stopping scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
 
 ### Run for different read_pulse_gain
 len_vec = 6

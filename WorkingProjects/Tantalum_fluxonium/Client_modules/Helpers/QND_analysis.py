@@ -152,6 +152,7 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
 
     ### return all values
     return (state0_probs, state0_probs_err, len(i0_shots), 
-            state1_probs, state1_probs_err, len(i1_shots))
+            state1_probs, state1_probs_err, len(i1_shots),
+            i0_shots, q0_shots, i1_shots, q1_shots)
 
 

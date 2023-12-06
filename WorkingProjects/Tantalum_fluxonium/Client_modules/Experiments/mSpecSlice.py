@@ -3,8 +3,11 @@ from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
-from tqdm.notebook import tqdm
-import time
+from scipy.optimize import curve_fit
+
+# Define the gaussian function
+def gauss(x, a, x0, sigma, c):
+    return a*np.exp(-(x-x0)**2/(2*sigma**2)) + c
 
 class LoopbackProgramSpecSlice(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -90,7 +93,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
 class SpecSlice(ExperimentClass):
     """
-    Basic spec experiement that takes a single slice of data
+    Basic spec experiment that takes a single slice of data
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
@@ -118,18 +121,28 @@ class SpecSlice(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
-        data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
+        avgi = avgi[0][0]
+        avgq = avgq[0][0]
+        sig = avgi + 1j * avgq
+        amp = np.abs(sig)
+        phase = np.angle(sig, deg=True)
+
+        ### Fit Gaussian for avgi
+        # intelligently guess the initial parameters
+        a_0 = np.max(avgi) - np.min(avgi)
+        x_0 = x_pts[np.argmax(avgi)]
+        sigma_0 = np.abs(x_pts[np.argmin(np.abs(avgi - a_0 / 2))] - x_0)
+        p0 = [a_0, x_0, sigma_0, np.min(avgi)]
+        popti = np.nan
+        try:
+            popti, pcovi = curve_fit(gauss, x_pts, avgi, p0=p0, maxfev=10000)
+        except:
+            print("Fit not found")
+
+        ### Save Data
+        data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq,
+                                             'amp': amp, 'phase': phase, "popti": popti}}
         self.data = data
-
-        #### find the frequency corresponding to the qubit dip
-        sig = data['data']['avgi'] + 1j * data['data']['avgq']
-        avgamp0 = np.abs(sig)
-
-        # peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
-        # print(np.max(np.abs(data['data']['avgq'])))
-        self.qubitFreq = data['data']['x_pts'][peak_loc]
-
         return data
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
@@ -140,41 +153,64 @@ class SpecSlice(ExperimentClass):
         x_pts = data['data']['x_pts']
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
-        sig  = avgi[0][0] + 1j * avgq[0][0]
-        avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
+        amp = data['data']['amp']
+        phase = data['data']['phase']
+        popti = data['data']['popti']
+
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
 
-        ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
-        axs[0].set_ylabel("degree.")
-        axs[0].set_xlabel("Qubit Frequency (GHz)")
-        axs[0].legend()
+        axs[0].scatter(x_pts, avgi, c='b', label='data')
+        try:
+            axs[0].plot(x_pts, gauss(x_pts, *popti), 'r', label='fit')
+            textstr = '\n'.join((
+                r'$a=%.2f$' % (popti[0],),
+                r'$x_0=%.2f$' % (popti[1],),
+                r'$\sigma=%.2f$' % (popti[2],),
+                r'$c=%.2f$' % (popti[3],)))
+            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+            axs[0].text(0.05, 0.95, textstr, transform=axs[0].transAxes, fontsize=14,
+                        verticalalignment='top', bbox=props)
+        except:
+            print("Cannot plot fit")
 
-        ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
-        axs[1].set_ylabel("a.u.")
-        axs[1].set_xlabel("Qubit Frequency (GHz)")
-        axs[1].legend()
+        axs[0].set_xlabel('Frequency (GHz)')
+        axs[0].set_ylabel('I (a.u.)')
+        axs[0].set_title('I vs Frequency')
+        # Add a text box with the fit parameters
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].set_ylabel("a.u.")
-        axs[2].set_xlabel("Qubit Frequency (GHz)")
-        axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
-        axs[3].set_ylabel("a.u.")
-        axs[3].set_xlabel("Qubit Frequency (GHz)")
-        axs[3].legend()
+        axs[1].plot(x_pts, avgq, c='b', label='data')
+        axs[1].set_xlabel('Frequency (GHz)')
+        axs[1].set_ylabel('Q (a.u.)')
+        axs[1].set_title('Q vs Frequency')
 
+        axs[2].plot(x_pts, amp, c='b', label='data')
+        axs[2].set_xlabel('Frequency (GHz)')
+        axs[2].set_ylabel('Amplitude (a.u.)')
+        axs[2].set_title('Amplitude vs Frequency')
+
+        axs[3].plot(x_pts, phase, c='b', label='data')
+        axs[3].set_xlabel('Frequency (GHz)')
+        axs[3].set_ylabel('Phase (rad)')
+        axs[3].set_title('Phase vs Frequency')
+
+        try:
+            data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
+                                + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
+                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(popti[1])
+                                + " MHz \n" )
+            plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
+        except:
+            print("Cannot make title")
+
+        plt.tight_layout()
         plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)
-            plt.pause(2)
-
         else:
-            fig.clf(True)
             plt.close(fig)
 
 

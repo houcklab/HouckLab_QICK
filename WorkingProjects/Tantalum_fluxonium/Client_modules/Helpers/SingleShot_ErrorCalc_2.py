@@ -5,10 +5,6 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
 from tqdm import tqdm
 
-'''
-@author: Parth Jatakia
-'''
-
 def plotCenter(iq_data, centers, fname, loc):
     # Plot the centers
     plt.figure()
@@ -100,7 +96,9 @@ def plotGaussians(gaussians, x_points, y_points, fname, loc):
     return
 
 
-def findGaussians(hist2d, centers, cen_num, return_bounds = False, input_bounds = None, **kwargs):
+def findGaussians(hist2d, centers, cen_num, return_bounds = False, 
+    input_bounds = None, p_guess = None, **kwargs):
+
     gaussians = []
 
      # Fit the double 2D Gaussian to the histogram
@@ -154,10 +152,17 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False, input_bounds 
         # bounds[1][j*no_of_params+5] = 0.05
     
     if input_bounds is not None:
-        popt = curve_fit(
-            double_gaussian_2d, (X.ravel(),Y.ravel()), 
-            np.transpose(hist2d[0]).ravel(), p0 = p0, maxfev = 100000, 
-            bounds = input_bounds, )[0]
+        if p_guess is not None:
+            popt = curve_fit(
+                double_gaussian_2d, (X.ravel(),Y.ravel()), 
+                np.transpose(hist2d[0]).ravel(), p0 = p_guess, maxfev = 100000, 
+                bounds = input_bounds, )[0]
+        else:
+            popt = curve_fit(
+                double_gaussian_2d, (X.ravel(),Y.ravel()), 
+                np.transpose(hist2d[0]).ravel(), p0 = p0, maxfev = 100000, 
+                bounds = input_bounds, )[0]
+
     else:
         popt = curve_fit(
             double_gaussian_2d, (X.ravel(),Y.ravel()), 
@@ -358,3 +363,11 @@ def findTempr(probability, std_probability, f1):
         + std_probability[1]**2*(T/(probability[1]*np.log(probability[0]/probability[1])))**2 
     
     return np.abs(T), np.sqrt(u_T)
+
+
+def oendim_projection(iq_data):
+    # Calculate the center
+    # Rotate the data
+    # Project in 1d dimension
+    # Return the data
+    return

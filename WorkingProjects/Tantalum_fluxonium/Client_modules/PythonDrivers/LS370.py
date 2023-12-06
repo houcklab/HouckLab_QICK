@@ -303,7 +303,7 @@ class Lakeshore370:
         print("setting temperature: " + str(temperature) + " mK")
 
         #### set heater setting, if below 10 turn heater off
-        if temperature <= 10:
+        if temperature < 10:
             self.set_heater_range(0)
         else:
             self.set_heater_range(heater_range)

@@ -30,6 +30,16 @@ soc, soccfg = makeProxy()
 # # print(soccfg)
 
 print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+
+###########
+#### define the switch cofidg
+SwitchConfig = {
+    "trig_buffer_start": 0.035, # in us
+    "trig_buffer_end": 0.024, # in us
+    "trig_delay": 0.07, # in us
+}
+##########
 #
 # plt.ioff()
 #
@@ -135,30 +145,30 @@ print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S
 # SingleShot_2Dsweep.save_config(Instance_SingleShot_2Dsweep)
 
 
-##################################################################################
-################## code finding T1 of a thermal state
+# #################################################################################
+# ################# code finding T1 of a thermal state
 # UpdateConfig = {
 #     ##### set yoko
-#     "yokoVoltage": -0.21,
+#     "yokoVoltage": -0.23,
 #     ###### cavity
 #     #"reps": 0,  # this line does nothing, is overwritten with "shots"
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 15, # [Clock ticks]
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 7392.3, # [MHz]
+#     "read_length": 10, # [Clock ticks]
+#     "read_pulse_gain": 8000, # [DAC units]
+#     "read_pulse_freq": 7392.17, # [MHz]
 #     ##### qubit spec parameters
 #     "qubit_pulse_style": "arb",
 #     "qubit_gain": 0,
 #     # "qubit_length": 10,  ###us, this is used if pulse style is const
 #     "sigma": 0.3,  ### units us, define a 20ns sigma
-#     "qubit_freq": 1715.6,
-#     "relax_delay": 10000,  ### turned into us inside the run function
+#     "qubit_freq": 650,
+#     "relax_delay": 4000,  ### turned into us inside the run function
 #     #### define shots
-#     "shots": 7000, ### this gets turned into "reps"
+#     "shots": 10000, ### this gets turned into "reps"
 #     ### define the wait times
 #     "wait_start": 0,
-#     "wait_stop": 7000,
-#     "wait_num": 21,
+#     "wait_stop": 10000,
+#     "wait_num": 41,
 #     ##### define number of clusters to use
 #     "cen_num": 2,
 # }
@@ -236,23 +246,23 @@ print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S
 ####################################### code for running basic single shot experiment with post selection
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.5,
+    "yokoVoltage": -0.23,
     ###### cavity
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
-    "read_length": 15, # us
-    "read_pulse_gain": 6000, # [DAC units]
-    "read_pulse_freq": 7392.25, # [MHz]
+    "read_length": 10, # us
+    "read_pulse_gain": 8000, # [DAC units]
+    "read_pulse_freq": 7392.17, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "flat_top",
     "qubit_gain": 30000,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "flat_top_length": 10.0,  ### in us
-    "sigma": 0.300,  ### units us, define a 20ns sigma
-    "qubit_freq": 4822,
-    "relax_delay": 10000,  ### turned into us inside the run function
+    "flat_top_length": 20.0,  ### in us
+    "sigma": 0.025,  ### units us, define a 20ns sigma
+    "qubit_freq": 650,
+    "relax_delay": 10,  ### turned into us inside the run function
     #### define shots
-    "shots": 5000, ### this gets turned into "reps"
+    "shots": 20000, ### this gets turned into "reps"
     #### define info for clustering
     "cen_num": 2,
 }
@@ -272,28 +282,28 @@ SingleShotPS.save_config(Instance_SingleShotPS)
 # ###################################### code for running Amplitude rabi Blob with post selection
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -1.29,
+#     "yokoVoltage": -0.23,
 #     ###### cavity
 #     "read_pulse_style": "const", # --Fixed
 #     "read_length": 10, # us
-#     "read_pulse_gain": 5000, # [DAC units]
-#     "read_pulse_freq": 6360.36, # [MHz]
+#     "read_pulse_gain": 8000, # [DAC units]
+#     "read_pulse_freq": 7392.17, # [MHz]
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 70,
-#     "qubit_freq_stop": 120,
+#     "qubit_freq_start": 650 - 25,
+#     "qubit_freq_stop": 650 + 25,
 #     "RabiNumPoints": 51,  ### number of points
-#     "qubit_pulse_style": "arb",
-#     "sigma": 0.100,  ### units us, define a 20ns sigma
-#     # "flat_top_length": 0.025, ### in us
+#     "qubit_pulse_style": "flat_top",
+#     "sigma": 0.025,  ### units us, define a 20ns sigma
+#     "flat_top_length": 20., ### in us
 #     "relax_delay": 10,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
 #     "qubit_gain_start": 10000,
-#     "qubit_gain_step": 2000, ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 11, ### number of steps
+#     "qubit_gain_step": 10000, ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 2, ### number of steps
 #     # "AmpRabi_reps": 2000,  # number of averages for the experiment
 #     ##### define number of clusters to use
-#     "cen_num": 3,
-#     "shots": 3000,  ### this gets turned into "reps"
+#     "cen_num": 2,
+#     "shots": 5000,  ### this gets turned into "reps"
 # }
 # config = BaseConfig | UpdateConfig
 #

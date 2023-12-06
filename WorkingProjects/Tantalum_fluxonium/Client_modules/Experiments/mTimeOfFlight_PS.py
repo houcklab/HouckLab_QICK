@@ -7,6 +7,10 @@ import WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.SingleShot_Erro
 from tqdm.notebook import tqdm
 import time
 
+'''
+@author: Parth Jatakia
+'''
+
 class LoopbackProgramTOFPS(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -14,13 +18,13 @@ class LoopbackProgramTOFPS(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        ##### set up the expirement updates, only runs it once
+        ### set up the experiment updates, only runs it once
         cfg["start"] = 0
         cfg["step"] = 0
         cfg["reps"] = cfg["shots"]
         cfg["expts"] = 1
 
-        # Configuring Resonator Tone
+        ### Configuring Resonator Tone
         res_ch = cfg["res_ch"]
         self.read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
@@ -29,7 +33,7 @@ class LoopbackProgramTOFPS(RAveragerProgram):
                                  length=self.us2cycles(cfg["read_length"]),
                                  )  # mode="periodic")
 
-        # Configuring Qubit Tone
+        ### Configuring Qubit Tone
         self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
         qubit_ch = cfg["qubit_ch"]
@@ -54,12 +58,12 @@ class LoopbackProgramTOFPS(RAveragerProgram):
         else:
             print("define pi or flat top pulse")
 
-        # Configuring the ADC readout
+        ### Configuring the ADC readout
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"]), gen_ch=cfg["res_ch"])
 
-        # If offset is more than max_pulse_length
+        ### If offset is more than max_pulse_length
         self.num_pulses = int((self.cfg["offset"]) / self.cfg["max_pulse_length"]) + 2
         # print(self.num_pulses)
         self.synci(200)  # give processor some time to configure pulses
@@ -260,8 +264,8 @@ class TimeOfFlightPS(ExperimentClass):
                     x_points_list.append(x_points)
                     y_points_list.append(y_points)
 
-        update_data = {"processed_data" : {"avgi" : avgi, "avgq" : avgq, "stdi" : stdi, "stdq": stdq}}
-        data = data | update_data
+        update_data = {"data" : {"avgi" : avgi, "avgq" : avgq, "stdi" : stdi, "stdq": stdq}}
+        data["data"] = data["data"] | update_data["data"]
 
         if 'save_all' in kwargs:
             if kwargs['save_all'] == True:
@@ -286,10 +290,10 @@ class TimeOfFlightPS(ExperimentClass):
         i_0 = data["data"]["i_0"]
         q_0 = data["data"]["q_0"]
         offset_vec = data["data"]["offset_vec"]
-        avgi = data["processed_data"]["avgi"]
-        avgq = data["processed_data"]["avgq"]
-        stdi = data["processed_data"]["stdi"]
-        stdq = data["processed_data"]["stdq"]
+        avgi = data["data"]["avgi"]
+        avgq = data["data"]["avgq"]
+        stdi = data["data"]["stdi"]
+        stdq = data["data"]["stdq"]
 
         # Choice of color
         colorlist = [
@@ -330,6 +334,7 @@ class TimeOfFlightPS(ExperimentClass):
             plt.show()
         plt.close()
         return
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

@@ -10,7 +10,7 @@ os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_Pulse_Test import Qubit_Pulse_Test
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import Transmission
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import SpecSlice
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransVsGain import TransVsGain
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
@@ -71,66 +71,68 @@ plt.ioff()
 # endregion
 
 # ###TITLE: Transmission + SpecSlice + AmplitudeRabi
-# # region Config Files
-# UpdateConfig_transmission = {
-#     "reps": 50,  # this will be used for all experiments below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "readout_length": 10, # us
-#     "read_pulse_gain": 5000,#500, # [DAC units]
-#     "read_pulse_freq": 7392.0257 , # [MHz]
-#     "nqz": 2,  #### refers to cavity
-#     ##### define tranmission experiment parameters
-#     "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
-#     "TransNumPoitns": 100, ### number of points in the transmission frequecny
-# }
-# #
-# # # Configure for qubit experiment
-# UpdateConfig_qubit = {
-#     "qubit_pulse_style": "const",
-#     "qubit_gain": 550,
-#     "qubit_freq": 265.56, ###########
-#     "qubit_length": 30,
-#     ##### define spec slice experiment parameters
-#     "qubit_freq_start": 440,
-#     "qubit_freq_stop": 560,
-#     "SpecNumPoints": 51,  ### number of points
-#     'spec_reps': 2000,
-#     ##### amplitude rabi parameters
-#     "qubit_gain_start": 0, ########
-#     "qubit_gain_step": 200, #200 ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 26,#26,  ### number of steps
-#     "AmpRabi_reps": 2000,#10000,  # number of averages for the experiment
-#     ##### define the yoko voltage
-#     "yokoVoltage": -0.22,
-#     "relax_delay": 5000,
-# }
+# region Config Files
+UpdateConfig_transmission = {
+    "reps": 50,  # this will be used for all experiments below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "readout_length": 10, # us
+    "read_pulse_gain": 8000,#500, # [DAC units]
+    "read_pulse_freq": 7392.17 , # [MHz]
+    "nqz": 2,  #### refers to cavity
+    ##### define tranmission experiment parameters
+    "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
+    "TransNumPoitns": 100, ### number of points in the transmission frequecny
+}
 #
-# UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
-# config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+# # Configure for qubit experiment
+UpdateConfig_qubit = {
+    "qubit_pulse_style": "const",
+    "qubit_gain": 20000,
+    "qubit_freq": 265.56, ###########
+    "qubit_length": 30,
+    ##### define spec slice experiment parameters
+    "qubit_freq_start": 500,
+    "qubit_freq_stop": 800,
+    "SpecNumPoints": 51,  ### number of points
+    'spec_reps': 500,
+    ##### amplitude rabi parameters
+    "qubit_gain_start": 0, ########
+    "qubit_gain_step": 200, #200 ### stepping amount of the qubit gain
+    "qubit_gain_expts": 26,#26,  ### number of steps
+    "AmpRabi_reps": 2000,#10000,  # number of averages for the experiment
+    ##### define the yoko voltage
+    "yokoVoltage": -0.23,
+    "yokoVoltage_freqPoint": -0.23,
+    "relax_delay": 5000,
+    "fridge_temp": 10,
+}
+
+UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
+config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+
+# endregion
+
+# region Transmission Experiment
+### set the yoko frequency
+yoko1.SetVoltage(config["yokoVoltage"])
+print("Voltage is ", yoko1.GetVoltage(), " Volts")
+
+### Performing the Cavity Transmission Experiment
+# Transmission.save_data(Instance_trans, data_trans)
 #
-# # endregion
-#
-# # region Transmission Experiment
-# ### set the yoko frequency
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print("Voltage is ", yoko1.GetVoltage(), " Volts")
-#
-# ### Performing the Cavity Transmission Experiment
-# # Transmission.save_data(Instance_trans, data_trans)
-# #
-# # # ### update the transmission frequency to be the peak
-# # config["read_pulse_freq"] = Instance_trans.peakFreq
-# # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-# # endregion
-#
-# # region SpecSlice
-# # Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# # data_trans= Transmission.acquire(Instance_trans)
-# # Transmission.display(Instance_trans, data_trans, plotDisp=True)
-# Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# data_specSlice= SpecSlice.acquire(Instance_specSlice)
-# SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
-# SpecSlice.save_data(Instance_specSlice, data_specSlice)
+# # ### update the transmission frequency to be the peak
+# config["read_pulse_freq"] = Instance_trans.peakFreq
+# print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+# endregion
+
+# region SpecSlice
+# Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+# data_trans= Transmission.acquire(Instance_trans)
+# Transmission.display(Instance_trans, data_trans, plotDisp=True)
+Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_specSlice= SpecSlice.acquire(Instance_specSlice)
+SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
+SpecSlice.save_data(Instance_specSlice, data_specSlice)
 
 # config["qubit_pulse_style"]= "arb"
 # config["sigma"] = 0.2 # 0.2 # us
