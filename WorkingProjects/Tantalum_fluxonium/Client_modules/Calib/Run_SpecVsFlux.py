@@ -8,7 +8,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux i
 # from Tantalum_fluxonium.Client_modules.Experiments.mSpecVsFlux_SPI import SpecVsFlux_SPI
 
 #### define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 
 #################################### Running the actual experiments
 

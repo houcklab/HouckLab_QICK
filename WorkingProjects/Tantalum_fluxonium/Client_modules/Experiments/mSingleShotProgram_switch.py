@@ -70,6 +70,15 @@ class LoopbackProgramSingleShot_Switch(RAveragerProgram):
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4 + self.us2cycles(self.cfg["flat_top_length"], gen_ch=qubit_ch)
 
+        # #### Added for debugging
+        # elif cfg["qubit_pulse_style"] == "const":
+        #
+        #     self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+        #                              phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+        #                              length=self.us2cycles(self.cfg["const_length"]))
+        #     self.qubit_pulseLength = self.us2cycles(self.cfg["const_length"], gen_ch=qubit_ch)
+        # ############
+
         else:
             print("define pi or flat top pulse")
 
@@ -77,16 +86,28 @@ class LoopbackProgramSingleShot_Switch(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch),
                                  ) # mode="periodic")
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         #### wait 10ns
         self.sync_all(self.us2cycles(0.010))
-        self.trigger(pins=[0], t=0, width=self.us2cycles(1)) # trigger for switch
-        self.synci(self.us2cycles(.5)) # delay between switch trigger and qubit pulse
+
+        if self.cfg["qubit_gain"] != 0:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
+
+        # ###### Added for debugging
+        # self.sync_all(self.us2cycles(0.25))
+        # self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]), width=self.cfg["trig_len"])  # trigger for switch
+        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        # ########
 
         # self.sync_all(self.us2cycles(100))  # wait 10ns after pulse ends
 
