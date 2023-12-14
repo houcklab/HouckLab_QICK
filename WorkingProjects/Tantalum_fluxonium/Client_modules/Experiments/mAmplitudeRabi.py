@@ -21,6 +21,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get frequency register for qubit_ch
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
@@ -71,6 +72,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain of the Gaussian pi pulse
+        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"] / 2))
 
 
 

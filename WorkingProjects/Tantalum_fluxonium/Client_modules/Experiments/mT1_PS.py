@@ -124,7 +124,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
 
-        if self.cfg["qubit_gain"] != 0:
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
 
@@ -217,14 +217,259 @@ class T1_PS(ExperimentClass):
             q_0_arr[idx_wait, :] = q_0
             i_1_arr[idx_wait, :] = i_1
             q_1_arr[idx_wait, :] = q_1
+        #
+        #     ####################################################
+        #     cen_num = self.cfg["cen_num"]
+        #     alpha_val = 0.5
+        #     colors = ['b', 'r', 'm', 'c', 'g']
+        #     ### store the data
+        #     i_raw = i_0
+        #     q_raw = q_0
+        #
+        #     I = i_raw
+        #     Q = q_raw
+        #
+        #     iqData = np.stack((i_raw, q_raw), axis=1)
+        #
+        #     ### partition data into two cluster
+        #     kmeans = KMeans(
+        #         n_clusters=cen_num, n_init=7, max_iter=1000).fit(iqData)
+        #
+        #     ### pull out the centers of the clusters
+        #     Centers = kmeans.cluster_centers_
+        #     ### pull out labels for the blobs
+        #     blobNums = kmeans.labels_
+        #     ### create an array to store all seperated blobs
+        #     ### indexed as blobs[BLOB NUMBER][0 for I, 1 for Q][shot number]
+        #     blobs = np.full([cen_num, 2, len(i_raw)], np.nan)
+        #     dists = np.full([cen_num, len(i_raw)], np.nan)
+        #
+        #     for idx_shot in range(len(i_raw)):
+        #         for idx_cen in range(cen_num):
+        #             if blobNums[idx_shot] == idx_cen:
+        #                 #### fill blob with I and Q data
+        #                 blobs[idx_cen][0][idx_shot] = i_raw[idx_shot]
+        #                 blobs[idx_cen][1][idx_shot] = q_raw[idx_shot]
+        #                 #### fill with distance info
+        #                 dists[idx_cen][idx_shot] = np.sqrt(
+        #                     (Centers[idx_cen][0] - i_raw[idx_shot]) ** 2 +
+        #                     (Centers[idx_cen][1] - q_raw[idx_shot]) ** 2)
+        #
+        #     # ###############################################
+        #     if idx_wait == 0:
+        #         ##### plot out
+        #         fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
+        #
+        #         #### plot raw data only
+        #         axs[0].plot(I, Q, '.', alpha=alpha_val)
+        #
+        #         axs[0].set_xlabel('I')
+        #         axs[0].set_ylabel('Q')
+        #
+        #         # #### find the relative population amounts
+        #         # blob_pops = np.zeros(cen_num)
+        #         #  for idx in range
+        #
+        #         #### plot the sorted blobs
+        #         for idx in range(cen_num):
+        #             axs[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val, color=colors[idx])
+        #             axs[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
+        #
+        #         ### plot circle around each center with radius of average blob size
+        #         for idx in range(cen_num):
+        #             axs[1].add_patch(
+        #                 plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
+        #                            color='k', fill=False, zorder=2)
+        #             )
+        #
+        #         axs[1].set_xlabel('I')
+        #         axs[1].set_ylabel('Q')
+        #
+        #         axs[1].set_ylim(axs[0].get_ylim())
+        #         axs[1].set_xlim(axs[0].get_xlim())
+        #
+        #         lims = [axs[0].get_xlim(), axs[0].get_ylim()]
+        #
+        #         plt.tight_layout()
+        #
+        #     # #### look at slice of qubit trajectory
+        #     # idx_t = 0
+        #     # blobs_0 = np.full([cen_num, 2, len(I)], np.nan)
+        #     # blobs_1 = np.full([cen_num, 2, len(I)], np.nan)
+        #     #
+        #     # for idx_shot in range(len(i_0_arr[idx_t])):
+        #     #     for idx_cen in range(cen_num):
+        #     #         pt_dist = np.sqrt((i_0_arr[idx_t][idx_shot] - Centers[idx_cen][0]) ** 2
+        #     #                           + (q_0_arr[idx_t][idx_shot] - Centers[idx_cen][1]) ** 2)
+        #     #         size_select = np.nanmean(dists[idx_cen])
+        #     #
+        #     #         if pt_dist <= size_select:
+        #     #             #### fill blob with I and Q data
+        #     #             blobs_0[idx_cen][0][idx_shot] = i_0_arr[idx_t][idx_shot]
+        #     #             blobs_0[idx_cen][1][idx_shot] = q_0_arr[idx_t][idx_shot]
+        #     #
+        #     #             blobs_1[idx_cen][0][idx_shot] = i_1_arr[idx_t][idx_shot]
+        #     #             blobs_1[idx_cen][1][idx_shot] = q_1_arr[idx_t][idx_shot]
+        #     #
+        #     # ##### plot out
+        #     # fig, axs = plt.subplots(cen_num, 1, figsize=[8, 10], num = 112)
+        #     #
+        #     # alpha_val = 0.5
+        #     #
+        #     # #### plot the sorted blobs
+        #     # for idx in range(cen_num):
+        #     #     axs[idx].plot(blobs_0[idx][0], blobs_0[idx][1], '.', alpha=alpha_val, color=colors[idx])
+        #     #     axs[idx].plot(blobs_1[idx][0], blobs_1[idx][1], '.', alpha=alpha_val)
+        #     #     axs[idx].set_xlabel('I')
+        #     #     axs[idx].set_ylabel('Q')
+        #     #     axs[idx].set_xlim(lims[0])
+        #     #     axs[idx].set_ylim(lims[1])
+        #     #
+        #     #     plt.tight_layout()
+        #     #
+        #     # plt.show()
+        #     # ####################################################
+        #
+        #
+        # ### using desired number of clustors, seperate out the data
+        #
+        # ############# loop over all time slices and find distribuition of populations
+        # ### indexed as pops_arr[starting blob][resulting blob][time index]
+        # pops_arr = np.full([cen_num, cen_num, len(t_arr)], 0.0)
+        #
+        # #### using the blob centers sort out data
+        # blobSizes = dists
+        #
+        # #### loop over time steps
+        # for idx_t in range(len(t_arr)):
+        #     #### create new set of blobs for each point in time
+        #     blobs_0 = np.full([cen_num, 2, len(i_0_arr[idx_t])], np.nan)
+        #     blobs_1 = np.full([cen_num, 2, len(i_0_arr[idx_t])], np.nan)
+        #
+        #     for idx_shot in range(len(i_0_arr[idx_t])):
+        #         for idx_cen in range(cen_num):
+        #             pt_dist = np.sqrt((i_0_arr[idx_t][idx_shot] - Centers[idx_cen][0]) ** 2
+        #                               + (q_0_arr[idx_t][idx_shot] - Centers[idx_cen][1]) ** 2)
+        #             size_select = np.nanmean(dists[idx_cen])
+        #
+        #             if pt_dist <= size_select:
+        #                 #### fill blob with I and Q data
+        #                 blobs_0[idx_cen][0][idx_shot] = i_0_arr[idx_t][idx_shot]
+        #                 blobs_0[idx_cen][1][idx_shot] = q_0_arr[idx_t][idx_shot]
+        #
+        #                 blobs_1[idx_cen][0][idx_shot] = i_1_arr[idx_t][idx_shot]
+        #                 blobs_1[idx_cen][1][idx_shot] = q_1_arr[idx_t][idx_shot]
+        #
+        #     #### using sorted blob data, find approximate population distribuitions
+        #     for idx_cen_start in range(cen_num):
+        #         #### grab i and q data from blob, removing out the nan values
+        #         iData = blobs_1[idx_cen_start][0][~np.isnan(blobs_1[idx_cen_start][0])]
+        #         qData = blobs_1[idx_cen_start][1][~np.isnan(blobs_1[idx_cen_start][1])]
+        #         iq = np.stack((iData, qData), axis=1)
+        #         ##### sort data into predicted blob distributions
+        #         blob_distribution = kmeans.predict(iq)
+        #
+        #         ##### calculate the distribuition of the blob populations
+        #         for idx in range(len(blob_distribution)):
+        #             for idx_cen_stop in range(cen_num):
+        #                 if blob_distribution[idx] == idx_cen_stop:
+        #                     pops_arr[idx_cen_start][idx_cen_stop][idx_t] += 1
+        #         pops_arr[idx_cen_start][:, idx_t] = pops_arr[idx_cen_start][:, idx_t] / len(blob_distribution)
+        #
+        # ##### plot out
+        # fig, axs = plt.subplots(cen_num, 1, figsize=[5, 6])
+        #
+        # alpha_val = 0.5
+        # colors = ['b', 'r', 'm', 'c', 'g']
+        #
+        # ### exponential fitting
+        # def expFit(x, a, T1, c):
+        #     return a * np.exp(-1 * x / T1) + c
+        #
+        # #### loop over starting blobs
+        # for idx_plot in range(cen_num):
+        #     #### loop over each final blob
+        #     for idx_blob in range(cen_num):
+        #
+        #         #### find the T1 fit of the data
+        #         if idx_plot == idx_blob:
+        #             pop_list = pops_arr[idx_plot][idx_blob]
+        #             a_guess = (np.max(pop_list) - np.min(pop_list)) * -1
+        #             T1_guess = np.max(t_arr) / 4.0
+        #             c_guess = np.min(pop_list)
+        #             guess = [a_guess, T1_guess, c_guess]
+        #
+        #             #### attempt a T1 fit
+        #             try:
+        #                 pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
+        #                 pErr = np.sqrt(np.diag(pCov))
+        #             except:
+        #                 T1 = [0, 0, 0]
+        #                 T1_err = [0, 0, 0]
+        #
+        #             T1 = pOpt[1]
+        #             T1_err = pErr[1]
+        #             fit = expFit(t_arr, *pOpt)
+        #
+        #             print(T1)
+        #
+        #             axs[idx_plot].plot(t_arr, fit, 'k-')
+        #         ######
+        #
+        #         axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], 'o',
+        #                            label='blob ' + str(idx_blob), color=colors[idx_blob])
+        #
+        #     #### label axes and title
+        #     axs[idx_plot].set_xlabel('time (us)')
+        #     axs[idx_plot].set_ylabel('population')
+        #     # axs[idx_plot].set_title(
+        #     #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
+        #     axs[idx_plot].set_title(
+        #         'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
+        # #     axs[idx_plot].set_ylim([0.0,0.8])
+        #
+        # plt.tight_layout()
+        # plt.legend()
+        # # plt.show()
+        #
+        # plt.savefig(self.iname, dpi=600)  #### save the figure
 
+        #### save the data
+        data = {'config': self.cfg, 'data': {
+                                             "wait_vec": wait_vec,
+                                             'i_0_arr': i_0_arr, 'q_0_arr': q_0_arr,
+                                             'i_1_arr': i_1_arr, 'q_1_arr': q_1_arr,
+                                             # 'pop_arr': pops_arr,
+                                             }
+                }
+
+        self.data = data
+
+        return data
+
+    def process_data(self, data = None):
+
+        if data is None:
+            data = self.data
+
+        i_0_arr = data['data']['i_0_arr']
+        q_0_arr = data['data']['q_0_arr']
+
+        i_1_arr = data['data']['i_1_arr']
+        q_1_arr = data['data']['q_1_arr']
+
+        t_arr = data['data']['wait_vec']
+
+
+        #### loop over all wait times and collect raw data
+        for idx_wait in range(self.cfg["wait_num"]):
             ####################################################
             cen_num = self.cfg["cen_num"]
             alpha_val = 0.5
             colors = ['b', 'r', 'm', 'c', 'g']
             ### store the data
-            i_raw = i_0
-            q_raw = q_0
+            i_raw = i_0_arr[0]
+            q_raw = q_0_arr[0]
 
             I = i_raw
             Q = q_raw
@@ -258,7 +503,7 @@ class T1_PS(ExperimentClass):
             # ###############################################
             if idx_wait == 0:
                 ##### plot out
-                fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
+                fig, axs = plt.subplots(1, 2, figsize=[5, 5], num=111)
 
                 #### plot raw data only
                 axs[0].plot(I, Q, '.', alpha=alpha_val)
@@ -329,7 +574,6 @@ class T1_PS(ExperimentClass):
             #
             # plt.show()
             # ####################################################
-
 
         ### using desired number of clustors, seperate out the data
 
@@ -433,20 +677,6 @@ class T1_PS(ExperimentClass):
         # plt.show()
 
         plt.savefig(self.iname, dpi=600)  #### save the figure
-
-        #### save the data
-        data = {'config': self.cfg, 'data': {
-                                             "wait_vec": wait_vec,
-                                             'i_0_arr': i_0_arr, 'q_0_arr': q_0_arr,
-                                             'i_1_arr': i_1_arr, 'q_1_arr': q_1_arr,
-                                             'pop_arr': pops_arr,
-                                             }
-                }
-
-        self.data = data
-
-        return data
-
 
     def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
         if data is None:
