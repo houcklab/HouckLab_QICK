@@ -18,7 +18,6 @@ for i in range(D5a._num_dacs):
 ################
 
 DACs = [0, 2, 4, 6]
-DACs = [0, 2, 4, 6]
 #0, 2 and left
 #4, 6 are right
 #4(number 3) is right coupler
@@ -40,13 +39,14 @@ DACs = [0, 2, 4, 6]
 #
 
 
+#[Left qubit, left coupler, right coupler, right qubit]
+voltages = [0, 0, -0.4, -1.085]
+# voltages = [-0.6, 0.3, 0, 0]
+# voltages = [0, 0, 0, 0]
 
-voltages = [0, 0, 0, 0]
-voltages = [0.35, 0.45, 0, 0]
-voltages = [-0.5, -0.41, 0.0, 0]
-voltages = [-0.5, -0.403, 0.0, 0]
-voltages = [-0.63, 0, 0, 0]
-voltages = [-0.42, -0.38, 0, 0]
+# voltages = [-0.59, 0, 0, 0]
+
+
 set_unused_to_zero = False
 
 ################

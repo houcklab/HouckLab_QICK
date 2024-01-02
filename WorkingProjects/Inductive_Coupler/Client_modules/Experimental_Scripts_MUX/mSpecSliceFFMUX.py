@@ -65,7 +65,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         # self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
         #                          length=self.us2cycles(cfg["length"]))
         print(self.FFPulse)
-
+        print(cfg["mixer_freq"], cfg["pulse_freqs"], cfg["pulse_gains"], cfg["length"], self.cfg["adc_trig_offset"])
     def body(self):
 
         # self.sync_all(dac_t0=self.dac_t0)

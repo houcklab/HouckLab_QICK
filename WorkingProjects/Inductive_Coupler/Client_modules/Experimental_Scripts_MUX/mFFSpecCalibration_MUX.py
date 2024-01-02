@@ -18,8 +18,6 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        res_ch = cfg["res_ch"]
-
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["pulse_freqs"],
@@ -54,31 +52,13 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=self.f_start,
                                  phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                  waveform="qubit")
-
-
+        print(cfg["mixer_freq"], cfg["pulse_freqs"], cfg["pulse_gains"], cfg["length"], self.cfg["adc_trig_offset"])
     def body(self):
-        print(self.delay, self.cfg["sigma"], self.pulse_qubit_lenth)
-        self.sync_all(dac_t0=self.dac_t0)
-        # self.FFPulses(self.FFRamp, 2)
-        # self.FFPulses(self.FFRamp, self.qubit_length_us,
-        #               t_start=self.us2cycles(2))  # Sara: Length specified in us in FFPulses argument; add 20 ns
-        # self.pulse(ch=self.cfg["qubit_ch"], t=self.delay)  # probe pulse at 2 us + delay FIXME CLOCK
-        # self.FFPulses(self.FFExpts, self.qubit_length_us + 0.05)
-        # self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-        #                         + 200 * 16, self.FFRamp,
-        #                      IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2')
-        # # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.26) + self.delay)  # play probe pulse
-
-        self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-                                + 200 * 16, self.FFRamp,
-                             IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2', t_start= self.us2cycles(0.05))
-        # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
-        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0) + self.delay)  # play probe pulse
-
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
-        # trigger measurement, play measurement pulse, wait for qubit to relax
-        print(self.FFRamp, self.FFExpts)
+        print(self.FFRamp, self.FFExpts, self.FFReadouts, self.delay)
+        self.sync_all(50, dac_t0=self.dac_t0)
+        self.FFPulses(self.FFRamp, 2.02)
+        self.FFPulses(self.FFExpts, 6)
+        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(2.0) + self.delay)  # play probe pulse
         self.sync_all(dac_t0=self.dac_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -86,12 +66,50 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=False,
                      syncdelay=self.us2cycles(10))
+
+        self.FFPulses(-1 * self.FFExpts, 2.05)
+        self.FFPulses(-1 * self.FFExpts, 2)
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        # self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 0.3)
-        self.FFPulses_direct(-1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-                                + 200 * 16, self.FFRamp,
-                             IQPulseArray = self.cfg["IDataArray"], waveform_label='FF3')
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+
+    # def body(self):
+    #     print(self.delay, self.cfg["sigma"], self.pulse_qubit_lenth)
+    #     print(self.FFRamp, self.FFExpts, self.FFReadouts)
+    #     self.sync_all(50, dac_t0=self.dac_t0)
+    #     self.FFPulses(self.FFExpts, 2)
+    #     # self.FFPulses(self.FFRamp, self.qubit_length_us,
+    #     #               t_start=self.us2cycles(2))  # Sara: Length specified in us in FFPulses argument; add 20 ns
+    #     # self.pulse(ch=self.cfg["qubit_ch"], t=self.delay)  # probe pulse at 2 us + delay FIXME CLOCK
+    #     # self.FFPulses(self.FFExpts, self.qubit_length_us + 0.05)
+    #     # self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
+    #     #                         + 200 * 16, self.FFRamp,
+    #     #                      IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2')
+    #     # # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
+    #     # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.26) + self.delay)  # play probe pulse
+    #     self.FFPulses(self.FFExpts, self.qubit_length_us + self.delay + 0.3)
+    #
+    #     # self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
+    #     #                         + 200 * 16, self.FFRamp,
+    #     #                      IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2', t_start= self.us2cycles(0.05))
+    #     # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
+    #     self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(2.02) + self.delay)  # play probe pulse
+    #
+    #     # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
+    #     # trigger measurement, play measurement pulse, wait for qubit to relax
+    #     print(self.FFRamp, self.FFExpts)
+    #     self.sync_all(dac_t0=self.dac_t0)
+    #     self.FFPulses(self.FFReadouts, self.cfg["length"])
+    #     self.measure(pulse_ch=self.cfg["res_ch"],
+    #                  adcs=self.cfg["ro_chs"], pins=[0],
+    #                  adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+    #                  wait=False,
+    #                  syncdelay=self.us2cycles(10))
+    #     self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+    #     # self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 0.3)
+    #     self.FFPulses_direct(-1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
+    #                             + 200 * 16, self.FFRamp,
+    #                          IQPulseArray = self.cfg["IDataArray"], waveform_label='FF3')
+    #     self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
         FF.FFPulses(self, list_of_gains, length_us, t_start, IQPulseArray, waveform_label)
@@ -155,7 +173,7 @@ class FFSpecCalibrationMUX(ExperimentClass):
         # create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(2, 1, figsize=(8, 10), num=figNum)
+        fig, axs = plt.subplots(1, 1, figsize=(10, 7), num=figNum)
         fig.suptitle(str(self.titlename), fontsize=16)
 
         # create the frequency arrays for both transmission and spec
@@ -197,25 +215,27 @@ class FFSpecCalibrationMUX(ExperimentClass):
             # print('delay_time: ', self.cfg["delay_time"])
             # tqdm.set_postfix_str("delay time: {}".format(self.cfg['delay_time']))
             # take the transmission data. only need once because qubit frequency at readout invariant
-            if i == 0:
-                data_I_trans, data_Q_trans = self._acquireTransData()
-                sig = data_I_trans + 1j * data_Q_trans
-                avgamp0_trans = np.abs(sig)
-
-                self.data['data']['trans_Imat'][i, :] = data_I_trans
-                self.data['data']['trans_Qmat'][i, :] = data_Q_trans
-
-                Z_trans[i, :] = avgamp0_trans
-
-                axs[0].plot(X_trans, avgamp0_trans, label="Amplitude; ADC 0")
-                axs[0].set_xlabel("Cavity Frequency (GHz)")
-                axs[0].set_title("Cavity Transmission")
-
-            if plotDisp:
-                plt.show(block=False)
-                plt.pause(0.1)
+            # if i == 0:
+            #     data_I_trans, data_Q_trans = self._acquireTransData()
+            #     sig = data_I_trans + 1j * data_Q_trans
+            #     avgamp0_trans = np.abs(sig)
+            #
+            #     self.data['data']['trans_Imat'][i, :] = data_I_trans
+            #     self.data['data']['trans_Qmat'][i, :] = data_Q_trans
+            #
+            #     Z_trans[i, :] = avgamp0_trans
+            #
+            #     axs[0].plot(X_trans, avgamp0_trans, label="Amplitude; ADC 0")
+            #     axs[0].set_xlabel("Cavity Frequency (GHz)")
+            #     axs[0].set_title("Cavity Transmission")
+            #     self.cfg["mixer_freq"] -= self.cfg["TransSpan"]
+            #
+            # if plotDisp:
+            #     plt.show(block=False)
+            #     plt.pause(0.1)
             if i == 0:
                 start = time.time()
+
 
             # take the spec data
             data_I, data_Q = self._acquireSpecData()
@@ -246,7 +266,7 @@ class FFSpecCalibrationMUX(ExperimentClass):
                 Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
 
             # print('zspec', Z_spec)
-            ax_plot_1 = axs[1].imshow(
+            ax_plot_1 = axs.imshow(
                 Z_spec,
                 aspect='auto',
                 extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
@@ -255,16 +275,16 @@ class FFSpecCalibrationMUX(ExperimentClass):
                 interpolation='none',
             )
             if i == 0:  # if first sweep add a colorbar
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
                 cbar1.set_label('a.u.', rotation=90)
             else:
                 cbar1.remove()
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
                 cbar1.set_label('a.u.', rotation=90)
 
-            axs[1].set_ylabel("Delay Time (clock cycles (2.35 ns))")
-            axs[1].set_xlabel("Spec Frequency (GHz)")
-            axs[1].set_title("Qubit Spec")
+            axs.set_ylabel("Delay Time (clock cycles (2.35 ns))")
+            axs.set_xlabel("Spec Frequency (GHz)")
+            axs.set_title("Qubit Spec")
 
             if plotDisp:
                 plt.show(block=False)

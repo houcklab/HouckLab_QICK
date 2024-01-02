@@ -12,16 +12,6 @@ class LoopbackProgramFastFlux(AveragerProgram):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        # cfg = self.cfg
-        #
-        # self.declare_gen(ch=ffChannel, nqz=cfg["ff_nqz"])
-        # style = self.cfg["ff_pulse_style"]
-        #
-        # ff_freq = self.freq2reg(cfg["ff_freq"],
-        #                            gen_ch=ffChannel)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        # self.ff_freq = ff_freq
-        # self.style = style
-
         self.FFDefinitions()
 
         self.synci(200)  # give processor some time to configure pulses
