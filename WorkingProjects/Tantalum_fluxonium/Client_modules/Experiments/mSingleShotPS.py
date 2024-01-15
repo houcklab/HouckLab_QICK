@@ -98,6 +98,10 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  )  # mode="periodic")
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
         # self.r_thresh = 6
@@ -114,6 +118,11 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
+
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],

@@ -66,12 +66,21 @@ class LoopbackProgramTOFPS(RAveragerProgram):
         ### If offset is more than max_pulse_length
         self.num_pulses = int((self.cfg["offset"]) / self.cfg["max_pulse_length"]) + 2
         # print(self.num_pulses)
+
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
 
     def body(self):
         # Pause
         self.sync_all(self.us2cycles(0.01))
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
 
         # Qubit tone to create a mixed state
         self.pulse(ch=self.cfg["qubit_ch"])

@@ -1,4 +1,5 @@
 import os
+os.environ["OMP_NUM_THREADS"] = '1'
 import sys
 import csv
 import time
@@ -14,7 +15,20 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_PS_sse im
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQND import QNDmeas
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTimeOfFlight_PS import TimeOfFlightPS
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiBlob_PS_sse import AmplitudeRabi_PS_sse
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
+
+
+###########
+#### define the switch cofidg
+SwitchConfig = {
+    "trig_buffer_start": 0.035, # in us
+    "trig_buffer_end": 0.024, # in us
+    "trig_delay": 0.07, # in us
+}
+
+BaseConfig = BaseConfig | SwitchConfig
+######################
 
 ### Set up the Lakeshore
 rm = pyvisa.ResourceManager()
@@ -24,29 +38,37 @@ lakeshore = lk.Lakeshore370(LS370_connection)
 ### Defining temperature sweep configuration
 tempr_cfg = {
     'tempr_list': [10,15,20,25,30,35,40,45,50,55,60],  # [in mK]
-    'wait_time': 10 * 60,  # [in seconds]
+    'wait_time': 15 * 60,  # [in seconds]
     'max_deviation': 5,  # [in mK] maximum instability of temperature allowed
     'patience_ctr': 3,  # Number of tries an experiment be retried
 }
+# Defining initial T1
+T1_meas = 6000
 
 ### Defining common experiment configurations
 UpdateConfig = {
     ## set yoko
-    "yokoVoltage": -0.23,  # [in V]
-    "yokoVoltage_freqPoint": -0.23,  # [in V] used for naming the file systems
+    "yokoVoltage": -0.37,  # [in V]
+    "yokoVoltage_freqPoint": -0.37,  # [in V] used for naming the file systems
     ## cavity
     "reps": 2000,  # placeholder for reps. Cannot be undefined
     "read_pulse_style": "const",
     "read_length": 10,  # [in us]
-    "read_pulse_gain": 8000,  # [in DAC units]
-    "read_pulse_freq": 7392.17,  # [in MHz]
-    ## qubit spec parameters
-    "qubit_freq": 650,  # [in MHz]
-    "relax_delay": 25000,  # [in us] : Will keep on getting updated
+    "read_pulse_gain": 7000,  # [in DAC units]
+    "read_pulse_freq": 7392.36,  # [in MHz]
+    ## qubit drive parameters
+    "qubit_freq": 2815.65,  # [in MHz]
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 10000,
+    "sigma": 0.5,  ### units us, define a 20ns sigma
+    "flat_top_length": 20.0,  ### in us
     ## experiment parameters
     "cen_num": 2,  # Number of states expected
+    "relax_delay": 5*T1_meas,
 }
 config = BaseConfig | UpdateConfig
+
+
 
 ### Setting yoko voltage
 yoko1.SetVoltage(config["yokoVoltage"])
@@ -74,15 +96,19 @@ for i in range(len(tempr_cfg["tempr_list"])):
     ###region TITLE: QND Measurement
     UpdateConfig = {
         ##### qubit spec parameters
-        "qubit_pulse_style": "arb",
-        "qubit_gain": 0,
-        "sigma": 0.005,  ### units us, define a 20ns sigma
-        "flat_top_length": 10.0,  ### in us
+        # "qubit_pulse_style": "arb",
+        # "qubit_gain": 0,
+        # "sigma": 0.005,  ### units us, define a 20ns sigma
+        # "flat_top_length": 10.0,  ### in us
         "relax_delay": 0.01,  ### turned into us inside the run function
         #### define shots
-        "shots": 2000000,  ### this gets turned into "reps"
+        "shots": 4000000,  ### this gets turned into "reps"
+
+        "use_switch": True,
     }
     config_qnd = config | UpdateConfig
+
+    time_required = config_qnd["relax_delay"] * config_qnd["shots"] / 1e6 / 60
 
     # Measuring
     is_fluctuating = 1
@@ -93,6 +119,8 @@ for i in range(len(tempr_cfg["tempr_list"])):
             lakeshore.set_heater_range(0)
             sys.exit("Lakeshore has run out of patience. Human required!")
 
+
+        print("QND : Total time estimate is " + str(time_required) + " min")
         print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
                                    cfg=config_qnd,
@@ -114,30 +142,34 @@ for i in range(len(tempr_cfg["tempr_list"])):
 
         ctr += 1
     ###endregion
-
+#TODO this measurement is not time of flight at all, I guess the name migrated from a previous expt for historical reasons
+# I don't want to rename it in the middle of measurements but we absolutely need to change it. Lev 12/24/2023
     ##region TITLE: Time of Flight Measurement
     UpdateConfig = {
         ### cavity spec parameters
         "read_length_tof": 2,  # [us]
-        ### qubit spec parameters
-        "qubit_pulse_style": "arb",
-        "qubit_gain": 0,
-        "sigma": 0.005,
+        # ### qubit spec parameters
+        # "qubit_pulse_style": "arb",
+        # "qubit_gain": 0,
+        # "sigma": 0.005,
         ### define experiment specific parameters
-        "shots": 10000,
+        "shots": 200000,
         "offset": 0,  # [us] placeholder for actual value
         "offset_start": 0,  # [us]
         "offset_end": 50,  # [us]
         "offset_num": 15,  # [Number of points]
         "max_pulse_length": 5,
+
+        "use_switch": True,
+        "relax_delay": 10,
     }
     config_tof = config | UpdateConfig
 
     # Estimating Time
     time_required = np.sum(
         (np.linspace(config_tof["offset"], config_tof["offset_end"], config_tof["offset_num"]) +
-         2 * config_tof["max_pulse_length"]) * config_tof["shots"] + config["relax_delay"]) * 1e-6 / 60
-    print("Time required is " + str(time_required) + " min")
+         2 * config_tof["max_pulse_length"]) * config_tof["shots"] + config_tof["relax_delay"]) * 1e-6 / 60
+
 
     # Measuring
     is_fluctuating = 1
@@ -148,6 +180,7 @@ for i in range(len(tempr_cfg["tempr_list"])):
             lakeshore.set_heater_range(0)
             sys.exit("Lakeshore has run out of patience. Human required!")
 
+        print("TOF : Total time estimate is " + str(time_required) + " min")
         print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_" + str(config["fridge_temp"]),
                                                  outerFolder=outerFolder, cfg=config_tof,
@@ -171,80 +204,21 @@ for i in range(len(tempr_cfg["tempr_list"])):
 
     ##endregion
 
-    ##region TITLE: Spec Slice
-    # UpdateConfig = {
-    #     "qubit_pulse_style": "const",
-    #     "qubit_gain": 600,
-    #     "qubit_freq": 265.56,  ###########
-    #     "qubit_length": 30,
-    #     ##### define spec slice experiment parameters
-    #     "qubit_freq_start": 600,
-    #     "qubit_freq_stop": 720,
-    #     "SpecNumPoints": 51,  ### number of points
-    #     'spec_reps': 1000,
-    # }
-    # config_spec_slice = config | UpdateConfig
-    #
-    # # Estimating Time
-    # time_required = config_spec_slice["SpecNumPoints"] * config_spec_slice["spec_reps"] * config_spec_slice[
-    #     "relax_delay"] * 1e-6 / 60
-    # print('total time estimate: ' + str(time_required) + " minutes")
-    #
-    # # Measuring
-    # is_fluctuating = 1
-    # ctr = 1
-    # while is_fluctuating:
-    #     if ctr > tempr_cfg["patience_ctr"]:
-    #         lakeshore.set_setpoint(5)
-    #         lakeshore.set_heater_range(0)
-    #         sys.exit("Lakeshore has run out of patience. Human required!")
-    #
-    #     print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-    #     Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config_spec_slice, soc=soc, soccfg=soccfg,
-    #                                    outerFolder=outerFolder)
-    #     data_specSlice = SpecSlice.acquire(Instance_specSlice)
-    #     SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=False)
-    #     SpecSlice.save_data(Instance_specSlice, data_specSlice)
-    #     print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-    #
-    #     # Checking if temperature is stable if not then run again
-    #     if np.abs(float(lakeshore.get_temp(7)) * 1e3 - tempr_cfg["tempr_list"][i]) < tempr_cfg["max_deviation"]:
-    #         is_fluctuating = 0
-    #     else:
-    #         print("WARNING : Temperature not stable. Trying again")
-    #         lakeshore.set_temp(tempr_cfg["tempr_list"][i])
-    #         time.sleep(tempr_cfg["wait_time"])
-    #
-    #     ctr += 1
-    #
-    # if data_specSlice["data"]["popti"].isnan():
-    #     sys.exit("No qubit transition found. Human required!")
-    # else:
-    #     config["qubit_freq"] = data_specSlice["data"]["popti"][1]
-
-    ##endregion
-
-    ##region TITLE: Measure T1
+    ##region TITLE: Rabi Chevron
     UpdateConfig = {
-        ## qubit parameters
-        "qubit_pulse_style": "arb",  # Pulse Type
-        "qubit_gain": 0,  # [in DAC units]
-        "sigma": 0.005,  # [in us]
-        ## experiment parameters
-        "shots": 20000,  # Number of shots
-        "wait_start": 0,  # [in us]
-        "wait_stop": config["relax_delay"],  # [in us]
-        "wait_num": 25,  # number of points in logspace
-        'wait_type': 'linear',
+        "qubit_freq_start": config["qubit_freq"] - 100,
+        "qubit_freq_stop": config["qubit_freq"] + 100,
+        "SpecNumPoints": 41,  ### number of points
+        ##### define spec slice experiment parameters
+        "qubit_gain": 4000,
+        "spec_reps": 800,
+        "use_switch": True,
     }
-    config_t1 = config | UpdateConfig
+    config_rc = config | UpdateConfig
 
     # Estimating Time
-    time_per_scan = config_t1["shots"] * (
-            np.linspace(config_t1["wait_start"], config_t1["wait_stop"], config_t1["wait_num"])
-            + config_t1["relax_delay"]) * 1e-6
-    total_time = np.sum(time_per_scan) / 60
-    print('total time estimate: ' + str(total_time) + " minutes")
+    time_required = config_rc["relax_delay"]*config_rc["spec_reps"]*config_rc["SpecNumPoints"]/1e6/60
+
 
     # Measuring
     is_fluctuating = 1
@@ -255,6 +229,64 @@ for i in range(len(tempr_cfg["tempr_list"])):
             lakeshore.set_heater_range(0)
             sys.exit("Lakeshore has run out of patience. Human required!")
 
+        print('Rabi Chevron : Total time estimate: ' + str(time_required) + " minutes")
+        print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+        Instance_SpecSlice = SpecSlice_bkg_sub(path="Rabi_Chevron_temp_" + str(config["fridge_temp"]),
+                                                         outerFolder=outerFolder, cfg=config_rc, soc=soc, soccfg=soccfg,
+                                                         progress=True)
+        data_SpecSlice = Instance_SpecSlice.acquire()
+        Instance_SpecSlice.save_data(data_SpecSlice)
+        Instance_SpecSlice.save_config()
+        Instance_SpecSlice.display(data_SpecSlice, plotDisp=False)
+        print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+        # Checking if temperature is stable if not then run again
+        if np.abs(float(lakeshore.get_temp(7)) * 1e3 - tempr_cfg["tempr_list"][i]) < tempr_cfg["max_deviation"]:
+            is_fluctuating = 0
+            config["qubit_freq"] = data_SpecSlice['data']['f_reqd'].round(2)
+        else:
+            print("WARNING : Temperature not stable. Trying again")
+            lakeshore.set_temp(tempr_cfg["tempr_list"][i])
+            time.sleep(tempr_cfg["wait_time"])
+
+        ctr += 1
+
+    ##endregion
+
+    ##region TITLE: Measure T1
+    UpdateConfig = {
+        # ## qubit parameters
+        # "qubit_pulse_style": "arb",  # Pulse Type
+        # "qubit_gain": 0,  # [in DAC units]
+        # "sigma": 0.005,  # [in us]
+        ## experiment parameters
+        "shots": 40000,  # Number of shots
+        "wait_start": 0,  # [in us]
+        "wait_stop": config["relax_delay"],  # [in us]
+        "wait_num": 25,  # number of points in logspace
+        'wait_type': 'linear',
+        "use_switch": True,
+        "relax_delay": 10,
+    }
+    config_t1 = config | UpdateConfig
+
+    # Estimating Time
+    time_per_scan = config_t1["shots"] * (
+            np.linspace(config_t1["wait_start"], config_t1["wait_stop"], config_t1["wait_num"])
+            + config_t1["relax_delay"]) * 1e-6
+    total_time = np.sum(time_per_scan) / 60
+
+
+    # Measuring
+    is_fluctuating = 1
+    ctr = 1
+    while is_fluctuating:
+        if ctr > tempr_cfg["patience_ctr"]:
+            lakeshore.set_setpoint(5)
+            lakeshore.set_heater_range(0)
+            sys.exit("Lakeshore has run out of patience. Human required!")
+
+        print('T1 : Total time estimate: ' + str(total_time) + " minutes")
         print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         Instance_T1_PS = T1_PS_sse(path="T1_PS_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
                                    cfg=config_t1,
@@ -268,7 +300,10 @@ for i in range(len(tempr_cfg["tempr_list"])):
 
         # updating the relax delay
         if data_T1_PS["data"]["T1"] < 10000:
-            config["relax_delay"] = data_T1_PS["data"]["T1"] * 5
+            if data_T1_PS["data"]["T1_guess"]*5 > 1000:
+                config["relax_delay"] = data_T1_PS["data"]["T1_guess"] * 5  ## TITLE: Very important line
+            else:
+                config["relax_delay"] = 1000
             T1_meas = data_T1_PS["data"]["T1"]
             T1_meas_err = data_T1_PS["data"]["T1_err"]
             rate_tempr = data_T1_PS["data"]["temp_rate"]
@@ -291,19 +326,22 @@ for i in range(len(tempr_cfg["tempr_list"])):
     ##region TITLE: Measure SingleShot for Temperature Calculation
     UpdateConfig = {
         ## qubit spec parameters
-        "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
-        "qubit_gain": 0,  # [in DAC Units]
-        "sigma": 0.005,  # [in us]
+        # "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
+        # "qubit_gain": 0,  # [in DAC Units]
+        # "sigma": 0.005,  # [in us]
         ## define experiment parameters
-        "shots": 60000,
+        "shots": 1000000,
+        "use_switch": True,
+        "initialize_pulse": True
     }
-    config_ss = BaseConfig | UpdateConfig
+    config_ss = config | UpdateConfig
 
     # Estimating Time
     time_required = config_ss["shots"] * config_ss["relax_delay"] * 1e-6 / 60
-    print("Time required is ", time_required, " mins")
+
 
     # Measuring
+    is_fluctuating = 1
     ctr = 1
     while is_fluctuating:
         if ctr > tempr_cfg["patience_ctr"]:
@@ -311,7 +349,9 @@ for i in range(len(tempr_cfg["tempr_list"])):
             lakeshore.set_heater_range(0)
             sys.exit("Lakeshore has run out of patience. Human required!")
 
-        Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_temp_" + str(config["fridge_temp"]),
+        print("SingleShot : Total time estimate is ", time_required, " mins")
+        print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+        Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_temp_" + str(config_ss["fridge_temp"]),
                                                    outerFolder=outerFolder, cfg=config_ss,
                                                    soc=soc, soccfg=soccfg)
         data_SingleShot = Instance_SingleShotProgram.acquire()
@@ -319,6 +359,7 @@ for i in range(len(tempr_cfg["tempr_list"])):
         Instance_SingleShotProgram.save_data(data_SingleShot)
         Instance_SingleShotProgram.save_config()
         Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
+        print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         # Getting the temperatures
         state_prob = data_SingleShot["data"]["prob"]
@@ -341,14 +382,15 @@ for i in range(len(tempr_cfg["tempr_list"])):
     data_csv.append(tempr_cfg["tempr_list"][i])  # [mK] Temperature
     data_csv.append(config["yokoVoltage_freqPoint"])  # [V] Yoko Voltage
     data_csv.append(config["qubit_freq"])  # [MHz] Qubit Frequency
-    data_csv.append(T1_meas)  # [in us] T1
-    data_csv.append(T1_meas_err)  # [in us] T1 std
-    data_csv.append(state_prob)  # Thermal excitation
-    data_csv.append(state_prob_std)  # Thermal excitation std
-    data_csv.append(state_tempr)  # [in K] Temperature of qubit
-    data_csv.append(state_tempr_std)  # [in K] Std of temperature of qubit
-    data_csv.append(rate_tempr)
-    data_csv.append(rate_tempr_std)
+    data_csv.append(T1_meas.round(4))  # [in us] T1
+    data_csv.append(T1_meas_err.round(4))  # [in us] T1 std
+    indx_min = np.argmin(np.array(state_prob))
+    data_csv.append((state_prob[indx_min]*1e2).round(4))  # Thermal excitation
+    data_csv.append((state_prob_std[indx_min]*1e2).round(4))  # Thermal excitation std
+    data_csv.append((state_tempr*1e3).round(4))  # [in mK] Temperature of qubit
+    data_csv.append((state_tempr_std*1e3).round(4))  # [in mK] Std of temperature of qubit
+    data_csv.append(rate_tempr.round(4))
+    data_csv.append(rate_tempr_std.round(4))
     today = datetime.datetime.today()
     formatted_date = today.strftime("%m/%d/%Y")
     data_csv.append(formatted_date)  # today's date in mm/dd/yyyy format
@@ -373,7 +415,7 @@ for i in range(len(tempr_cfg["tempr_list"])):
     path_csv.append(Instance_QNDmeas.fname)
     path_csv.append(Instance_TimeOfFlightPS.fname)
     path_csv.append(Instance_T1_PS.fname)
-    path_csv.append(Instance_SingleShotProgram)
+    path_csv.append(Instance_SingleShotProgram.fname)
 
     # Saving to a csv file
     loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
@@ -385,7 +427,7 @@ for i in range(len(tempr_cfg["tempr_list"])):
         writer = csv.writer(file)
 
         # Write the list to the CSV file
-        writer.writerow(data_csv)
+        writer.writerow(path_csv)
 
     # Close the open csv
     file.close()

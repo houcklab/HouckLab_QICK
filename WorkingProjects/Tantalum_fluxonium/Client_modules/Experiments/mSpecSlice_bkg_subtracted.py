@@ -100,7 +100,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
 # ====================================================== #
 
-class SpecSlice(ExperimentClass):
+class SpecSlice_bkg_sub(ExperimentClass):
     """
     Basic spec experiment that takes a single slice of data
     """
@@ -125,66 +125,38 @@ class SpecSlice(ExperimentClass):
         self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
                                        expt_cfg["SpecNumPoints"])
 
+        ### Actual data
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
-        avgi = avgi[0][0]
-        avgq = avgq[0][0]
+
+        ### Background data
+        qubit_gain = self.cfg["qubit_gain"]
+        self.cfg["qubit_gain"] = 0
+        prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+        x_pts_bkg, avgi_bkg, avgq_bkg = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                         readouts_per_experiment=1, save_experiments=None,
+                                         start_src="internal", progress=False, debug=False)
+        self.cfg["qubit_gain"] = qubit_gain
+
+        # Subtracting
+        avgi = avgi[0][0] - avgi_bkg[0][0]
+        avgq = avgq[0][0] - avgq_bkg[0][0]
         sig = avgi + 1j * avgq
         amp = np.abs(sig)
         phase = np.angle(sig, deg=True)
+        avgi = np.abs(avgi)
+        avgq = np.abs(avgq)
 
-        ### Fit Gaussian for avgi
-        # intelligently guess the initial parameters
-        a_0 = np.max(avgi) - np.min(avgi)
-        x_0 = self.qubit_freqs[np.argmax(avgi)]
-        sigma_0 = np.abs(x_pts[np.argmin(np.abs(avgi - a_0 / 2))] - x_0)
-        p0 = [a_0, x_0, sigma_0, np.min(avgi)]
-        popti = np.nan
-        try:
-            popti, pcovi = curve_fit(gauss, x_pts, avgi, p0=p0, maxfev=10000)
-        except:
-            print("I - Fit not found")
+        # All information in amp now
+        f_reqd = self.qubit_freqs[np.argmax(amp)]
 
-        # intelligently guess the initial parameters
-        a_0 = np.max(avgq) - np.min(avgq)
-        x_0 = self.qubit_freqs[np.argmax(avgq)]
-        sigma_0 = np.abs(x_pts[np.argmin(np.abs(avgq - a_0 / 2))] - x_0)
-        p0 = [a_0, x_0, sigma_0, np.min(avgq)]
-        poptq = np.nan
-        try:
-            poptq, pcovq = curve_fit(gauss, x_pts, avgq, p0=p0, maxfev=10000)
-        except:
-            print("Q-Fit not found")
-
-        # intelligently guess the initial parameters
-        a_0 = np.max(amp) - np.min(amp)
-        x_0 = self.qubit_freqs[np.argmax(amp)]
-        sigma_0 = np.abs(x_pts[np.argmin(np.abs(amp - a_0 / 2))] - x_0)
-        p0 = [a_0, x_0, sigma_0, np.min(amp)]
-        poptamp = np.nan
-        try:
-            poptamp, pcovamp = curve_fit(gauss, x_pts, amp, p0=p0, maxfev=10000)
-        except:
-            print("amp-Fit not found")
-
-        # intelligently guess the initial parameters
-        a_0 = np.max(phase) - np.min(phase)
-        x_0 = self.qubit_freqs[np.argmax(phase)]
-        sigma_0 = np.abs(x_pts[np.argmin(np.abs(phase - a_0 / 2))] - x_0)
-        p0 = [a_0, x_0, sigma_0, np.min(phase)]
-        poptphase = np.nan
-        try:
-            poptphase, pcovphase = curve_fit(gauss, x_pts, phase, p0=p0, maxfev=10000)
-        except:
-            print("Phase-Fit not found")
 
         ### Save Data
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq,
-                                             'amp': amp, 'phase': phase, "popti": popti, "poptq": poptq,
-                                             "poptamp":poptamp, "poptphase":poptphase}}
+                                             'amp': amp, 'phase': phase, "f_reqd": f_reqd}}
         self.data = data
         return data
 
@@ -198,61 +170,32 @@ class SpecSlice(ExperimentClass):
         avgq = data['data']['avgq']
         amp = data['data']['amp']
         phase = data['data']['phase']
-        popti = data['data']['popti']
-        poptq = data['data']['poptq']
-        poptamp = data['data']['poptamp']
-        poptphase = data['data']['poptphase']
+        f_reqd = data['data']['f_reqd']
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
 
         axs[0].scatter(x_pts, avgi, c='b', label='data')
-        try:
-            axs[0].plot(x_pts, gauss(x_pts, *popti), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (popti[0],),
-                r'$x_0=%.2f$' % (popti[1],),
-                r'$\sigma=%.2f$' % (popti[2],),
-                r'$c=%.2f$' % (popti[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[0].text(0.05, 0.95, textstr, transform=axs[0].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot i-plot fit")
-
         axs[0].set_xlabel('Frequency (GHz)')
         axs[0].set_ylabel('I (a.u.)')
         axs[0].set_title('I vs Frequency')
         # Add a text box with the fit parameters
 
         axs[1].scatter(x_pts, avgq, c='b', label='data')
-        try:
-            axs[1].plot(x_pts, gauss(x_pts, *poptq), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptq[0],),
-                r'$x_0=%.2f$' % (poptq[1],),
-                r'$\sigma=%.2f$' % (poptq[2],),
-                r'$c=%.2f$' % (poptq[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[1].text(0.05, 0.95, textstr, transform=axs[1].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot i-plot fit")
         axs[1].set_xlabel('Frequency (GHz)')
         axs[1].set_ylabel('Q (a.u.)')
         axs[1].set_title('Q vs Frequency')
 
         axs[2].scatter(x_pts, amp, c='b', label='data')
         try:
-            axs[2].plot(x_pts, gauss(x_pts, *poptamp), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptamp[0],),
-                r'$x_0=%.2f$' % (poptamp[1],),
-                r'$\sigma=%.2f$' % (poptamp[2],),
-                r'$c=%.2f$' % (poptamp[3],)))
+            popt, pcov = curve_fit(gauss, x_pts, amp, p0=[max(amp) - min(amp), f_reqd, (max(x_pts) - min(x_pts))/7,
+                                                          min(amp) if f_reqd > np.average(amp) else max(amp)])
+            axs[2].plot(x_pts, gauss(x_pts, popt[0], popt[1], popt[2], popt[3]))
+
+            label = r'$f_{01}$ =' + str(popt[1].round(3)) + ' MHz\n$\sigma$ =' + str(popt[2].round(1)) + ' MHz'
             props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[2].text(0.05, 0.95, textstr, transform=axs[2].transAxes, fontsize=14,
+            axs[2].text(0.01, 0.95, label, transform=axs[2].transAxes, fontsize=14,
                         verticalalignment='top', bbox=props)
         except:
             print("Cannot amp-plot fit")
@@ -261,18 +204,6 @@ class SpecSlice(ExperimentClass):
         axs[2].set_title('Amplitude vs Frequency')
 
         axs[3].scatter(x_pts, phase, c='b', label='data')
-        try:
-            axs[3].plot(x_pts, gauss(x_pts, *poptphase), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptphase[0],),
-                r'$x_0=%.2f$' % (poptphase[1],),
-                r'$\sigma=%.2f$' % (poptphase[2],),
-                r'$c=%.2f$' % (poptphase[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[3].text(0.05, 0.95, textstr, transform=axs[3].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot phase-plot fit")
         axs[3].set_xlabel('Frequency (GHz)')
         axs[3].set_ylabel('Phase (rad)')
         axs[3].set_title('Phase vs Frequency')
@@ -280,7 +211,7 @@ class SpecSlice(ExperimentClass):
         try:
             data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
                                 + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
-                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(popti[1])
+                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(f_reqd.round(2))
                                 + " MHz \n" )
             plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
         except:

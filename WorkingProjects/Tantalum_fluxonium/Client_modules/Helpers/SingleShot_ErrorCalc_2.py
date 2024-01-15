@@ -3,6 +3,8 @@ from sklearn.cluster import KMeans
 from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
+# plt.rc('text', usetex=True)
+# plt.rc('font', family='serif')
 from tqdm import tqdm
 
 def plotCenter(iq_data, centers, fname, loc):
@@ -18,8 +20,13 @@ def plotCenter(iq_data, centers, fname, loc):
 
 def getCenters(iq_data, cen_num,**kwargs):
     # use kmeans to cluster the data
-    kmeans = KMeans(n_clusters=cen_num, n_init = 7, max_iter = 10000).fit(iq_data.T)
-    
+    if 'init_guess' in kwargs:
+        # use kmeans to cluster the data
+        kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
+    else:
+        # use kmeans to cluster the data
+        kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
+
     # Get the centers of the clusters
     centers = kmeans.cluster_centers_
 
@@ -67,14 +74,14 @@ def plotGaussians(gaussians, x_points, y_points, fname, loc):
     for j in range(len(gaussians)): 
         total_gaussian += gaussians[j] 
     # Use imshow to plot the 2d gaussian i
-    plt.imshow(total_gaussian, extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]], 
+    plt.imshow(np.transpose(total_gaussian), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]],
                origin = 'lower', norm=LogNorm())
     plt.colorbar()
     plt.xlabel('I')
     plt.ylabel('Q')
     plt.savefig(loc+fname+'_gaussianlog_'+str(j)+'.png', dpi = 300)
     plt.close()
-    plt.imshow(total_gaussian, extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]], 
+    plt.imshow(np.transpose(total_gaussian), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]],
                origin = 'lower')
     plt.colorbar()
     plt.xlabel('I')
@@ -86,7 +93,7 @@ def plotGaussians(gaussians, x_points, y_points, fname, loc):
     plt.figure()
     for j in range(len(gaussians)):
         plt.subplot(1,len(gaussians),j+1)
-        plt.imshow(gaussians[j], extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]], 
+        plt.imshow(np.transpose(gaussians[j]), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]],
                    origin = 'lower', norm=LogNorm())
         plt.colorbar()
         plt.xlabel('I')
@@ -97,7 +104,7 @@ def plotGaussians(gaussians, x_points, y_points, fname, loc):
 
 
 def findGaussians(hist2d, centers, cen_num, return_bounds = False, 
-    input_bounds = None, p_guess = None, **kwargs):
+    input_bounds = None, p_guess = None, no_of_params = 4, **kwargs):
 
     gaussians = []
 
@@ -108,11 +115,10 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
     yedges_mid = (yedges[1:] + yedges[:-1])/2
     x_points = xedges_mid
     y_points = yedges_mid
-    X, Y = np.meshgrid(xedges_mid, yedges_mid)
+    Y, X = np.meshgrid(yedges_mid, xedges_mid)
 
     # find the initial guess for the parameters
     p0 = []
-    no_of_params = 4
     bounds = (np.full((cen_num*no_of_params), -np.inf), np.full((cen_num*no_of_params), np.inf))
     for j in range(cen_num):
         #Find the closes point to the center
@@ -133,10 +139,10 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
 
         bounds[0][j*no_of_params] = 0
         bounds[1][j*no_of_params] = np.inf #hist2d[0][indx_x, indx_y]*1.1
-        bounds[0][j*no_of_params+1] = centers[j,0] - np.abs(centers[j,0])*0.05
-        bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.05
-        bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.05
-        bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.05
+        bounds[0][j*no_of_params+1] = centers[j,0] - np.abs(centers[j,0])*0.2
+        bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.2
+        bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.2
+        bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.2
         
         # Check if sigma is given as input in kwargs
         if 'sigma' in kwargs:
@@ -155,18 +161,18 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
         if p_guess is not None:
             popt = curve_fit(
                 double_gaussian_2d, (X.ravel(),Y.ravel()), 
-                np.transpose(hist2d[0]).ravel(), p0 = p_guess, maxfev = 100000, 
+                hist2d[0].ravel(), p0 = p_guess, maxfev = 100000,
                 bounds = input_bounds, )[0]
         else:
             popt = curve_fit(
                 double_gaussian_2d, (X.ravel(),Y.ravel()), 
-                np.transpose(hist2d[0]).ravel(), p0 = p0, maxfev = 100000, 
+                hist2d[0].ravel(), p0 = p0, maxfev = 100000,
                 bounds = input_bounds, )[0]
 
     else:
         popt = curve_fit(
             double_gaussian_2d, (X.ravel(),Y.ravel()), 
-            np.transpose(hist2d[0]).ravel(), p0 = p0, maxfev = 100000, 
+            hist2d[0].ravel(), p0 = p0, maxfev = 100000,
             bounds = bounds, )[0]
  
     
@@ -206,7 +212,7 @@ def plotPDF(pdf, x_points, y_points, fname, loc):
     plt.figure()
     for j in range(len(pdf)):
         plt.subplot(1,len(pdf),j+1)
-        plt.imshow(pdf[j], extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]], origin = 'lower')
+        plt.imshow(np.transpose(pdf[j]), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]], origin = 'lower')
         plt.colorbar()
         plt.xlabel('I')
         plt.ylabel('Q')
@@ -220,7 +226,7 @@ def calcNumSamplesInGaussian(hist2d, pdf, cen_num, **kwargs):
     # The shape is (cen_num, hist2d[0].shape)
     expected_dist = np.zeros((cen_num,) + hist2d[0].shape)
     for i in range(cen_num):
-        expected_dist[i] = pdf[i]*np.transpose(hist2d[0])
+        expected_dist[i] = pdf[i]*hist2d[0]
         num_samples_in_gaussian[i] = np.sum(expected_dist[i])
     
     # Check if plot is given as input
@@ -239,7 +245,7 @@ def calcNumSamplesInGaussian(hist2d, pdf, cen_num, **kwargs):
             plt.figure()
             for i in range(cen_num):
                 plt.subplot(1,cen_num,i+1)
-                plt.imshow(expected_dist[i], 
+                plt.imshow(np.transpose(expected_dist[i]),
                            extent = [
                            kwargs["x_points"][0], kwargs["x_points"][-1], 
                            kwargs["y_points"][0], kwargs["y_points"][-1]
@@ -258,7 +264,7 @@ def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
     num_samples_in_gaussian_std = np.zeros(cen_num)
     expected_dist_std = np.zeros((cen_num,) + hist2d[0].shape)
     for i in range(cen_num):
-        expected_dist_std[i] = pdf[i]*(1-pdf[i])*np.transpose(hist2d[0])
+        expected_dist_std[i] = pdf[i]*(1-pdf[i])*hist2d[0]
         num_samples_in_gaussian_std[i] = np.sqrt(np.sum(expected_dist_std[i]))
             
     # Check if plot is given as input
@@ -277,7 +283,7 @@ def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
             plt.figure()
             for i in range(cen_num):
                 plt.subplot(1,cen_num,i+1)
-                plt.imshow(expected_dist_std[i], 
+                plt.imshow(np.transpose(expected_dist_std[i]),
                            extent = [
                            kwargs["x_points"][0], kwargs["x_points"][-1], 
                            kwargs["y_points"][0], kwargs["y_points"][-1]
@@ -365,9 +371,35 @@ def findTempr(probability, std_probability, f1):
     return np.abs(T), np.sqrt(u_T)
 
 
-def oendim_projection(iq_data):
-    # Calculate the center
-    # Rotate the data
-    # Project in 1d dimension
-    # Return the data
+def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, axs, cen_num = 2, **kwargs):
+    ## Create the best looking plots for all the data and fit and pdf
+    # Calculate the probability for each iq_data point using the pdf
+    probability = np.zeros((cen_num, iq_data.shape[1]))
+    for i in range(cen_num):
+        for j in range(iq_data.shape[1]):
+            probability[i,j] = pdf[i][np.argmin(np.abs(x_points - iq_data[0,j])), np.argmin(np.abs(y_points - iq_data[1,j]))]
+
+    # Plot the iq_data as a scatter plot with the color corresponding to the largest probability of the point in a given center
+    # The color is given using the 'inferno' colormap and the colorbar is normalized to the minimum and maximum probability
+    # The colorbar is given the label 'Probability'
+    im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral', norm = LogNorm(vmin = 0.6, vmax = 1), s = 15)
+    fig.colorbar(im, ax = axs, label = 'Center')
+
+    # Plot the contours of the gaussians. Each contour should be in log scale and the levels should be at max(gaussian), max(gaussian)*e^(-1/2), max(gaussian)*e^-1.
+    # Also above each contour the value of gaussian should be given using clabel where the labels should be $\sqrt{2}\sigma$, $\sigma$ and $0$.
+    # The color of the contour should be black
+    for i in range(cen_num):
+        levels = [np.max(gaussians[i])*np.exp(-2) ,np.max(gaussians[i])*np.exp(-1), np.max(gaussians[i])*np.exp(-1/2) ]
+        contour = axs.contour(x_points, y_points, np.transpose(gaussians[i]), levels = levels, colors = 'k')
+        labels = {level: label for level, label in zip(levels, [r'$2\sigma$',r'$\sqrt{2}\sigma$', r'$\sigma$'])}
+        axs.clabel(contour, levels = levels, inline = True, fmt = labels, fontsize = 10)
+
+    # Plot the centers of the gaussians as red stars
+    axs.scatter(centers[:,0], centers[:,1], marker = '*', c = 'r', s = 100, label = 'Center')\
+
+    axs.set_xlabel('I')
+    axs.set_ylabel('Q')
+    axs.set_title('Data')
+    axs.set_aspect('auto')
+
     return

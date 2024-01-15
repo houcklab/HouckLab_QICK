@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 from tqdm import tqdm
+from scipy.optimize import curve_fit
 # Set default font size
 plt.rcParams.update({'font.size': 10})
 
@@ -47,80 +48,59 @@ class GammaFit:
         state0_probs_err = []
         state1_probs = []
         state1_probs_err = []
+        self.centers = []
         
         for idx_t in tqdm(range(len(self.wait_arr))):
 
-            if idx_t == 0:
-                #### combine all initial measurements to
-                #### find the centers and find gaussian fit parameters
-                self.i_arr_full = np.array([])
-                self.q_arr_full = np.array([])
-                for idx_fill in range(len(self.wait_arr)):
-                    self.i_arr_full = np.append(
-                        self.i_arr_full, self.i_0_arr[idx_fill])
-                    self.q_arr_full = np.append(
-                        self.q_arr_full, self.q_0_arr[idx_fill])
-
-                # Changing the way data is stored for kmeans
-                iq_data = np.stack((self.i_arr_full, self.q_arr_full), axis=0)
-
-                # Get centers of the data
-                cen_num = 2
-                self.centers = sse2.getCenters(iq_data, cen_num)
-
-                #### bin into a histogram
-                bin_size = 51
-                hist2d = sse2.createHistogram(iq_data, bin_size)
-                
-                # Find the fit parameters for the double 2D Gaussian
-                gaussians, popt, x_points, y_points, bounds = sse2.findGaussians(
-                    hist2d, self.centers, cen_num, plot= False,
-                    return_bounds = True, 
-                    fname = "Wait_Arr_0_0", loc = "plots/")
-
-                #### extract the fit parameters
-                self.popt = popt
-
-                ##############################
-                #### create bounds given current fit
-                lower_bound = np.zeros(len(popt))
-                upper_bound = np.zeros(len(popt))
-                p_guess = popt
-            
-                for idx in range(len(popt)):
-            
-                    lower_bound[idx] = popt[idx] - 0.000001 
-                    upper_bound[idx] = popt[idx] + 0.000001 
-                    
-                    if idx == 0:
-                        lower_bound[idx] = 0
-                        upper_bound[idx] = np.inf
-            
-                    if idx == 4:
-                        lower_bound[idx] = 0 
-                        upper_bound[idx] = np.inf 
-            
-                bounds = [lower_bound, upper_bound]
-                ##############################
- 
             #### define new arrays for each time slice
             i_arr = self.i_0_arr[idx_t]
             q_arr = self.q_0_arr[idx_t]
             # Changing the way data is stored for kmeans
             iq_data = np.stack((i_arr, q_arr), axis = 0)
-        
-            # Converting the data to 2d histogram
-            # Check if bin_size is given as input
+
+            # Get centers of the data
+            cen_num = 2
+            if idx_t == 0:
+                self.centers.append(sse2.getCenters(iq_data, cen_num))
+            else:
+                self.centers.append(sse2.getCenters(iq_data, cen_num, init_guess=self.centers[0]))
+
+            #### bin into a histogram
             bin_size = 51
             hist2d = sse2.createHistogram(iq_data, bin_size)
-            
+
             # Find the fit parameters for the double 2D Gaussian
-            gaussians, popt, x_points, y_points = sse2.findGaussians(
-                hist2d, self.centers, cen_num, plot= False,
-                input_bounds = bounds, p_guess = p_guess,
+            gaussians, popt, x_points, y_points, bounds = sse2.findGaussians(
+                hist2d, self.centers[idx_t], cen_num, plot= False,
+                return_bounds = True,
                 fname = "Wait_Arr_0_0", loc = "plots/")
-           
-            # Extract the sigma 
+
+            #### extract the fit parameters
+            self.popt = popt
+
+            ##############################
+            #### create bounds given current fit
+            lower_bound = np.zeros(len(popt))
+            upper_bound = np.zeros(len(popt))
+            p_guess = popt
+
+            for idx in range(len(popt)):
+
+                lower_bound[idx] = popt[idx] - 0.000001
+                upper_bound[idx] = popt[idx] + 0.000001
+
+                if idx == 0:
+                    lower_bound[idx] = 0
+                    upper_bound[idx] = np.inf
+
+                if idx == 4:
+                    lower_bound[idx] = 0
+                    upper_bound[idx] = np.inf
+
+            bounds = [lower_bound, upper_bound]
+            ##############################
+
+            # Extract the sigma
             sigma = []
             for i in range(cen_num):
                 sigma.append(popt[i*4+3])
@@ -150,10 +130,10 @@ class GammaFit:
             q1_shots = []
             
             for idx in range(len(sorted_shots_0)):
-                if sorted_shots_0[idx] > 0.99:
+                if sorted_shots_0[idx] > 0.8:
                     i0_shots.append(self.i_1_arr[idx_t][idx])
                     q0_shots.append(self.q_1_arr[idx_t][idx])
-                if sorted_shots_1[idx] > 0.99:
+                if sorted_shots_1[idx] > 0.8:
                     i1_shots.append(self.i_1_arr[idx_t][idx])
                     q1_shots.append(self.q_1_arr[idx_t][idx])
            
@@ -168,7 +148,7 @@ class GammaFit:
                 
                 # Find the fit parameters for the double 2D Gaussian
                 gaussians, popt, x_points, y_points = sse2.findGaussians(
-                    hist2d, self.centers, cen_num, plot= False,
+                    hist2d, self.centers[idx_t], cen_num, plot= False,
                     input_bounds = bounds, p_guess = p_guess,
                     sigma = sigma,
                     fname = "Wait_Arr_0_0", loc = "plots/")
@@ -220,6 +200,22 @@ class GammaFit:
                 self.pops_err_vec[1][0][idx_t] = state1_probs_err[idx_t]
                 self.pops_err_vec[1][1][idx_t] = state1_probs_err[idx_t]
 
+        ### if cen_num = 2 just use exponential fil to get an estimate of T1 which will be used in the AutoSweep
+        if cen_num == 2:
+            # check which has the higher contrast
+            idx = np.argmax(np.array([np.ptp(self.pops_vec[0][0][:]), np.ptp(self.pops_vec[1][0][:])]))
+            pop_curr = self.pops_vec[idx][0][:]
+            # Fit to data
+            a_guess = pop_curr[0] - pop_curr[-1]
+            T1_guess = np.max(self.wait_arr) / 4.0
+            c_guess = pop_curr[-1]
+            guess = [a_guess, T1_guess, c_guess]
+
+            def expFit(x, a, T1, c):
+                return a * np.exp(-1 * x / T1) + c
+
+            popt, pcov = curve_fit(expFit, self.wait_arr, pop_curr, p0=guess)
+            self.T1_guess = popt[1]
     ##########
     def Pops_ode(self, pops, t, params):
         """
@@ -301,8 +297,8 @@ class GammaFit:
         
         params = Parameters()
        
-        params.add('g01', value = 1e-2, min = 1e-8, max = 0.5)
-        params.add('g10', value = 1e-2, min = 1e-8, max = 0.5)
+        params.add('g01', value = 1e-2, min = 1e-9, max = 0.1)
+        params.add('g10', value = 1e-2, min = 1e-9, max = 0.1)
         
         params.add('P0_0_init',P0_0_data[0],vary = False)
         params.add('P0_1_init',P0_1_data[0],vary = False)

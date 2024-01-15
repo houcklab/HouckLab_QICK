@@ -17,6 +17,9 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
     cen_num = 2
 
     ##### loop over the time steps
+    # The format in which the data is going to be stored is
+    # state0_prob = [P(0|0), P(1|0)]
+    # state1_prob = [P(0|1), P(1|1)]
     state0_probs = []
     state0_probs_err = []
     state1_probs = []
@@ -62,17 +65,17 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
         sorted_shots_1.append(pdf[1][i_idx, q_idx])
     
     ####
-    i0_0_shots = []
-    q0_0_shots = []
+    i0_0_shots = [] # initial shots if in state 0
+    q0_0_shots = [] # initial shots if in state 0
     
-    i0_1_shots = []
-    q0_1_shots = []
+    i0_1_shots = [] # initial shots if in state 1
+    q0_1_shots = [] # initial shots if in state 1
     
-    i0_shots = []
-    q0_shots = []
+    i0_shots = [] # final shots if initially in state 0
+    q0_shots = [] # final shots if initially in state 0
     
-    i1_shots = []
-    q1_shots = []
+    i1_shots = [] # final shots if initially in state 1
+    q1_shots = [] # final shots if initially in state 1
     
     for idx in range(len(sorted_shots_0)):
         if sorted_shots_0[idx] > confidence_selection:
@@ -141,13 +144,13 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
             num_samples_in_gaussian, num_samples_in_gaussian_std,cen_num)
     
         if idx_cen == 0:
-            state0_probs.append(probability[1])
             state0_probs.append(probability[0])
+            state0_probs.append(probability[1])
             state0_probs_err.append(std_probability[0])
     
         if idx_cen == 1:
-            state1_probs.append(probability[1])
             state1_probs.append(probability[0])
+            state1_probs.append(probability[1])
             state1_probs_err.append(std_probability[0])
 
     ### return all values

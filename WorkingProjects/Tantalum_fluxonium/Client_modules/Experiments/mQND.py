@@ -50,6 +50,7 @@ class LoopbackProgramQND(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
@@ -57,6 +58,7 @@ class LoopbackProgramQND(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         else:
             print("define pi or flat top pulse")
 
@@ -65,11 +67,20 @@ class LoopbackProgramQND(RAveragerProgram):
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         ### initial pulse
         self.sync_all(self.us2cycles(0.05))
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
+
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))
 

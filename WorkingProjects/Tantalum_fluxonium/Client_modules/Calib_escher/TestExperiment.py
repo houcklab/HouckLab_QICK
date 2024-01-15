@@ -10,7 +10,7 @@ os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_Pulse_Test import Qubit_Pulse_Test
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import Transmission
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi import AmplitudeRabi
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransVsGain import TransVsGain
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabi_Blob import AmplitudeRabi_Blob
@@ -28,6 +28,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rab
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_individual_state
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_ef
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_RPM
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.ConstantTone import ConstantTone_Experiment
 from matplotlib import pyplot as plt
 import datetime
 from tqdm import tqdm
@@ -55,69 +56,86 @@ plt.ioff()
 #     "read_pulse_style": "const", # --Fixed
 #     "read_length": 10, # us
 #     "read_pulse_gain": 4000, # [DAC units]
-#     "read_pulse_freq": 5753.5,
+#     "read_pulse_freq": 7392.36,
 #     ### Qubit
-#     "qubit_ge_freq": 512, # MHz
+#     "qubit_ge_freq": 2815.65, # MHz
 #     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
 #     "relax_delay": 500,  ### turned into us inside the run function
-#     "qubit_ge_gain": 30000, # Constant gain to use
+#     "qubit_ge_gain": 0000, # Constant gain to use
 # }
 # config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
+# #
+# # yoko1.SetVoltage(config["yokoVoltage"])
 # # #
 # Instance_Qubit_pulse_test = Qubit_Pulse_Test(path="path", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 # data_Qubit_ef_spectroscopy = Qubit_Pulse_Test.acquire(Instance_Qubit_pulse_test)
 # endregion
 
+SwitchConfig = {
+    "trig_buffer_start": 0.035, # in us
+    "trig_buffer_end": 0.024, # in us
+    "trig_delay": 0.07, # in us
+}
+
+BaseConfig = BaseConfig | SwitchConfig
+
+
 # ###TITLE: Transmission + SpecSlice + AmplitudeRabi
 # region Config Files
 UpdateConfig_transmission = {
-    "reps": 50,  # this will be used for all experiments below unless otherwise changed in between trials
+    "reps": 1200,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
     "readout_length": 10, # us
-    "read_pulse_gain": 8000,#500, # [DAC units]
-    "read_pulse_freq": 7392.17 , # [MHz]
+    "read_pulse_gain": 5000,#500, # [DAC units]
+    "read_pulse_freq": 7392.31 , # [MHz]
     "nqz": 2,  #### refers to cavity
-    ##### define tranmission experiment parameters
-    "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
-    "TransNumPoitns": 100, ### number of points in the transmission frequecny
+    ##### define transmission experiment parameters
+    "TransSpan": 1, ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 41, ### number of points in the transmission frequecny
 }
 #
 # # Configure for qubit experiment
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "const",
-    "qubit_gain": 20000,
-    "qubit_freq": 265.56, ###########
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 10000,
+    "qubit_freq": 3500, ###########
     "qubit_length": 30,
+    ### for flat-top spec slice
+    "sigma": 0.05,
+    "flat_top_length": 20.0,
     ##### define spec slice experiment parameters
-    "qubit_freq_start": 500,
-    "qubit_freq_stop": 800,
-    "SpecNumPoints": 51,  ### number of points
-    'spec_reps': 500,
+    "qubit_freq_start": 2700,
+    "qubit_freq_stop": 2900,
+    "SpecNumPoints": 101,  ### number of points
+    'spec_reps': 800,
     ##### amplitude rabi parameters
     "qubit_gain_start": 0, ########
-    "qubit_gain_step": 200, #200 ### stepping amount of the qubit gain
-    "qubit_gain_expts": 26,#26,  ### number of steps
-    "AmpRabi_reps": 2000,#10000,  # number of averages for the experiment
+    "qubit_gain_step": 1, #200 ### stepping amount of the qubit gain
+    "qubit_gain_expts": 2,#26,  ### number of steps
+    "AmpRabi_reps": 8000,#10000,  # number of averages for the experiment
     ##### define the yoko voltage
-    "yokoVoltage": -0.23,
-    "yokoVoltage_freqPoint": -0.23,
-    "relax_delay": 5000,
+    "yokoVoltage": -0.37,
+    "yokoVoltage_freqPoint": -0.37,
+    "relax_delay": 1000,
     "fridge_temp": 10,
+    "two_pulses": False, # Do e-f pulse
+    "use_switch": True
 }
-
+#
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
 
 # endregion
 
 # region Transmission Experiment
-### set the yoko frequency
+# set the yoko frequency
 yoko1.SetVoltage(config["yokoVoltage"])
 print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
-### Performing the Cavity Transmission Experiment
+# Performing the Cavity Transmission Experiment
+# Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+# data_trans= Transmission.acquire(Instance_trans)
+# Transmission.display(Instance_trans, data_trans, plotDisp=True)
 # Transmission.save_data(Instance_trans, data_trans)
 #
 # # ### update the transmission frequency to be the peak
@@ -126,13 +144,10 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 # endregion
 
 # region SpecSlice
-# Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# data_trans= Transmission.acquire(Instance_trans)
-# Transmission.display(Instance_trans, data_trans, plotDisp=True)
-Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-data_specSlice= SpecSlice.acquire(Instance_specSlice)
-SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
-SpecSlice.save_data(Instance_specSlice, data_specSlice)
+Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_specSlice= SpecSlice_bkg_sub.acquire(Instance_specSlice)
+SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
+SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 
 # config["qubit_pulse_style"]= "arb"
 # config["sigma"] = 0.2 # 0.2 # us
@@ -147,24 +162,24 @@ SpecSlice.save_data(Instance_specSlice, data_specSlice)
 # endregion
 
 # ##TITLE: Transmission vs Power
-#region Trans vs Power Config
+# region Trans vs Power Config
 # UpdateConfig = {
-#     "yokoVoltage": -0.42, #3.1
+#     "yokoVoltage": -0.38, #3.1
 #     ##### change gain instead option
 #     "trans_gain_start": 0,
-#     "trans_gain_stop": 30000,
+#     "trans_gain_stop": 15000,
 #     "trans_gain_num": 31,
 #     ###### cavity
 #     "reps": 100,
-#     "trans_reps": 100,  # this will used for all experiments below unless otherwise changed in between trials
+#     "trans_reps": 2000,  # this will used for all experiments below unless otherwise changed in between trials
 #     "read_pulse_style": "const",  # --Fixed
 #     "readout_length": 20,  # [us]
 #     # "read_pulse_gain": 10000,  # [DAC units]
 #     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
 #     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "trans_freq_start": 7392 - 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "trans_freq_stop": 7392 + 2.5,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "TransNumPoints": 251,  ### number of points in the transmission frequecny
+#     "trans_freq_start": 7392.4 - 1,  # [MHz] actual frequency is this number + "cavity_LO"
+#     "trans_freq_stop": 7392.4 + 1,  # [MHz] actual frequency is this number + "cavity_LO"
+#     "TransNumPoints": 201,  ### number of points in the transmission frequecny
 #     "relax_delay": 10, # us
 # }
 # #
@@ -180,28 +195,28 @@ SpecSlice.save_data(Instance_specSlice, data_specSlice)
 # endregion
 
 ###TITLE: Amplitude Rabi Blob
-##region Amplitude Rabi Blob Config
+#region Amplitude Rabi Blob Config
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -0.21,
+#     "yokoVoltage": -0.38,
 #     ###### cavity
 #     "read_pulse_style": "const",  # --Fixed
-#     "read_length": 15,  # us
-#     "read_pulse_gain": 10000,  # [DAC units]
-#     "read_pulse_freq": 7392.3,  # MHz
+#     "read_length": 20,  # us
+#     "read_pulse_gain": 6000,  # [DAC units]
+#     "read_pulse_freq": 7392.4,  # MHz
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 500,
-#     "qubit_freq_stop": 525,
-#     "RabiNumPoints": 21,  ### number of points
-#     "qubit_pulse_style": "arb",
-#     "sigma": 0.2,  ### units us, define a 20ns sigma
-#     "flat_top_length": 10.0, ### in us
+#     "qubit_freq_start": 2974.5 - 0.05,
+#     "qubit_freq_stop": 2974 + 0.05,
+#     "RabiNumPoints": 41,  ### number of points
+#     "qubit_pulse_style": "flat_top",
+#     "sigma": 0.5,  ### units us, define a 20ns sigma
+#     "flat_top_length": 150.0, ### in us
 #     # "qubit_length": 1,
-#     "relax_delay": 3000,  ### turned into us inside the run function
+#     "relax_delay": 100,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
-#     "qubit_gain_start": 0,
-#     "qubit_gain_step": 500,  ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 21,  ### number of steps
+#     "qubit_gain_start": 0000,
+#     "qubit_gain_step": 6000,  ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 6,  ### number of steps
 #     "AmpRabi_reps": 2000,  # number of averages for the experiment
 #     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
 # }
@@ -299,82 +314,85 @@ SpecSlice.save_data(Instance_specSlice, data_specSlice)
 # T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
 # T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
 # T1Experiment.save_config(Instance_T1Experiment)
-#
-# # for idx in range(30):
-# #     Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
-# #     data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
-# #     T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
-# #     T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
-# #     T1Experiment.save_config(Instance_T1Experiment)
+
+# for idx in range(30):
+#     Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
+#     data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
+#     T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
+#     T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
+#     T1Experiment.save_config(Instance_T1Experiment)
 # endregion
 
 ###TITLE: Basic single shot experiment looped with a variable of choice
 # region Single Shot Config
 # UpdateConfig = {
 #     # set yoko
-#     "yokoVoltage": 0,
+#     "yokoVoltage": -0.38,
 #     # cavity
-#     "reps": 1000,  # Repitions
+#     "reps": 2000,  # Repitions
 #     "read_pulse_style": "const",
-#     "read_length": 15,  # [us]
-#     "read_pulse_gain": 4800,  # [DAC units]
-#     "read_pulse_freq": 5749.4,  # [MHz]
+#     "read_length": 20,  # [us]
+#     "read_pulse_gain": 6000,  # [DAC units]
+#     "read_pulse_freq": 7392.4,  # [MHz]
 #     # qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 15000, # 4 * 6500,  # [DAC units]
-#     "sigma": 0.088,  # [us]
-#     "qubit_freq": 4655,  # [MHz]
-#     "relax_delay": 1000,  ### turned into us inside the run function
+#     "qubit_pulse_style": "flat_top",
+#     "qubit_gain": 30000, # 4 * 6500,  # [DAC units]
+#     "sigma": 0.25,  # [us]
+#     "qubit_freq": 2974.6,  # [MHz]
+#     "flat_top_length": 20,
+#     "relax_delay": 3000,  ### turned into us inside the run function
 #     # define shots
 #     "shots": 5000,  ### this gets turned into "reps"
+#     "use_switch": True,
 # }
 # config = BaseConfig | UpdateConfig
 #
 # yoko1.SetVoltage(config["yokoVoltage"])
 #
 # ##### run the single shot experiment on loop
-# # loop_len = 18
-# # freq_vec = config["read_pulse_freq"] + np.linspace(-3, 3, loop_len)
-# # # read_gain_vec = np.linspace(4000, 8000, loop_len, dtype=int)
-# # # read_len_vec = np.linspace(1, 50, loop_len, dtype=int)
-# # # # qubit_gain_vec = np.linspace(12000, 14000, loop_len, dtype=int)
-# # # # qubit_freq_vec = config["qubit_freq"] + np.linspace(-0.2, 0.2, loop_len)
-# #
-# # fid_vec = np.zeros((loop_len, loop_len))
-# # for idx in range(loop_len):
-# #     # for idy in range(loop_len):
-# #         config["read_pulse_freq"] = freq_vec[idx]
-# #         # config["read_pulse_gain"] = read_gain_vec[idy]
-# #         # config["read_length"] = read_len_vec[idx]
-# #         # config["qubit_freq"] = qubit_freq_vec[idx]
-# #         # config["qubit_gain"] = qubit_gain_vec[idx]
-# #         Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# #         data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-# #         SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
-# #         SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-# #         SingleShotProgram.save_config(Instance_SingleShotProgram)
-# #         fid_vec[idx] = Instance_SingleShotProgram.fid
-# #
-# # # 2d plot
-# # # X, Y = np.meshgrid(freq_vec, read_gain_vec)
-# # # Z = np.transpose(fid_vec)
-# # # plt.pcolor(X,Y,Z)
-# # # plt.xlabel("Read Pulse Frequency")
-# # # plt.ylabel("Read Pulse Gain")
-# # # plt.colorbar()
-# # # plt.tight_layout()
-# #
-# # # 1d plot
-# # x = freq_vec
-# # y = fid_vec
-# # plt.plot(x, y)
-# # plt.xlabel("Read Length (in us)")
-# # plt.ylabel("Fidelity")
+# loop_len = 5
+# # freq_vec = config["read_pulse_freq"] + np.linspace(-0.02, 0.2, loop_len)
+# read_gain_vec = np.linspace(11000, 15000, loop_len, dtype=int)
+# # read_len_vec = np.linspace(5, 25, loop_len, dtype=int)
+# # # qubit_gain_vec = np.linspace(12000, 14000, loop_len, dtype=int)
+# # # qubit_freq_vec = config["qubit_freq"] + np.linspace(-0.2, 0.2, loop_len)
+#
+# fid_vec = np.zeros((loop_len, loop_len))
+# for idx in range(loop_len):
+#     # for idy in range(loop_len):
+#     #     config["read_pulse_freq"] = freq_vec[idx]
+#         config["read_pulse_gain"] = read_gain_vec[idx]
+#         # config["read_length"] = read_len_vec[idx]
+#         # config["qubit_freq"] = qubit_freq_vec[idx]
+#         # config["qubit_gain"] = qubit_gain_vec[idx]
+#         Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+#         data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+#         SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True, figNum=idx + 100)
+#         SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+#         SingleShotProgram.save_config(Instance_SingleShotProgram)
+#         fid_vec[idx] = Instance_SingleShotProgram.fid
+#
+# # 2d plot
+# # X, Y = np.meshgrid(freq_vec, read_gain_vec)
+# # Z = np.transpose(fid_vec)
+# # plt.pcolor(X,Y,Z)
+# # plt.xlabel("Read Pulse Frequency")
+# # plt.ylabel("Read Pulse Gain")
+# # plt.colorbar()
 # # plt.tight_layout()
-# #
-# # datetimenow = datetime.datetime.now()
-# # name = "fidvsreadlength"+datetimenow.strftime("_%Y_%m_%d_%H_%M_%S")
-# # plt.savefig(outerFolder + "dataTestSingleShotProgram\\" + name, dpi = 600)
+#
+# # 1d plot
+# x = read_gain_vec
+# y = fid_vec
+# plt.figure()
+# plt.plot(x, y)
+# plt.xlabel("Read Length (in us)")
+# plt.ylabel("Fidelity")
+# plt.tight_layout()
+#
+# datetimenow = datetime.datetime.now()
+# name = "fidvsreadlength"+datetimenow.strftime("_%Y_%m_%d_%H_%M_%S")
+# plt.savefig(outerFolder + "dataTestSingleShotProgram\\" + name, dpi = 600)
 #
 # Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
 #                                                soc=soc, soccfg=soccfg)
@@ -431,34 +449,34 @@ SpecSlice.save_data(Instance_specSlice, data_specSlice)
 # region Amplitude Rabi PS Config
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -0.23,
+#     "yokoVoltage": -0.241,
 #     ###### cavity
 #     "read_pulse_style": "const", # --Fixed
-#     "read_length": 15, # us
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 7392.3, # [MHz]
+#     "read_length": 20, # us
+#     "read_pulse_gain": 6000, # [DAC units]
+#     "read_pulse_freq": 7392.18, # [MHz]
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 600,
-#
-#     "qubit_freq_stop": 700,
-#
-#     "RabiNumPoints": 21,  ### number of points
-#     "qubit_pulse_style": "arb",
+#     "qubit_freq_start": 750,
+#     "qubit_freq_stop": 850,
+#     "RabiNumPoints": 31,  ### number of points
+#     "qubit_pulse_style": "flat_top",
 #     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     # "flat_top_length": 0.025, ### in us
-#     "relax_delay": 4000,  ### turned into us inside the run function
+#     "flat_top_length": 20, ### in us
+#     "relax_delay": 2000,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
-#     "qubit_gain_start": 0,
-#     "qubit_gain_step": 1000, ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 30, ### number of steps
+#     "qubit_gain_start": 1000,
+#     "qubit_gain_step": 200, ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 2, ### number of steps
 #     # "AmpRabi_reps": 2000,  # number of averages for the experiment
 #     ##### define number of clusters to use
 #     "cen_num": 2,
-#     "shots": 1000,  ### this gets turned into "reps"
+#     "shots": 500,  ### this gets turned into "reps"
+#     "use_switch": True,
 # }
 # config = BaseConfig | UpdateConfig
 #
 # yoko1.SetVoltage(config["yokoVoltage"])
+# print("Voltage is ", yoko1.GetVoltage(), " Volts")
 #
 # Instance_AmplitudeRabi_PS = AmplitudeRabi_PS(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 # data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
@@ -875,6 +893,25 @@ SpecSlice.save_data(Instance_specSlice, data_specSlice)
 # T2EchoExperiment.save_config(Instance_T2EchoExperiment)
 # endregion
 
+# region constant tone experiment
+### Constant tone experiment
+# UpdateConfig = {
+#     ###### cavity
+#     "read_pulse_style": "const",  # --Fixed
+#     "gain": 30000,  # [DAC units]
+#     "freq": 2975,  # [MHz]
+#     "channel": 1,  # TODO default value
+#     "nqz": 1,  # TODO default value
+# }
+#
+# config = BaseConfig | UpdateConfig
+# #
+#
+# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+# ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
+# ConstantTone_Experiment.save_config(ConstantTone_Instance)
+#endregion
 
 plt.show()
 

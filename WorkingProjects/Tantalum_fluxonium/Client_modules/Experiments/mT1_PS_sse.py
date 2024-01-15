@@ -5,7 +5,7 @@ import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers import GammaFit as gf
-from scipy.optimize import curve_fit
+
 
 '''
 @author: Parth Jatakia
@@ -53,6 +53,7 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
@@ -60,6 +61,7 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         else:
             print("define pi or flat top pulse")
 
@@ -68,11 +70,20 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         ### initial pulse
         self.sync_all(self.us2cycles(0.01))  # align channels and wait
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
+
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.01))  # align channels and wait
 
@@ -186,152 +197,6 @@ class T1_PS_sse(ExperimentClass):
         q_1 = data["data"]["q_1"]
         wait_vec = data["data"]["wait_vec"]
 
-        #region: Generalize cen_num processing
-        # if "cen_num" in kwargs:
-        #     cen_num = kwargs["cen_num"]
-        # else:
-        #     cen_num = 2
-        #
-        # ### Create empty arrays to save data
-        # # start blob x end blob x wait_time
-        # pop = np.zeros((cen_num, cen_num, i_0.shape[0]))
-        # pop_err = np.zeros((cen_num, cen_num, i_0.shape[0]))
-        #
-        # # Creating other data. Use this wisely. Only if things are not behaving well
-        # if 'save_all' in kwargs:
-        #     if kwargs['save_all']:
-        #         gaussians_list_0 = []
-        #         x_points_list_0 = []
-        #         y_points_list_0 = []
-        #         gaussians_list_1 = []
-        #         x_points_list_1 = []
-        #         y_points_list_1 = []
-        #
-        # # For loop around the offset num
-        # for indx_wait in range(i_0.shape[0]):
-        #     # TODO : Write the code for general number of centers
-        #     ### Perform post selection for the initial data for two centers
-        #     ### by selecting points withing some confidence bound.
-        #     iq_data_0 = np.stack((i_0[indx_wait, :], q_0[indx_wait, :]), axis=0)
-        #     iq_data_1 = np.stack((i_1[indx_wait, :], q_1[indx_wait, :]), axis=0)
-        #
-        #     # TODO : Write the code to identify centers across different time
-        #     if indx_wait == 0:
-        #         # Get centers
-        #         centers = sse2.getCenters(iq_data_0, cen_num)
-        #
-        #     # Fit Gaussian
-        #     bin_size = 25
-        #     hist2d = sse2.createHistogram(iq_data_0, bin_size)
-        #     gaussians_0, popt, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centers, cen_num)
-        #
-        #     if 'save_all' in kwargs:
-        #         if kwargs['save_all'] == True:
-        #             gaussians_list_0.append(gaussians_0)
-        #             x_points_list_0.append(x_points_0)
-        #             y_points_list_0.append(y_points_0)
-        #
-        #     # Get probability function
-        #     pdf = sse2.calcPDF(gaussians_0)
-        #
-        #     # Calculate the probability
-        #     probability = np.zeros((cen_num, iq_data_0.shape[1]))
-        #     for i in range(cen_num):
-        #         for j in range(iq_data_0.shape[1]):
-        #             # find the x,y point closest to the i,q point
-        #             indx_i = np.argmin(np.abs(x_points_0 - iq_data_0[0, j]))
-        #             indx_q = np.argmin(np.abs(y_points_0 - iq_data_0[1, j]))
-        #             # Calculate the probability
-        #             probability[i, j] = pdf[i][indx_i, indx_q]
-        #
-        #     # Find the sorted data
-        #     sorted_prob = np.zeros((cen_num, iq_data_0.shape[1]))
-        #     sorted_data_0 = np.zeros((cen_num,) + iq_data_0.shape)
-        #     sorted_data_1 = np.zeros((cen_num,) + iq_data_1.shape)
-        #
-        #     for i in range(cen_num):
-        #         sorted_indx = np.argsort(-probability[i, :])
-        #         sorted_prob[i, :] = probability[i, sorted_indx]
-        #         sorted_data_0[i, :, :] = iq_data_0[:, sorted_indx]
-        #         sorted_data_1[i, :, :] = iq_data_1[:, sorted_indx]
-        #
-        #     # Selecting the points in the confidence regime and calculating the populations
-        #     if 'confidence' in kwargs:
-        #         confidence = kwargs["confidence"]
-        #     else:
-        #         confidence = 0.80
-        #
-        #     # Some housekeeping. Creating empty lists to save in the case of "save_all"
-        #     if "save_all" in kwargs:
-        #         if kwargs["save_all"]:
-        #             gaussians_list_1.append([])
-        #             x_points_list_1.append([])
-        #             y_points_list_1.append([])
-        #
-        #     # Calculating the populations
-        #     for i in range(cen_num):
-        #         indx_confidence = np.argmin(np.abs(sorted_prob[i, :] - confidence))
-        #         selected_data = sorted_data_1[i, :, 0:indx_confidence + 1]
-        #         # Fit Gaussians
-        #         bin_size = 25
-        #         hist2d = sse2.createHistogram(selected_data, bin_size)
-        #         gaussians_1, popt, x_points_1, y_points_1 = sse2.findGaussians(hist2d, centers, cen_num)
-        #         # Get probability function
-        #         pdf = sse2.calcPDF(gaussians_1)
-        #         # Get the expected values of probability and error
-        #         num_samples_1 = sse2.calcNumSamplesInGaussian(hist2d, pdf, cen_num)
-        #         num_std_1 = sse2.calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num)
-        #         prob_1, std_1 = sse2.calcProbability(num_samples_1, num_std_1, cen_num)
-        #         pop[i, :, indx_wait] = prob_1
-        #         pop_err[i, :, indx_wait] = std_1
-        #
-        #         # Saving the additional data in the case of "save_all"
-        #         if "save_all" in kwargs:
-        #             if kwargs["save_all"]:
-        #                 gaussians_list_1[indx_wait].append(gaussians_1)
-        #                 x_points_list_1[indx_wait].append(x_points_1)
-        #                 y_points_list_1[indx_wait].append(y_points_1)
-        #
-        # # Get the fit
-        # popt_list = []
-        # perr_list = []
-        # max_T1 = 0
-        # max_T1_err = 0
-        # # TODO : Incorporate the ODE Fit for a generalized fitting method.
-        # if cen_num == 2:
-        #     for idx_start in range(cen_num):
-        #         popt_list.append([])
-        #         perr_list.append([])
-        #         for idx_end in range(cen_num):
-        #             pop_curr = pop[idx_start, idx_end, :]
-        #             pop_curr_std = pop_err[idx_start, idx_end, :]
-        #
-        #             a_guess = pop_curr[0] - pop_curr[-1]
-        #             T1_guess = np.max(wait_vec) / 4.0
-        #             c_guess = pop_curr[-1]
-        #             guess = [a_guess, T1_guess, c_guess]
-        #
-        #             popt, pcov = curve_fit(expFit, wait_vec, pop_curr, p0=guess, sigma=pop_curr_std)
-        #             perr = np.sqrt(np.diag(pcov))
-        #             popt_list[idx_start].append(popt)
-        #             perr_list[idx_start].append(perr)
-        #
-        #             if popt[1] > max_T1:
-        #                 max_T1 = popt[1]
-        #                 max_T1_err = np.diag(pcov)[1]
-        # # saving the temporary data is "save_all"
-        # if "save_all" in kwargs:
-        #     if kwargs["save_all"]:
-        #         update_data = {"temp_data": {"gaussians_0": gaussians_list_0, "x_points_0": x_points_list_0,
-        #                                      "y_points_0": y_points_list_0, "gaussians_1": gaussians_list_1,
-        #                                      "x_points_1": x_points_list_1, "y_points_1": y_points_list_1}}
-        #         data = data | update_data
-        #         self.data = data
-        #
-        # update_data = {"data": {"population": pop, "population_std": pop_err, "centers": centers,
-        #                         "popt_list": popt_list, "perr_list": perr_list, "max_T1": max_T1, "max_T1_err": max_T1_err}}
-        #endregion
-
         data_to_process = [i_0, i_1, q_0, q_1, wait_vec]
 
         gammafit = gf.GammaFit(data_to_process, freq_01 = data['config']["qubit_freq"]*1e6)
@@ -347,11 +212,13 @@ class T1_PS_sse(ExperimentClass):
         temp_rate = gammafit.temp
         temp_std_rate = gammafit.temp_err
         data_fitted = gammafit.data_fitted
+        T1_guess = gammafit.T1_guess
 
         # saving the processed data
         update_data = {"data": {"population": pop, "population_std": pop_err, "centers": centers_list,
                                 "g01": g01, "err01": err01, "g10": g10, "err10": err10, "T1": T1, "T1_err": T1_err,
-                                "temp_rate": temp_rate, "temp_std_rate": temp_std_rate, "data_fitted": data_fitted}}
+                                "temp_rate": temp_rate, "temp_std_rate": temp_std_rate, "data_fitted": data_fitted,
+                                "T1_guess": T1_guess}}
 
 
         data["data"] = data["data"] | update_data["data"]
@@ -376,13 +243,21 @@ class T1_PS_sse(ExperimentClass):
         wait_vec = data["data"]["wait_vec"]
         pop = data["data"]["population"]
         pop_err = data["data"]["population_std"]
-        centers = data["data"]["centers"]
+        centers = data["data"]["centers"][0]
         # popt_list = data["data"]["popt_list"]
         # perr_list = data["data"]["perr_list"]
 
         data_fitted = data["data"]["data_fitted"]
         T1 = data["data"]["T1"]
         T1_err = data["data"]["T1_err"]
+
+        # Create histogram
+        iq_data = np.stack((i_0[0],q_0[0]), axis = 0)
+        hist2d = sse2.createHistogram(iq_data, bin_size = 51)
+        xedges = hist2d[1]
+        yedges = hist2d[2]
+        x_points = (xedges[1:] + xedges[:-1]) / 2
+        y_points = (yedges[1:] + yedges[:-1]) / 2
 
         # Choice of color
         colorlist = [
@@ -398,11 +273,21 @@ class T1_PS_sse(ExperimentClass):
         gs = gridspec.GridSpec(cen_num, 2, width_ratios=[1, 2])
         fig = plt.figure(figsize=[12, 5 * cen_num])
         # Plot the blob distribution
-        subplot_left = plt.subplot(gs[:, 0])
+        subplot_left = plt.subplot(gs[0, 0])
         subplot_left.scatter(np.ravel(i_0), np.ravel(q_0), s=0.1)
         subplot_left.scatter(centers[:, 0], centers[:, 1], s=10, c='r')
         subplot_left.set_xlabel("I")
         subplot_left.set_ylabel("Q")
+
+        subplot_left_bottom = plt.subplot(gs[1, 0])
+        im = subplot_left_bottom.imshow(np.transpose(hist2d[0]), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]],
+               origin = 'lower', aspect = 'auto')
+        fig.colorbar(im, ax = subplot_left_bottom)
+        subplot_left_bottom.scatter(centers[:, 0], centers[:, 1], s=10, c='r')
+        subplot_left_bottom.set_xlabel("I")
+        subplot_left_bottom.set_ylabel("Q")
+
+
         # Plot the population vs time
         subplot_right = []
         for idx_start in range(cen_num):
