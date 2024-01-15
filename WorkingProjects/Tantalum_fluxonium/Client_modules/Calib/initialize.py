@@ -68,4 +68,9 @@ BaseConfig={
         "adc_trig_offset": 0.54, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
         # Try varying adc_trig_offset from 100 to 220 clock ticks
         "cavity_LO": 0.0,
+        ###### switch parameters
+        "trig_buffer_start": 0.035,  # in us
+        "trig_buffer_end": 0.024,  # in us
+        "trig_delay": 0.07,  # in us
+
        }

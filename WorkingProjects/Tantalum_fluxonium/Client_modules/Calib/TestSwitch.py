@@ -23,39 +23,40 @@ soc, soccfg = makeProxy()
 # Disable the interactive mode
 plt.ioff()
 
-####################################################################################################################
-
+# ####################################################################################################################
+#
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
     "trig_buffer_end": 0.024, # in us
     "trig_delay": 0.07, # in us
 }
-
-# ###### amplitude rabi with post seelction and triggering the swtich
+#
+# ###########################################
+# # ###### amplitude rabi with post seelction and triggering the swtich
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -3.8,
+#     "yokoVoltage": -2.4,
 #     ###### cavity
 #     "read_pulse_style": "const", # --Fixed
 #     "read_length": 10, # us
 #     "read_pulse_gain": 10000,  # [DAC units]
-#     "read_pulse_freq": 6436.8,  # [MHz]
+#     "read_pulse_freq": 6437.55,  # [MHz]
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 422.25 - 20,
-#     "qubit_freq_stop": 422.25 + 20,
-#     "RabiNumPoints": 41,  ### number of points
+#     "qubit_freq_start": 3955 - 15,
+#     "qubit_freq_stop": 3955 + 15,
+#     "RabiNumPoints": 31,  ### number of points
 #     "qubit_pulse_style": "arb",
-#     "sigma": 0.025,  ### units us, define a 20ns sigma
+#     "sigma": 0.100,  ### units us, define a 20ns sigma
 #     # "flat_top_length": 0.600, ### in us
 #     "relax_delay": 10,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
-#     "qubit_gain_start": 430,
-#     "qubit_gain_step": 20, ### stepping amount of the qubit gain
+#     "qubit_gain_start": 500,
+#     "qubit_gain_step": 1500, ### stepping amount of the qubit gain
 #     "qubit_gain_expts": 3, ### number of steps
 #     # "AmpRabi_reps": 2000,  # number of averages for the experiment
 #     ##### define number of clusters to use
 #     "cen_num": 2,
-#     "shots": 10000,  ### this gets turned into "reps"
+#     "shots": 5000,  ### this gets turned into "reps"
 # }
 # config = BaseConfig | UpdateConfig | SwitchConfig
 #
@@ -65,30 +66,30 @@ SwitchConfig = {
 # data_AmplitudeRabi_PS_switch = AmplitudeRabi_PS_switch.acquire(Instance_AmplitudeRabi_PS_switch)
 # AmplitudeRabi_PS_switch.save_data(Instance_AmplitudeRabi_PS_switch, data_AmplitudeRabi_PS_switch)
 # AmplitudeRabi_PS_switch.save_config(Instance_AmplitudeRabi_PS_switch)
-#
 
 
-# # # # # ##############################################################################################################
+
+# # # # ##############################################################################################################
 ####################################### code for running basic single shot experiment with post selection
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -3.8,
+    "yokoVoltage": -2.4,
     ###### cavity
     "reps": 2000,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     "read_length": 10,  # us
     "read_pulse_gain": 10000,  # [DAC units]
-    "read_pulse_freq": 6436.8,  # [MHz]
+    "read_pulse_freq": 6437.55,  # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 310,
+    "qubit_gain": 1400,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "flat_top_length": 0.600, ### in us
-    "sigma": 0.025,  ### units us, define a 20ns sigma
-    "qubit_freq": 426.66,
+    # "flat_top_length": 0.600, ### in us
+    "sigma": 0.100,  ### units us, define a 20ns sigma
+    "qubit_freq": 3964.5,
     "relax_delay": 1000,  ### turned into us inside the run function
     #### define shots
-    "shots": 50000,  ### this gets turned into "reps"
+    "shots": 5000,  ### this gets turned into "reps"
     #### define info for clustering
     "cen_num": 2,
 }
@@ -101,7 +102,7 @@ data_SingleShotPS_switch = SingleShotPS_switch.acquire(Instance_SingleShotPS_swi
 # data_SingleShotPS_switch.display(Instance_SingleShotPS, data_SingleShotPS, plotDisp=True, save_fig=True)
 SingleShotPS_switch.save_data(Instance_SingleShotPS_switch, data_SingleShotPS_switch)
 SingleShotPS_switch.save_config(Instance_SingleShotPS_switch)
-# #
+# # #
 
 #####################################################################################################################
 

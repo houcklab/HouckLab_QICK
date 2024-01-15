@@ -130,7 +130,9 @@ class LoopbackProgramT1_PS(RAveragerProgram):
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
+        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
+
+        self.sync_all(self.us2cycles(50))  # align channels and wait 50ns
 
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -648,8 +650,8 @@ class T1_PS(ExperimentClass):
                         pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
                         pErr = np.sqrt(np.diag(pCov))
                     except:
-                        T1 = [0, 0, 0]
-                        T1_err = [0, 0, 0]
+                        T1 = 0
+                        T1_err = 0
 
                     T1 = pOpt[1]
                     T1_err = pErr[1]

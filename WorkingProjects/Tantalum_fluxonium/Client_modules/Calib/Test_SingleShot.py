@@ -293,25 +293,25 @@ UpdateConfig = {
     #"reps": 0,  # this line does nothing, is overwritten with "shots"
     "read_pulse_style": "const", # --Fixed
     "read_length": 10, # [Clock ticks]
-    "read_pulse_gain": 7000,  # [DAC units]
+    "read_pulse_gain": 7500,  # [DAC units]
     "read_pulse_freq": 6437.55 - 0.3,  # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
-    "qubit_gain": 3000, #12000,
+    "qubit_gain": 1400, #12000,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.100,  ### units us, define a 20ns sigma
     # "flat_top_length": 0.300,
-    "qubit_freq": 3948.5,
-    "relax_delay": 10,  ### turned into us inside the run function
+    "qubit_freq": 3964.5,
+    "relax_delay": 2000,  ### turned into us inside the run function
     #### define shots
-    "shots": 20000, ### this gets turned into "reps"
+    "shots": 10000, ### this gets turned into "reps"
     ### define the wait times
     "wait_start": 0,
-    "wait_stop": 1000,
-    "wait_num": 51,
+    "wait_stop": 2000,
+    "wait_num": 21,
     ##### define number of clusters to use
     "cen_num": 3,
-    "use_switch": False,
+    "use_switch": True,
 }
 config = BaseConfig | UpdateConfig | SwitchConfig
 
