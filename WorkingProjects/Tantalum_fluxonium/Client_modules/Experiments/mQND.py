@@ -6,6 +6,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis imp
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.QND_analysis import QND_analysis
 import WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.SingleShot_ErrorCalc_2 as sse2
+from scipy import constants as ct
 from tqdm.notebook import tqdm
 import time
 
@@ -162,7 +163,7 @@ class QNDmeas(ExperimentClass):
         if 'confidence_selection' in kwargs:
             confidence_selection = kwargs["confidence_selection"]
         else:
-            confidence_selection = 0.999
+            confidence_selection = 0.9
 
         # Calculate the probability
         (state0_probs, state0_probs_err, state0_num,
@@ -218,7 +219,7 @@ class QNDmeas(ExperimentClass):
         state1_0_probs = data["data"]["state0_probs"]   #
         state1_1_probs = data["data"]["state1_probs"]
 
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[12, 6], width_ratios=[1.2, 1, 1])
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[18, 8], width_ratios=[1.2, 1, 1])
         # Plot histogram of the initial measurement
         if "bin_size" in kwargs:
             bin_size = kwargs["bin_size"]
@@ -246,7 +247,7 @@ class QNDmeas(ExperimentClass):
         axs[1].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
         axs[1].set_xlabel('I')
         axs[1].set_ylabel('Q')
-        axs[1].set_title("Begin in Blob 0 | P( Other blob ) = " + str(state1_0_probs[1].round(4)))
+        axs[1].set_title("P( End in 1 | Begin in 0 ) = " + str(state1_0_probs[1].round(4)) + " || T (mK) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_0_probs[1]))).round(1)))
         axs[1].legend()
 
         axs[2].scatter(i_1_1, q_1_1, s=0.1)
@@ -254,7 +255,7 @@ class QNDmeas(ExperimentClass):
         axs[2].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
         axs[2].set_xlabel('I')
         axs[2].set_ylabel('Q')
-        axs[2].set_title("Begin in Blob 1 | P( Other blob ) = " + str(state1_1_probs[0].round(4)))
+        axs[2].set_title("P( End in 0 | Begin in 1 ) = " + str(state1_1_probs[0].round(4)) + " || T (mk) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_1_probs[0]))).round(1)))
         axs[2].legend()
 
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "

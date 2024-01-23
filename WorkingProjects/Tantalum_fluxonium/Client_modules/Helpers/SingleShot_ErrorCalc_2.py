@@ -3,6 +3,7 @@ from sklearn.cluster import KMeans
 from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
+from sklearn.mixture import GaussianMixture as gmm
 # plt.rc('text', usetex=True)
 # plt.rc('font', family='serif')
 from tqdm import tqdm
@@ -20,15 +21,22 @@ def plotCenter(iq_data, centers, fname, loc):
 
 def getCenters(iq_data, cen_num,**kwargs):
     # use kmeans to cluster the data
-    if 'init_guess' in kwargs:
-        # use kmeans to cluster the data
-        kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
+    if 'use_gmm' in kwargs and kwargs["use_gmm"]:
+        if 'init_guess' in kwargs:
+            # Use gmm to cluster the data
+            gmm_model = gmm(n_components=cen_num, means_init = kwargs["init_guess"]).fit(iq_data.T)
+        else:
+            gmm_model = gmm(n_components=cen_num).fit(iq_data.T)
+        centers = gmm_model.means_
     else:
-        # use kmeans to cluster the data
-        kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
-
-    # Get the centers of the clusters
-    centers = kmeans.cluster_centers_
+        if 'init_guess' in kwargs:
+            # use kmeans to cluster the data
+            kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
+        else:
+            # use kmeans to cluster the data
+            kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
+        # Get the centers of the clusters
+        centers = kmeans.cluster_centers_
 
     # Check if plot is given as input
     if 'plot' in kwargs:
@@ -139,10 +147,10 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
 
         bounds[0][j*no_of_params] = 0
         bounds[1][j*no_of_params] = np.inf #hist2d[0][indx_x, indx_y]*1.1
-        bounds[0][j*no_of_params+1] = centers[j,0] - np.abs(centers[j,0])*0.2
-        bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.2
-        bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.2
-        bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.2
+        bounds[0][j*no_of_params+1] = centers[j,0] - np.abs(centers[j,0])*0.05
+        bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.05
+        bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.05
+        bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.05
         
         # Check if sigma is given as input in kwargs
         if 'sigma' in kwargs:

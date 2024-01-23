@@ -58,10 +58,10 @@ plt.ioff()
 #     "read_pulse_gain": 4000, # [DAC units]
 #     "read_pulse_freq": 7392.36,
 #     ### Qubit
-#     "qubit_ge_freq": 2815.65, # MHz
+#     "qubit_ge_freq": 2000, # MHz
 #     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
 #     "relax_delay": 500,  ### turned into us inside the run function
-#     "qubit_ge_gain": 0000, # Constant gain to use
+#     "qubit_ge_gain": 5000, # Constant gain to use
 # }
 # config = BaseConfig | UpdateConfig
 # #
@@ -85,9 +85,9 @@ BaseConfig = BaseConfig | SwitchConfig
 UpdateConfig_transmission = {
     "reps": 1200,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
-    "readout_length": 10, # us
+    "readout_length": 15, # us
     "read_pulse_gain": 5000,#500, # [DAC units]
-    "read_pulse_freq": 7392.31 , # [MHz]
+    "read_pulse_freq": 7392.72 , # [MHz]
     "nqz": 2,  #### refers to cavity
     ##### define transmission experiment parameters
     "TransSpan": 1, ### MHz, span will be center+/- this parameter
@@ -104,8 +104,8 @@ UpdateConfig_qubit = {
     "sigma": 0.05,
     "flat_top_length": 20.0,
     ##### define spec slice experiment parameters
-    "qubit_freq_start": 2700,
-    "qubit_freq_stop": 2900,
+    "qubit_freq_start": 1400,
+    "qubit_freq_stop": 1800,
     "SpecNumPoints": 101,  ### number of points
     'spec_reps': 800,
     ##### amplitude rabi parameters
@@ -114,20 +114,19 @@ UpdateConfig_qubit = {
     "qubit_gain_expts": 2,#26,  ### number of steps
     "AmpRabi_reps": 8000,#10000,  # number of averages for the experiment
     ##### define the yoko voltage
-    "yokoVoltage": -0.37,
-    "yokoVoltage_freqPoint": -0.37,
+    "yokoVoltage": -0.29,
+    "yokoVoltage_freqPoint": -0.29,
     "relax_delay": 1000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": True
 }
-#
+
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+# # endregion
 
-# endregion
-
-# region Transmission Experiment
+# # region Transmission Experiment
 # set the yoko frequency
 yoko1.SetVoltage(config["yokoVoltage"])
 print("Voltage is ", yoko1.GetVoltage(), " Volts")
@@ -137,13 +136,13 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 # data_trans= Transmission.acquire(Instance_trans)
 # Transmission.display(Instance_trans, data_trans, plotDisp=True)
 # Transmission.save_data(Instance_trans, data_trans)
-#
-# # ### update the transmission frequency to be the peak
+
+### update the transmission frequency to be the peak
 # config["read_pulse_freq"] = Instance_trans.peakFreq
 # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-# endregion
-
-# region SpecSlice
+# # endregion
+#
+# # region SpecSlice
 Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_specSlice= SpecSlice_bkg_sub.acquire(Instance_specSlice)
 SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
@@ -198,26 +197,26 @@ SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 #region Amplitude Rabi Blob Config
 # UpdateConfig = {
 #     ##### define attenuators
-#     "yokoVoltage": -0.38,
+#     "yokoVoltage": -0.29,
 #     ###### cavity
 #     "read_pulse_style": "const",  # --Fixed
 #     "read_length": 20,  # us
-#     "read_pulse_gain": 6000,  # [DAC units]
-#     "read_pulse_freq": 7392.4,  # MHz
+#     "read_pulse_gain": 5000,  # [DAC units]
+#     "read_pulse_freq": 7392.15,  # MHz
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 2974.5 - 0.05,
-#     "qubit_freq_stop": 2974 + 0.05,
-#     "RabiNumPoints": 41,  ### number of points
+#     "qubit_freq_start": 2200,
+#     "qubit_freq_stop": 2600,
+#     "RabiNumPoints": 101,  ### number of points
 #     "qubit_pulse_style": "flat_top",
 #     "sigma": 0.5,  ### units us, define a 20ns sigma
-#     "flat_top_length": 150.0, ### in us
+#     "flat_top_length": 20.0, ### in us
 #     # "qubit_length": 1,
-#     "relax_delay": 100,  ### turned into us inside the run function
+#     "relax_delay": 500,  ### turned into us inside the run function
 #     ##### amplitude rabi parameters
-#     "qubit_gain_start": 0000,
-#     "qubit_gain_step": 6000,  ### stepping amount of the qubit gain
+#     "qubit_gain_start": 500,
+#     "qubit_gain_step": 2500,  ### stepping amount of the qubit gain
 #     "qubit_gain_expts": 6,  ### number of steps
-#     "AmpRabi_reps": 2000,  # number of averages for the experiment
+#     "AmpRabi_reps": 1200,  # number of averages for the experiment
 #     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
 # }
 # config = BaseConfig | UpdateConfig
