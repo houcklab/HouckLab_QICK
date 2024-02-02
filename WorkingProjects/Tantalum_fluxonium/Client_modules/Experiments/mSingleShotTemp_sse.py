@@ -48,6 +48,7 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),

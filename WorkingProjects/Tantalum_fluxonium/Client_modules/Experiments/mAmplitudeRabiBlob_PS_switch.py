@@ -284,41 +284,44 @@ class AmplitudeRabi_PS_switch(ExperimentClass):
                                     (Centers[idx_cen][0] - i_raw[idx_shot]) ** 2 +
                                     (Centers[idx_cen][1] - q_raw[idx_shot]) ** 2)
 
-                    #region plot out a slice for visual
-                    # if idx_amp == 0 and idx_freq ==0:
-                    #     ##### plot out
-                    #     fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
-                    #
-                    #     #### plot raw data only
-                    #     axs[0].plot(I, Q, '.', alpha=alpha_val)
-                    #
-                    #     axs[0].set_xlabel('I')
-                    #     axs[0].set_ylabel('Q')
-                    #
-                    #     #### plot the sorted blobs
-                    #     for idx in range(cen_num):
-                    #         axs[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val, color=colors[idx])
-                    #         axs[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
-                    #
-                    #     ### plot circle around each center with radius of average blob size
-                    #     for idx in range(cen_num):
-                    #         axs[1].add_patch(
-                    #             plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
-                    #                        color='k', fill=False, zorder=2)
-                    #         )
-                    #
-                    #     axs[1].set_xlabel('I')
-                    #     axs[1].set_ylabel('Q')
-                    #
-                    #     axs[1].set_ylim(axs[0].get_ylim())
-                    #     axs[1].set_xlim(axs[0].get_xlim())
-                    #
-                    #     lims = [axs[0].get_xlim(), axs[0].get_ylim()]
-                    #
-                    #     plt.tight_layout()
-                    #
-                    #     plt.show()
-                    #endregion
+                    # region plot out a slice for visual
+                    if idx_amp == 0 and idx_freq ==0:
+                        ##### plot out
+                        fig_new, axs_new = plt.subplots(1, 2, figsize=[5, 5], num = 111)
+
+                        #### plot raw data only
+                        axs_new[0].plot(I, Q, '.', alpha=alpha_val)
+
+                        axs_new[0].set_xlabel('I')
+                        axs_new[0].set_ylabel('Q')
+
+                        #### plot the sorted blobs
+                        for idx in range(cen_num):
+                            axs_new[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val, color=colors[idx])
+                            axs_new[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
+
+                        ### plot circle around each center with radius of average blob size
+                        for idx in range(cen_num):
+                            axs_new[1].add_patch(
+                                plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
+                                           color='k', fill=False, zorder=2)
+                            )
+
+                        axs_new[1].set_xlabel('I')
+                        axs_new[1].set_ylabel('Q')
+
+                        axs_new[1].set_ylim(axs_new[0].get_ylim())
+                        axs_new[1].set_xlim(axs_new[0].get_xlim())
+
+                        lims = [axs_new[0].get_xlim(), axs_new[0].get_ylim()]
+
+                        plt.tight_layout()
+
+                        plt.show(block=False)
+                        plt.pause(0.1)
+
+                        # plt.show()
+                    # endregion
 
 
                 # ####################################################

@@ -84,7 +84,7 @@ class ExperimentClass:
         ##### check to see if the file path exists
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
-            os.mkdir(self.outerFolder + self.path)
+            os.makedirs(self.outerFolder + self.path)
         DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
             os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))

@@ -16,6 +16,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT2R_PS impor
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotPS import SingleShotPS
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
 
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
@@ -25,7 +26,17 @@ import datetime
 #### define the saving path
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 
+
+print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
+
+SwitchConfig = {
+    "trig_buffer_start": 0.035, # in us
+    "trig_buffer_end": 0.024, # in us
+    "trig_delay": 0.07, # in us
+}
 
 
 #################################### Running the actual experiments
@@ -39,25 +50,25 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 
 # #################################### code for running basic single shot exerpiment
 # UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -2.8,
+#     ##### define yoko
+#     "yokoVoltage": -2.4 + 1.25,
 #     ###### cavity
-#     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
 #     "read_pulse_style": "const",  # --Fixed
-#     "read_length": 5,  # [Clock ticks]
-#     "read_pulse_gain": 8000,  # [DAC units]
-#     "read_pulse_freq": 6437.4,  # [MHz]
+#     "read_length": 5, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 6437.4,
 #     ##### qubit spec parameters
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 25000,
+#     "qubit_pulse_style": "arb",
+#     "qubit_gain": 9000,
 #     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.025,  ### units us
-#     "flat_top_length": 0.900,  ### in us
-#     "qubit_freq": 3513.0,
-#     "relax_delay": 1000,  ### turned into us inside the run function
+#     "sigma": 0.200,  ### units us
+#     # "flat_top_length": 0.900,  ### in us
+#     "qubit_freq": 4117.0,
+#     "relax_delay": 100,  ### turned into us inside the run function
 #     #### define shots
-#     "shots": 2000,  ### this gets turned into "reps"
+#     "shots": 5000,  ### this gets turned into "reps"
 #     ### Added for switch
+#     "use_switch": True,
 #     "trig_buffer_start": 0.035, # in us
 #     "trig_buffer_end": 0.024, # in us
 #     "trig_delay": 0.07, # in us
@@ -67,6 +78,10 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 #
 # yoko1.SetVoltage(config["yokoVoltage"])
 #
+# scan_time = (config["relax_delay"] * config["shots"] *2) * 1e-6 / 60
+#
+# print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+#
 # Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
 #                                                soc=soc, soccfg=soccfg)
 # data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
@@ -75,16 +90,18 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 # SingleShotProgram.save_config(Instance_SingleShotProgram)
 
 # # ##### run the single shot experiment
-# loop_len = 11
-# freq_vec = config["read_pulse_freq"] + np.linspace(-0.25, 0.25, loop_len)
+# loop_len = 21
+# freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
 # # qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
 # # read_gain_vec = np.linspace(4000, 5000, loop_len, dtype=int)
-# # yoko_vec = config["yokoVoltage"] + np.linspace(-0.02, 0.02, 21)
+# # yoko_vec = config["yokoVoltage"] + np.linspace(-0.08, 0.08, loop_len)
 # for idx in range(loop_len):
 #     config["read_pulse_freq"] = freq_vec[idx]
 #     # config["qubit_gain"] = qubit_gain_vec[idx]
 #     # config["read_pulse_gain"] = read_gain_vec[idx]
 #     # yoko1.SetVoltage(yoko_vec[idx])
+#     # config["yokoVoltage"] = yoko_vec[idx]
+#
 #     Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram_paramSweep_q2", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 #     data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
 #     # SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=False)
@@ -277,60 +294,53 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 # AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
 # AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 
-
-SwitchConfig = {
-    "trig_buffer_start": 0.035, # in us
-    "trig_buffer_end": 0.024, # in us
-    "trig_delay": 0.07, # in us
-}
 #
-# ###############################################################################
-################## code finding T1 of a thermal state using pulses
-UpdateConfig = {
-    ##### set yoko
-    "yokoVoltage": -2.4,
-    ###### cavity
-    #"reps": 0,  # this line does nothing, is overwritten with "shots"
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 10, # [Clock ticks]
-    "read_pulse_gain": 7500,  # [DAC units]
-    "read_pulse_freq": 6437.55 - 0.3,  # [MHz]
-    ##### qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 1400, #12000,
-    # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.100,  ### units us, define a 20ns sigma
-    # "flat_top_length": 0.300,
-    "qubit_freq": 3964.5,
-    "relax_delay": 2000,  ### turned into us inside the run function
-    #### define shots
-    "shots": 10000, ### this gets turned into "reps"
-    ### define the wait times
-    "wait_start": 0,
-    "wait_stop": 2000,
-    "wait_num": 21,
-    ##### define number of clusters to use
-    "cen_num": 3,
-    "use_switch": True,
-}
-config = BaseConfig | UpdateConfig | SwitchConfig
-
-yoko1.SetVoltage(config["yokoVoltage"])
-print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-scan_time = (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])) + config["relax_delay"])*config["shots"] *1e-6 / 60
-
-print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
-
-Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
-                                               soc=soc, soccfg=soccfg)
-data_T1_PS = T1_PS.acquire(Instance_T1_PS)
-T1_PS.save_data(Instance_T1_PS, data_T1_PS)
-print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-T1_PS.save_config(Instance_T1_PS)
-T1_PS.process_data(Instance_T1_PS, data_T1_PS)
-
-print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+# # ###############################################################################
+# ################## code finding T1 of a thermal state using pulses
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": -2.4 + 1.25,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 10, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 6437.25,
+#     ##### qubit spec parameters
+#     "qubit_pulse_style": "arb",
+#     "qubit_gain": 5000, #12000,
+#     # "qubit_length": 10,  ###us, this is used if pulse style is const
+#     "sigma": 0.050,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.300,
+#     "qubit_freq": 4139.0,
+#     "relax_delay": 100,  ### turned into us inside the run function
+#     #### define shots
+#     "shots": 5000, ### this gets turned into "reps"
+#     ### define the wait times
+#     "wait_start": 0,
+#     "wait_stop": 1000,
+#     "wait_num": 11,
+#     ##### define number of clusters to use
+#     "cen_num": 3,
+#     "use_switch": True,
+# }
+# config = BaseConfig | UpdateConfig | SwitchConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
+# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+#
+# scan_time = (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])) + config["relax_delay"])*config["shots"] *1e-6 / 60
+#
+# print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+#
+# Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
+#                                                soc=soc, soccfg=soccfg)
+# data_T1_PS = T1_PS.acquire(Instance_T1_PS)
+# T1_PS.save_data(Instance_T1_PS, data_T1_PS)
+# print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+# T1_PS.save_config(Instance_T1_PS)
+# T1_PS.process_data(Instance_T1_PS, data_T1_PS)
+#
+# print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 
 # # # ####################################################################################
@@ -435,5 +445,57 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # RepeatReadout.save_data(Instance_RepeatReadout, data_RepeatReadout)
 # RepeatReadout.save_config(Instance_RepeatReadout)
 
+###########
+
+#
+# ################## code finding T1 of a thermal state using pulses
+# UpdateConfig = {
+#     ##### define attenuators
+#     "yokoVoltage": -2.4 + 1.25,
+#     ###### cavity
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 5, # us
+#     "read_pulse_gain": 10000, # [DAC units]
+#     "read_pulse_freq": 6437.4,
+#     ####### spec parameters
+#     "qubit_freq_start": 4138 - 100,
+#     "qubit_freq_stop": 4138 + 100,
+#     "SpecNumPoints": 401,  ### number of points
+#     "spec_reps": 1000,
+#     ##### qubit spec parameters
+#     "qubit_pulse_style": "arb",
+#     "qubit_gain": 9000, #12000,
+#     # "qubit_length": 10,  ###us, this is used if pulse style is const
+#     "sigma": 0.200,  ### units us, define a 20ns sigma
+#     # "flat_top_length": 0.300,
+#     "qubit_freq": 4138.0,
+#     "relax_delay": 100,  ### turned into us inside the run function
+#     #### define shots
+#     "shots": 5000, ### this gets turned into "reps"
+#     ### define the wait times
+#     "wait_start": 0,
+#     "wait_stop": 1000,
+#     "wait_num": 5,
+#     ##### define number of clusters to use
+#     "cen_num": 3,
+#     "use_switch": True,
+# }
+# config = BaseConfig | UpdateConfig | SwitchConfig
+# # yoko1.SetVoltage(config["yokoVoltage"])
+#
+# config["initialize_pulse"] = True
+#
+# Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc", outerFolder=outerFolder,
+#                                            cfg=config,
+#                                            soc=soc, soccfg=soccfg)
+# data_SingleShotSSE =  SingleShotSSE.acquire(Instance_SingleShotSSE)
+# # SingleShotSSE.display(Instance_SingleShotSSE, data_SingleShotSSE, plotDisp=False, save_fig=True)
+# SingleShotSSE.save_data(Instance_SingleShotSSE, data_SingleShotSSE)
+# SingleShotSSE.save_config(Instance_SingleShotSSE)
+#
+# config["initialize_pulse"] = False
+
+#####################################################################################################################
+print('experiment: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 #####################################################################################################################
 plt.show()

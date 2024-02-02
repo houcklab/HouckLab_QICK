@@ -77,11 +77,19 @@ class LoopbackProgramSingleShot(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch),
                                  ) # mode="periodic")
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         #### wait 10ns
         self.sync_all(self.us2cycles(0.010))
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
@@ -168,8 +176,8 @@ class SingleShotProgram(ExperimentClass):
 
         #### plotting is handled by the helper histogram
         title = ('Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) )
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp, ran=ran, title = title)
+                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + ", yoko: " +  str(self.cfg["yokoVoltage"]) )
+        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp or save_fig, ran=ran, title = title)
 
 
         self.fid = fid

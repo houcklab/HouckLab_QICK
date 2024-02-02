@@ -28,14 +28,38 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
         # add qubit and readout pulses to respective channels
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                 length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+
+        #### define the qubit pulse depending on the pulse type
+        if self.cfg["qubit_pulse_style"] == "arb":
+            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                     waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
+        else:
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),mode="periodic")
+
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
 
         self.sync_all(self.us2cycles(1))
 
     def body(self):
+
+        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
+
+
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
@@ -85,7 +109,7 @@ class SpecSlice(ExperimentClass):
         avgamp0 = np.abs(sig)
 
         peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        print(np.max(np.abs(data['data']['avgq'])))
+        # print(np.max(np.abs(data['data']['avgq'])))
         self.qubitFreq = data['data']['x_pts'][peak_loc]
 
         return data
@@ -111,6 +135,20 @@ class SpecSlice(ExperimentClass):
         # plt.title("Averages = " + str(self.cfg["reps"]))
         # plt.legend()
         # plt.savefig(self.iname)
+
+        # ##### code to aquire just the qubit spec data
+        # expt_cfg = {
+        #     ### spec parameters
+        #     "qubit_freq_start": self.cfg["qubit_freq_start"],
+        #     "qubit_freq_stop": self.cfg["qubit_freq_stop"],
+        #     "SpecNumPoints": self.cfg["SpecNumPoints"],  ### number of points
+        # }
+        # self.cfg["reps"] = self.cfg["spec_reps"]
+        # self.cfg["start"] = expt_cfg["qubit_freq_start"]
+        # self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
+        # self.cfg["expts"] = expt_cfg["SpecNumPoints"]
+        #
+        # x_pts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
 
         if data is None:
             data = self.data

@@ -25,11 +25,11 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.f_step = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_freq = self.sreg(cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
+        self.q_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
 
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
-        for ch in cfg["ro_chs"]:
+        for ch in self.cfg["ro_chs"]:
             self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
                                  freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
 

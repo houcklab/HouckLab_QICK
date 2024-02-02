@@ -5,12 +5,9 @@ import numpy as np
 
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_2Dsweep import SingleShot_2Dsweep
-# from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_ThermalPS import T1_ThermalPS
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_ThermalPS_pulse import T1_ThermalPS
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_PS_sse import T1_PS_sse
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotPS import SingleShotPS
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQND import QNDmeas
@@ -53,22 +50,22 @@ BaseConfig = BaseConfig | SwitchConfig
 # # # ####################################### code for running basic single shot exerpiment
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.37,
-    "yokoVoltage_freqPoint": -0.37,
+    "yokoVoltage": -3.835,
+    "yokoVoltage_freqPoint": -3.835,
     ###### cavity
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
-    "read_length": 20, # [Clock ticks]
-    "read_pulse_gain": 6500, # [DAC units]
-    "read_pulse_freq": 7392.36,# [MHz]
+    "read_length": 15, # [Clock ticks]
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.6,# [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
+    "qubit_gain": 500,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.005,  ### units us, define a 20ns sigma
     "flat_top_length": 20, ### in us
-    "qubit_freq": 2815.65,
-    "relax_delay": 10000,  ### turned into us inside the run function
+    "qubit_freq": 427.33,
+    "relax_delay": 500,  ### turned into us inside the run function
     #### define shots
     "shots": 4000, ### this gets turned into "reps"
     ##### record the fridge temperature in units of mK
@@ -79,36 +76,36 @@ config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
-Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-                                               soc=soc, soccfg=soccfg)
-data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-SingleShotProgram.save_config(Instance_SingleShotProgram)
-SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\TempChecks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
+# Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+#                                                soc=soc, soccfg=soccfg)
+# data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+# SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+# SingleShotProgram.save_config(Instance_SingleShotProgram)
+# SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 #
 # # # # ##### run the single shot experiment
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\singleShotSweeps\\"
-# loop_len = 7
-# # freq_vec = config["read_pulse_freq"] + np.linspace(-0.1, 0.1, loop_len)
-# # qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\singleShotSweeps\\"
+loop_len = 21
+freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
+# qubit_gain_vec = np.linspace(10000, 20000, loop_len, dtype=int)
 # read_gain_vec = np.linspace(6000, 13000, loop_len, dtype=int)
-# # qubit_freq_vec = config["qubit_freq"] + np.linspace(-10,10,loop_len)
-# # qubit_gain_vec = np.linspace(20000,31000, loop_len, dtype = int)
-# # flat_top_length_vec = np.linspace(1,40,loop_len, dtype = int)
-# for idx in range(loop_len):
-#     # config["read_pulse_freq"] = freq_vec[idx]
-#     # config["qubit_gain"] = qubit_gain_vec[idx]
-#     config["read_pulse_gain"] = read_gain_vec[idx]
-#     # config["qubit_freq"] = qubit_freq_vec[idx]
-#     # config['flat_top_length'] = flat_top_length_vec[idx]
-#     Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_sweeps_yoko_"+str(config["yokoVoltage"]), outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-#     data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-#     SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=False, save_fig=True)
-#     SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-#     SingleShotProgram.save_config(Instance_SingleShotProgram)
-#     plt.clf()
-#     plt.close()
+# qubit_freq_vec = config["qubit_freq"] + np.linspace(-10,10,loop_len)
+# qubit_gain_vec = np.linspace(20000,31000, loop_len, dtype = int)
+# flat_top_length_vec = np.linspace(1,40,loop_len, dtype = int)
+for idx in range(loop_len):
+    config["read_pulse_freq"] = freq_vec[idx]
+    # config["qubit_gain"] = qubit_gain_vec[idx]
+    # config["read_pulse_gain"] = read_gain_vec[idx]
+    # config["qubit_freq"] = qubit_freq_vec[idx]
+    # config['flat_top_length'] = flat_top_length_vec[idx]
+    Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_sweeps_yoko_"+str(config["yokoVoltage"]), outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+    data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+    SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=False, save_fig=True)
+    SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+    SingleShotProgram.save_config(Instance_SingleShotProgram)
+    plt.clf()
+    plt.close()
 #     plt.clf()
 #     print(idx)
 # ###########

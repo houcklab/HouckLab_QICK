@@ -20,15 +20,15 @@ plt.ioff()
 UpdateConfig = {
     ##### define attenuators
     ##### define the yoko voltage
-    "yokoVoltageStart": -5.0, #-0.65,
-    "yokoVoltageStop": 0.0, #-0.63,
-    "yokoVoltageNumPoints": 51,
+    "yokoVoltageStart": -4, #-0.65,
+    "yokoVoltageStop": 1.5, #-0.63,
+    "yokoVoltageNumPoints": 501,
     ###### cavity
     "trans_reps": 20,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 100,  # us
-    "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6436.92 - 1.0,  # [MHz]
+    "read_length": 10,  # us
+    "read_pulse_gain": 8000,  # [DAC units]
+    "trans_freq_start": 6436.92 - 2.0,  # [MHz]
     "trans_freq_stop": 6436.92 + 2.0,  # [MHz]
     "TransNumPoints": 301,  ### number of points in the transmission frequecny
     ##### qubit spec parameters
@@ -36,11 +36,11 @@ UpdateConfig = {
     "qubit_pulse_style": "const",
     "qubit_gain": 0,
     "qubit_length": 1, ### in units of us
-    "qubit_freq_start": 1544,
-    "qubit_freq_stop": 1545,
+    "qubit_freq_start": 544,
+    "qubit_freq_stop": 545,
     "SpecNumPoints": 2,  ### number of points
     "sigma": None,
-    "relax_delay": 2,
+    "relax_delay": 10,
 }
 config = BaseConfig | UpdateConfig
 
