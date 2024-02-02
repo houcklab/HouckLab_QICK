@@ -177,7 +177,7 @@ class SingleShotSSE(ExperimentClass):
             i_0 = data["data"]["i_0"]
             q_0 = data["data"]["q_0"]
             iq_data_0 = np.stack((i_0,q_0), axis = 0)
-            self.centers = sse2.getCenters(iq_data_0, cen_num = cen_num, use_gmm = True)
+            self.centers = sse2.getCenters(iq_data_0, cen_num = cen_num, use_gmm = False)
             hist2d_0 = sse2.createHistogram(iq_data_0, bin_size)
             gaussians_0, popt_0, x_points_0, y_points_0 = sse2.findGaussians(hist2d_0, self.centers, cen_num)
             pdf_0 = sse2.calcPDF(gaussians_0)
@@ -196,7 +196,7 @@ class SingleShotSSE(ExperimentClass):
             self.gaussians, self.popt, self.x_points, self.y_points = sse2.findGaussians(hist2d, self.centers, cen_num, sigma = sigma_0)
 
         else:
-            self.centers = sse2.getCenters(iq_data, cen_num = cen_num, use_gmm = True)
+            self.centers = sse2.getCenters(iq_data, cen_num = cen_num, use_gmm = False)
 
             # Calculate the probability and centers
             hist2d = sse2.createHistogram(iq_data, bin_size)

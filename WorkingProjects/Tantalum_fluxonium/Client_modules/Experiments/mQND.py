@@ -163,7 +163,7 @@ class QNDmeas(ExperimentClass):
         if 'confidence_selection' in kwargs:
             confidence_selection = kwargs["confidence_selection"]
         else:
-            confidence_selection = 0.9
+            confidence_selection = 0.999
 
         # Calculate the probability
         (state0_probs, state0_probs_err, state0_num,
@@ -189,12 +189,16 @@ class QNDmeas(ExperimentClass):
                     )
                 print("QND fidelity is {} +/- {}".format(round(100 * qnd, 8), round(100 * qnd_err, 8)))
 
+        T_0_0 = (-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state0_probs[1]))).round(1)
+        T_1_1 = (-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_probs[1]))).round(1)
+
         ### Save the data
         update_data = {"data": {'centers': centers, 'confidence': confidence_selection, 'state0_probs': state0_probs,
                                 'state0_probs_err': state0_probs_err, 'state0_num': state0_num,
                                 'state1_probs': state1_probs, 'state1_probs_err': state1_probs_err,
                                 'state1_num': state1_num, 'i0_shots': i0_shots, 'q0_shots': q0_shots,
-                                'i1_shots':i1_shots, 'q1_shots':q1_shots, 'qnd': qnd, 'qnd_err': qnd_err, }
+                                'i1_shots':i1_shots, 'q1_shots':q1_shots, 'qnd': qnd, 'qnd_err': qnd_err,
+                                'T_0_0': T_0_0, 'T_1_1' : T_1_1 }
                        }
         data["data"] = data["data"] | update_data["data"]
         self.data = data
@@ -247,7 +251,7 @@ class QNDmeas(ExperimentClass):
         axs[1].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
         axs[1].set_xlabel('I')
         axs[1].set_ylabel('Q')
-        axs[1].set_title("P( End in 1 | Begin in 0 ) = " + str(state1_0_probs[1].round(4)) + " || T (mK) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_0_probs[1]))).round(1)))
+        axs[1].set_title("P( End in 1 | Begin in 0 ) = " + str(state1_0_probs[1].round(4)) + " || T (mK) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_0_probs[1]/state1_0_probs[0]))).round(1)))
         axs[1].legend()
 
         axs[2].scatter(i_1_1, q_1_1, s=0.1)
@@ -255,7 +259,7 @@ class QNDmeas(ExperimentClass):
         axs[2].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
         axs[2].set_xlabel('I')
         axs[2].set_ylabel('Q')
-        axs[2].set_title("P( End in 0 | Begin in 1 ) = " + str(state1_1_probs[0].round(4)) + " || T (mk) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_1_probs[0]))).round(1)))
+        axs[2].set_title("P( End in 0 | Begin in 1 ) = " + str(state1_1_probs[0].round(4)) + " || T (mk) = " + str((-ct.h*1000*self.cfg["qubit_freq"]*1e6/(ct.k*np.log(state1_1_probs[0]/state1_1_probs[1]))).round(1)))
         axs[2].legend()
 
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "

@@ -43,7 +43,7 @@ UpdateConfig = {
     "read_pulse_style": "const", # --Fixed
     "read_length": 10, # [Clock ticks]
     "read_pulse_gain":  5000, # [DAC units]
-    "read_pulse_freq": 7392.7, # [MHz]
+    "read_pulse_freq": 7392.433, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
     "qubit_gain": 0,

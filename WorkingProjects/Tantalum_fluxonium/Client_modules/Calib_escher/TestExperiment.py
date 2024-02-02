@@ -80,73 +80,73 @@ SwitchConfig = {
 BaseConfig = BaseConfig | SwitchConfig
 
 
-# ###TITLE: Transmission + SpecSlice + AmplitudeRabi
-# region Config Files
-UpdateConfig_transmission = {
-    "reps": 1200,  # this will be used for all experiments below unless otherwise changed in between trials
-    "read_pulse_style": "const", # --Fixed
-    "readout_length": 15, # us
-    "read_pulse_gain": 5000,#500, # [DAC units]
-    "read_pulse_freq": 7392.72 , # [MHz]
-    "nqz": 2,  #### refers to cavity
-    ##### define transmission experiment parameters
-    "TransSpan": 1, ### MHz, span will be center+/- this parameter
-    "TransNumPoints": 41, ### number of points in the transmission frequecny
-}
+# # ###TITLE: Transmission + SpecSlice + AmplitudeRabi
+# # region Config Files
+# UpdateConfig_transmission = {
+#     "reps": 1200,  # this will be used for all experiments below unless otherwise changed in between trials
+#     "read_pulse_style": "const", # --Fixed
+#     "readout_length": 15, # us
+#     "read_pulse_gain": 5000,#500, # [DAC units]
+#     "read_pulse_freq": 7392.738 , # [MHz]
+#     "nqz": 2,  #### refers to cavity
+#     ##### define transmission experiment parameters
+#     "TransSpan": 0.5, ### MHz, span will be center+/- this parameter
+#     "TransNumPoints": 21, ### number of points in the transmission frequecny
+# }
+# #
+# # # Configure for qubit experiment
+# UpdateConfig_qubit = {
+#     "qubit_pulse_style": "flat_top",
+#     "qubit_gain": 4000,
+#     "qubit_freq": 3500, ###########
+#     "qubit_length": 30,
+#     ### for flat-top spec slice
+#     "sigma": 0.05,
+#     "flat_top_length": 20.0,
+#     ##### define spec slice experiment parameters
+#     "qubit_freq_start": 4500,
+#     "qubit_freq_stop": 4550,
+#     "SpecNumPoints": 101,  ### number of points
+#     'spec_reps': 800,
+#     ##### amplitude rabi parameters
+#     "qubit_gain_start": 0, ########
+#     "qubit_gain_step": 1, #200 ### stepping amount of the qubit gain
+#     "qubit_gain_expts": 2,#26,  ### number of steps
+#     "AmpRabi_reps": 8000,#10000,  # number of averages for the experiment
+#     ##### define the yoko voltage
+#     "yokoVoltage": -0.48,
+#     "yokoVoltage_freqPoint": -0.48,
+#     "relax_delay": 500,
+#     "fridge_temp": 10,
+#     "two_pulses": False, # Do e-f pulse
+#     "use_switch": True
+# }
 #
-# # Configure for qubit experiment
-UpdateConfig_qubit = {
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
-    "qubit_freq": 3500, ###########
-    "qubit_length": 30,
-    ### for flat-top spec slice
-    "sigma": 0.05,
-    "flat_top_length": 20.0,
-    ##### define spec slice experiment parameters
-    "qubit_freq_start": 1400,
-    "qubit_freq_stop": 1800,
-    "SpecNumPoints": 101,  ### number of points
-    'spec_reps': 800,
-    ##### amplitude rabi parameters
-    "qubit_gain_start": 0, ########
-    "qubit_gain_step": 1, #200 ### stepping amount of the qubit gain
-    "qubit_gain_expts": 2,#26,  ### number of steps
-    "AmpRabi_reps": 8000,#10000,  # number of averages for the experiment
-    ##### define the yoko voltage
-    "yokoVoltage": -0.29,
-    "yokoVoltage_freqPoint": -0.29,
-    "relax_delay": 1000,
-    "fridge_temp": 10,
-    "two_pulses": False, # Do e-f pulse
-    "use_switch": True
-}
-
-UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
-config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
-# # endregion
-
-# # region Transmission Experiment
-# set the yoko frequency
-yoko1.SetVoltage(config["yokoVoltage"])
-print("Voltage is ", yoko1.GetVoltage(), " Volts")
+# UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
+# config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+# # # endregion
+#
+# # # region Transmission Experiment
+# # set the yoko frequency
+# yoko1.SetVoltage(config["yokoVoltage"])
+# print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
 # Performing the Cavity Transmission Experiment
 # Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 # data_trans= Transmission.acquire(Instance_trans)
 # Transmission.display(Instance_trans, data_trans, plotDisp=True)
 # Transmission.save_data(Instance_trans, data_trans)
-
-### update the transmission frequency to be the peak
-# config["read_pulse_freq"] = Instance_trans.peakFreq
-# print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-# # endregion
 #
-# # region SpecSlice
-Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-data_specSlice= SpecSlice_bkg_sub.acquire(Instance_specSlice)
-SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
-SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
+# ### update the transmission frequency to be the peak
+# # config["read_pulse_freq"] = Instance_trans.peakFreq
+# # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+# # # endregion
+# #
+# # # region SpecSlice
+# Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+# data_specSlice= SpecSlice_bkg_sub.acquire(Instance_specSlice)
+# SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
+# SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 
 # config["qubit_pulse_style"]= "arb"
 # config["sigma"] = 0.2 # 0.2 # us
@@ -893,24 +893,24 @@ SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 # endregion
 
 # region constant tone experiment
-### Constant tone experiment
-# UpdateConfig = {
-#     ###### cavity
-#     "read_pulse_style": "const",  # --Fixed
-#     "gain": 30000,  # [DAC units]
-#     "freq": 2975,  # [MHz]
-#     "channel": 1,  # TODO default value
-#     "nqz": 1,  # TODO default value
-# }
+## Constant tone experiment
+UpdateConfig = {
+    ###### cavity
+    "read_pulse_style": "const",  # --Fixed
+    "gain": 00,  # [DAC units]
+    "freq": 2975,  # [MHz]
+    "channel": 1,  # TODO default value
+    "nqz": 1,  # TODO default value
+}
+
+config = BaseConfig | UpdateConfig
 #
-# config = BaseConfig | UpdateConfig
-# #
-#
-# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
-# ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
-# ConstantTone_Experiment.save_config(ConstantTone_Instance)
-#endregion
+
+ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
+ConstantTone_Experiment.save_config(ConstantTone_Instance)
+# endregion
 
 plt.show()
 
