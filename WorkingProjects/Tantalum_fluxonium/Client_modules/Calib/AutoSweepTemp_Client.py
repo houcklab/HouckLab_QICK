@@ -63,9 +63,9 @@ UpdateConfig = {
     "sigma": 0.200,  ### units us, define a 20ns sigma
     # "flat_top_length": 0.300,
     "qubit_freq": 4138.0,
-    "relax_delay": 100,  ### turned into us inside the run function
+    "relax_delay": 1000,  ### turned into us inside the run function
     #### define shots
-    "shots": 30000, ### this gets turned into "reps"
+    "shots": 35000, ### this gets turned into "reps"
     ### define the wait times
     "wait_start": 0,
     "wait_stop": 2000,
@@ -108,7 +108,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         config["shots"] = T1_shots
         config["relax_delay"] = relax_delay
 
-        Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+        Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice_temp_"+str(tempr_list[indx_tempr]), cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
         data_specSlice = SpecSlice_bkg_sub.acquire(Instance_specSlice)
         SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
         SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
@@ -128,7 +128,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
         print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
 
-        Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
+        Instance_T1_PS = T1_PS(path="dataTestT1_PS_temp_"+str(tempr_list[indx_tempr]), outerFolder=outerFolder, cfg=config,
                                                        soc=soc, soccfg=soccfg)
         data_T1_PS = T1_PS.acquire(Instance_T1_PS)
         T1_PS.save_data(Instance_T1_PS, data_T1_PS)
@@ -158,7 +158,8 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
         config["initialize_pulse"] = True
 
-        Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc", outerFolder=outerFolder,
+        Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc_temp_"+str(tempr_list[indx_tempr]),
+                                                outerFolder=outerFolder,
                                                cfg=config,
                                                soc=soc, soccfg=soccfg)
         data_SingleShotSSE = SingleShotSSE.acquire(Instance_SingleShotSSE)

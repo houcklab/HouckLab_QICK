@@ -79,6 +79,9 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
                              width=self.cfg["trig_len"])  # trigger for switc
             self.pulse(ch=self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
+            ### add a delay to let state decay from f to 3
+            self.sync_all(self.us2cycles(20))
+
             self.measure(pulse_ch=self.cfg["res_ch"],
                          adcs=[0],
                          adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),

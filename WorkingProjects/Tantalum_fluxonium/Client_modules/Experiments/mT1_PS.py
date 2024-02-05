@@ -132,7 +132,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         # self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
 
-        self.sync_all(self.us2cycles(50))  # align channels and wait 50ns
+        self.sync_all(self.us2cycles(10))  # align channels and wait 10us
 
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
