@@ -1,7 +1,7 @@
 #### import packages
 import os
 path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+os.add_dll_directory(r'C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\QM_Team\Client_modules')
 from WorkingProjects.QM_Team.Client_modules.Calib.initialize import *
 from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission_SaraTest import Transmission
 # from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission import Transmission
@@ -19,7 +19,7 @@ matplotlib.use('TkAgg')
 import datetime
 
 #### define the saving path
-outerFolder = "Z:\\Basil\\DataTest\\"
+outerFolder = "Z:\\t1Team\\Data\\2024_01_23_CoolDown\\2024_02_07_LowTc_Qubit_RecoolDown\\"
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 

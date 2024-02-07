@@ -2,7 +2,7 @@
 import os
 path = os.getcwd()
 # os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-os.add_dll_directory(r'C:\Users\newforce\Documents\GitHub\HouckLab_QICK\MasterProject\Client_modules')
+os.add_dll_directory(r'C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\QM_Team\Client_modules')
 from WorkingProjects.QM_Team.Client_modules.Calib.initialize import *
 from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission_SaraTest import Transmission
 # from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission import Transmission
@@ -20,7 +20,7 @@ matplotlib.use('TkAgg')
 import datetime
 
 #### define the saving path
-outerFolder = "Z:\\t1Team\\Data\\2023-11-30_cooldown\\TATPR6_StarCryo_CanD\\7p4_65\\"
+outerFolder = "Z:\\t1Team\\Data\\2024_01_23_CoolDown\\2024_02_07_LowTc_Qubit_RecoolDown\\"
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 
@@ -46,7 +46,7 @@ soc, soccfg = makeProxy()
 #     # "read_pulse_gain": 10000,  # [DAC units]
 #     "trans_freq_start": 7499.99 - 1,  # [MHz] actual frequency is this number + "cavity_LO"
 #     "trans_freq_stop": 7499.99 + 1,  # [MHz] actual frequency is this number + "cavity_LO"
-#     "TransNumPoints": 201,  ### number of points in the transmission frequecny
+#     "TransNumPoints": 201,  ### number of points in the transmission frequency
 #     "relax_delay": 2,
 # }
 # config = BaseConfig | UpdateConfig
@@ -58,43 +58,43 @@ soc, soccfg = makeProxy()
 
 ########################################################################################################################
 #######################################################################################################################
-# # # Configure for Transmission Experiment ###
-# UpdateConfig_transmission={
-#     "reps": 5000,  # this will be used for all experiments below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "readout_length": 20, # us
-#     "read_pulse_gain": 2000, # [DAC units]
-#     "read_pulse_freq": 7391.8, # [MHz] actual frequency is this number + "cavity_LO"
-#     "nqz": 2,  #### refers to cavity
-#     ##### define transmission experiment parameters
-#     "TransSpan": 1, ### MHz, span will be center+/- this parameter
-#     "TransNumPoints": 101, ### number of points in the transmission frequecny
-# }
-#
-# ## Configure for qubit experiment ###
-# UpdateConfig_qubit = {
-#     "qubit_pulse_style": "const",
-#     "qubit_gain": 8000,
-#     "qubit_freq": 5480,
-#     "qubit_length": 20,
-#     #### define spec slice experiment parameters
-#     "qubit_freq_start": 5480 - 40,
-#     "qubit_freq_stop": 5480 + 40,
-#     "SpecNumPoints": 201,  ### number of points
-#     'spec_reps': 5000,
-# }
-#
-# UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
-# config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+# # Configure for Transmission Experiment ###
+UpdateConfig_transmission={
+    "reps": 4000,  # this will be used for all experiments below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "readout_length": 40, # us
+    "read_pulse_gain": 100, # [DAC units]
+    "read_pulse_freq": 7499.65, # [MHz] actual frequency is this number + "cavity_LO"
+    "nqz": 2,  #### refers to cavity
+    ##### define transmission experiment parameters
+    "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 501, ### number of points in the transmission frequecny
+}
 
-# ## For Resonator Transmission ###
-# Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# data_trans= Transmission.acquire(Instance_trans)
-# Transmission.display(Instance_trans, data_trans, plotDisp=True)
-# Transmission.save_data(Instance_trans, data_trans)
-#
-# config["read_pulse_freq"] = Instance_trans.peakFreq ### Update the transmission frequency to be the peak
-# print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+## Configure for qubit experiment ###
+UpdateConfig_qubit = {
+    "qubit_pulse_style": "const",
+    "qubit_gain": 8000,
+    "qubit_freq": 5480,
+    "qubit_length": 20,
+    #### define spec slice experiment parameters
+    "qubit_freq_start": 5480 - 40,
+    "qubit_freq_stop": 5480 + 40,
+    "SpecNumPoints": 201,  ### number of points
+    'spec_reps': 5000,
+}
+
+UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
+config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+
+## For Resonator Transmission ###
+Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_trans = Transmission.acquire(Instance_trans)
+Transmission.display(Instance_trans, data_trans, plotDisp=True)
+Transmission.save_data(Instance_trans, data_trans)
+
+config["read_pulse_freq"] = Instance_trans.peakFreq ### Update the transmission frequency to be the peak
+print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
 ### For Qubit Spec Experiment ###
 # Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
@@ -148,34 +148,34 @@ soc, soccfg = makeProxy()
 #
 # #######################################################################################################################
 ########################################################################################################################
-### T1 Measurement ###
-UpdateConfig = {
-    ###### cavity
-"read_pulse_style": "const",  # --Fixed
-"read_length": 20,  # us
-"read_pulse_gain": 2000,  # [DAC units]
-"read_pulse_freq": 7391.8,  # [MHz] actual frequency is this number + "cavity_LO"
-##### spec parameters for finding the qubit frequency
-"qubit_freq": 5485,
-"qubit_gain": 20000,
-"sigma": 0.30,  ### units us, define a 20ns sigma
-"qubit_pulse_style": "arb",  #### arb means gaussian here
-"relax_delay": 1000,  ### turned into us inside the run function
-##### T1 parameters
-"start": 0,  ### us
-"step": 20,  ### us
-"expts": 51,  ### number of experiments
-"reps": 5000,  ### number of averages on each experiment
-}
-config = BaseConfig | UpdateConfig
-
-Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
-data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
-T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
-T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
-T1Experiment.save_config(Instance_T1Experiment)
-
-########################################################################################################################
+# ### T1 Measurement ###
+# UpdateConfig = {
+#     ###### cavity
+# "read_pulse_style": "const",  # --Fixed
+# "read_length": 20,  # us
+# "read_pulse_gain": 2000,  # [DAC units]
+# "read_pulse_freq": 7391.8,  # [MHz] actual frequency is this number + "cavity_LO"
+# ##### spec parameters for finding the qubit frequency
+# "qubit_freq": 5485,
+# "qubit_gain": 20000,
+# "sigma": 0.30,  ### units us, define a 20ns sigma
+# "qubit_pulse_style": "arb",  #### arb means gaussian here
+# "relax_delay": 1000,  ### turned into us inside the run function
+# ##### T1 parameters
+# "start": 0,  ### us
+# "step": 20,  ### us
+# "expts": 51,  ### number of experiments
+# "reps": 5000,  ### number of averages on each experiment
+# }
+# config = BaseConfig | UpdateConfig
+#
+# Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
+# data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
+# T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
+# T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
+# T1Experiment.save_config(Instance_T1Experiment)
+#
+# ########################################################################################################################
 ########################################################################################################################
 ### T2 Measurement ###
 # UpdateConfig = {
