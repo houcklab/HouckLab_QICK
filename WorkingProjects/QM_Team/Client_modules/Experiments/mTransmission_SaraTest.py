@@ -2,7 +2,7 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 
@@ -20,7 +20,7 @@ class LoopbackProgramTrans(AveragerProgram):
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]) )#, mode = 'periodic')
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
@@ -44,7 +44,7 @@ class Transmission(ExperimentClass):
         expt_cfg = {
                 "center": self.cfg["read_pulse_freq"],
                 "span": self.cfg["TransSpan"],
-                "expts": self.cfg["TransNumPoitns"]
+                "expts": self.cfg["TransNumPoints"]
         }
         expt_cfg["step"] = 2 * expt_cfg["span"] / expt_cfg["expts"]
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
@@ -69,7 +69,7 @@ class Transmission(ExperimentClass):
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
         self.peakFreq = data['data']['fpts'][peak_loc]
-
+        print(self.peakFreq)
         return data
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
@@ -90,7 +90,7 @@ class Transmission(ExperimentClass):
         plt.xlabel("Cavity Frequency (GHz)")
         plt.title("Averages = " + str(self.cfg["reps"]))
         plt.legend()
-        plt.savefig(self.iname)
+        # plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)

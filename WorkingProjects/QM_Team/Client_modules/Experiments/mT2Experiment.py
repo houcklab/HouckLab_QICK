@@ -3,7 +3,7 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
@@ -116,30 +116,31 @@ class T2Experiment(ExperimentClass):
         mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
-        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase, 'volt':self.cfg["yokoVoltage"]}}
+        data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
         ## perform fit for T1 estimate
-        mag = avgi[0][0]
+        #mag = avgi[0][0]
 
-        # ### define T2 function
-        # def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
-        #     return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset) )
-        #
-        # offset_geuss = (np.max(mag) + np.min(mag))/2
-        # amp_geuss = (np.max(mag) - np.min(mag))/2
-        # T2_geuss = np.max(x_pts)/3
-        # freq_geuss = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
-        # phaseOffset_geuss = np.pi
-        #
-        # geuss = [offset_geuss, amp_geuss, T2_geuss, freq_geuss, phaseOffset_geuss]
-        #
-        # self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=geuss)
-        #
-        # self.T2_fit = _expCosFit(x_pts, *self.pOpt)
-        #
-        # self.T2_est = self.pOpt[2]
-        # self.freq_est = self.pOpt[3]
-        # self.data = data
+        ### define T2 function
+        def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
+            return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset) )
+
+        offset_guess = (np.max(mag) + np.min(mag))/2
+        amp_guess = (np.max(mag) - np.min(mag))/2
+        T2_guess = np.max(x_pts)/2
+        freq_guess = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
+        phaseOffset_guess = np.pi
+
+        guess = [offset_guess, amp_guess, T2_guess, freq_guess, phaseOffset_guess]
+
+        self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)
+        self.perr =np.sqrt(np.diag(self.pCov))
+        self.T2_fit = _expCosFit(x_pts, *self.pOpt)
+
+        self.T2_est = self.pOpt[2]
+        self.T2_err = self.perr[2]
+        self.freq_est = self.pOpt[3]
+        self.data = data
         print("--- %s seconds ---" % (time.time() - start_time))
 
         return data
@@ -166,6 +167,7 @@ class T2Experiment(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
+        axs[1].plot(times, self.T2_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
@@ -180,7 +182,8 @@ class T2Experiment(ExperimentClass):
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        fig.suptitle('T2 Experiment | Voltage = ' + str(self.cfg["yokoVoltage"]))
+        plt.suptitle("T2 Experiment, T2 = " + str(round(self.T2_est,1)) + r" $\pm$ " + str(round(self.T2_err,1)) + "us")
+
         plt.savefig(self.iname)
 
         if plotDisp:
