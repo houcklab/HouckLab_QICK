@@ -14,251 +14,8 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT1_TwoPulsesSS import T1_TwoPulseMUXSS
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT2R_TwoPulses import T2R_2PulseMUX, T2R_2PulseMUX_NoUpdate
-from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mChiShift import ChiShift
+# from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mChiShift import ChiShift
 
-
-# yoko69.rampstep = 0.0005
-# yoko70.rampstep = 0.0005
-# yoko71.rampstep = 0.0005
-# yoko72.rampstep = 0.0005
-
-# yoko69.SetVoltage(-0.1214)
-# yoko70.SetVoltage(-0.2226)
-# yoko71.SetVoltage(-0.2905)
-# yoko72.SetVoltage(0.2407)
-
-mixer_freq = 500
-BaseConfig["mixer_freq"] = mixer_freq
-Qubit_Parameters = {
-    '1': {
-        # 'Readout': {'Frequency': 6953 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-        #               "FF_Gains": [-15900, 0, 0, 0]}, #01 optimization
-            'Readout': {'Frequency': 6952.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [-15900, 0, 0, 0]}, #12 optimization
-          'Qubit01': {'Frequency': 4682.6 , 'Gain': 1180},
-          'Qubit12': {'Frequency':4530.5, 'Gain': 790},
-          'Pulse_FF': [-9800, 0, 0, 0]},
-    '2': {
-        # 'Readout': {'Frequency': 7056.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-        #               "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3}, #Optimize 01
-        'Readout': {'Frequency': 7055.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-                    "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},  #Optimize 12
-          'Qubit01':  {'Frequency': 4802.6, 'Gain': 830},
-          'Qubit12': {'Frequency': 4646.6, 'Gain': 1270},
-          'Pulse_FF': [0, 13000, 0, 0]},
-    '3': {
-        'Readout': {'Frequency': 7117.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-                    "FF_Gains": [0, 0, 17000, 0]},
-        'Readout': {'Frequency': 7117.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6700,
-                    "FF_Gains": [0, 0, 17000, 0]},
-          'Qubit01': {'Frequency': 4807.6, 'Gain': 870},
-          'Qubit12': {'Frequency': 4651.6, 'Gain': 1340},
-          'Pulse_FF': [0, 0, 13000, 0]},
-    '4': {
-        # 'Readout': {'Frequency': 7250.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-        # "FF_Gains": [0, 0, 0, -25000]},   #optimize 01
-        'Readout': {'Frequency': 7249.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-                    "FF_Gains": [0, 0, 0, -25000]},   #Optimize 12
-        'Qubit01': {'Frequency': 4910.4, 'Gain': 2150},
-          'Qubit12': {'Frequency': 4754.3, 'Gain': 720},
-          'Pulse_FF': [0, 0, 0, -21000]}
-    }
-
-#Qubit Parameters for physics
-mixer_freq = 500
-BaseConfig["mixer_freq"] = mixer_freq
-Qubit_Parameters = {
-    '1': {
-        # 'Readout': {'Frequency': 6953 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-        #               "FF_Gains": [-15900, 0, 0, 0]}, #01 optimization
-            'Readout': {'Frequency': 6952.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [-15900, 0, 0, 0]}, #12 optimization
-          'Qubit01': {'Frequency': 4682.6 , 'Gain': 1180},
-          'Qubit12': {'Frequency':4530.5, 'Gain': 790},
-          'Pulse_FF': [-9800, 0, 0, 0]},
-    '2': {
-        'Readout': {'Frequency': 7056.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-                      "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3}, #Optimize 01
-        # 'Readout': {'Frequency': 7055.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-        #             "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},  #Optimize 12
-          'Qubit01':  {'Frequency': 4802.6, 'Gain': 830},
-          'Qubit12': {'Frequency': 4646.6, 'Gain': 1270},
-          'Pulse_FF': [0, 13000, 0, 0]},
-    '3': {
-        'Readout': {'Frequency': 7117.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-                    "FF_Gains": [0, 0, 17000, 0]},
-        # 'Readout': {'Frequency': 7117.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6700,
-        #             "FF_Gains": [0, 0, 17000, 0]},
-          'Qubit01': {'Frequency': 4807.6, 'Gain': 870},
-          'Qubit12': {'Frequency': 4651.6, 'Gain': 1340},
-          'Pulse_FF': [0, 0, 13000, 0]},
-    '4': {
-        'Readout': {'Frequency': 7250.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-        "FF_Gains": [0, 0, 0, -25000]},   #optimize 01
-        # 'Readout': {'Frequency': 7249.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-        #             "FF_Gains": [0, 0, 0, -25000]},   #Optimize 12
-        'Qubit01': {'Frequency': 4910.4, 'Gain': 2150},
-          'Qubit12': {'Frequency': 4754.3, 'Gain': 720},
-          'Pulse_FF': [0, 0, 0, -21000]}
-    }
-
-# # #Reading out T1T2 parameters at physics frequency
-# mixer_freq = 500
-# BaseConfig["mixer_freq"] = mixer_freq
-# Qubit_Parameters = {
-#     '1': {
-#         # 'Readout': {'Frequency': 6953 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#         #               "FF_Gains": [-15900, 0, 0, 0]}, #01 optimization
-#             'Readout': {'Frequency': 6952.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#                       "FF_Gains": [0, 0, 0, 0]}, #12 optimization
-#           'Qubit01': {'Frequency': 4449.1 , 'Gain': 400},
-#           'Qubit12': {'Frequency':4292, 'Gain': 930},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '2': {
-#         'Readout': {'Frequency': 7055.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3}, #Optimize 01
-#         # 'Readout': {'Frequency': 7055.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-#         #             "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},  #Optimize 12
-#           'Qubit01':  {'Frequency': 4449.8, 'Gain': 400},
-#           'Qubit12': {'Frequency': 4292.3, 'Gain': 860},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '3': {
-#         'Readout': {'Frequency': 7117.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-#                     "FF_Gains": [0, 0, 0, 0]},
-#         # 'Readout': {'Frequency': 7117.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6700,
-#         #             "FF_Gains": [0, 0, 17000, 0]},
-#           'Qubit01': {'Frequency': 4449.2, 'Gain': 750},
-#           'Qubit12': {'Frequency': 4290, 'Gain': 830},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '4': {
-#         'Readout': {'Frequency': 7249.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-#         "FF_Gains": [0, 0, 0, 0]},   #optimize 01
-#         # 'Readout': {'Frequency': 7249.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#         #             "FF_Gains": [0, 0, 0, -25000]},   #Optimize 12
-#         'Qubit01': {'Frequency': 4448.2, 'Gain': 550},
-#           'Qubit12': {'Frequency': 4289.8, 'Gain': 840},
-#           'Pulse_FF': [0, 0, 0, 0]}
-#     }
-
-# yoko69.SetVoltage(-0.1368)
-# yoko70.SetVoltage(-0.1542)
-# yoko71.SetVoltage(-0.2343)
-# yoko72.SetVoltage(0.1055)
-#Reading out T1T2 parameters at physics frequency
-# mixer_freq = 500
-# BaseConfig["mixer_freq"] = mixer_freq
-# Qubit_Parameters = {
-#     '1': {
-#         'Readout': {'Frequency': 6962.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': False},
-#         'Readout': {'Frequency': 6962.3 - 0.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#                     "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': False},
-#           'Qubit01': {'Frequency': 4449.3, 'Gain': 900},
-#           'Qubit12': {'Frequency':4291.4, 'Gain': 1750 * 0},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '2': {
-#         'Readout': {'Frequency': 7033.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
-#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#         'Readout': {'Frequency': 7033.4 - 0.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                     "FF_Gains": [0, -5000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#           'Qubit01':  {'Frequency': 4450.5, 'Gain': 920},
-#           'Qubit12': {'Frequency': 4292.4, 'Gain': 1700 * 0},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '3': {
-#         'Readout': {'Frequency': 7104.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-#         'Readout': {'Frequency': 7104.4 - 0.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-#           'Qubit01': {'Frequency': 4448.3, 'Gain': 2000},
-#           'Qubit12': {'Frequency': 4290.8, 'Gain': 2000 * 0},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '4': {
-#         'Readout': {'Frequency': 7230.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-#         'Readout': {'Frequency': 7230.1 - 0.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True}, #Optimize 12
-#           'Qubit01': {'Frequency': 4448.9, 'Gain': 1250},
-#           'Qubit12': {'Frequency': 4291.6, 'Gain': 1900 },
-#           'Pulse_FF': [0, 0, 0, 0]}
-#     }
-
-
-# yoko69.SetVoltage(-0.14)
-# yoko70.SetVoltage(0.0375)
-# yoko71.SetVoltage(-0.0147)
-# yoko72.SetVoltage(-0.1099)
-# Qubit_Readout = [1]
-# Qubit_Pulse = 1
-
-# yoko69.SetVoltage(0.0662)
-# yoko70.SetVoltage(-0.1472)
-# yoko71.SetVoltage(-0.005)
-# yoko72.SetVoltage(-0.0965)
-# Qubit_Readout = [2]
-# Qubit_Pulse = 2
-
-# yoko69.SetVoltage(0.0508)
-# yoko70.SetVoltage(0.0363)
-# yoko71.SetVoltage(-0.2416)
-# yoko72.SetVoltage(-0.1127)
-# Qubit_Readout = [3]
-# Qubit_Pulse = 3
-
-# yoko69.SetVoltage(0.0655)
-# yoko70.SetVoltage(0.0464)
-# yoko71.SetVoltage(-0.0073)
-# yoko72.SetVoltage(0.1141)
-# Qubit_Readout = [4]
-# Qubit_Pulse = 4
-
-
-# yoko69.SetVoltage(-0.1368)
-# yoko70.SetVoltage(-0.1542)
-# yoko71.SetVoltage(-0.2343)
-# yoko72.SetVoltage(0.1055)
-# #Reading out T1T2 parameters at physics frequency
-# mixer_freq = 500
-# BaseConfig["mixer_freq"] = mixer_freq
-# Qubit_Parameters = {
-#     '1': {
-#         'Readout': {'Frequency': 6962.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#                       "FF_Gains": [15900, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': False},
-#         'Readout': {'Frequency': 6962.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-#                     "FF_Gains": [15900, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': False},
-#           'Qubit01': {'Frequency': 4688.7, 'Gain': 1100},
-#           'Qubit12': {'Frequency':4535.1, 'Gain': 850},
-#           'Pulse_FF': [9500, 0, 0, 0]},
-#     '2': {
-#         'Readout': {'Frequency': 7034.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
-#                       "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#         'Readout': {'Frequency': 7033.45 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                     "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#           'Qubit01':  {'Frequency': 4811.2, 'Gain': 860},
-#           'Qubit12': {'Frequency': 4654.5, 'Gain': 1300},
-#           'Pulse_FF': [0, 13000, 0, 0]},
-#     '3': {
-#         'Readout': {'Frequency': 7105.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                       "FF_Gains": [0, 0, 20000, 0], 'cavmin': True},
-#         'Readout': {'Frequency': 7104.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                     "FF_Gains": [0, 0, 30000, 0], 'cavmin': True},
-#           'Qubit01': {'Frequency': 4806.1, 'Gain': 980},
-#           'Qubit12': {'Frequency': 4649.5, 'Gain': 1470},
-#           'Pulse_FF': [0, 0, 15000, 0]},
-#     '4': {
-#         'Readout': {'Frequency': 7230.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-#                       "FF_Gains": [0, 0, 0, -20000], 'cavmin': True},
-#         'Readout': {'Frequency': 7230. - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-#                     "FF_Gains": [0, 0, 0, -20000], 'cavmin': True}, #Optimize 12
-#           'Qubit01': {'Frequency': 4761.8, 'Gain': 1250},
-#           'Qubit12': {'Frequency': 4606.5, 'Gain': 2000},
-#           'Pulse_FF': [0, 0, 0, -13000]}
-#     }
-
-# yoko69.SetVoltage(-0.1167)
-# yoko70.SetVoltage(-0.1266)
-# yoko71.SetVoltage(-0.2437)
-# yoko72.SetVoltage(0.1134)
-#Reading out T1T2 parameters at physics frequency
 
 # coupler device anharm
 mixer_freq = 500
@@ -271,9 +28,9 @@ Qubit_Parameters = {
           'Qubit12': {'Frequency': 4202.3, 'Gain': 700},
           'Pulse_FF': [0, 0, 0, 0]},
     '2': {
-        'Readout': {'Frequency': 7033.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5700,
+        'Readout': {'Frequency': 7088.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
                     "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01':  {'Frequency': 4811.2, 'Gain': 860},
+          'Qubit01':  {'Frequency': 4679.7, 'Gain': 2100},
           'Qubit12': {'Frequency': 4654.5, 'Gain': 1300},
           'Pulse_FF': [0, 0, 0, 0]},
     '3': {
@@ -291,8 +48,8 @@ Qubit_Parameters = {
     }
 
 #
-Qubit_Readout = [4]
-Qubit_Pulse = 4
+Qubit_Readout = [2]
+Qubit_Pulse = 2
 # expt
 FF_gain1_expt = 0  # 8000
 FF_gain2_expt = 0
@@ -306,7 +63,7 @@ BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False  # determine cavity frequency
 Run2ToneSpec = False
-sigma = 0.05
+sigma = 0.03
 Spec_relevant_params = {"qubit_gain": 70, "SpecSpan": 7, "SpecNumPoints": 61, 'Gauss': False, "sigma": sigma,
                         "gain": 3000}
 
@@ -324,14 +81,14 @@ Amplitude_Rabi_params_2nd = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Q
 
 RunT1 = False
 RunT2 = False
-RunT1SS = True
-T1T2_params = {"SecondPulse": 1, "T1_step": 5,"T1_expts": 60,"T1_reps": 50,"T1_rounds": 20,
+RunT1SS = False
+T1T2_params = {"SecondPulse": 1, "T1_step": 1.5,"T1_expts": 60,"T1_reps": 50,"T1_rounds": 30,
                 "T2_step":0.00232515*22 * 2,"T2_expts":100,"T2_reps":50,"T2_rounds":20,"freq_shift":1.4}
 
 SingleShot = False
 SS_params = {"Shots": 3000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 
-SingleShot_2States = True
+SingleShot_2States = False
 SS_params_2States = {"ground": 1, 'excited': 2, "Shots": 2500, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 
 SingleShot_MultipleBlobs = False
@@ -559,13 +316,13 @@ if RunT2:
     #     T2R_2PulseMUX.display(iT2R, dT2R, plotDisp=False, figNum=2)
     #     T2R_2PulseMUX.save_data(iT2R, dT2R)
     #     n += 1
-if RunChiShift:
-    config =  config | ChiShift_Params
-    iChi = ChiShift(path="ChiShift", cfg=config,soc=soc,soccfg=soccfg,
-                                      outerFolder=outerFolder)
-    dChi= ChiShift.acquire(iChi)
-    ChiShift.display(iChi, dChi, plotDisp=True, figNum=1)
-    ChiShift.save_data(iChi, dChi)
+# if RunChiShift:
+#     config =  config | ChiShift_Params
+#     iChi = ChiShift(path="ChiShift", cfg=config,soc=soc,soccfg=soccfg,
+#                                       outerFolder=outerFolder)
+#     dChi= ChiShift.acquire(iChi)
+#     ChiShift.display(iChi, dChi, plotDisp=True, figNum=1)
+#     ChiShift.save_data(iChi, dChi)
 
 if type(Qubit_Pulse) != list:
     Qubit_Pulse = [Qubit_Pulse]
@@ -721,7 +478,7 @@ if SingleShot_ReadoutOptimize:
     config = config | exp_parameters
     # Now lets optimize powers and readout frequencies
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-    data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize, cavityAtten = cavityAtten)
+    data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize)
     # print(data_SingleShotProgram)
     ReadOpt_wSingleShotFFMUX.display(Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True)
 

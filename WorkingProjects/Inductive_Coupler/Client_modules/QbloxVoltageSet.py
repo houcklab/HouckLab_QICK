@@ -40,9 +40,10 @@ DACs = [0, 2, 4, 6]
 
 
 #[Left qubit, left coupler, right coupler, right qubit]
-voltages = [0, 0, -0.4, -1.085]
+# after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
+voltages = [0, 0, -0.3, 1.4]
 # voltages = [-0.6, 0.3, 0, 0]
-# voltages = [0, 0, 0, 0]
+voltages = [-0.365, 0, -0.715, 0]
 
 # voltages = [-0.59, 0, 0, 0]
 

@@ -10,21 +10,22 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6998.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7500,
+    '1': {'Readout': {'Frequency': 6999.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8500,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5420, 'Gain': 510},
-          'Pulse_FF': [0, 0, 150, 0]},
-    '2': {'Readout': {'Frequency': 7090.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 5101, 'Gain': 920},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7104.63 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 11600, 0]},
-          'Qubit': {'Frequency': 4663.13, 'Gain': 1770},
-          'Pulse_FF': [0, 0, 15000, 0]},
-    '4': {'Readout': {'Frequency': 7280.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4620, 'Gain': 1275},
-          'Pulse_FF': [10000, 0, 0, 0]}
+          'Qubit': {'Frequency': 5450, 'Gain': 2130},
+          'Pulse_FF': [0, 0, 2000, 0]},
+    '2': {'Readout': {'Frequency': 7089.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3},
+          'Qubit': {'Frequency': 5067.2, 'Gain': 1300},
+          'Pulse_FF': [30000, 0, 0, 0]},
+    '3': {'Readout': {'Frequency': 7192.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5570, 'Gain': 1780},
+          'Pulse_FF': [0, 12000, 0, 0]},
+    '4': {'Readout': {'Frequency': 7281.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
+                    "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+          'Qubit': {'Frequency': 5110, 'Gain': 1280},
+          'Pulse_FF': [0, 0, 0, 2000]}
     }
 # Qubit_Parameters = {
 #     '1': {'Readout': {'Frequency': 6952.79, 'Gain': 8000}, 'Qubit': {'Frequency': 4672, 'Gain': 1450}},
@@ -33,13 +34,13 @@ Qubit_Parameters = {
 #     '4': {'Readout': {'Frequency': 7250.01, 'Gain': 6000}, 'Qubit': {'Frequency': 4700, 'Gain': 2630}}
 #     }
 
-Qubit_Pulse = 2
+Qubit_Pulse = 3
 # gain_test = -15000 #15000  # 6000  # maximum gain +/-3e4  # -20000 for left qubit, 20000 mid/right
 # initial (pre-step) values
 FF_gain1_init = 0  # Left Qubit
-FF_gain2_init = 0  # Middle Qubit
+FF_gain2_init = -6000  # Middle Qubit
 FF_gain3_init = 0  # Right Qubit
-FF_gain4_init = -20000  # Right Qubit
+FF_gain4_init = 0  # Right Qubit
 
 FF_gain1_step, FF_gain2_step, FF_gain3_step, FF_gain4_step = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
@@ -67,8 +68,8 @@ BaseConfig['ro_chs'] = [0]
 qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
 qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
 
-Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 30, "SpecNumPoints": 75, 'Gauss': True, "sigma": 0.012,
-                        "gain": 4900}
+Spec_relevant_params = {"qubit_gain": 150, "SpecSpan": 50, "SpecNumPoints": 75, 'Gauss': True, "sigma": 0.012,
+                        "gain": 500}
 # Spec_relevant_params = {"qubit_gain": 3000, "SpecSpan": 30, "SpecNumPoints": 76}
 
 # # Christie wants to see initial qubit frequency (for delta fn measurement)
@@ -187,7 +188,7 @@ if RunAmplitudeRabi:
 
 experiment = {
     "delayStart": 0,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
-    "delayStep": 1 ,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
+    "delayStep": 0.25,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
     "DelayPoints": 100  # 400  # 28
 }
 # experiment = {

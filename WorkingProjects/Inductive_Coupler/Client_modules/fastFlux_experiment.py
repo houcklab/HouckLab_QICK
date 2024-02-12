@@ -11,11 +11,11 @@ from WorkingProjects.Inductive_Coupler.Client_modules.mfastFlux import *
 
 FF_channel1 = 1 #4 is middle qubit, 6 is left qubit
 FF_channel2 = 2 #4 is middle qubit, 6 is left qubit
-FF_channel3 = 0 #4 is middle qubit, 6 is left qubit
+FF_channel3 = 3 #4 is middle qubit, 6 is left qubit
 
-FF_gain1 = 0
-FF_gain2 = 0
-FF_gain3 = 20000
+FF_gain1 = 30000 * 0
+FF_gain2 = 30000 * 1
+FF_gain3 = 30000 * 0
 
 
 config={

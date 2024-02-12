@@ -182,6 +182,8 @@ class SpecVsQblox(ExperimentClass):
                      }
         }
 
+        print(qbloxVec)
+
         #### start a timer for estimating the time for the scan
         startTime = datetime.datetime.now()
         print('') ### print empty row for spacing
@@ -200,7 +202,7 @@ class SpecVsQblox(ExperimentClass):
             ### set the qblox voltage for the specific run
             # self.qblox.SetVoltage(qbloxVec[i])
             QbloxClass.set_voltage([self.cfg['DACs']], [qbloxVec[i]])
-
+            # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data
             # data_I, data_Q = self._aquireTransData()
@@ -253,7 +255,7 @@ class SpecVsQblox(ExperimentClass):
                 ax_plot_1 = axs.imshow(
                     Z_spec,
                     aspect='auto',
-                    extent=[np.min(X_spec)-X_spec_step/2,np.max(X_spec)+X_spec_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
                     origin='lower',
                     interpolation = 'none',
                 )

@@ -18,7 +18,7 @@ Qubit_Parameters = {
           'Pulse_FF': [0, 0, 0, 0]},
     '2': {'Readout': {'Frequency': 7088.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 4679.2 + 100, 'Gain': 2150},
+          'Qubit': {'Frequency': 4679.7, 'Gain': 2100},
           'Pulse_FF': [0, 0, 0, 0]},
     '3': {'Readout': {'Frequency': 7104.63 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 11600, 0]},
           'Qubit': {'Frequency': 4663.13, 'Gain': 1770},
@@ -55,15 +55,15 @@ FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4_read, 'Gain_Expt': FF_gain4_step,
 
 RunTransmissionSweep = False  # determine cavity frequency
 Run2ToneSpec = False  # detrmine qubit frequency
-Spec_relevant_params = {"qubit_gain": 400, "SpecSpan": 50, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.03,
+Spec_relevant_params = {"qubit_gain": 50, "SpecSpan": 4, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.03,
                         "gain": 4900}
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.03, "max_gain": 8000}
+                         "sigma": 0.03, "max_gain": 3000}
 RunCalibrationFF = True
-CalibrationFF_params = {'FFQubitIndex': 1, 'FFQubitExpGain': 13000,
-                        "start": 0, "step": 1, "expts": 3*16,
-                        "reps": 10, "rounds": 10, "relax_delay": 120,
+CalibrationFF_params = {'FFQubitIndex': 4, 'FFQubitExpGain': 17000,
+                        "start": 0, "step": 1, "expts": 10 * 16 * 10,
+                        "reps": 100, "rounds": 200, "relax_delay": 250,
            }
 
 cavity_gain = Qubit_Parameters[str(Qubit_Pulse)]['Readout']['Gain']
@@ -205,6 +205,7 @@ if RunCalibrationFF:
         if i + 1 != CalibrationFF_params['FFQubitIndex']:
             config["FF_Qubits"][str(i + 1)]['Gain_Expt'] = 0
 
+    print(config["FF_Qubits"])
     config = config | RamseyCal_cfg | CalibrationFF_params
 
     config['IDataArray'] = [None, None, None, None]

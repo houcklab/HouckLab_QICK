@@ -41,10 +41,10 @@ class RamseyFFCalRProg(RAveragerProgram):
         self.res_r_modes = []
         self.r_gains = []
         for channel in self.FFChannels:
-            self.rps.append(self.ch_page(ch=channel))
-            self.r_addrs.append(self.sreg(ch=channel, name='addr'))
-            self.res_r_modes.append(self.sreg(ch=channel, name="mode"))  # length reg in last 16 bits of mode register
-            self.r_gains.append(self.sreg(ch=channel, name='gain'))
+            self.rps.append(self.ch_page(gen_ch=channel))
+            self.r_addrs.append(self.sreg(gen_ch=channel, name='addr'))
+            self.res_r_modes.append(self.sreg(gen_ch=channel, name="mode"))  # length reg in last 16 bits of mode register
+            self.r_gains.append(self.sreg(gen_ch=channel, name='gain'))
         # load waveforms
         # FF.LoadWaveform_initial(self, self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)
         FF.LoadWaveforms(self)
