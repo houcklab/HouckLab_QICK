@@ -22,7 +22,7 @@ UpdateConfig = {
     ##### define the yoko voltage
     "yokoVoltageStart": -4, #-0.65,
     "yokoVoltageStop": 1.5, #-0.63,
-    "yokoVoltageNumPoints": 501,
+    "yokoVoltageNumPoints": 201,
     ###### cavity
     "trans_reps": 20,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed

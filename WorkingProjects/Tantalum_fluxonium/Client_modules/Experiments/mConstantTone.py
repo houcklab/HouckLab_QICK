@@ -69,8 +69,8 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 10000,  # [DAC units]
-    "freq": 1000,  # [MHz]
+    "gain": 5000,  # [DAC units]
+    "freq": 1400,  # [MHz]
     "channel": 1,  # TODO default value
     "nqz": 1,  # TODO default value
 }

@@ -82,17 +82,16 @@ class LoopbackProgramT1_PS(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg[
-            "qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        self.qubit_ge_freq = self.freq2reg(self.cfg["qubit_ge_freq"], gen_ch=self.cfg["qubit_ch"])
+        self.qubit_ef_freq = self.freq2reg(self.cfg["qubit_ef_freq"], gen_ch=self.cfg["qubit_ch"])
 
         ### Declaration of Pulses
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit")
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
 
@@ -100,8 +99,8 @@ class LoopbackProgramT1_PS(RAveragerProgram):
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4 + self.us2cycles(
                 self.cfg["flat_top_length"], gen_ch=cfg["qubit_ch"])
@@ -124,15 +123,25 @@ class LoopbackProgramT1_PS(RAveragerProgram):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
 
-        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+        # Apply g-e pi pulse
+        if self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
-
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
+        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
+                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
+                                 waveform="qubit")
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
 
-        self.sync_all(self.us2cycles(10))  # align channels and wait 10us
+        self.sync_all(self.us2cycles(0.01))
+
+        # Apply e-f pi pulse
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
+        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ef_freq,
+                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+                                 waveform="qubit")
+        self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
 
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -140,8 +149,6 @@ class LoopbackProgramT1_PS(RAveragerProgram):
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait = False)
 
-        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
 
         self.sync_all(self.us2cycles(self.cfg["wait_length"]))
@@ -676,7 +683,7 @@ class T1_PS(ExperimentClass):
 
         plt.tight_layout()
         plt.legend()
-        # plt.show()
+        plt.show()
 
         plt.savefig(self.iname, dpi=600)  #### save the figure
 

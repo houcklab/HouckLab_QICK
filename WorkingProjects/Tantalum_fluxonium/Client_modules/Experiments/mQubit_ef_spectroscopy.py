@@ -5,6 +5,11 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import
 from tqdm.notebook import tqdm
 import time
 
+from scipy.optimize import curve_fit
+
+# Define the gaussian function
+def gauss(x, a, x0, sigma, c):
+    return a*np.exp(-(x-x0)**2/(2*sigma**2)) + c
 
 class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -51,6 +56,7 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_ge_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
         # Define qubit pulse: flat top
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -72,6 +78,10 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
                                  gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"]))
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
 
@@ -79,17 +89,26 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
         ge_freq = self.freq2reg(self.cfg["qubit_ge_freq"], gen_ch=self.cfg["qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
         # Set up g-e pi pulse
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                  waveform="qubit")
-
         self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
         self.sync_all(self.us2cycles(0.005))  # align channels and wait /
+
+        # Apply e-f gaussian pulse with increasing amplitude
+        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
+                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+                                 waveform="qubit")
         self.mathi(self.q_rp, self.r_freq, self.r_freq_ef, '+', 0) # Hack to set the r_freq register page to r_freq_ef (+0)
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])
         self.pulse(ch = self.cfg['qubit_ch']) # play ef probe pulse
 
         self.sync_all(self.us2cycles(0.05)) # align channels and wait /
-
         #trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=self.cfg["ro_chs"],
@@ -121,9 +140,35 @@ class Qubit_ef_spectroscopy(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
-        print(f'Time: {time.time() - start}')
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+
+        #### Background data
+        qubit_ef_gain = self.cfg["qubit_ef_gain"]
+        qubit_ge_gain = self.cfg["qubit_ge_gain"]
+        self.cfg["qubit_ef_gain"] = 0
+        self.cfg["qubit_ge_gain"] = 0
+        prog = LoopbackProgramQubit_ef_spectroscopy(self.soccfg, self.cfg)
+        x_pts_bkg, avgi_bkg, avgq_bkg = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                                     readouts_per_experiment=1, save_experiments=None,
+                                                     start_src="internal", progress=False, debug=False)
+        self.cfg["qubit_ef_gain"] = qubit_ef_gain
+        self.cfg["qubit_ge_gain"] = qubit_ge_gain
+        # Subtracting
+        avgi = avgi[0][0] - avgi_bkg[0][0]
+        avgq = avgq[0][0] - avgq_bkg[0][0]
+        sig = avgi + 1j * avgq
+        amp = np.abs(sig)
+        phase = np.angle(sig, deg=True)
+        avgi = np.abs(avgi)
+        avgq = np.abs(avgq)
+
+        # All information in amp now
+        f_reqd = x_pts[np.argmax(amp)]
+
+        ### Save Data
+        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq,
+                                             'amp': amp, 'phase': phase, "f_reqd": f_reqd}}
         self.data = data
+        return data
 
         return data
 
@@ -135,44 +180,61 @@ class Qubit_ef_spectroscopy(ExperimentClass):
         x_pts = data['data']['x_pts']
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
-        sig  = avgi[0][0] + 1j * avgq[0][0]
-        avgsig = np.abs(sig)
-        max_indx = np.argmax(avgsig)
-        print(x_pts[max_indx])
-        avgphase = np.remainder(np.angle(sig,deg=True)+360,360)
+        amp = data['data']['amp']
+        phase = data['data']['phase']
+        f_reqd = data['data']['f_reqd']
+
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
 
-        ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="Phase")
-        axs[0].set_ylabel("Degrees")
-        axs[0].set_xlabel("e-f spec frequency (MHz)")
-        axs[0].legend()
+        axs[0].scatter(x_pts, avgi, c='b', label='data')
+        axs[0].set_xlabel('Frequency (GHz)')
+        axs[0].set_ylabel('I (a.u.)')
+        axs[0].set_title('I vs Frequency')
+        # Add a text box with the fit parameters
 
-        ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="Magnitude")
-        axs[1].set_ylabel("a.u.")
-        axs[1].set_xlabel("e-f spec frequency (MHz)")
-        axs[1].legend()
+        axs[1].scatter(x_pts, avgq, c='b', label='data')
+        axs[1].set_xlabel('Frequency (GHz)')
+        axs[1].set_ylabel('Q (a.u.)')
+        axs[1].set_title('Q vs Frequency')
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I")
-        axs[2].set_ylabel("a.u.")
-        axs[2].set_xlabel("e-f spec frequency (MHz)")
-        axs[2].legend()
+        axs[2].scatter(x_pts, amp, c='b', label='data')
+        try:
+            popt, pcov = curve_fit(gauss, x_pts, amp, p0=[max(amp) - min(amp), f_reqd, (max(x_pts) - min(x_pts))/7,
+                                                          min(amp) if f_reqd > np.average(amp) else max(amp)])
+            axs[2].plot(x_pts, gauss(x_pts, popt[0], popt[1], popt[2], popt[3]))
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q")
-        axs[3].set_ylabel("a.u.")
-        axs[3].set_xlabel("e-f spec frequency (MHz)")
-        axs[3].legend()
+            label = r'$f_{01}$ =' + str(popt[1].round(3)) + ' MHz\n$\sigma$ =' + str(popt[2].round(1)) + ' MHz'
+            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+            axs[2].text(0.01, 0.95, label, transform=axs[2].transAxes, fontsize=14,
+                        verticalalignment='top', bbox=props)
+        except:
+            print("Cannot amp-plot fit")
+        axs[2].set_xlabel('Frequency (GHz)')
+        axs[2].set_ylabel('Amplitude (a.u.)')
+        axs[2].set_title('Amplitude vs Frequency')
 
-        fig.tight_layout()
+        axs[3].scatter(x_pts, phase, c='b', label='data')
+        axs[3].set_xlabel('Frequency (GHz)')
+        axs[3].set_ylabel('Phase (rad)')
+        axs[3].set_title('Phase vs Frequency')
+
+        try:
+            data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
+                                + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
+                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(f_reqd.round(2))
+                                + " MHz \n" )
+            plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
+        except:
+            print("Cannot make title")
+
+        plt.tight_layout()
         plt.savefig(self.iname)
 
         if plotDisp:
-            plt.show(block=True)
-            plt.pause(2)
-            plt.close()
+            plt.show(block=False)
         else:
-            fig.clf(True)
             plt.close(fig)
 
     def save_data(self, data=None):

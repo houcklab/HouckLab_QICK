@@ -295,52 +295,52 @@ SwitchConfig = {
 # AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 
 #
-# # ###############################################################################
-# ################## code finding T1 of a thermal state using pulses
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": -2.4 + 1.25,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 6437.25,
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 5000, #12000,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     # "flat_top_length": 0.300,
-#     "qubit_freq": 4139.0,
-#     "relax_delay": 100,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 5000, ### this gets turned into "reps"
-#     ### define the wait times
-#     "wait_start": 0,
-#     "wait_stop": 1000,
-#     "wait_num": 11,
-#     ##### define number of clusters to use
-#     "cen_num": 3,
-#     "use_switch": True,
-# }
-# config = BaseConfig | UpdateConfig | SwitchConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-#
-# scan_time = (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])) + config["relax_delay"])*config["shots"] *1e-6 / 60
-#
-# print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
-#
-# Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_T1_PS = T1_PS.acquire(Instance_T1_PS)
-# T1_PS.save_data(Instance_T1_PS, data_T1_PS)
-# print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# T1_PS.save_config(Instance_T1_PS)
+# ###############################################################################
+################## code finding T1 of a thermal state using pulses
+UpdateConfig = {
+    ##### define attenuators
+    "yokoVoltage": -2.4 + 1.25,
+    ###### cavity
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 5, # us
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.4,
+    ##### qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 9000, #12000,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.200,  ### units us, define a 20ns sigma
+    # "flat_top_length": 0.300,
+    "qubit_freq": 4139.5,
+    "relax_delay": 200,  ### turned into us inside the run function
+    #### define shots
+    "shots": 100000, ### this gets turned into "reps"
+    ### define the wait times
+    "wait_start": 0,
+    "wait_stop": 4000,
+    "wait_num": 2,
+    ##### define number of clusters to use
+    "cen_num": 3,
+    "use_switch": True,
+}
+config = BaseConfig | UpdateConfig | SwitchConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+scan_time = (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])) + config["relax_delay"])*config["shots"] *1e-6 / 60
+
+print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+
+Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_T1_PS = T1_PS.acquire(Instance_T1_PS)
+T1_PS.save_data(Instance_T1_PS, data_T1_PS)
+print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+T1_PS.save_config(Instance_T1_PS)
 # T1_PS.process_data(Instance_T1_PS, data_T1_PS)
-#
-# print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 
 # # # ####################################################################################

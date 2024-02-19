@@ -39,22 +39,26 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
         self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
         qubit_ch = cfg["qubit_ch"]  # Get the qubit channel
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])  # Declare the qubit channel
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # Convert qubit length to clock ticks
+
+        # Converting the frequency to register values
+        self.qubit_ge_freq = self.freq2reg(self.cfg["qubit_ge_freq"], gen_ch=self.cfg["qubit_ch"])
+        self.qubit_ef_freq = self.freq2reg(self.cfg["qubit_ef_freq"], gen_ch=self.cfg["qubit_ch"])
+
         # Define the qubit pulse
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit")
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         else:
@@ -74,13 +78,29 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
         # Initial pause
         self.sync_all(self.us2cycles(0.01))
         if self.cfg["initialize_pulse"]:
-            if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"] and self.cfg["initialize_pulse"]:
+            # Apply g-e pi pulse
+            if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                             width=self.cfg["trig_len"])  # trigger for switc
-            self.pulse(ch=self.cfg["qubit_ch"])
+                             width=self.cfg["trig_len"])  # trigger for switch
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                     freq=self.qubit_ge_freq,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
+                                     waveform="qubit")
+            self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
             self.sync_all(self.us2cycles(0.01))
-            ### add a delay to let state decay from f to 3
-            self.sync_all(self.us2cycles(20))
+
+            # Apply e-f pi pulse
+            if self.cfg["use_switch"]:
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                             width=self.cfg["trig_len"])  # trigger for switch
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                     freq=self.qubit_ef_freq,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+                                     waveform="qubit")
+            self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
+
+            self.sync_all(self.us2cycles(0.01))
 
             self.measure(pulse_ch=self.cfg["res_ch"],
                          adcs=[0],
@@ -217,8 +237,9 @@ class SingleShotSSE(ExperimentClass):
 
         prob, prob_std = sse2.calcProbability(num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num)
 
-        tempr, tempr_std = sse2.findTempr(prob, prob_std, self.cfg["qubit_freq"]*1e6)
+        # tempr, tempr_std = sse2.findTempr(prob, prob_std, self.cfg["qubit_freq"]*1e6)
 
+        tempr, tempr_std = [0,0]
         update_data = {"data": {"prob" : prob, "prob_std" : prob_std, "tempr": tempr, "tempr_std": tempr_std,
                                 "centers": self.centers, "hist2d": hist2d[0],"xedges": hist2d[1],
                                 "yedges": hist2d[2]}}
@@ -264,15 +285,17 @@ class SingleShotSSE(ExperimentClass):
         sse2.plotFitAndData(self.pdf, self.gaussians, self.x_points, self.y_points, self.centers, iq_data, fig, axs[1])
         axs[1].set_title("Single Shot Histogram")
 
-
-        data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
-                            + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
-                            self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_freq"])
-                            + " MHz \n"+
-                            "Excited State Population = " + str(np.max(prob).round(4)) + " +/- "
-                            + str(prob_std[np.argmax(prob)].round(4)) + ". Temperature of excited state = "
-                            + str(tempr.round(4)) + " +/- " + str(tempr_std.round(5)) + " K")
-        plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
+        try:
+            data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
+                                + str(self.cfg["yokoVoltage"]) + "V, relax_delay = " + str(
+                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_freq"])
+                                + " MHz \n"+
+                                "Excited State Population = " + str(np.max(prob).round(4)) + " +/- "
+                                + str(prob_std[np.argmax(prob)].round(4)) + ". Temperature of excited state = "
+                                + str(tempr.round(4)) + " +/- " + str(tempr_std.round(5)) + " K")
+            plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
+        except:
+            print("cannot make title")
         plt.tight_layout()
         plt.savefig(self.iname, dpi =400)
         if plotDisp:

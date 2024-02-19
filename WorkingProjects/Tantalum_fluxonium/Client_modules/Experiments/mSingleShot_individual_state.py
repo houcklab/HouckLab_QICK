@@ -77,7 +77,13 @@ class LoopbackProgramSingleShot_f(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  ) # mode="periodic")
 
-        self.synci(200)  # give processor some time to configure pulses
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+
+    # give processor some time to configure pulses
 
     def body(self):
 
@@ -85,12 +91,20 @@ class LoopbackProgramSingleShot_f(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         # Apply g-e pi pulse
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                  waveform="qubit")
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
+        self.sync_all(self.us2cycles(0.01))
+
         # Apply e-f pi pulse
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ef_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
                                  waveform="qubit")
@@ -195,7 +209,13 @@ class LoopbackProgramSingleShot_e(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  ) # mode="periodic")
 
-        self.synci(200)  # give processor some time to configure pulses
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+
+    # give processor some time to configure pulses
 
     def body(self):
 
@@ -203,6 +223,9 @@ class LoopbackProgramSingleShot_e(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         # Apply g-e pi pulse
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
         self.sync_all(self.us2cycles(0.01))  # wait 10ns after pulse ends
@@ -274,7 +297,13 @@ class LoopbackProgramSingleShot_g(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  ) # mode="periodic")
 
-        self.synci(200)  # give processor some time to configure pulses
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+
+    # give processor some time to configure pulses
 
     def body(self):
 
@@ -426,8 +455,8 @@ class SingleShotProgram_ef(ExperimentClass):
         q_f = data["data"]["q_f"]
 
         title = ('Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                 + "MHz, gain: " + str(self.cfg["read_pulse_gain"]))
-        fid, threshold, angle = hist_process(data=[i_e, q_e, i_f, q_f], plot=plotDisp, ran=ran, title=title, label_ig="e", label_ie="f")
+                 + "MHz, EF gain: " + str(self.cfg["qubit_ef_gain"]))
+        fid, threshold, angle = hist_process(data=[i_e, q_e, i_f, q_f], plot=plotDisp or save_fig, ran=ran, title=title, label_ig="e", label_ie="f")
 
         self.fid = fid
         self.threshold = threshold

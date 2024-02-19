@@ -5,7 +5,9 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
-
+from matplotlib import pyplot
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 
 class LoopbackProgramQubit_ef_rabi(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -52,6 +54,7 @@ class LoopbackProgramQubit_ef_rabi(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_ge_freq,
                                      phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
         # Define qubit pulse: flat top
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -69,6 +72,10 @@ class LoopbackProgramQubit_ef_rabi(RAveragerProgram):
                                  gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"]))
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
 
@@ -77,23 +84,32 @@ class LoopbackProgramQubit_ef_rabi(RAveragerProgram):
         ef_freq = self.freq2reg(self.cfg["qubit_ef_freq"], gen_ch=self.cfg["qubit_ch"])
         # Apply g-e pi pulse
         if self.cfg["apply_ge"]:
+            if self.cfg["use_switch"]:
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                             width=self.cfg["trig_len"])  # trigger for switch
             self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                      phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                      waveform="qubit")
             self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
-
+        self.sync_all(self.us2cycles(0.1))
         # Apply e-f gaussian pulse with increasing amplitude
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ef_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=0,
                                  waveform="qubit")
         self.mathi(self.q_rp, self.qreg_gain, self.qreg_gain_ef, '+', 0) # Hack to set the qreg_gain register page to qreg_gain_ef (+0)
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.pulse(ch = self.cfg['qubit_ch']) # play ef probe pulse
 
-        # Apply g-e pi pulse to read the population of e state
-        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
-                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-                                 waveform="qubit")
-        self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
+        # # Apply g-e pi pulse to read the population of e state
+        # self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
+        #                          phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
+        #                          waveform="qubit")
+        # if self.cfg["use_switch"]:
+        #     self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+        #                  width=self.cfg["trig_len"])  # trigger for switch
+        # self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
 
         # Syncing all pulses
         self.sync_all(self.us2cycles(0.05)) # align channels and wait /
@@ -216,6 +232,158 @@ class Qubit_ef_rabi(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])
+
+class Qubit_ef_rabiChevron(ExperimentClass):
+    """
+    Basic AmplitudeRabi
+    """
+
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+
+    def acquire(self, progress=False, debug=False):
+        # Create a vector of the possible e-f frequencies to sweep over
+        self.qubit_ef_freq_vec = np.linspace(self.cfg['qubit_ef_freq_start'],
+                                             self.cfg['qubit_ef_freq_start'] + self.cfg['qubit_ef_freq_step']*(self.cfg["qubit_ef_freq_pts"]-1),
+                                             self.cfg["qubit_ef_freq_pts"])
+
+        # Create a vector of the possible pulse gains to sweep over
+        self.qubit_ef_gain_vec = np.linspace(self.cfg['qubit_ef_gain_start'],
+                                              self.cfg['qubit_ef_gain_start'] + self.cfg['RabiNumPoints']*(self.cfg['qubit_ef_gain_step']-1),
+                                             self.cfg['RabiNumPoints'])
+
+        # Create a 2d array to store the iq data
+        self.Z_avgi = np.full((self.qubit_ef_freq_vec.size, self.qubit_ef_gain_vec.size), np.nan)
+        self.Z_avgq = np.full((self.qubit_ef_freq_vec.size, self.qubit_ef_gain_vec.size), np.nan)
+
+        # Collect data by sweeping over the qubit ef frequency
+        for i in range(self.qubit_ef_freq_vec.size):
+            # Update the qubit ef frequency
+            self.cfg['qubit_ef_freq'] = self.qubit_ef_freq_vec[i]
+
+            # pull the data from the amp rabi sweep
+            prog = LoopbackProgramQubit_ef_rabi(self.soccfg, self.cfg)
+            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                             readouts_per_experiment=1, save_experiments=None,
+                                             start_src="internal", progress=False, debug=False)
+
+            # Update the data arrays
+            self.Z_avgi[i, :] = avgi
+            self.Z_avgq[i, :] = avgq
+
+            data = {'config': self.cfg,
+                    'data': {'qubit_ef_freq_vec': self.qubit_ef_freq_vec, 'qubit_ef_gain_vec': self.qubit_ef_gain_vec,
+                             'Z_avgi': self.Z_avgi, 'Z_avgq': self.Z_avgq}}
+
+            # Update the display
+            if i == 0:
+                fig, axs = self.display(data = data, plotDisp = True)
+            else:
+                fig, axs = self.display(data=data, fig = fig, axs = axs, plotDisp = True)
+
+        plt.close()
+        self.data = data
+
+        return data
+
+
+    def display(self, data=None, plotDisp = False, fig = None, axs = None, **kwargs):
+        if data is None:
+            data = self.data
+
+        x = data['data']['qubit_ef_freq_vec']
+        y = data['data']['qubit_ef_gain_vec']
+        Z_avgi = data['data']['Z_avgi']
+        Z_avgq = data['data']['Z_avgq']
+        sig = Z_avgi + 1j * Z_avgq
+        Z_avgsig = np.abs(sig)
+        Z_avgphase = np.remainder(np.angle(sig, deg=True) + 360, 360)
+
+        to_update = True
+
+        if fig is None or axs is None:
+            fig, axs = plt.subplots(4, 1, figsize=(12, 12))
+            to_update = False
+        else:
+            if len(axs) != 4:
+                raise ValueError("Unexpected number of axes provided.")
+            for ax in axs:
+                ax.clear()  # Clear existing plots
+
+        # Plot Z_avgi
+        ax_plot_0 = axs[0].imshow(
+            Z_avgi.T,
+            aspect='auto',
+            extent=[x[0], x[-1], y[0], y[-1]],
+            origin='lower',
+            interpolation='none',
+        )
+        if not to_update:
+            cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
+            cbar0.set_label('a.u.', rotation=90)
+        axs[0].set_ylabel("qubit gain")
+        axs[0].set_xlabel("qubit frequency (GHz)")
+        axs[0].set_title("rabi power blob: avgi")
+
+        # Plot Z_avgq
+        ax_plot_1 = axs[1].imshow(
+            Z_avgq.T,
+            aspect='auto',
+            extent=[x[0], x[-1], y[0], y[-1]],
+            origin='lower',
+            interpolation='none',
+        )
+        if not to_update:
+            cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
+            cbar1.set_label('a.u.', rotation=90)
+        axs[1].set_ylabel("qubit gain")
+        axs[1].set_xlabel("qubit frequency (GHz)")
+        axs[1].set_title("rabi power blob: avgq")
+
+        # plot the amp
+        ax_plot_2 = axs[2].imshow(
+            Z_avgsig.T,
+            aspect='auto',
+            extent=[x[0], x[-1], y[0], y[-1]],
+            origin='lower',
+            interpolation='none',
+        )
+        if not to_update:
+            cbar2 = fig.colorbar(ax_plot_2, ax=axs[2], extend='both')
+            cbar2.set_label('a.u.', rotation=90)
+        axs[2].set_ylabel("qubit gain")
+        axs[2].set_xlabel("qubit frequency (GHz)")
+        axs[2].set_title("rabi power blob: amp")
+
+        # Plot the phase
+        ax_plot_3 = axs[3].imshow(
+            Z_avgphase.T,
+            aspect='auto',
+            extent=[x[0], x[-1], y[0], y[-1]],
+            origin='lower',
+            interpolation='none',
+        )
+        if not to_update:
+            cbar3 = fig.colorbar(ax_plot_3, ax=axs[3], extend='both')
+            cbar3.set_label('a.u.', rotation=90)
+        axs[3].set_ylabel("qubit gain")
+        axs[3].set_xlabel("qubit frequency (GHz)")
+        axs[3].set_title("rabi power blob: phase")
+
+        fig.tight_layout()
+        plt.savefig(self.iname)
+
+        if plotDisp:
+            plt.show(block=False)
+            plt.pause(2)
+        else:
+            fig.clf(True)
+            plt.close(fig)
+
+        return fig, axs
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

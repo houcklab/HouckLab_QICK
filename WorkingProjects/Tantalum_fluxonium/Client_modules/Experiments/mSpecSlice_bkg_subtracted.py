@@ -36,8 +36,6 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
                                   ro_ch=cfg["ro_chs"][0])  # conver f_res to dac register value
-        # qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg[
-        #     "qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=cfg["read_pulse_gain"],

@@ -163,19 +163,30 @@ class PS_Analysis:
                     except:
                         pass
             except:
-                """
-                if you hit this point then you are 
-                probably inputing data with only a single 
-                measurement. if this is case, set the 
-                intial and final measurements to be the
-                same and just use a confidence seleciton 
-                of 0. This is super hacky, but i think 
-                that it should work.
-                """
-                self.i_0_arr = [data['i_arr'][:]]
-                self.q_0_arr = [data['q_arr'][:]]
-                self.i_1_arr = [data['i_arr'][:]]
-                self.q_1_arr = [data['q_arr'][:]]
+                try:
+                    i_arr = np.append(data['i_g'][:], data['i_e'][:])
+                    q_arr = np.append(data['q_g'][:], data['q_e'][:])
+                    self.i_0_arr = [i_arr]
+                    self.q_0_arr = [q_arr]
+                    self.i_1_arr = [i_arr]
+                    self.q_1_arr = [q_arr]
+                except:
+                    print("RIP")
+                    print("Time to give up")
+                    print("Let's schedule my FPO")
+                    """
+                    if you hit this point then you are 
+                    probably inputing data with only a single 
+                    measurement. if this is case, set the 
+                    intial and final measurements to be the
+                    same and just use a confidence seleciton 
+                    of 0. This is super hacky, but i think 
+                    that it should work.
+                    """
+                    self.i_0_arr = [data['i_arr'][:]]
+                    self.q_0_arr = [data['q_arr'][:]]
+                    self.i_1_arr = [data['i_arr'][:]]
+                    self.q_1_arr = [data['q_arr'][:]]
 
 
             self.t_arr = np.array([0.0])
@@ -416,8 +427,8 @@ class PS_Analysis:
 
         ### create a verison of the data to fit, remove the 0 elements
         fit_hist = np.copy(norm_hist)
-        fit_hist[fit_hist == 0] = np.nan
-        weights = 1 / np.sqrt(fit_hist)
+        # fit_hist[fit_hist == 0] = np.nan
+        weights = 1 / np.sqrt(fit_hist+1)
         
         ### fit the data
         result = self.full_model.fit(
@@ -447,8 +458,8 @@ class PS_Analysis:
         heading = 'confidence intervals'
         conf_int_report = result.ci_report(
             ndigits = 6, 
-            maxiter = 1000,
-            verbose = True,
+            maxiter = 20000,
+            verbose = False,
             )
         print(conf_int_report)
         self.saveOutput(
@@ -564,7 +575,6 @@ class PS_Analysis:
             sorted_shots.append([])
         
             for idx_shot in range(len(I0)):
-                print(I0.shape)
                 i_val = I0[idx_shot]
                 q_val = Q0[idx_shot]
             
@@ -625,8 +635,8 @@ class PS_Analysis:
             
             ### create a verison of the data to fit, remove the 0 elements
             fit_hist_fin = np.copy(norm_hist_fin)
-            fit_hist_fin[fit_hist_fin == 0] = np.nan
-            weights_fin = 1 / np.sqrt(fit_hist_fin)
+            # fit_hist_fin[fit_hist_fin == 0] = np.nan
+            weights_fin = 1 / np.sqrt(fit_hist_fin+1)
             
             ### fit the data
             result_fin = self.full_model.fit(
@@ -969,7 +979,7 @@ class PS_Analysis:
                 iq_data[1,:], 
                 bins = bin_size, 
                 density=False,
-                range = self.hist_lims
+                range = lims
                 )
 
         return hist2d
@@ -1076,7 +1086,7 @@ class PS_Analysis:
 
         ##### calcualte the confidence interval for all percentages
         conf_inter = result.conf_interval( 
-            maxiter = 1000,
+            maxiter = 100000,
             sigmas = percentages
             )
 
@@ -1128,6 +1138,7 @@ class PS_Analysis:
             dict[prefix+'estimates'] =  estimates[idx_cen]
             dict[prefix+'mean'] = np.nanmean(estimates[idx_cen])
             dict[prefix+'std'] = np.nanstd(estimates[idx_cen])
+            dict[prefix+'median'] = np.nanmedian(estimates[idx_cen])
             #### find the 95% confidence interval
             estimates_sorted = sorted(estimates[idx_cen])
             lower = int(len(estimates_sorted)*0.025)
@@ -1161,6 +1172,7 @@ class PS_Analysis:
             dict[prefix+'estimates'] =  temps_list
             dict[prefix+'mean'] = np.nanmean(temps_list)
             dict[prefix+'std'] = np.nanstd(temps_list)
+            dict[prefix+'median'] = np.nanmedian(temps_list)
             #### find the 95% confidence interval
             temps_list_sorted = sorted(temps_list)
             lower = int(len(temps_list)*0.025)
