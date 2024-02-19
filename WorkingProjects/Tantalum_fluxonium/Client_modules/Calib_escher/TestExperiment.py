@@ -48,28 +48,28 @@ soc, soccfg = makeProxy()
 plt.ioff()
 
 ###TITLE: Test Qubit Pulses
-# region Config for Testing Qubit Pulses
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": 0,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 4000, # [DAC units]
-#     "read_pulse_freq": 7392.36,
-#     ### Qubit
-#     "qubit_ge_freq": 2000, # MHz
-#     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
-#     "relax_delay": 500,  ### turned into us inside the run function
-#     "qubit_ge_gain": 5000, # Constant gain to use
-# }
-# config = BaseConfig | UpdateConfig
+# # region Config for Testing Qubit Pulses
+UpdateConfig = {
+    ##### define attenuators
+    "yokoVoltage": 0,
+    ###### cavity
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 10, # us
+    "read_pulse_gain": 4000, # [DAC units]
+    "read_pulse_freq": 7392.36,
+    ### Qubit
+    "qubit_ge_freq": 815, # MHz
+    "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
+    "relax_delay": 500,  ### turned into us inside the run function
+    "qubit_ge_gain": 30000, # Constant gain to use
+}
+config = BaseConfig | UpdateConfig
+#
+# yoko1.SetVoltage(config["yokoVoltage"])
 # #
-# # yoko1.SetVoltage(config["yokoVoltage"])
-# # #
-# Instance_Qubit_pulse_test = Qubit_Pulse_Test(path="path", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-# data_Qubit_ef_spectroscopy = Qubit_Pulse_Test.acquire(Instance_Qubit_pulse_test)
-# endregion
+Instance_Qubit_pulse_test = Qubit_Pulse_Test(path="path", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_Qubit_ef_spectroscopy = Qubit_Pulse_Test.acquire(Instance_Qubit_pulse_test)
+# # endregion
 
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
@@ -82,70 +82,71 @@ BaseConfig = BaseConfig | SwitchConfig
 
 # # ###TITLE: Transmission + SpecSlice + AmplitudeRabi
 # # region Config Files
-# UpdateConfig_transmission = {
-#     "reps": 1200,  # this will be used for all experiments below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "readout_length": 15, # us
-#     "read_pulse_gain": 5000,#500, # [DAC units]
-#     "read_pulse_freq": 7392.738 , # [MHz]
-#     "nqz": 2,  #### refers to cavity
-#     ##### define transmission experiment parameters
-#     "TransSpan": 0.5, ### MHz, span will be center+/- this parameter
-#     "TransNumPoints": 21, ### number of points in the transmission frequecny
-# }
-# #
-# # # Configure for qubit experiment
-# UpdateConfig_qubit = {
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 4000,
-#     "qubit_freq": 3500, ###########
-#     "qubit_length": 30,
-#     ### for flat-top spec slice
-#     "sigma": 0.05,
-#     "flat_top_length": 20.0,
-#     ##### define spec slice experiment parameters
-#     "qubit_freq_start": 4500,
-#     "qubit_freq_stop": 4550,
-#     "SpecNumPoints": 101,  ### number of points
-#     'spec_reps': 800,
-#     ##### amplitude rabi parameters
-#     "qubit_gain_start": 0, ########
-#     "qubit_gain_step": 1, #200 ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 2,#26,  ### number of steps
-#     "AmpRabi_reps": 8000,#10000,  # number of averages for the experiment
-#     ##### define the yoko voltage
-#     "yokoVoltage": -0.48,
-#     "yokoVoltage_freqPoint": -0.48,
-#     "relax_delay": 500,
-#     "fridge_temp": 10,
-#     "two_pulses": False, # Do e-f pulse
-#     "use_switch": True
-# }
+UpdateConfig_transmission = {
+    "reps": 500,  # this will be used for all experiments below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "readout_length": 30, # us
+    "read_pulse_gain": 6000,#500, # [DAC units]
+    "read_pulse_freq": 7392.2, # [MHz]
+    "nqz": 2,  #### refers to cavity
+    ##### define transmission experiment parameters
+    "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 301, ### number of points in the transmission frequecny
+}
 #
-# UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
-# config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
-# # # endregion
-#
-# # # region Transmission Experiment
-# # set the yoko frequency
+# # Configure for qubit experiment
+UpdateConfig_qubit = {
+    "qubit_pulse_style": "const",
+    "qubit_gain": 30000,
+    "qubit_freq": 800, ###########
+    "qubit_length": 30,
+    ### for flat-top spec slice
+    "sigma": 0.05,
+    "flat_top_length": 50.0,
+    ##### define spec slice experiment parameters
+    "qubit_freq_start": 300,
+    "qubit_freq_stop": 1300,
+    "SpecNumPoints": 1001,  ### number of points
+    'spec_reps': 2000,
+    ##### amplitude rabi parameters
+    "qubit_gain_start": 30000, ########
+    "qubit_gain_step": 1, #200 ### stepping amount of the qubit gain
+    "qubit_gain_expts": 2,#26,  ### number of steps
+    "AmpRabi_reps": 2000,#10000,  # number of averages for the experiment
+    ##### define the yoko voltage
+    "yokoVoltage": -0.24,
+    "yokoVoltage_freqPoint": -0.24,
+    "relax_delay": 10,
+    "fridge_temp": 10,
+    "two_pulses": False, # Do e-f pulse
+    "use_switch": True
+}
+
+UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
+config = BaseConfig | UpdateConfig ### note that UpdateConfig will overwrite elements in BaseConfig
+# # endregion
+
+# # region Transmission Experiment
+# set the yoko frequency
 # yoko1.SetVoltage(config["yokoVoltage"])
 # print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
-# Performing the Cavity Transmission Experiment
+# # #### Performing the Cavity Transmission Experiment
 # Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 # data_trans= Transmission.acquire(Instance_trans)
 # Transmission.display(Instance_trans, data_trans, plotDisp=True)
 # Transmission.save_data(Instance_trans, data_trans)
 #
-# ### update the transmission frequency to be the peak
-# # config["read_pulse_freq"] = Instance_trans.peakFreq
-# # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-# # # endregion
+# ## update the transmission frequency to be the peak
+# config["read_pulse_freq"] = Instance_trans.peakFreq
+# print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+# # endregion
 # #
 # # # region SpecSlice
 # Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 # data_specSlice= SpecSlice_bkg_sub.acquire(Instance_specSlice)
 # SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
+# SpecSlice_bkg_sub.save_config(Instance_specSlice)
 # SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 
 # config["qubit_pulse_style"]= "arb"
@@ -160,17 +161,17 @@ BaseConfig = BaseConfig | SwitchConfig
 # AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # endregion
 
-# ##TITLE: Transmission vs Power
-# region Trans vs Power Config
+##TITLE: Transmission vs Power
+# ###region Trans vs Power Config
 # UpdateConfig = {
-#     "yokoVoltage": -0.38, #3.1
+#     "yokoVoltage": -0.24, #3.1
 #     ##### change gain instead option
-#     "trans_gain_start": 0,
+#     "trans_gain_start": 1000,
 #     "trans_gain_stop": 15000,
-#     "trans_gain_num": 31,
+#     "trans_gain_num": 15,
 #     ###### cavity
 #     "reps": 100,
-#     "trans_reps": 2000,  # this will used for all experiments below unless otherwise changed in between trials
+#     "trans_reps": 1000,  # this will used for all experiments below unless otherwise changed in between trials
 #     "read_pulse_style": "const",  # --Fixed
 #     "readout_length": 20,  # [us]
 #     # "read_pulse_gain": 10000,  # [DAC units]
@@ -894,22 +895,22 @@ BaseConfig = BaseConfig | SwitchConfig
 
 # region constant tone experiment
 ## Constant tone experiment
-UpdateConfig = {
-    ###### cavity
-    "read_pulse_style": "const",  # --Fixed
-    "gain": 00,  # [DAC units]
-    "freq": 2975,  # [MHz]
-    "channel": 1,  # TODO default value
-    "nqz": 1,  # TODO default value
-}
-
-config = BaseConfig | UpdateConfig
+# UpdateConfig = {
+#     ###### cavity
+#     "read_pulse_style": "const",  # --Fixed
+#     "gain": 00,  # [DAC units]
+#     "freq": 2975,  # [MHz]
+#     "channel": 1,  # TODO default value
+#     "nqz": 1,  # TODO default value
+# }
 #
-
-ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
-ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
-ConstantTone_Experiment.save_config(ConstantTone_Instance)
+# config = BaseConfig | UpdateConfig
+# #
+#
+# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+# ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
+# ConstantTone_Experiment.save_config(ConstantTone_Instance)
 # endregion
 
 plt.show()

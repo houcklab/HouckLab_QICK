@@ -26,7 +26,7 @@ PORT = 4000
 is_connection_valid = True
 ############
 
-#### define the switch cofidg
+#### define the switch config
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
     "trig_buffer_end": 0.024, # in us
@@ -43,27 +43,27 @@ lakeshore = lk.Lakeshore370(LS370_connection)
 
 ### Defining temperature sweep configuration
 tempr_cfg = {
-    'tempr_list': [10,15,20,25,30,35,40,45,50,55,60],  # [in mK]
-    'wait_time': 15 * 60,  # [in seconds]
+    'tempr_list': [0,10,15,20,25,30,35,40,45,50,55,60,65,70,75],  # [in mK]
+    'wait_time': 25 * 60,  # [in seconds]
     'max_deviation': 5,  # [in mK] maximum instability of temperature allowed
     'patience_ctr': 3,  # Number of tries an experiment be retried
 }
 # Defining initial T1
-T1_meas = 700
+T1_meas = 3000
 
 ### Defining common experiment configurations
 UpdateConfig = {
     ## set yoko
-    "yokoVoltage": -0.48,  # [in V]
-    "yokoVoltage_freqPoint": -0.48,  # [in V] used for naming the file systems
+    "yokoVoltage": -0.24,  # [in V]
+    "yokoVoltage_freqPoint": -0.24,  # [in V] used for naming the file systems
     ## cavity
     "reps": 2000,  # placeholder for reps. Cannot be undefined
     "read_pulse_style": "const",
-    "read_length": 35,  # [in us]
+    "read_length": 25,  # [in us]
     "read_pulse_gain": 7000,  # [in DAC units]
-    "read_pulse_freq": 7392.238,  # [in MHz]
+    "read_pulse_freq": 7392.0,  # [in MHz]
     ## qubit drive parameters
-    "qubit_freq": 4516.03,  # [in MHz]
+    "qubit_freq": 809.5,  # [in MHz]
     "qubit_pulse_style": "flat_top",
     "qubit_gain": 6000,
     "sigma": 0.025,  ### units us, define a 20ns sigma
@@ -96,8 +96,14 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         for i in range(len(tempr_cfg["tempr_list"])):
             ## Set temperature and wait for 'wait_time' for the fridge to thermalize
             # TODO : Generalize the wait_time for hot and cold thermalization
-            lakeshore.set_temp(tempr_cfg["tempr_list"][i])
-            time.sleep(tempr_cfg["wait_time"])
+            if tempr_cfg["tempr_list"][i] > 60:
+                lakeshore.set_temp(tempr_cfg["tempr_list"][i], heater_range = 5)
+            else:
+                lakeshore.set_temp(tempr_cfg["tempr_list"][i])
+
+            # Do not wait if the first temperature is zero
+            if tempr_cfg["tempr_list"][i] != 0:
+                time.sleep(tempr_cfg["wait_time"])
 
             curr_temp = lakeshore.get_temp(7)
             # Send the index of the tempr_list it is currently on.
@@ -116,321 +122,349 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             }
             config = config | UpdateConfig
 
-            ### Defining the data entry list and path list
-            data_csv = []
-            path_csv = []
+            if tempr_cfg["tempr_list"][i] >= 25:
+                ### Defining the data entry list and path list
+                data_csv = []
+                path_csv = []
+                tempr_csv = []
 
-            ###region TITLE: QND Measurement
-            UpdateConfig = {
-                ##### qubit spec parameters
-                # "qubit_pulse_style": "arb",
-                # "qubit_gain": 0,
-                # "sigma": 0.005,  ### units us, define a 20ns sigma
-                # "flat_top_length": 10.0,  ### in us
-                "relax_delay": 0.01,  ### turned into us inside the run function
-                #### define shots
-                "shots": 4000000,  ### this gets turned into "reps"
+                tempr_csv.append(tempr_cfg["tempr_list"][i])
+                tempr_csv.append(config["yokoVoltage_freqPoint"])
 
-                "use_switch": True,
-            }
-            config_qnd = config | UpdateConfig
+                ###region TITLE: QND Measurement
+                UpdateConfig = {
+                    ##### qubit spec parameters
+                    # "qubit_pulse_style": "arb",
+                    "qubit_gain": 800,
+                    # "sigma": 0.005,  ### units us, define a 20ns sigma
+                    # "flat_top_length": 10.0,  ### in us
+                    "relax_delay": 0.01,  ### turned into us inside the run function
+                    #### define shots
+                    "shots": 4000000,  ### this gets turned into "reps"
 
-            time_required = config_qnd["relax_delay"] * config_qnd["shots"] / 1e6 / 60
+                    "use_switch": True,
+                }
+                config_qnd = config | UpdateConfig
 
-            # Measuring
-            print("QND : Total time estimate is " + str(time_required) + " min")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
-                                       cfg=config_qnd,
-                                       soc=soc, soccfg=soccfg)
-            data_QNDmeas = Instance_QNDmeas.acquire()
-            try:
-                data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=False, confidence_selection=0.99)
-                Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
-            except:
-                print("Couldnt process QND Data")
-            Instance_QNDmeas.save_data(data_QNDmeas)
-            Instance_QNDmeas.save_config()
-            print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            ###endregion
+                time_required = config_qnd["relax_delay"] * config_qnd["shots"] / 1e6 / 60
 
-            #TODO this measurement is not time of flight at all, I guess the name migrated from a previous expt for historical reasons
-            # I don't want to rename it in the middle of measurements but we absolutely need to change it. Lev 12/24/2023
-            ##region TITLE: Time of Flight Measurement
-            UpdateConfig = {
-                ### cavity spec parameters
-                "read_length_tof": 2,  # [us]
-                # ### qubit spec parameters
-                # "qubit_pulse_style": "arb",
-                # "qubit_gain": 0,
-                # "sigma": 0.005,
-                ### define experiment specific parameters
-                "shots": 200000,
-                "offset": 0,  # [us] placeholder for actual value
-                "offset_start": 0,  # [us]
-                "offset_end": 50,  # [us]
-                "offset_num": 15,  # [Number of points]
-                "max_pulse_length": 5,
+                # Measuring
+                print("QND : Total time estimate is " + str(time_required) + " min")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
+                                           cfg=config_qnd,
+                                           soc=soc, soccfg=soccfg)
+                data_QNDmeas = Instance_QNDmeas.acquire()
+                try:
+                    data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=False, confidence_selection=0.99)
+                    Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
+                    tempr_csv.append(lakeshore.get_temp(7))
+                except:
+                    print("Couldnt process QND Data")
+                Instance_QNDmeas.save_data(data_QNDmeas)
+                Instance_QNDmeas.save_config()
+                print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                ###endregion
 
-                "use_switch": True,
-                "relax_delay": 10,
-            }
-            config_tof = config | UpdateConfig
+                #TODO this measurement is not time of flight at all, I guess the name migrated from a previous expt for historical reasons
+                # I don't want to rename it in the middle of measurements but we absolutely need to change it. Lev 12/24/2023
+                ##region TITLE: Time of Flight Measurement
+                UpdateConfig = {
+                    ### cavity spec parameters
+                    "read_length_tof": 2,  # [us]
+                    # ### qubit spec parameters
+                    # "qubit_pulse_style": "arb",
+                    # "qubit_gain": 0,
+                    # "sigma": 0.005,
+                    ### define experiment specific parameters
+                    "shots": 200000,
+                    "offset": 0,  # [us] placeholder for actual value
+                    "offset_start": 0,  # [us]
+                    "offset_end": 50,  # [us]
+                    "offset_num": 15,  # [Number of points]
+                    "max_pulse_length": 5,
 
-            # Estimating Time
-            time_required = np.sum(
-                (np.linspace(config_tof["offset"], config_tof["offset_end"], config_tof["offset_num"]) +
-                 2 * config_tof["max_pulse_length"]) * config_tof["shots"] + config_tof["relax_delay"]) * 1e-6 / 60
+                    "use_switch": True,
+                    "relax_delay": 10,
+                }
+                config_tof = config | UpdateConfig
 
-
-            # Measuring
-            print("TOF : Total time estimate is " + str(time_required) + " min")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_" + str(config["fridge_temp"]),
-                                                     outerFolder=outerFolder, cfg=config_tof,
-                                                     soc=soc, soccfg=soccfg)
-            data_TimeOfFlightPS = Instance_TimeOfFlightPS.acquire()
-            try:
-                data_TimeOfFlightPS = Instance_TimeOfFlightPS.processData(data_TimeOfFlightPS, save_all=False)
-                Instance_TimeOfFlightPS.display(data=data_TimeOfFlightPS, plotDisp=False, save_all=False)
-            except:
-                print("Couldn't process T.O.F Data")
-            Instance_TimeOfFlightPS.save_data(data_TimeOfFlightPS)
-            Instance_TimeOfFlightPS.save_config()
-            print('stopping scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            ##endregion
-
-            ##region TITLE: Rabi Chevron
-            UpdateConfig = {
-                "qubit_freq_start": config["qubit_freq"] - 100,
-                "qubit_freq_stop": config["qubit_freq"] + 100,
-                "SpecNumPoints": 41,  ### number of points
-                ##### define spec slice experiment parameters
-                "qubit_gain": 4000,
-                "spec_reps": 800,
-                "use_switch": True,
-            }
-            config_rc = config | UpdateConfig
-
-            # Estimating Time
-            time_required = config_rc["relax_delay"]*config_rc["spec_reps"]*config_rc["SpecNumPoints"]/1e6/60
+                # Estimating Time
+                time_required = np.sum(
+                    (np.linspace(config_tof["offset"], config_tof["offset_end"], config_tof["offset_num"]) +
+                     2 * config_tof["max_pulse_length"]) * config_tof["shots"] + config_tof["relax_delay"]) * 1e-6 / 60
 
 
-            # Measuring
-            print('Rabi Chevron : Total time estimate: ' + str(time_required) + " minutes")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_SpecSlice = SpecSlice_bkg_sub(path="Rabi_Chevron_temp_" + str(config["fridge_temp"]),
-                                                             outerFolder=outerFolder, cfg=config_rc, soc=soc, soccfg=soccfg,
-                                                             progress=True)
-            data_SpecSlice = Instance_SpecSlice.acquire()
-            Instance_SpecSlice.save_data(data_SpecSlice)
-            Instance_SpecSlice.save_config()
-            Instance_SpecSlice.display(data_SpecSlice, plotDisp=False)
-            config["qubit_freq"] = data_SpecSlice["data"]["f_reqd"]
-            print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                # Measuring
+                print("TOF : Total time estimate is " + str(time_required) + " min")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_" + str(config["fridge_temp"]),
+                                                         outerFolder=outerFolder, cfg=config_tof,
+                                                         soc=soc, soccfg=soccfg)
+                data_TimeOfFlightPS = Instance_TimeOfFlightPS.acquire()
+                try:
+                    data_TimeOfFlightPS = Instance_TimeOfFlightPS.processData(data_TimeOfFlightPS, save_all=False)
+                    Instance_TimeOfFlightPS.display(data=data_TimeOfFlightPS, plotDisp=False, save_all=False)
+                    tempr_csv.append(lakeshore.get_temp(7))
+                except:
+                    print("Couldn't process T.O.F Data")
+                Instance_TimeOfFlightPS.save_data(data_TimeOfFlightPS)
+                Instance_TimeOfFlightPS.save_config()
+                print('stopping scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                ##endregion
 
-            ##endregion
+                ##region TITLE: Rabi Chevron
+                UpdateConfig = {
+                    "qubit_freq_start": config["qubit_freq"] - 100,
+                    "qubit_freq_stop": config["qubit_freq"] + 100,
+                    "SpecNumPoints": 41,  ### number of points
+                    ##### define spec slice experiment parameters
+                    "qubit_gain": 4000,
+                    "spec_reps": 800,
+                    "use_switch": True,
+                }
+                config_rc = config | UpdateConfig
 
-            ##region TITLE: Measure T1
-            UpdateConfig = {
-                # ## qubit parameters
-                # "qubit_pulse_style": "arb",  # Pulse Type
-                # "qubit_gain": 0,  # [in DAC units]
-                # "sigma": 0.005,  # [in us]
-                ## experiment parameters
-                "shots": 40000,  # Number of shots
-                "wait_start": 0,  # [in us]
-                "wait_stop": config["relax_delay"],  # [in us]
-                "wait_num": 25,  # number of points in logspace
-                'wait_type': 'linear',
-                "use_switch": True,
-                "relax_delay": 10,
-            }
-            config_t1 = config | UpdateConfig
-
-            # Estimating Time
-            time_per_scan = config_t1["shots"] * (
-                    np.linspace(config_t1["wait_start"], config_t1["wait_stop"], config_t1["wait_num"])
-                    + config_t1["relax_delay"]) * 1e-6
-            total_time = np.sum(time_per_scan) / 60
+                # Estimating Time
+                time_required = config_rc["relax_delay"]*config_rc["spec_reps"]*config_rc["SpecNumPoints"]/1e6/60
 
 
-            # Measuring
-            print('T1 : Total time estimate: ' + str(total_time) + " minutes")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_T1_PS = T1_PS_sse(path="T1_PS_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
-                                       cfg=config_t1,
-                                       soc=soc, soccfg=soccfg)
-            data_T1_PS = Instance_T1_PS.acquire()
-            try:
-                data_T1_PS = Instance_T1_PS.process_data(data_T1_PS)
-                Instance_T1_PS.display(data_T1_PS, plotDisp=False)
-                if data_T1_PS["data"]["T1"] < 10000:
-                    if data_T1_PS["data"]["T1_guess"] * 5 > 1000:
-                        config["relax_delay"] = data_T1_PS["data"]["T1_guess"] * 5  ## TITLE: Very important line
+                # Measuring
+                print('Rabi Chevron : Total time estimate: ' + str(time_required) + " minutes")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_SpecSlice = SpecSlice_bkg_sub(path="Rabi_Chevron_temp_" + str(config["fridge_temp"]),
+                                                                 outerFolder=outerFolder, cfg=config_rc, soc=soc, soccfg=soccfg,
+                                                                 progress=True)
+                tempr_csv.append(lakeshore.get_temp(7))
+                data_SpecSlice = Instance_SpecSlice.acquire()
+                Instance_SpecSlice.save_data(data_SpecSlice)
+                Instance_SpecSlice.save_config()
+                Instance_SpecSlice.display(data_SpecSlice, plotDisp=False)
+                config["qubit_freq"] = data_SpecSlice["data"]["f_reqd"]
+                print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+                ##endregion
+
+                ##region TITLE: Measure T1
+                UpdateConfig = {
+                    # ## qubit parameters
+                    # "qubit_pulse_style": "arb",  # Pulse Type
+                    # "qubit_gain": 0,  # [in DAC units]
+                    # "sigma": 0.005,  # [in us]
+                    ## experiment parameters
+                    "shots": 40000,  # Number of shots
+                    "wait_start": 0,  # [in us]
+                    "wait_stop": config["relax_delay"],  # [in us]
+                    "wait_num": 25,  # number of points in logspace
+                    'wait_type': 'linear',
+                    "use_switch": True,
+                    "relax_delay": 10,
+                }
+                config_t1 = config | UpdateConfig
+
+                # Estimating Time
+                time_per_scan = config_t1["shots"] * (
+                        np.linspace(config_t1["wait_start"], config_t1["wait_stop"], config_t1["wait_num"])
+                        + config_t1["relax_delay"]) * 1e-6
+                total_time = np.sum(time_per_scan) / 60
+
+
+                # Measuring
+                print('T1 : Total time estimate: ' + str(total_time) + " minutes")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_T1_PS = T1_PS_sse(path="T1_PS_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
+                                           cfg=config_t1,
+                                           soc=soc, soccfg=soccfg)
+                data_T1_PS = Instance_T1_PS.acquire()
+                try:
+                    data_T1_PS = Instance_T1_PS.process_data(data_T1_PS)
+                    Instance_T1_PS.display(data_T1_PS, plotDisp=False)
+                    tempr_csv.append(lakeshore.get_temp(7))
+                    if data_T1_PS["data"]["T1"] < 10000:
+                        if data_T1_PS["data"]["T1_guess"] * 5 > 1000:
+                            config["relax_delay"] = data_T1_PS["data"]["T1_guess"] * 5  ## TITLE: Very important line
+                        else:
+                            config["relax_delay"] = 1000
+                        T1_meas = data_T1_PS["data"]["T1"]
+                        T1_meas_err = data_T1_PS["data"]["T1_err"]
+                        rate_tempr = data_T1_PS["data"]["temp_rate"]
+                        rate_tempr_std = data_T1_PS["data"]["temp_std_rate"]
                     else:
-                        config["relax_delay"] = 1000
-                    T1_meas = data_T1_PS["data"]["T1"]
-                    T1_meas_err = data_T1_PS["data"]["T1_err"]
-                    rate_tempr = data_T1_PS["data"]["temp_rate"]
-                    rate_tempr_std = data_T1_PS["data"]["temp_std_rate"]
-                else:
-                    print("Error: T1 is too big")
-                    sys.exit("What nonsense is this! Human required!")
-            except:
-                print("Couldn't process T1 data")
-                T1_meas = 0.0
-                T1_meas_err = 0.0
-                rate_tempr = 0.0
-                rate_tempr_std = 0.0
-            Instance_T1_PS.save_data(data_T1_PS)
-            Instance_T1_PS.save_config()
-            print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                        print("Error: T1 is too big")
+                        sys.exit("What nonsense is this! Human required!")
+                except:
+                    print("Couldn't process T1 data")
+                    T1_meas = 0.0
+                    T1_meas_err = 0.0
+                    rate_tempr = 0.0
+                    rate_tempr_std = 0.0
+                Instance_T1_PS.save_data(data_T1_PS)
+                Instance_T1_PS.save_config()
+                print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
-            # updating the relax delay
+                # updating the relax delay
 
 
-            ##endregion
+                ##endregion
 
-            ##region TITLE: Measure SingleShot for Temperature Calculation
-            UpdateConfig = {
-                ## qubit spec parameters
-                # "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
-                # "qubit_gain": 0,  # [in DAC Units]
-                # "sigma": 0.005,  # [in us]
-                ## define experiment parameters
-                "shots": 1000000,
-                "use_switch": True,
-                "initialize_pulse": True
-            }
-            config_ss = config | UpdateConfig
+                ##region TITLE: Measure SingleShot for Temperature Calculation
+                UpdateConfig = {
+                    ## qubit spec parameters
+                    # "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
+                    # "qubit_gain": 0,  # [in DAC Units]
+                    # "sigma": 0.005,  # [in us]
+                    ## define experiment parameters
+                    "shots": 1000000,
+                    "use_switch": True,
+                    "initialize_pulse": True
+                }
+                config_ss = config | UpdateConfig
 
-            # Estimating Time
-            time_required = config_ss["shots"] * config_ss["relax_delay"] * 1e-6 / 60
-
-
-            # Measuring
-            print("SingleShot : Total time estimate is ", time_required, " mins")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_temp_" + str(config_ss["fridge_temp"]),
-                                                       outerFolder=outerFolder, cfg=config_ss,
-                                                       soc=soc, soccfg=soccfg)
-            data_SingleShot = Instance_SingleShotProgram.acquire()
-            try:
-                data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot, bin_size=51)
-                Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
-            except:
-                print("Couldn't process Single Shot Data")
-            Instance_SingleShotProgram.save_data(data_SingleShot)
-            Instance_SingleShotProgram.save_config()
-            print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-            # Getting the temperatures
-            state_prob = data_SingleShot["data"]["prob"]
-            state_prob_std = data_SingleShot["data"]["prob_std"]
-            state_tempr = data_SingleShot["data"]["tempr"]
-            state_tempr_std = data_SingleShot["data"]["tempr_std"]
-
-            ##endregion
-
-            ##region TITLE: Measure SingleShot for HMM
-            UpdateConfig = {
-                ## qubit spec parameters
-                # "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
-                # "qubit_gain": 0,  # [in DAC Units]
-                # "sigma": 0.005,  # [in us]
-                ## define experiment parameters
-                "shots": int(1e7),
-                "use_switch": False,
-                "relax_delay": 0.01,
-            }
-            config_hmm = config | UpdateConfig
-
-            # Estimating Time
-            time_required = config_hmm["shots"] * config_hmm["relax_delay"] * 1e-6 / 60
-
-            # Measuring
-            print("SingleShot for HMM : Total time estimate is ", time_required, " mins")
-            print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-            Instance_SingleShotProgram_HMM = SingleShotProgramHMM(path="SingleShot_NoDelay_" + str(config_hmm["fridge_temp"]),
-                                                       outerFolder=outerFolder, cfg=config_hmm,
-                                                       soc=soc, soccfg=soccfg)
-            data_SingleShot_HMM = Instance_SingleShotProgram_HMM.acquire()
-            try:
-                Instance_SingleShotProgram_HMM.display(data_SingleShot_HMM, plotDisp=False, save_fig=True)
-            except:
-                print("Couldn't process Single Shot Data")
-            Instance_SingleShotProgram_HMM.save_data(data_SingleShot_HMM)
-            Instance_SingleShotProgram_HMM.save_config()
-            print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-            ##endregion
+                # Estimating Time
+                time_required = config_ss["shots"] * config_ss["relax_delay"] * 1e-6 / 60
 
 
-            ### Saving the data to a csv
-            # getting all the data
-            data_csv.append(tempr_cfg["tempr_list"][i])  # [mK] Temperature
-            data_csv.append(config["yokoVoltage_freqPoint"])  # [V] Yoko Voltage
-            data_csv.append(config["qubit_freq"])  # [MHz] Qubit Frequency
-            try:
-                data_csv.append(T1_meas.round(4))  # [in us] T1
-                data_csv.append(T1_meas_err.round(4))  # [in us] T1 std
-            except:
-                data_csv.append(0)  # [in us] T1
-                data_csv.append(0)  # [in us] T1 std
+                # Measuring
+                print("SingleShot : Total time estimate is ", time_required, " mins")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_temp_" + str(config_ss["fridge_temp"]),
+                                                           outerFolder=outerFolder, cfg=config_ss,
+                                                           soc=soc, soccfg=soccfg)
+                data_SingleShot = Instance_SingleShotProgram.acquire()
+                try:
+                    data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot, bin_size=51)
+                    Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
+                    tempr_csv.append(lakeshore.get_temp(7))
+                except:
+                    print("Couldn't process Single Shot Data")
+                Instance_SingleShotProgram.save_data(data_SingleShot)
+                Instance_SingleShotProgram.save_config()
+                print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
-            indx_min = np.argmin(np.array(state_prob))
-            data_csv.append((state_prob[indx_min]*1e2).round(4))  # Thermal excitation
-            data_csv.append((state_prob_std[indx_min]*1e2).round(4))  # Thermal excitation std
-            data_csv.append((state_tempr*1e3).round(4))  # [in mK] Temperature of qubit
-            data_csv.append((state_tempr_std*1e3).round(4))  # [in mK] Std of temperature of qubit
-            try:
-                data_csv.append(rate_tempr.round(4))
-                data_csv.append(rate_tempr_std.round(4))
-            except:
-                data_csv.append(0)  # [in us] T1
-                data_csv.append(0)  # [in us] T1 std
-            today = datetime.datetime.today()
-            formatted_date = today.strftime("%m/%d/%Y")
-            data_csv.append(formatted_date)  # today's date in mm/dd/yyyy format
+                # Getting the temperatures
+                state_prob = data_SingleShot["data"]["prob"]
+                state_prob_std = data_SingleShot["data"]["prob_std"]
+                state_tempr = data_SingleShot["data"]["tempr"]
+                state_tempr_std = data_SingleShot["data"]["tempr_std"]
 
-            # Saving to a csv file
-            loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
-            fname = "WTF_cooldown6_allData.csv"
+                ##endregion
 
-            # Open the existing CSV file in append mode
-            with open(loc+fname, mode='a', newline='') as file:
-                # Create a CSV writer object
-                writer = csv.writer(file)
+                ##region TITLE: Measure SingleShot for HMM
+                UpdateConfig = {
+                    ## qubit spec parameters
+                    # "qubit_pulse_style": "arb",  # no actual pulse applied. This is just for safety
+                    # "qubit_gain": 0,  # [in DAC Units]
+                    # "sigma": 0.005,  # [in us]
+                    ## define experiment parameters
+                    "shots": int(1e7),
+                    "use_switch": False,
+                    "relax_delay": 0.01,
+                }
+                config_hmm = config | UpdateConfig
 
-                # Write the list to the CSV file
-                writer.writerow(data_csv)
+                # Estimating Time
+                time_required = config_hmm["shots"] * config_hmm["relax_delay"] * 1e-6 / 60
 
-            # Close the open csv
-            file.close()
+                # Measuring
+                print("SingleShot for HMM : Total time estimate is ", time_required, " mins")
+                print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+                Instance_SingleShotProgram_HMM = SingleShotProgramHMM(path="SingleShot_NoDelay_" + str(config_hmm["fridge_temp"]),
+                                                           outerFolder=outerFolder, cfg=config_hmm,
+                                                           soc=soc, soccfg=soccfg)
+                data_SingleShot_HMM = Instance_SingleShotProgram_HMM.acquire()
+                try:
+                    Instance_SingleShotProgram_HMM.display(data_SingleShot_HMM, plotDisp=False, save_fig=True)
+                    tempr_csv.append(lakeshore.get_temp(7))
+                except:
+                    print("Couldn't process Single Shot Data")
+                Instance_SingleShotProgram_HMM.save_data(data_SingleShot_HMM)
+                Instance_SingleShotProgram_HMM.save_config()
+                print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
-            path_csv.append(tempr_cfg["tempr_list"][i])
-            path_csv.append(config["yokoVoltage_freqPoint"])
-            path_csv.append(Instance_QNDmeas.fname)
-            path_csv.append(Instance_TimeOfFlightPS.fname)
-            path_csv.append(Instance_T1_PS.fname)
-            path_csv.append(Instance_SingleShotProgram.fname)
-            path_csv.append(Instance_SingleShotProgram_HMM.fname)
+                ##endregion
 
-            # Saving to a csv file
-            loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
-            fname = "WTF_cooldown6_pathtodata.csv"
 
-            # Open the existing CSV file in append mode
-            with open(loc + fname, mode='a', newline='') as file:
-                # Create a CSV writer object
-                writer = csv.writer(file)
+                ### Saving the data to a csv
+                # getting all the data
+                data_csv.append(tempr_cfg["tempr_list"][i])  # [mK] Temperature
+                data_csv.append(config["yokoVoltage_freqPoint"])  # [V] Yoko Voltage
+                data_csv.append(config["qubit_freq"])  # [MHz] Qubit Frequency
+                try:
+                    data_csv.append(T1_meas.round(4))  # [in us] T1
+                    data_csv.append(T1_meas_err.round(4))  # [in us] T1 std
+                except:
+                    data_csv.append(0)  # [in us] T1
+                    data_csv.append(0)  # [in us] T1 std
 
-                # Write the list to the CSV file
-                writer.writerow(path_csv)
+                indx_min = np.argmin(np.array(state_prob))
+                data_csv.append((state_prob[indx_min]*1e2).round(4))  # Thermal excitation
+                data_csv.append((state_prob_std[indx_min]*1e2).round(4))  # Thermal excitation std
+                data_csv.append((state_tempr*1e3).round(4))  # [in mK] Temperature of qubit
+                data_csv.append((state_tempr_std*1e3).round(4))  # [in mK] Std of temperature of qubit
+                try:
+                    data_csv.append(rate_tempr.round(4))
+                    data_csv.append(rate_tempr_std.round(4))
+                except:
+                    data_csv.append(0)  # [in us] T1
+                    data_csv.append(0)  # [in us] T1 std
+                today = datetime.datetime.today()
+                formatted_date = today.strftime("%m/%d/%Y")
+                data_csv.append(formatted_date)  # today's date in mm/dd/yyyy format
 
-            # Close the open csv
-            file.close()
+                # Saving to a csv file
+                loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
+                fname = "WTF_cooldown6_allData.csv"
+
+                # Open the existing CSV file in append mode
+                with open(loc+fname, mode='a', newline='') as file:
+                    # Create a CSV writer object
+                    writer = csv.writer(file)
+
+                    # Write the list to the CSV file
+                    writer.writerow(data_csv)
+
+                # Close the open csv
+                file.close()
+
+                path_csv.append(tempr_cfg["tempr_list"][i])
+                path_csv.append(config["yokoVoltage_freqPoint"])
+                path_csv.append(Instance_QNDmeas.fname)
+                path_csv.append(Instance_TimeOfFlightPS.fname)
+                path_csv.append(Instance_T1_PS.fname)
+                path_csv.append(Instance_SingleShotProgram.fname)
+                path_csv.append(Instance_SingleShotProgram_HMM.fname)
+
+                # Saving to a csv file
+                loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
+                fname = "WTF_cooldown6_pathtodata.csv"
+
+                # Open the existing CSV file in append mode
+                with open(loc + fname, mode='a', newline='') as file:
+                    # Create a CSV writer object
+                    writer = csv.writer(file)
+
+                    # Write the list to the CSV file
+                    writer.writerow(path_csv)
+
+                # Close the open csv
+                file.close()
+
+                tempr_csv.append(formatted_date)
+
+                # Saving to a csv file
+                loc = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Summary\\"
+                fname = "WTF_cooldown6_fridgetemp.csv"
+
+                # Open the existing CSV file in append mode
+                with open(loc + fname, mode='a', newline='') as file:
+                    # Create a CSV writer object
+                    writer = csv.writer(file)
+
+                    # Write the list to the CSV file
+                    writer.writerow(tempr_csv)
+
+                # Close the open csv
+                file.close()
 
             print("Message Sent:Server Ready")
             conn.sendall("Server Ready".encode())

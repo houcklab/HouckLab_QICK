@@ -51,43 +51,43 @@ BaseConfig = BaseConfig | SwitchConfig
 
 # # ################################################################################################################
 # # # ####################################### code for running basic single shot exerpiment
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -0.48,
-#     "yokoVoltage_freqPoint": -0.48,
-#     ###### cavity
-#     "reps": 2000,  # this will be used for all experiments below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 20, # [Clock ticks]
-#     "read_pulse_gain": 6000, # [DAC units]
-#     "read_pulse_freq": 7392.238,# [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 7000,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.005,  ### units us, define a 20ns sigma
-#     "flat_top_length": 20, ### in us
-#     "qubit_freq": 4516.03,
-#     "relax_delay": 2000,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 5000, ### this gets turned into "reps"
-#     ##### record the fridge temperature in units of mK
-#     "fridge_temp": fridge_temp,
-#     "use_switch": True,
-# }
-# config = BaseConfig | UpdateConfig
+UpdateConfig = {
+    ##### set yoko
+    "yokoVoltage": -0.48,
+    "yokoVoltage_freqPoint": -0.48,
+    ###### cavity
+    "reps": 2000,  # this will be used for all experiments below unless otherwise changed in between trials
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 20, # [Clock ticks]
+    "read_pulse_gain": 6000, # [DAC units]
+    "read_pulse_freq": 7392.238,# [MHz]
+    ##### qubit spec parameters
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 31000,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.005,  ### units us, define a 20ns sigma
+    "flat_top_length": 20, ### in us
+    "qubit_freq": 5700.356,
+    "relax_delay": 2000,  ### turned into us inside the run function
+    #### define shots
+    "shots": 5000, ### this gets turned into "reps"
+    ##### record the fridge temperature in units of mK
+    "fridge_temp": fridge_temp,
+    "use_switch": True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
 #
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# # outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
-# # Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-# #                                                soc=soc, soccfg=soccfg)
-# # data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
-# # SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
-# # SingleShotProgram.save_config(Instance_SingleShotProgram)
-# # SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
-# # # #
-# # # # # ##### run the single shot experiment
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
+Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+SingleShotProgram.save_config(Instance_SingleShotProgram)
+SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+# #
+# # # # # # # ##### run the single shot experiment
 # outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\singleShotSweeps\\"
 # loop_len = 11
 # freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
@@ -218,78 +218,78 @@ BaseConfig = BaseConfig | SwitchConfig
 
 # ####################################################################################################################
 ###################################### QNDness measurement
-UpdateConfig = {
-    ##### set yoko
-    "yokoVoltage": -0.48,
-    "yokoVoltage_freqPoint": -0.48,
-    ###### cavity
-    "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 20, # us
-    "read_pulse_gain": 6000, # [DAC units]
-    "read_pulse_freq": 7392.238, # [MHz]
-    ##### qubit spec parameters
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 6000,
-    # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.005,  ### units us, define a 20ns sigma
-    "flat_top_length": 20.0, ### in us
-    "qubit_freq": 4516.03,
-    "relax_delay": 0.01,  ### turned into us inside the run function
-    #### define shots
-    "shots": 400000, ### this gets turned into "reps"
-    #### define info for clustering
-    "cen_num": 2,
-#     ##### record the fridge temperature in units of mK
-    "fridge_temp": fridge_temp,
-    'use_switch':True,
-}
-config = BaseConfig | UpdateConfig
-
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\QND_Checks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
+# UpdateConfig = {
+#     ##### set yoko
+#     "yokoVoltage": -1.4558,
+#     "yokoVoltage_freqPoint": -1.4558,
+#     ###### cavity
+#     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
+#     "read_pulse_style": "const", # --Fixed
+#     "read_length": 30, # us
+#     "read_pulse_gain": 8000, # [DAC units]
+#     "read_pulse_freq": 7392.038, # [MHz]
+#     ##### qubit spec parameters
+#     "qubit_pulse_style": "flat_top",
+#     "qubit_gain": 600,
+#     # "qubit_length": 10,  ###us, this is used if pulse style is const
+#     "sigma": 0.005,  ### units us, define a 20ns sigma
+#     "flat_top_length": 20.0, ### in us
+#     "qubit_freq": 4517.03,
+#     "relax_delay": 0.01,  ### turned into us inside the run function
+#     #### define shots
+#     "shots": 300000, ### this gets turned into "reps"
+#     #### define info for clustering
+#     "cen_num": 2,
+# #     ##### record the fridge temperature in units of mK
+#     "fridge_temp": fridge_temp,
+#     'use_switch':True,
+# }
+# config = BaseConfig | UpdateConfig
 #
+# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\QND_Checks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
+# #
 # yoko1.SetVoltage(config["yokoVoltage"])
-#
+# #
 # # Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
 # #                                                soc=soc, soccfg=soccfg)
 # # data_QNDmeas = Instance_QNDmeas.acquire()
-# # data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+# # data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.999)
 # # Instance_QNDmeas.save_data(data_QNDmeas)
 # # Instance_QNDmeas.save_config()
 # # Instance_QNDmeas.display(data_QNDmeas, plotDisp=True)
 # # print('data saved: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+# # #
+# # #
+# # # ##### loop over readout parameters and try to improve QNDness
+# avg = 1
+# read_length_vec = config["read_length"] + np.linspace(-10,5, 4)
+# read_gain_vec = config["read_pulse_gain"] + np.linspace(-2500, 0, 6, dtype = int)
+# Tempr = np.zeros((read_length_vec.size, read_gain_vec.size, avg))
 #
+# for idx_avg in range(avg):
+#     print(idx_avg)
+#     for idx_length in range(read_length_vec.size):
+#         for idx_gain in range(read_gain_vec.size):
+#             config["read_length"] = read_length_vec[idx_length]
+#             config["read_pulse_gain"] = read_gain_vec[idx_gain]
+#             Instance_QNDmeas = QNDmeas(path="QND_Meas_Sweeps_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+#                                        soc=soc, soccfg=soccfg)
+#             data_QNDmeas = QNDmeas.acquire(Instance_QNDmeas)
+#             data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.995)
+#             QNDmeas.save_data(Instance_QNDmeas, data_QNDmeas)
+#             QNDmeas.save_config(Instance_QNDmeas)
+#             Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
+#             Tempr[idx_length, idx_gain, idx_avg] = np.min([data_QNDmeas["data"]["T_0_0"], data_QNDmeas["data"]["T_1_1"]])
+# ###########
 #
-# ##### loop over readout parameters and try to improve QNDness
-avg = 10
-read_length_vec = config["read_length"] + np.linspace(-10,15, 6)
-read_gain_vec = config["read_pulse_gain"] + np.linspace(-2000, 2000, 9, dtype = int)
-Tempr = np.zeros((read_length_vec.size, read_gain_vec.size, avg))
-
-for idx_avg in range(avg):
-    print(idx_avg)
-    for idx_length in range(read_length_vec.size):
-        for idx_gain in range(read_gain_vec.size):
-            config["read_length"] = read_length_vec[idx_length]
-            config["read_pulse_gain"] = read_gain_vec[idx_gain]
-            Instance_QNDmeas = QNDmeas(path="QND_Meas_Sweeps_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-                                       soc=soc, soccfg=soccfg)
-            data_QNDmeas = QNDmeas.acquire(Instance_QNDmeas)
-            data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
-            QNDmeas.save_data(Instance_QNDmeas, data_QNDmeas)
-            QNDmeas.save_config(Instance_QNDmeas)
-            Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
-            Tempr[idx_length, idx_gain, idx_avg] = np.min([data_QNDmeas["data"]["T_0_0"], data_QNDmeas["data"]["T_1_1"]])
-###########
-
-plt.figure(figsize=(10, 6))
-plt.imshow(np.average(Tempr, axis = 2).T, origin='lower', extent=[read_length_vec.min(), read_length_vec.max(), read_gain_vec.min(), read_gain_vec.max()], aspect='auto', cmap='viridis')
-plt.colorbar(label='Tempr')
-plt.xlabel('read_length_vec')
-plt.ylabel('read_gain_vec')
-plt.title('2D plot of Tempr')
-plt.tight_layout()
-plt.show()
+# plt.figure(figsize=(10, 6))
+# plt.imshow(np.average(Tempr, axis = 2).T, origin='lower', extent=[read_length_vec.min(), read_length_vec.max(), read_gain_vec.min(), read_gain_vec.max()], aspect='auto', cmap='viridis')
+# plt.colorbar(label='Tempr')
+# plt.xlabel('read_length_vec')
+# plt.ylabel('read_gain_vec')
+# plt.title('2D plot of Tempr')
+# plt.tight_layout()
+# plt.show()
 
 # Create a 2d plot
 

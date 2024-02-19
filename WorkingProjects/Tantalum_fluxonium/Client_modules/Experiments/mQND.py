@@ -163,7 +163,7 @@ class QNDmeas(ExperimentClass):
         if 'confidence_selection' in kwargs:
             confidence_selection = kwargs["confidence_selection"]
         else:
-            confidence_selection = 0.999
+            confidence_selection = 0.99999
 
         # Calculate the probability
         (state0_probs, state0_probs_err, state0_num,

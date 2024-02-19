@@ -16,10 +16,10 @@ class LoopbackProgramSingleShotHMM(RAveragerProgram):
         cfg = self.cfg
 
         #### first do nothing, then apply the pi pulse
-        cfg["start"]=0
-        cfg["step"]=cfg["qubit_gain"]
-        cfg["reps"]=cfg["shots"]
-        cfg["expts"]=2
+        cfg["start"] = 0
+        cfg["step"] = cfg["qubit_gain"]
+        cfg["reps"] = cfg["shots"]
+        cfg["expts"] = 1
         # ##### reverse the experiment order
         # cfg["start"]=cfg["qubit_gain"]
         # cfg["step"]= -cfg["qubit_gain"]
@@ -112,10 +112,10 @@ class LoopbackProgramSingleShotHMM(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        shots_i = self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        shots_q = self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
 
-        return shots_i0,shots_q0
+        return shots_i, shots_q
 
 
 
@@ -132,18 +132,16 @@ class SingleShotProgramHMM(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         #### pull the data from the single hots
         prog = LoopbackProgramSingleShotHMM(self.soccfg, self.cfg)
-        shots_i0,shots_q0 = prog.acquire(self.soc, load_pulses=True)
+        shots_i,shots_q = prog.acquire(self.soc, load_pulses=True)
 
-        i_g = shots_i0[0]
-        q_g = shots_q0[0]
-        i_e = shots_i0[1]
-        q_e = shots_q0[1]
+        i_arr = shots_i
+        q_arr = shots_q
 
-        data = {'config': self.cfg, 'data': {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}}
+        data = {'config': self.cfg, 'data': {'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=20) ### arbitrary ran, change later
+        fid, threshold, angle = hist_process(data=[i_arr, q_arr, i_arr, q_arr], plot=False, ran=20) ### arbitrary ran, change later
 
         # stop = 100
         # plt.figure(101)

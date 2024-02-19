@@ -28,16 +28,16 @@ UpdateConfig = {
     ##### define attenuators
     ##### define the yoko voltage
     "yokoVoltageStart": -0.40, #-0.65,
-    "yokoVoltageStop": -0.2, #-0.63,
-    "yokoVoltageNumPoints": 50,
+    "yokoVoltageStop": 0.1, #-0.63,
+    "yokoVoltageNumPoints": 51,
     ###### cavity
     "trans_reps": 500,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     "read_length": 20,  # us
     "read_pulse_gain": 5000,  # [DAC units]
-    "trans_freq_start": 7392.3 - 15,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 7392.3 + 15,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransNumPoints": 201,  ### number of points in the transmission frequecny
+    "trans_freq_start": 7392.3 - 2,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 7392.3 + 2,  # [MHz] actual frequency is this number + "cavity_LO"
+    "TransNumPoints": 101,  ### number of points in the transmission frequecny
     ##### qubit spec parameters
     "spec_reps": 2, #2500
     "qubit_pulse_style": "const",
