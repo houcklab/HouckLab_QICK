@@ -23,7 +23,11 @@ from matplotlib import pyplot as plt
 import datetime
 
 #### define the saving path
+<<<<<<< Updated upstream:WorkingProjects/QM_Team/Client_modules/Calib/TestExperiment.py
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+=======
+outerFolder = "Z:\\t1Team\\Data\\2024_01_23_CoolDown\\2024_02_07_LowTc_Qubit_RecoolDown\\"
+>>>>>>> Stashed changes:WorkingProjects/TJPR/Calib/TestExperiment.py
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 

@@ -151,7 +151,7 @@ class SpecSlice(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

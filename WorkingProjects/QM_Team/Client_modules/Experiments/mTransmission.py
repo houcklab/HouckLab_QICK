@@ -37,7 +37,7 @@ class LoopbackProgramTrans(AveragerProgram):
 
         if style == "const":
             self.set_pulse_registers(ch=res_ch, style=style, freq=freq, phase=0, gain=cfg["read_pulse_gain"],
-                                     length=self.us2cycles(cfg["read_length"]) )#,  mode="periodic")
+                                     length=self.us2cycles(cfg["read_length"]),  mode="periodic")
         elif style == "flat_top":
             self.set_pulse_registers(ch=res_ch, style=style, freq=freq, phase=0, gain=cfg["read_pulse_gain"],
                                      waveform="measure", length=self.us2cycles(cfg["read_length"]) )

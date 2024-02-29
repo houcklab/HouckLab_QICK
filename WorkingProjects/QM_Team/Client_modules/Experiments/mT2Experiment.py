@@ -131,6 +131,12 @@ class T2Experiment(ExperimentClass):
         freq_guess = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
         phaseOffset_guess = np.pi
 
+        offset_guess = np.min(mag)
+        amp_guess = np.max(mag)
+        T2_guess = 1
+        freq_guess = 1
+        phaseOffset_guess = 0
+
         guess = [offset_guess, amp_guess, T2_guess, freq_guess, phaseOffset_guess]
 
         self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)

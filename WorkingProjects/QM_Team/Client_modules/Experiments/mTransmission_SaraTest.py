@@ -20,7 +20,7 @@ class LoopbackProgramTrans(AveragerProgram):
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]) )#, mode = 'periodic')
+                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode = 'periodic')
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
