@@ -14,17 +14,17 @@ Qubit_Parameters = {
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit': {'Frequency': 5450, 'Gain': 2130},
           'Pulse_FF': [0, 0, 2000, 0]},
-    '2': {'Readout': {'Frequency': 7089.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 5067.2, 'Gain': 1300},
-          'Pulse_FF': [30000, 0, 0, 0]},
+    '2': {'Readout': {'Frequency': 7089.45 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5045, 'Gain': 760},
+          'Pulse_FF': [0, 0, 0, 10000]},
     '3': {'Readout': {'Frequency': 7192.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit': {'Frequency': 5570, 'Gain': 1780},
           'Pulse_FF': [0, 12000, 0, 0]},
-    '4': {'Readout': {'Frequency': 7281.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
+    '4': {'Readout': {'Frequency': 7281.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 5110, 'Gain': 1280},
+          'Qubit': {'Frequency': 4983, 'Gain': 1700},
           'Pulse_FF': [0, 0, 0, 2000]}
     }
 # Qubit_Parameters = {
@@ -34,13 +34,27 @@ Qubit_Parameters = {
 #     '4': {'Readout': {'Frequency': 7250.01, 'Gain': 6000}, 'Qubit': {'Frequency': 4700, 'Gain': 2630}}
 #     }
 
-Qubit_Pulse = 3
+Qubit_Pulse = 4
 # gain_test = -15000 #15000  # 6000  # maximum gain +/-3e4  # -20000 for left qubit, 20000 mid/right
 # initial (pre-step) values
 FF_gain1_init = 0  # Left Qubit
-FF_gain2_init = -6000  # Middle Qubit
+FF_gain2_init = 0  # Middle Qubit
 FF_gain3_init = 0  # Right Qubit
 FF_gain4_init = 0  # Right Qubit
+
+RunTransmissionSweep = False  # determine cavity frequency
+Run2ToneSpec = False  # detrmine qubit frequency
+Spec_relevant_params = {"qubit_gain": 150, "SpecSpan": 75, "SpecNumPoints": 75, 'Gauss': True, "sigma": 0.008,
+                        "gain": 5000}
+RunAmplitudeRabi = False
+Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
+                         "sigma": 0.008, "max_gain": 8000}
+RunFFCal = True
+#Delays are in units of clock cycles! delay step must be an integer
+FFCal_params = {'delay_start': 0, 'delay_step': 1, 'delay_points': 100,
+                'spec_rounds': 20, 'spec_reps': 10,
+                'sigma': 0.008, 'qubit_gain': int(6000),
+                'FFPulses_IData': [None, None, None, None]}
 
 FF_gain1_step, FF_gain2_step, FF_gain3_step, FF_gain4_step = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
@@ -52,11 +66,20 @@ FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3_read, 'Gain_Expt': FF_gain3_step,
 FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4_read, 'Gain_Expt': FF_gain4_step, 'Gain_Init': FF_gain4_init, 'Gain_Pulse': FF_gain4_pulse}
 
 
-RunTransmissionSweep = False  # determine cavity frequency
-Run2ToneSpec = False  # detrmine qubit frequency
-RunAmplitudeRabi = False
-Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.012, "max_gain": 8000}
+experiment = {
+    "delayStart": 0,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
+    "delayStep": 0.25,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
+    "DelayPoints": 100  # 400  # 28
+}
+
+sigma = 0.008
+ARabi_config = {  # short time, high-amplitude pi pulse
+    "sigma": sigma,  # [us] qubit pulse width
+    # "qubit_gain": int(qubit_gain * 0.05 / sigma  * 2.5)
+    "qubit_gain": int(5000)#2380  # arbitrary units
+}
+
+# config['IDataArray'] = [None, None, None, None]
 
 cavity_gain = Qubit_Parameters[str(Qubit_Pulse)]['Readout']['Gain']
 resonator_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Readout']['Frequency']
@@ -68,8 +91,7 @@ BaseConfig['ro_chs'] = [0]
 qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
 qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
 
-Spec_relevant_params = {"qubit_gain": 150, "SpecSpan": 50, "SpecNumPoints": 75, 'Gauss': True, "sigma": 0.012,
-                        "gain": 500}
+
 # Spec_relevant_params = {"qubit_gain": 3000, "SpecSpan": 30, "SpecNumPoints": 76}
 
 # # Christie wants to see initial qubit frequency (for delta fn measurement)
@@ -187,9 +209,9 @@ if RunAmplitudeRabi:
 # Calibration experiment!
 
 experiment = {
-    "delayStart": 0,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
-    "delayStep": 0.25,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
-    "DelayPoints": 100  # 400  # 28
+    "delayStart": FFCal_params['delay_start'],  # [clock cycles] = 0.00235 us each #FIXME CLOCK
+    "delayStep": FFCal_params['delay_step'],  # [clock cycles] = 0.00235 us each #FIXME CLOCK
+    "DelayPoints": FFCal_params['delay_points']  # 400  # 28
 }
 # experiment = {
 #     "delayStart": 0,  # [clock cycles] = 0.00235 us each #FIXME CLOCK
@@ -202,10 +224,10 @@ frequencies_dictionary = {
     "qubit_freq_start": config["qubit_freq"] - config["SpecSpan"],  # [MHz]
     "qubit_freq_stop": config["qubit_freq"] + config["SpecSpan"],  # [MHz]
     "trans_reps": 500,
-    "spec_reps": 40,
-    "spec_rounds": 40  # 40  #
+    "spec_reps": FFCal_params['spec_reps'],
+    "spec_rounds": FFCal_params['spec_rounds']  # 40  #
 }
-config = config | experiment | frequencies_dictionary
+
 
 # ARabi_config = {  # long time, low-amplitude pi pulse
 #     "sigma": 0.015,  # [us] qubit pulse width
@@ -221,9 +243,9 @@ ARabi_config = {  # short time, high-amplitude pi pulse
 }
 sigma = 0.008
 ARabi_config = {  # short time, high-amplitude pi pulse
-    "sigma": sigma,  # [us] qubit pulse width
+    "sigma": FFCal_params['sigma'],  # [us] qubit pulse width
     # "qubit_gain": int(qubit_gain * 0.05 / sigma  * 2.5)
-    "qubit_gain": int(5000)#2380  # arbitrary units
+    "qubit_gain": FFCal_params['qubit_gain']#2380  # arbitrary units
 }
 #
 # ARabi_config = {  # short time, high-amplitude pi pulse
@@ -235,7 +257,9 @@ ARabi_config = {  # short time, high-amplitude pi pulse
 #     "sigma": 0.007,  # [us] qubit pulse width
 #     "qubit_gain": 9000 #2380  # arbitrary units
 # }
+config = config | experiment | frequencies_dictionary
 config = config | ARabi_config
+config['IDataArray'] = [None, None, None, None]
 
 # pick what pulse to send, module imports
 # vs_tosend_step = vs_step_orig  # uncompensated step
@@ -250,7 +274,7 @@ config = config | ARabi_config
 # config['IDataArray'] = [-15000 * Compensated_AWG((30 * 30 + 2)* 16, Qubit1_parameters)[1], None, None, None]
 # config['IDataArray'] = [-15000 * Compensated_AWG_LongTimes((50 * 50 + 2)* 16, Qubit1_parameters_long2)[1], None, None, None]
 
-config['IDataArray'] = [None, None, None, None]
+
 # config['IDataArray'] = [None, 15000 * Compensated_AWG((50 * 50 + 2)* 16, Qubit2_parameters)[1], None, None]
 
 # config['IDataArray'] = [None, 15000 * Compensated_AWG_LongTimes((50 * 50 + 2)* 16, Qubit2_parameters_long)[1], None, None]
@@ -264,9 +288,20 @@ config['IDataArray'] = [None, None, None, None]
 # plt.show()
 
 # print(config['IDataArray'][1])
+if RunFFCal:
+    frequencies_dictionary = {
+        "trans_freq_start": config["pulse_freq"] - config["TransSpan"],  # [MHz] frequency offset from "cavity_LO" = 7e9
+        "trans_freq_stop": config["pulse_freq"] + config["TransSpan"],  # [MHz] frequency offset from "cavity_LO" = 7e9
+        "qubit_freq_start": config["qubit_freq"] - config["SpecSpan"],  # [MHz]
+        "qubit_freq_stop": config["qubit_freq"] + config["SpecSpan"],  # [MHz]
+        "trans_reps": 500,
+        "spec_reps": FFCal_params['spec_reps'],
+        "spec_rounds": FFCal_params['spec_rounds']  # 40  #
+    }
+    config = config | frequencies_dictionary | FFCal_params
 
-# run FF qubit frequency calibration scan
-Instance_FFSpecCal = FFSpecCalibrationMUX(path="FFSpecCal", cfg=config, soc=soc, soccfg=soccfg,
-                                       outerFolder=outerFolder, progress=True)
-data_FFSpecCal = Instance_FFSpecCal.acquire(i_data=False, q_data=True)
-Instance_FFSpecCal.save_data(data_FFSpecCal)
+    # run FF qubit frequency calibration scan
+    Instance_FFSpecCal = FFSpecCalibrationMUX(path="FFSpecCal", cfg=config, soc=soc, soccfg=soccfg,
+                                           outerFolder=outerFolder, progress=True)
+    data_FFSpecCal = Instance_FFSpecCal.acquire(i_data=False, q_data=True)
+    Instance_FFSpecCal.save_data(data_FFSpecCal)

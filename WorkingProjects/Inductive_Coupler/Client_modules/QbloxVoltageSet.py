@@ -18,8 +18,8 @@ for i in range(D5a._num_dacs):
 ################
 
 DACs = [0, 2, 4, 6]
-#0, 2 and left
-#4, 6 are right
+#0, 2 and right
+#4, 6 are left
 #4(number 3) is right coupler
 #6(number 4) is right qubit
 
@@ -43,7 +43,8 @@ DACs = [0, 2, 4, 6]
 # after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
 voltages = [0, 0, -0.3, 1.4]
 # voltages = [-0.6, 0.3, 0, 0]
-voltages = [-0.365, 0, -0.715, 0]
+voltages = [-0.365, 0, 0.45, 0]
+voltages = [1.8, 0, 0, 0]
 
 # voltages = [-0.59, 0, 0, 0]
 

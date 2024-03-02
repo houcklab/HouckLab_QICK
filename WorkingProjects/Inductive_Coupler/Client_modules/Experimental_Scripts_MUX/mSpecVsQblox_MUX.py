@@ -128,7 +128,8 @@ class SpecVsQblox(ExperimentClass):
                          config_file=config_file, progress=progress, qblox = qblox)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
+    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1,
+                smart_normalize = True):
         expt_cfg = {
             ### define the qblox parameters
             "qbloxStart": self.cfg["qbloxStart"],
@@ -248,7 +249,11 @@ class SpecVsQblox(ExperimentClass):
 
             #### plot out the spec data
             sig = data_I + 1j * data_Q
+
+
             avgamp0 = np.abs(sig)
+            if smart_normalize:
+                avgamp0 = Normalize_Qubit_Data(data_I[0][0], data_Q[0][0])
             Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
             if i == 0:
 
@@ -414,4 +419,42 @@ class SpecVsQblox(ExperimentClass):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
+
+# def Normalize_Qubit_Data(idata, qdata):
+#     idata_rotated = Amplitude_IQ_angle(idata, qdata)
+#     idata_rotated -= np.median(idata_rotated) #subtract the offset
+#     range_ = max(idata_rotated) - min(idata_rotated)
+#     idata_rotated *= 1 / range_   #normalize data to have amplitude of 1
+#     if np.abs(max(idata_rotated)) < np.abs(min(idata_rotated)):
+#         idata_rotated *= -1 #ensures that the spec has a peak rather than a dip
+#     return(idata_rotated)
+
+def Normalize_Qubit_Data(idata, qdata):
+    idata_rotated = Amplitude_IQ_angle(idata, qdata)
+    idata_rotated -= np.median(idata_rotated) #subtract the offset
+    range_ = max(idata_rotated) - min(idata_rotated)
+    if np.abs(max(idata_rotated)) < np.abs(min(idata_rotated)):
+        idata_rotated *= -1 #ensures that the spec has a peak rather than a dip
+    idata_rotated -= min(idata_rotated)
+    idata_rotated *= 1 / range_   #normalize data to have amplitude of 1
+
+    return(idata_rotated)
+
+def Amplitude_IQ_angle(I, Q, phase_num_points = 50):
+    '''
+    IQ data is inputted and it will multiply by a phase such that all of the
+    information is in I
+    :param I:
+    :param Q:
+    :param phase_num_points:
+    :return: Array of data all in I quadrature
+    '''
+    complexarg = I + 1j * Q
+    phase_values = np.linspace(0, np.pi, phase_num_points)
+    multiplied_phase = [complexarg * np.exp(1j * phase) for phase in phase_values]
+    I_range = np.array([np.max(IQPhase.real) - np.min(IQPhase.real) for IQPhase in multiplied_phase])
+    phase_index = np.argmax(I_range)
+    angle = phase_values[phase_index]
+    complexarg *= np.exp(1j * angle)
+    return(complexarg.real)
 

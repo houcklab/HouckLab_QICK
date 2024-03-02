@@ -57,7 +57,7 @@ else:
 # yoko72.SetVoltage(0)
 
 #Define Save folder
-outerFolder = "Z:\Jeronimo\Measurements\RFSOC_4Qubit_0F\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\RFSOC_CouplerV1\\"
 
 ###### define default configuration
 BaseConfig = {

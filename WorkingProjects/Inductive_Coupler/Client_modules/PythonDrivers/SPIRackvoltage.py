@@ -22,7 +22,7 @@ class D5aModule(D5a_module):
         :param spi_rack:
         :param module:
         :param reset_voltages:
-        :param ramp_step:
+        :param ramp_step: Voltage ste
         :param ramp_interval:
         :param num_dacs:
         :param span: 4V_bi = 2,

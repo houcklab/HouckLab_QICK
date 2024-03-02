@@ -15,24 +15,32 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT2R_TwoPulses import T2R_2PulseMUX, T2R_2PulseMUX_NoUpdate
 
+
+#Left tunable: 7.28 (Q4) DAC 6, (FF index: 3)
+#Left fixed: 7.19 (Q3)
+#Left coupler: No qubit index, DAC 2 (FF index: 1)
+
+#Right tunable: 7.09 (Q2), DAC 0, (FF index: 0)
+#Right fixed: 7.0 (Q1)
+#Right coupler: No qubit index, DAC 4,(FF index: 2)
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6999.25 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+    '1': {'Readout': {'Frequency': 6999.75 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5380, 'Gain': 2500},
+          'Qubit': {'Frequency': 5460, 'Gain': 1960},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7091.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5430, 'Gain': 760},
+    '2': {'Readout': {'Frequency': 7106 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 2000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 6384, 'Gain': 760},
           'Pulse_FF': [0, 0, 0, 0]},
     '3': {'Readout': {'Frequency': 7192.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit': {'Frequency': 5546, 'Gain': 2424},
           'Pulse_FF': [0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7283.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
+    '4': {'Readout': {'Frequency': 7281.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 5580, 'Gain': 1626},
+          'Qubit': {'Frequency': 4983, 'Gain': 1700},
           'Pulse_FF': [0, 0, 0, 0]}
     }
 
@@ -42,8 +50,8 @@ FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = [1]
+Qubit_Readout = [2]
+Qubit_Pulse = [2]
 
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
@@ -65,11 +73,11 @@ gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Read
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 
-RunTransmissionSweep = True  # determine cavity frequency
-Run2ToneSpec = False
-Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
-                        "gain": 5500}
-# Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 150, "SpecNumPoints": 101, 'Gauss': True, "sigma": 0.05,
+RunTransmissionSweep = False  # determine cavity frequency
+Run2ToneSpec = True
+Spec_relevant_params = {"qubit_gain": 300, "SpecSpan": 5, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
+                        "gain": 5500, 'reps': 30, 'rounds': 30}
+# Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 200, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.05,
 #                         "gain": 1230}
 # Spec_relevant_params = {"qubit_gain": 120, "SpecSpan": 10, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
 #                         "gain": 600}
@@ -201,8 +209,8 @@ else:
 
 # qubit spec experiment
 if Run2ToneSpec:
-    config["reps"] = 30  # want more reps and rounds for qubit data
-    config["rounds"] = 30
+    config["reps"] = Spec_relevant_params['reps']  # want more reps and rounds for qubit data
+    config["rounds"] = Spec_relevant_params['rounds']
     config["Gauss"] = Spec_relevant_params['Gauss']
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]
