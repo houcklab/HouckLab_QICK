@@ -1,0 +1,136 @@
+2023-04-04_TAHP02_AuPd_wet-etch:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: -40
+  gain:
+  - 30000
+  - 30000
+  - 25000
+  - 25000
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  n_expts: 1000
+  n_reps: 5
+  n_resonators: 8
+  n_rounds: 5
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p82
+  - 7p21
+  - 7p38
+  - 7p69
+  - 8p00
+  readout_length: 200
+  res_f:
+  - 5949.37
+  - 6255.94
+  - 6530.407
+  - 6824.19
+  - 7209.82
+  - 7384.674
+  - 7694.999
+  - 7995.55
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-04-04_TAHP02_AuPd_wet-etch\freq_shift_rfsoc
+  span_f:
+  - 0.04
+  - 0.04
+  - 0.09
+  - 0.09
+  - 0.17
+  - 0.04
+  - 0.2
+  - 0.05
+2023-04-04_TAHP02_annealed:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: -40
+  gain:
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  n_expts: 1000
+  n_reps: 10
+  n_resonators: 7
+  n_rounds: 25
+  names:
+  - 5p90
+  - 6p22
+  - 6p50
+  - 6p79
+  - 7p06
+  - 7p30
+  - 7p93
+  readout_length: 200
+  res_f:
+  - 5909.5
+  - 6218.74
+  - 6498.95
+  - 6789.07
+  - 7061.95
+  - 7295.5428
+  - 7928.071
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-04-14_TAHP02_Annealed\freq_shift_rfsoc
+  span_f:
+  - 0.3
+  - 0.3
+  - 0.1
+  - 0.1
+  - 0.15
+  - 0.15
+  - 0.25
+2023-04-04_TAHP02_ebeam_resist:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: -40
+  gain:
+  - 20000
+  - 20000
+  - 10000
+  - 30000
+  - 20000
+  - 20000
+  - 20000
+  n_expts: 1000
+  n_reps: 10
+  n_resonators: 7
+  n_rounds: 25
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p82
+  - 7p39
+  - 7p69
+  - 7p99
+  readout_length: 200
+  res_f:
+  - 5947.5579
+  - 6256.1533
+  - 6530.19
+  - 6821.5976
+  - 7385.817
+  - 7687.744
+  - 7992.29
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-04-04_TAHP02_ebeam-resist\freq_shift_rfsoc
+  span_f:
+  - 0.12
+  - 0.12
+  - 0.12
+  - 0.03
+  - 0.15
+  - 0.4
+  - 0.4

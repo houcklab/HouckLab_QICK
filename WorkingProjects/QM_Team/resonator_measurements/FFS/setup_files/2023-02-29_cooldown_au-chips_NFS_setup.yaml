@@ -1,0 +1,68 @@
+2023-11-30_TAHP02_Au_StarCryo230518-1+96nm:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 5
+  n_rounds: 3
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p83
+  - 8p00
+  readout_length: 10000
+  res_f:
+  - 5952.05
+  - 6259.237
+  - 6533.214
+  - 6826.368
+  - 8002.614
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2024-02-29_BFG_cooldown\2023-11-30_TAHP02_Au+96nm\NFS
+  span_f:
+  - 0.5
+  - 0.5
+  - 0.6
+  - 0.6
+  - 0.6
+2024-02-25 TAHP02_Au_StarCryo230518-1+144nm:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 4
+  n_rounds: 3
+  names:
+  - 5p96
+  - 6p26
+  - 6p54
+  - 6p83
+  readout_length: 10000
+  res_f:
+  - 5957.124
+  - 6262.567
+  - 6536.59
+  - 6829.28
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2024-02-29_BFG_cooldown\2024-02-25_TAHP02_Au+144nm\NFS
+  span_f:
+  - 1.2
+  - 1.5
+  - 1.5
+  - 1.5

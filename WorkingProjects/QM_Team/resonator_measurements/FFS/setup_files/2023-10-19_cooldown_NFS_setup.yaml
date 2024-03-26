@@ -1,0 +1,155 @@
+2023-10-05_TAHP02_dep85:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 1000
+  n_reps: 1
+  n_resonators: 6
+  n_rounds: 4
+  names:
+  - 5p95
+  - 6p26
+  - 6p54
+  - 6p83
+  - 7p38
+  - 8p00
+  readout_length: 10000
+  res_f:
+  - 5949.8
+  - 6257.
+  - 6536.103
+  - 6827.58
+  - 7377.7
+  - 7997.167
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-10-19_Cooldown\2023-10-05_TAHP02_dep85\RFSOC\NFS
+  span_f:
+  - 0.3
+  - 0.1
+  - 0.4
+  - 0.1
+  - 0.2
+  - 0.4
+2023-10-08_TALE04_anneal_dep92:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 1000
+  n_reps: 1
+  n_resonators: 4
+  n_rounds: 4
+  names:
+  - 4p39
+  - 4p63
+  - 4p83
+  - 4p96
+  readout_length: 10000
+  res_f:
+  - 4389.356
+  - 4630.37
+  - 4832.43
+  - 4964.0
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-10-19_Cooldown\2023-10-08_TALE04_anneal_dep92\RFSOC\NFS
+  span_f:
+  - 1
+  - 1
+  - 1
+  - 1
+2023-10-10_TAHP02_Au_StarCryo230518-1+8nm:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 1000
+  n_reps: 1
+  n_resonators: 6
+  n_rounds: 4
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p82
+  - 7p39
+  - 8p00
+  readout_length: 10000
+  res_f:
+  - 5948.6801
+  - 6256.587
+  - 6529.934
+  - 6824.072
+  - 7386.783
+  - 7998.15
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-10-19_Cooldown\2023-10-10_TAHP02_Au_StarCryo230518-1+8nm\RFSOC\NFS
+  span_f:
+  - 0.15
+  - 0.15
+  - 0.15
+  - 0.15
+  - 0.2
+  - 0.5
+2023-10-12_TAHP02_dep100:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 1000
+  n_reps: 1
+  n_resonators: 5
+  n_rounds: 4
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p82
+  - 7p38
+  readout_length: 10000
+  res_f:
+  - 5946.615
+  - 6255.0931
+  - 6531.8177
+  - 6824.4843
+  - 7378.945
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-10-19_Cooldown\2023-10-12_TAHP02_dep100\RFSOC\NFS
+  span_f:
+  - 0.05
+  - 0.03
+  - 0.03
+  - 0.03
+  - 0.06

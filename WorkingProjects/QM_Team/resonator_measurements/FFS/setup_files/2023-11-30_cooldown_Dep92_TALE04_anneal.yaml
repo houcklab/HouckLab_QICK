@@ -1,0 +1,32 @@
+2023-11-30_TALE04_anneal_dep92_2:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 20000
+  - 20000
+  - 20000
+  - 20000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 4
+  n_rounds: 3
+  names:
+  - 4p42
+  - 4p66
+  - 4p86
+  - 4p99
+  readout_length: 10000
+  res_f:
+  - 4418.416
+  - 4660.223
+  - 4858.895
+  - 4994.3475
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2023-11-30_cooldown\TALE04_anneal_dep92_2\2023-12-21_NFS_Turbo_off
+  span_f:
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02

@@ -1,0 +1,36 @@
+TALE04_annealed_2_22_23:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: -40
+  gain:
+  - 30000
+  - 32767
+  - 30000
+  - 30000
+  n_expts: 301
+  n_reps: 50
+  n_resonators: 4
+  n_rounds: 10
+  names:
+  - 4p30
+  - 4p53
+  - 4p74
+  - 4p83
+  readout_length: 100
+  res_f:
+  - 4299.442
+  - 4526.9387
+  - 4738.459
+  - 4863.145
+  ring_between_time: 50
+  ring_up_time: 500
+  save_paths:
+  - Z:t1Team\Data\TALE04_annealed_2_22_23\freq_shift_rfsoc\4p30
+  - Z:t1Team\Data\TALE04_annealed_2_22_23\freq_shift_rfsoc\4p53
+  - Z:t1Team\Data\TALE04_annealed_2_22_23\freq_shift_rfsoc\4p74
+  - Z:t1Team\Data\TALE04_annealed_2_22_23\freq_shift_rfsoc\4p83
+  span_f:
+  - 0.01
+  - 0.003
+  - 0.005
+  - 0.005

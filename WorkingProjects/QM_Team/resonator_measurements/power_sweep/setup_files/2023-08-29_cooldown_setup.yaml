@@ -1,0 +1,139 @@
+2023-08-01 TALE04-annealed:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  attenList:
+  - 20
+  - 30
+
+  - 40
+  - 50
+  - 60
+  - 70
+  - 80
+  basePowers: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 1000
+  n_repsList:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  n_resonators: 4
+  n_roundsList:
+  - 3
+  - 8
+  - 30
+  - 80
+  - 125
+  - 250
+  - 500
+  names:
+  - 4p53
+  - 4p78
+  - 4p94
+  - 5p09
+  readout_lengthList:
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  res_f:
+  - 4528.043
+  - 4776.8342
+  - 4934.98
+  - 5092.4061
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TALE04_anneal\power_sweep_rfsoc2
+  span_f:
+  - 0.01
+  - 0.01
+  - 0.01
+  - 0.01
+2023-08-21 TAHP02_AuPd_Cl_etch:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  attenList:
+  - 0
+  - 10
+  - 20
+  - 30
+  - 40
+  - 50
+  - 60
+  basePowers: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 600
+  n_repsList:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  n_resonators: 7
+  n_roundsList:
+  - 20
+  - 50
+  - 100
+  - 200
+  - 400
+  - 800
+  - 1600
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p82
+  - 7p20
+  - 7p38
+  - 7p99
+  readout_lengthList:
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  res_f:
+  - 5945.9175
+  - 6252.4
+  - 6525.92
+  - 6821.782
+  - 7200.525
+  - 7385.53
+  - 7991.71
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TAHP02_AuPd_Cl_etch\power_sweep_rfsoc
+  span_f:
+  - 0.1
+  - 0.1
+  - 0.1
+  - 0.1
+  - 0.1
+  - 0.1
+  - 0.1

@@ -1,0 +1,164 @@
+2023-08-01 TALE04-annealed:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 4
+  n_rounds: 20
+  names:
+  - 4p53
+  - 4p78
+  - 4p94
+  - 5p09
+  readout_length: 10000
+  res_f:
+  - 4528.043
+  - 4776.834
+  - 4935.091
+  - 5092.406
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TALE04_anneal\freq_shift_rfsoc3
+  span_f:
+  - 0.05
+  - 0.05
+  - 0.02
+  - 0.02
+2023-08-21 TAHP02_AuPd_Cl_etch:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  #- 30000
+  #- 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 5
+  n_rounds: 20
+  names:
+  #- 5p95
+  #- 6p26
+  - 6p53
+  - 6p82
+  - 7p20
+  - 7p38
+  - 7p99
+  readout_length: 10000
+  res_f:
+  #- 5957.703
+  #- 6262.483
+  - 6525.922
+  - 6821.7838
+  - 7200.589
+  - 7385.576
+  - 7991.735
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TAHP02_AuPd_Cl_etch\freq_shift_rfsoc3
+  span_f:
+  #- 0.05
+  #- 0.05
+  - 0.05
+  - 0.05
+  - 0.1
+  - 0.08
+  - 0.1
+2023-08-24_TAHP02-Au-Cl-etch:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  #- 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 6
+  n_rounds: 20
+  names:
+  - 5p96
+  #- 6p26
+  - 6p54
+  - 6p83
+  - 7p25
+  - 7p40
+  - 8p01
+  readout_length: 10000
+  res_f:
+  - 5957.7
+  #- 6252.4
+  - 6535.43
+  - 6828.673
+  - 7244.765
+  - 7404.466
+  - 8010.012
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TAHP02_Au_Cl_etch\freq_shift_rfsoc3
+  span_f:
+  - 0.05
+  #- 0.05
+  - 0.05
+  - 0.05
+  - 0.2
+  - 0.1
+  - 0.1
+2023-08-24_TAHP02_Au_F_etch:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 7
+  n_rounds: 20
+  names:
+  - 5p96
+  - 6p26
+  - 6p54
+  - 6p83
+  - 7p28
+  - 7p42
+  - 8p01
+  readout_length: 10000
+  res_f:
+  - 5959.585
+  - 6264.419
+  - 6540.5024
+  - 6831.873
+  - 7279.452
+  - 7419.968
+  - 8014.638
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:t1Team\Data\2023-08-24_Cooldown\2023-08-24_TAHP02_Au_F_etch\freq_shift_rfsoc3
+  span_f:
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.1
+  - 0.1
+  - 0.1

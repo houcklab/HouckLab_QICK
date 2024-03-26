@@ -1,0 +1,96 @@
+2024_01_23_Re_750C_TAHP02:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 8
+  n_rounds: 3
+  names:
+  - 5p78
+  - 6p10
+  - 6p39
+  - 6p54
+  - 6p69
+  - 6p94
+  - 7p36
+  - 7p73
+  readout_length: 10000
+  res_f:
+  - 5785.28
+  - 6106.066
+  - 6396.70
+  - 6546.681
+  - 6691.374
+  - 6945.03
+  - 7363.165
+  - 7734.35
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024_01_23_CoolDown\2024_01_23_Re_750C_TAHP02\2024_02_1_NFS_Turbo_on_clk_true
+  span_f:
+  - 0.09
+  - 0.09
+  - 0.09
+  - 0.09
+  - 0.09
+  - 0.09
+  - 0.09
+  - 0.09
+2024_01_23_LowTc_Ta_HoleDesign:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 8
+  n_rounds: 3
+  names:
+  - 5p97
+  - 6p27
+  - 6p55
+  - 6p84
+  - 7p32
+  - 7p46
+  - 7p73
+  - 8p03
+  readout_length: 10000
+  res_f:
+  - 5970.962
+  - 6277.837
+  - 6550.802
+  - 6842.415
+  - 7329.38
+  - 7465.74
+  - 7738.146
+  - 8039.15
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024_01_23_CoolDown\2024_01_23_LowTc_Ta_HoleDesign\2024_02_1_NFS_Turbo_on_clk_true
+  span_f:
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02
+  - 0.02
