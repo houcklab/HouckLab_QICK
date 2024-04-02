@@ -182,7 +182,7 @@ class ResSweep(ExperimentClass):
                     1 + 2j * Q0 * (xData - freq0) / freq0))) + offset
 
     # function to perform a frequency sweep
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         diList = [[] for i in range(self.n_expts)]
         dqList = [[] for i in range(self.n_expts)]
         IArray = [np.asarray([0. for ii in range(self.n_expts)]) for i in self.res_f]
@@ -198,7 +198,7 @@ class ResSweep(ExperimentClass):
             self.cfg['reps'] = 2
             prog = ResSweepProgram(self.soccfg, self.cfg)
             try:
-                dummy = prog.acquire(self.soc, load_pulses=True, debug=False) # we throw out the data we collect during ring up
+                dummy = prog.acquire(self.soc, load_pulses=True) # we throw out the data we collect during ring up
             except Exception:
                 print("Pyro traceback:")
                 print("".join(Pyro4.util.getPyroTraceback()))
@@ -214,7 +214,7 @@ class ResSweep(ExperimentClass):
                 prog = ResSweepProgram(self.soccfg, self.cfg)
 
                 try:
-                    iqList = prog.acquire(self.soc, load_pulses=True, debug=False)
+                    iqList = prog.acquire(self.soc, load_pulses=True)
                 except Exception:
                     print("Pyro traceback:")
                     print("".join(Pyro4.util.getPyroTraceback()))
@@ -345,7 +345,7 @@ class ResSweep(ExperimentClass):
             pickle.dump(self.data, f)
         # super().save_data(data=data['data'])
 
-    def acquire_decimated(self, soft_avgs=1, readout_length=100, progress=False, debug=False):
+    def acquire_decimated(self, soft_avgs=1, readout_length=100, progress=False):
 
         self.cfg['ring_time'] = self.ring_up_time
         self.cfg['soft_avgs'] = soft_avgs
@@ -356,7 +356,7 @@ class ResSweep(ExperimentClass):
         prog = ResSweepProgram(self.soccfg, self.cfg)
         print("start decimated")
         self.soc.reset_gens()  # clear any DC or periodic values on generators
-        iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False, debug=False)
+        iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False)
         print("decimated done")
         data = {'config': self.cfg, 'data': {'iq_list': iq_list}}
         self.data = data
