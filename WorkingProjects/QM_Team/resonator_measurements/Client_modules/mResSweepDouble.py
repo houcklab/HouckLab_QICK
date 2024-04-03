@@ -251,6 +251,45 @@ class ResSweep(ExperimentClass):
                   'startTime': start,
                   'temperature_mK': self.readTemp()
               }}
+        
+
+
+        #update saved object, have to update read in code to match
+        # acquisition_params = {
+        #     'LO_freq': self.inputDict['LO_f'],
+        #     'base_powers': self.inputDict['base_powers'] ,
+        #     'powers': self.inputDict['powers'],
+        #     'res_chs': self.cfg['res_ch'],
+        #     'ro_chs': self.cfg['ro_chs'],
+        #     'res_phases': self.cfg['res_phases'],
+        #     'readout_length_cycles_us': [self.cfg['readout_length'],self.inputDict['readout_length']],
+        #     'adc_trig_offset_cycles_us': [self.cfg['adc_trig_offset'],self.inputDict['adc_trig_offset']],
+        #     'ring_up_time_cycles_us': [self.ring_up_time,self.inputDict['ring_up_time']],
+        #     'ring_between_time_cycles_us': [self.ring_between_time, self.inputDict['ring_between_time']],
+        #     'gains': self.inputDict['gain'],
+        #     'freqs': self.inputDict['res_f'],
+        #     'spans': self.inputDict['span_f'],
+        #     'save_path': self.inputDict['save_path'],
+        #     'n_rounds': self.inputDict['n_rounds'],
+        #     'n_expts': self.inputDict['n_expts'],
+        #     'n_res': self.inputDict['n_res'],
+        #     'n_reps': self.inputDict['n_reps'],
+        #     'names' : self.inputDict['names']
+        # }
+
+        # data = {'acquisition_params': acquisition_params,
+        #         'data': {
+        #           'ampArray': ampArray,
+        #           'ampArray_log': ampArray_log,
+        #           'phaseArray': phaseArray,
+        #           'IArray': IArray,
+        #           'QArray': QArray,
+        #           'f': self.resArray_f,
+        #           'endTime': time.time(),
+        #           'startTime': start,
+        #           'temperature_mK': self.readTemp()
+        #         }}
+
         self.data=data
 
         return data

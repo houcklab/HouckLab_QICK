@@ -1,5 +1,5 @@
 from mTempControl import *
-from PythonDrivers.getInputDicts import *
+from getInputDicts import *
 import mResSweepDouble
 import tqdm
 import time

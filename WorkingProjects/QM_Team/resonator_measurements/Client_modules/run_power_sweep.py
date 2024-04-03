@@ -1,4 +1,4 @@
-from PythonDrivers.getInputDicts import *
+from getInputDicts import *
 import mResSweepDouble
 import tqdm
 from PythonDrivers.control_atten import setatten
