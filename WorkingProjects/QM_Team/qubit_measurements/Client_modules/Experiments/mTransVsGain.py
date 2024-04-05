@@ -2,11 +2,11 @@
 from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
-from WorkingProjects.QM_Team.Client_modules.Calib.initialize import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize import *
 import numpy as np
-from WorkingProjects.QM_Team.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 # from STFU.Client_modules.Experiments.mTransmission import LoopbackProgramTrans
-from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
 from tqdm.notebook import tqdm
 import time
 import datetime

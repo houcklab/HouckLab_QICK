@@ -5,7 +5,7 @@ def makeProxy():
     Pyro4.config.SERIALIZER = "pickle"
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
-    ns_host = "192.168.1.13"
+    ns_host = "192.168.1.131"
     ns_port = 8888
     server_name = "myqick"
 

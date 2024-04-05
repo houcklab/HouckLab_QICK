@@ -4,9 +4,9 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.QM_Team.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.QM_Team.Client_modules.Experiments.mSingleShotProgram import LoopbackProgramSingleShot
-from WorkingProjects.QM_Team.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgram import LoopbackProgramSingleShot
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
 

@@ -6,7 +6,7 @@ file to create basic initialization of things used for RFSOC This will include:
 """
 
 ### import relevent libraries
-from WorkingProjects.QM_Team.Client_modules.CoreLib.socProxy import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.socProxy import *
 import os
 import pyvisa as visa
 from pathlib import Path
