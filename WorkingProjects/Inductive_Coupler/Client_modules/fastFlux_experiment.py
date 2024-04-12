@@ -11,7 +11,7 @@ from WorkingProjects.Inductive_Coupler.Client_modules.mfastFlux import *
 
 FF_channel1 = 1 #4 is middle qubit, 6 is left qubit
 FF_channel2 = 2 #4 is middle qubit, 6 is left qubit
-FF_channel3 = 3 #4 is middle qubit, 6 is left qubit
+FF_channel3 = 0 #4 is middle qubit, 6 is left qubit
 
 FF_gain1 = 30000 * 0
 FF_gain2 = 30000 * 1
@@ -21,7 +21,7 @@ FF_gain3 = 30000 * 0
 config={
     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
     "ff_pulse_style": "const", # --Fixed
-    "ff_length": 0.05, # [us]
+    "ff_length": 0.1, # [us]
     "ff_freq": 0, # [MHz] actual frequency is this number + "cavity_LO"
     ##### define tranmission experiment parameters
     "ff_nqz": 1, ### MHz, span will be center+/- this parameter

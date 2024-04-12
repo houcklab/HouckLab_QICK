@@ -28,10 +28,10 @@ Qubit_Parameters = {
           'Qubit12': {'Frequency': 4202.3, 'Gain': 700},
           'Pulse_FF': [0, 0, 0, 0]},
     '2': {
-        'Readout': {'Frequency': 7088.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+        'Readout': {'Frequency': 7092.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
                     "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01':  {'Frequency': 4679.7, 'Gain': 2100},
-          'Qubit12': {'Frequency': 4654.5, 'Gain': 1300},
+          'Qubit01':  {'Frequency': 5691.75, 'Gain': 630},
+          'Qubit12': {'Frequency': 5691.75 - 74.3, 'Gain': 535},
           'Pulse_FF': [0, 0, 0, 0]},
     '3': {
         'Readout': {'Frequency': 7002.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
@@ -48,8 +48,8 @@ Qubit_Parameters = {
     }
 
 #
-Qubit_Readout = [2]
-Qubit_Pulse = 2
+Qubit_Readout = [1]
+Qubit_Pulse = 1
 # expt
 FF_gain1_expt = 0  # 8000
 FF_gain2_expt = 0
@@ -62,22 +62,22 @@ FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameter
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False  # determine cavity frequency
-Run2ToneSpec = False
-sigma = 0.03
-Spec_relevant_params = {"qubit_gain": 70, "SpecSpan": 7, "SpecNumPoints": 61, 'Gauss': False, "sigma": sigma,
-                        "gain": 3000}
+Run2ToneSpec = True
+sigma = 0.05
+Spec_relevant_params = {"qubit_gain": 50, "SpecSpan": 10, "SpecNumPoints": 61, 'Gauss': True, "sigma": sigma,
+                        "gain": 630, 'reps': 20, 'rounds': 30}
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit01']['Frequency'],
-                         "sigma": sigma, "max_gain": 3000}
+                         "sigma": sigma, "max_gain": 1500}
 
 Run2ToneSpec_2nd = False
-Spec_relevant_params_Higher = {"qubit_gain": 250, "SpecSpan": 20, "SpecNumPoints": 61, 'Gauss': False, "sigma": sigma,
-                    "gain": 1700}
+Spec_relevant_params_Higher = {"qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 61, 'Gauss': True, "sigma": sigma,
+                    "gain": 535, 'reps': 20, 'rounds': 30}
 
 RunAmplitudeRabi_2nd = False
 Amplitude_Rabi_params_2nd = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit01']['Frequency'],
-                         "sigma": sigma, "max_gain": 3000}
+                         "sigma": sigma, "max_gain": 1200}
 
 RunT1 = False
 RunT2 = False
@@ -172,7 +172,7 @@ qubit_config = {
     "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],  ### number of points in the transmission frequecny
 }
 expt_cfg = {
-    "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
+    "step": 2 * qubit_config["SpecSpan"] / (qubit_config["SpecNumPoints"] - 1),
     "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
     "expts": qubit_config["SpecNumPoints"]
 }
@@ -207,8 +207,8 @@ else:
 
 # qubit spec experiment
 if Run2ToneSpec:
-    config["reps"] = 30  # want more reps and rounds for qubit data
-    config["rounds"] = 30
+    config["reps"] = Spec_relevant_params['reps']  # want more reps and rounds for qubit data
+    config["rounds"] = Spec_relevant_params['rounds']
     config["Gauss"] = Spec_relevant_params['Gauss']
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]

@@ -144,9 +144,11 @@ class SpecVsQblox(ExperimentClass):
             "start": self.cfg["start"],
             "expts": self.cfg["expts"],
         }
+        print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
 
-
-        qbloxVec = np.linspace(expt_cfg["qbloxStart"],expt_cfg["qbloxStop"], expt_cfg["qbloxNumPoints"])
+        qbloxVec = []
+        for n in range(len(expt_cfg["qbloxStart"])):
+            qbloxVec.append(np.linspace(expt_cfg["qbloxStart"][n],expt_cfg["qbloxStop"][n], expt_cfg["qbloxNumPoints"]))
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -159,13 +161,14 @@ class SpecVsQblox(ExperimentClass):
         ### also create empty array to fill with transmission and spec data
         # self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         # self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
-        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"] * expt_cfg["step"])
+        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
+        print(self.spec_fpts)
 
         # X_trans = (self.trans_fpts + self.cfg["cavity_LO"]/1e6) /1e3
         # X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = qbloxVec
+        Y = qbloxVec[0]
         Y_step = Y[1] - Y[0]
         # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
         Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
@@ -202,7 +205,11 @@ class SpecVsQblox(ExperimentClass):
                 self.soc.reset_gens()
             ### set the qblox voltage for the specific run
             # self.qblox.SetVoltage(qbloxVec[i])
-            QbloxClass.set_voltage([self.cfg['DACs']], [qbloxVec[i]])
+            voltages_for_qblox = []
+            for m in range(len(self.cfg['DACs'])):
+                voltages_for_qblox.append(qbloxVec[m][i])
+            print(voltages_for_qblox)
+            QbloxClass.set_voltage(self.cfg['DACs'], voltages_for_qblox)
             # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data

@@ -20,21 +20,21 @@ mixer_freq = 500
 print(BaseConfig["cavity_LO"] / 1e6)
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6999.75 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+    '1': {'Readout': {'Frequency': 6999.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5460, 'Gain': 1960},
+          'Qubit': {'Frequency': 5475, 'Gain': 620},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7100 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 6200, 'Gain': 1200},
-          'Pulse_FF': [0, 0, 0, 0]},
+    '2': {'Readout': {'Frequency': 7089.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
+          'Qubit': {'Frequency': 4975, 'Gain': 1200},
+          'Pulse_FF': [0, 0, 0, 2000]},
     '3': {'Readout': {'Frequency': 7192.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
-                      "FF_Gains": [0, 0, 0, 30000], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5540, 'Gain': 2424},
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5570, 'Gain': 1780},
           'Pulse_FF': [0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7283.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
+    '4': {'Readout': {'Frequency': 7281.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 5560, 'Gain': 1626},
+          'Qubit': {'Frequency': 5083, 'Gain': 1626},
           'Pulse_FF': [0, 0, 0, 0]}
 }
 
@@ -44,9 +44,9 @@ FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 0
 
-Qubit_Readout = [2]
-Qubit_Pulse = 2
-Qubit_PulseSS = [2]
+Qubit_Readout = [3]
+Qubit_Pulse = 3
+Qubit_PulseSS = [3]
 
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
@@ -69,12 +69,17 @@ BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False  # determine cavity frequency
 Run2ToneSpec = False
-Spec_relevant_params = {"qubit_gain": 300, "SpecSpan": 50, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
-                        "gain": 600}
+Spec_relevant_params = {"qubit_gain": 2000, "SpecSpan": 10, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.05,
+                        "gain": 600, 'reps': 20, 'rounds': 20}
+# Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 40, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
+#                         "gain": 600, 'reps': 15, 'rounds': 15}
 Run_Spec_v_Voltage = True
-Spec_sweep_relevant_params = {"qubit_gain": 500, "SpecSpan": 100, "SpecNumPoints": 71,
-                              "DAC": 0, "Qblox_Vmin": 0.8, "Qblox_Vmax": 1.2, "Qblox_numpoints": 21,
+Spec_sweep_relevant_params = {"qubit_gain": 2000, "SpecSpan": 20, "SpecNumPoints": 101,
+                              "DAC": [2],
+                              "Qblox_Vmin": [-0.3],
+                              "Qblox_Vmax": [-0.1], "Qblox_numpoints": 11,
                               'reps': 10, 'rounds': 10, 'smart_normalize': True}
+
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
@@ -110,7 +115,7 @@ trans_config = {
     "pulse_gains": gains,  # [DAC units]
     "pulse_freqs": resonator_frequencies,
     "TransSpan": 1.5 * 1,  ### MHz, span will be center+/- this parameter
-    "TransNumPoints": 61,  ### number of points in the transmission frequecny
+    "TransNumPoints": 61 * 1,  ### number of points in the transmission frequecny
     "cav_relax_delay": 30
 }
 qubit_config = {
@@ -122,10 +127,12 @@ qubit_config = {
     "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],  ### number of points in the transmission frequecny
 }
 expt_cfg = {
-    "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
+    "step": 2 * qubit_config["SpecSpan"] / (qubit_config["SpecNumPoints"] - 1),
     "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
     "expts": qubit_config["SpecNumPoints"]
 }
+
+print(expt_cfg)
 
 UpdateConfig = trans_config | qubit_config | expt_cfg
 config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
@@ -164,10 +171,8 @@ else:
 
 # qubit spec experiment
 if Run2ToneSpec:
-    # config["reps"] = 30  # want more reps and rounds for qubit data
-    # config["rounds"] = 30
-    config["reps"] = 20  # want more reps and rounds for qubit data
-    config["rounds"] = 20
+    config["reps"] = Spec_relevant_params['reps']  # want more reps and rounds for qubit data
+    config["rounds"] = Spec_relevant_params['rounds']
     config["Gauss"] = Spec_relevant_params['Gauss']
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]
@@ -188,10 +193,11 @@ if Run_Spec_v_Voltage:
     config['DACs'] = Spec_sweep_relevant_params["DAC"]
     config["qbloxStart"] = Spec_sweep_relevant_params["Qblox_Vmin"]
     config["qbloxStop"] = Spec_sweep_relevant_params["Qblox_Vmax"]
+
     config["Gauss"] = False
 
     config["qubit_gain"] = Spec_sweep_relevant_params["qubit_gain"]
-    config["step"] = 2 * Spec_sweep_relevant_params["SpecSpan"] / Spec_sweep_relevant_params["SpecNumPoints"]
+    config["step"] = 2 * Spec_sweep_relevant_params["SpecSpan"] / (Spec_sweep_relevant_params["SpecNumPoints"] - 1)
     config["start"] = qubit_config["qubit_freq"] - Spec_sweep_relevant_params["SpecSpan"]
     config["expts"] = Spec_sweep_relevant_params["SpecNumPoints"]
     # expt_cfg = {
