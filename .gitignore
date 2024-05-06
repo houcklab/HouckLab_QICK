@@ -2,3 +2,4 @@
 *.pyc
 /__pycache__/*
 /.idea/*
+/WorkingProjects/QM_Team/resonator_measurements/local_notebooks/
