@@ -3,7 +3,7 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.QM_Team.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
@@ -139,13 +139,17 @@ class T2Experiment(ExperimentClass):
 
         guess = [offset_guess, amp_guess, T2_guess, freq_guess, phaseOffset_guess]
 
-        self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)
-        self.perr =np.sqrt(np.diag(self.pCov))
-        self.T2_fit = _expCosFit(x_pts, *self.pOpt)
+        try:
+            self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)
+            self.perr =np.sqrt(np.diag(self.pCov))
+            self.T2_fit = _expCosFit(x_pts, *self.pOpt)
 
-        self.T2_est = self.pOpt[2]
-        self.T2_err = self.perr[2]
-        self.freq_est = self.pOpt[3]
+            self.T2_est = self.pOpt[2]
+            self.T2_err = self.perr[2]
+            self.freq_est = self.pOpt[3]
+        except:
+            pass
+
         self.data = data
         print("--- %s seconds ---" % (time.time() - start_time))
 
@@ -188,7 +192,10 @@ class T2Experiment(ExperimentClass):
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        plt.suptitle("T2 Experiment, T2 = " + str(round(self.T2_est,1)) + r" $\pm$ " + str(round(self.T2_err,1)) + "us")
+        try:
+            plt.suptitle("T2 Experiment, T2 = " + str(round(self.T2_est,1)) + r" $\pm$ " + str(round(self.T2_err,1)) + "us")
+        except:
+            plt.suptitle("T2 Experiment")
 
         plt.savefig(self.iname)
 

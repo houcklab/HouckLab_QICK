@@ -1,7 +1,7 @@
 #### import packages
 import os
 path = os.getcwd()
-# os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+#os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 os.add_dll_directory(r'C:\Users\my\Documents\GitHub\HouckLab_QICK\WorkingProjects\QM_Team\Client_modules')
 from WorkingProjects.QM_Team.Client_modules.Calib.initialize import *
 from WorkingProjects.QM_Team.Client_modules.Experiments.mTransmission_SaraTest import Transmission
@@ -20,7 +20,7 @@ matplotlib.use('TkAgg')
 import datetime
 
 #### define the saving path
-outerFolder = "Z:\\t1Team\\Data\\2024_01_23_CoolDown\\2024_02_07_LowTc_Qubit_RecoolDown\\"
+outerFolder = "Z:\\t1Team\\Data\\2024-04-04_TATPR6-Si\\7p2\\"
 
 ###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
 
@@ -63,11 +63,11 @@ UpdateConfig_transmission={
     "reps": 4000,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const", # --Fixed
     "readout_length": 40, # us
-    "read_pulse_gain": 100, # [DAC units]
-    "read_pulse_freq": 7499.65, # [MHz] actual frequency is this number + "cavity_LO"
+    "read_pulse_gain": 1000, # [DAC units]
+    "read_pulse_freq": 7195, # [MHz] actual frequency is this number + "cavity_LO"
     "nqz": 2,  #### refers to cavity
     ##### define transmission experiment parameters
-    "TransSpan": 1.5, ### MHz, span will be center+/- this parameter
+    "TransSpan": 2, ### MHz, span will be center+/- this parameter
     "TransNumPoints": 501, ### number of points in the transmission frequecny
 }
 
