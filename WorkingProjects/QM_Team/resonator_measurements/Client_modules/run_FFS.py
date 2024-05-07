@@ -23,7 +23,7 @@ def run_FFS(temps, socs, chipDicts, soccfgs, dBm_lookups=['','','',''],turbo=Tru
                     span_factor = 1.0  # when turbo is on
                 else:
                     span_factor = temp * 1000 / 250 # when turbo is off
-                inputDict['power'] = inputDict['basePowers']
+                inputDict['powers'] = inputDict['base_powers']
                 if len(inputDict['span_f']) == 2:
                     inputDict['span_f'] = [span_factor * inputDict['span_f'][0],
                                            span_factor * inputDict['span_f'][1]]
@@ -95,7 +95,7 @@ def run_TT(socs, chipDicts, soccfgs, turbo=True):
                     span_factor = 1.0  # when turbo is on
                 else:
                     span_factor = 4.0 # when turbo is off
-                inputDict['power'] = inputDict['basePowers']
+                inputDict['power'] = inputDict['base_powers']
                 if len(inputDict['span_f']) == 2:
                     inputDict['span_f'] = [span_factor * inputDict['span_f'][0],
                                             span_factor * inputDict['span_f'][1]]

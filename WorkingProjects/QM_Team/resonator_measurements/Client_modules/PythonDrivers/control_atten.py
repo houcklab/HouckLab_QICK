@@ -9,8 +9,8 @@ import os
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 
 # TODO make this computer agnostic
-# os.add_dll_directory(r'C:\Users\my\Documents\GitHub\ZCU216\res_dev\Client_modules\PythonDrivers')
-os.add_dll_directory(r'C:\Users\deleo\Documents\GitHub\HouckLab_QICK\WorkingProjects\QM_Team\resonator_measurements\Client_modules\PythonDrivers')
+os.add_dll_directory(r'C:\Users\my\Documents\GitHub\ZCU216\res_dev\Client_modules\PythonDrivers')
+# os.add_dll_directory(r'C:\Users\deleo\Documents\GitHub\HouckLab_QICK\WorkingProjects\QM_Team\resonator_measurements\Client_modules\PythonDrivers')
 
 def setatten(attenu, serial, printv):
     if printv == True:

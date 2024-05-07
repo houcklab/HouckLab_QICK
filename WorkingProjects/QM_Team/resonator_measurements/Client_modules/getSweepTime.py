@@ -1,5 +1,5 @@
 import numpy as np
-from PythonDrivers.getInputDicts import getInputDicts
+from getInputDicts import *
 
 def printSweepTime(chipDict,dBm_lookup_file):
     inputDicts = getInputDicts(chipDict,measType='power_sweep',dBm_lookup_file=dBm_lookup_file)
