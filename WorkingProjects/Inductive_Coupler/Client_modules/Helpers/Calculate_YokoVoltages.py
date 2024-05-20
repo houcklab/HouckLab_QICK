@@ -220,10 +220,16 @@ list_of_dictionaries, voltage_matrix, inverse_voltage_matrix, offset_vector,cavi
 results_everything = pickle.load(open(file_location + '\\4Q_ABV1\Results.p', 'rb'))
 list_of_dictionaries, voltage_matrix, inverse_voltage_matrix, offset_vector,cavity_dictionaries = same_format(results_everything)
 
-offset_vector[0] += 0
-# offset_vector[1] += 0.039
-offset_vector[2] += 0
+offset_vector[0] += -0.44
+offset_vector[1] += 0.039
+offset_vector[2] += 0.175
 offset_vector[3] += 0
+
+voltage_matrix *= 0.6
+# voltage_matrix[0, 0] *= 0.7
+# voltage_matrix[1, 1] *= 0.7
+# voltage_matrix[2, 2] *= 0.7
+# voltage_matrix[3, 3] *= 0.7
 
 file_location = 'Z:\Jeronimo\Measurements\RFSOC_4Qubit_0F\Qubit_Yoko_Calibration'
 FF_matrix = pickle.load(open(file_location + '\FF_matrix.p', 'rb'))
@@ -235,7 +241,7 @@ print('Defining Yoko')
 yoko_voltages = [ 0.1913,  0.7168, -0.2923, -0.0492]
 yoko_voltages = [ 0, 0.2345, 0, 0]
 yoko_voltages = [0.0852, -0.3669, -0.0874, 0.2018]
-yoko_voltages = [0, 0, 0, 0]
+yoko_voltages = [0.25, 0.0, -0.0, 0]
 
 
 Fast_flux_vector = [0, 0, 0, 0]

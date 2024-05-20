@@ -416,8 +416,8 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
 
 
 
-                axs[0].set_ylabel("Cavity Atten (dB")
-                axs[0].set_xlabel("Cavity Frequency (GHz)")
+                axs[0].set_ylabel("Qubit Gain (a.u.)")
+                axs[0].set_xlabel("Qubit Frequency (GHz)")
                 axs[0].set_title("fidelity")
 
                 #### perform a mixed shot analysis, decide to combine shots or not based on 'arb' or 'const' qubit drive

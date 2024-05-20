@@ -41,17 +41,19 @@ DACs = [8, 2, 4, 6]
 #
 
 
-#[Left qubit, left coupler, right coupler, right qubit]
+
 # after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
+# 4Q device: [right qubit, top qubit, bottom qubit, left qubit]
 voltages = [0, 0, -0.3, 1.4]
 # voltages = [-0.6, 0.3, 0, 0]
 voltages = [-0.8, 0, 0.549, 0]
 voltages = [-1 + -0.01, 0, 0.64533 + (-1) * 0.11667, 0]
 
-voltages = [-0.0, -0.0, 0.0, -0]
-
+voltages = [0.1, 0.2, 0.0, -0.01]
+voltages = [0.0, 0.15 +0.0085, -0.0, 0]
 # voltages = [-0.59, 0, 0, 0]
-
+voltages = [0.109, 0.4, 0.4, 0.4]
+voltages = [0, 0, 0, 0]
 
 set_unused_to_zero = False
 

@@ -57,7 +57,7 @@ else:
 # yoko72.SetVoltage(0)
 
 #Define Save folder
-outerFolder = "Z:\QSimMeasurements\Measurements\RFSOC_CouplerV1\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\RFSOC_4Qubit_AB\\"
 
 ###### define default configuration
 BaseConfig = {
@@ -71,7 +71,7 @@ BaseConfig = {
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed
-    "length": 10,  # length of cavity pulse for readout in us
+    "length": 20,  # length of cavity pulse for readout in us
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 0.5,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks

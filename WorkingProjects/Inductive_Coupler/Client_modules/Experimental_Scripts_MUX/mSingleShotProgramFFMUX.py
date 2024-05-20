@@ -157,6 +157,8 @@ class SingleShotProgram(AveragerProgram):
         cfg = self.cfg
         cfg["reps"] = cfg["shots"]
         self.cfg["rounds"] = 1
+        if "number_of_pulses" not in self.cfg.keys():
+            self.cfg["number_of_pulses"] = 1
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         # self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
@@ -206,9 +208,12 @@ class SingleShotProgram(AveragerProgram):
                 else:
                     time = 'auto'
                 # print(freq_, gain_, time)
-                self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
-                                 gain=gain_,
-                                 waveform="qubit", t=time)
+                for iter in range(self.cfg["number_of_pulses"]):
+                    if iter > 0 and time != 'auto':
+                        time = 'auto'
+                    self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
+                                     gain=gain_,
+                                     waveform="qubit", t=time)
 
             # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  #play probe pulse
         self.sync_all(dac_t0=self.dac_t0)
