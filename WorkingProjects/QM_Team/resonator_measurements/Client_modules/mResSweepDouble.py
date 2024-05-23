@@ -244,7 +244,7 @@ class ResSweep(ExperimentClass):
         #           'IArray': IArray,
         #           'QArray': QArray,
         #           'f': self.resArray_f,
-        #           'power': self.inputDict['powers'],
+        #           'power': self.inputDict['power'],
         #           # 'diList': diList,
         #           # 'dqList': dqList,
         #           'endTime': time.time(),

@@ -17,7 +17,7 @@ def run_power_sweep(soc,soccfg,chipDict,dBm_lookup_file,channel_number=1):
         inputDictTemp['n_rounds'] = 1
         inputDictTemp['n_reps'] = 1
         inputDictTemp['readout_length'] = 10000
-        inputDictTemp['power']=inputDict['basePowers']-20
+        inputDictTemp['powers']=inputDict['base_powers']-20
         inputDictTemp['span_f']=inputDict['span_f']  
 
         Instance = mResSweepDouble.ResSweep(path=inputDict['save_path'],
@@ -27,8 +27,8 @@ def run_power_sweep(soc,soccfg,chipDict,dBm_lookup_file,channel_number=1):
                 with redirect_stderr(f):
                     data = mResSweepDouble.ResSweep.acquire(Instance)
         
-        #pOpt, pCov = mResSweepDouble.ResSweep.display(Instance, data,fit=True)            
-        """if len(inputDict['res_f']) == 2:
+        pOpt, pCov = mResSweepDouble.ResSweep.display(Instance, data,fit=True)            
+        if len(inputDict['res_f']) == 2:
             inputDict['res_f'] = [pOpt[0][0] / 1e6,
               pOpt[1][0] / 1e6]
             lw1 = pOpt[0][0] * ((1 / pOpt[0][1]) + (1 / pOpt[0][2])) / 1e6
@@ -37,7 +37,7 @@ def run_power_sweep(soc,soccfg,chipDict,dBm_lookup_file,channel_number=1):
         else:
             inputDict['res_f'] = [pOpt[0][0] / 1e6]
             lw1 = pOpt[0][0] * ((1 / pOpt[0][1]) + (1 / pOpt[0][2])) / 1e6
-            inputDict['span_f'] = [8. * lw1]"""
+            inputDict['span_f'] = [8. * lw1]
 
         # Run power sweep with updated parameters
         for i, atten in enumerate(inputDict['attenList']):
@@ -61,12 +61,12 @@ def run_power_sweep(soc,soccfg,chipDict,dBm_lookup_file,channel_number=1):
 
             initialSpan = np.asarray(inputDict['span_f'])
             inputDict['span_f'] = span_factor * initialSpan
-            inputDict['power'] = inputDict['basePowers']-atten
+            inputDict['powers'] = inputDict['base_powers']-atten
             inputDict['n_rounds'] = inputDict['n_roundsList'][i]
             inputDict['n_reps'] = inputDict['n_repsList'][i]
             inputDict['readout_length'] = inputDict['readout_lengthList'][i]
             attobj.set_attenuation(1,atten,channel_number)
-            Instance = mResSweepDouble.ResSweep(path=inputDict['save_path'], prefix='data_p'+str(inputDict['power']), inputDict=inputDict, soc=soc, soccfg=soccfg)
+            Instance = mResSweepDouble.ResSweep(path=inputDict['save_path'], prefix='data_p'+str(inputDict['powers']), inputDict=inputDict, soc=soc, soccfg=soccfg)
             with open(devnull,'w') as f:
                 with redirect_stderr(f):
                     data = mResSweepDouble.ResSweep.acquire(Instance)
