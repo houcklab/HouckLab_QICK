@@ -1,7 +1,7 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WTF.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass # used to come from WTF, might cause problems
 from tqdm.notebook import tqdm
 import time
 
@@ -47,6 +47,12 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
 
+        elif cfg["qubit_pulse_style"] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
+                                     gain=cfg["start"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
+                                     mode="periodic")
+
         else:
             print("define pi or flat top pulse")
 
@@ -60,7 +66,11 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
     def body(self):
 
         self.pulse(ch=self.cfg["qubit_ch"])  #play probe pulse
-        self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
+        # self.sync_all(self.us2cycles(0.05)) # align channels and wait 50ns
+        # If we're calibrating a pi/2 pulse:
+        if self.cfg["two_pulses"]:
+            self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
         #trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],

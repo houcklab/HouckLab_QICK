@@ -6,17 +6,17 @@ import numpy as np
 
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib.initialize import *
-from STFU.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
-from STFU.Client_modules.Experiments.mSingleShot_2Dsweep import SingleShot_2Dsweep
-from STFU.Client_modules.Experiments.mT1_ThermalPS import T1_ThermalPS
-from STFU.Client_modules.Experiments.mT1_PS import T1_PS
-from STFU.Client_modules.Experiments.mT2R_PS import T2R_PS
-from STFU.Client_modules.Experiments.mSingleShotPS import SingleShotPS
-from STFU.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
-from STFU.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_2Dsweep import SingleShot_2Dsweep
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_ThermalPS import T1_ThermalPS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_PS import T1_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT2R_PS import T2R_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotPS import SingleShotPS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
 
-from STFU.Client_modules.Experiments.mRepeatReadout import RepeatReadout
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
 from matplotlib import pyplot as plt
 import datetime

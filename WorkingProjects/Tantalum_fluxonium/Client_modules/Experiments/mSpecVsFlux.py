@@ -2,13 +2,14 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 import datetime
-from STFU.Client_modules.PythonDrivers.YOKOGS200 import *
-from STFU.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
-from STFU.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib_escher.initialize import yoko1
 
 # class LoopbackProgramTrans(AveragerProgram):
 #     def __init__(self, soccfg, cfg):
@@ -163,7 +164,7 @@ class SpecVsFlux(ExperimentClass):
         }
 
         ### define the yoko vector for the voltages, note this assumes that yoko1 already exists
-        yoko1 = YOKOGS200(VISAaddress='GPIB0::2::INSTR', rm=visa.ResourceManager())
+        #yoko1 = YOKOGS200(VISAaddress='GPIB0::7::INSTR', rm=visa.ResourceManager())
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
         yoko1.SetVoltage(expt_cfg["yokoVoltageStart"])
@@ -221,22 +222,17 @@ class SpecVsFlux(ExperimentClass):
             sig = data_I + 1j * data_Q
             avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
             Z_trans[i, :] = avgamp0
-
+            ax_plot_0 = axs['b'].imshow(
+                Z_trans,
+                aspect='auto',
+                extent=[np.min(X_trans)-X_trans_step/2,np.max(X_trans)+X_trans_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                origin= 'lower',
+                interpolation= 'none',
+            )
             if i ==0: #### if first sweep add a colorbar
-                ax_plot_0 = axs['b'].imshow(
-                    Z_trans,
-                    aspect='auto',
-                    extent=[np.min(X_trans) - X_trans_step / 2, np.max(X_trans) + X_trans_step / 2,
-                            np.min(Y) - Y_step / 2, np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none',
-                )
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
             else:
-                ax_plot_0.set_data(Z_trans)
-                ax_plot_0.set_clim(vmin=np.nanmin(Z_trans))
-                ax_plot_0.set_clim(vmax=np.nanmax(Z_trans))
                 cbar0.remove()
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
@@ -262,22 +258,17 @@ class SpecVsFlux(ExperimentClass):
             avgQ = np.abs(data_Q) - np.mean(np.abs(data_Q))
             ## Amplitude
             Z_specamp[i, :] = avgamp0
-
+            ax_plot_1 = axs['a'].imshow(
+                Z_specamp,
+                aspect='auto',
+                extent=[np.min(X_spec)-X_spec_step/2,np.max(X_spec)+X_spec_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                origin='lower',
+                interpolation = 'none',
+            )
             if i ==0: #### if first sweep add a colorbar
-                ax_plot_1 = axs['a'].imshow(
-                    Z_specamp,
-                    aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none',
-                )
                 cbar1 = fig.colorbar(ax_plot_1, ax=axs['a'], extend='both')
                 cbar1.set_label('a.u.', rotation=90)
             else:
-                ax_plot_1.set_data(Z_specamp)
-                ax_plot_1.set_clim(vmin=np.nanmin(Z_specamp))
-                ax_plot_1.set_clim(vmax=np.nanmax(Z_specamp))
                 cbar1.remove()
                 cbar1 = fig.colorbar(ax_plot_1, ax=axs['a'], extend='both')
                 cbar1.set_label('a.u.', rotation=90)
@@ -288,22 +279,18 @@ class SpecVsFlux(ExperimentClass):
 
             ## Phase
             Z_specphase[i, :] = avgphase
-
+            ax_plot_2 = axs['c'].imshow(
+                Z_specphase,
+                aspect='auto',
+                extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
+                        np.max(Y) + Y_step / 2],
+                origin='lower',
+                interpolation='none',
+            )
             if i == 0:  #### if first sweep add a colorbar
-                ax_plot_2 = axs['c'].imshow(
-                    Z_specphase,
-                    aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none',
-                )
                 cbar2 = fig.colorbar(ax_plot_2, ax=axs['c'], extend='both')
                 cbar2.set_label('Phase', rotation=90)
             else:
-                ax_plot_2.set_data(Z_specphase)
-                ax_plot_2.set_clim(vmin=np.nanmin(Z_specphase))
-                ax_plot_2.set_clim(vmax=np.nanmax(Z_specphase))
                 cbar2.remove()
                 cbar2 = fig.colorbar(ax_plot_2, ax=axs['c'], extend='both')
                 cbar2.set_label('Phase', rotation=90)
@@ -314,22 +301,18 @@ class SpecVsFlux(ExperimentClass):
 
             ## I
             Z_specI[i, :] = avgI
-
+            ax_plot_3 = axs['d'].imshow(
+                Z_specI,
+                aspect='auto',
+                extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
+                        np.max(Y) + Y_step / 2],
+                origin='lower',
+                interpolation='none',
+            )
             if i == 0:  #### if first sweep add a colorbar
-                ax_plot_3 = axs['d'].imshow(
-                    Z_specI,
-                    aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none',
-                )
                 cbar3 = fig.colorbar(ax_plot_3, ax=axs['d'], extend='both')
                 cbar3.set_label('I', rotation=90)
             else:
-                ax_plot_3.set_data(Z_specI)
-                ax_plot_3.set_clim(vmin=np.nanmin(Z_specI))
-                ax_plot_3.set_clim(vmax=np.nanmax(Z_specI))
                 cbar3.remove()
                 cbar3 = fig.colorbar(ax_plot_3, ax=axs['d'], extend='both')
                 cbar3.set_label('I', rotation=90)
@@ -340,22 +323,18 @@ class SpecVsFlux(ExperimentClass):
 
             ## Q
             Z_specQ[i, :] = avgQ
-
+            ax_plot_4 = axs['e'].imshow(
+                Z_specQ,
+                aspect='auto',
+                extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
+                        np.max(Y) + Y_step / 2],
+                origin='lower',
+                interpolation='none',
+            )
             if i == 0:  #### if first sweep add a colorbar
-                ax_plot_4 = axs['e'].imshow(
-                    Z_specQ,
-                    aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none',
-                )
                 cbar4 = fig.colorbar(ax_plot_4, ax=axs['e'], extend='both')
                 cbar4.set_label('Q', rotation=90)
             else:
-                ax_plot_4.set_data(Z_specQ)
-                ax_plot_4.set_clim(vmin=np.nanmin(Z_specQ))
-                ax_plot_4.set_clim(vmax=np.nanmax(Z_specQ))
                 cbar4.remove()
                 cbar4 = fig.colorbar(ax_plot_4, ax=axs['e'], extend='both')
                 cbar4.set_label('Q', rotation=90)
@@ -414,7 +393,8 @@ class SpecVsFlux(ExperimentClass):
         #### find the frequency corresponding to the cavity peak and set as cavity transmission number
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmin(avgamp0)
+        # peak_loc = np.argmin(avgamp0)
+        peak_loc = np.argmax(avgamp0)
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]
 
         return data_I, data_Q

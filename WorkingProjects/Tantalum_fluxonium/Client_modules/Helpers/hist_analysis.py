@@ -4,11 +4,12 @@ from h5py import File
 import os
 import datetime
 
-def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha = 0.5):
+def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha = 0.5, label_ig = "g", label_ie = "e"):
     ig = data[0]
     qg = data[1]
     ie = data[2]
     qe = data[3]
+
 
     numbins = 200
 
@@ -16,13 +17,13 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     xe, ye = np.median(ie), np.median(qe)
 
     if plot == True:
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(20, 10), num=figNum)
 
         # fig.tight_layout()
         fig.suptitle(title)
 
-        axs[0].scatter(ig, qg, label='g', color='r', marker='*', alpha=alpha)
-        axs[0].scatter(ie, qe, label='e', color='b', marker='*', alpha=alpha)
+        axs[0].scatter(ig, qg, label= label_ig, color='r', marker='*', alpha=alpha)
+        axs[0].scatter(ie, qe, label= label_ie, color='b', marker='*', alpha=alpha)
         axs[0].scatter(xg, yg, color='k', marker='o')
         axs[0].scatter(xe, ye, color='k', marker='o')
         axs[0].set_xlabel('I (a.u.)')
@@ -56,8 +57,8 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
         ylims = [yg - ran, yg + ran]
 
     if plot == True:
-        axs[1].scatter(ig_new, qg_new, label='g', color='r', marker='*', alpha=alpha)
-        axs[1].scatter(ie_new, qe_new, label='e', color='b', marker='*', alpha=alpha)
+        axs[1].scatter(ig_new, qg_new, label= label_ig, color='r', marker='*', alpha=alpha)
+        axs[1].scatter(ie_new, qe_new, label= label_ie, color='b', marker='*', alpha=alpha)
         axs[1].scatter(xg, yg, color='k', marker='o')
         axs[1].scatter(xe, ye, color='k', marker='o')
         axs[1].set_xlabel('I (a.u.)')
@@ -67,10 +68,11 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
 
         """X and Y ranges for histogram"""
 
-        ng, binsg, pg = axs[2].hist(ig_new, bins=numbins, range=xlims, color='r', label='g', alpha=0.5)
-        ne, binse, pe = axs[2].hist(ie_new, bins=numbins, range=xlims, color='b', label='e', alpha=0.5)
+        ng, binsg, pg = axs[2].hist(ig_new, bins=numbins, range=xlims, color='r', label=label_ig, alpha=0.5)
+        ne, binse, pe = axs[2].hist(ie_new, bins=numbins, range=xlims, color='b', label=label_ie, alpha=0.5)
         axs[2].set_xlabel('I(a.u.)')
         axs[2].legend(loc='upper right')
+        plt.tight_layout()
 
     else:
         ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)

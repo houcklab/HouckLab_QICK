@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
-from STFU.Client_modules.Helpers.hist_analysis import *
-from STFU.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 
@@ -98,6 +98,10 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  )  # mode="periodic")
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
         # self.r_thresh = 6
@@ -114,6 +118,11 @@ class LoopbackProgramSingleShotPS(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
+
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -161,10 +170,10 @@ class SingleShotPS(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        #### pull the data from the single hots
+        #### pull the data from the single shots
         prog = LoopbackProgramSingleShotPS(self.soccfg, self.cfg)
         ie_0, ie_1, qe_0, qe_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])
-        ### run ground state expirement
+        ### run ground state experiment
         self.cfg["qubit_gain"] = 0
         prog = LoopbackProgramSingleShotPS(self.soccfg, self.cfg)
         ig_0, ig_1, qg_0, qg_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])

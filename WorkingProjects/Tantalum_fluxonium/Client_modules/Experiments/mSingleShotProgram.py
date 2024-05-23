@@ -2,10 +2,11 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
-from STFU.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
+
 
 class LoopbackProgramSingleShot(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -44,7 +45,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
             #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
@@ -74,14 +75,22 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             print("define pi or flat top pulse")
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]),
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=cfg["ro_chs"][0]),
                                  ) # mode="periodic")
+
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
 
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
         #### wait 10ns
         self.sync_all(self.us2cycles(0.01))
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
@@ -90,7 +99,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=[0],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -167,22 +176,28 @@ class SingleShotProgram(ExperimentClass):
         q_e = data["data"]["q_e"]
 
         #### plotting is handled by the helper histogram
-        title = ('Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) )
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp, ran=ran, title = title)
-
+        title = (self.outerFolder +'\n' + self.path_wDate + '\n Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
+                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + "\n" +
+                 " Qubit Frequency: " + str(self.cfg["qubit_freq"]) + " MHz, Qubit Gain: " + str(self.cfg["qubit_gain"]) + ", Flat top length = " + str(self.cfg["flat_top_length"]) + ".")
+        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp or save_fig, ran=ran,
+                                             title = title, figNum = figNum)
 
         self.fid = fid
         self.threshold = threshold
         self.angle = angle
 
-
         if save_fig:
             plt.savefig(self.iname)
 
         if plotDisp:
-            plt.show(block=False)
+            plt.show(block = False)
             plt.pause(0.1)
+
+
+            # plt.close()
+
+        # plt.clf()
+
         # else:
             # fig.clf(True)
             # plt.close(fig)
