@@ -45,7 +45,7 @@ class ExperimentThread(QObject):
             elif issubclass(type(self.experiment_instance), RAveragerProgram):
 
                 try:
-                    x_pts, avgi, avgq = self.experiment_instance.acquire()
+                    x_pts, avgi, avgq = self.experiment_instance.acquire(self.soc)
                 except Exception as e:
                     self.RFSOC_error.emit(e)
                     self.finished.emit()
