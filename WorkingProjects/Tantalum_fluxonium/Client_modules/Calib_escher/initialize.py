@@ -16,13 +16,13 @@ from pathlib import Path
 # sys.path.append('..\\ClientModules')
 
 #### issue when adding PythonDrivers due to file location, adding a hacky solution for now
-DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
-
-if DriverFolderBool:
-    os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
-else:
-    path = os.getcwd()
-    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+# DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
+#
+# if DriverFolderBool:
+#     os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# else:
+#     path = os.getcwd()
+#     os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 
 
 #### define a attenuator class to change define attenuators for the setup
@@ -40,8 +40,12 @@ class attenuator:
 # cavityAtten = attenuator(27787)
 # qubitAtten = attenuator(27797)
 
-##### define yoko
+# define yoko 1
 yoko1 = YOKOGS200(VISAaddress = 'GPIB0::4::INSTR', rm = visa.ResourceManager())
+yoko1.SetMode('voltage')
+
+# define yoko 2
+yoko2 = YOKOGS200(VISAaddress = 'GPIB0::5::INSTR', rm = visa.ResourceManager())
 yoko1.SetMode('voltage')
 
 
@@ -67,6 +71,6 @@ BaseConfig={
         # if you lower pulse_freq you will see an increased gain.
         "adc_trig_offset": 0.468+0.02, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
         # Try varying adc_trig_offset from 100 to 220 clock ticks
-        "cavity_LO": 0.0,
+        "cavity_LO": 0.0, # [MHz]
        }
 

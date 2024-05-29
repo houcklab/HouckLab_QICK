@@ -41,6 +41,7 @@ class YOKOGS200:
         for tempvolt in tempvolts:
             self.session.write(':SOURce:LEVel:AUTO %.8f' %tempvolt)
             time.sleep(self._rampinterval)
+        print("Voltage is ", self.GetVoltage(), " Volts")
 
     # Ramp up the current (amps) in increments of _rampstep, waiting _rampinterval
     # between each increment.
