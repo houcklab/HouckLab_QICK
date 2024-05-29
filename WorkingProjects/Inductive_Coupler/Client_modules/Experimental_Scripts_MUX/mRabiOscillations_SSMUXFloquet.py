@@ -42,7 +42,7 @@ class WalkProgramSS(AveragerProgram):
 
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
@@ -57,7 +57,7 @@ class WalkProgramSS(AveragerProgram):
                                  waveform="qubit", t=time)
 
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -87,7 +87,7 @@ class WalkProgramSS(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
@@ -123,7 +123,7 @@ class WalkFFSSMUXFloquet(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False):
+    def acquire(self, threshold = None, angle = None, progress=False):
         tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         Floquet_Frequencies = self.cfg['Floquet_Frequencies']
         Floquet_Gains = self.cfg['Floquet_Gains']

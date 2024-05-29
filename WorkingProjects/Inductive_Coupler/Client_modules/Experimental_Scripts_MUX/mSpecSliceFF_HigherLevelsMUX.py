@@ -53,7 +53,7 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
         self.sync_all(self.us2cycles(0.1))
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         offset_FFpulse = self.us2cycles(1.5)
         if self.cfg['Gauss']:
@@ -82,7 +82,7 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
         self.mathi(self.q_rp, self.r_freq, self.r_freq2, "+", 0)
         self.pulse(ch=self.cfg["qubit_ch"])
 
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -91,7 +91,7 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse,  self.cfg["sigma"] * 4 + 1.01 + self.cfg["qubit_length"] // 2)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def update(self):
         self.mathi(self.q_rp, self.r_freq2, self.r_freq2, '+', self.f_step) # update frequency list index
@@ -115,12 +115,12 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         prog = PulseProbeSpectroscopyProgramFFMultipleFF(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
@@ -225,7 +225,7 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
 #         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=self.cfg["qubit_gain"],
 #                                  length=self.us2cycles(self.cfg["qubit_length"]))
 #         self.qubit_length_us = self.cfg["qubit_length"]
-#         self.sync_all(dac_t0=self.dac_t0)
+#         self.sync_all(gen_t0=self.gen_t0)
 #         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
 #
 #         # self.FFPulses(self.FFPulse, self.qubit_length_us + self.cfg['sigma'] * 4 + 1)
@@ -245,7 +245,7 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
 #         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
 #
 #         # trigger measurement, play measurement pulse, wait for qubit to relax
-#         self.sync_all(dac_t0=self.dac_t0)
+#         self.sync_all(gen_t0=self.gen_t0)
 #         self.FFPulses(self.FFReadouts, self.cfg["length"])
 #         self.measure(pulse_ch=self.cfg["res_ch"],
 #                      adcs=[0, 1],
@@ -254,7 +254,7 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
 #                      syncdelay=self.us2cycles(10))
 #         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
 #         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 0.1)
-#         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+#         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 #
 #     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
 #         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -306,7 +306,7 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
 #                                  length=self.us2cycles(cfg["length"]))
 #
 #     def body(self):
-#         # self.sync_all(dac_t0=self.dac_t0)
+#         # self.sync_all(gen_t0=self.gen_t0)
 #         # self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_qubit01, phase=0,
 #         #                      gain=self.cfg["qubit_gain"], waveform="qubit")
 #         # self.mathi(self.q_rp, self.r_freq, self.r_freq2, "+", 0)
@@ -314,13 +314,13 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
 #         #                          length=self.us2cycles(self.cfg["qubit_length"]))
 #         # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
 #         # # trigger measurement, play measurement pulse, wait for qubit to relax
-#         # self.sync_all(dac_t0=self.dac_t0)
+#         # self.sync_all(gen_t0=self.gen_t0)
 #         # self.measure(pulse_ch=self.cfg["res_ch"],
 #         #              adcs=[0, 1],
 #         #              adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
 #         #              wait=True,
 #         #              syncdelay=self.us2cycles(10))
-#         # self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+#         # self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 #
 #         cfg=self.cfg
 #

@@ -66,7 +66,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         self.sync_all(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + 1)
         self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
                              np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
@@ -84,7 +84,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
                              waveform="qubit", t=time)
 
         # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  #play probe pulse
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -99,7 +99,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         # IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
         # self.FFPulses_direct(-1 * self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray = IQ_Array_Negative, waveform_label='FF2')
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
 
     def update(self):
@@ -115,7 +115,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
         start = time.time()
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
         end = time.time()
@@ -194,7 +194,7 @@ class SingleShotProgram(AveragerProgram):
         self.sync_all(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + 1)
         # self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
@@ -216,7 +216,7 @@ class SingleShotProgram(AveragerProgram):
                                      waveform="qubit", t=time)
 
             # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  #play probe pulse
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -231,7 +231,7 @@ class SingleShotProgram(AveragerProgram):
         # IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
         # self.FFPulses_direct(-1 * self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray = IQ_Array_Negative, waveform_label='FF2')
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -242,7 +242,7 @@ class SingleShotProgram(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
         start = time.time()
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
         end = time.time()
@@ -279,7 +279,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
         self.threshold = []
         self.angle = []
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         #### pull the data from the single hots
         self.cfg["IDataArray"] = [None, None, None, None]
         self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
@@ -342,7 +342,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
         #
         # return data
 
-    # def acquireUPDATE(self, progress=False, debug=False):
+    # def acquireUPDATE(self, progress=False):
     #     #### pull the data from the single hots
     #     self.cfg["IDataArray"] = [None, None, None, None]
     #     self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
@@ -581,7 +581,7 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
         self.pulse(ch=self.FF_Channel3)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 

@@ -55,11 +55,11 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         print(cfg["mixer_freq"], cfg["pulse_freqs"], cfg["pulse_gains"], cfg["length"], self.cfg["adc_trig_offset"])
     def body(self):
         print(self.FFRamp, self.FFExpts, self.FFReadouts, self.delay)
-        self.sync_all(50, dac_t0=self.dac_t0)
+        self.sync_all(50, gen_t0=self.gen_t0)
         self.FFPulses(self.FFRamp, 2.02)
         self.FFPulses(self.FFExpts, 6)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(2.0) + self.delay)  # play probe pulse
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -70,12 +70,12 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.FFPulses(-1 * self.FFExpts, 2.05)
         self.FFPulses(-1 * self.FFExpts, 2)
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     # def body(self):
     #     print(self.delay, self.cfg["sigma"], self.pulse_qubit_lenth)
     #     print(self.FFRamp, self.FFExpts, self.FFReadouts)
-    #     self.sync_all(50, dac_t0=self.dac_t0)
+    #     self.sync_all(50, gen_t0=self.gen_t0)
     #     self.FFPulses(self.FFExpts, 2)
     #     # self.FFPulses(self.FFRamp, self.qubit_length_us,
     #     #               t_start=self.us2cycles(2))  # Sara: Length specified in us in FFPulses argument; add 20 ns
@@ -97,7 +97,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
     #     # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
     #     # trigger measurement, play measurement pulse, wait for qubit to relax
     #     print(self.FFRamp, self.FFExpts)
-    #     self.sync_all(dac_t0=self.dac_t0)
+    #     self.sync_all(gen_t0=self.gen_t0)
     #     self.FFPulses(self.FFReadouts, self.cfg["length"])
     #     self.measure(pulse_ch=self.cfg["res_ch"],
     #                  adcs=self.cfg["ro_chs"], pins=[0],
@@ -109,7 +109,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
     #     self.FFPulses_direct(-1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
     #                             + 200 * 16, self.FFRamp,
     #                          IQPulseArray = self.cfg["IDataArray"], waveform_label='FF3')
-    #     self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+    #     self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
         FF.FFPulses(self, list_of_gains, length_us, t_start, IQPulseArray, waveform_label)
@@ -354,7 +354,7 @@ class FFSpecCalibrationMUX(ExperimentClass):
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=self.progress, debug=False)
+                                         start_src="internal", progress=self.progress)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
 
         data_I = data['data']['avgi'][0][0]

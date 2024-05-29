@@ -9,6 +9,9 @@ from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
+# import qick
+# print("Test", qick.__file__)
+
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
@@ -28,7 +31,7 @@ class CavitySpecFFProg(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         # self.pulse(ch=self.cfg["res_ch"],t=0)
         #
@@ -40,7 +43,7 @@ class CavitySpecFFProg(AveragerProgram):
                      wait=False,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
         #
         # self.synci(200) # give processor time to get ahead of the pulses
@@ -64,7 +67,7 @@ class CavitySpecFFMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
                            self.cfg["mixer_freq"] + self.cfg["TransSpan"],
                            self.cfg["TransNumPoints"])

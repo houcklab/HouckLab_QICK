@@ -68,7 +68,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         print(cfg["mixer_freq"], cfg["pulse_freqs"], cfg["pulse_gains"], cfg["length"], self.cfg["adc_trig_offset"])
     def body(self):
 
-        # self.sync_all(dac_t0=self.dac_t0)
+        # self.sync_all(gen_t0=self.gen_t0)
         # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         #
         # self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -78,15 +78,15 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         #              wait=False,
         #              syncdelay=self.us2cycles(10))
         # # self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        # self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), dac_t0=self.dac_t0)
+        # self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
         # print(self.qubit_length_us, self.us2cycles(self.cfg["adc_trig_offset"]), self.us2cycles(self.cfg["relax_delay"]),
         #       self.us2cycles(self.cfg["length"]))
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         # self.FFPulses(self.FFPulse, self.cfg["length"])
         # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
@@ -97,7 +97,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -114,12 +114,12 @@ class QubitSpecSliceFFMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
 
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data

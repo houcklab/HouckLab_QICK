@@ -81,7 +81,7 @@ class T2R_2PulseMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
@@ -89,7 +89,7 @@ class T2R_2PulseMUX(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
@@ -207,7 +207,7 @@ class T2R_2PulseMUX_NoUpdate(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         x_pts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         results = []
         for t in tqdm(x_pts, position=0, disable=True):

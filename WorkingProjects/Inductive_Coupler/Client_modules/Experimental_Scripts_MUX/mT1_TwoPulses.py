@@ -125,7 +125,7 @@ class T1_TwoPulseMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
@@ -133,7 +133,7 @@ class T1_TwoPulseMUX(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         signal = (avgi + 1j * avgq) * np.exp(1j * (2 * np.pi * self.cfg['cavity_winding_freq'] *
                                                    self.cfg["pulse_freq"] + self.cfg['cavity_winding_offset']))
         avgi = signal.real

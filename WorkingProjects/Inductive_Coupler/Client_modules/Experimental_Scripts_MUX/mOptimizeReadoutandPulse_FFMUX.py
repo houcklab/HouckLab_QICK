@@ -34,7 +34,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
         #### function used to actually find the cavity parameters
         expt_cfg = {
             ### define the attenuator parameters
@@ -196,7 +196,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         return self.data
 
 
-    def _calibrate(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
+    def _calibrate(self, progress=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
         #### create a calibration function that is used to find the qubit frequency
         expt_cfg = {
             ### transmission parameters
@@ -326,7 +326,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False,
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False,
                 cavityAtten=None, figNum = 1, Qubit_Sweep_Index = 0):
         #### function used to actually find the cavity parameters
         expt_cfg = {
@@ -489,7 +489,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         return self.data
 
 
-    def _calibrate(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
+    def _calibrate(self, progress=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
         #### create a calibration function that is used to find the qubit frequency
         expt_cfg = {
             ### transmission parameters
@@ -587,7 +587,7 @@ class ReadOpt_wSingleShotFF_HigherMUX(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, ground = 0, excited = 1, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
+    def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
         #### function used to actually find the cavity parameters
         expt_cfg = {
             ### define the attenuator parameters
@@ -819,7 +819,7 @@ class ReadOpt_wSingleShotFF_HigherMUXOLD(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, ground = 0, excited = 1, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
+    def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
         #### function used to actually find the cavity parameters
         expt_cfg = {
             ### define the attenuator parameters
@@ -1051,7 +1051,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, ground = 0, excited = 1, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False,
+    def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False,
                 cavityAtten=None, figNum = 1, Qubit_Sweep_Index = 0):
         #### function used to actually find the cavity parameters
         expt_cfg = {
@@ -1296,7 +1296,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
 #                  calibrate = True, cavityAtten =None):
 #         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 #
-#     def acquire(self, ground = 0, excited = 1, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
+#     def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
 #         #### function used to actually find the cavity parameters
 #         expt_cfg = {
 #             ### define the attenuator parameters
@@ -1527,7 +1527,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
 #                  calibrate = True, cavityAtten =None):
 #         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 #
-#     def acquire(self, ground = 0, excited = 1, progress=False, debug=False, plotDisp = True, plotSave = True, calibrate=False, figNum = 1):
+#     def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False, figNum = 1):
 #         #### function used to actually find the cavity parameters
 #         expt_cfg = {
 #             ### define the attenuator parameters
@@ -1697,7 +1697,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
 #         return self.data
 #
 #
-#     def _calibrate(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
+#     def _calibrate(self, progress=False, plotDisp = True, plotSave = True, figNum = 1, cavityAtten = None):
 #         #### create a calibration function that is used to find the qubit frequency
 #         expt_cfg = {
 #             ### transmission parameters

@@ -43,7 +43,7 @@ class ChiProgram(AveragerProgram):
         self.qubit_length_us = cfg["sigma"] * 4
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFPulse, 2 * self.qubit_length_us + 1)
         if self.cfg['pulse_expt']['pulse_01'] or self.cfg['pulse_expt']['pulse_12']:
@@ -54,7 +54,7 @@ class ChiProgram(AveragerProgram):
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_12, phase=0, gain=self.cfg["qubit_gain12"],
                                  waveform="qubit")
 
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -65,7 +65,7 @@ class ChiProgram(AveragerProgram):
 
         self.FFPulses(-1 * self.FFPulse,  self.qubit_length_us + 1)
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -79,7 +79,7 @@ class ChiShift(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         expt_cfg = {
                 "center": self.cfg["pulse_freq"],
                 "span": self.cfg["TransSpan"],

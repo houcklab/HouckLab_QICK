@@ -49,11 +49,11 @@ class QubitSpecSliceFFProg(AveragerProgram):
 
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
-        # print(self.dac_t0, self._adc_ts, self._dac_ts, self.pulse_qubit_lenth, self.cycles2us(1, gen_ch = self.cfg["qubit_ch"]), self.us2cycles(self.cfg["qubit_length"]))
-        self.sync_all(dac_t0=self.dac_t0)
+        # print(self.gen_t0, self._adc_ts, self._dac_ts, self.pulse_qubit_lenth, self.cycles2us(1, gen_ch = self.cfg["qubit_ch"]), self.us2cycles(self.cfg["qubit_length"]))
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -62,7 +62,7 @@ class QubitSpecSliceFFProg(AveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -77,7 +77,7 @@ class QubitSpecSliceFFMUX_NoUpdate(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         # prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         fpts = np.linspace(self.cfg["qubit_freq"] - self.cfg["SpecSpan"],

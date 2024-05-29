@@ -67,7 +67,7 @@ class RamseyFFCalRProg(RAveragerProgram):
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         # Set FF initial values (same as readout values)
         self.FFPulses(self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)  # Should be 0 anyways
@@ -93,14 +93,14 @@ class RamseyFFCalRProg(RAveragerProgram):
         # self.memwi(self.rps[3], 27, 135)
 
         # Qubit X or Y pi/2 pulse
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
                                  phase=self.deg2reg(self.cfg["SecondPulseAngle"], gen_ch=self.cfg["qubit_ch"]),
                                  gain=self.cfg["pi2_gain"], waveform="qubit")
         self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(0.05))  # play probe pulse
 
         # Measure: set FF readout values and measure qubit
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -119,7 +119,7 @@ class RamseyFFCalRProg(RAveragerProgram):
             self.mathi(rp, r_g, r_g, '*', -1)  # swap sign of gain!
             self.pulse(ch=FFChannel)
         self.FFPulses(-1 * self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)  # Should be 0 anyways
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))  # , dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))  # , gen_t0=self.gen_t0)
         # print("final", self.gen_mgrs[self.FFChannels[0]].pulses)
 
 
@@ -165,7 +165,7 @@ class RamseyFFCalR(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         prog = RamseyFFCalRProg(self.soccfg, self.cfg)
         print(datetime.datetime.now())
         try:

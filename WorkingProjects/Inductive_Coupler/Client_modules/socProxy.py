@@ -1,5 +1,7 @@
 import Pyro4
-from qick_lib.qick import QickConfig
+# from qick_lib.qick import QickConfig
+from qick import QickConfig
+
 import socket
 
 def makeProxy():

@@ -30,7 +30,7 @@ class CavitySpecFFProg(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -38,7 +38,7 @@ class CavitySpecFFProg(AveragerProgram):
                      wait=False,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -86,11 +86,11 @@ class QubitSpecSliceFFProg(RAveragerProgram):
             self.qubit_length_us = cfg["qubit_length"]
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         # self.FFPulses(self.FFPulse, self.cfg["length"])
         # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
@@ -101,7 +101,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -128,7 +128,7 @@ class SpecVsQblox(ExperimentClass):
                          config_file=config_file, progress=progress, qblox = qblox)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1,
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
         expt_cfg = {
             ### define the qblox parameters
@@ -251,6 +251,9 @@ class SpecVsQblox(ExperimentClass):
 
             ### take the spec data
             data_I, data_Q = self._aquireSpecData()
+            data_I = data_I[0]
+            data_Q = data_Q[0]
+
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
@@ -260,7 +263,7 @@ class SpecVsQblox(ExperimentClass):
 
             avgamp0 = np.abs(sig)
             if smart_normalize:
-                avgamp0 = Normalize_Qubit_Data(data_I[0][0], data_Q[0][0])
+                avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
             Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
             if i == 0:
 
@@ -315,7 +318,7 @@ class SpecVsQblox(ExperimentClass):
 
         return self.data
 
-    def _aquireTransData(self, progress=False, debug=False):
+    def _aquireTransData(self, progress=False):
         fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
                            self.cfg["mixer_freq"] + self.cfg["TransSpan"],
                            self.cfg["TransNumPoints"])
@@ -374,12 +377,12 @@ class SpecVsQblox(ExperimentClass):
     #
     #     return data_I, data_Q
 
-    def _aquireSpecData(self, progress=False, debug=False):
+    def _aquireSpecData(self, progress=False):
 
         prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
 
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data

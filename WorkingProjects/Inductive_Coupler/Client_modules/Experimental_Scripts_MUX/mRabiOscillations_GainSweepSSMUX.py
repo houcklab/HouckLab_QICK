@@ -41,7 +41,7 @@ class OscillationsProgram(AveragerProgram):
         self.sync_all(200)
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_01, phase=0,
                              gain=self.cfg["qubit_gain01"],
@@ -50,7 +50,7 @@ class OscillationsProgram(AveragerProgram):
                              gain=self.cfg["qubit_gain12"],
                              waveform="qubit")
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -107,7 +107,7 @@ class OscillationsProgramSS(AveragerProgram):
         self.sync_all(200)
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
@@ -121,7 +121,7 @@ class OscillationsProgramSS(AveragerProgram):
                                  gain=gain_,
                                  waveform="qubit", t=time)
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -151,7 +151,7 @@ class OscillationsProgramSS(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
@@ -192,7 +192,7 @@ class Oscillations_Gain_2nd(ExperimentClass):
         self.I_Range = I_Excited - I_Ground
         self.Q_Range = Q_Excited - Q_Ground
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False, figNum = 1, plotDisp = True,
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
                 plotSave = True):
 
         gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
@@ -347,7 +347,7 @@ class Oscillations_Gain_2nd(ExperimentClass):
         #
         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
-        #                                  start_src="internal", progress=False, debug=False)
+        #                                  start_src="internal", progress=False)
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data
 
@@ -402,7 +402,7 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False, figNum = 1, plotDisp = True,
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
                 plotSave = True):
 
         gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
@@ -539,7 +539,7 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
         #
         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
-        #                                  start_src="internal", progress=False, debug=False)
+        #                                  start_src="internal", progress=False)
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data
 
