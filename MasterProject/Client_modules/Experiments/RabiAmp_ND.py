@@ -143,8 +143,11 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         ### in the following the data are arrays in the dimensionality of swept variables
         x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True, debug=False)
 
-        print(avgi)
-        print(avgi[0][0])
+        # print(avgi)
+        # print(avgi[0][0])
+        #
+        # print(x_pts)
+        #
 
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
