@@ -12,17 +12,19 @@ import os
 import pyvisa as visa
 from pathlib import Path
 
+path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium\Client_modules\PythonDrivers'
+os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 
 # sys.path.append('..\\ClientModules')
 
 #### issue when adding PythonDrivers due to file location, adding a hacky solution for now
-DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
-
-if DriverFolderBool:
-    os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
-else:
-    path = os.getcwd()
-    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+# DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
+#
+# if DriverFolderBool:
+#     os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+# else:
+#     path = os.getcwd()
+#     os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 
 
 #### define a attenuator class to change define attenuators for the setup

@@ -129,19 +129,20 @@ class LoopbackProgramT1_PS(RAveragerProgram):
                          width=self.cfg["trig_len"])  # trigger for switch
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-                                 waveform="qubit")
+                                 waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
         self.sync_all(self.us2cycles(0.01))
 
         # Apply e-f pi pulse
-        if self.cfg["use_switch"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switch
-        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ef_freq,
-                                 phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
-                                 waveform="qubit")
-        self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
+        if self.cfg['use_two_pulse']:
+            if self.fg['use_switch']:
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                             width=self.cfg["trig_len"])  # trigger for switch
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_ef_freq,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+                                     waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
 
         #### measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],

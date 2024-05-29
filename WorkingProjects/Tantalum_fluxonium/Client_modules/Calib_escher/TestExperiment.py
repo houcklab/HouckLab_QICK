@@ -613,7 +613,7 @@ Instance_Qubit_ef_spectroscopy = Qubit_ef_spectroscopy(path="dataQubit_ef_spectr
 data_Qubit_ef_spectroscopy = Qubit_ef_spectroscopy.acquire(Instance_Qubit_ef_spectroscopy)
 Qubit_ef_spectroscopy.save_data(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spectroscopy)
 Qubit_ef_spectroscopy.save_config(Instance_Qubit_ef_spectroscopy)
-Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spectroscopy, plotDisp=True)
+Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy)
 
 
 

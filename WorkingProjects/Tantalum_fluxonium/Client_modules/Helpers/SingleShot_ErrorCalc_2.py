@@ -359,17 +359,19 @@ def findProb(iq_data, cen_num, **kwargs):
     return probability, std_probability
 
 
-def findTempr(probability, std_probability, f1):
+def findTempr(probability, std_probability, f1, cen_num = 2):
     h = 6.62607015e-34
     kb = 1.380649e-23
-    # Calculate the temperature between state 0 and 1
-    T = -(h*f1/kb) /np.log(probability[0]/probability[1])
-    # Calculate the uncertainty in the temperature
-    u_T = std_probability[0]**2*(T/(probability[0]*np.log(probability[0]/probability[1])))**2 \
-        + std_probability[1]**2*(T/(probability[1]*np.log(probability[0]/probability[1])))**2 
-    
-    return np.abs(T), np.sqrt(u_T)
-
+    # Since there are ^{cen_num}C_2 choices of temperature. Let's calculate all of them
+    tempr = np.zeros((cen_num, cen_num))
+    tempr_std = np.zeros((cen_num, cen_num))
+    for i in range(cen_num):
+        for j in range(cen_num):
+            if i != j:
+                tempr[i,j] = np.abs((h*f1[i,j]/kb)/np.log(probability[i]/probability[j]))
+                tempr_std[i,j] =  np.abs(std_probability[i]**2*(tempr[i,j]/(probability[i]*np.log(probability[i]/probability[j])))**2
+                                   + std_probability[j]**2*(tempr[i,j]/(probability[j]*np.log(probability[i]/probability[j])))**2)
+    return tempr, tempr_std
 
 def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, axs, cen_num = 2, **kwargs):
     ## Create the best looking plots for all the data and fit and pdf

@@ -54,7 +54,7 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
 Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_trans= Transmission.acquire(Instance_trans)
-Transmission.display(Instance_trans, data_trans, plotDisp=False)
+Transmission.display(Instance_trans)
 Transmission.save_data(Instance_trans, data_trans)
 
 
@@ -99,6 +99,6 @@ for volt in config["yokoVoltage"]:
     config["actVolt"] = yoko1.GetVoltage()
     Instance_T2Experiment = T2EchoExperiment(path="T2Echo", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
     data_T2Experiment = T2EchoExperiment.acquire(Instance_T2Experiment)
-    T2EchoExperiment.display(Instance_T2Experiment, data_T2Experiment, plotDisp=True)
+    T2EchoExperiment.display(Instance_T2Experiment)
     T2EchoExperiment.save_data(Instance_T2Experiment, data_T2Experiment)
     T2EchoExperiment.save_config(Instance_T2Experiment)

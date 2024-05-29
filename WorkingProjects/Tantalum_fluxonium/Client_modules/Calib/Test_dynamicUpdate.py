@@ -60,7 +60,7 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 Instance_specSlice = SpecSlice(path="dataTestSpecSlice_dynamic", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
 data_specSlice = SpecSlice.acquire(Instance_specSlice)
 
-SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
+SpecSlice.display(Instance_specSlice)
 SpecSlice.save_data(Instance_specSlice, data_specSlice)
 SpecSlice.save_config(Instance_specSlice)
 

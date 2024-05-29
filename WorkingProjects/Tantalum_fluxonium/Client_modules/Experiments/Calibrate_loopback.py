@@ -78,7 +78,7 @@ while i < 1:
 
     Instance = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg)
     data= Transmission.acquire(Instance)
-    Transmission.display(Instance, data, plotDisp=True)
+    Transmission.display(Instance)
     Transmission.save_data(Instance, data)
 
     i += 1

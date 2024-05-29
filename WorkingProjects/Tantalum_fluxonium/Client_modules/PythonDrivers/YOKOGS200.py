@@ -31,7 +31,7 @@ class YOKOGS200:
 
     # Ramp up the voltage (volts) in increments of _rampstep, waiting _rampinterval
     # between each increment.
-    def SetVoltage(self, voltage):
+    def SetVoltage(self, voltage, toPrint = True):
         start = self.GetVoltage()
         stop = voltage
         steps = max(1, round(abs(stop-start)/self._rampstep))
@@ -41,6 +41,9 @@ class YOKOGS200:
         for tempvolt in tempvolts:
             self.session.write(':SOURce:LEVel:AUTO %.8f' %tempvolt)
             time.sleep(self._rampinterval)
+
+        if toPrint:
+            print("Yoko Voltage set to ", str(voltage), " V")
 
     # Ramp up the current (amps) in increments of _rampstep, waiting _rampinterval
     # between each increment.

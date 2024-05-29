@@ -130,7 +130,7 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
 Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
 data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
-T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
+T1Experiment.display(Instance_T1Experiment)
 T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
 T1Experiment.save_config(Instance_T1Experiment)
 

@@ -1,7 +1,7 @@
-#### import packages
+#%%
 import os
-path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+from matplotlib import pyplot as plt
+import datetime
 
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_rabi , Qubit_ef_rabiChevron
@@ -9,24 +9,15 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_EF_Rab
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mQubit_ef_spectroscopy import Qubit_ef_spectroscopy
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_ef
 
-from matplotlib import pyplot as plt
-import datetime
-
-#### define the saving path
+# Define the base folder for saving files
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
-
-###qubitAtten = attenuator(27797, attenuation_int= 10, print_int = False)
-
-print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-#################################### Running the actual experiments
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
-# print(soccfg)
 
-plt.ioff()
+# print(soccfg) # Can run this to print soc information
 
+# Define switch configs
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
     "trig_buffer_end": 0.024, # in us
@@ -34,30 +25,32 @@ SwitchConfig = {
 }
 BaseConfig = BaseConfig  | SwitchConfig
 
+#%%
 
-
-# # # # #######################################################################################################################
-############## qubit ef spectroscopy
+# TITLE : qubit ef spectroscopy
 UpdateConfig = {
-    ##### define attenuators
-    "yokoVoltage": -1.8,
-    ###### cavity
-    "read_pulse_style": "const", # --Fixed
-    "read_length": 5, # us
-    "read_pulse_gain": 7400, # [DAC units]
-    "read_pulse_freq": 6437.4,
+    # Yoko
+    "yokoVoltage": 6.729,
+
+    # Cavity
+    "read_pulse_style": "const",
+    "read_length": 4, # us
+    "read_pulse_gain": 14000, # [DAC units]
+    "read_pulse_freq": 6437.1,
+
     # g-e parameters
-    "qubit_ge_freq": 2243.44, # MHz
-    "qubit_ge_gain": 600, # Gain for pi pulse in DAC units
-    ##### spec parameters for finding the qubit frequency
-    "qubit_ef_freq_start": 2060, #1167-10
-    "qubit_ef_freq_step": 0.5,
-    'qubit_ef_gain': 8000,
-    "SpecNumPoints": 80,  ### number of points
+    "qubit_ge_freq": 2054.04,
+    "qubit_ge_gain": 2000,
+
+    # e-f parameters
+    "qubit_ef_freq_start": 1600,
+    "qubit_ef_freq_step": 1,
+    "SpecNumPoints": 401,
+    'qubit_ef_gain': 16000,
     "qubit_pulse_style": "arb",
-    "sigma": 0.100,  ### units us, define a 20ns sigma
-    "relax_delay": 500,  ### turned into us inside the run function
-    "reps": 800, # number of averages of every experiment
+    "sigma": 1.00,
+    "relax_delay": 500,  #
+    "reps": 800,
     'use_switch': True,
 }
 config = BaseConfig | UpdateConfig
@@ -70,9 +63,8 @@ Qubit_ef_spectroscopy.save_data(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_sp
 Qubit_ef_spectroscopy.save_config(Instance_Qubit_ef_spectroscopy)
 Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spectroscopy, plotDisp=True)
 
-
-#######################################################################################################################
-# ###### qubit ef rabi measurement
+#%%
+# TITLE: qubit ef rabi measurement
 # UpdateConfig = {
 #     ##### define attenuators
 #     "yokoVoltage": -1.8,
@@ -110,7 +102,7 @@ Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spec
 # Qubit_ef_rabi.save_data(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi)
 # Qubit_ef_rabi.save_config(Instance_Qubit_ef_rabi)
 # Qubit_ef_rabi.display(Instance_Qubit_ef_rabi, data_Qubit_ef_rabi, plotDisp=True)
-
+#%%
 
 # TITLE: Qubit EF Rabi Chevron
 #
@@ -163,55 +155,65 @@ Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spec
 # rabi_chev_expt.display(data_rabi_chev_expt, plotDisp=True)
 
 
-
-#########################################################################################################################
-################# Qubit single shot e-f
+#%%
+# TITLE : Qubit single shot e-f
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": -1.8,
+    "yokoVoltage": 6.729,
+
     # cavity
-    "reps": 1000,  # Repitions
     "read_pulse_style": "const",
-    "read_length": 5, # [us]
-    "read_pulse_gain": 7400, # [DAC units]
-    "read_pulse_freq": 6437.4, # [MHz]
+    "read_length": 4, # [us]
+    "read_pulse_gain": 14000, # [DAC units]
+    "read_pulse_freq": 6437.1, # [MHz]
+
     # qubit g-e pulse
     "qubit_pulse_style": "arb",
-    "qubit_ge_gain": 250, # [DAC units]
-    "sigma": 0.1,  # [us]
-    "qubit_ge_freq": 2243.4 , # [MHz]
+    "qubit_ge_gain": 2000, # [DAC units]
+    "sigma": 1,  # [us]
+    "qubit_ge_freq": 2054.04 , # [MHz]
     "relax_delay": 1500,  ### turned into us inside the run function
     "qubit_length": 1,
+
     # qubit e-f pulse
-    "qubit_ef_freq": 2081.5,
-    "qubit_ef_gain": 8000,
+    "qubit_ef_freq": 1630.503,
+    "qubit_ef_gain": 12000,
+
     # define shots
-    "shots": 6000, ### this gets turned into "reps"
+    "shots": 6000,
     'use_switch': True,
 }
 config = BaseConfig | UpdateConfig
 
 # Set the YOKO Voltage
 yoko1.SetVoltage(config["yokoVoltage"])
+plt.close('all')
+Instance_SingleShotProgram = SingleShotProgram_ef(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
+                                                  soc=soc, soccfg=soccfg)
+data_SingleShot = SingleShotProgram_ef.acquire(Instance_SingleShotProgram)
+SingleShotProgram_ef.save_data(Instance_SingleShotProgram, data_SingleShot)
+SingleShotProgram_ef.save_config(Instance_SingleShotProgram)
+SingleShotProgram_ef.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 
+#%%
 # Parameters to vary
-# qubit_ef_freq_arr = 1545.5 + np.linspace(-1, 1, 5)
-# qubit_ef_gain_arr = np.linspace(6000,10000,25, dtype = int)
-# fid = np.zeros((qubit_ef_freq_arr.size,qubit_ef_gain_arr.size))
+qubit_ef_freq_arr = 1545.5 + np.linspace(-1, 1, 5)
+qubit_ef_gain_arr = np.linspace(6000,10000,25, dtype = int)
+fid = np.zeros((qubit_ef_freq_arr.size,qubit_ef_gain_arr.size))
 
-# # for i in range(qubit_ef_freq_arr.size):
+for i in range(qubit_ef_freq_arr.size):
 # for j in range(qubit_ef_gain_arr.size):
-#     # config["qubit_ef_freq"] = qubit_ef_freq_arr[i]
-#     config["qubit_ef_gain"] = qubit_ef_gain_arr[j]
-#     # Run the experiment
-#     Instance_SingleShotProgram = SingleShotProgram_ef(path="dataTestSingleShotefProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-#     data_SingleShot = SingleShotProgram_ef.acquire(Instance_SingleShotProgram)
-#     # fid[i,j] = Instance_SingleShotProgram.fid
-#     SingleShotProgram_ef.save_data(Instance_SingleShotProgram, data_SingleShot)
-#     SingleShotProgram_ef.save_config(Instance_SingleShotProgram)
+    config["qubit_ef_freq"] = qubit_ef_freq_arr[i]
+    # config["qubit_ef_gain"] = qubit_ef_gain_arr[j]
+    # Run the experiment
+    Instance_SingleShotProgram = SingleShotProgram_ef(path="dataTestSingleShotefProgram", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+    data_SingleShot = SingleShotProgram_ef.acquire(Instance_SingleShotProgram)
+    # fid[i,j] = Instance_SingleShotProgram.fid
+    SingleShotProgram_ef.save_data(Instance_SingleShotProgram, data_SingleShot)
+    SingleShotProgram_ef.save_config(Instance_SingleShotProgram)
 #     SingleShotProgram_ef.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=False, save_fig=True)
-# #
+#%%
 # # Plot the data
 # X = qubit_ef_freq_arr
 # Y = qubit_ef_gain_arr
@@ -227,13 +229,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 # cbar0 = fig.colorbar(axs_plot_0, ax = axs, extend = 'both')
 # cbar0.set_label('fidelity', rotation=90)
 # plt.savefig(Instance_SingleShotProgram.iname, dpi = 600)
-
-# Instance_SingleShotProgram = SingleShotProgram_ef(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
-#                                                   soc=soc, soccfg=soccfg)
-# data_SingleShot = SingleShotProgram_ef.acquire(Instance_SingleShotProgram)
-# SingleShotProgram_ef.save_data(Instance_SingleShotProgram, data_SingleShot)
-# SingleShotProgram_ef.save_config(Instance_SingleShotProgram)
-# SingleShotProgram_ef.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+#%%
 
 # # #######################################################################################################################
 # # ####### code for perfoming the qubit RPM

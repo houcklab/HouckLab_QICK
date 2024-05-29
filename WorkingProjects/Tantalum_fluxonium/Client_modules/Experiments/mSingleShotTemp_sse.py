@@ -184,7 +184,7 @@ class SingleShotSSE(ExperimentClass):
         if "cen_num" in kwargs:
             cen_num = kwargs["cen_num"]
         else:
-            cen_num = 2
+            cen_num = self.cfg["cen_num"]
 
         iq_data = np.stack((i_arr,q_arr), axis = 0)
 
@@ -237,9 +237,10 @@ class SingleShotSSE(ExperimentClass):
 
         prob, prob_std = sse2.calcProbability(num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num)
 
-        # tempr, tempr_std = sse2.findTempr(prob, prob_std, self.cfg["qubit_freq"]*1e6)
-
-        tempr, tempr_std = [0,0]
+        freq = np.array([[0, self.cfg['qubit_ge_freq'], self.cfg['qubit_ge_freq'] + self.cfg['qubit_ef_freq']],
+                         [self.cfg["qubit_ge_freq"], 0, self.cfg["qubit_ef_freq"]],
+                         [self.cfg['qubit_ge_freq'] + self.cfg['qubit_ef_freq'], self.cfg["qubit_ef_freq"], 0]])
+        tempr, tempr_std = sse2.findTempr(prob, prob_std, freq*1e6, cen_num = cen_num)
         update_data = {"data": {"prob" : prob, "prob_std" : prob_std, "tempr": tempr, "tempr_std": tempr_std,
                                 "centers": self.centers, "hist2d": hist2d[0],"xedges": hist2d[1],
                                 "yedges": hist2d[2]}}
@@ -250,6 +251,11 @@ class SingleShotSSE(ExperimentClass):
     def display(self, data=None, plotDisp=False, figNum=1, save_fig=True, ran=None, **kwargs):
         if data is None:
             data = self.data
+
+        if "cen_num" in kwargs:
+            cen_num = kwargs["cen_num"]
+        else:
+            cen_num = self.cfg["cen_num"]
 
         i_arr = data["data"]["i_arr"]
         q_arr = data["data"]["q_arr"]
@@ -262,7 +268,7 @@ class SingleShotSSE(ExperimentClass):
         xedges = data["data"]["xedges"]
         yedges = data["data"]["yedges"]
 
-        fig = plt.figure(figsize=[18, 10])
+        fig = plt.figure(figsize=[20, 8])
         gs = gridspec.GridSpec(1, 2, width_ratios=[1, 1])
         axs = [plt.subplot(gs[0]), plt.subplot(gs[1])]
         if self.cfg["initialize_pulse"]:
@@ -273,29 +279,32 @@ class SingleShotSSE(ExperimentClass):
             gaussians_0 = data["data"]["gaussians_0"]
             x_points = data["data"]["x_points_0"]
             y_points = data["data"]["y_points_0"]
-            sse2.plotFitAndData(pdf_0, gaussians_0, x_points, y_points, self.centers,iq_data_0, fig, axs[0] )
+            sse2.plotFitAndData(pdf_0, gaussians_0, x_points, y_points, self.centers,iq_data_0, fig, axs[0], cen_num = cen_num)
         else:
             axs[0].scatter(i_arr, q_arr, s=0.1)
             axs[0].scatter(centers[:,0], centers[:,1])
             axs[0].set_xlabel('I')
             axs[0].set_ylabel('Q')
             axs[0].set_title("Single Shot Data")
+        axs[0].set_aspect('equal')
 
         iq_data = np.stack((i_arr, q_arr), axis = 0)
-        sse2.plotFitAndData(self.pdf, self.gaussians, self.x_points, self.y_points, self.centers, iq_data, fig, axs[1])
+        sse2.plotFitAndData(self.pdf, self.gaussians, self.x_points, self.y_points, self.centers, iq_data, fig, axs[1], cen_num = cen_num)
         axs[1].set_title("Single Shot Histogram")
+        axs[1].set_aspect('equal')
 
-        try:
-            data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
-                                + str(self.cfg["yokoVoltage"]) + "V, relax_delay = " + str(
-                                self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_freq"])
-                                + " MHz \n"+
-                                "Excited State Population = " + str(np.max(prob).round(4)) + " +/- "
-                                + str(prob_std[np.argmax(prob)].round(4)) + ". Temperature of excited state = "
-                                + str(tempr.round(4)) + " +/- " + str(tempr_std.round(5)) + " K")
-            plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
-        except:
-            print("cannot make title")
+    # try:
+        data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
+                        + str(self.cfg["yokoVoltage"]) + "V, relax_delay = " + str(
+                        self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_ge_freq"])
+                        + " MHz \n"+
+                        "Ground State Population = " + str(np.max(prob).round(4)) + " +/- "
+                        + str(prob_std[np.argmax(prob)].round(4)) + ". Temperature of 01 state = "
+                        + str(tempr[0,1].round(4)) + " +/- " + str(tempr_std[0,1].round(5)) + " K")
+        plt.suptitle(self.iname + '\n' + data_information)
+        # except:
+        #     print("cannot make title")
+
         plt.tight_layout()
         plt.savefig(self.iname, dpi =400)
         if plotDisp:

@@ -79,7 +79,6 @@ class Transmission(ExperimentClass):
         while plt.fignum_exists(num = figNum): ###account for if figure with number already exists
             figNum += 1
         fig = plt.figure(figNum)
-
         x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"]/1e6) /1e3 #### put into units of frequency GHz
         sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
         avgamp0 = np.abs(sig)
@@ -93,8 +92,8 @@ class Transmission(ExperimentClass):
         plt.savefig(self.iname)
 
         if plotDisp:
-            plt.show(block=False)
-            plt.pause(0.1)
+            plt.show()
+
         else:
             fig.clf(True)
             plt.close(fig)

@@ -1,8 +1,9 @@
-#### import packages
+#%%
 import os
 
-path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+# path = os.getcwd() # Old method, does not work with cells. I have shifted the following code to initialize
+# path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium\Client_modules\PythonDrivers'
+# os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import Transmission
@@ -25,6 +26,7 @@ from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.m2QubitFluxDr
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mConstantTone import ConstantTone_Experiment
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
+
 from matplotlib import pyplot as plt
 import datetime
 
@@ -37,9 +39,6 @@ print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
 
-# Disable the interactive mode
-plt.ioff()
-
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
     "trig_buffer_end": 0.024, # in us
@@ -47,79 +46,81 @@ SwitchConfig = {
 }
 BaseConfig = BaseConfig  | SwitchConfig
 
-# # ####### TITLE: Transmission + Specscan
-# ###### region Config
-# #######Config data for transmission scan
+#%%
+# TITLE: Transmission + Spectroscopy
 UpdateConfig_transmission = {
-    ##### define attenuators
-    "yokoVoltage":  -2.4 + 1.25 - 0.65,
     # Parameters
-    "reps": 50,  # Number of repetitions
-    ###### cavity
+    "reps": 200,  # Number of repetitions
+
+    # cavity
     "read_pulse_style": "const", # --Fixed
-    "read_length": 5, # us
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6437.4,
-    "nqz": 2,  # refers to cavity
+    "read_length": 4, # us
+    "read_pulse_gain": 14000, # [DAC units]
+    "read_pulse_freq": 6437.1,
+
+    # Experiment Parameters
     "TransSpan": 1,  # [MHz] span will be center frequency +/- this parameter
     "TransNumPoints": 200,  # number of points in the transmission frequency
 }
 
-#### Config data for spec scan
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "arb",  # Constant pulse
-    "qubit_gain": 600,  # [DAC Units]
-    'sigma': 0.1,
+    "qubit_pulse_style": "flat_top",  # Constant pulse
+    "qubit_gain": 200,  # [DAC Units]
+    'sigma': 1,
+    'flat_top_length': 20,
     "qubit_length": 10,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 2220,
-    "qubit_freq_stop": 2280,
-    "SpecNumPoints": 101,  # Number of points
-    'spec_reps': 2000,  # Number of repetition
+    "qubit_freq_start": 2000,
+    "qubit_freq_stop": 2400,
+    "SpecNumPoints": 801,  # Number of points
+    'spec_reps': 3000,  # Number of repetition
 
     # Define the yoko voltage
-    "yokoVoltage": -2.4 + 1.25 - 0.65,
-    "relax_delay": 500,  # [us] Delay post one experiment
+    "yokoVoltage": 9.2,
+    "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': True,
 }
-#
+
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
-# UpdateConfig will overwrite elements in BaseConfig
+
 config = BaseConfig | UpdateConfig
-#
-# # set the yoko frequency
+
+# Set the yoko frequency
 yoko1.SetVoltage(config["yokoVoltage"])
-print("Voltage is ", yoko1.GetVoltage(), " Volts")
 
-# # # Perform the cavity transmission experiment
-# # Instance_trans = Transmission(path="dataTestTransmission", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-# # data_trans = Transmission.acquire(Instance_trans)
-# # Transmission.display(Instance_trans, data_trans, plotDisp=True)
-# # Transmission.save_data(Instance_trans, data_trans)
-# #
-# # # update the transmission frequency to be the peak
-# # config["read_pulse_freq"] = Instance_trans.peakFreq
-# # print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-#
-# # Perform the spec slice experiment
-# Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# data_specSlice= SpecSlice.acquire(Instance_specSlice)
-# SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
-# SpecSlice.save_data(Instance_specSlice, data_specSlice)
+#%%
+# TITLE Perform the cavity transmission experiment
+Instance_trans = Transmission(path="dataTestTransmission", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+data_trans = Instance_trans.acquire()
+Instance_trans.save_data(data_trans)
+Instance_trans.display(data_trans, plotDisp=True)
+plt.show()
 
 
-# Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice_temp", cfg=config,
-#                                        soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-# data_specSlice = SpecSlice_bkg_sub.acquire(Instance_specSlice)
-# SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
-# SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
+# Update the transmission frequency to be the peak
+config["read_pulse_freq"] = Instance_trans.peakFreq
+print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
+#%%
+# TITLE Perform the spec slice experiment
+Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_specSlice= SpecSlice.acquire(Instance_specSlice)
+SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
+SpecSlice.save_data(Instance_specSlice, data_specSlice)
+plt.show()
 
-# endregion
+#%%
+# TITLE Perform the spec slice with background subtracted
+Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice_temp", cfg=config,
+                                       soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+data_specSlice = SpecSlice_bkg_sub.acquire(Instance_specSlice)
+SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
+SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
 
+#%%
 # TITLE: Amplitude Rabi
-#region Update Config file
+
 # UpdateConfig_spec = {
 #     ##### amplitude rabi parameters
 #     "qubit_gain_start": 0,    # [DAC Units]
@@ -641,84 +642,110 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 # TwoQubitFluxDrift.save_data(Instance_TwoQubitFluxDrift, data_TwoQubitFluxDrift)
 # TwoQubitFluxDrift.save_config(Instance_TwoQubitFluxDrift)
 
-# # region constant tone experiment
-# ## Constant tone experiment
-# UpdateConfig = {
-#     ###### cavity
-#     "read_pulse_style": "const",  # --Fixed
-#     "gain": 30000,  # [DAC units]
-#     "freq": 2975,  # [MHz]
-#     "channel": 1,  # TODO default value
-#     "nqz": 1,  # TODO default value
-# }
-#
-# config = BaseConfig | UpdateConfig
-# #
-#
-# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
-# ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
-# ConstantTone_Experiment.save_config(ConstantTone_Instance)
-# #endregion
-
+#%%
+#TITLE Constant tone experiment
 UpdateConfig = {
-    # Set Yoko Voltage
-    "yokoVoltage": -1.8,
+    ###### cavity
+    "read_pulse_style": "const",  # --Fixed
+    "gain": 5000,  # [DAC units]
+    "freq": 1900,  # [MHz]
+    "channel": 1,  # TODO default value
+    "nqz": 1,  # TODO default value
+}
 
-    # Readout Parameters
-    "read_pulse_style": "const",  # Constant Tone
-    "read_length": 5,  # [us]
-    "read_pulse_gain": 7400,  # [DAC units]
-    "read_pulse_freq": 6437.4,  # [MHz]
+config = BaseConfig | UpdateConfig
+#
 
-    # qubit parameters
-    "qubit_pulse_style": "arb",
-    "sigma": 0.100,
-    "qubit_ge_gain": 600,
-    "qubit_ge_freq": 2243.4,
-    "qubit_ef_gain": 8000,
-    "qubit_ef_freq": 2081.5,
-    "relax_delay": 500,
+ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
+ConstantTone_Experiment.save_config(ConstantTone_Instance)
+#%%
 
-    # Experiment time
-    "cen_num": 3,
-    "use_switch": True,
+# UpdateConfig = {
+#     # Set Yoko Voltage
+#     "yokoVoltage": -1.8,
+#
+#     # Readout Parameters
+#     "read_pulse_style": "const",  # Constant Tone
+#     "read_length": 5,  # [us]
+#     "read_pulse_gain": 7400,  # [DAC units]
+#     "read_pulse_freq": 6437.4,  # [MHz]
+#
+#     # qubit parameters
+#     "qubit_pulse_style": "arb",
+#     "sigma": 0.100,
+#     "qubit_ge_gain": 600,
+#     "qubit_ge_freq": 2243.4,
+#     "qubit_ef_gain": 8000,
+#     "qubit_ef_freq": 2081.5,
+#     "relax_delay": 500,
+#
+#     # Experiment time
+#     "cen_num": 3,
+#     "use_switch": True,
+# }
+# config = BaseConfig | UpdateConfig
+#
+# Update_config_ss = {
+#     # qubit parameters
+#     "qubit_pulse_style": "arb",
+#     "sigma": 0.100,
+#     "qubit_ge_gain": 250,
+#     "qubit_ef_gain": 8000,
+#
+#     # Experiment parameters
+#     'shots': 40000,
+#     'relax_delay': 4000,
+#     'initialize_pulse': True,
+#     'fridge_temp': 10.0,
+#     'qubit_freq': 2200,
+# }
+# config_ss = config | Update_config_ss
+#
+# scan_time = (config_ss["relax_delay"] * config_ss["shots"] * 2) * 1e-6 / 60
+# print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+# Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc_temp_",
+#                                        outerFolder=outerFolder,
+#                                        cfg=config_ss,
+#                                        soc=soc, soccfg=soccfg)
+# data_SingleShotSSE = SingleShotSSE.acquire(Instance_SingleShotSSE)
+# data_SingleShotSSE = SingleShotSSE.process_data(Instance_SingleShotSSE, data_SingleShotSSE, cen_num = 3)
+# SingleShotSSE.display(Instance_SingleShotSSE, data_SingleShotSSE, plotDisp=True, save_fig=True)
+# SingleShotSSE.save_data(Instance_SingleShotSSE, data_SingleShotSSE)
+# SingleShotSSE.save_config(Instance_SingleShotSSE)
+
+#%%
+# TITLE: Auto Calibration
+
+# import the measurement class
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mAutoCalibrator import CalibratedFlux
+
+# Defining changes to the config
+UpdateConfig = {
+    # define the yoko voltage
+    "yokoVoltageStart": 0.0,
+    "yokoVoltageStop": 10.0,
+    "yokoVoltageNumPoints": 81,
+
+    # cavity and readout
+    "trans_reps": 50,
+    "read_pulse_style": "const",
+    "read_length": 20,  # us
+    "read_pulse_gain": 7000,  # [DAC units]
+    "trans_freq_start": 6437.4 - 2.0,  # [MHz]
+    "trans_freq_stop": 6437.4 + 2.0,  # [MHz]
+    "TransNumPoints": 51,
+
+    # Experiment Parameters
+    "relax_delay": 5,
+    'use_switch': True,
 }
 config = BaseConfig | UpdateConfig
 
-Update_config_ss = {
-    # qubit parameters
-    "qubit_pulse_style": "arb",
-    "sigma": 0.100,
-    "qubit_ge_gain": 250,
-    "qubit_ef_gain": 8000,
+yoko_calibration = CalibratedFlux(path="data_calibration", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+yoko_calibration.calibrate()
+yoko_calibration.save_data()
+yoko_calibration.display()
 
-    # Experiment parameters
-    'shots': 40000,
-    'relax_delay': 4000,
-    'initialize_pulse': True,
-    'fridge_temp': 10.0,
-    'qubit_freq': 2200,
-}
-config_ss = config | Update_config_ss
-
-scan_time = (config_ss["relax_delay"] * config_ss["shots"] * 2) * 1e-6 / 60
-print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
-Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc_temp_",
-                                       outerFolder=outerFolder,
-                                       cfg=config_ss,
-                                       soc=soc, soccfg=soccfg)
-data_SingleShotSSE = SingleShotSSE.acquire(Instance_SingleShotSSE)
-data_SingleShotSSE = SingleShotSSE.process_data(Instance_SingleShotSSE, data_SingleShotSSE, cen_num = 3)
-SingleShotSSE.display(Instance_SingleShotSSE, data_SingleShotSSE, plotDisp=True, save_fig=True)
-SingleShotSSE.save_data(Instance_SingleShotSSE, data_SingleShotSSE)
-SingleShotSSE.save_config(Instance_SingleShotSSE)
-
-#####################################################################################################################
-
-print('end time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-plt.show()
-
-# #
-# plt.show(block = True)
+#%%

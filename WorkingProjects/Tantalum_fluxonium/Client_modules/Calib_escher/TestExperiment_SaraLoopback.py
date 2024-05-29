@@ -60,7 +60,7 @@ print("Voltage is ", yoko1.GetVoltage(), " Volts")
 ### Loopback to calibrate the ADC offset
 Instance = Loopback(path="dataTestLoopback", cfg=config,soc=soc,soccfg=soccfg, outerFolder=outerFolder)
 data= Loopback.acquire(Instance)
-Loopback.display(Instance, data)
+Loopback.display(Instance)
 Loopback.save_data(Instance, data)
 #
 # ###################################### code for runnning basic transmission and specSlice
