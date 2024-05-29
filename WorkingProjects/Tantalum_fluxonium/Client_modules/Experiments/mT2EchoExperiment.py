@@ -3,7 +3,7 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
@@ -114,15 +114,16 @@ class T2EchoExperiment(ExperimentClass):
         data = {'config': self.cfg, 'data': {'times': 2*x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
         #### define T2 echo function
-        mag = avgi[0][0]
+        # mag = avgi[0][0]
+        mag = np.sqrt(np.square(avgi[0][0]) + np.square(avgq[0][0]))
         def _expFit(x, a, T2_echo, c):
             return a * np.exp(-1 * x / T2_echo) + c
 
-        a_geuss = (np.max(mag)-np.min(mag))*-1
-        b_geuss = np.min(mag)
-        T2_echo_geuss = np.max(x_pts)/3
-        geuss = [a_geuss, T2_echo_geuss, b_geuss]
-        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag, p0=geuss)
+        a_guess = (np.max(mag)-np.min(mag))*-1
+        b_guess = np.min(mag)
+        T2_echo_guess = np.max(x_pts)/3
+        guess = [a_guess, T2_echo_guess, b_guess]
+        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag, p0=guess)
 
         self.T2_echo_fit = _expFit(x_pts, *self.pOpt)
 
@@ -153,13 +154,13 @@ class T2EchoExperiment(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
-        # axs[1].plot(times, self.T2_echo_fit, label='fit')
+        axs[1].plot(times, self.T2_echo_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
         ax2 = axs[2].plot(times, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].plot(times, self.T2_echo_fit, label='fit')
+        # axs[2].plot(times, self.T2_echo_fit, label='fit')
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()

@@ -2,7 +2,7 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 
@@ -150,7 +150,7 @@ class SpecSlice(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

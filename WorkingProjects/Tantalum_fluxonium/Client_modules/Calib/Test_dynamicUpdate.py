@@ -3,9 +3,9 @@
 import os
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-from STFU.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Calib.initialize import *
 
-from STFU.Client_modules.Experiments.mSpecSlice_dynamic import SpecSlice
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_dynamic import SpecSlice
 
 from matplotlib import pyplot as plt
 import datetime

@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WTF.Client_modules.CoreLib.Experiment import ExperimentClass
-from WTF.Client_modules.Helpers.hist_analysis import *
-from WTF.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 from sklearn.cluster import KMeans
@@ -57,7 +57,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        ##### set up the expirement updates, only runs it once
+        ##### set up the experiment updates, only runs it once
         cfg["start"]= 0
         cfg["step"]= 0
         cfg["reps"]=cfg["shots"]
@@ -94,6 +94,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
 
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -102,6 +103,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
 
         else:
             print("define pi or flat top pulse")
@@ -110,14 +112,21 @@ class LoopbackProgramT1_PS(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  )  # mode="periodic")
 
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
         self.synci(200)  # give processor some time to configure pulses
 
 
     def body(self):
         ### intial pause
-        self.sync_all(self.us2cycles(0.010))
-
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switc
+
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
 
@@ -379,6 +388,9 @@ class T1_PS(ExperimentClass):
         for idx_plot in range(cen_num):
             #### loop over each final blob
             for idx_blob in range(cen_num):
+                # Plot the data before the fits
+                axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], 'o',
+                                   label='blob ' + str(idx_blob), color=colors[idx_blob])
 
                 #### find the T1 fit of the data
                 if idx_plot == idx_blob:
@@ -388,13 +400,8 @@ class T1_PS(ExperimentClass):
                     c_guess = np.min(pop_list)
                     guess = [a_guess, T1_guess, c_guess]
 
-                    #### attempt a T1 fit
-                    try:
-                        pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
-                        pErr = np.sqrt(np.diag(pCov))
-                    except:
-                        T1 = [0, 0, 0]
-                        T1_err = [0, 0, 0]
+                    pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
+                    pErr = np.sqrt(np.diag(pCov))
 
                     T1 = pOpt[1]
                     T1_err = pErr[1]
@@ -405,8 +412,7 @@ class T1_PS(ExperimentClass):
                     axs[idx_plot].plot(t_arr, fit, 'k-')
                 ######
 
-                axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], 'o',
-                                   label='blob ' + str(idx_blob), color=colors[idx_blob])
+
 
             #### label axes and title
             axs[idx_plot].set_xlabel('time (us)')
@@ -414,9 +420,10 @@ class T1_PS(ExperimentClass):
             # axs[idx_plot].set_title(
             #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
             axs[idx_plot].set_title(
-                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
+                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err, 1)) + ' us')
         #     axs[idx_plot].set_ylim([0.0,0.8])
 
+        plt.suptitle(self.outerFolder +'\n' + self.path_wDate)
         plt.tight_layout()
         plt.legend()
         # plt.show()

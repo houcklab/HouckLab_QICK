@@ -1,9 +1,9 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WTF.Client_modules.CoreLib.Experiment import ExperimentClass
-from WTF.Client_modules.Helpers.hist_analysis import *
-from WTF.Client_modules.Helpers.MixedShots_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.MixedShots_analysis import *
 from tqdm.notebook import tqdm
 import time
 from sklearn.cluster import KMeans
@@ -378,12 +378,13 @@ class T1_ThermalPS(ExperimentClass):
             #### label axes and title
             axs[idx_plot].set_xlabel('time (us)')
             axs[idx_plot].set_ylabel('population')
-            # axs[idx_plot].set_title(
-            #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
             axs[idx_plot].set_title(
-                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
+                'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
+            # axs[idx_plot].set_title(
+            #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' us')
         #     axs[idx_plot].set_ylim([0.0,0.8])
 
+        plt.suptitle(self.outerFolder + '\n' + self.path_wDate)
         plt.tight_layout()
         plt.legend()
         # plt.show()
@@ -395,7 +396,7 @@ class T1_ThermalPS(ExperimentClass):
                                              "wait_vec": wait_vec,
                                              'i_0_arr': i_0_arr, 'q_0_arr': q_0_arr,
                                              'i_1_arr': i_1_arr, 'q_1_arr': q_1_arr,
-                                             'pop_arr': pops_arr,
+                                             'pop_arr': pops_arr
                                              }
                 }
 

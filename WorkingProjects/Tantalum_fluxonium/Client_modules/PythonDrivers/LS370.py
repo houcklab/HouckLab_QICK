@@ -92,7 +92,7 @@ class Lakeshore370:
             except:
                 time.sleep(1)
 
-    def get_heater_range(self):
+    def get_heater_heat(self):
         """Returns the range of the heater.
         0 is off
         1 is 31.6 uA
@@ -210,7 +210,7 @@ class Lakeshore370:
         self.LS370.write('RAMP ' + str(o) + ',' + str(r))
 
     def is_setpoint_ramping(self):
-        """Returns whether the the setpoint is currently ramping."""
+        """Returns whether the setpoint is currently ramping."""
         return self.LS370.query('RAMPST?').rsplit()
 
     def get_temp(self, chan):
@@ -303,7 +303,7 @@ class Lakeshore370:
         print("setting temperature: " + str(temperature) + " mK")
 
         #### set heater setting, if below 10 turn heater off
-        if temperature <= 10:
+        if temperature < 10:
             self.set_heater_range(0)
         else:
             self.set_heater_range(heater_range)
@@ -314,32 +314,35 @@ class Lakeshore370:
         ### wait 15s initially
         time.sleep(15)
 
-        idx = 0
-        while (True):
-            idx += 1
-            print('current temp: ' + str(self.get_temp(7)) + ' K')
-            time.sleep(30)
+        if temperature >= 10:
+            idx = 0
+            while (True):
+                idx += 1
+                print('current temp: ' + str(self.get_temp(7)) + ' K')
+                time.sleep(30)
 
-            if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < 0.001:
+                if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < 0.001:
 
-                print('almost there! \n current temp: ' + str(self.get_temp(7)))
-                time.sleep(60)
-                temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
-                if temp_diff < 0.001:
-                    print('congrats! \n current temp: ' + str(self.get_temp(7)))
-                    break
-                else:
-                    continue
+                    print('almost there! \n'
+                          'current temp: ' + str(self.get_temp(7)))
+                    time.sleep(60)
+                    temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
+                    if temp_diff < 0.001:
+                        print('congrats! \n'
+                              'current temp: ' + str(self.get_temp(7)))
+                        break
+                    else:
+                        continue
 
-            #### if 15 minutes have paused turn the temp to 0
-            if idx >= 30:
-                ### set temp to 9mK and turn off heater
-                self.set_setpoint(9)
+                #### if 15 minutes have paused turn the temp to 0
+                if idx >= 30:
+                    ### set temp to 9mK and turn off heater
+                    self.set_setpoint(9)
 
-                self.set_heater_range(0)
-                print('temp not reached, turnning off heater and trying again')
-                time.sleep(300)
-                ### turn the heater back on
-                self.set_heater_range(heater_range)
-                idx = 0
+                    self.set_heater_range(0)
+                    print('temp not reached, turnning off heater and trying again')
+                    time.sleep(300)
+                    ### turn the heater back on
+                    self.set_heater_range(heater_range)
+                    idx = 0
 
