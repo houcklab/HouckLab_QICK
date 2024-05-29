@@ -1,5 +1,0 @@
-numpy
-tqdm
-
-[:platform_machine == "aarch64" or platform_machine == "armv7l"]
-pynq
