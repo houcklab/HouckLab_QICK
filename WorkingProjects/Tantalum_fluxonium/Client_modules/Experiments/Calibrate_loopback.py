@@ -77,7 +77,7 @@ while i < 1:
     # Loopback.save_data(Instance, data)
 
     Instance = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg)
-    data= Transmission.acquire(Instance)
+    data= Transmission.acquire()
     Transmission.display(Instance, data, plotDisp=True)
     Transmission.save_data(Instance, data)
 

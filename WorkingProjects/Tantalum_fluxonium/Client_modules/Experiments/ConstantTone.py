@@ -29,10 +29,10 @@ class ConstantTone(AveragerProgram):
     config_template = {
         ###### cavity
         "read_pulse_style": "const",  # --Fixed
-        "gain": 1000, # [DAC units]
-        "freq": 2000, # [MHz]
-        "channel": 1, # TODO default value
-        "nqz": 1,     # TODO default value
+        "gain": 30000, # [DAC units]
+        "freq": 7392, # [MHz]
+        "channel": 0, # TODO default value
+        "nqz": 2,     # TODO default value
     }
 
 # ====================================================== #

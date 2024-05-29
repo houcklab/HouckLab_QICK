@@ -168,7 +168,7 @@ class SingleShotSSE(ExperimentClass):
         if 'bin_size' in kwargs:
             bin_size = kwargs['bin_size']
         else:
-            bin_size = 25
+            bin_size = 201
 
         # Get the centers
         if 'centers' in kwargs:

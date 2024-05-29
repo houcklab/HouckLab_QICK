@@ -2,8 +2,8 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LogNorm
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
 
@@ -112,6 +112,10 @@ class LoopbackProgramSingleShotHMM(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
+        # di_buff or dq_buff = number of read channels x total_count
+        # total_count = total_reps x reads_per_reps
+        # total_reps = expts x self.reps
+        # read_per_rep = number of readout triggers in the loop body = 1
         shots_i = self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
         shots_q = self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
 
@@ -140,58 +144,47 @@ class SingleShotProgramHMM(ExperimentClass):
         data = {'config': self.cfg, 'data': {'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
 
-        ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_arr, q_arr, i_arr, q_arr], plot=False, ran=20) ### arbitrary ran, change later
-
-        # stop = 100
-        # plt.figure(101)
-        # plt.plot(i_g[0:stop], q_g[0:stop], 'o')
-        # plt.plot(i_e[0:stop], q_e[0:stop], 'o')
-        # plt.show()
-
-
-        self.fid = fid
-        self.threshold = threshold
-        self.angle = angle
 
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, save_fig = True, ran=None, **kwargs):
+    def display(self, data=None, plotDisp = False, **kwargs):
         if data is None:
             data = self.data
 
-        i_g = data["data"]["i_g"]
-        q_g = data["data"]["q_g"]
-        i_e = data["data"]["i_e"]
-        q_e = data["data"]["q_e"]
+        i_arr = data["data"]["i_arr"]
+        q_arr = data["data"]["q_arr"]
 
-        #### plotting is handled by the helper histogram
-        title = (self.outerFolder +'\n' + self.path_wDate + '\n Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + "\n" +
-                 " Qubit Frequency: " + str(self.cfg["qubit_freq"]) + " MHz, Qubit Gain: " + str(self.cfg["qubit_gain"]) + ", Flat top length = " + str(self.cfg["flat_top_length"]) + ".")
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp or save_fig, ran=ran,
-                                             title = title, figNum = figNum)
+        # Let's plot
+        fig, axs = plt.subplots(nrows = 2, ncols = 2, figsize = (15,10))
+        axs[0,0].hist2d(i_arr, q_arr, bins = 51, norm = LogNorm())
+        axs[0,0].set_xlabel("I")
+        axs[0,0].set_ylabel("Q")
+        axs[0,0].set_title("I vs Q")
+        axs[0,0].set_aspect('equal')
+        axs[1,0].hist2d(i_arr, q_arr, bins = 51)
+        axs[1,0].set_xlabel("I")
+        axs[1,0].set_ylabel("Q")
+        axs[1,0].set_title("I vs Q")
+        axs[1,0].set_aspect('equal')
+        axs[0,1].plot(range(i_arr.size), i_arr)
+        axs[0,1].set_xlabel("Shot number")
+        axs[0,1].set_ylabel("I")
+        axs[0,1].set_title("I vs Shot number")
+        axs[1,1].plot(range(q_arr.size), q_arr)
+        axs[1,1].set_xlabel("Shot number")
+        axs[1,1].set_ylabel("Q")
+        axs[1,1].set_title("Q vs Shot number")
 
-        self.fid = fid
-        self.threshold = threshold
-        self.angle = angle
-
-        if save_fig:
-            plt.savefig(self.iname)
+        plt.suptitle("Yoko Voltage: " + str(self.cfg["yokoVoltage_freqPoint"]) + "V")
+        plt.tight_layout()
+        plt.savefig(self.iname, dpi = 400)
 
         if plotDisp:
             plt.show(block = False)
             plt.pause(0.1)
 
-
-            # plt.close()
-
-        # plt.clf()
-
-        # else:
-            # fig.clf(True)
-            # plt.close(fig)
+        plt.close()
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

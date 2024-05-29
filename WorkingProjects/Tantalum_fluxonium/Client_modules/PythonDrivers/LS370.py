@@ -29,6 +29,9 @@ class Lakeshore370:
         ### set hearter range to 1mA
         self.set_heater_range(4)
 
+        ### set the PID temperature to 0 to avoid it turning on the heater
+        self.set_setpoint(0)
+
         ### Identity string
         self.id_string = self.identity()
         print("Connected to Lakeshore " + self.id_string)
@@ -227,6 +230,20 @@ class Lakeshore370:
             except:
                 time.sleep(1)
 
+    def get_resistance(self, chan):
+        """Returns the resistance in Ohms of channel chan."""
+        while (True):
+            try:
+                resistance = self.LS370.query('RDGR? ' + str(chan)).rstrip()
+
+                if resistance != self.id_string:
+                    return resistance
+                else:
+                    time.sleep(1)
+
+            except:
+                time.sleep(1)
+
     def get_controlsetup(self):
         """ returns the control settings for the different channels """
 
@@ -298,15 +315,28 @@ class Lakeshore370:
                 time.sleep(1)
 
     ### define function to set temperature and wait to stabilize
-    def set_temp(self, temperature, heater_range=4):
+    # If heater_range is left at -1, the heater range will be set based on temperature
+    # If the heater_range is set explicitly, the heater will be set to that value
+    def set_temp(self, temperature, heater_range=-1):
 
         print("setting temperature: " + str(temperature) + " mK")
 
-        #### set heater setting, if below 10 turn heater off
-        if temperature < 10:
-            self.set_heater_range(0)
-        else:
+        # Set the heater range. For an explicit value, use that value; else, depends on temperature.
+        # These values may need to be changed depending on the payload in the fridge.
+        if heater_range != -1:
             self.set_heater_range(heater_range)
+        else:
+            if temperature < 10:
+                self.set_heater_range(0) # off
+            elif temperature < 60:
+                self.set_heater_range(4) # 1 mA
+            elif temperature < 100:
+                self.set_heater_range(5) # 3.16 mA
+            else:
+                self.set_heater_range(6) # 10 mA
+
+        # Print the heater range
+        print("Heater range: " + str(self.get_heater_heat()))
 
         #### set the temperature point
         self.set_setpoint(temperature)
@@ -321,13 +351,23 @@ class Lakeshore370:
                 print('current temp: ' + str(self.get_temp(7)) + ' K')
                 time.sleep(30)
 
-                if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < 0.001:
+                # The stability of the PID gets worse with higher temperatures
+                if temperature < 150:
+                    acceptable_delta_T = 0.001
+                elif temperature < 250:
+                    acceptable_delta_T = 0.003
+                elif temperature < 500:
+                    acceptable_delta_T = 0.01
+                else:
+                    acceptable_delta_T = 0.02
+
+                if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < acceptable_delta_T:
 
                     print('almost there! \n'
                           'current temp: ' + str(self.get_temp(7)))
                     time.sleep(60)
                     temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
-                    if temp_diff < 0.001:
+                    if temp_diff < acceptable_delta_T:
                         print('congrats! \n'
                               'current temp: ' + str(self.get_temp(7)))
                         break

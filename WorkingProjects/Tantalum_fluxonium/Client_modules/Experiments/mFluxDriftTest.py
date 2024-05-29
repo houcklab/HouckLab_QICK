@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
-from tqdm.notebook import tqdm
+from WorkingProjects.Tantalum_fluxonium.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from tqdm import tqdm
 import time
 import datetime
 
@@ -66,13 +67,18 @@ class FluxDriftTest(ExperimentClass):
         start = time.time()
 
         #### loop over the waiting vector
-        for i in range(expt_cfg["wait_num"]):
+        for i in tqdm(range(expt_cfg["wait_num"])):
             ### set the yoko voltage for the specific run
 
-            ### take the spec data
-            data_I, data_Q = self._aquireSpecData()
+            ### take the Cavity data
+            data_I, data_Q = self._aquireTransData()
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
+
+            # ### take the trans data
+            # data_I, data_Q = self._aquireSpecData()
+            # self.data['data']['spec_Imat'][i,:] = data_I
+            # self.data['data']['spec_Qmat'][i,:] = data_Q
 
             #### plot out the spec data
             # sig = data_I + 1j * data_Q
@@ -107,8 +113,8 @@ class FluxDriftTest(ExperimentClass):
                 cbar.set_label('a.u.', rotation=90)
 
             axs.set_ylabel("Time (min)")
-            axs.set_xlabel("Qubit Frequency (GHz)")
-            axs.set_title("Qubit Drift Test")
+            axs.set_xlabel("Cavity Frequency (GHz)")
+            axs.set_title("Cavity Drift Test")
 
             if plotDisp:
                 plt.show(block=False)
@@ -163,6 +169,32 @@ class FluxDriftTest(ExperimentClass):
         #### pull out I and Q data
         data_I = results[0][0][0]
         data_Q = results[0][0][1]
+
+        return data_I, data_Q
+
+    def _aquireTransData(self):
+        ##### code to aquire just the cavity transmission data
+        expt_cfg = {
+            ### transmission parameters
+            "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
+            "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
+            "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequecny
+        }
+        ### take the transmission data
+        self.cfg["reps"] = self.cfg["trans_reps"]
+        fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
+        results = []
+        start = time.time()
+        for f in tqdm(fpts, position=0, disable=True):
+            self.cfg["read_pulse_freq"] = f
+            prog = LoopbackProgramTrans(self.soccfg, self.cfg)
+            # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
+            results.append(prog.acquire(self.soc, load_pulses=True))
+        results = np.transpose(results)
+        #### pull out I and Q data
+        data_I = results[0][0][0]
+        data_Q = results[0][0][1]
+
 
         return data_I, data_Q
 
