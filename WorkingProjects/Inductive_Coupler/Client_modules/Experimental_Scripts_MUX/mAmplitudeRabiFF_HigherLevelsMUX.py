@@ -1,13 +1,13 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
 
 
@@ -52,7 +52,7 @@ class AmplitudeRabiProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.05))
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_qubit01, phase=0,
@@ -63,7 +63,7 @@ class AmplitudeRabiProgram(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain, self.r_gain2, "+", 0)
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -73,7 +73,7 @@ class AmplitudeRabiProgram(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', self.cfg["step"])  # update gain of the Gaussian
@@ -92,7 +92,7 @@ class AmplitudeRabiFF_HigherExcMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
@@ -100,7 +100,7 @@ class AmplitudeRabiFF_HigherExcMUX(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         signal = (avgi + 1j * avgq) * np.exp(1j * (2 * np.pi * self.cfg['cavity_winding_freq'] *
                                                    self.cfg["pulse_freq"] + self.cfg['cavity_winding_offset']))
         avgi = signal.real

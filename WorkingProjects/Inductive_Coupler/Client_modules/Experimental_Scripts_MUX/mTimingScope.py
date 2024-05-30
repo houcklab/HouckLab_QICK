@@ -1,13 +1,13 @@
 from qick import *
-# from q4diamond.Client_modules.socProxy import makeProxy
+# from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
 class TimingProg(AveragerProgram):
     def initialize(self):
@@ -22,11 +22,11 @@ class TimingProg(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         print('wo', self._dac_ts)
         self.FFPulses([900, 900, 900, 900], self.cfg["length"], t_start = 30)
         # self.pulse(ch=self.cfg["qubit_ch"],t=30)
-        self.sync_all(self.us2cycles(cfg['relax_delay']), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(cfg['relax_delay']), gen_t0=self.gen_t0)
         print(self.cycles2us(1, gen_ch=0), self.cycles2us(1))
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
@@ -36,15 +36,15 @@ class TimingProg(AveragerProgram):
 
 
 from qick import *
-# from q4diamond.Client_modules.socProxy import makeProxy
+# from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
@@ -66,16 +66,16 @@ class CavitySpecFFProg(AveragerProgram):
     def body(self):
 
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         print('wo', self._dac_ts)
         self.FFPulses([900, 900, 900, 900], self.cfg["length"], t_start = 30)
         # self.pulse(ch=self.cfg["qubit_ch"],t=30)
-        self.sync_all(self.us2cycles(cfg['relax_delay']), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(cfg['relax_delay']), gen_t0=self.gen_t0)
         print(self.cycles2us(1, gen_ch=0), self.cycles2us(1))
 
 
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.pulse(ch=self.cfg["res_ch"],t=0)
 
@@ -87,7 +87,7 @@ class CavitySpecFFProg(AveragerProgram):
                      wait=False,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)

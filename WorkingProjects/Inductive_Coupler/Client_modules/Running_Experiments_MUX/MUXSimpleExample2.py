@@ -1,13 +1,13 @@
-from q4diamond.Client_modules.socProxy import makeProxy, soc, soccfg
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy, soc, soccfg
 import h5py
 import os
 import platform
 from qick import *
-# from q4diamond.Client_modules.socProxy import makeProxy
+# from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 
 

@@ -1,18 +1,18 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
 
-from q4diamond.Client_modules.Experiment_Scripts.mTransmissionFF import CavitySpecFF
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX_NoUpdate import QubitSpecSliceFFMUX_NoUpdate
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mTransmissionFF import CavitySpecFF
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX_NoUpdate import QubitSpecSliceFFMUX_NoUpdate
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from q4diamond.Client_modules.Experiment_Scripts.mT1FF import T1FF
-from q4diamond.Client_modules.Experiment_Scripts.mT2R import T2R
-from q4diamond.Client_modules.Experiment_Scripts.mChiShift import ChiShift
-from q4diamond.Client_modules.Experiment_Scripts.T2_Measurement_FF import T2FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mT1FF import T1FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mT2R import T2R
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mChiShift import ChiShift
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.T2_Measurement_FF import T2FF
 
 #### define the saving path
 yoko69.rampstep = 0.0005

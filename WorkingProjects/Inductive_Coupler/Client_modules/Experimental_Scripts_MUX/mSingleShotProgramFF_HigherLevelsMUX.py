@@ -2,11 +2,11 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from q4diamond.Client_modules.Experiment import ExperimentClass
-from q4diamond.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
 # class SingleShotProgramOldFF(AveragerProgram):
 #     def __init__(self, soccfg, cfg):
@@ -112,7 +112,7 @@ import q4diamond.Client_modules.Helpers.FF_utils as FF
 #         self.FFExpts = np.array([self.FF_Gain1_exp, self.FF_Gain2_exp, self.FF_Gain3_exp])
 #
 #     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-#                 start_src="internal", progress=False, debug=False):
+#                 start_src="internal", progress=False):
 #         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 #
 #         return self.collect_shots()
@@ -160,7 +160,7 @@ class SingleShotProgram_Higher(AveragerProgram):
 
     def body(self):
         print(self.cfg['pulse_expt'], self.cfg["qubit_gain01"], self.cfg["qubit_gain12"], self.cfg["qubit_freq01"], self.cfg["qubit_freq12"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         # self.FFPulses_direct(self.FFPulse, (self.us2cycles(1 + 2 * self.cfg["sigma"] * 4) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
@@ -173,7 +173,7 @@ class SingleShotProgram_Higher(AveragerProgram):
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_12, phase=0, gain=self.cfg["qubit_gain12"],
                                  waveform="qubit")
 
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -201,7 +201,7 @@ class SingleShotProgram_Higher(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
         return self.collect_shots()
@@ -222,7 +222,7 @@ class SingleShotProgramFF_2StatesMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, ground_pulse = 0, excited_pulse = 1, progress=False, debug=False, ):
+    def acquire(self, ground_pulse = 0, excited_pulse = 1, progress=False, ):
         self.cfg["length"] = self.cfg['readout_length'] + self.cfg["adc_trig_offset"] + 0.5
         self.cfg["IDataArray"] = [None, None, None, None]
         self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
@@ -290,7 +290,7 @@ class SingleShotProgramFF_HigherLevelsMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         data= {}
 
         # Ground state shots
@@ -653,7 +653,7 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
         self.pulse(ch=self.FF_Channel3)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 

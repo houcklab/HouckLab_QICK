@@ -1,13 +1,13 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-from q4diamond.Client_modules.Helpers.rotate_SS_data import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 
 class T1Program(AveragerProgram):
     def initialize(self):
@@ -100,7 +100,7 @@ class T1Program(AveragerProgram):
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
@@ -122,7 +122,7 @@ class T1_TwoPulseMUXSS(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, threshold = None, angle = None, excited_pulse = 2, progress=False, debug=False):
+    def acquire(self, threshold = None, angle = None, excited_pulse = 2, progress=False):
         tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.cfg['Excited_PulseT1'] = excited_pulse
 

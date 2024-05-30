@@ -1,16 +1,16 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
-from q4diamond.Client_modules.Helpers.rotate_SS_data import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 import pickle
-from q4diamond.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFFProg
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFFProg
 
 
 # class OscillationsProgram(AveragerProgram):
@@ -41,7 +41,7 @@ from q4diamond.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFF
 #         self.sync_all(200)
 #
 #     def body(self):
-#         self.sync_all(dac_t0=self.dac_t0)
+#         self.sync_all(gen_t0=self.gen_t0)
 #         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
 #         self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_01, phase=0,
 #                              gain=self.cfg["qubit_gain01"],
@@ -50,7 +50,7 @@ from q4diamond.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFF
 #                              gain=self.cfg["qubit_gain12"],
 #                              waveform="qubit")
 #         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-#         self.sync_all(dac_t0=self.dac_t0)
+#         self.sync_all(gen_t0=self.gen_t0)
 #
 #         self.FFPulses(self.FFReadouts, self.cfg["length"])
 #
@@ -125,11 +125,11 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         # print(self.FFPulse)
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -138,7 +138,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -301,7 +301,7 @@ class SpecGainSweep(ExperimentClass):
         prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=self.progress, debug=False)
+                                         start_src="internal", progress=self.progress)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
 
         data_I = data['data']['avgi'][0][0]
@@ -326,7 +326,7 @@ class SpecGainSweep(ExperimentClass):
 #         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
 #                          config_file=config_file, progress=progress)
 #
-#     def acquire(self, threshold = None, angle = None, progress=False, debug=False, figNum = 1, plotDisp = True,
+#     def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
 #                 plotSave = True):
 #
 #         gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
@@ -462,7 +462,7 @@ class SpecGainSweep(ExperimentClass):
 #         #
 #         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
 #         #                                  readouts_per_experiment=1, save_experiments=None,
-#         #                                  start_src="internal", progress=False, debug=False)
+#         #                                  start_src="internal", progress=False)
 #         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
 #         # self.data = data
 #

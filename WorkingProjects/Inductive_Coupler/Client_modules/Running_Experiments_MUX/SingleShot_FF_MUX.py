@@ -1,66 +1,49 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
 
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
-
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
-from q4diamond.Client_modules.Experiment_Scripts.mT1FF import T1FF
-from q4diamond.Client_modules.Experiment_Scripts.mT2R import T2R
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mChiShiftMUX import ChiShift
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mOptimizeReadoutandPulse_FFMUX import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mT1MUX import T1MUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mT2RMUX import T2RMUX
-
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mT2R_TwoPulses import T2R_2PulseMUX, T2R_2PulseMUX_NoUpdate
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mChiShiftMUX import ChiShift
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mOptimizeReadoutandPulse_FFMUX import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT1MUX import T1MUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT2RMUX import T2RMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT2EMUX import T2EMUX
 
 
-# yoko69.rampstep = 0.0005
-# yoko70.rampstep = 0.0005
-# yoko71.rampstep = 0.0005
-# yoko72.rampstep = 0.0005
-
-# yoko69.SetVoltage(0.1913)
-# yoko70.SetVoltage(0.7168 + 0.004)
-# yoko71.SetVoltage(-0.2923)
-# yoko72.SetVoltage(-0.0492)
-
-# yoko69.SetVoltage(0.0)
-# yoko70.SetVoltage(0.15)
-# yoko71.SetVoltage(0)
-# yoko72.SetVoltage(0)
-
-# voltages=[0, 0, 0., 0.]
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mT2R_TwoPulses import T2R_2PulseMUX, T2R_2PulseMUX_NoUpdate
 
 
-# yoko69.SetVoltage(voltages[0])
-# yoko70.SetVoltage(voltages[1])
-# # D5a.set_voltage_ramp(0, voltages[1])
-# yoko71.SetVoltage(voltages[2])
-# yoko72.SetVoltage(voltages[3])
+#Left tunable: 7.28 (Q4) DAC 6, (FF index: 3)
+#Left fixed: 7.19 (Q3)
+#Left coupler: No qubit index, DAC 2 (FF index: 1)
 
+#Right tunable: 7.09 (Q2), DAC 0, (FF index: 0)
+#Right fixed: 7.0 (Q1)
+#Right coupler: No qubit index, DAC 4,(FF index: 2)
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7000.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 3000,
+    '1': {'Readout': {'Frequency': 6976.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5507.8, 'Gain': 1800 - 100},
+          'Qubit': {'Frequency': 4450, 'Gain': 740},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7091.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000, "FF_Gains": [-30000, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 5275, 'Gain': 865},
-          'Pulse_FF': [-30000, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7193.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [-0, 0, 0, 0]},
-          'Qubit': {'Frequency': 5586.7, 'Gain': 840},
-          'Pulse_FF': [-0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7281 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                    "FF_Gains": [-30000, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4735, 'Gain': 1275},
-          'Pulse_FF': [-30000, 0, 0, 0]}
+    '2': {'Readout': {'Frequency': 7059.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4450, 'Gain': 1050},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '3': {'Readout': {'Frequency': 7126.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4450, 'Gain': 1250},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '4': {'Readout': {'Frequency': 7245.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+                    "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+          'Qubit': {'Frequency': 4150.55, 'Gain': 1315},
+          'Pulse_FF': [0, 0, 0, 0]}
     }
 
 # expt
@@ -75,59 +58,48 @@ Qubit_Pulse = [4]
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
 
-# Qubit_Read_Gain = 0
-# Qubit_Sweep = 4
-# Qubit_Sweep_Gain = 13000
-# FF_Gains = [-30000, -30000, -30000, -30000]
-# # FF_Gains = [0, 0, 0, 0]
-# FF_Gains[Qubit_Readout[0] - 1] = Qubit_Read_Gain
-# FF_Gains[Qubit_Sweep - 1] = Qubit_Sweep_Gain
-# FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = FF_Gains
-# FF_Gains[Qubit_Readout[0] - 1] = 0
-# FF_gain1, FF_gain2, FF_gain3, FF_gain4 = FF_Gains
-
-
 gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout]
 
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 
 RunTransmissionSweep = False  # determine cavity frequency
-Run2ToneSpec = True
-# Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 100, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
-#                         "gain": 2000}
-# Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 150, "SpecNumPoints": 101, 'Gauss': True, "sigma": 0.05,
-#                         "gain": 1230}
-Spec_relevant_params = {"qubit_gain": 400, "SpecSpan": 50, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
-                        "gain": 600}
+Run2ToneSpec =  False
+Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 20, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.05,
+                        "gain": 5500, 'reps': 20, 'rounds': 20}
+# Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 300, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.05,
+#                         "gain": 1230, 'reps': 20, 'rounds': 10}
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['Frequency'],
-                         "sigma": 0.05, "max_gain": 3000}
+                         "sigma": 0.05, "max_gain": 2200}
 
 RunT1 = False
 RunT2 = False
+RunT2E = True
+
 # T1T2_params = {"T1_step": 5, "T1_expts": 60, "T1_reps": 50, "T1_rounds": 20,
 #                "T2_step": 0.015, "T2_expts": 30*4 * 4, "T2_reps": 100, "T2_rounds": 100, "freq_shift": 2.5,
 #                "relax_delay": 500}
-# T1T2_params = {"T1_step": 10, "T1_expts": 60, "T1_reps": 50, "T1_rounds": 40,
-#                "T2_step": 0.2, "T2_expts": 50, "T2_reps": 50, "T2_rounds": 30, "freq_shift": 1,
-#                "relax_delay": 500}
-#
-T1T2_params = {"T1_step": 2, "T1_expts": 60, "T1_reps": 50, "T1_rounds": 20,
-               "T2_step": 0.4, "T2_expts": 160, "T2_reps": 30, "T2_rounds": 30, "freq_shift": 0.2,
-               "relax_delay": 200}
+T1T2_params = {"T1_step": 5, "T1_expts": 50, "T1_reps": 30, "T1_rounds": 30,
+               "T2_step":0.00232515 * 150, "T2_expts": 280, "T2_reps": 30, "T2_rounds": 20, "freq_shift": 0.27, "angle_shift": 0,
+               "relax_delay": 250}
+T2E_params = {"T2_step":0.00232515 * 450 * 2, "T2_expts": 280 // 2, "T2_reps": 50, "T2_rounds": 50, "freq_shift": 0,
+               "relax_delay": 250,
+               "pi2_gain": 635}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 2, "ADC_Offset": 0.4, "Qubit_Pulse": Qubit_Pulse}
+SS_params = {"Shots": 200, "Readout_Time": 2, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_Pulse,
+             'number_of_pulses': 1}
 # SS_params = {"Shots": 100000, "Readout_Time": 35, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_Pulse}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 3000, "gain_stop": 10000, "gain_pts": 7, "span": 1.2, "trans_pts": 7}
+SS_R_params = {"gain_start": 3000, "gain_stop": 12000, "gain_pts": 9, "span": 2, "trans_pts": 11}
 # SS_R_params = {"gain_start": 4000, "gain_stop": 6000, "gain_pts": 7, "span": 1, "trans_pts": 7}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"Optimize_Index": 0, "q_gain_span": 1000, "q_gain_pts": 6, "q_freq_span": 3, "q_freq_pts": 11}
+SS_Q_params = {"Optimize_Index": 0, "q_gain_span": 200, "q_gain_pts":11, "q_freq_span": 1, "q_freq_pts": 11,
+               'number_of_pulses': 10}
 
 RunChiShift = False
 ChiShift_Params = {'pulse_expt': {'check_12': False},
@@ -164,7 +136,6 @@ resonator_frequencies = [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for 
 #
 # print(FF_Qubits)
 
-
 trans_config = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
@@ -186,7 +157,7 @@ qubit_config = {
     "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],  ### number of points in the transmission frequecny
 }
 expt_cfg = {
-    "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
+    "step": 2 * qubit_config["SpecSpan"] / (qubit_config["SpecNumPoints"] - 1),
     "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
     "expts": qubit_config["SpecNumPoints"]
 }
@@ -229,8 +200,8 @@ else:
 
 # qubit spec experiment
 if Run2ToneSpec:
-    config["reps"] = 30  # want more reps and rounds for qubit data
-    config["rounds"] = 30
+    config["reps"] = Spec_relevant_params['reps']  # want more reps and rounds for qubit data
+    config["rounds"] = Spec_relevant_params['rounds']
     config["Gauss"] = Spec_relevant_params['Gauss']
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]
@@ -253,7 +224,7 @@ if Run2ToneSpecCW:
 # Amplitude Rabi
 number_of_steps = 31
 step = int(Amplitude_Rabi_params["max_gain"] / number_of_steps)
-ARabi_config = {'start': 0, 'step': step, "expts": number_of_steps, "reps": 20, "rounds": 30,
+ARabi_config = {'start': 0, 'step': step, "expts": number_of_steps, "reps": 30, "rounds": 30,
                 "sigma": Amplitude_Rabi_params["sigma"], "f_ge": Amplitude_Rabi_params["qubit_freq"],
                 "relax_delay": 200}
 config = config | ARabi_config  ### note that UpdateConfig will overwrite elements in BaseConfig
@@ -290,6 +261,23 @@ if RunT2:
     dT2R = T2RMUX.acquire(iT2R)
     T2RMUX.display(iT2R, dT2R, plotDisp=True, figNum=2)
     T2RMUX.save_data(iT2R, dT2R)
+
+if RunT2E:
+    if T2E_params["pi2_gain"] == False:
+        qubit_gain_pi2 = qubit_gain // 2
+    else:
+        qubit_gain_pi2 = T2E_params["pi2_gain"]
+    T2E_cfg = {"start": 0, "step": T2E_params["T2_step"],
+               "expts": T2E_params["T2_expts"], "reps": T2E_params["T2_reps"], "rounds": T2E_params["T2_rounds"],
+               "pi_gain": qubit_gain,
+               "pi2_gain": qubit_gain_pi2, "relax_delay": T2E_params["relax_delay"],
+               'f_ge': qubit_frequency_center + T2E_params["freq_shift"]
+               }
+    config = config | T2E_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+    iT2E = T2EMUX(path="T2R", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+    dT2E = T2EMUX.acquire(iT2E)
+    T2EMUX.display(iT2E, dT2E, plotDisp=True, figNum=2)
+    T2EMUX.save_data(iT2E, dT2E)
 
 if RunChiShift:
     config = config | ChiShift_Params
@@ -333,6 +321,8 @@ config['Read_Indeces'] = Qubit_Readout
 
 print(config)
 if SingleShot:
+    print(config)
+    config['number_of_pulses'] = SS_params['number_of_pulses']
     Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
     data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
     # print(data_SingleShotProgram)
@@ -360,7 +350,7 @@ if SingleShot_ReadoutOptimize:
     config = config | exp_parameters
     # Now lets optimize powers and readout frequencies
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-    data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize, cavityAtten = cavityAtten)
+    data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize)
     # print(data_SingleShotProgram)
     ReadOpt_wSingleShotFFMUX.display(Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True)
 
@@ -384,6 +374,7 @@ if SingleShot_QubitOptimize:
         "qubit_freq_start": qubit_frequency_centers[Qubit_Pulse_Index] - q_freq_span / 2, #249.6,
         "qubit_freq_stop": qubit_frequency_centers[Qubit_Pulse_Index] + q_freq_span / 2, #250.3,
         "QubitNumPoints": q_freq_pts,
+        "number_of_pulses": SS_Q_params["number_of_pulses"]
     }
     config = config | exp_parameters
     # # Now lets optimize powers and readout frequencies
@@ -398,6 +389,17 @@ if SingleShot_QubitOptimize:
     QubitPulseOpt_wSingleShotFFMUX.save_config(Instance_SingleShotOptimize)
 
 
+
+# Qubit_Read_Gain = 0
+# Qubit_Sweep = 4
+# Qubit_Sweep_Gain = 13000
+# FF_Gains = [-30000, -30000, -30000, -30000]
+# # FF_Gains = [0, 0, 0, 0]
+# FF_Gains[Qubit_Readout[0] - 1] = Qubit_Read_Gain
+# FF_Gains[Qubit_Sweep - 1] = Qubit_Sweep_Gain
+# FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = FF_Gains
+# FF_Gains[Qubit_Readout[0] - 1] = 0
+# FF_gain1, FF_gain2, FF_gain3, FF_gain4 = FF_Gains
 
 
 #

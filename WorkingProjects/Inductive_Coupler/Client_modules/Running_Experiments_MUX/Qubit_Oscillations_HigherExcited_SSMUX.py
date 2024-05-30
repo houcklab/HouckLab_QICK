@@ -1,10 +1,10 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mRabiOscillations_2nd_SSMUX import WalkFFSSMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mRabiOscillations_2nd_GainSweepMUX import Oscillations_Gain_2nd_SSMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mRabiOscillations_2nd_SSMUX import WalkFFSSMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mRabiOscillations_2nd_GainSweepMUX import Oscillations_Gain_2nd_SSMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
 
 print(soc)
 

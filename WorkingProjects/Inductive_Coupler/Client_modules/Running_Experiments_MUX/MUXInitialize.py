@@ -7,13 +7,13 @@ file to create basic initialization of things used for RFSOC This will include:
 """
 
 ### import relevent libraries
-from q4diamond.Client_modules.socProxy import makeProxy, soc, soccfg
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy, soc, soccfg
 import os
 import platform
-if 'macOS' not in platform.platform():
-    import visa
-    from q4diamond.Client_modules.PythonDrivers.control_atten import setatten
-    from q4diamond.Client_modules.PythonDrivers.YOKOGS200 import *
+# if 'macOS' not in platform.platform():
+    # import visa
+    # from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.control_atten import setatten
+    # from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.YOKOGS200 import *
 
 if 'macOS' in platform.platform():
     if "LD_LIBRARY_PATH" in os.environ.keys():
@@ -23,28 +23,28 @@ if 'macOS' in platform.platform():
 else:
     os.add_dll_directory(os.getcwd() + '.\..\\PythonDrivers')
 
-if 'macOS' not in platform.platform():
-    #### define a attenuator class to change define attenuators for the setup
-    class attenuator:
-        def __init__(self, serialNum, attenuation_int=50, print_int=False):
-            self.serialNum = serialNum
-            self.attenuation = attenuation_int
-            setatten(attenu=attenuation_int, serial=self.serialNum, printv=print_int)
-
-        def SetAttenuation(self, attenuation, printOut=False):
-            self.attenuation = attenuation
-            setatten(attenu=attenuation, serial=self.serialNum, printv=printOut)
-
-
-    # ##### define the attenuators
-    cavityAtten = attenuator(27786)
-    qubitAtten = attenuator(27796)  ####*********CHECK THIS****####
-
-    # ##### define yoko
-    # yoko69 = YOKOGS200(VISAaddress='GPIB0::1::INSTR', rm=visa.ResourceManager())
-    # yoko70 = YOKOGS200(VISAaddress='GPIB0::2::INSTR', rm=visa.ResourceManager())
-    # yoko71 = YOKOGS200(VISAaddress='GPIB0::3::INSTR', rm=visa.ResourceManager())
-    # yoko72 = YOKOGS200(VISAaddress='GPIB0::4::INSTR', rm=visa.ResourceManager())
+# if 'macOS' not in platform.platform():
+#     #### define a attenuator class to change define attenuators for the setup
+#     class attenuator:
+#         def __init__(self, serialNum, attenuation_int=50, print_int=False):
+#             self.serialNum = serialNum
+#             self.attenuation = attenuation_int
+#             setatten(attenu=attenuation_int, serial=self.serialNum, printv=print_int)
+#
+#         def SetAttenuation(self, attenuation, printOut=False):
+#             self.attenuation = attenuation
+#             setatten(attenu=attenuation, serial=self.serialNum, printv=printOut)
+#
+#
+#     # ##### define the attenuators
+#     cavityAtten = attenuator(27786)
+#     qubitAtten = attenuator(27796)  ####*********CHECK THIS****####
+#
+#     # ##### define yoko
+#     # yoko69 = YOKOGS200(VISAaddress='GPIB0::1::INSTR', rm=visa.ResourceManager())
+#     # yoko70 = YOKOGS200(VISAaddress='GPIB0::2::INSTR', rm=visa.ResourceManager())
+#     # yoko71 = YOKOGS200(VISAaddress='GPIB0::3::INSTR', rm=visa.ResourceManager())
+#     # yoko72 = YOKOGS200(VISAaddress='GPIB0::4::INSTR', rm=visa.ResourceManager())
 
 
 # yoko1 = YOKOGS200(VISAaddress = 'GPIB0::5::INSTR', rm = visa.ResourceManager())
@@ -57,7 +57,7 @@ if 'macOS' not in platform.platform():
 # yoko72.SetVoltage(0)
 
 #Define Save folder
-outerFolder = "Z:\Jeronimo\Measurements\RFSOC_4Qubit_0F\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\RFSOC_4Qubit_AB\\"
 
 ###### define default configuration
 BaseConfig = {
@@ -71,7 +71,7 @@ BaseConfig = {
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed
-    "length": 10,  # length of cavity pulse for readout in us
+    "length": 20,  # length of cavity pulse for readout in us
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 0.5,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks

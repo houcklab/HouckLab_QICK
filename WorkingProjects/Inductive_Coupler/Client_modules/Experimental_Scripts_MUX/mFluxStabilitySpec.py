@@ -1,13 +1,13 @@
 from qick import *
 import matplotlib.pyplot as plt
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import datetime
 import time
-from q4diamond.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.YOKOGS200 import *
 from scipy.signal import savgol_filter
-import q4diamond.Client_modules.Helpers.FF_utils as FF
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFProg
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFProg
 
 # ====================================================== #
 
@@ -67,11 +67,11 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
             self.qubit_length_us = cfg["qubit_length"]
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -80,7 +80,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
         FF.FFPulses(self, list_of_gains, length_us, t_start, IQPulseArray, waveform_label)
@@ -332,7 +332,7 @@ class FluxStability(ExperimentClass):
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=self.progress, debug=False)
+                                         start_src="internal", progress=self.progress)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
 
         data_I = data['data']['avgi'][0][0]

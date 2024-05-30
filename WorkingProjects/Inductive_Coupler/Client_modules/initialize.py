@@ -6,14 +6,13 @@ file to create basic initialization of things used for RFSOC This will include:
 """
 
 ### import relevent libraries
-from q4diamond.Client_modules.socProxy import makeProxy, soc, soccfg
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy, soc, soccfg
 import h5py
 import os
 import platform
 if 'macOS' not in platform.platform():
     import visa
-    from q4diamond.Client_modules.PythonDrivers.control_atten import setatten
-    from q4diamond.Client_modules.PythonDrivers.YOKOGS200 import *
+    from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.YOKOGS200 import *
 
 if 'macOS' in platform.platform():
     if "LD_LIBRARY_PATH" in os.environ.keys():
@@ -31,11 +30,9 @@ if 'macOS' not in platform.platform():
         def __init__(self, serialNum, attenuation_int=50, print_int=False):
             self.serialNum = serialNum
             self.attenuation = attenuation_int
-            setatten(attenu=attenuation_int, serial=self.serialNum, printv=print_int)
 
         def SetAttenuation(self, attenuation, printOut=False):
             self.attenuation = attenuation
-            setatten(attenu=attenuation, serial=self.serialNum, printv=printOut)
 
 
     # ##### define the attenuators
@@ -43,10 +40,10 @@ if 'macOS' not in platform.platform():
     qubitAtten = attenuator(27796)  ####*********CHECK THIS****####
 
     # ##### define yoko
-    yoko69 = YOKOGS200(VISAaddress='GPIB0::1::INSTR', rm=visa.ResourceManager())
-    yoko70 = YOKOGS200(VISAaddress='GPIB0::2::INSTR', rm=visa.ResourceManager())
-    yoko71 = YOKOGS200(VISAaddress='GPIB0::3::INSTR', rm=visa.ResourceManager())
-    yoko72 = YOKOGS200(VISAaddress='GPIB0::4::INSTR', rm=visa.ResourceManager())
+    # yoko69 = YOKOGS200(VISAaddress='GPIB0::1::INSTR', rm=visa.ResourceManager())
+    # yoko70 = YOKOGS200(VISAaddress='GPIB0::2::INSTR', rm=visa.ResourceManager())
+    # yoko71 = YOKOGS200(VISAaddress='GPIB0::3::INSTR', rm=visa.ResourceManager())
+    # yoko72 = YOKOGS200(VISAaddress='GPIB0::4::INSTR', rm=visa.ResourceManager())
 
 # yoko1 = YOKOGS200(VISAaddress = 'GPIB0::5::INSTR', rm = visa.ResourceManager())
 # yoko1.SetVoltage(-0.052)

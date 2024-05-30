@@ -1,14 +1,14 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
-from q4diamond.Client_modules.Helpers.rotate_SS_data import *
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 
 
 class WalkProgramSS(AveragerProgram):
@@ -42,7 +42,7 @@ class WalkProgramSS(AveragerProgram):
 
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_01, phase=0,
                              gain=self.cfg["qubit_gain01"],
@@ -51,11 +51,11 @@ class WalkProgramSS(AveragerProgram):
                              gain=self.cfg["qubit_gain12"],
                              waveform="qubit")
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(2* self.FFReadouts, 0.02)
         print(2* self.FFReadouts)
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -85,7 +85,7 @@ class WalkProgramSS(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
@@ -110,7 +110,7 @@ class WalkFFSSMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False):
+    def acquire(self, threshold = None, angle = None, progress=False):
         tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         if np.array(self.cfg["IDataArray"]).any() != None:
             self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'], self.cfg['FF_Qubits'][

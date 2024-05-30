@@ -2,13 +2,13 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from q4diamond.Client_modules.Experiment import ExperimentClass
-from q4diamond.Client_modules.Helpers.hist_analysis import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mTimingScope import TimingProg
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTimingScope import TimingProg
 
 import os
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')

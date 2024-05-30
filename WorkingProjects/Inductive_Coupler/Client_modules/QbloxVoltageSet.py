@@ -1,4 +1,4 @@
-from q4diamond.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
+from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
 import numpy as np
 COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds
@@ -7,6 +7,8 @@ spi_rack = SPIRack(port, COM_speed, timeout)
 D5a = D5aModule(spi_rack, module=2, reset_voltages=False)
 
 span = D5a.range_4V_bi
+# span = D5a.range_8V_uni
+
 # span = D5a.range_2V_bi
 
 for i in range(D5a._num_dacs):
@@ -17,10 +19,9 @@ for i in range(D5a._num_dacs):
 
 ################
 
-DACs = [0, 2, 4, 6]
-DACs = [0, 2, 4, 6]
-#0, 2 and left
-#4, 6 are right
+DACs = [8, 2, 4, 6]
+#0, 2 and right
+#4, 6 are left
 #4(number 3) is right coupler
 #6(number 4) is right qubit
 
@@ -41,12 +42,10 @@ DACs = [0, 2, 4, 6]
 
 
 
-voltages = [0, 0, 0, 0]
-voltages = [0.35, 0.45, 0, 0]
-voltages = [-0.5, -0.41, 0.0, 0]
-voltages = [-0.5, -0.403, 0.0, 0]
-voltages = [-0.63, 0, 0, 0]
-voltages = [-0.42, -0.403, 0, 0]
+# after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
+# 4Q device: [right qubit, top qubit, bottom qubit, left qubit]
+voltages = [0.428, 0.9, 0.63, 0]
+
 set_unused_to_zero = False
 
 ################

@@ -1,79 +1,43 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mCouplerSwap_SSMUX import CouplerSwapMUX, CouplerSwapGainSweepMUX
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mCouplerSwap_SSMUX import CouplerSwapPhaseSweepMUX, CouplerSwapFrequencySweepMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mCouplerSwap_SSMUX import CouplerSwapMUX, CouplerSwapGainSweepMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mCouplerSwap_SSMUX import CouplerSwapPhaseSweepMUX, CouplerSwapFrequencySweepMUX
+
+import numpy as np
 def coupler_pulse(t, gain, freq, phase):
     return gain * np.sin(freq * 2 * np.pi * t + phase)
 
 print(soc)
 
-#### define the saving path
-
-yoko69.rampstep = 0.0005
-yoko70.rampstep = 0.0005
-yoko71.rampstep = 0.0005
-yoko72.rampstep = 0.0005
-
-# yoko69.SetVoltage(-0.0479)
-# yoko70.SetVoltage(0.0904)
-# yoko71.SetVoltage(-0.1262)
-# yoko72.SetVoltage(0.0051)
-
-
-
-yoko69.SetVoltage(0.1826)
-yoko70.SetVoltage(0.1011)
-yoko71.SetVoltage(0.2304)
-yoko72.SetVoltage(-0.2418)
-
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 
-# Qubit_Parameters = {
-#     '1': {'Readout': {'Frequency': 6962.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 9000,
-#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#           'Qubit01': {'Frequency': 4700.25, 'Gain': 825},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '2': {'Readout': {'Frequency': 7033.97 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-#           'Qubit01': {'Frequency': 4891.6, 'Gain': 1640},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '3': {'Readout': {'Frequency': 7105.39 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-#           'Qubit01': {'Frequency': 5200, 'Gain': 4550},
-#           'Pulse_FF': [0, 0, 0, 0]},
-#     '4': {'Readout': {'Frequency': 7230.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 3500,
-#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-#           'Qubit01': {'Frequency': 4728.9, 'Gain': 1250},
-#           'Pulse_FF': [0, 0, 0, 0]}
-#     }
 
 Qubit_Parameters = {
     '1': {
-        'Readout': {'Frequency': 6962.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 3,
-                      "ADC_Offset": 0.5},
-          'Qubit01': {'Frequency': 4999.8, 'Gain': 770},
+        'Readout': {'Frequency': 7192.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 5581.4, 'Gain': 1815},
           'Qubit12': {'Frequency': 4531.2, 'Gain': 0},
           'Pulse_FF': [0, 0, 0, 0],
           'Coupler': {'Frequency': 0, 'Gain': 0, 'Phase': 0}},
     '2': {
-        'Readout': {'Frequency': 7034.37 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+        'Readout': {'Frequency': 7091.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01': {'Frequency': 4820.1, 'Gain': 710},
+          'Qubit01': {'Frequency': 5477.2, 'Gain': 1626},
           'Qubit12': {'Frequency': 4746, 'Gain': 0},
           'Pulse_FF': [0, 0, 0, 0],
-          'Coupler': {'Frequency': 30, 'Gain': 4000, 'Phase': 0}},
+          'Coupler': {'Frequency': 110, 'Gain': 6000, 'Phase': 0}},
     '3': {
-        'Readout': {'Frequency': 7104.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
-                      "FF_Gains": [0, 0, 0, 0]},
-          'Qubit01': {'Frequency': 5212.4, 'Gain': 1470},
-          'Qubit12': {'Frequency': 4504.8, 'Gain': 0},
+        'Readout': {'Frequency': 7281.95 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 5258, 'Gain': 2030},
+          'Qubit12': {'Frequency': 4746, 'Gain': 0},
           'Pulse_FF': [0, 0, 0, 0],
-          'Coupler': {'Frequency': 30, 'Gain': 4000, 'Phase': 0}},
+          'Coupler': {'Frequency': 0, 'Gain': 0, 'Phase': 0}},
     '4': {
         'Readout': {'Frequency': 7230.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                       "FF_Gains": [0, 0, 0, 0]},
@@ -84,8 +48,8 @@ Qubit_Parameters = {
 
     }
 
-Qubit_Readout = [1]
-Qubit_Pulse = [1]
+Qubit_Readout = [3]
+Qubit_Pulse = [3]
 Coupler_Drive = [2]
 
 FF_gain1_expt = 0
@@ -104,11 +68,11 @@ for Q_R in Coupler_Drive:
     IDataArray[Q_R - 1] = coupler_pulse(times, gain, freq, phase)
 
 swept_qubit_index = 2 #1 indexed
-Oscillation_Frequency = False  #MHz
-oscillation_freq_dict = {'reps': 250, 'start': int(0), 'step': int(4 * 16), 'expts': 200, 'freqStart': 29,
-                         'freqStop': 31, 'freqNumPoints': 11, 'relax_delay': 200}
+Oscillation_Frequency = True  #MHz
+oscillation_freq_dict = {'reps': 250, 'start': int(0), 'step': int(4 * 16), 'expts': 200, 'freqStart': 300,
+                         'freqStop': 340, 'freqNumPoints': 21, 'relax_delay': 200}
 
-Oscillation_Gain = True
+Oscillation_Gain = False
 oscillation_gain_dict = {'reps': 250, 'start': int(0), 'step': int(4 * 16), 'expts': 200, 'gainStart': 3000,
                          'gainStop': 9000, 'gainNumPoints': 16, 'relax_delay': 200}
 
@@ -181,7 +145,7 @@ config['Read_Indeces'] = Qubit_Readout
 #### update the qubit and cavity attenuation
 
 config["rounds"] = 1
-config["sigma"] = 0.05
+config["sigma"] = 0.03
 
 config["shots"] = SS_params_2States["Shots"]
 config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit01']['Gain'] for Q in Qubit_Readout]

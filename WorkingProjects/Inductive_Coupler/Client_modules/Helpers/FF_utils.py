@@ -224,10 +224,10 @@ def FFDefinitions(instance):
     Additional_delay_channels = [instance.cfg['Additional_Delays'][k]['channel'] for k in additional_delay_keys]
     Additional_delay_times = [instance.us2cycles(instance.cfg['Additional_Delays'][k]['delay_time']) for k in additional_delay_keys]
     # print(additional_delay_keys, Additional_delay_channels, Additional_delay_times)
-    instance.dac_t0 = np.array([0] * len(instance._dac_ts))
-    instance.dac_t0[instance.FFChannels] = [instance.us2cycles(d) for d in FFDelays]
-    instance.dac_t0[Additional_delay_channels] = Additional_delay_times
-    instance.dac_t0 = list(instance.dac_t0)
+    instance.gen_t0 = np.array([0] * len(instance._gen_ts))
+    instance.gen_t0[instance.FFChannels] = [instance.us2cycles(d) for d in FFDelays]
+    instance.gen_t0[Additional_delay_channels] = Additional_delay_times
+    instance.gen_t0 = list(instance.gen_t0)
 
     # print(instance.dac_t0)
 

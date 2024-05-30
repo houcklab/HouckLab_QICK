@@ -1,6 +1,6 @@
 globals().clear()
 
-from q4diamond.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
+from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
 import serial
 COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds

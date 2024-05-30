@@ -1,16 +1,16 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
-from q4diamond.Client_modules.Helpers.rotate_SS_data import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 import pickle
-from q4diamond.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFFProg
+# from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mRabiOscillations import WalkFFProg
 
 
 class OscillationsProgram(AveragerProgram):
@@ -41,7 +41,7 @@ class OscillationsProgram(AveragerProgram):
         self.sync_all(200)
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.freq_01, phase=0,
                              gain=self.cfg["qubit_gain01"],
@@ -50,7 +50,7 @@ class OscillationsProgram(AveragerProgram):
                              gain=self.cfg["qubit_gain12"],
                              waveform="qubit")
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -107,7 +107,7 @@ class OscillationsProgramSS(AveragerProgram):
         self.sync_all(200)
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
@@ -121,7 +121,7 @@ class OscillationsProgramSS(AveragerProgram):
                                  gain=gain_,
                                  waveform="qubit", t=time)
         self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
@@ -151,7 +151,7 @@ class OscillationsProgramSS(AveragerProgram):
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
 
@@ -192,7 +192,7 @@ class Oscillations_Gain_2nd(ExperimentClass):
         self.I_Range = I_Excited - I_Ground
         self.Q_Range = Q_Excited - Q_Ground
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False, figNum = 1, plotDisp = True,
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
                 plotSave = True):
 
         gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
@@ -347,7 +347,7 @@ class Oscillations_Gain_2nd(ExperimentClass):
         #
         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
-        #                                  start_src="internal", progress=False, debug=False)
+        #                                  start_src="internal", progress=False)
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data
 
@@ -402,7 +402,7 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, threshold = None, angle = None, progress=False, debug=False, figNum = 1, plotDisp = True,
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
                 plotSave = True):
 
         gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
@@ -539,7 +539,7 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
         #
         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
-        #                                  start_src="internal", progress=False, debug=False)
+        #                                  start_src="internal", progress=False)
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data
 
@@ -623,7 +623,7 @@ def Compensated_AWG(Num_Points, Fit_Parameters, maximum = 1.5):
 def DoubleExponentialFit(t, A1, T1, A2, T2):
     return (A1 * np.exp(-t / T1) + A2 * np.exp(-t / T2))
 
-def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 1.5):
+def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 2):
     step = 0.00232515 / 16
     time = np.arange(0,Num_Points)*step
     ideal_AWG = np.ones(Num_Points)
@@ -646,8 +646,7 @@ def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 1.5):
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected.p', 'rb'))
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_corrected_V3.p', 'rb'))
 # Qubit2_parameters_long = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected_LongTime_3.p', 'rb'))
-
-'''Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
+Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
 Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
 Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_PreFinal.p', 'rb'))
 # Qubit1_[0] *= 1.
@@ -668,15 +667,19 @@ Qubit2_[0] *= 0.75
 Qubit2_[2] *= 0.75
 Qubit2_[4] *= 1
 
+Qubit4_[0] *= 1.3
+Qubit4_[1] *= 1.2
+Qubit4_[2] *= 1.2
+Qubit4_[3] *= 1.2
+# Qubit4_[0] *= 1.2
+
+
+
 v_awg_Q1 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit1_)[1]
 v_awg_Q2 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit2_)[1]
-v_awg_Q4 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit4_)[1]'''
+v_awg_Q4 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit4_)[1]
 
-v_awg_Q1 = np.ones(16 * 5000)
-v_awg_Q2 = np.ones(16 * 5000)
-v_awg_Q4 = np.ones(16 * 5000)
 
-print(v_awg_Q1[:20])
 
 # v_awg_Q2 = Compensated_AWG_LongTimes(150 * 2 * 16 * 3, Qubit2_parameters_long)[1]
 
@@ -691,6 +694,9 @@ def Compensated_Pulse(final_gain, initial_gain, Qubit_number = 1, compensated = 
     Pulse = Compensated_pulse_list[Qubit_number - 1]
     Comp_Difference = Pulse - 1
     Comp_Step_Gain = Comp_Difference * (final_gain - initial_gain) + np.ones(len(Comp_Difference)) * final_gain
+    Comp_Step_Gain[Comp_Step_Gain > 32000] = 32000
+    Comp_Step_Gain[Comp_Step_Gain < -32000] = -32000
+
     return(Comp_Step_Gain)
 
 # Compensated_Step_Pulse = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/v_awg_V2.p', 'rb'))

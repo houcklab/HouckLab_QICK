@@ -1,14 +1,14 @@
 from qick import *
-from q4diamond.Client_modules.socProxy import makeProxy
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import q4diamond.Client_modules.Helpers.FF_utils as FF
-from q4diamond.Client_modules.Helpers.Qblox_Functions import Qblox
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
 
 
 class CavitySpecFFProg(AveragerProgram):
@@ -30,7 +30,7 @@ class CavitySpecFFProg(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -38,7 +38,7 @@ class CavitySpecFFProg(AveragerProgram):
                      wait=False,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -86,11 +86,11 @@ class QubitSpecSliceFFProg(RAveragerProgram):
             self.qubit_length_us = cfg["qubit_length"]
 
     def body(self):
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(dac_t0=self.dac_t0)
+        self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         # self.FFPulses(self.FFPulse, self.cfg["length"])
         # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
@@ -101,7 +101,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), dac_t0=self.dac_t0)
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
@@ -128,7 +128,8 @@ class SpecVsQblox(ExperimentClass):
                          config_file=config_file, progress=progress, qblox = qblox)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
+                smart_normalize = True):
         expt_cfg = {
             ### define the qblox parameters
             "qbloxStart": self.cfg["qbloxStart"],
@@ -143,9 +144,11 @@ class SpecVsQblox(ExperimentClass):
             "start": self.cfg["start"],
             "expts": self.cfg["expts"],
         }
+        print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
 
-
-        qbloxVec = np.linspace(expt_cfg["qbloxStart"],expt_cfg["qbloxStop"], expt_cfg["qbloxNumPoints"])
+        qbloxVec = []
+        for n in range(len(expt_cfg["qbloxStart"])):
+            qbloxVec.append(np.linspace(expt_cfg["qbloxStart"][n],expt_cfg["qbloxStop"][n], expt_cfg["qbloxNumPoints"]))
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -158,13 +161,14 @@ class SpecVsQblox(ExperimentClass):
         ### also create empty array to fill with transmission and spec data
         # self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         # self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
-        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"] * expt_cfg["step"])
+        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
+        print(self.spec_fpts)
 
         # X_trans = (self.trans_fpts + self.cfg["cavity_LO"]/1e6) /1e3
         # X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = qbloxVec
+        Y = qbloxVec[0]
         Y_step = Y[1] - Y[0]
         # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
         Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
@@ -181,6 +185,8 @@ class SpecVsQblox(ExperimentClass):
                         'qbloxVec': qbloxVec
                      }
         }
+
+        print(qbloxVec)
 
         #### start a timer for estimating the time for the scan
         startTime = datetime.datetime.now()
@@ -199,8 +205,12 @@ class SpecVsQblox(ExperimentClass):
                 self.soc.reset_gens()
             ### set the qblox voltage for the specific run
             # self.qblox.SetVoltage(qbloxVec[i])
-            QbloxClass.set_voltage([self.cfg['DACs']], [qbloxVec[i]])
-
+            voltages_for_qblox = []
+            for m in range(len(self.cfg['DACs'])):
+                voltages_for_qblox.append(qbloxVec[m][i])
+            print(voltages_for_qblox)
+            QbloxClass.set_voltage(self.cfg['DACs'], voltages_for_qblox)
+            # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data
             # data_I, data_Q = self._aquireTransData()
@@ -241,19 +251,26 @@ class SpecVsQblox(ExperimentClass):
 
             ### take the spec data
             data_I, data_Q = self._aquireSpecData()
+            data_I = data_I[0]
+            data_Q = data_Q[0]
+
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
             #### plot out the spec data
             sig = data_I + 1j * data_Q
+
+
             avgamp0 = np.abs(sig)
+            if smart_normalize:
+                avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
             Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
             if i == 0:
 
                 ax_plot_1 = axs.imshow(
                     Z_spec,
                     aspect='auto',
-                    extent=[np.min(X_spec)-X_spec_step/2,np.max(X_spec)+X_spec_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
                     origin='lower',
                     interpolation = 'none',
                 )
@@ -301,7 +318,7 @@ class SpecVsQblox(ExperimentClass):
 
         return self.data
 
-    def _aquireTransData(self, progress=False, debug=False):
+    def _aquireTransData(self, progress=False):
         fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
                            self.cfg["mixer_freq"] + self.cfg["TransSpan"],
                            self.cfg["TransNumPoints"])
@@ -360,12 +377,12 @@ class SpecVsQblox(ExperimentClass):
     #
     #     return data_I, data_Q
 
-    def _aquireSpecData(self, progress=False, debug=False):
+    def _aquireSpecData(self, progress=False):
 
         prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
 
         # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # self.data = data
@@ -412,4 +429,42 @@ class SpecVsQblox(ExperimentClass):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
+
+# def Normalize_Qubit_Data(idata, qdata):
+#     idata_rotated = Amplitude_IQ_angle(idata, qdata)
+#     idata_rotated -= np.median(idata_rotated) #subtract the offset
+#     range_ = max(idata_rotated) - min(idata_rotated)
+#     idata_rotated *= 1 / range_   #normalize data to have amplitude of 1
+#     if np.abs(max(idata_rotated)) < np.abs(min(idata_rotated)):
+#         idata_rotated *= -1 #ensures that the spec has a peak rather than a dip
+#     return(idata_rotated)
+
+def Normalize_Qubit_Data(idata, qdata):
+    idata_rotated = Amplitude_IQ_angle(idata, qdata)
+    idata_rotated -= np.median(idata_rotated) #subtract the offset
+    range_ = max(idata_rotated) - min(idata_rotated)
+    if np.abs(max(idata_rotated)) < np.abs(min(idata_rotated)):
+        idata_rotated *= -1 #ensures that the spec has a peak rather than a dip
+    idata_rotated -= min(idata_rotated)
+    idata_rotated *= 1 / range_   #normalize data to have amplitude of 1
+
+    return(idata_rotated)
+
+def Amplitude_IQ_angle(I, Q, phase_num_points = 50):
+    '''
+    IQ data is inputted and it will multiply by a phase such that all of the
+    information is in I
+    :param I:
+    :param Q:
+    :param phase_num_points:
+    :return: Array of data all in I quadrature
+    '''
+    complexarg = I + 1j * Q
+    phase_values = np.linspace(0, np.pi, phase_num_points)
+    multiplied_phase = [complexarg * np.exp(1j * phase) for phase in phase_values]
+    I_range = np.array([np.max(IQPhase.real) - np.min(IQPhase.real) for IQPhase in multiplied_phase])
+    phase_index = np.argmax(I_range)
+    angle = phase_values[phase_index]
+    complexarg *= np.exp(1j * angle)
+    return(complexarg.real)
 

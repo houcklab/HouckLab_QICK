@@ -1,11 +1,11 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from q4diamond.Client_modules.Experiment import ExperimentClass
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 import datetime
-from q4diamond.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.YOKOGS200 import *
 from scipy.signal import savgol_filter
 import time
 

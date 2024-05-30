@@ -1,11 +1,11 @@
-from q4diamond.Client_modules.Running_Experiments_MUX.MUXInitialize import *
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
-from q4diamond.Client_modules.Experiment_Scripts.mSpecSliceFF import QubitSpecSliceFF
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mSpecSliceFF import QubitSpecSliceFF
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
 
-from q4diamond.Client_modules.Experimental_Scripts_MUX.mFluxStabilitySpec import FluxStability
-from q4diamond.Client_modules.Experiment_Scripts.mAmplitudeRabiFF import AmplitudeRabiFF
-from q4diamond.Client_modules.Helpers.Compensated_Pulse_Generation import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFluxStabilitySpec import FluxStability
+from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mAmplitudeRabiFF import AmplitudeRabiFF
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_Generation import *
 
 
 # yoko69.rampstep = 0.0005
