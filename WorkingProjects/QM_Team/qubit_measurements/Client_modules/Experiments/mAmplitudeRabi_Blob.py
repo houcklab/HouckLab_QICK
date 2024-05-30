@@ -4,8 +4,8 @@
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
-from STFU.Client_modules.Experiments.mAmplitudeRabi import LoopbackProgramAmplitudeRabi
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAmplitudeRabi import LoopbackProgramAmplitudeRabi
 from tqdm.notebook import tqdm
 import time
 import datetime

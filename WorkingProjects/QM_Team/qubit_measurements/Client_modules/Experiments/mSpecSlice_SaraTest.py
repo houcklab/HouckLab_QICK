@@ -2,7 +2,7 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 
@@ -120,7 +120,8 @@ class SpecSlice(ExperimentClass):
         avgq = data['data']['avgq']
         sig  = avgi[0][0] + 1j * avgq[0][0]
         avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
+        #avgphase = np.angle(sig, deg=True)
+        avgphase = np.remainder(np.angle(sig, deg=True) + 360, 360)
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
@@ -150,7 +151,7 @@ class SpecSlice(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

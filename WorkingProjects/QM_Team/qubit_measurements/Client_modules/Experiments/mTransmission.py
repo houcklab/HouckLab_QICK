@@ -2,7 +2,7 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from STFU.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 
@@ -37,7 +37,7 @@ class LoopbackProgramTrans(AveragerProgram):
 
         if style == "const":
             self.set_pulse_registers(ch=res_ch, style=style, freq=freq, phase=0, gain=cfg["read_pulse_gain"],
-                                     length=self.us2cycles(cfg["read_length"]) )#,  mode="periodic")
+                                     length=self.us2cycles(cfg["read_length"]),  mode="periodic")
         elif style == "flat_top":
             self.set_pulse_registers(ch=res_ch, style=style, freq=freq, phase=0, gain=cfg["read_pulse_gain"],
                                      waveform="measure", length=self.us2cycles(cfg["read_length"]) )
@@ -80,7 +80,7 @@ class Transmission(ExperimentClass):
         expt_cfg = {
                 "center": self.cfg["read_pulse_freq"],
                 "span": self.cfg["TransSpan"],
-                "expts": self.cfg["TransNumPoitns"]
+                "expts": self.cfg["TransNumPoints"]
         }
         expt_cfg["step"] = 2 * expt_cfg["span"] / expt_cfg["expts"]
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
