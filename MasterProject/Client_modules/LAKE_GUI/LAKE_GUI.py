@@ -1,3 +1,10 @@
+# Description, to be written
+
+# Global TODO's section
+#TODO: write proper error handling with boxes popping up
+#TODO: fix a single naming convention for funtion names
+
+
 # General imports
 import json
 
@@ -105,6 +112,7 @@ class Window(QMainWindow):
         # Create and connect widgets
         self.runExperimentButton = QPushButton("Run Experiment!", self)
         self.runExperimentButton.clicked.connect(self.runExperiment)
+        self.runExperimentButton.setEnabled(False) # The button should not be enabled until we've loaded an experiment
         self.plotWidget = PlotWidget(parent = self)
         loadExperimentDataButton = QPushButton(self)
         loadExperimentDataButton.setGeometry(QRect(30, 790, 75, 23))
@@ -263,6 +271,7 @@ class Window(QMainWindow):
         filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "python files (*.py)",)
         if filename:
             self.loadExperiment(filename)
+        self.runExperimentButton.setEnabled(True) # The run button is now enabled
 
     def load_config_file_open(self): # loadConfigButton
         """ Runs when the load config file button is pressed. """
