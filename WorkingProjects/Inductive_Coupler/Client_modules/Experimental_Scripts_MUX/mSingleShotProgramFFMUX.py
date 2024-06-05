@@ -244,7 +244,7 @@ class SingleShotProgram(AveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False):
         start = time.time()
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
         end = time.time()
 
         # print(end - start)

@@ -125,9 +125,10 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         self.data = data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
-
+        avgi = data['data']['avgi'][0]
+        avgq = data['data']['avgq'][0]
+        print(avgi)
+        print(avgq)
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
