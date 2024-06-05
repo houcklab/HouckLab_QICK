@@ -21,14 +21,14 @@ print(BaseConfig["cavity_LO"] / 1e6)
 BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["has_mixer"] = True
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6975.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+    '1': {'Readout': {'Frequency': 6975.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 3000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4302.3, 'Gain': 740},
+          'Qubit': {'Frequency': 4700, 'Gain': 740},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7060.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+    '2': {'Readout': {'Frequency': 7059.25 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5139.5, 'Gain': 1050},
-          'Pulse_FF': [0, 0, 0, 0]},
+          'Qubit': {'Frequency': 4700, 'Gain': 1050},
+          'Pulse_FF': [20000, 0, 0, 0]},
     '3': {'Readout': {'Frequency': 7127.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit': {'Frequency': 5012.2, 'Gain': 1250},
@@ -45,9 +45,9 @@ FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = 1
-Qubit_PulseSS = [4]
+Qubit_Readout = [2]
+Qubit_Pulse = 2
+Qubit_PulseSS = [2]
 
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
@@ -72,14 +72,14 @@ RunTransmissionSweep = False # determine cavity frequency
 Run2ToneSpec = False
 # Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 100, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.05,
 #                         "gain": 600, 'reps': 20, 'rounds': 20}
-Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 30, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
+Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
                         "gain": 600, 'reps': 15, 'rounds': 15}
 Run_Spec_v_Voltage = True
-Spec_sweep_relevant_params = {"qubit_gain": 1, "SpecSpan": 0.8, "SpecNumPoints": 81,
-                              "DAC": [8],
-                              "Qblox_Vmin": [0.42475],
-                              "Qblox_Vmax": [0.42558], "Qblox_numpoints": 11,
-                              'reps': 10, 'rounds': 10, 'smart_normalize': True}
+Spec_sweep_relevant_params = {"qubit_gain": 300, "SpecSpan": 100, "SpecNumPoints": 51,
+                              "DAC": [2],
+                              "Qblox_Vmin": [0.45],
+                              "Qblox_Vmax": [0.55], "Qblox_numpoints": 21,
+                              'reps': 20, 'rounds': 10, 'smart_normalize': True}
 
 
 RunAmplitudeRabi = False
@@ -87,7 +87,7 @@ Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit
                          "sigma": 0.05, "max_gain": 4000}
 
 SingleShot = False
-SS_params = {"Shots": 2000, "Readout_Time": 2.5, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_PulseSS}
+SS_params = {"Shots": 2000, "Readout_Time": 2, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_PulseSS}
 # SS_params = {"Shots": 30000, "Readout_Time": 35, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_PulseSS}
 
 SingleShot_ReadoutOptimize = False
@@ -292,7 +292,7 @@ if SingleShot_ReadoutOptimize:
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
                                                            cfg=config, soc=soc, soccfg=soccfg)
     data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize,
-                                                                      cavityAtten=cavityAtten)
+                                                                      )
     # print(data_SingleShotProgram)
     ReadOpt_wSingleShotFFMUX.display(Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True)
 
