@@ -7,6 +7,7 @@
 
 # General imports
 import json
+import re
 
 import datetime
 import importlib
@@ -17,6 +18,8 @@ from time import sleep
 import h5py
 import numpy as np
 from pathlib import Path
+
+from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
 
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 
@@ -39,6 +42,9 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QSplitter,
     QProgressBar,
+    QTabWidget,
+    QGridLayout,
+    QFormLayout, QComboBox, QLineEdit,
 )
 from PyQt5.QtGui import QIcon
 from QDictEdit import QDictEdit
@@ -82,6 +88,11 @@ class Window(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Connect to the RFSOC
+
+        self.lakeRootDir = os.getcwd()
+        self.configDir = os.path.join(self.lakeRootDir, 'config')
+        self.acccountDir = os.path.join(self.configDir, 'accounts')
+
         self.soc, self.soccfg = makeProxy()
 
         self.data = [] # The array that stores the currently-plotted data. The exact format of this may get changed.
@@ -97,54 +108,65 @@ class Window(QMainWindow):
         self.outerFolder = "Z:\\HouckLab_QICK\\Gui\\Data\\"
 
 
-
     def setupUi(self):
         """ This function draws all of the UI elements and attaches signals to them. """
         self.setWindowTitle("RFSOC GUI")
         self.setWindowIcon(QIcon('lake_icon.png'))
-        self.resize(2500, 1500)
-        self.centralWidget = QWidget()
-        self.setCentralWidget(self.centralWidget)
+        self.resize(1600, 1000)
+        self.centralTabWidget = QTabWidget()
+        self.setCentralWidget(self.centralTabWidget)
 
         # Set up the font
         font = self.font()
         font.setPointSize(16)
         self.setFont(font)
 
+        # define multiple tabs
+
+        # experiment tab
+        self.__createExperimentTab()
+
+        # experiment tab
+        self.__createAccountTab()
+
+    def __createExperimentTab(self):
+
+        experimentTab = QWidget(parent=self.centralTabWidget)
+        self.centralTabWidget.addTab(experimentTab, 'Experiment')
+
         # Create and connect widgets
-        self.runExperimentButton = QPushButton("Run Experiment!", self)
+        self.runExperimentButton = QPushButton("Run Experiment!", experimentTab)
         self.runExperimentButton.clicked.connect(self.runExperiment)
-        self.runExperimentButton.setEnabled(False) # The button should not be enabled until we've loaded an experiment
-        self.plotWidget = PlotWidget(parent = self)
-        loadExperimentDataButton = QPushButton(self)
+        self.runExperimentButton.setEnabled(False)  # The button should not be enabled until we've loaded an experiment
+        self.plotWidget = PlotWidget(parent=experimentTab)
+        loadExperimentDataButton = QPushButton(experimentTab)
         loadExperimentDataButton.setGeometry(QRect(30, 790, 75, 23))
         loadExperimentDataButton.setObjectName("loadExperimentDataButton")
         loadExperimentDataButton.setText("Load data")
         loadExperimentDataButton.clicked.connect(self.loadExperimentData)
 
-        loadExperimentButton = QPushButton(self)
+        loadExperimentButton = QPushButton(experimentTab)
         loadExperimentButton.setObjectName("loadExperimentButton")
         loadExperimentButton.setText("Load experiment ")
         loadExperimentButton.clicked.connect(self.load_experiment_file_open)
 
-        loadConfigButton = QPushButton(self)
+        loadConfigButton = QPushButton(experimentTab)
         loadConfigButton.setObjectName("loadConfigButton")
         loadConfigButton.setText("Load Config ")
         loadConfigButton.clicked.connect(self.load_config_file_open)
 
-        cancelButton = QPushButton(self)
+        cancelButton = QPushButton(experimentTab)
         cancelButton.setObjectName("STOP")
         cancelButton.setText("STOP!")
         cancelButton.clicked.connect(self.stopExperiment)
         cancelButton.setStyleSheet("background-color : red")
 
-        self.progressBar = QProgressBar(self)
-        #progressBar.setValue(50)
+        self.progressBar = QProgressBar(experimentTab)
+        # progressBar.setValue(50)
         self.progressBar.setAlignment(Qt.AlignCenter)
         self.progressBar.setMaximumSize(QSize(400, 40))
 
-
-        self.experimentNameLabel = QLabel(self)
+        self.experimentNameLabel = QLabel(experimentTab)
         self.experimentNameLabel.setText('<html><b>Experiment: none</b></html>')
 
         # create the dictionary editor
@@ -162,7 +184,7 @@ class Window(QMainWindow):
         # layout.addStretch()
         topButtonsLayout = QHBoxLayout()
         topButtonsLayout.addWidget(self.runExperimentButton)
-        self.centralWidget.setLayout(layout)
+        experimentTab.setLayout(layout)
         topButtonsLayout.addWidget(loadExperimentDataButton)
         topButtonsLayout.addWidget(loadExperimentButton)
         topButtonsLayout.addWidget(loadConfigButton)
@@ -187,6 +209,12 @@ class Window(QMainWindow):
         ### adjust the sizes, make plot 5x larger than labels
         layout.setStretch(0, 1)
         layout.setStretch(1, 5)
+
+    def __createAccountTab(self):
+
+        accountTab = AccountTabWidget(parent=self.centralTabWidget)
+        self.centralTabWidget.addTab(accountTab, 'Account')
+
 
 ########################################################################################################################
 #######################################  Signal functions for UI  ######################################################
