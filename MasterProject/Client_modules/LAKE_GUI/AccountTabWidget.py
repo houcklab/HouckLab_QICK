@@ -10,107 +10,198 @@ class AccountTabWidget(QWidget):
     def __init__(self, parent):
         super().__init__(parent=parent)
 
-        self.currentAccount = 'default'
+        self.account_settings_widget = None
+        self.account_settings_form_widget = None
+        self.current_account = 'default'
 
-        self.lakeRootDir = os.getcwd()
-        self.configDir = os.path.join(self.lakeRootDir, 'config')
-        self.acccountDir = os.path.join(self.configDir, 'accounts')
-
-        self.__loadAccount()
+        self.root_dir = os.getcwd()
+        self.config_dir = os.path.join(self.root_dir, 'config')
+        self.account_dir = os.path.join(self.config_dir, 'accounts')
 
         self.__intiUI()
 
+        self.__create_account_settings_widget()
+        self.__load_default_account()
+
+
     def __intiUI(self):
 
-        accountTabLayout = QGridLayout(self)
+        account_tab_layout = QGridLayout(self)
+        self.setLayout(account_tab_layout)
+        # self.__create_account_settings_widget()
 
-        self.__createAccountSettingsWidget(self)
-
-        spacerWidget = QWidget(self)
-        accountTabLayout.addWidget(spacerWidget, 1, 1)
+        spacer_widget = QWidget(self)
+        account_tab_layout.addWidget(spacer_widget, 1, 1)
 
         # saving and loading accounts
-        saveLoadAccountWidget = QWidget(self)
-        accountTabLayout.addWidget(saveLoadAccountWidget, 0, 1)
+        save_load_account_widget = QWidget(self)
+        account_tab_layout.addWidget(save_load_account_widget, 0, 1)
 
-        saveLoadAccountLayout = QGridLayout(saveLoadAccountWidget)
-
+        save_load_account_layout = QGridLayout(save_load_account_widget)
 
         # load account button
-        loadAccountButton = QPushButton('Load account')
-        saveLoadAccountLayout.addWidget(loadAccountButton, 0, 0)
+        load_account_button = QPushButton('Load account')
+        save_load_account_layout.addWidget(load_account_button, 0, 0)
 
-        accountDropDown = QComboBox(saveLoadAccountWidget)
-        saveLoadAccountLayout.addWidget(accountDropDown, 0, 1)
+        account_drop_down = QComboBox(save_load_account_widget)
+        save_load_account_layout.addWidget(account_drop_down, 0, 1)
+        load_account_button.clicked.connect(lambda: self.__load(account_drop_down.currentText()))
 
         # find all possible accounts
-        accountFileRegex = re.compile('(?P<accountName>.*).json')
+        account_file_regex = re.compile('(?P<accountName>.*).json')
 
-        accountNames = []
+        account_names = []
 
-        for root, dirs, files in os.walk(self.acccountDir):
+        for root, dirs, files in os.walk(self.account_dir):
             print(files)
             for file in files:
-                match = accountFileRegex.search(file)
-                accountNames.append(match.groupdict()['accountName'])
+                match = account_file_regex.search(file)
+                account_names.append(match.groupdict()['accountName'])
 
-        for accountName in accountNames:
-            accountDropDown.addItem(accountName)
-
+        for accountName in account_names:
+            account_drop_down.addItem(accountName)
 
         # save account button
+        save_account_button = QPushButton('Save account')
+        save_account_button.clicked.connect(self.__save)
+        save_load_account_layout.addWidget(save_account_button, 1, 0)
 
-        saveAccountButton = QPushButton('Save account')
-        saveLoadAccountLayout.addWidget(saveAccountButton, 1, 0)
+        save_as_account_button = QPushButton('Save as new account')
+        save_load_account_layout.addWidget(save_as_account_button, 2, 0)
 
-        saveAsAccountButton = QPushButton('Save as new account')
-        saveLoadAccountLayout.addWidget(saveAsAccountButton, 2, 0)
+        new_account_text_input = QLineEdit(f'{self.current_account} copy', save_load_account_widget)
+        save_load_account_layout.addWidget(new_account_text_input, 2, 1)
 
-        newAccountTextInput = QLineEdit(f'{self.currentAccount} copy', saveLoadAccountWidget)
-        saveLoadAccountLayout.addWidget(newAccountTextInput, 2, 1)
+        save_as_account_button.clicked.connect(lambda: self.__save_as(new_account_text_input.text()))
 
-    def __createAccountSettingsWidget(self, accountTab):
-
-        # widget to dislay account details
-        accountSettingsWidget = QWidget(parent=accountTab)
-
-        accountDetailsLayout = QVBoxLayout(accountSettingsWidget)
-
-        currentAccountLabel = QLabel(f'Current Account: {self.currentAccount}', accountSettingsWidget)
-
-        accountDetailsLayout.addWidget(currentAccountLabel)
-
-        accountSettingsFormWidget = QWidget(parent=accountSettingsWidget)
-        accountDetailsLayout.addWidget(accountSettingsFormWidget)
+        # set default button
+        set_default_button = QPushButton('Set current account as default')
+        set_default_button.clicked.connect(self.__set_default_account)
+        save_load_account_layout.addWidget(set_default_button, 3, 0)
 
 
-        accountDetailsFormlayout = QFormLayout(accountSettingsFormWidget)
-        # accountDetailsLayout.setHorizontalSpacing(100)
-        # accountDetailsLayout.addWidget(currentAccountLabel, 0, 1)
-        # accountDetailsLayout.addWidget(currentAccountName, 0, 2)
+    def __create_account_settings_widget(self):
+        # widget to display account details
+        self.account_settings_widget = QWidget(parent=self)
 
-        # labels = []
-        # values = []
+
+        print(self.current_account)
+        self.current_account_label = QLabel(f'Current Account: {self.current_account}', self.account_settings_widget)
+
+        account_details_layout = QVBoxLayout(self.account_settings_widget)
+
+        account_details_layout.addWidget(self.current_account_label)
+
+
+    def __update_account_settings_widget(self):
+
+
+        self.current_account_label.setText(f'Current Account: {self.current_account}')
+
+        account_details_layout = self.account_settings_widget.layout()
+
+        if self.account_settings_form_widget is not None:
+            account_details_layout.removeWidget(self.account_settings_form_widget)
+
+        self.account_settings_form_widget = QWidget(parent=self.account_settings_widget)
+        account_details_layout.addWidget(self.account_settings_form_widget)
+
+
+
+        account_details_formlayout = QFormLayout(self.account_settings_form_widget)
+
+        # dictionaries to map QLineEdit to parameter name it will change and vice versa
+        self.name_to_line_edit = {}
+        self.line_edit_to_name = {}
 
         # display account details
-        for key, value in self.accountSettings.items():
-            if not key == 'account':
-                textInput = QLineEdit(f'{value}')
-                textInput.setFixedWidth(100)
+        for key, value in self.account_settings.items():
+            if key not in ['default_account_name', 'account_name']:
+                text_input = QLineEdit(f'{value}')
+                text_input.setFixedWidth(200)
 
-                accountDetailsFormlayout.addRow(key, textInput)
+                self.name_to_line_edit[key] = text_input
+                self.line_edit_to_name[text_input] = key
+                account_details_formlayout.addRow(f'{key}:', text_input)
 
-        # for i in range(len(labels)):
-        #     accountDetailsLayout.addWidget(labels[i], i + 1, 1)
-        #     accountDetailsLayout.addWidget(values[i], i + 1, 2)
+        account_tab_layout = self.layout()
+        account_tab_layout.addWidget(self.account_settings_widget, 0, 0)
 
-        accountTabLayout = accountTab.layout()
-        accountTabLayout.addWidget(accountSettingsWidget, 0, 0)
+    def __load_default_account(self):
+        '''
+        Read default.json to find `default_account_name`, then set as the current account and load
+        '''
 
-    def __loadAccount(self):
+        account_file_path = os.path.join(self.account_dir, f'default.json')
 
-        accountFilePath = os.path.join(self.acccountDir, f'{self.currentAccount}.json')
+        with open(account_file_path, 'r') as f:
+            default_settings = json.load(f)
 
-        with open(accountFilePath, 'r') as f:
-            self.accountSettings = json.load(f)
-            print(self.accountSettings)
+        default_account_name = default_settings['default_account_name']
+        self.__load(default_account_name)
+
+    ########################################################################################################################
+    #####################################  Signal functions for Account  ###################################################
+    ########################################################################################################################
+
+    def __load(self, account_name):
+        self.current_account = account_name
+
+        print(f'Loading account {self.current_account}')
+        account_file_path = os.path.join(self.account_dir, f'{self.current_account}.json')
+
+        with open(account_file_path, 'r') as f:
+            self.account_settings = json.load(f)
+            print(self.account_settings)
+
+        self.__update_account_settings_widget()
+
+        # update settings display with loaded parameters
+
+        # for key, value in self.name_to_line_edit:
+        #     if self.name_to_line_edit[key] is not None:
+        #         self.name_to_line_edit[key].setText(self.account_settings[key])
+
+    def __save(self):
+        self.__save_as(self.current_account)
+
+    def __save_as(self, new_account_name):
+
+        # load settings from form into json
+        if new_account_name == 'default':
+            print('Cannot overwrite default account')
+            return
+
+        json_data = {}
+
+        for key, value in self.name_to_line_edit.items():
+            parameter_value = value.text()
+            json_data[key] = parameter_value
+
+        json_data['account_name'] = new_account_name
+
+        account_file_path = os.path.join(self.account_dir, f'{new_account_name}.json')
+
+        # dump json to file
+        print(f'Saving to {new_account_name}')
+        with open(account_file_path, 'w') as f:
+            json.dump(json_data, f)
+
+    def __set_default_account(self):
+
+        print(f'Setting default account to {self.current_account}')
+
+        # load default.json
+
+        account_file_path = os.path.join(self.account_dir, 'default.json')
+
+        # read json file
+        with open(account_file_path, 'r') as f:
+            json_data = json.load(f)
+
+        # update default account name
+        json_data['default_account_name'] = self.current_account
+
+        # write json file
+        with open(account_file_path, 'w') as f:
+            json.dump(json_data, f)

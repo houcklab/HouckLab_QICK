@@ -1,8 +1,8 @@
 # Description, to be written
 
 # Global TODO's section
-#TODO: write proper error handling with boxes popping up
-#TODO: fix a single naming convention for funtion names
+# TODO: write proper error handling with boxes popping up
+# TODO: fix a single naming convention for funtion names
 
 
 # General imports
@@ -52,7 +52,6 @@ from matplotlib.backends.backend_qtagg import (
     FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar)
 from matplotlib.figure import Figure
 
-
 # Custom widgets
 from PlotWidget import PlotWidget
 
@@ -61,8 +60,9 @@ from MasterProject.Client_modules.LAKE_GUI.ExperimentThread import ExperimentThr
 from qick import RAveragerProgram, AveragerProgram, NDAveragerProgram
 
 path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 from MasterProject.Client_modules.Init.initialize import BaseConfig
+
 
 #############
 #### this function should be moved elsewhere
@@ -78,6 +78,8 @@ def dictOverride(dict1, dict2):
         except:
             new_dict[keys[idx]] = dict2[keys[idx]]
     return new_dict
+
+
 #############
 
 class Window(QMainWindow):
@@ -85,6 +87,7 @@ class Window(QMainWindow):
     This class represents the main application window of the GUI.
     It includes all of the UI, as well as functions for running experiments and dealing with the data.
     """
+
     def __init__(self, parent=None):
         super().__init__(parent)
         # Connect to the RFSOC
@@ -95,18 +98,16 @@ class Window(QMainWindow):
 
         self.soc, self.soccfg = makeProxy()
 
-        self.data = [] # The array that stores the currently-plotted data. The exact format of this may get changed.
-        self.dataLock = QMutex() # This is an object used to make data access thread-safe. Not currently necessary
-        self.setupUi() # Set up all of the UI
+        self.data = []  # The array that stores the currently-plotted data. The exact format of this may get changed.
+        self.dataLock = QMutex()  # This is an object used to make data access thread-safe. Not currently necessary
+        self.setupUi()  # Set up all of the UI
 
+        self.experiment_type = ''  # The name of the experiment type, e.g. RAverager
+        self.experiment_instance = None  # The actual experiment object
+        self.experiment_name = ''  # The name of the experiment class, e.g. SpecSlice_GUI
 
-        self.experiment_type = '' # The name of the experiment type, e.g. RAverager
-        self.experiment_instance = None # The actual experiment object
-        self.experiment_name = '' # The name of the experiment class, e.g. SpecSlice_GUI
-
-        #TODO at some point this needs to be set by the user
+        # TODO at some point this needs to be set by the user
         self.outerFolder = "Z:\\HouckLab_QICK\\Gui\\Data\\"
-
 
     def setupUi(self):
         """ This function draws all of the UI elements and attaches signals to them. """
@@ -215,16 +216,15 @@ class Window(QMainWindow):
         accountTab = AccountTabWidget(parent=self.centralTabWidget)
         self.centralTabWidget.addTab(accountTab, 'Account')
 
+    ########################################################################################################################
+    #######################################  Signal functions for UI  ######################################################
+    ########################################################################################################################
 
-########################################################################################################################
-#######################################  Signal functions for UI  ######################################################
-########################################################################################################################
-
-    def runExperiment(self): # runExperimentButton
-        self.thread = QThread() # Thread object
+    def runExperiment(self):  # runExperimentButton
+        self.thread = QThread()  # Thread object
         ### update the config
         UpdateConfig = self.configEdit.config["Experiment Config"]
-        BaseConfig  = self.configEdit.config["Base Config"]
+        BaseConfig = self.configEdit.config["Base Config"]
         self.config = BaseConfig | UpdateConfig
 
         ### create names and time stamps for the experiment
@@ -242,16 +242,16 @@ class Window(QMainWindow):
 
         # Define filenames
         self.data_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                     experiment_name + "_" + date_time_string + '.h5')
+                                          experiment_name + "_" + date_time_string + '.h5')
         self.config_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                       experiment_name + "_" + date_time_string + '.json')
+                                            experiment_name + "_" + date_time_string + '.json')
         self.image_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                      experiment_name + "_" + date_time_string + '.png')
+                                           experiment_name + "_" + date_time_string + '.png')
 
         ### create the experiment
         self.experiment = self.experiment_instance(soccfg, self.config)
         self.worker = ExperimentThread(self.config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
-        self.worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread from the main loop
+        self.worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread from the main loop
         # Step 5: Connect signals and slots
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self.thread.quit)
@@ -260,14 +260,15 @@ class Window(QMainWindow):
         self.worker.updateData.connect(self.updateData)
         self.worker.updateProgress.connect(self.updateProgress)
         self.worker.RFSOC_error.connect(self.RFSOC_error)
-        self.thread.start() # Start the thread
+        self.thread.start()  # Start the thread
 
         # Change progress bar
         self.updateProgress(0)
 
         # Final resets
         self.runExperimentButton.setEnabled(False)
-        self.thread.finished.connect( # Connect finished signal to a slot with an in-line function to re-enable the button
+        self.thread.finished.connect(
+            # Connect finished signal to a slot with an in-line function to re-enable the button
             lambda: self.runExperimentButton.setEnabled(True)
         )
 
@@ -276,7 +277,7 @@ class Window(QMainWindow):
         self.worker.stop()
         print("stopped?")
 
-    def loadExperimentData(self): # loadExperimentDataButton
+    def loadExperimentData(self):  # loadExperimentDataButton
         """
         This function loads the experiment data from an h5 file when the button is pressed.
         Side effects: updates the main window's data variable to what is read from the file, re-plots.
@@ -289,23 +290,23 @@ class Window(QMainWindow):
             return  # User pressed 'cancel'
 
         with h5py.File(fname, "r") as f:
-            #print(list(f['x_pts']))
-            #print(f['avgi'][0][0])
+            # print(list(f['x_pts']))
+            # print(f['avgi'][0][0])
             self.dataLock.lock()
-            self.data = f # Update the data variable, might need mutex for safety
+            self.data = f  # Update the data variable, might need mutex for safety
             self.dataLock.unlock()
             self._updateCanvas(list(f['x_pts']), f['avgi'][0][0], f['avgq'][0][0])
 
-    def load_experiment_file_open(self): # loadExperimentButton
+    def load_experiment_file_open(self):  # loadExperimentButton
         """ Runs when the load experiment file button is pressed. """
-        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "python files (*.py)",)
+        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "python files (*.py)", )
         if filename:
             self.loadExperiment(filename)
-        self.runExperimentButton.setEnabled(True) # The run button is now enabled
+        self.runExperimentButton.setEnabled(True)  # The run button is now enabled
 
-    def load_config_file_open(self): # loadConfigButton
+    def load_config_file_open(self):  # loadConfigButton
         """ Runs when the load config file button is pressed. """
-        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "json files (*.json)",)
+        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "json files (*.json)", )
         if filename:
             ### load the dictionary
             file = open(filename)
@@ -319,17 +320,17 @@ class Window(QMainWindow):
             self.configEdit.config["Base Config"] = newConfigBase
             self.configEdit.set_config()
 
-########################################################################################################################
-#########################################  Data/threading functions  ###################################################
-########################################################################################################################
+    ########################################################################################################################
+    #########################################  Data/threading functions  ###################################################
+    ########################################################################################################################
 
     def updateData(self, data):
         """ This function updates the data object of the main window. We have to be careful when doing this with multiple
         threads, because we don't want to corrupt the data. Currently, this is only run by the main window, and thus
         should be thread-safe even without the mutex. """
-        self.dataLock.lock() # Make sure no other thread is messing with the data!
+        self.dataLock.lock()  # Make sure no other thread is messing with the data!
         self.data = data
-        self.dataLock.unlock() # Release the lock on the mutex
+        self.dataLock.unlock()  # Release the lock on the mutex
 
         ### check what set number is being run
         set_num = data['data']['set_num']
@@ -338,8 +339,8 @@ class Window(QMainWindow):
             self.data_cur = data
         elif set_num > 0:
             ### average together the data weighting the sets
-            avgi = (self.data_cur['data']['avgi'][0][0]*(set_num) + data['data']['avgi'][0][0])/ (set_num+1)
-            avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num+1)
+            avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
+            avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
 
             self.data_cur['data']['avgi'][0][0] = avgi
             self.data_cur['data']['avgq'][0][0] = avgq
@@ -360,7 +361,6 @@ class Window(QMainWindow):
 
         self._updateCanvas(data['data']['x_pts'], data['data']['avgi'][0][0], data['data']['avgq'][0][0], plot_labels)
         self.save_data(data, self.data_filename, self.config_filename, self.image_filename)
-
 
     def updateProgress(self, setsComplete):
         """
@@ -385,17 +385,15 @@ class Window(QMainWindow):
         msgBox.setWindowTitle("RFSOC error!.")
         msgBox.exec()
 
-########################################################################################################################
-###########################################  Helper functions  #########################################################
-########################################################################################################################
-
+    ########################################################################################################################
+    ###########################################  Helper functions  #########################################################
+    ########################################################################################################################
 
     def _updateCanvas(self, x, i, q, labels):
         """ Re-draw the canvas using the provided data. Likely will be changed in the future, including signature. """
         self.plotWidget.plot1(x, i, labels)
         self.plotWidget.plot2(x, q, labels)
         self.plotWidget.drawCanvas()
-
 
     def import_file(self, full_path_to_module):
         """
@@ -415,7 +413,6 @@ class Window(QMainWindow):
             raise ImportError(e)
         return module_obj, module_name
 
-
     def loadExperiment(self, filename):
         """
         This function loads the experiment located at filename. Still figuring out what exactly it will do,
@@ -429,8 +426,8 @@ class Window(QMainWindow):
         print('importing: ' + str(path))
 
         experiment, self.experiment_name = self.import_file(str(path))
-        #print(experiment)
-        #print(experiment_name)
+        # print(experiment)
+        # print(experiment_name)
 
         ### create an instance of the class from the file
         for name, obj, in inspect.getmembers(experiment):
@@ -479,33 +476,34 @@ class Window(QMainWindow):
         """
 
         # Save data
-        data_file = h5py.File(data_filename, 'w') # Create file if does not exist, truncate mode if exists
-        data_file.flush() # Notsure what the point of flushing buffers is, inherited from old code
+        data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
+        data_file.flush()  # Notsure what the point of flushing buffers is, inherited from old code
         for key, datum in data['data'].items():
             datum = np.array(datum)
             # I don't know what is the error that this is supposed to catch. I am leaving it here for now, and adding a print
             try:
                 data_file.create_dataset(key, shape=datum.shape,
-                                    maxshape=tuple([None] * len(datum.shape)),
-                                    dtype=str(datum.astype(np.float64).dtype))
+                                         maxshape=tuple([None] * len(datum.shape)),
+                                         dtype=str(datum.astype(np.float64).dtype))
             except RuntimeError as e:
                 print(e)
                 del data_file[key]
                 data_file.create_dataset(key, shape=datum.shape,
-                                    maxshape=tuple([None] * len(datum.shape)),
-                                    dtype=str(datum.astype(np.float64).dtype))
+                                         maxshape=tuple([None] * len(datum.shape)),
+                                         dtype=str(datum.astype(np.float64).dtype))
             data_file[key][...] = datum
         data_file.close()
 
         # Save config
         with open(config_filename, 'w') as config_file:
-            json.dump(data['config'], config_file, cls=Window.NpEncoder), #TODO coul dump config directly from self
+            json.dump(data['config'], config_file, cls=Window.NpEncoder),  # TODO coul dump config directly from self
 
-        #save image
+        # save image
         self.plotWidget.save_fig(image_filename)
 
     class NpEncoder(json.JSONEncoder):
         """ Ensure json dump can handle np arrays """
+
         # I took this code from an old Experiment.py, I have no idea whether it's necessary
         def default(self, obj):
             if isinstance(obj, np.integer):
@@ -515,7 +513,6 @@ class Window(QMainWindow):
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
             return super(Window.NpEncoder, self).default(obj)
-
 
 
 app = QApplication(sys.argv)
