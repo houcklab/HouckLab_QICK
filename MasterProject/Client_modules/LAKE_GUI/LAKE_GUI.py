@@ -19,6 +19,8 @@ import numpy as np
 from pathlib import Path
 
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+
+# TODO handle different IP addresses
 soc, soccfg = makeProxy()
 
 # Qt imports
@@ -92,7 +94,7 @@ class Window(QMainWindow):
         self.experiment_name = '' # The name of the experiment class, e.g. SpecSlice_GUI
 
         #TODO at some point this needs to be set by the user
-        self.outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_07_20_BF2_cooldown_3\\TF4\\"
+        self.outerFolder = "Z:\\HouckLab_QICK\\Gui\\Data\\"
 
 
 
@@ -220,7 +222,7 @@ class Window(QMainWindow):
 
         ### create the experiment
         self.experiment = self.experiment_instance(soccfg, self.config)
-        self.worker = ExperimentThread(self.config, soccfg = self.soccfg, exp = self.experiment, soc = self.soc)
+        self.worker = ExperimentThread(self.config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
         self.worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread from the main loop
         # Step 5: Connect signals and slots
         self.thread.started.connect(self.worker.run)
