@@ -69,8 +69,8 @@ class AccountTabWidget(QWidget):
         rfsoc_connection_layout = QGridLayout(rfsoc_connection_widget)
 
         # display current status
-        status_label = QLabel(f'Current status: not connected', rfsoc_connection_widget)
-        rfsoc_connection_layout.addWidget(status_label, 0, 0, 1, 2)
+        self.rfsoc_status_label = QLabel(f'Current status: <span style="color: red;">not connected</span>', rfsoc_connection_widget)
+        rfsoc_connection_layout.addWidget(self.rfsoc_status_label, 0, 0, 1, 2)
 
         # connect
         connect_to_rfsoc_button = QPushButton('Connect')
@@ -224,10 +224,6 @@ class AccountTabWidget(QWidget):
 
         self.account_loaded.emit(account_name)
 
-        # for key, value in self.name_to_line_edit:
-        #     if self.name_to_line_edit[key] is not None:
-        #         self.name_to_line_edit[key].setText(self.account_settings[key])
-
     def __save(self):
         self.__save_as(self.current_account)
 
@@ -258,12 +254,6 @@ class AccountTabWidget(QWidget):
             self.account_created.emit(new_account_name)
             self.__load(new_account_name)
 
-        # # switch accounts and add to accounts list if account to save is a new account
-        # if not self.current_account == new_account_name:
-        #     self.current_account = new_account_name
-        #     self.__load(new_account_name)
-        #     self.__set_account_list_dropdown(self.account_drop_down)
-
     def __set_default_account(self):
 
         print(f'Setting default account to {self.current_account}')
@@ -285,6 +275,7 @@ class AccountTabWidget(QWidget):
 
     def __connect_to_rfsoc(self):
         ip_address = self.name_to_line_edit['ip_address'].text()
+        self.rfsoc_status_label.setText(f'Current status: <span style="color: green;">connected</span>')
         self.rfsoc_connected.emit(ip_address)
 
     def __disconnect_from_rfsoc(self):
