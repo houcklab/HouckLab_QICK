@@ -3,12 +3,23 @@ import os
 import re
 
 from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QComboBox, QLineEdit, QVBoxLayout, QLabel, QFormLayout
-
-
+from PyQt5.QtCore import pyqtSignal, pyqtSlot
 class AccountTabWidget(QWidget):
+
+    ### pyQt signals
+
+    # argument is name of account
+    account_created = pyqtSignal(str)
+
+    # argument is name of account
+    account_loaded = pyqtSignal(str)
 
     def __init__(self, parent):
         super().__init__(parent=parent)
+
+        # connect signals to slots
+        self.account_created.connect(self.__set_account_list_dropdown)
+        self.account_loaded.connect(self.__update_on_load_account)
 
         self.account_settings_widget = None
         self.account_settings_form_widget = None
@@ -20,9 +31,10 @@ class AccountTabWidget(QWidget):
 
         self.__intiUI()
 
+
+
         self.__create_account_settings_widget()
         self.__load_default_account()
-
 
     def __intiUI(self):
 
@@ -43,23 +55,11 @@ class AccountTabWidget(QWidget):
         load_account_button = QPushButton('Load account')
         save_load_account_layout.addWidget(load_account_button, 0, 0)
 
-        account_drop_down = QComboBox(save_load_account_widget)
-        save_load_account_layout.addWidget(account_drop_down, 0, 1)
-        load_account_button.clicked.connect(lambda: self.__load(account_drop_down.currentText()))
+        self.account_drop_down = QComboBox(save_load_account_widget)
+        save_load_account_layout.addWidget(self.account_drop_down, 0, 1)
+        load_account_button.clicked.connect(lambda: self.__load(self.account_drop_down.currentText()))
 
-        # find all possible accounts
-        account_file_regex = re.compile('(?P<accountName>.*).json')
-
-        account_names = []
-
-        for root, dirs, files in os.walk(self.account_dir):
-            print(files)
-            for file in files:
-                match = account_file_regex.search(file)
-                account_names.append(match.groupdict()['accountName'])
-
-        for accountName in account_names:
-            account_drop_down.addItem(accountName)
+        self.__set_account_list_dropdown()
 
         # save account button
         save_account_button = QPushButton('Save account')
@@ -69,21 +69,19 @@ class AccountTabWidget(QWidget):
         save_as_account_button = QPushButton('Save as new account')
         save_load_account_layout.addWidget(save_as_account_button, 2, 0)
 
-        new_account_text_input = QLineEdit(f'{self.current_account} copy', save_load_account_widget)
-        save_load_account_layout.addWidget(new_account_text_input, 2, 1)
+        self.new_account_text_input = QLineEdit(f'{self.current_account} copy', save_load_account_widget)
+        save_load_account_layout.addWidget(self.new_account_text_input, 2, 1)
 
-        save_as_account_button.clicked.connect(lambda: self.__save_as(new_account_text_input.text()))
+        save_as_account_button.clicked.connect(lambda: self.__save_as(self.new_account_text_input.text()))
 
         # set default button
         set_default_button = QPushButton('Set current account as default')
         set_default_button.clicked.connect(self.__set_default_account)
         save_load_account_layout.addWidget(set_default_button, 3, 0)
 
-
     def __create_account_settings_widget(self):
         # widget to display account details
         self.account_settings_widget = QWidget(parent=self)
-
 
         print(self.current_account)
         self.current_account_label = QLabel(f'Current Account: {self.current_account}', self.account_settings_widget)
@@ -92,9 +90,7 @@ class AccountTabWidget(QWidget):
 
         account_details_layout.addWidget(self.current_account_label)
 
-
     def __update_account_settings_widget(self):
-
 
         self.current_account_label.setText(f'Current Account: {self.current_account}')
 
@@ -105,8 +101,6 @@ class AccountTabWidget(QWidget):
 
         self.account_settings_form_widget = QWidget(parent=self.account_settings_widget)
         account_details_layout.addWidget(self.account_settings_form_widget)
-
-
 
         account_details_formlayout = QFormLayout(self.account_settings_form_widget)
 
@@ -127,6 +121,8 @@ class AccountTabWidget(QWidget):
         account_tab_layout = self.layout()
         account_tab_layout.addWidget(self.account_settings_widget, 0, 0)
 
+
+
     def __load_default_account(self):
         '''
         Read default.json to find `default_account_name`, then set as the current account and load
@@ -144,6 +140,37 @@ class AccountTabWidget(QWidget):
     #####################################  Signal functions for Account  ###################################################
     ########################################################################################################################
 
+    @pyqtSlot(str)
+    def __update_on_load_account(self):
+        # update text box for save as button
+        self.new_account_text_input.setText(f'{self.current_account} copy')
+        # update settings display with loaded parameters
+        self.__update_account_settings_widget()
+
+    @pyqtSlot(str)
+    def __set_account_list_dropdown(self):
+        '''
+        Search through the config/accounts directory to find all .json files representing accounts and list them in
+        a drop down menu.
+        :param account_drop_down: drop down menu object listing all accounts
+        '''
+
+        # clear current items
+        self.account_drop_down.clear()
+
+        # find all possible accounts
+        account_file_regex = re.compile('(?P<accountName>.*).json')
+
+        account_names = []
+        for root, dirs, files in os.walk(self.account_dir):
+            print(files)
+            for file in files:
+                match = account_file_regex.search(file)
+                account_names.append(match.groupdict()['accountName'])
+
+        for accountName in account_names:
+            self.account_drop_down.addItem(accountName)
+
     def __load(self, account_name):
         self.current_account = account_name
 
@@ -154,9 +181,7 @@ class AccountTabWidget(QWidget):
             self.account_settings = json.load(f)
             print(self.account_settings)
 
-        self.__update_account_settings_widget()
-
-        # update settings display with loaded parameters
+        self.account_loaded.emit(account_name)
 
         # for key, value in self.name_to_line_edit:
         #     if self.name_to_line_edit[key] is not None:
@@ -186,6 +211,17 @@ class AccountTabWidget(QWidget):
         print(f'Saving to {new_account_name}')
         with open(account_file_path, 'w') as f:
             json.dump(json_data, f)
+
+        # emit account created signal and load new account if new account is not the same as current one
+        if not self.current_account == new_account_name:
+            self.account_created.emit(new_account_name)
+            self.__load(new_account_name)
+
+        # # switch accounts and add to accounts list if account to save is a new account
+        # if not self.current_account == new_account_name:
+        #     self.current_account = new_account_name
+        #     self.__load(new_account_name)
+        #     self.__set_account_list_dropdown(self.account_drop_down)
 
     def __set_default_account(self):
 
