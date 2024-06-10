@@ -4,6 +4,9 @@ import re
 
 from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QComboBox, QLineEdit, QVBoxLayout, QLabel, QFormLayout
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
+
+from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+
 class AccountTabWidget(QWidget):
 
     ### pyQt signals
@@ -13,6 +16,9 @@ class AccountTabWidget(QWidget):
 
     # argument is name of account
     account_loaded = pyqtSignal(str)
+
+    # argument is ip_address
+    rfsoc_connected = pyqtSignal(str)
 
     def __init__(self, parent):
         super().__init__(parent=parent)
@@ -24,6 +30,8 @@ class AccountTabWidget(QWidget):
         self.account_settings_widget = None
         self.account_settings_form_widget = None
         self.current_account = 'default'
+
+        self.rfsoc_is_connected = False
 
         self.root_dir = os.getcwd()
         self.config_dir = os.path.join(self.root_dir, 'config')
@@ -43,7 +51,40 @@ class AccountTabWidget(QWidget):
         # self.__create_account_settings_widget()
 
         spacer_widget = QWidget(self)
-        account_tab_layout.addWidget(spacer_widget, 1, 1)
+        account_tab_layout.addWidget(spacer_widget, 2, 0)
+
+        # panel for connecting to rfsoc
+        self.__create_rfsoc_widget()
+
+        # panel for saving and loading accounts
+        self.__create_save_load_widget()
+
+    def __create_rfsoc_widget(self):
+        # buttons to connect to the rfsoc
+
+        account_tab_layout = self.layout()
+        rfsoc_connection_widget = QWidget(self)
+        account_tab_layout.addWidget(rfsoc_connection_widget, 1, 0)
+
+        rfsoc_connection_layout = QGridLayout(rfsoc_connection_widget)
+
+        # display current status
+        status_label = QLabel(f'Current status: not connected', rfsoc_connection_widget)
+        rfsoc_connection_layout.addWidget(status_label, 0, 0, 1, 2)
+
+        # connect
+        connect_to_rfsoc_button = QPushButton('Connect')
+        rfsoc_connection_layout.addWidget(connect_to_rfsoc_button, 1, 0)
+        connect_to_rfsoc_button.clicked.connect(self.__connect_to_rfsoc)
+
+        disconnect_from_rfsoc_button = QPushButton('Disconnect')
+        rfsoc_connection_layout.addWidget(disconnect_from_rfsoc_button, 1, 1)
+        disconnect_from_rfsoc_button.clicked.connect(self.__disconnect_from_rfsoc)
+
+
+    def __create_save_load_widget(self):
+
+        account_tab_layout = self.layout()
 
         # saving and loading accounts
         save_load_account_widget = QWidget(self)
@@ -241,3 +282,10 @@ class AccountTabWidget(QWidget):
         # write json file
         with open(account_file_path, 'w') as f:
             json.dump(json_data, f)
+
+    def __connect_to_rfsoc(self):
+        ip_address = self.name_to_line_edit['ip_address'].text()
+        self.rfsoc_connected.emit(ip_address)
+
+    def __disconnect_from_rfsoc(self):
+        print('Not yet implemented')

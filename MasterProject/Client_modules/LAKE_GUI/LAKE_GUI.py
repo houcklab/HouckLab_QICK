@@ -24,10 +24,10 @@ from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWid
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 
 # TODO handle different IP addresses
-soc, soccfg = makeProxy()
+# soc, soccfg = makeProxy()
 
 # Qt imports
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
@@ -96,7 +96,9 @@ class Window(QMainWindow):
         self.configDir = os.path.join(self.lakeRootDir, 'config')
         self.acccountDir = os.path.join(self.configDir, 'accounts')
 
-        self.soc, self.soccfg = makeProxy()
+        self.soc = None
+        self.soccfg = None
+        # self.soc, self.soccfg = makeProxy()
 
         self.data = []  # The array that stores the currently-plotted data. The exact format of this may get changed.
         self.dataLock = QMutex()  # This is an object used to make data access thread-safe. Not currently necessary
@@ -213,8 +215,17 @@ class Window(QMainWindow):
 
     def __createAccountTab(self):
 
-        accountTab = AccountTabWidget(parent=self.centralTabWidget)
-        self.centralTabWidget.addTab(accountTab, 'Account')
+        self.account_tab = AccountTabWidget(parent=self.centralTabWidget)
+        self.centralTabWidget.addTab(self.account_tab, 'Account')
+
+        # connect rfsoc connect signal to connect_to_rfsoc slot
+        self.account_tab.rfsoc_connected.connect(self.connect_to_rfsoc)
+
+    @pyqtSlot(str)
+    def connect_to_rfsoc(self, ip_address):
+        print(f'Connecting to {ip_address}')
+        self.soc, self.soccfg = makeProxy(ip_address)
+
 
     ########################################################################################################################
     #######################################  Signal functions for UI  ######################################################
@@ -249,7 +260,7 @@ class Window(QMainWindow):
                                            experiment_name + "_" + date_time_string + '.png')
 
         ### create the experiment
-        self.experiment = self.experiment_instance(soccfg, self.config)
+        self.experiment = self.experiment_instance(self.soccfg, self.config)
         self.worker = ExperimentThread(self.config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
         self.worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread from the main loop
         # Step 5: Connect signals and slots
