@@ -230,6 +230,9 @@ class Window(QMainWindow):
         # connect rfsoc_connection_updated signal to logging_tab slot
         self.rfsoc_connection_updated.connect(self.account_tab.rfsoc_connection_updated_handler)
 
+        # try to connect to rfsoc using account ip address
+        self.account_tab.connect_to_rfsoc()
+
     def __create_logging_tab(self):
         self.logging_tab = LogConsoleWidget(parent=self.centralTabWidget)
         self.centralTabWidget.addTab(self.logging_tab, 'Log')

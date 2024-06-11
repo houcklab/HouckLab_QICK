@@ -39,8 +39,6 @@ class AccountTabWidget(QWidget):
 
         self.__intiUI()
 
-
-
         self.__create_account_settings_widget()
         self.__load_default_account()
 
@@ -75,7 +73,7 @@ class AccountTabWidget(QWidget):
         # connect
         connect_to_rfsoc_button = QPushButton('Connect')
         rfsoc_connection_layout.addWidget(connect_to_rfsoc_button, 1, 0)
-        connect_to_rfsoc_button.clicked.connect(self.__connect_to_rfsoc)
+        connect_to_rfsoc_button.clicked.connect(self.connect_to_rfsoc)
 
         disconnect_from_rfsoc_button = QPushButton('Disconnect')
         rfsoc_connection_layout.addWidget(disconnect_from_rfsoc_button, 1, 1)
@@ -270,7 +268,7 @@ class AccountTabWidget(QWidget):
         with open(account_file_path, 'w') as f:
             json.dump(json_data, f)
 
-    def __connect_to_rfsoc(self):
+    def connect_to_rfsoc(self):
         ip_address = self.name_to_line_edit['ip_address'].text()
         self.rfsoc_status_label.setText(f'Current status: <span style="color: orange;">connecting to {ip_address} failed</span>')
         qInfo(f'Trying to connect to {ip_address}')
