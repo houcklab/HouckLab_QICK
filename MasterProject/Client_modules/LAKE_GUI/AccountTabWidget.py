@@ -20,6 +20,8 @@ class AccountTabWidget(QWidget):
     # argument is ip_address
     rfsoc_connected = pyqtSignal(str)
 
+    rfsoc_disconnected = pyqtSignal()
+
     def __init__(self, parent):
         super().__init__(parent=parent)
 
@@ -269,13 +271,24 @@ class AccountTabWidget(QWidget):
             json.dump(json_data, f)
 
     def connect_to_rfsoc(self):
-        ip_address = self.name_to_line_edit['ip_address'].text()
-        self.rfsoc_status_label.setText(f'Current status: <span style="color: orange;">connecting to {ip_address} failed</span>')
-        qInfo(f'Trying to connect to {ip_address}')
-        self.rfsoc_connected.emit(ip_address)
+        if self.rfsoc_is_connected:
+            qWarning('RFSoC is already connected')
+        else:
+            ip_address = self.name_to_line_edit['ip_address'].text()
+            self.rfsoc_status_label.setText(f'Current status: <span style="color: orange;">connecting to {ip_address} failed</span>')
+            qInfo(f'Trying to connect to {ip_address}')
+            self.rfsoc_connected.emit(ip_address)
 
     def __disconnect_from_rfsoc(self):
-        qWarning('Not yet implemented')
+        if self.rfsoc_is_connected:
+            ip_address = self.name_to_line_edit['ip_address'].text()
+            self.rfsoc_status_label.setText(f'Current status: <span style="color: red;"> not connected</span>')
+            qInfo(f'Disconnecting from {ip_address}')
+            self.rfsoc_is_connected = False
+            self.rfsoc_disconnected.emit()
+        else:
+            qWarning('RFSoC is already disconnected')
+
 
     @pyqtSlot(str, str)
     def rfsoc_connection_updated_handler(self, ip_address, status):
@@ -286,6 +299,7 @@ class AccountTabWidget(QWidget):
         if status == 'success':
             self.rfsoc_status_label.setText(f'Current status: <span style="color: green;">connected at {ip_address}</span>')
             qInfo(f'Connected to {ip_address}')
+            self.rfsoc_is_connected = True
         elif status == 'failure':
             self.rfsoc_status_label.setText(f'Current status: <span style="color: red;">connection to {ip_address} failed</span>')
-
+            self.rfsoc_is_connected = False

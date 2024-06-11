@@ -26,7 +26,8 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 # soc, soccfg = makeProxy()
 
 # Qt imports
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo, qCritical, qDebug
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo, qCritical, qDebug, \
+    qWarning
 from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
@@ -224,11 +225,14 @@ class Window(QMainWindow):
         self.account_tab = AccountTabWidget(parent=self.centralTabWidget)
         self.centralTabWidget.addTab(self.account_tab, 'Account')
 
-        # connect rfsoc connect signal to connect_to_rfsoc slot
+        # connect rfsoc_connected signal to connect_to_rfsoc slot
         self.account_tab.rfsoc_connected.connect(self.connect_to_rfsoc)
 
-        # connect rfsoc_connection_updated signal to logging_tab slot
+        # connect rfsoc_connection_updated signal to account_tab slot
         self.rfsoc_connection_updated.connect(self.account_tab.rfsoc_connection_updated_handler)
+
+        # connect rfsoc_disconnected signal to disconnect_from_rfsoc slot
+        self.account_tab.rfsoc_disconnected.connect(self.disconnect_from_rfsoc)
 
         # try to connect to rfsoc using account ip address
         self.account_tab.connect_to_rfsoc()
@@ -252,64 +256,69 @@ class Window(QMainWindow):
         else:
             # no error
             self.rfsoc_connection_updated.emit(ip_address, 'success')
-
-
+    @pyqtSlot()
+    def disconnect_from_rfsoc(self):
+        self.soc = None
+        self.soccfg = None
 
     ########################################################################################################################
     #######################################  Signal functions for UI  ######################################################
     ########################################################################################################################
 
     def runExperiment(self):  # runExperimentButton
-        self.thread = QThread()  # Thread object
-        ### update the config
-        UpdateConfig = self.configEdit.config["Experiment Config"]
-        BaseConfig = self.configEdit.config["Base Config"]
-        self.config = BaseConfig | UpdateConfig
+        if self.rfsoc_is_connected():
+            self.thread = QThread()  # Thread object
+            ### update the config
+            UpdateConfig = self.configEdit.config["Experiment Config"]
+            BaseConfig = self.configEdit.config["Base Config"]
+            self.config = BaseConfig | UpdateConfig
 
-        ### create names and time stamps for the experiment
-        # Dates/times for file names
-        experiment_name = self.experiment_name
-        date_time_now = datetime.datetime.now()
-        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-        date_string = date_time_now.strftime("%Y_%m_%d")
+            ### create names and time stamps for the experiment
+            # Dates/times for file names
+            experiment_name = self.experiment_name
+            date_time_now = datetime.datetime.now()
+            date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+            date_string = date_time_now.strftime("%Y_%m_%d")
 
-        # Create directories if they don't already exist
-        if not Path(self.outerFolder + experiment_name).is_dir():
-            os.mkdir(self.outerFolder + experiment_name)
-        if not Path(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string)).is_dir():
-            os.mkdir(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string))
+            # Create directories if they don't already exist
+            if not Path(self.outerFolder + experiment_name).is_dir():
+                os.mkdir(self.outerFolder + experiment_name)
+            if not Path(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string)).is_dir():
+                os.mkdir(os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string))
 
-        # Define filenames
-        self.data_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                          experiment_name + "_" + date_time_string + '.h5')
-        self.config_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                            experiment_name + "_" + date_time_string + '.json')
-        self.image_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
-                                           experiment_name + "_" + date_time_string + '.png')
+            # Define filenames
+            self.data_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
+                                              experiment_name + "_" + date_time_string + '.h5')
+            self.config_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
+                                                experiment_name + "_" + date_time_string + '.json')
+            self.image_filename = os.path.join(self.outerFolder + experiment_name, experiment_name + "_" + date_string,
+                                               experiment_name + "_" + date_time_string + '.png')
 
-        ### create the experiment
-        self.experiment = self.experiment_instance(self.soccfg, self.config)
-        self.worker = ExperimentThread(self.config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
-        self.worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread from the main loop
-        # Step 5: Connect signals and slots
-        self.thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.worker.updateData.connect(self.updateData)
-        self.worker.updateProgress.connect(self.updateProgress)
-        self.worker.RFSOC_error.connect(self.RFSOC_error)
-        self.thread.start()  # Start the thread
+            ### create the experiment
+            self.experiment = self.experiment_instance(self.soccfg, self.config)
+            self.worker = ExperimentThread(self.config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
+            self.worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread from the main loop
+            # Step 5: Connect signals and slots
+            self.thread.started.connect(self.worker.run)
+            self.worker.finished.connect(self.thread.quit)
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
+            self.worker.updateData.connect(self.updateData)
+            self.worker.updateProgress.connect(self.updateProgress)
+            self.worker.RFSOC_error.connect(self.RFSOC_error)
+            self.thread.start()  # Start the thread
 
-        # Change progress bar
-        self.updateProgress(0)
+            # Change progress bar
+            self.updateProgress(0)
 
-        # Final resets
-        self.runExperimentButton.setEnabled(False)
-        self.thread.finished.connect(
-            # Connect finished signal to a slot with an in-line function to re-enable the button
-            lambda: self.runExperimentButton.setEnabled(True)
-        )
+            # Final resets
+            self.runExperimentButton.setEnabled(False)
+            self.thread.finished.connect(
+                # Connect finished signal to a slot with an in-line function to re-enable the button
+                lambda: self.runExperimentButton.setEnabled(True)
+            )
+        else:
+            qWarning('RFSoC is not connected! Connect and try again.')
 
     def stopExperiment(self):
         qDebug("STOP!!!!")
@@ -427,6 +436,9 @@ class Window(QMainWindow):
     ########################################################################################################################
     ###########################################  Helper functions  #########################################################
     ########################################################################################################################
+
+    def rfsoc_is_connected(self):
+        return self.account_tab.rfsoc_is_connected
 
     def _updateCanvas(self, x, i, q, labels):
         """ Re-draw the canvas using the provided data. Likely will be changed in the future, including signature. """
