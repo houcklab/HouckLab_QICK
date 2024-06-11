@@ -35,6 +35,7 @@ class LogConsoleWidget(QWidget):
         if mode == QtMsgType.QtDebugMsg:
             color = 'purple'
             header = 'Debug:\t'
+            print(header + message)
         elif mode == QtMsgType.QtWarningMsg:
             color = 'yellow'
             header = 'Warning:\t'

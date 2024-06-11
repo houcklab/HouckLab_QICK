@@ -26,7 +26,7 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 # soc, soccfg = makeProxy()
 
 # Qt imports
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo, qCritical
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo, qCritical, qDebug
 from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
@@ -309,9 +309,9 @@ class Window(QMainWindow):
         )
 
     def stopExperiment(self):
-        print("STOP!!!!")
+        qDebug("STOP!!!!")
         self.worker.stop()
-        print("stopped?")
+        qDebug("stopped?")
 
     def loadExperimentData(self):  # loadExperimentDataButton
         """
@@ -370,7 +370,7 @@ class Window(QMainWindow):
 
         ### check what set number is being run
         set_num = data['data']['set_num']
-        print(set_num)
+        qDebug(str(set_num))
         if set_num == 0:
             self.data_cur = data
         elif set_num > 0:
@@ -459,7 +459,7 @@ class Window(QMainWindow):
         path = Path(filename)
         # self.filename_edit.setText(str(path))
 
-        print('importing: ' + str(path))
+        qInfo('importing: ' + str(path))
 
         experiment, self.experiment_name = self.import_file(str(path))
         # print(experiment)
@@ -469,7 +469,7 @@ class Window(QMainWindow):
         for name, obj, in inspect.getmembers(experiment):
             if name == self.experiment_name:
                 if inspect.isclass(obj):
-                    print("found class instance: " + name)
+                    qInfo("found class instance: " + name)
 
                     ### create instance of experiment
                     # self.experiment_instance = obj(soccfg, self.config)
@@ -482,13 +482,13 @@ class Window(QMainWindow):
                     ###
                     if issubclass(obj, AveragerProgram):
                         self.experiment_type = 'Averager'
-                        print('RAverager program, good to go!')
+                        qInfo('RAverager program, good to go!')
                     elif issubclass(obj, RAveragerProgram):
                         self.experiment_type = 'RAverager'
-                        print('RAverager program, good to go!')
+                        qInfo('RAverager program, good to go!')
                     elif issubclass(obj, NDAveragerProgram):
                         self.experiment_type = 'NDAverager'
-                        print('RAverager program, good to go!')
+                        qInfo('RAverager program, good to go!')
                     else:
                         msgBox = QMessageBox()
                         msgBox.setText("Error. Unrecognised class: " + self.experiment_name + ". Restart program.")
@@ -522,7 +522,7 @@ class Window(QMainWindow):
                                          maxshape=tuple([None] * len(datum.shape)),
                                          dtype=str(datum.astype(np.float64).dtype))
             except RuntimeError as e:
-                print(e)
+                qCritical(e)
                 del data_file[key]
                 data_file.create_dataset(key, shape=datum.shape,
                                          maxshape=tuple([None] * len(datum.shape)),
@@ -531,8 +531,9 @@ class Window(QMainWindow):
         data_file.close()
 
         # Save config
+        qInfo(f'Saving file to {config_filename}')
         with open(config_filename, 'w') as config_file:
-            json.dump(data['config'], config_file, cls=Window.NpEncoder),  # TODO coul dump config directly from self
+            json.dump(data['config'], config_file, cls=Window.NpEncoder),  # TODO could dump config directly from self
 
         # save image
         self.plotWidget.save_fig(image_filename)
