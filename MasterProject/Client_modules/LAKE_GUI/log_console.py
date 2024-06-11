@@ -1,19 +1,20 @@
-from PyQt5.QtCore import qDebug, qWarning, qCritical, qInstallMessageHandler, QtMsgType
+from PyQt5.QtCore import qDebug, qWarning, qCritical, qInstallMessageHandler, QtMsgType, pyqtSlot
 from PyQt5.QtWidgets import QWidget, QTextEdit, QVBoxLayout
 
 
 class LogConsoleWidget(QWidget):
 
     def __init__(self, parent):
+        '''
+        Creates the LogConsoleWidget responsible for maintaining a QTextEdit acting as a console. This text box displays
+        any error, info, or warning messages. To display an message, use qInfo for info messages, qCritical for error
+        messages, qWarning for warning messages, qDebug for debug messages.
+        '''
         super().__init__(parent=parent)
 
         self.console = None
 
         self.__init_UI()
-
-
-
-        self.test_error()
 
     def __init_UI(self):
 
@@ -26,18 +27,9 @@ class LogConsoleWidget(QWidget):
 
         layout.addWidget(self.console)
 
-    def test_error(self):
-        qDebug('this is a debug message')
-        qWarning('this is a warning message')
-        qCritical('this is a critical message')
-
     def message_handler(self, mode, context, message):
 
-        print(mode)
-        print(message)
-        print(context)
-
-        color = 'black'
+        # color = 'black'
         color = 'white'
         header = ''
         if mode == QtMsgType.QtDebugMsg:
@@ -52,7 +44,6 @@ class LogConsoleWidget(QWidget):
         elif mode == QtMsgType.QtInfoMsg:
             color = 'white'
             header = ' -\t'
-
 
         self.console.append(f"<span style='color:{color}'>{header}{message}</span>")
         self.console.ensureCursorVisible()

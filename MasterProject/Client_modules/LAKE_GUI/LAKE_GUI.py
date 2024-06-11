@@ -26,7 +26,7 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 # soc, soccfg = makeProxy()
 
 # Qt imports
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo, qCritical
 from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
@@ -88,6 +88,8 @@ class Window(QMainWindow):
     This class represents the main application window of the GUI.
     It includes all of the UI, as well as functions for running experiments and dealing with the data.
     """
+
+    rfsoc_connection_updated = pyqtSignal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -225,6 +227,9 @@ class Window(QMainWindow):
         # connect rfsoc connect signal to connect_to_rfsoc slot
         self.account_tab.rfsoc_connected.connect(self.connect_to_rfsoc)
 
+        # connect rfsoc_connection_updated signal to logging_tab slot
+        self.rfsoc_connection_updated.connect(self.account_tab.rfsoc_connection_updated_handler)
+
     def __create_logging_tab(self):
         self.logging_tab = LogConsoleWidget(parent=self.centralTabWidget)
         self.centralTabWidget.addTab(self.logging_tab, 'Log')
@@ -234,8 +239,17 @@ class Window(QMainWindow):
 
     @pyqtSlot(str)
     def connect_to_rfsoc(self, ip_address):
-        qInfo(f'Connecting to RFSoC at {ip_address}')
-        self.soc, self.soccfg = makeProxy(ip_address)
+
+        try:
+            self.soc, self.soccfg = makeProxy(ip_address)
+        except Exception as e:
+            # error occured
+            qCritical(str(e))
+            self.rfsoc_connection_updated.emit(ip_address, 'failure')
+        else:
+            # no error
+            self.rfsoc_connection_updated.emit(ip_address, 'success')
+
 
 
     ########################################################################################################################
