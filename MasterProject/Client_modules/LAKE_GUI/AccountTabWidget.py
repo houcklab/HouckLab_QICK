@@ -3,7 +3,7 @@ import os
 import re
 
 from PyQt5.QtWidgets import QWidget, QGridLayout, QPushButton, QComboBox, QLineEdit, QVBoxLayout, QLabel, QFormLayout
-from PyQt5.QtCore import pyqtSignal, pyqtSlot
+from PyQt5.QtCore import pyqtSignal, pyqtSlot, qInfo, qWarning
 
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 
@@ -124,7 +124,6 @@ class AccountTabWidget(QWidget):
         # widget to display account details
         self.account_settings_widget = QWidget(parent=self)
 
-        print(self.current_account)
         self.current_account_label = QLabel(f'Current Account: {self.current_account}', self.account_settings_widget)
 
         account_details_layout = QVBoxLayout(self.account_settings_widget)
@@ -204,7 +203,6 @@ class AccountTabWidget(QWidget):
 
         account_names = []
         for root, dirs, files in os.walk(self.account_dir):
-            print(files)
             for file in files:
                 match = account_file_regex.search(file)
                 account_names.append(match.groupdict()['accountName'])
@@ -215,12 +213,11 @@ class AccountTabWidget(QWidget):
     def __load(self, account_name):
         self.current_account = account_name
 
-        print(f'Loading account {self.current_account}')
+        qInfo(f'Loading account {self.current_account}')
         account_file_path = os.path.join(self.account_dir, f'{self.current_account}.json')
 
         with open(account_file_path, 'r') as f:
             self.account_settings = json.load(f)
-            print(self.account_settings)
 
         self.account_loaded.emit(account_name)
 
@@ -231,7 +228,7 @@ class AccountTabWidget(QWidget):
 
         # load settings from form into json
         if new_account_name == 'default':
-            print('Cannot overwrite default account')
+            qWarning('Cannot overwrite default account')
             return
 
         json_data = {}
@@ -245,7 +242,7 @@ class AccountTabWidget(QWidget):
         account_file_path = os.path.join(self.account_dir, f'{new_account_name}.json')
 
         # dump json to file
-        print(f'Saving to {new_account_name}')
+        qInfo(f'Saving to {new_account_name}')
         with open(account_file_path, 'w') as f:
             json.dump(json_data, f)
 
@@ -256,7 +253,7 @@ class AccountTabWidget(QWidget):
 
     def __set_default_account(self):
 
-        print(f'Setting default account to {self.current_account}')
+        qInfo(f'Setting default account to {self.current_account}')
 
         # load default.json
 
@@ -275,8 +272,8 @@ class AccountTabWidget(QWidget):
 
     def __connect_to_rfsoc(self):
         ip_address = self.name_to_line_edit['ip_address'].text()
-        self.rfsoc_status_label.setText(f'Current status: <span style="color: green;">connected</span>')
+        self.rfsoc_status_label.setText(f'Current status: <span style="color: green;">connected at {ip_address}</span>')
         self.rfsoc_connected.emit(ip_address)
 
     def __disconnect_from_rfsoc(self):
-        print('Not yet implemented')
+        qWarning('Not yet implemented')

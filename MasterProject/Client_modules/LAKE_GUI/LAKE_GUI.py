@@ -19,7 +19,6 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
 
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 
@@ -27,7 +26,7 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 # soc, soccfg = makeProxy()
 
 # Qt imports
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, qInstallMessageHandler, qInfo
 from PyQt5.QtCore import Qt, QRect, QMutex, QSize
 from PyQt5.QtWidgets import (
     QApplication,
@@ -63,6 +62,8 @@ path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 
+from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
+from MasterProject.Client_modules.LAKE_GUI.log_console import LogConsoleWidget
 
 #############
 #### this function should be moved elsewhere
@@ -130,7 +131,10 @@ class Window(QMainWindow):
         self.__createExperimentTab()
 
         # experiment tab
-        self.__createAccountTab()
+        self.__create_account_tab()
+
+        # logging tab
+        self.__create_logging_tab()
 
     def __createExperimentTab(self):
 
@@ -213,7 +217,7 @@ class Window(QMainWindow):
         layout.setStretch(0, 1)
         layout.setStretch(1, 5)
 
-    def __createAccountTab(self):
+    def __create_account_tab(self):
 
         self.account_tab = AccountTabWidget(parent=self.centralTabWidget)
         self.centralTabWidget.addTab(self.account_tab, 'Account')
@@ -221,9 +225,16 @@ class Window(QMainWindow):
         # connect rfsoc connect signal to connect_to_rfsoc slot
         self.account_tab.rfsoc_connected.connect(self.connect_to_rfsoc)
 
+    def __create_logging_tab(self):
+        self.logging_tab = LogConsoleWidget(parent=self.centralTabWidget)
+        self.centralTabWidget.addTab(self.logging_tab, 'Log')
+
+        # install message handler
+        qInstallMessageHandler(self.logging_tab.message_handler)
+
     @pyqtSlot(str)
     def connect_to_rfsoc(self, ip_address):
-        print(f'Connecting to {ip_address}')
+        qInfo(f'Connecting to RFSoC at {ip_address}')
         self.soc, self.soccfg = makeProxy(ip_address)
 
 
