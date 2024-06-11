@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal, qWarning, qDebug
 
 from qick import AveragerProgram, RAveragerProgram
 
@@ -26,7 +26,7 @@ class ExperimentThread(QObject):
         # self.experiment_instance = exp(soccfg, self.config)
 
         if not exp:
-            print('Warning: None experiment. Going to crash in 3, 2, 1...')
+            qDebug('Warning: None experiment. Going to crash in 3, 2, 1...')
 
     def run(self):
         """ Run the RFSOC experiment. """
@@ -40,7 +40,7 @@ class ExperimentThread(QObject):
 
             #### check what kind of experiment it is
             if issubclass(type(self.experiment_instance), AveragerProgram):
-                print("I can't handle AveragerProgram yet!")
+                qWarning("I can't handle AveragerProgram yet!")
                 return
                 ### if Averager class, need to loop over variables
             elif issubclass(type(self.experiment_instance), RAveragerProgram):
@@ -63,4 +63,4 @@ class ExperimentThread(QObject):
 
     def stop(self):
         self.running = False
-        print("trying to stop the thread...")
+        qDebug("trying to stop the thread...")
