@@ -32,10 +32,12 @@ class TransVsGain(ExperimentClass):
             "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequecny
         }
 
-
-        gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"],
-                               dtype=int) ### for current simplicity set it to an int
-
+        if self.cfg["units"] == "DAC":
+            gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"],
+                                   dtype=int) ### for current simplicity set it to an int
+        else:
+            gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"],
+                                   dtype = int)
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -49,6 +51,7 @@ class TransVsGain(ExperimentClass):
         X = (self.trans_fpts + self.cfg["cavity_LO"] / 1e6) / 1e3
         X_step = X[1] - X[0]
         Y = gainVec
+        print(gainVec)
         Y_step = Y[1] - Y[0]
         Z = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
         Z1 = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
@@ -72,6 +75,13 @@ class TransVsGain(ExperimentClass):
         print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
         start = time.time()
 
+        # Creating the extents of the plot
+        if self.cfg['units'] == 'DAC':
+            extents = [X[0] - X_step / 2, X[-1] + X_step / 2, Y[0] - Y_step / 2, Y[-1] + Y_step / 2]
+        else:
+            print(Y[-1]**2/Y[-2])
+            extents = [X[0] - X_step / 2, X[-1] + X_step / 2, 10*np.log10(Y[0]**2/Y[1]), 10*np.log10(Y[-1]**2/Y[-2])]
+
         for i in range(expt_cfg["trans_gain_num"]):
             self.cfg["read_pulse_gain"] = gainVec[i]
 
@@ -86,35 +96,38 @@ class TransVsGain(ExperimentClass):
             #### plot out the transmission data
             sig = data_I + 1j * data_Q
             avgamp0 = np.abs(sig)
-            # Haven't gotten this to work yet, maybe come back later
-            avgphase = np.unwrap(np.angle(sig * np.exp(-X * 10j), deg = True), period = 360)
+            avgamp0 = avgamp0 - np.mean(avgamp0)
+            avgphase = np.angle(sig * np.exp(-X * 10j), deg = True)
             Z1[i, :] = avgphase
             # Z[i, :] = avgamp0
 
             ### normalize transmission data for plotting
-            avgamp0_offset = avgamp0 - np.min(avgamp0)
-            avgamp0_norm = avgamp0_offset / (np.max(avgamp0_offset))
-            Z[i, :] = avgamp0_norm
+            # avgamp0_offset = avgamp0 - np.min(avgamp0)
+            # avgamp0_norm = avgamp0_offset / (np.max(avgamp0_offset))
+            Z[i, :] = avgamp0
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_00 = axs[0,0].imshow(
                     Z,
                     aspect='auto',
-                    extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
-                            Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                    extent=extents,
                     origin='lower',
                     interpolation='none',
+                    vmin = Z.min(),
+                    vmax = Z.max(),
                 )
+                # axs[0,0].set_yscale('log')
                 cbar00 = fig.colorbar(ax_plot_00, ax=axs[0,0], extend='both')
                 cbar00.set_label('a.u.', rotation=90)
 
                 ax_plot_10 = axs[1, 0].imshow(
                     Z1,
                     aspect = 'auto',
-                    extent = [X[0] - X_step / 2, X[-1] + X_step / 2,
-                             Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                    extent = extents,
                     origin = 'lower',
                     interpolation = 'none',
+                    vmin=Z1.min(),
+                    vmax=Z1.max(),
                 )
                 cbar10 = fig.colorbar(ax_plot_10, ax = axs[1, 0], extend = 'both')
                 cbar10.set_label('deg', rotation = 90)
@@ -123,10 +136,11 @@ class TransVsGain(ExperimentClass):
                 ax_plot_01 = axs[0, 1].imshow(
                     Z_I,
                     aspect = 'auto',
-                    extent = [X[0] - X_step / 2, X[-1] + X_step / 2,
-                             Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                    extent = extents,
                     origin = 'lower',
                     interpolation = 'none',
+                    vmin=Z_I.min(),
+                    vmax=Z_I.max(),
                 )
                 cbar01 = fig.colorbar(ax_plot_01, ax = axs[0, 1], extend = 'both')
                 cbar01.set_label('deg', rotation = 90)
@@ -135,10 +149,11 @@ class TransVsGain(ExperimentClass):
                 ax_plot_11 = axs[1, 1].imshow(
                     Z_Q,
                     aspect='auto',
-                    extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
-                            Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                    extent=extents,
                     origin='lower',
                     interpolation='none',
+                    vmin=Z_Q.min(),
+                    vmax=Z_Q.max(),
                 )
                 cbar11 = fig.colorbar(ax_plot_11, ax=axs[1, 1], extend='both')
                 cbar11.set_label('deg', rotation=90)
@@ -146,41 +161,58 @@ class TransVsGain(ExperimentClass):
 
             else:
                 ax_plot_00.set_data(Z)
+                ax_plot_00.set_clim(vmin=np.nanmin(Z), vmax=np.nanmax(Z))
+                # axs[0,0].set_yscale('log')
                 cbar00.remove()
                 cbar00 = fig.colorbar(ax_plot_00, ax=axs[0, 0], extend='both')
                 cbar00.set_label('a.u.', rotation=90)
 
                 ax_plot_10.set_data(Z1)
+                ax_plot_10.set_clim(vmin=np.nanmin(Z1), vmax=np.nanmax(Z1))
                 cbar10.remove()
                 cbar10 = fig.colorbar(ax_plot_10, ax=axs[1, 0], extend='both')
                 cbar10.set_label('deg', rotation=90)
 
                 ax_plot_01.set_data(Z_I)
+                ax_plot_01.set_clim(vmin=np.nanmin(Z_I), vmax=np.nanmax(Z_I))
                 cbar01.remove()
                 cbar01 = fig.colorbar(ax_plot_01, ax=axs[0, 1], extend='both')
                 cbar01.set_label('I (a.u.)', rotation=90)
 
                 ax_plot_11.set_data(Z_Q)
+                ax_plot_11.set_clim(vmin=np.nanmin(Z_Q), vmax=np.nanmax(Z_Q))
                 cbar11.remove()
                 cbar11 = fig.colorbar(ax_plot_11, ax=axs[1, 1], extend='both')
                 cbar11.set_label('Q (a.u.)', rotation=90)
 
-            axs[0, 0].set_ylabel("Cavity Gain (a.u.)")
+            if self.cfg["units"] == "DAC":
+                axs[0, 0].set_ylabel("Cavity Gain (a.u.)")
+                axs[1, 0].set_ylabel("Cavity Gain (a.u.)")
+                axs[0, 1].set_ylabel("Cavity Gain (a.u.)")
+                axs[1, 1].set_ylabel("Cavity Gain (a.u.)")
+            elif self.cfg["units"] == "dB":
+                axs[0, 0].set_ylabel("Cavity Gain (dBDAC)")
+                axs[1, 0].set_ylabel("Cavity Gain (dBDAC)")
+                axs[0, 1].set_ylabel("Cavity Gain (dBDAC)")
+                axs[1, 1].set_ylabel("Cavity Gain (dBDAC)")
+
             axs[0, 0].set_xlabel("Cavity Frequency (GHz)")
-            axs[0, 0].set_title("Cavity Transmission Magnitude Normalized")
+            axs[0, 0].set_title("Magnitude Mean Sub")
             # axs.set_yscale('log')
 
-            axs[1, 0].set_ylabel("Cavity Gain (a.u.)")
+
             axs[1, 0].set_xlabel("Cavity Frequency (GHz)")
-            axs[1, 0].set_title("Cavity Transmission Phase")
+            axs[1, 0].set_title("Phase")
 
-            axs[0, 1].set_ylabel("Cavity Gain (a.u.)")
+
             axs[0, 1].set_xlabel("Cavity Frequency (GHz)")
-            axs[0, 1].set_title("Cavity Transmission I")
+            axs[0, 1].set_title(" I")
 
-            axs[1, 1].set_ylabel("Cavity Gain (a.u.)")
+
             axs[1, 1].set_xlabel("Cavity Frequency (GHz)")
-            axs[1, 1].set_title("Cavity Transmission Q")
+            axs[1, 1].set_title("Q")
+
+            plt.suptitle("Cavity Transmission")
 
             if plotDisp:
                 plt.show(block=False)
