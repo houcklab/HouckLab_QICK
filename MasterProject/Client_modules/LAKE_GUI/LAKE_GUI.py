@@ -497,13 +497,13 @@ class Window(QMainWindow):
                     ###
                     if issubclass(obj, AveragerProgram):
                         self.experiment_type = 'Averager'
-                        qInfo('RAverager program, good to go!')
+                        qInfo('Averager program, good to go!')
                     elif issubclass(obj, RAveragerProgram):
                         self.experiment_type = 'RAverager'
                         qInfo('RAverager program, good to go!')
                     elif issubclass(obj, NDAveragerProgram):
                         self.experiment_type = 'NDAverager'
-                        qInfo('RAverager program, good to go!')
+                        qInfo('NDAverager program, good to go!')
                     else:
                         msgBox = QMessageBox()
                         msgBox.setText("Error. Unrecognised class: " + self.experiment_name + ". Restart program.")
