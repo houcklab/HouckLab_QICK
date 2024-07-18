@@ -5,7 +5,7 @@ import os
 
 
 # os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-path = r'/WorkingProjects/Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
 os.add_dll_directory(path)
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
@@ -21,7 +21,7 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mT1_PS
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_03_25_BF2_cooldown_7\\WTF\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -39,31 +39,31 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": 3.6,
+    "yokoVoltage": 0.12,
 
     # cavity
-    "reps": 2000,
+    "reps": 1000,
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain":  10000,
-    "read_pulse_freq": 7392.3,
+    "read_length": 30,
+    "read_pulse_gain":  5000,
+    "read_pulse_freq": 6423.375,
 
     # qubit spec parameters
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 7000,
-    "qubit_length": 20,
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 1,
+    "qubit_length": 32,
     "sigma": 0.05,
     "flat_top_length": 5,
-    "qubit_freq": 830.72,
-    "relax_delay": 2000,
+    "qubit_freq": 600,
+    "relax_delay": 5,
 
     # define shots
-    "shots": 10000,
+    "shots": 100000,
     "use_switch": True,
 }
 config = BaseConfig | UpdateConfig
 
-yoko2.SetVoltage(config["yokoVoltage"])
+yoko1.SetVoltage(config["yokoVoltage"])
 
 #%%
 # TITLE: Single shot experiment
@@ -81,10 +81,11 @@ plt.close('all')
 outerFolder_sweep = outerFolder + "singleShotSweeps_qubitFreq\\"
 loop_len = 6
 param_dict = {
-    'read_pulse_freq': config["read_pulse_freq"] + np.linspace(-0.2, 0.2, 21),
+    'read_pulse_freq': config["read_pulse_freq"] + np.linspace(-1.5, 1.5, 81),
     'qubit_freq': config["qubit_freq"] + np.linspace(-50, 50, 21),
     'qubit_gain': np.linspace(15000, 22000, 21, dtype=int),
-    'read_pulse_gain': np.linspace(7000, 12000, 6, dtype=int)
+    'read_pulse_gain': np.linspace(10000, 25000, 61, dtype=int),
+    'read_length':np.linspace(10,50,10, dtype=int)
 }
 vary = "read_pulse_gain"
 

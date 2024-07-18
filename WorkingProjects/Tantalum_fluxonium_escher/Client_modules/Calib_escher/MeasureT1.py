@@ -23,10 +23,10 @@ plt.ioff()
 
 # Configure for transmission experiment
 UpdateConfig={
-    "reps": 10,                         ### This will used for all experiements below unless otherwise changed in between trials
+    "reps": 300,                         ### This will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",
-    "read_length": 10,                  ### in us
-    "read_pulse_gain": 12000,           ### [DAC units]
+    "read_length": 20,                  ### in us
+    "read_pulse_gain": 6000,           ### [DAC units]
     "read_pulse_freq": 891.5 ,          ### [MHz] actual frequency is this number + "cavity_LO"
 
     ##### define tranmission experiment parameters
