@@ -163,7 +163,7 @@ class SpecVsFlux(ExperimentClass):
         }
 
         ### define the yoko vector for the voltages, note this assumes that yoko1 already exists
-        yoko1 = YOKOGS200(VISAaddress='GPIB1::2::INSTR', rm=visa.ResourceManager())
+        yoko1 = YOKOGS200(VISAaddress='GPIB1::4::INSTR', rm=visa.ResourceManager())
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
         yoko1.SetVoltage(expt_cfg["yokoVoltageStart"])

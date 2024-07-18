@@ -384,8 +384,15 @@ def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, ax
     # Plot the iq_data as a scatter plot with the color corresponding to the largest probability of the point in a given center
     # The color is given using the 'inferno' colormap and the colorbar is normalized to the minimum and maximum probability
     # The colorbar is given the label 'Probability'
-    im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral', norm = LogNorm(vmin = 0.6, vmax = 1), s = 15)
-    fig.colorbar(im, ax = axs, label = 'Center')
+    if "isColor" in kwargs:
+        isColor = kwargs["isColor"]
+    else:
+        isColor = False
+    if isColor:
+        im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral', norm = LogNorm(vmin = 0.6, vmax = 1), s = 15)
+        fig.colorbar(im, ax = axs, label = 'Center')
+    else:
+        im = axs.scatter(iq_data[0, :], iq_data[1, :], s=15)
 
     # Plot the contours of the gaussians. Each contour should be in log scale and the levels should be at max(gaussian), max(gaussian)*e^(-1/2), max(gaussian)*e^-1.
     # Also above each contour the value of gaussian should be given using clabel where the labels should be $\sqrt{2}\sigma$, $\sigma$ and $0$.

@@ -48,10 +48,12 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
-            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
-
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4 + self.us2cycles(self.cfg["flat_top_length"],gen_ch=cfg["qubit_ch"])
+            print(self.qubit_pulseLength)
         else:
-            print("define pi or flat top pulse")
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
+                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=cfg["read_pulse_gain"],
@@ -66,7 +68,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
 
     def body(self):
 
-        self.sync_all(self.us2cycles(0.01))
+        self.sync_all(self.us2cycles(0.05))
         if self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch

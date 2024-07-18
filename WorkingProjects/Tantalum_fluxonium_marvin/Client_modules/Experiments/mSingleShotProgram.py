@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.hist_analysis import *
+# import WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.SingleShot_ErrorCalc_2 as sse2
 from tqdm.notebook import tqdm
 import time
 
@@ -42,17 +43,17 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
             # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-            #                      length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+            #                      length=self.us2cycles(self.cfg["read_length"], gen_ch = cfg["res_ch"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        qubit_freq = self.freq2reg(cfg["qubit_freq"],
-                                   gen_ch=qubit_ch)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=qubit_ch)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
         # print("generator freq:", self.reg2freq(freq, gen_ch=res_ch))
         if cfg["qubit_pulse_style"] == "arb":
+            print("Sending a Gaussian Pulse")
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4)
@@ -66,16 +67,19 @@ class LoopbackProgramSingleShot(RAveragerProgram):
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-                                     waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
+                                     phase=0, gain=cfg["qubit_gain"],
+                                     waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4 + self.us2cycles(self.cfg["flat_top_length"], gen_ch=qubit_ch)
 
         else:
-            print("define pi or flat top pulse")
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["start"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+                                     # mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch),
-                                 ) # mode="periodic")
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch), mode="periodic")
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -85,24 +89,20 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
     def body(self):
         #### wait 10ns
-        self.sync_all(self.us2cycles(0.010))
+        self.sync_all(self.us2cycles(0.05))
 
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
-            self.trigger(pins=[2], t=self.us2cycles(0),
-                         width=self.us2cycles(10) )  # trigger for switch
-
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
 
 
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
+        self.sync_all(self.us2cycles(0.05)) # wait 10ns after pulse ends
 
-        # self.sync_all(self.us2cycles(10))  # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],
-             adcs=[0],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+             adcs=self.cfg["ro_chs"],
+             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -111,8 +111,8 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
 
     def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain list index
-        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update gain list index
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])          # Updates gain of the gaussian
+        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update gain of the flat part
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False, debug=False):

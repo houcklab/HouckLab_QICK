@@ -1,11 +1,9 @@
-from WTF.Client_modules.Experiments.mTransmission import Transmission
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import Transmission
 
 import os
 os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
-from initialize import *
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 
-cavityAtten = attenuator(27787, attenuation_int= 35, print_int = False)
-qubitAtten = attenuator(27797, attenuation_int= 20, print_int = False)
 
 # Yokovalue = -0.052 #-0.798 # (0 flux, re-measure) #-0.666 # (0.2 flux, re-measure) #0.7015 #(0.58 flux target 0 zz) #0.2 #(0.19 flux, still far away from coupler) #-0.049 (0 flux) #0.0225 (from TQ3 measurement, 0 flux)
 # YOKOGS200.main(Yokovalue)

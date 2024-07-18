@@ -51,7 +51,6 @@ class TransVsGain(ExperimentClass):
         X = (self.trans_fpts + self.cfg["cavity_LO"] / 1e6) / 1e3
         X_step = X[1] - X[0]
         Y = gainVec
-        print(gainVec)
         Y_step = Y[1] - Y[0]
         Z = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
         Z1 = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
@@ -97,6 +96,8 @@ class TransVsGain(ExperimentClass):
             sig = data_I + 1j * data_Q
             avgamp0 = np.abs(sig)
             avgamp0 = avgamp0 - np.mean(avgamp0)
+            if self.cfg['normalize']:
+                avgamp0 = avgamp0/np.nanmax(avgamp0)
             avgphase = np.angle(sig * np.exp(-X * 10j), deg = True)
             Z1[i, :] = avgphase
             # Z[i, :] = avgamp0
