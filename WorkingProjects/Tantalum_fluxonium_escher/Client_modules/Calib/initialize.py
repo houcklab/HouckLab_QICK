@@ -21,8 +21,9 @@ DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
 if DriverFolderBool:
     os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 else:
-    path = os.getcwd()
-    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+#    path = os.getcwd()
+#    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+     pass
 
 
 #### define a attenuator class to change define attenuators for the setup
@@ -41,8 +42,8 @@ class attenuator:
 # qubitAtten = attenuator(27797)
 
 ##### define yoko
-yoko1 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
-yoko1.SetMode('voltage')
+#yoko1 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
+#yoko1.SetMode('voltage')
 
 
 ###### define default configuration

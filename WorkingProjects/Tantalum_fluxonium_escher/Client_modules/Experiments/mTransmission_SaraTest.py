@@ -54,6 +54,7 @@ class Transmission(ExperimentClass):
         for f in tqdm(fpts, position=0, disable=True):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
+            #self.soc.reset_gens()  # clear any DC or periodic values on generators
             results.append(prog.acquire(self.soc, load_pulses=True))
         print(f'Time: {time.time() - start}')
         results = np.transpose(results)
@@ -66,8 +67,15 @@ class Transmission(ExperimentClass):
 
         #### find the frequency corresponding to the peak
         sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
+        x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"]/1e6) /1e3 #### put into units of frequency GHz
+        sig = sig * np.exp(1j * x_pts * 2 * np.pi * self.cfg["RFSOC_delay"]) # This is an empirically-determined "electrical delay"
+        # It is much larger than the real, physical electrical delay (which is more like 80 ns, while this one is around a us),
+        # and is caused by the fact that the RFSOC has two different clocks for the output and input. We can safely just remove this phase.
+        # Expect the effective electrical delay to change when the RFSOC is rebooted.
+        data['data']['results'][0][0][0] = np.real(sig)
+        data['data']['results'][0][0][1] = np.imag(sig)
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmax(avgamp0)
+        peak_loc = np.argmin(avgamp0)
         self.peakFreq = data['data']['fpts'][peak_loc]
 
         return data
@@ -83,13 +91,28 @@ class Transmission(ExperimentClass):
         x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"]/1e6) /1e3 #### put into units of frequency GHz
         sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
         avgamp0 = np.abs(sig)
-        plt.plot(x_pts, data['data']['results'][0][0][0],label="I")
-        plt.plot(x_pts, data['data']['results'][0][0][1],label="Q")
-        plt.plot(x_pts, avgamp0, label="Magnitude")
+        plt.title("Averages = " + str(self.cfg["reps"]))
+        plt.subplot(2, 2, 1)
+        plt.title("I, Q")
+        plt.plot(x_pts, np.real(sig),label="I")
+        plt.plot(x_pts, np.imag(sig),label="Q")
+        plt.legend()
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
-        plt.title("Averages = " + str(self.cfg["reps"]))
-        plt.legend()
+        plt.subplot(2, 2, 2)
+        plt.plot(x_pts, avgamp0, label="Magnitude")
+        plt.title("Magnitude")
+        plt.ylabel("a.u.")
+        plt.xlabel("Cavity Frequency (GHz)")
+        plt.subplot(2, 2, 3)
+        plt.plot(x_pts, np.unwrap(np.angle(sig)), label="Phase")
+        plt.title("Phase")
+        plt.ylabel("radians")
+        plt.xlabel("Cavity Frequency (GHz)")
+        plt.subplot(2, 2, 4, adjustable='box', aspect=1)
+        plt.plot(np.real(sig), np.imag(sig))
+        plt.xlabel('I')
+        plt.ylabel('Q')
         plt.savefig(self.iname)
 
         if plotDisp:

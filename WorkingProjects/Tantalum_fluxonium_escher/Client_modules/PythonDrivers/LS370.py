@@ -352,7 +352,7 @@ class Lakeshore370:
                 time.sleep(30)
 
                 # The stability of the PID gets worse with higher temperatures
-                if temperature < 150:
+                if temperature < 80:
                     acceptable_delta_T = 0.001
                 elif temperature < 250:
                     acceptable_delta_T = 0.003
