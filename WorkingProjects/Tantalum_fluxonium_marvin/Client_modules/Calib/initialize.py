@@ -12,7 +12,7 @@ import os
 import pyvisa as visa
 from pathlib import Path
 
-path = r'/WorkingProjects/Tantalum_fluxonium_marvin\Client_modules\PythonDrivers'
+path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_marvin\Client_modules\PythonDrivers'
 os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 
 # sys.path.append('..\\ClientModules')
@@ -43,7 +43,7 @@ class attenuator:
 # qubitAtten = attenuator(27797)
 
 ##### define yoko
-yoko1 = YOKOGS200(VISAaddress = 'GPIB1::2::INSTR', rm = visa.ResourceManager())
+yoko1 = YOKOGS200(VISAaddress = 'GPIB1::4::INSTR', rm = visa.ResourceManager())
 yoko1.SetMode('voltage')
 
 
@@ -67,7 +67,8 @@ BaseConfig={
         # In this program the signal is up and downconverted digitally so you won't see any frequency
         # components in the I/Q traces below. But since the signal gain depends on frequency,
         # if you lower pulse_freq you will see an increased gain.
-        "adc_trig_offset": 0.54, #+ 1, #soc.us2cycles(0.468-0.02), # [Clock ticks]
+        "adc_trig_offset": 0.530, #+ 1, #soc.us2cycles(0.468-0.02), # [usmd
+    # ]
         # Try varying adc_trig_offset from 100 to 220 clock ticks
         "cavity_LO": 0.0,
         ###### switch parameters

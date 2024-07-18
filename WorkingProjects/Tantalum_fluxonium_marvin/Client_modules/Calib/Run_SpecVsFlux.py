@@ -1,7 +1,7 @@
 #%%
 import os
 # path = os.getcwd() # Old method, does not work with cells
-path = r'/WorkingProjects/Tantalum_fluxonium_marvin\Client_modules\PythonDrivers'
+path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_marvin\Client_modules\PythonDrivers'
 os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 from matplotlib import pyplot as plt
@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -18,29 +18,29 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -2.0,
-    "yokoVoltageStop": 10.0,
-    "yokoVoltageNumPoints": 49,
+    "yokoVoltageStart": -0.2,
+    "yokoVoltageStop": 0.0,
+    "yokoVoltageNumPoints": 31,
 
     # cavity and readout
     "trans_reps": 200,
     "read_pulse_style": "const",
     "read_length": 20,  # us
-    "read_pulse_gain": 7000,  # [DAC units]
-    "trans_freq_start": 6437.4 - 2.0,  # [MHz]
-    "trans_freq_stop": 6437.4 + 2.0,  # [MHz]
-    "TransNumPoints": 151,
+    "read_pulse_gain": 1000,  # [DAC units]
+    "trans_freq_start": 6670.5,  # [MHz]
+    "trans_freq_stop": 6673,  # [MHz]
+    "TransNumPoints": 201,
 
     # qubit spec parameters
     "spec_reps": 1,
     "qubit_pulse_style": "const",
-    "qubit_gain": 1,
-    "qubit_length": 0.1,
-    "qubit_freq_start": 600,
+    "qubit_gain": 0,
+    "qubit_length": 10,
+    "qubit_freq_start": 300,
     "qubit_freq_stop": 1000,
-    "SpecNumPoints": 3,
-    "sigma": None,
-    "relax_delay": 5,
+    "SpecNumPoints": 2,
+    "sigma": 0.05,
+    "relax_delay": 10,
     'use_switch': True,
 }
 config = BaseConfig | UpdateConfig

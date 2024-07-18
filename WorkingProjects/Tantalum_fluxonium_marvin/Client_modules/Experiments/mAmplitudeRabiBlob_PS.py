@@ -104,14 +104,20 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
-
         else:
-            print("define pi or flat top pulse")
-
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["start"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            # mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"]),
                                  )  # mode="periodic")
+
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
 
         self.synci(200)  # give processor some time to configure pulses
 
@@ -128,6 +134,9 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
 
         self.sync_all(self.us2cycles(0.01))
 
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
@@ -213,7 +222,7 @@ class AmplitudeRabi_PS(ExperimentClass):
 
         ##### set up figure
         cen_num = self.cfg["cen_num"]
-        fig, axs = plt.subplots(cen_num, 1, figsize=[10, 10])
+        fig, axs = plt.subplots(cen_num, cen_num, figsize=[14, 10])
         ax_plots = []
         colorbars = []
 
@@ -224,12 +233,15 @@ class AmplitudeRabi_PS(ExperimentClass):
         start = time.time()
 
         #### loop over qubit gains
-        for idx_amp in range(len(self.qubit_amps)):
+        for idx_freq in range(len(self.qubit_freqs)):
+
             #### set new qubit frequency and aquire data
-            self.cfg["qubit_gain"] = self.qubit_amps[idx_amp]
+            self.cfg["qubit_freq"] = self.qubit_freqs[idx_freq]
+
             #### loop over qubit frequencies
-            for idx_freq in range(len(self.qubit_freqs)):
-                self.cfg["qubit_freq"] = self.qubit_freqs[idx_freq]
+            for idx_amp in range(len(self.qubit_amps)):
+
+                self.cfg["qubit_gain"] = self.qubit_amps[idx_amp]
 
                 #### pull the data from the single shots for the first run
                 prog = LoopbackProgramAmplitudeRabi_PS(self.soccfg, self.cfg)
@@ -278,40 +290,40 @@ class AmplitudeRabi_PS(ExperimentClass):
                                     (Centers[idx_cen][0] - i_raw[idx_shot]) ** 2 +
                                     (Centers[idx_cen][1] - q_raw[idx_shot]) ** 2)
 
-                    #region plot out a slice for visual
+                    # region plot out a slice for visual
                     # if idx_amp == 0 and idx_freq ==0:
-                    #     ##### plot out
-                    #     fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
-                    #
-                    #     #### plot raw data only
-                    #     axs[0].plot(I, Q, '.', alpha=alpha_val)
-                    #
-                    #     axs[0].set_xlabel('I')
-                    #     axs[0].set_ylabel('Q')
-                    #
-                    #     #### plot the sorted blobs
-                    #     for idx in range(cen_num):
-                    #         axs[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val, color=colors[idx])
-                    #         axs[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
-                    #
-                    #     ### plot circle around each center with radius of average blob size
-                    #     for idx in range(cen_num):
-                    #         axs[1].add_patch(
-                    #             plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
-                    #                        color='k', fill=False, zorder=2)
-                    #         )
-                    #
-                    #     axs[1].set_xlabel('I')
-                    #     axs[1].set_ylabel('Q')
-                    #
-                    #     axs[1].set_ylim(axs[0].get_ylim())
-                    #     axs[1].set_xlim(axs[0].get_xlim())
-                    #
-                    #     lims = [axs[0].get_xlim(), axs[0].get_ylim()]
-                    #
-                    #     plt.tight_layout()
-                    #
-                    #     plt.show()
+                        # ##### plot out
+                        # fig, axs = plt.subplots(1, 2, figsize=[5, 5], num = 111)
+                        #
+                        # #### plot raw data only
+                        # axs[0].plot(I, Q, '.', alpha=alpha_val)
+                        #
+                        # axs[0].set_xlabel('I')
+                        # axs[0].set_ylabel('Q')
+                        #
+                        # #### plot the sorted blobs
+                        # for idx in range(cen_num):
+                        #     axs[1].plot(blobs[idx][0], blobs[idx][1], '.', alpha=alpha_val, color=colors[idx])
+                        #     axs[1].plot(Centers[idx][0], Centers[idx][1], 'k*', markersize=15)
+                        #
+                        # ### plot circle around each center with radius of average blob size
+                        # for idx in range(cen_num):
+                        #     axs[1].add_patch(
+                        #         plt.Circle((Centers[idx][0], Centers[idx][1]), np.nanmean(dists[idx]),
+                        #                    color='k', fill=False, zorder=2)
+                        #     )
+                        #
+                        # axs[1].set_xlabel('I')
+                        # axs[1].set_ylabel('Q')
+                        #
+                        # axs[1].set_ylim(axs[0].get_ylim())
+                        # axs[1].set_xlim(axs[0].get_xlim())
+                        #
+                        # lims = [axs[0].get_xlim(), axs[0].get_ylim()]
+                        #
+                        # plt.tight_layout()
+                        #
+                        # plt.show()
                     #endregion
 
 
@@ -341,6 +353,8 @@ class AmplitudeRabi_PS(ExperimentClass):
                 #### using sorted blob data, find approximate population distribuitions
                 for idx_cen_start in range(cen_num):
                     #### grab i and q data from blob, removing out the nan values
+                    iData_0 = blobs_0[idx_cen_start][0][~np.isnan(blobs_0[idx_cen_start][0])]
+                    qData_0 = blobs_0[idx_cen_start][1][~np.isnan(blobs_0[idx_cen_start][1])]
                     iData = blobs_1[idx_cen_start][0][~np.isnan(blobs_1[idx_cen_start][0])]
                     qData = blobs_1[idx_cen_start][1][~np.isnan(blobs_1[idx_cen_start][1])]
                     iq = np.stack((iData, qData), axis=1)
@@ -353,6 +367,17 @@ class AmplitudeRabi_PS(ExperimentClass):
                             if blob_distribution[idx] == idx_cen_stop:
                                 pops_arr[idx_cen_start][idx_cen_stop] += 1
                     pops_arr[idx_cen_start][:] = pops_arr[idx_cen_start][:] / len(blob_distribution)
+
+                    # Quick Plotting the selected data
+                    axs[idx_cen_start, 0].clear()
+                    axs[idx_cen_start, 0 ].plot(iData_0,qData_0,'.' ,c = colors[0], alpha = 0.5,
+                                                label = "initial")
+                    axs[idx_cen_start, 0].plot(iData, qData, '.', c=colors[1], alpha=0.5,
+                                               label="final")
+                    axs[idx_cen_start,0].set_title("Cluster" + str(idx_cen_start))
+                    axs[idx_cen_start, 0].set_xlabel("I")
+                    axs[idx_cen_start, 0].set_ylabel("Q")
+                    axs[idx_cen_start,0].set_aspect('equal')
 
                 ##### using the population array, take out the Z data
                 ##### Z_mat contains the amount of population remaining in the initial blob after a pulse
@@ -367,8 +392,8 @@ class AmplitudeRabi_PS(ExperimentClass):
 
                     ### loop over all clusters and plot out
                     for idx_cen in range(cen_num):
-                        #### plotting
-                        ax_plots.append(axs[idx_cen].imshow(
+
+                        ax_plots.append(axs[idx_cen,1].imshow(
                                         Z_mat[idx_cen],
                                         aspect='auto',
                                         extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
@@ -377,12 +402,12 @@ class AmplitudeRabi_PS(ExperimentClass):
                                         interpolation='none',
                         ) )
 
-                        colorbars.append(fig.colorbar(ax_plots[idx_cen], ax=axs[idx_cen], extend='both') )
+                        colorbars.append(fig.colorbar(ax_plots[idx_cen], ax=axs[idx_cen,1], extend='both') )
                         colorbars[idx_cen].set_label('population (%)', rotation=90)
 
-                        axs[idx_cen].set_ylabel("qubit gain")
-                        axs[idx_cen].set_xlabel("qubit frequency (GHz)")
-                        axs[idx_cen].set_title("population of blob: " + str(idx_cen))
+                        axs[idx_cen,1].set_ylabel("qubit gain")
+                        axs[idx_cen,1].set_xlabel("qubit frequency (GHz)")
+                        axs[idx_cen,1].set_title("population of blob: " + str(idx_cen))
 
                 else:
                     ### loop over all clusters and plot out

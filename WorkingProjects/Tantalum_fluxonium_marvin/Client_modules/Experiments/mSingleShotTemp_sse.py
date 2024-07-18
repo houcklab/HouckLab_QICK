@@ -197,6 +197,13 @@ class SingleShotSSE(ExperimentClass):
         # Get the centers
         if 'centers' in kwargs:
             self.centers = kwargs["centers"]
+
+            # Calculate the probability and centers
+            hist2d = sse2.createHistogram(iq_data, bin_size)
+
+            # Find the fit parameters for the double 2D Gaussian
+            self.gaussians, self.popt, self.x_points, self.y_points = sse2.findGaussians(hist2d, self.centers, cen_num)
+
         elif self.cfg["initialize_pulse"]:
             i_0 = data["data"]["i_0"]
             q_0 = data["data"]["q_0"]
@@ -281,7 +288,8 @@ class SingleShotSSE(ExperimentClass):
             y_points = data["data"]["y_points_0"]
             sse2.plotFitAndData(pdf_0, gaussians_0, x_points, y_points, self.centers,iq_data_0, fig, axs[0], cen_num = cen_num)
         else:
-            axs[0].scatter(i_arr, q_arr, s=0.1)
+            h = axs[0].hist2d(i_arr,q_arr, bins=51, norm = LogNorm())
+            fig.colorbar(h[3], ax = axs[0])
             axs[0].scatter(centers[:,0], centers[:,1])
             axs[0].set_xlabel('I')
             axs[0].set_ylabel('Q')
