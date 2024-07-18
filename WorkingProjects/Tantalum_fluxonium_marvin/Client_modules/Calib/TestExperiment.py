@@ -101,7 +101,7 @@ UpdateConfig_transmission = {
     "read_pulse_style": "const",
     "read_length": 20,
     "read_pulse_gain": 1000,
-    "read_pulse_freq":  6671.9,
+    "read_pulse_freq":  6672.8,
 
     # Experiment Parameters
     "TransSpan": 1,  # [MHz] span will be center frequency +/- this parameter
@@ -122,7 +122,7 @@ UpdateConfig_qubit = {
     'spec_reps': 10000,  # Number of repetition
 
     # Define the yoko voltage
-    "yokoVoltage": 2,
+    "yokoVoltage": -0.12,
     "relax_delay": 50,  # [us] Delay post one experiment
     'use_switch': True,
 }
