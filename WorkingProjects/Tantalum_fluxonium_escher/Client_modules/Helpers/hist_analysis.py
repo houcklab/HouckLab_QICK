@@ -17,7 +17,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     xe, ye = np.median(ie), np.median(qe)
 
     if plot == True:
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(20, 10), num=figNum)
+        fig, axs = plt.subplots(nrows=1, ncols=4, figsize=(20, 10), num=figNum)
 
         # fig.tight_layout()
         fig.suptitle(title)
@@ -77,6 +77,19 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     else:
         ng, binsg = np.histogram(ig_new, bins=numbins, range=xlims)
         ne, binse = np.histogram(ie_new, bins=numbins, range=xlims)
+
+    if plot == True:
+        # Plot a 2d histogram of all the data
+        i_alldata = np.concatenate((ig_new, ie_new))
+        q_alldata = np.concatenate((qg_new, qe_new))
+        H, xedges, yedges = np.histogram2d(i_alldata, q_alldata, bins=100)
+        H = H.T
+        axs[3].imshow(H, extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]], origin='lower', aspect='auto')
+        axs[3].set_xlabel('I (a.u.)')
+        axs[3].set_ylabel('Q (a.u.)')
+        axs[3].set_title('2D Histogram')
+        axs[3].axis('equal')
+        plt.tight_layout()
 
     """Compute the fidelity using overlap of the histograms"""
     contrast = np.abs(((np.cumsum(ng) - np.cumsum(ne)) / (0.5 * ng.sum() + 0.5 * ne.sum())))

@@ -63,7 +63,8 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
                                      gain=cfg["qubit_gain"],
                                      length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
-                                     mode="periodic")
+                                     # mode="periodic")
+                                     )
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"])
             self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                      gain=cfg["read_pulse_gain"], mode='periodic',
@@ -77,6 +78,8 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
                                               gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
 
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            print("Using Switch")
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def body(self):
@@ -118,7 +121,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
         }
         self.cfg["reps"] = self.cfg["spec_reps"]
         self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
+        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/(expt_cfg["SpecNumPoints"] - 1)
         self.cfg["expts"] = expt_cfg["SpecNumPoints"]
 
         ### define qubit frequency array

@@ -51,7 +51,9 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
                                      gain=cfg["start"],
                                      length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
-                                     mode="periodic")
+                                     )
+                                     #mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
 
         else:
             print("define pi or flat top pulse")
