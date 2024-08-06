@@ -48,9 +48,6 @@ SwitchConfig = {
 
 BaseConfig = BaseConfig | SwitchConfig
 # %%
-
-# # ################################################################################################################
-# # # ####################################### code for running basic single shot exerpiment
 UpdateConfig = {
     ##### set yoko
     "yokoVoltage": -3.835,
@@ -119,34 +116,34 @@ for idx in range(loop_len):
 # TITLE : code finding T1 of a thermal state with and without pulses
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": 2,
-    "yokoVoltage_freqPoint": 2,
+    "yokoVoltage": -0.12,
+    "yokoVoltage_freqPoint": -0.12,
     ###### cavity
     # "reps": 0,  # this line does nothing, is overwritten with "shots"
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 28,  # [Clock ticks]
-    "read_pulse_gain": 1350,  # [DAC units]
-    "read_pulse_freq": 6432.489,  # [MHz]
+    "read_length": 50,  # [Clock ticks]
+    "read_pulse_gain": 1690,  # [DAC units]
+    "read_pulse_freq": 6672.7, # [MHz]
     ##### qubit spec parameters
     "qubit_pulse_style": "arb",
     "qubit_gain": 0,
     "flat_top_length": 20,
     # "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 0.05,  ### units us, define a 20ns sigma
-    "qubit_freq": 2815.65,
-    "relax_delay": 5000,  ### turned into us inside the run function
+    "qubit_freq": 65.4,
+    "relax_delay": 10000,  ### turned into us inside the run function
     #### define shots
-    "shots": 8000,  ### this gets turned into "reps"
+    "shots": 10000,  ### this gets turned into "reps"
     ### define the wait times
     "wait_start": 0,
-    "wait_stop": 4000,
-    "wait_num": 21,
+    "wait_stop": 5000,
+    "wait_num": 11,
     'wait_type': 'linear',
     ##### define number of clusters to use
     "cen_num": 2,
     ##### record the fridge temperature in units of mK
     "fridge_temp": 10,
-    "use_switch": False
+    "use_switch": True
 }
 config = BaseConfig | UpdateConfig
 

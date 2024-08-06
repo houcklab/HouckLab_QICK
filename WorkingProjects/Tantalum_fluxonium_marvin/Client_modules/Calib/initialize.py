@@ -43,9 +43,11 @@ class attenuator:
 # qubitAtten = attenuator(27797)
 
 ##### define yoko
+#yoko1 = YOKOGS200(VISAaddress = 'GPIB1::4::INSTR', rm = visa.ResourceManager())
+# yoko2 = YOKOGS200(VISAaddress = 'GPIB1::2::INSTR', rm = visa.ResourceManager())
+# yoko2.SetMode('voltage')
 yoko1 = YOKOGS200(VISAaddress = 'GPIB1::4::INSTR', rm = visa.ResourceManager())
 yoko1.SetMode('voltage')
-
 
 ###### define default configuration
 BaseConfig={

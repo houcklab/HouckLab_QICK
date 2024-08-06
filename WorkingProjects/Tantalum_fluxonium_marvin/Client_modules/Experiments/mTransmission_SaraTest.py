@@ -47,7 +47,7 @@ class Transmission(ExperimentClass):
                 "expts": self.cfg["TransNumPoints"]
         }
         print(expt_cfg)
-        expt_cfg["step"] = 2 * expt_cfg["span"] / expt_cfg["expts"]
+        expt_cfg["step"] = 2 * expt_cfg["span"] / (expt_cfg["expts"]-1)
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
         fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
         results = []

@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_26_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -18,18 +18,18 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.2,
-    "yokoVoltageStop": 0.0,
-    "yokoVoltageNumPoints": 31,
+    "yokoVoltageStart": -0.5,
+    "yokoVoltageStop": 0.5,
+    "yokoVoltageNumPoints": 401,
 
     # cavity and readout
-    "trans_reps": 200,
+    "trans_reps": 500,
     "read_pulse_style": "const",
     "read_length": 20,  # us
     "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6670.5,  # [MHz]
-    "trans_freq_stop": 6673,  # [MHz]
-    "TransNumPoints": 201,
+    "trans_freq_start": 6671.6,  # [MHz]
+    "trans_freq_stop": 6672.2,  # [MHz]
+    "TransNumPoints": 101,
 
     # qubit spec parameters
     "spec_reps": 1,
@@ -40,7 +40,7 @@ UpdateConfig = {
     "qubit_freq_stop": 1000,
     "SpecNumPoints": 2,
     "sigma": 0.05,
-    "relax_delay": 10,
+    "relax_delay": 3,
     'use_switch': True,
 }
 config = BaseConfig | UpdateConfig
