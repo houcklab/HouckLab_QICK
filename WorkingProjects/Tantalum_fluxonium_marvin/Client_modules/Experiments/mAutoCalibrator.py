@@ -20,7 +20,7 @@ class CalibratedFlux(ExperimentClass):
 
     def acquire(self):
         # Define the yoko
-        yoko1 = YOKOGS200(VISAaddress='GPIB1::2::INSTR', rm=visa.ResourceManager())
+        yoko1 = YOKOGS200(VISAaddress='GPIB1::4::INSTR', rm=visa.ResourceManager())
         yoko1.SetMode('voltage')
 
         # Define the yoko voltage vector
@@ -34,7 +34,7 @@ class CalibratedFlux(ExperimentClass):
         trans_Q = np.zeros((self.cfg["yokoVoltageNumPoints"], self.cfg["TransNumPoints"]))
 
         # Get the data
-        for i in tqdm(range(volt_vec.size)):
+        for i in tqdm(range(volt_vec.size), position=0, leave=True):
 
             # Set the yoko voltage
             yoko1.SetVoltage(volt_vec[i], toPrint = False)
@@ -76,7 +76,7 @@ class CalibratedFlux(ExperimentClass):
 
         return data_I, data_Q
 
-    def calibrate(self, half_flux = 'min'):
+    def calibrate(self, half_flux = 'min', dev_name = None):
         """
         Calibrate the flux
         :param half_flux: Can be 'min' or 'max'. Default is 'min'. Zero flux is assumed to be the opposite
@@ -85,32 +85,38 @@ class CalibratedFlux(ExperimentClass):
         # Get the data
         data = self.acquire()
 
-        # Calculate the amplitude from I and Q data
-        self.trans_amp = np.sqrt(data["trans_I"]**2 + data["trans_Q"]**2)
+        if dev_name == None:
+            # Calculate the amplitude from I and Q data
+            self.trans_amp = np.sqrt(data["trans_I"]**2 + data["trans_Q"]**2)
 
-        # Find the frequency corresponding to the minimum amplitude
-        self.resonant_freq = data["trans_freq"][np.argmin(self.trans_amp, axis = 1)]
+            # Find the frequency corresponding to the minimum amplitude
+            self.resonant_freq = data["trans_freq"][np.argmin(self.trans_amp, axis = 1)]
 
-        # Smoothen the resonant frequency
-        self.resonant_freq_smooth = savgol_filter(self.resonant_freq, int(data["trans_freq"].size/10), 1)
+            # Smoothen the resonant frequency
+            self.resonant_freq_smooth = savgol_filter(self.resonant_freq, int(data["trans_freq"].size/10), 1)
+            self.volt_vec_resonant = data["volt_vec"]
 
-        # Find the half flux point
-        if half_flux == 'min':
-            self.half_flux = data["volt_vec"][np.argmin(self.resonant_freq_smooth)]
-        elif half_flux == 'max':
-            self.half_flux = data["volt_vec"][np.argmax(self.resonant_freq_smooth)]
+            # Find the half flux point
+            if half_flux == 'min':
+                self.half_flux = data["volt_vec"][np.argmin(self.resonant_freq_smooth)]
+            elif half_flux == 'max':
+                self.half_flux = data["volt_vec"][np.argmax(self.resonant_freq_smooth)]
+            else:
+                raise Exception("Invalid Half flux extrema")
+            self.zero_flux = self.half_flux - self.cfg["flux_quantum"] / 2
         else:
-            raise Exception("Invalid Half flux extrema")
+            self.half_flux, self.flux_quantum = self.find_half_flux(data, dev_name = dev_name)
+            self.zero_flux = self.half_flux - (self.flux_quantum / 2)
 
-        self.zero_flux = self.half_flux - self.cfg["flux_quantum"] / 2
         # Update self.data and add resonant_freq, resonant_freq_smooth
         update_data = {"resonant_freq": self.resonant_freq, "resonant_freq_smooth": self.resonant_freq_smooth,
+                       "volt_vec_resonant": self.volt_vec_resonant,
                        "trans_amp": self.trans_amp, "half_flux": self.half_flux, "zero_flux": self.zero_flux}
         self.data = self.data | update_data
 
         return self.data
 
-    def display(self, data=None, **kwargs):
+    def display(self, data=None, display=False, **kwargs):
         if data is None:
             data = self.data
 
@@ -127,7 +133,7 @@ class CalibratedFlux(ExperimentClass):
         cbar.set_label("Transmission Amplitude")
 
         # Plot 2 Smoothened resonant frequency vs flux
-        axs[1].plot(data["volt_vec"], data["resonant_freq_smooth"])
+        axs[1].plot(data["volt_vec_resonant"], data["resonant_freq_smooth"])
         axs[1].set_title("Smoothened Resonant Frequency")
         axs[1].set_xlabel("Voltage (in V)")
         axs[1].set_ylabel("Frequency (in MHz)")
@@ -135,7 +141,8 @@ class CalibratedFlux(ExperimentClass):
         # Save the data
         plt.tight_layout()
         plt.savefig(self.iname + "_resonant.png" , dpi = 400)
-        plt.close()
+        if display:
+            plt.show()
 
     def flux_to_yoko(self, phase):
         """
@@ -159,5 +166,69 @@ class CalibratedFlux(ExperimentClass):
         # save the data to a .h5 file
         print(f'Saving {self.fname}')
         super().save_data(data=data)
+
+
+    def find_half_flux(self, data, dev_name = "6p75_qcage_0729"):
+        half_flux = 0
+        if dev_name == "6p75_qcage_0729":
+            # The half flux is going to be in between 0.4V and  0.6V
+            # We cut the frequency range to 6671.75 and greater
+            sel_freq_indx = np.argmin(np.abs(data["trans_freq"] - 6671.75))
+            sel_freq = data["trans_freq"][sel_freq_indx:]
+
+            if "n_quantum" in self.cfg.keys():
+                n_quantum = self.cfg["n_quantum"]
+            else:
+                n_quantum = 0
+
+            sel_flux_0p4_indx = np.argmin(np.abs(data["volt_vec"] - (0.45 + n_quantum*self.cfg["flux_quantum"])))
+            sel_flux_0p6_indx = np.argmin(np.abs(data["volt_vec"] - (0.6 + n_quantum*self.cfg["flux_quantum"])))
+            sel_flux = data["volt_vec"][sel_flux_0p4_indx:sel_flux_0p6_indx]
+            self.volt_vec_resonant = sel_flux
+
+            trans_amp = np.sqrt(data["trans_I"] ** 2 + data["trans_Q"] ** 2)
+            sel_trans_amp = trans_amp[sel_flux_0p4_indx:sel_flux_0p6_indx,sel_freq_indx:]
+            self.trans_amp = trans_amp
+
+            # Find the frequency corresponding to the minimum amplitude
+            self.resonant_freq = sel_freq[np.argmin(sel_trans_amp, axis=1)]
+
+            # Smoothen the resonant frequency
+            self.resonant_freq_smooth = savgol_filter(self.resonant_freq, int(sel_freq.size / 10), 1)
+
+            # Finding half flux
+            half_flux_0 = sel_flux[np.argmax(self.resonant_freq_smooth)]
+            print("Half Flux Found at : ", half_flux_0, " V")
+
+            # Do the same again one flux quantum away to find the second one
+            # We cut the frequency range to 6671.75 and greater
+            sel_freq_indx = np.argmin(np.abs(data["trans_freq"] - 6671.75))
+            sel_freq = data["trans_freq"][sel_freq_indx:]
+
+            sel_flux_0p4_indx = np.argmin(np.abs(data["volt_vec"] - (0.45 + (n_quantum - 1)*self.cfg["flux_quantum"])))
+            sel_flux_0p6_indx = np.argmin(np.abs(data["volt_vec"] - (0.6 + (n_quantum - 1)*self.cfg["flux_quantum"])))
+            sel_flux = data["volt_vec"][sel_flux_0p4_indx:sel_flux_0p6_indx]
+            self.volt_vec_resonant = sel_flux
+
+            trans_amp = np.sqrt(data["trans_I"] ** 2 + data["trans_Q"] ** 2)
+            sel_trans_amp = trans_amp[sel_flux_0p4_indx:sel_flux_0p6_indx, sel_freq_indx:]
+            self.trans_amp = trans_amp
+
+            # Find the frequency corresponding to the minimum amplitude
+            self.resonant_freq = sel_freq[np.argmin(sel_trans_amp, axis=1)]
+
+            # Smoothen the resonant frequency
+            self.resonant_freq_smooth = savgol_filter(self.resonant_freq, int(sel_freq.size / 10), 1)
+
+            # Finding half flux
+            half_flux = sel_flux[np.argmax(self.resonant_freq_smooth)]
+            print("Half Flux Found at : ", half_flux, " V")
+
+            # finding flux_quantu
+            flux_quantum = half_flux_0 - half_flux
+
+        else:
+            print("Wrong Device Name")
+        return half_flux, flux_quantum
 
 

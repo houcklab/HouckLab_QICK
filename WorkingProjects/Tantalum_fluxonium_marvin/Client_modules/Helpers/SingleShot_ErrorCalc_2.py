@@ -389,11 +389,12 @@ def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, ax
     else:
         isColor = False
     if isColor:
-        im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral', norm = LogNorm(vmin = 0.6, vmax = 1), s = 15)
+        im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral',
+                         norm = LogNorm(vmin = 0.6, vmax = 1), s = 15, aspect = 'equal')
         fig.colorbar(im, ax = axs, label = 'Center')
     else:
         im = axs.scatter(iq_data[0, :], iq_data[1, :], s=15)
-
+    axs.set_aspect('equal')
     # Plot the contours of the gaussians. Each contour should be in log scale and the levels should be at max(gaussian), max(gaussian)*e^(-1/2), max(gaussian)*e^-1.
     # Also above each contour the value of gaussian should be given using clabel where the labels should be $\sqrt{2}\sigma$, $\sigma$ and $0$.
     # The color of the contour should be black

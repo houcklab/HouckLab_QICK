@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -18,30 +18,33 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.2,
-    "yokoVoltageStop": 0.0,
-    "yokoVoltageNumPoints": 31,
+    "yokoVoltageStart": -2.05,
+    "yokoVoltageStop": -1.95,
+    "yokoVoltageNumPoints": 101,
 
     # cavity and readout
-    "trans_reps": 200,
+    "trans_reps": 1000,
     "read_pulse_style": "const",
-    "read_length": 20,  # us
-    "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6670.5,  # [MHz]
-    "trans_freq_stop": 6673,  # [MHz]
-    "TransNumPoints": 201,
+    "read_length": 50,  # us
+    "read_pulse_gain": 1500,  # [DAC units]
+    "trans_freq_start": 6671.5-1.5,  # [MHz]
+    "trans_freq_stop": 6671.5 + 1.5,  # [MHz]
+    "TransNumPoints": 101,
 
     # qubit spec parameters
-    "spec_reps": 1,
-    "qubit_pulse_style": "const",
-    "qubit_gain": 0,
-    "qubit_length": 10,
-    "qubit_freq_start": 300,
-    "qubit_freq_stop": 1000,
-    "SpecNumPoints": 2,
-    "sigma": 0.05,
+    "spec_reps": 2,
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 1,
+    "qubit_length": 0.01,
+    "flat_top_length" : 10,
+    "qubit_freq_start": 200,
+    "qubit_freq_stop": 400,
+    "SpecNumPoints": 3,
+    "sigma": 0.1,
     "relax_delay": 10,
-    'use_switch': True,
+    'use_switch': False,
+    'initialize_pulse': False,
+    'fridge_temp': 420,
 }
 config = BaseConfig | UpdateConfig
 

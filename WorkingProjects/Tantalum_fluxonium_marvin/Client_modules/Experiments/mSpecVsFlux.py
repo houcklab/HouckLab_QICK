@@ -9,6 +9,8 @@ import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.YOKOGS200 import *
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
 
 # class LoopbackProgramTrans(AveragerProgram):
 #     def __init__(self, soccfg, cfg):
@@ -164,6 +166,7 @@ class SpecVsFlux(ExperimentClass):
 
         ### define the yoko vector for the voltages, note this assumes that yoko1 already exists
         yoko1 = YOKOGS200(VISAaddress='GPIB1::4::INSTR', rm=visa.ResourceManager())
+        #yoko1 = YOKOGS200(VISAaddress='GPIB1::2::INSTR', rm=visa.ResourceManager())
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
         yoko1.SetVoltage(expt_cfg["yokoVoltageStart"])
@@ -211,6 +214,7 @@ class SpecVsFlux(ExperimentClass):
         for i in range(expt_cfg["yokoVoltageNumPoints"]):
             ### set the yoko voltage for the specific run
             yoko1.SetVoltage(voltVec[i])
+            self.cfg["yokoVoltage"] = voltVec[i]
 
             ### take the transmission data
             data_I, data_Q = self._aquireTransData()
@@ -435,13 +439,25 @@ class SpecVsFlux(ExperimentClass):
         fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
         results = []
         start = time.time()
-        prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+        # prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+        # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+        #                                  readouts_per_experiment=1, save_experiments=None,
+        #                                  start_src="internal", progress=False, debug=False)
+        # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+        my_spec = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                    outerFolder=r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\QCage_dev\dataTestSpecVsFlux', progress=True)
+        data = my_spec.acquire()
+        my_spec.display(data, plotDisp=False)
         data_I = data['data']['avgi']
         data_Q = data['data']['avgq']
+
+        # my_spec = SpecSlice_PS_sse(path="dataTestSpecSlice_PS", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+        #                            outerFolder=r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\QCage_dev\dataTestSpecVsFlux', progress=True)
+        # data = my_spec.acquire()
+        # data = my_spec.process_data(data=data)
+        # my_spec.display(data, plotDisp=False)
+        # data_I = data['data']['pop'][0,0,:]
+        # data_Q = data['data']['pop'][1,1,:]
 
         return data_I, data_Q
 
