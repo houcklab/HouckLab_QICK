@@ -22,20 +22,12 @@ import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
-#### define the saving path
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\"
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\"
-#################################### Running the actual experiments
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
-# # print(soccfg)
+# print(soccfg)
 
-print('program starting: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-#
-# plt.ioff()
-#
-#
 fridge_temp = 10
 relax_delay = 1000
 wait_stop = 800
@@ -115,50 +107,46 @@ for idx in range(loop_len):
 # %%
 # TITLE : code finding T1 of a thermal state with and without pulses
 UpdateConfig = {
-    ##### set yoko
-    "yokoVoltage": -0.12,
-    "yokoVoltage_freqPoint": -0.12,
-    ###### cavity
-    # "reps": 0,  # this line does nothing, is overwritten with "shots"
-    "read_pulse_style": "const",  # --Fixed
-    "read_length": 50,  # [Clock ticks]
-    "read_pulse_gain": 1690,  # [DAC units]
-    "read_pulse_freq": 6672.7, # [MHz]
-    ##### qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 0,
-    "flat_top_length": 20,
-    # "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.05,  ### units us, define a 20ns sigma
-    "qubit_freq": 65.4,
-    "relax_delay": 10000,  ### turned into us inside the run function
-    #### define shots
-    "shots": 10000,  ### this gets turned into "reps"
-    ### define the wait times
+    # yoko
+    "yokoVoltage": -0.1433,
+    "yokoVoltage_freqPoint": -0.1433,
+
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 75,
+    "read_pulse_gain": 1300,
+    "read_pulse_freq": 6672.274,
+
+    # qubit tone
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 10000,
+    "qubit_length": 10,
+    "sigma": 1,
+    "flat_top_length": 10.0,
+    "qubit_freq": 220,
+
+    # experiment
+    "shots": 20000,
     "wait_start": 0,
-    "wait_stop": 5000,
-    "wait_num": 11,
+    "wait_stop": 13000,
+    "wait_num": 6,
     'wait_type': 'linear',
-    ##### define number of clusters to use
     "cen_num": 2,
-    ##### record the fridge temperature in units of mK
     "fridge_temp": 10,
+    "relax_delay": 10,
     "use_switch": True
 }
 config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
-
-########
-## calculate an estimate of the scan time
+# calculate an estimate of the scan time
 time_per_scan = config["shots"] * (
-            np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"]) + config["relax_delay"]) * 1e-6
+        np.linspace(config['wait_start'], config["wait_stop"], config["wait_num"]) + config["relax_delay"]) * 1e-6
 total_time = np.sum(time_per_scan) / 60
 print('total time estimate: ' + str(total_time) + " minutes")
-#########
 
+# Run
 print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 Instance_T1_PS = T1_PS_sse(path="T1_PS_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
                            soc=soc, soccfg=soccfg)
@@ -228,112 +216,67 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": 2,
-    "yokoVoltage_freqPoint": 2,
+    "yokoVoltage": -0.1433,
+    "yokoVoltage_freqPoint": -0.1433,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 35,
-    "read_pulse_gain": 1500,
-    "read_pulse_freq": 6432.489,
+    "read_length": 50,
+    "read_pulse_gain": 1300,
+    "read_pulse_freq": 6672.274,
 
-    # qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 1,
+    # qubit tone
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 10000,
     "qubit_length": 10,
-    "sigma": 0.05,
-    "flat_top_length": 20.0,
-    "qubit_freq": 110,
+    "sigma": 1,
+    "flat_top_length": 10.0,
+    "qubit_freq": 220,
 
     # Experiment
-    "shots": 25000,
+    "shots": 1000000,
     "cen_num": 2,
-    "relax_delay": 5000,
+    "relax_delay": 10,
     "fridge_temp": 10,
-    'use_switch': False,
+    'use_switch': True,
 }
 config = BaseConfig | UpdateConfig
-
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
 
 yoko1.SetVoltage(config["yokoVoltage"])
 
 # %%
-time_required = (config["relax_delay"] * config["shots"]) * 1e-6 / 60
+time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
 print("QND Measure Time Required: ", time_required, "min")
-Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-                           soc=soc, soccfg=soccfg)
-data_QNDmeas = Instance_QNDmeas.acquire()
-data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
-Instance_QNDmeas.save_data(data_QNDmeas)
-Instance_QNDmeas.save_config()
-Instance_QNDmeas.display(data_QNDmeas, plotDisp=True)
-print('data saved: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# %%
-from tqdm import tqdm
+inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                   soc=soc, soccfg=soccfg)
 
-loop_len = 5
-loop_param = "read_pulse_gain"
-loop_vec = np.linspace(1500, 4000, loop_len, dtype=int)
+data_QNDmeas = inst_qnd.acquire()
+data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+inst_qnd.save_data(data_QNDmeas)
+inst_qnd.save_config()
+inst_qnd.display(data_QNDmeas, plotDisp=True)
+#%%
+# TITLE : Brute Search best parameters
+param_bounds ={
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
+    'read_length': (20, 90),
+    'read_pulse_gain': (1100, 2400)
+}
+step_size = {
+    "read_pulse_freq" : 0.01,
+    'read_length': 10,
+    'read_pulse_gain': 100,
+}
+keys = ["read_pulse_gain"]
+config["shots"] = 300000
+inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
+inst_qndopt.brute_search_result_display(display = True)
 
-QND = []
-QND_err = []
+#%%
 
-state0_0_prob = []
-state0_1_prob = []
-state0_prob_err = []
-state0_num = []
+plt.show()
 
-state1_0_prob = []
-state1_1_prob = []
-state1_prob_err = []
-state1_num = []
-
-for idx in tqdm(range(loop_len)):
-    # config["read_pulse_freq"] = read_freq_vec[idx]
-    config[loop_param] = loop_vec[idx]
-    Instance_QNDmeas = QNDmeas(path="QND_Meas_Sweeps_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder,
-                               cfg=config,
-                               soc=soc, soccfg=soccfg)
-    data_QNDmeas = QNDmeas.acquire(Instance_QNDmeas)
-    data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
-    Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
-    QNDmeas.save_data(Instance_QNDmeas, data_QNDmeas)
-    QNDmeas.save_config(Instance_QNDmeas)
-
-    state0_0_prob.append(data_QNDmeas['data']['state0_probs'][0])
-    state0_1_prob.append(data_QNDmeas['data']['state0_probs'][1])
-    state0_prob_err.append(data_QNDmeas['data']['state0_probs_err'][0])
-    state0_num.append(data_QNDmeas['data']['state0_num'])
-
-    state1_0_prob.append(data_QNDmeas['data']['state1_probs'][0])
-    state1_1_prob.append(data_QNDmeas['data']['state1_probs'][1])
-    state1_prob_err.append(data_QNDmeas['data']['state1_probs_err'][0])
-    state1_num.append(data_QNDmeas['data']['state1_num'])
-
-    QND.append(data_QNDmeas['data']['qnd'])
-    QND_err.append(data_QNDmeas['data']['qnd_err'])
-
-    print(idx)
-###########
-
-fig, axs = plt.subplots(3, 1, figsize=(8, 6))
-
-axs[0].errorbar(loop_vec, state0_0_prob, state0_prob_err, marker='o', ls='none')
-axs[0].errorbar(loop_vec, state1_1_prob, state1_prob_err, marker='o', ls='none')
-axs[0].set_xlabel(loop_param)
-axs[0].set_ylabel('state populations')
-
-axs[1].plot(loop_vec, state0_num)
-axs[1].plot(loop_vec, state1_num)
-axs[1].set_xlabel(loop_param)
-axs[1].set_ylabel('state populations')
-
-axs[2].errorbar(loop_vec, QND, QND_err)
-axs[2].set_xlabel(loop_param)
-axs[2].set_ylabel('QND fidelity')
-
-plt.tight_layout()
 # %%
 # ###TITLE: Amplitude rabi Blob with post selection
 # region Amplitude Rabi PS Config

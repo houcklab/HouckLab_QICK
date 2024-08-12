@@ -82,7 +82,7 @@ class ExperimentClass:
         #     self.plotter = LivePlotClient()
         # self.dataserver= dataserver_client()
 
-        ##### check to see if the file path exists
+        # check to see if the file path exists
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
             os.makedirs(self.outerFolder + self.path)
@@ -94,34 +94,30 @@ class ExperimentClass:
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
         self.path_wDate = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix )
         self.path_only = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)
-        ### define name for the config file
         self.cname = os.path.join(self.outerFolder +  self.path, self.path + "_" + datestring, self.path + "_" + datetimestring + "_" + self.prefix + '.json')
-        # print(self.fname)
-        #self.load_config()
-    #
-    # def load_config(self):
-    #     if self.config_file is None:
-    #         self.config_file = os.path.join(self.path, self.prefix + ".json")
-    #     try:
-    #         if self.config_file[-3:] == '.h5':
-    #             with SlabFile(self.config_file) as f:
-    #                 self.cfg = AttrDict(f.load_config())
-    #                 self.fname = self.config_file
-    #         elif self.config_file[-4:].lower() =='.yml':
-    #             with open(self.config_file,'r') as fid:
-    #                 self.cfg = AttrDict(yaml.safe_load(fid))
-    #         else:
-    #             with open(self.config_file, 'r') as fid:
-    #                 cfg_str = fid.read()
-    #                 self.cfg = AttrDict(json.loads(cfg_str))
-    #
-    #         if self.cfg is not None:
-    #             for alias, inst in self.cfg['aliases'].items():
-    #                 if inst in self.im:
-    #                     setattr(self, alias, self.im[inst])
-    #     except Exception as e:
-    #         print("Could not load config.")
-    #         traceback.print_exc()
+
+    def new_file(self):
+        datetimenow = datetime.datetime.now()
+        datetimestring = datetimenow.strftime("%Y_%m_%d_%H_%M_%S")
+        datestring = datetimenow.strftime("%Y_%m_%d")
+        self.datetimestring = datetimestring
+        # check to see if the file path exists
+        DataFolderBool = Path(self.outerFolder + self.path).is_dir()
+        if DataFolderBool == False:
+            os.makedirs(self.outerFolder + self.path)
+        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
+        if DataSubFolderBool == False:
+            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
+
+        self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.h5')
+        self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.png')
+        self.path_wDate = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                       self.path + "_" + datetimestring + "_" + self.prefix)
+        self.path_only = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)
+        self.cname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.json')
 
     def save_config(self):
         if self.cname[:-3] != '.h5':

@@ -10,6 +10,7 @@ The pulses should try that at the beginning the qubit is inequal population of e
 """
 import numpy as np
 from qick import *
+import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
 import scipy.optimize as opt
@@ -404,9 +405,23 @@ class SingleShotMeasure(ExperimentClass):
 
         return best_params, best_value
 
-    def display(self, data=None, plotDisp=False, figNum=1, save_fig=True, ran=None, **kwargs):
+    def display_opt(self, data=None, plotDisp=False, figNum=1, save_fig=True, ran=None, **kwargs):
         if data is None:
             data = self.data
+
+        if len(self.keys) == 1:
+            param1_values = [param[0][0] for param in self.params]
+            quants = self.quants
+            # Create a 1D  plot
+            plt.figure(figsize=(10, 8))
+            scatter = plt.scatter(param1_values, quants)
+            plt.xlabel('Resonator Pulse Frequency')
+            plt.ylabel('KL Divergence')
+            plt.title('Optimization')
+            plt.tight_layout()
+            plt.savefig(self.iname, dpi = 500)
+            if plotDisp == True:
+                plt.show()
         return
 
     def save_data(self, data=None):

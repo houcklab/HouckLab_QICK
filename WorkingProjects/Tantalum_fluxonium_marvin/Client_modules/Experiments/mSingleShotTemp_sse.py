@@ -53,6 +53,7 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit")
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4
+            self.qubit_tone_length = None
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
@@ -61,6 +62,7 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+            self.qubit_tone_length = self.us2cycles(self.cfg["flat_top_length"])
         else:
             print("define pi or flat top pulse")
 
@@ -83,7 +85,7 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                              width=self.cfg["trig_len"])  # trigger for switch
             self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
-                                     freq=self.qubit_ge_freq,
+                                     freq=self.qubit_ge_freq, length=self.qubit_tone_length,
                                      phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                      waveform="qubit")
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
@@ -91,14 +93,15 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
             self.sync_all(self.us2cycles(0.01))
 
             # Apply e-f pi pulse
-            if self.cfg["use_switch"]:
-                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                             width=self.cfg["trig_len"])  # trigger for switch
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
-                                     freq=self.qubit_ef_freq,
-                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
-                                     waveform="qubit")
-            self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
+            if self.cfg["apply_ef"]:
+                if self.cfg["use_switch"]:
+                    self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                                 width=self.cfg["trig_len"])  # trigger for switch
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_ef_freq,
+                                         phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+                                         waveform="qubit")
+                self.pulse(ch=self.cfg['qubit_ch'])  # play ef probe pulse
 
             self.sync_all(self.us2cycles(0.01))
 
@@ -107,6 +110,9 @@ class LoopbackProgramSingleShot_sse(RAveragerProgram):
                          adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
                          wait=True,
                          syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+
+            self.sync_all(self.us2cycles(0.01))
+
             self.measure(pulse_ch=self.cfg["res_ch"],
                          adcs=[0],
                          adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),

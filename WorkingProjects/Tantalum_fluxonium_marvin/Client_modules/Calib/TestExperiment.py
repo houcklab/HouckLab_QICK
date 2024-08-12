@@ -27,12 +27,13 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.m2Qubi
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mConstantTone import ConstantTone_Experiment
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
 
 from matplotlib import pyplot as plt
 import datetime
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_26_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
 
 # Print the start time
 print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
@@ -99,9 +100,9 @@ UpdateConfig_transmission = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 20,
+    "read_length": 75,
     "read_pulse_gain": 1500,
-    "read_pulse_freq":  6671.5, #6253.8,
+    "read_pulse_freq":  6671.858, #6253.8,
 
     # Experiment Parameters
     "TransSpan": 3,  # [MHz] span will be center frequency +/- this parameter
@@ -110,19 +111,19 @@ UpdateConfig_transmission = {
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",  # Constant pulse
-    "qubit_gain": 12000,  # [DAC Units]
+    "qubit_gain": 18000,  # [DAC Units]
     'sigma': 1,
     'flat_top_length': 10,
-    "qubit_length": 10,  # [us]
+    "qubit_length": 20,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 50,
-    "qubit_freq_stop": 120,
-    "SpecNumPoints": 101,  # Number of points
-    'spec_reps': 5000,  # Number of repetition
+    "qubit_freq_start": 300,
+    "qubit_freq_stop": 600,
+    "SpecNumPoints": 301,  # Number of points
+    'spec_reps': 10000,  # Number of repetition
 
     # Define the yoko voltage
-    "yokoVoltage": -0.1433,
+    "yokoVoltage": -0.1145 - 0.635,
     "relax_delay": 50,  # [us] Delay post one experiment
     'use_switch': True,
 }
@@ -132,7 +133,7 @@ UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig
 
 # Set the yoko frequency
-yoko1.SetVoltage(config["yokoVoltage"])
+# yoko1.SetVoltage(config["yokoVoltage"])
 
 
 #%%
@@ -171,6 +172,22 @@ Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice_temp", cfg=config
 data_specSlice = SpecSlice_bkg_sub.acquire(Instance_specSlice)
 SpecSlice_bkg_sub.save_data(Instance_specSlice, data_specSlice)
 SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
+
+#%%
+# TITLE : Perform the spec slice with Post Selection
+config_spec_ps = {
+    'spec_reps' : 10000, # Converted to shots
+    'initialize_pulse': False,
+    'fridge_temp': 420,
+    "qubit_pulse_style": "flat_top"
+}
+config_spec_ps = config | config_spec_ps
+inst_specslice = SpecSlice_PS_sse(path="dataTestSpecSlice_PS", cfg=config_spec_ps,
+                                        soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+data_specSlice_PS = inst_specslice.acquire()
+data_specSlice_PS = inst_specslice.process_data(data = data_specSlice_PS)
+inst_specslice.display(data = data_specSlice_PS, plotDisp=True)
+inst_specslice.save_data(data_specSlice_PS)
 
 #%%
 # TITLE: Amplitude Rabi
@@ -716,8 +733,8 @@ inst_t1.save_config()
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 15000,  # [DAC units]
-    "freq": 200,  # [MHz]
+    "gain": 1000,  # [DAC units]
+    "freq": 500,  # [MHz]
     "channel": 1,  # TODO default value
         "nqz": 1,  # TODO default value
 }
