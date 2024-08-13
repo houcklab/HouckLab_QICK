@@ -1,0 +1,55 @@
+2024-04-15_TAHP02_Al2O3_Ta-Au-300nm_01:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  attenList:
+  - 0
+  - 10
+  - 20
+  - 30
+  - 40
+  - 50
+  - 60
+  base_powers: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 600
+  n_repsList:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  n_resonators: 1
+  n_roundsList:
+  - 20
+  - 50
+  - 100
+  - 200
+  - 400
+  - 800
+  - 1600
+  names:
+  - 5p95
+  readout_lengthList:
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  - 10000
+  res_f:
+  - 5951.7
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024-04-19_cooldown\2024-04-15_TAHP02_Al2O3_Ta-Au-300nm_01\PS
+  span_f:
+  - 2.5

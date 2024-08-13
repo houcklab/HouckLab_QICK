@@ -113,8 +113,12 @@ class T2Experiment(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
-        mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        #mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
         phase = np.arctan2(avgq[0][0], avgi[0][0])
+
+        #mag = np.sqrt((avgi[0][0])**2 + (avgq[0][0])**2)
+
+        mag = avgq[0][0]
 
         data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
@@ -123,7 +127,7 @@ class T2Experiment(ExperimentClass):
 
         ### define T2 function
         def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
-            return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset) )
+            return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset))
 
         offset_guess = (np.max(mag) + np.min(mag))/2
         amp_guess = (np.max(mag) - np.min(mag))/2
@@ -147,6 +151,7 @@ class T2Experiment(ExperimentClass):
             self.T2_est = self.pOpt[2]
             self.T2_err = self.perr[2]
             self.freq_est = self.pOpt[3]
+            self.freq_err = self.perr[3]
         except:
             pass
 
@@ -164,8 +169,10 @@ class T2Experiment(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
 
-        mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
-        phase = np.angle(avgi[0][0] + 1j * avgq[0][0], deg = True)
+        #mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        mag = np.sqrt((avgi[0][0]) ** 2 + (avgq[0][0]) ** 2)
+        phase = np.arctan2(avgq[0][0], avgi[0][0])
+        #phase = np.angle(avgi[0][0] + 1j * avgq[0][0], deg = True)
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
@@ -177,23 +184,30 @@ class T2Experiment(ExperimentClass):
         axs[0].legend()
 
         ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
-        axs[1].plot(times, self.T2_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(times, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        ax2 = axs[2].plot(times, avgi[0][0], 'o-', label="I - Data")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(times, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        ax3 = axs[3].plot(times, avgq[0][0], 'o-', label="Q - Data")
+        try:
+            axs[3].plot(times, self.T2_fit, label='fit')
+            print(self.pOpt)
+            print(self.perr)
+        except:
+            pass
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
         try:
-            plt.suptitle("T2 Experiment, T2 = " + str(round(self.T2_est,1)) + r" $\pm$ " + str(round(self.T2_err,1)) + "us")
+            true_freq = self.freq_est
+            plt.suptitle("T2 Experiment, T2 = " + str(round(self.T2_est,2)) + r" $\pm$ " + str(round(self.T2_err,2)) + "us | "
+                         + str(round(true_freq,6)) + " MHz")
         except:
             plt.suptitle("T2 Experiment")
 

@@ -14,11 +14,13 @@ class LoopbackProgramTrans(AveragerProgram):
         cfg = self.cfg
         res_ch = cfg["res_ch"]
         #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], ro_ch=cfg["ro_chs"][0])
 
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"], length=self.us2cycles((cfg["read_length"]), gen_ch=cfg["res_ch"]))
+            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
+                                 length=self.us2cycles(cfg["read_length"]),
+                                 gen_ch=cfg["res_ch"])
 
         style = self.cfg["read_pulse_style"]
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][
@@ -119,11 +121,15 @@ class Transmission(ExperimentClass):
         x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"]/1e6) /1e3 #### put into units of frequency GHz
         sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
         avgamp0 = np.abs(sig)
+        phase = np.angle(sig)
         plt.plot(x_pts, avgamp0, label="Amplitude; ADC 0")
+        plt.plot(x_pts, data['data']['results'][0][0][0], label="I; ADC 0")
+        plt.plot(x_pts, data['data']['results'][0][0][1], label="Q; ADC 0")
+        # plt.plot(x_pts, phase, label="phase; ADC 0")
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.title("Averages = " + str(self.cfg["reps"]))
-
+        plt.legend()
         plt.savefig(self.iname)
 
         if plotDisp:

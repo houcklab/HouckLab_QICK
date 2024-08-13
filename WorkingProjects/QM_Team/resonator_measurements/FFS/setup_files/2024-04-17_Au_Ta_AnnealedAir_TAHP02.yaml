@@ -1,0 +1,68 @@
+2024-04-15_TAHP02_Al2O3_Ta-Au-300nm_01:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  base_powers: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 6
+  n_rounds: 5
+  names:
+  - 5p95
+  - 6p26
+  - 6p53
+  - 6p83
+  - 7p39
+  - 8p00
+  readout_length: 10000
+  res_f:
+  - 5951.7
+  - 6258.7
+  - 6536.6
+  - 6824.0
+  - 7399.46
+  - 8003.0
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024-04-19_cooldown\2024-04-15_TAHP02_Al2O3_Ta-Au-300nm_01_NFS
+  span_f:
+  - 2.5
+  - 2.5
+  - 2.5
+  - 1.5
+  - 1.0
+  - 2.0
+TALE08-AIRanneal:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  base_powers: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 3
+  n_rounds: 5
+  names:
+  - 4p41
+  - 4p66
+  - 5p16
+  readout_length: 10000
+  res_f:
+  - 4410.09419
+  - 4661.96
+  - 5159.5315
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024-04-19_cooldown\TALE08_AIRannealed_NFS
+  span_f:
+  - 0.01
+  - 0.02
+  - 0.02

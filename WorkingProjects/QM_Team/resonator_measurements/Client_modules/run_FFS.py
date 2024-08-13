@@ -15,7 +15,7 @@ def run_FFS(temps, socs, chipDicts, soccfgs, dBm_lookups=['','','',''],turbo=Tru
         #tc.changeHeaterCurrentPercent(hp)
         # Wait for temperature to settle - at this point the measurements should be ready to be run
         #tc.waitUntilFridgeStableAfterHeaterChange()
-        time.sleep(40*60)
+        time.sleep(60*60)
         for soc, chipDict, soccfg, dBm_lookup in zip(socs, chipDicts, soccfgs,dBm_lookups):
             inputDicts = getInputDicts(chipDict, measType='FFS', dBm_lookup_file=dBm_lookup) # may have to move this outside for loop? so that inputDict center gets redefined
             for inputDict in inputDicts:

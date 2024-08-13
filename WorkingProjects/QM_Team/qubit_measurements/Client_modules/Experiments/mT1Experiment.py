@@ -142,17 +142,18 @@ class T1Experiment(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False, debug=False)
-        mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        #mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        mag = np.sqrt(avgi[0][0] ** 2 + avgq[0][0] ** 2)
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
         data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
         # perform fit for T1 estimate
 
-        # define T1 function
-        # mag = np.sqrt(avgi[0][0] ** 2 + avgq[0][0] ** 2) # Fit to magnitude rather than I quadrature -- Lev
-        #
-        mag_fit = mag
+        #mag_fit = mag
+        #mag_I = avgi[0][0]
+        mag_fit = avgq[0][0]
+
 
         def _expFit(x, a, T1, c):
             return a * np.exp(-1 * x / T1) + c
@@ -190,24 +191,25 @@ class T1Experiment(ExperimentClass):
             figNum += 1
         fig, axs = plt.subplots(4,1, figsize = (12,12), num = figNum)
 
-        ax0 = axs[0].plot(times, phase, 'o-', label="phase")
+        ax0 = axs[0].plot(times, phase, 'o', label="phase")
         axs[0].set_ylabel("degree.")
         axs[0].set_xlabel("Time (us)")
         axs[0].legend()
 
-        ax1 = axs[1].plot(times, mag, 'o-', label="magnitude")
-        axs[1].plot(times, self.T1_fit, label='fit')
+        ax1 = axs[1].plot(times, mag, 'o', label="magnitude")
+        #axs[1].plot(times, self.T1_fit, label='fit')
         axs[1].set_ylabel("a.u.")
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(times, avgi[0][0] , 'o-', label="I - Data")
-        # axs[2].plot(times, self.T1_fit, label='fit')
+        ax2 = axs[2].plot(times, avgi[0][0], 'o', label="I - Data")
+        #axs[2].plot(times, self.T1_fit, label='fit')
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(times, avgq[0][0] , 'o-', label="Q - Data")
+        ax3 = axs[3].plot(times, avgq[0][0], 'o', label="Q - Data")
+        axs[3].plot(times, self.T1_fit, label='fit')
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()

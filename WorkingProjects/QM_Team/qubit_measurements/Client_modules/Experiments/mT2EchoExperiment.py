@@ -114,20 +114,20 @@ class T2EchoExperiment(ExperimentClass):
         data = {'config': self.cfg, 'data': {'times': 2*x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
 
         #### define T2 echo function
-        mag = avgi[0][0]
+        mag = avgq[0][0]
         def _expFit(x, a, T2_echo, c):
             return a * np.exp(-1 * x / T2_echo) + c
 
-        a_geuss = (np.max(mag)-np.min(mag))*-1
-        b_geuss = np.min(mag)
-        T2_echo_geuss = np.max(x_pts)/3
-        geuss = [a_geuss, T2_echo_geuss, b_geuss]
-        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag, p0=geuss)
-
+        a_guess = (np.max(mag)-np.min(mag))*-1
+        b_guess = np.min(mag)
+        T2_echo_guess = np.max(x_pts)/3
+        guess = [a_guess, T2_echo_guess, b_guess]
+        self.pOpt, self.pCov = curve_fit(_expFit, x_pts, mag, p0=guess)
+        self.perr = np.sqrt(np.diag(self.pCov))
         self.T2_echo_fit = _expFit(x_pts, *self.pOpt)
 
         self.T2_echo_est = self.pOpt[1]
-        self.T2_echo_err = self.pCov
+        self.T2_echo_err = self.perr[1]
         print("--- %s seconds ---" % (time.time() - start_time))
 
         return data
@@ -140,7 +140,8 @@ class T2EchoExperiment(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
 
-        mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        #mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        mag = np.sqrt((avgi[0][0])**2 + (avgq[0][0])**2)
         phase = np.angle(avgi[0][0] + 1j * avgq[0][0], deg=True)
 
         while plt.fignum_exists(num=figNum):
@@ -158,18 +159,19 @@ class T2EchoExperiment(ExperimentClass):
         axs[1].set_xlabel("Time (us)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(times, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].plot(times, self.T2_echo_fit, label='fit')
+        ax2 = axs[2].plot(times, avgi[0][0], 'o-', label="I - Data")
+        #axs[2].plot(times, self.T2_echo_fit, label='fit')
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Time (us)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(times, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        ax3 = axs[3].plot(times, avgq[0][0], 'o-', label="Q - Data")
+        axs[3].plot(times, self.T2_echo_fit, label='fit')
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        fig.suptitle("T2 echo Experiment, T2 = " + str(round(self.T2_echo_est,1) ) + " us")
+        fig.suptitle("T2 echo Experiment, T2E = " + str(round(self.T2_echo_est,4)) + r" $\pm$ " + str(round(self.T2_echo_err,2)) + " us")
 
         plt.tight_layout()
 

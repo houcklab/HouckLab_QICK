@@ -106,15 +106,15 @@ print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 ########################################################################################################################
 ########################################################################################################################
 # ## Amplitude Rabi ###
-# config["qubit_pulse_style"]= "flat_top"
-# config["sigma"] = 0.5
-# config["flat_top_length"] = 20
-#
-# Instance_AmplitudeRabi = AmplitudeRabi(path="dataTestAmplitudeRabi", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-# data_AmplitudeRabi = AmplitudeRabi.acquire(Instance_AmplitudeRabi)
-# AmplitudeRabi.display(Instance_AmplitudeRabi, data_AmplitudeRabi, plotDisp=True)
-# AmplitudeRabi.save_data(Instance_AmplitudeRabi, data_AmplitudeRabi)
-# AmplitudeRabi.save_config(Instance_AmplitudeRabi)
+config["qubit_pulse_style"]= "flat_top"
+config["sigma"] = 0.5
+config["flat_top_length"] = 20
+
+Instance_AmplitudeRabi = AmplitudeRabi(path="dataTestAmplitudeRabi", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_AmplitudeRabi = AmplitudeRabi.acquire(Instance_AmplitudeRabi)
+AmplitudeRabi.display(Instance_AmplitudeRabi, data_AmplitudeRabi, plotDisp=True)
+AmplitudeRabi.save_data(Instance_AmplitudeRabi, data_AmplitudeRabi)
+AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 
 #######################################################################################################################
 ########################################################################################################################

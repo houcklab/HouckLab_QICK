@@ -1,0 +1,48 @@
+2024-06-09_TAHP02-ReTa:
+  LO_f: 0
+  adc_trig_offset: 0.1
+  basePower: 0
+  gain:
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  - 30000
+  n_expts: 700
+  n_reps: 1
+  n_resonators: 8
+  n_rounds: 3
+  names:
+  - 3p87
+  - 4p74
+  - 4p89
+  - 5p12
+  - 5p45
+  - 5p58
+  - 5p78
+  - 6p14
+  readout_length: 10000
+  res_f:
+  - 3871.9
+  - 4738.7
+  - 4892.8
+  - 5120.1
+  - 5454.9
+  - 5589.75
+  - 5786.68
+  - 6140.65
+  ring_between_time: 50
+  ring_up_time: 500
+  save_path: Z:\t1Team\Data\2024-05-20_cooldown\TAHP02-ReTa\2024_06_09_NFS_Turbo_on_clk_true
+  span_f:
+  - 3.0
+  - 0.5
+  - 0.5
+  - 0.5
+  - 0.5
+  - 0.5
+  - 0.5
+  - 0.5

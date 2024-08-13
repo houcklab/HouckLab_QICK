@@ -28,10 +28,15 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
         # add qubit and readout pulses to respective channels
+        # self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+        #                          length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+        # self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
+        #                          length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),mode="periodic")
+
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                 length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+                                 length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),mode="periodic")
+                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         self.sync_all(self.us2cycles(1))
 
@@ -136,12 +141,12 @@ class SpecSlice(ExperimentClass):
         axs[1].set_xlabel("Qubit Frequency (GHz)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        ax2 = axs[2].plot(x_pts, avgi[0][0], 'o-', label="I - Data")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Qubit Frequency (GHz)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        ax3 = axs[3].plot(x_pts, avgq[0][0], 'o-', label="Q - Data")
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Qubit Frequency (GHz)")
         axs[3].legend()
