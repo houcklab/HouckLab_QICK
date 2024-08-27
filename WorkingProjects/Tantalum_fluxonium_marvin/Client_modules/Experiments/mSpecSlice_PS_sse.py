@@ -340,7 +340,9 @@ class SpecSlice_PS_sse(ExperimentClass):
 
         if plotDisp:
             plt.show()
-        plt.close()
+        else:
+            plt.close()
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

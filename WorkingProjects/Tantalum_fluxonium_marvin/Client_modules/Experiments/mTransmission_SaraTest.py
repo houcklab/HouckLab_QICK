@@ -46,7 +46,6 @@ class Transmission(ExperimentClass):
                 "span": self.cfg["TransSpan"],
                 "expts": self.cfg["TransNumPoints"]
         }
-        print(expt_cfg)
         expt_cfg["step"] = 2 * expt_cfg["span"] / (expt_cfg["expts"]-1)
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
         fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
@@ -56,7 +55,8 @@ class Transmission(ExperimentClass):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             results.append(prog.acquire(self.soc, load_pulses=True))
-        print(f'Time: {time.time() - start}')
+        if debug:
+            print(f'Time: {time.time() - start}')
         results = np.transpose(results)
         #
         # prog = LoopbackProgram(self.soccfg, self.cfg)
@@ -101,7 +101,7 @@ class Transmission(ExperimentClass):
 
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
+        # print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
 

@@ -221,8 +221,8 @@ UpdateConfig = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 50,
-    "read_pulse_gain": 1300,
+    "read_length": 70,
+    "read_pulse_gain": 1600,
     "read_pulse_freq": 6672.274,
 
     # qubit tone

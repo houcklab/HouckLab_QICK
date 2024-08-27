@@ -33,7 +33,7 @@ from matplotlib import pyplot as plt
 import datetime
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\Magnet_Heat_Check_3\\"
 
 # Print the start time
 print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
@@ -101,8 +101,8 @@ UpdateConfig_transmission = {
     # cavity
     "read_pulse_style": "const",
     "read_length": 75,
-    "read_pulse_gain": 1500,
-    "read_pulse_freq":  6671.858, #6253.8,
+    "read_pulse_gain": 1200,
+    "read_pulse_freq":  6672.38, #6253.8,
 
     # Experiment Parameters
     "TransSpan": 3,  # [MHz] span will be center frequency +/- this parameter
@@ -110,21 +110,21 @@ UpdateConfig_transmission = {
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "const",  # Constant pulse
-    "qubit_gain": 18000,  # [DAC Units]
+    "qubit_pulse_style": "flat_top",  # Constant pulse
+    "qubit_gain": 10000,  # [DAC Units]
     'sigma': 1,
     'flat_top_length': 10,
-    "qubit_length": 20,  # [us]
+    "qubit_length": 10,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 300,
-    "qubit_freq_stop": 600,
+    "qubit_freq_start": 50,
+    "qubit_freq_stop": 650,
     "SpecNumPoints": 301,  # Number of points
-    'spec_reps': 10000,  # Number of repetition
+    'spec_reps': 300,  # Number of repetition
 
     # Define the yoko voltage
-    "yokoVoltage": -0.1145 - 0.635,
-    "relax_delay": 50,  # [us] Delay post one experiment
+    "yokoVoltage": -1.98395416666666,
+    "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': True,
 }
 
@@ -157,6 +157,7 @@ print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 # Estimate Time
 time = config["spec_reps"]*config["SpecNumPoints"]*(config["relax_delay"] + config["qubit_length"] + config["read_length"])*1e-6
 #print("Time required for spec slice experiment is ", datetime.timedelta(seconds = time).strftime('%H::%M::%S'))
+print(time)
 
 Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_specSlice= SpecSlice.acquire(Instance_specSlice)
@@ -176,7 +177,7 @@ SpecSlice_bkg_sub.display(Instance_specSlice, data_specSlice, plotDisp=True)
 #%%
 # TITLE : Perform the spec slice with Post Selection
 config_spec_ps = {
-    'spec_reps' : 10000, # Converted to shots
+    'spec_reps' : 1000, # Converted to shots
     'initialize_pulse': False,
     'fridge_temp': 420,
     "qubit_pulse_style": "flat_top"
@@ -733,8 +734,8 @@ inst_t1.save_config()
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 1000,  # [DAC units]
-    "freq": 500,  # [MHz]
+    "gain": 0,  # [DAC units]
+    "freq": 4000,  # [MHz]
     "channel": 1,  # TODO default value
         "nqz": 1,  # TODO default value
 }
@@ -792,7 +793,7 @@ print("Done")
 #
 # scan_time = (config_ss["relax_delay"] * config_ss["shots"] * 2) * 1e-6 / 60
 # print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
-# Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc_temp_",
+ #Instance_SingleShotSSE = SingleShotSSE(path="dataSingleShot_TempCalc_temp_",
 #                                        outerFolder=outerFolder,
 #                                        cfg=config_ss,
 #                                        soc=soc, soccfg=soccfg)
