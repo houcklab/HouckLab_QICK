@@ -33,18 +33,22 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingl
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_ef
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_RPM
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.ConstantTone import ConstantTone_Experiment
+
+import sys
+sys.path.insert(0, 'Z:\TantalumFluxonium\Data\HouckLabMeasurementCode\ADMV8818')
+from admv8818_functions import set_filter
 from matplotlib import pyplot as plt
 import datetime
 from tqdm import tqdm
 
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_07_29_cooldown\HouckCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
 # print(soccfg)
 
-plt.ioff()
+# plt.ioff()
 
 # Defining the switch configuration
 SwitchConfig = {
@@ -61,10 +65,11 @@ UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
     "gain": 5000,  # [DAC units]
-    "freq": 200,  # [MHz]
 
-    "channel": 1,  # TODO default value # 0 is resonator, 1 is qubit
-    "nqz": 1,  # TODO default value
+    "freq": 6665,  # [MHz]
+
+    "channel": 0,  # TODO default value # 0 is resonator, 1 is qubit
+    "nqz": 2,#1,  # TODO default value
 }
 
 config = BaseConfig | UpdateConfig
@@ -74,6 +79,10 @@ data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
 ConstantTone_Experiment.save_data(ConstantTone_Instance, data_ConstantTone)
 ConstantTone_Experiment.save_config(ConstantTone_Instance)
 
+# using the 10MHz-1GHz balun
+# f_center = 1e9 #Hz
+# settings = set_filter(f_center)
+# print(settings)
 
 #%%
 # TITLE: Loopback experiment
@@ -93,7 +102,7 @@ config = {"res_ch": 0,  # --Fixed
           "pulse_gain": 30000,  # [DAC units]
           # Try varying pulse_gain from 500 to 30000 DAC units
 
-          "pulse_freq": 6204,  # [MHz]
+          "pulse_freq": 6648,  # [MHz]
           # In this program the signal is up and downconverted digitally so you won't see any frequency
           # components in the I/Q traces below. But since the signal gain depends on frequency,
           # if you lower pulse_freq you will see an increased gain.
@@ -101,7 +110,7 @@ config = {"res_ch": 0,  # --Fixed
           "adc_trig_offset": 220,  # [Clock ticks] NOTE: the rest of the code accepts this number in us, not clock cycles!
           # Try varying adc_trig_offset from 100 to 220 clock ticks
 
-          "soft_avgs": 10000
+          "soft_avgs": 100#10000
           # Try varying soft_avgs from 1 to 200 averages
           }
 
@@ -123,26 +132,25 @@ fff.show()
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 10000,
+    "reps": 2000,
     "read_pulse_style": "const",
-    "readout_length": 30,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 6423.375,
+    "readout_length": 80,
+    "read_pulse_gain": 1000,
+    "read_pulse_freq": 6230,
 
     # Transmission Experiment
     "TransSpan": 2, # MHz
-    "TransNumPoints": 201,
+    "TransNumPoints": 51,
 
-    "relax_delay": 1,
 
     # define the yoko voltage
-    "yokoVoltage": 0.12,
+    "yokoVoltage": 1.2869,
 }
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",
     "qubit_freq": 200,
-    "qubit_gain": 30000,
+    "qubit_gain": 25000,
 
     # Constant Pulse Tone
     "qubit_length": 20,
@@ -153,12 +161,12 @@ UpdateConfig_qubit = {
 
     # define spec slice experiment parameters
     "qubit_freq_start": 100,
-    "qubit_freq_stop": 600,
-    "SpecNumPoints": 501,
-    'spec_reps': 10000,
+    "qubit_freq_stop": 1000,
+    "SpecNumPoints": 451,
+    'spec_reps': 5000,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 10000,
+    "qubit_gain_start": 0,
     "qubit_gain_step": 1,
     "qubit_gain_expts": 2,
     "AmpRabi_reps": 500000,
@@ -178,6 +186,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 
 #%%
 # TITLE: Performing the Cavity Transmission Experiment
+config = BaseConfig | UpdateConfig
 Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_trans= Transmission.acquire(Instance_trans)
 Transmission.display(Instance_trans, data_trans, plotDisp=True)
@@ -190,6 +199,7 @@ print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 #%%
 # TITLE: Performing background subtracted spec slice
 plt.close("all")
+
 Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder, progress = True)
 data_specSlice= Instance_specSlice.acquire()
 Instance_specSlice.display(data_specSlice, plotDisp=True)
@@ -212,31 +222,33 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 ##TITLE: Transmission vs Power
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": 0.12, #3.1
+    "yokoVoltage": 1.2869, #3.1
     ##### change gain instead option
-    "trans_gain_start": 10,
+    "trans_gain_start": 500,
     "trans_gain_stop": 30000,
-    "trans_gain_num": 101,
+    "trans_gain_num": 21,
     ###### cavity
-    "reps": 200,
-    "trans_reps": 200,  # this will used for all experiments below unless otherwise changed in between trials
+    "reps": 1000,
+    "trans_reps":1000,  # this will used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    "readout_length": 20,  # [us]
+    "readout_length": 80,  # [us]
     # "read_pulse_gain": 10000,  # [DAC units]
     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_start": 6422.,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 6424.,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransNumPoints": 201,  ### number of points in the transmission frequecny
-    "relax_delay": 10, # us
-    "units": "dB",
+    "trans_freq_start": 6226,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6236,  # [MHz] actual frequency is this number + "cavity_LO"
+    "TransNumPoints": 101,  ### number of points in the transmission frequecny
+    "relax_delay": 5, # us
+    "units": "dB",         # in dB or DAC
 }
 #
 config = BaseConfig | UpdateConfig
 #
 # #### update the qubit and cavity attenuation
-# yoko1.SetVoltage(config["yokoVoltage"])
+yoko1.SetVoltage(config["yokoVoltage"])
 # #
+import matplotlib
+matplotlib.use('Qt5Agg')
 Instance_TransVsGain = TransVsGain(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 data_TransVsGain = TransVsGain.acquire(Instance_TransVsGain)
 TransVsGain.save_data(Instance_TransVsGain, data_TransVsGain)

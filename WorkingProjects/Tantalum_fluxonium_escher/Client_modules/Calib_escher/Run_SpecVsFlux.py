@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 
 # define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_07_29_cooldown\HouckCage_dev\\"
 
 
 # Only run this if no proxy already exists
@@ -26,31 +26,31 @@ BaseConfig = BaseConfig | SwitchConfig
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": 0,
-    "yokoVoltageStop": 0.2,
-    "yokoVoltageNumPoints": 21,#151,
+    "yokoVoltageStart": 1.2,#-.08,
+    "yokoVoltageStop": 1.4,
+    "yokoVoltageNumPoints": 51,#201,#151,
 
     # Readout parameters
-    "trans_reps": 800,
+    "trans_reps": 200,
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 6000,
-    "trans_freq_start": 6422.,
-    "trans_freq_stop": 6424,
+    "read_length": 80,
+    "read_pulse_gain": 2500,
+    "trans_freq_start": 6230,
+    "trans_freq_stop": 6240,
     "TransNumPoints": 101,
 
     # qubit spec parameters
-    "spec_reps": 10000,
+    "spec_reps": 1,
     "qubit_pulse_style": "const", #"flat_top",
-    "qubit_gain": 20000,
+    "qubit_gain": 0,
     "qubit_length": 20,
     "flat_top_length": 20,
     "qubit_freq_start": 600,
     "qubit_freq_stop": 900,
-    "SpecNumPoints": 91,
+    "SpecNumPoints": 2,#91,
     "sigma": 0.5,
-    "relax_delay": 10,
-    "use_switch": True,
+    "relax_delay": 10,#10,
+    "use_switch": False,
 }
 config = BaseConfig | UpdateConfig
 
@@ -61,3 +61,4 @@ data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux)
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
 plt.show()
+
