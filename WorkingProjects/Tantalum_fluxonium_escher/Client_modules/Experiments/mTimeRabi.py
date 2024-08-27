@@ -4,7 +4,61 @@ import numpy as np
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass # used to come from WTF, might cause problems
 from tqdm.notebook import tqdm
 import time
+# class LoopbackProgramTimeRabi(AveragerProgram):
+#     def initialize(self):
+#         cfg = self.cfg
+#         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
+#         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+#         for ch in cfg["ro_chs"]:
+#             self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+#                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
+#
+#         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+#                                   ro_ch=cfg["ro_chs"][0])  # convert f_res to dac register value
+#         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg[
+#             "qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
+#
+#         # Define qubit pulse
+#         if cfg["qubit_pulse_style"] == "flat_top":
+#             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+#                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
+#                            length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+#             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+#                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+#                                      # cfg["start"],
+#                                      waveform="qubit", length=self.us2cycles(cfg["qb_length"]))
+#             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(cfg["qb_length"])
+#         elif cfg["qubit_pulse_style"] == "const":
+#             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+#                                      gain=cfg["qubit_gain"],
+#                                      length=self.us2cycles(cfg["qb_length"], gen_ch=cfg["qubit_ch"]),
+#                                      )
+#             # mode="periodic")
+#             self.qubit_pulseLength = self.us2cycles(cfg["qb_length"], gen_ch=cfg["qubit_ch"])
+#
+#         else:
+#             print("define pi or flat top pulse")
+#
+#         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+#                                  gain=cfg["read_pulse_gain"],
+#                                  length=self.us2cycles(self.cfg["read_length"]))
+#
+#         # Calculate length of trigger pulse
+#         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+#                                               gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+#
+#         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+#
+#         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+# def body(self):
+#     cfg = self.cfg
+#     self.pulse(ch=cfg["qubit_ch"])  # play probe pulse
+#     self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+#
+#     self.measure(pulse_ch=cfg["res_ch"],adcs=[0,1],wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+#
 
+#-----------------------------------------------------------#
 class LoopbackProgramTimeRabi(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -14,12 +68,13 @@ class LoopbackProgramTimeRabi(RAveragerProgram):
 
         #### set the start, step, and other parameters
         self.cfg["start"] = self.cfg["qubit_len_start"]
-        self.cfg["step"] = self.cfg["qubit_len_step"]
-        self.cfg["expts"] = self.cfg["qubit_len_expts"]
+        self.cfg["step"] = 1
+        self.cfg["expts"] = 1 #self.cfg["qubit_len_expts"]
         self.cfg["reps"] = self.cfg["TimeRabi_reps"]
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        #self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        #self.r_length = self.sreg(cfg["qubit_ch"], "t") ### Ignore
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
@@ -38,15 +93,15 @@ class LoopbackProgramTimeRabi(RAveragerProgram):
                            length=self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=self.cfg["qubit_gain"], #cfg["start"],
-                                     waveform="qubit",  length=self.us2cycles(cfg["start"]))
-            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(cfg["start"])
+                                     waveform="qubit",  length=self.us2cycles(cfg["qb_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(cfg["qb_length"])
         elif cfg["qubit_pulse_style"] == "const":
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
                                      gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(cfg["start"], gen_ch=cfg["qubit_ch"]),
+                                     length=self.us2cycles(cfg["qb_length"], gen_ch=cfg["qubit_ch"]),
                                      )
                                      #mode="periodic")
-            self.qubit_pulseLength = self.us2cycles(cfg["start"], gen_ch=cfg["qubit_ch"])
+            self.qubit_pulseLength = self.us2cycles(cfg["qb_length"], gen_ch=cfg["qubit_ch"])
 
         else:
             print("define pi or flat top pulse")
@@ -83,9 +138,9 @@ class LoopbackProgramTimeRabi(RAveragerProgram):
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
-    def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+',
-                   self.cfg["step"])  # update gain of the Gaussian pi pulse
+    # def update(self):
+    #     self.mathi(self.q_rp, self.r_length, self.r_length, '+',
+    #                self.cfg["step"])  # update gain of the Gaussian pi pulse
 # ====================================================== #
 
 class TimeRabi(ExperimentClass):
@@ -98,18 +153,28 @@ class TimeRabi(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self):
         #### pull the data from the amp rabi sweep
-        prog = LoopbackProgramTimeRabi(self.soccfg, self.cfg)
-        start = time.time()
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
-        print(f'Time: {time.time() - start}')
+        avgi_list = []
+        avgq_list = []
+        len_list = np.linspace(self.cfg["qubit_len_start"], self.cfg["qubit_len_start"]+self.cfg["qubit_len_step"]*self.cfg["qubit_len_expts"], self.cfg["qubit_len_expts"])
+        for length in len_list:
+            self.cfg["qb_length"] = length
+            prog = LoopbackProgramTimeRabi(self.soccfg, self.cfg)
+            start = time.time()
+            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                                 readouts_per_experiment=1, save_experiments=None,
+                                                 start_src="internal", progress=False, debug=False)
+            print(f'Time: {time.time() - start}')
+            avgi_list.append(avgi[0][0][0])
+            avgq_list.append(avgq[0][0][0])
+
+
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
+        return x_pts, np.array(avgi_list), np.array(avgq_list)
 
-        return data
+
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         if data is None:
             data = self.data
