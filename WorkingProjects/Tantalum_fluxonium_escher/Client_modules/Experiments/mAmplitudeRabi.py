@@ -20,7 +20,8 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         self.cfg["reps"] = self.cfg["AmpRabi_reps"]
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch, this is the gaussian part
+        self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get gain2 register for qubit_ch, this is the flat part
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
@@ -91,8 +92,11 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain of the Gaussian pi pulse
-
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain of the Gaussian part
+        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', self.cfg["step"] // 2) # update gain of the flat part
+        # This needs to be half the normal update, because something about the "arb" gain is different from const
+        # I think the reason is that arb is defined as the individual points vs. time, whereas the const is an envelope
+        # over the carrier, so const gets an extra bit and so is twice as big.
 
 
 
