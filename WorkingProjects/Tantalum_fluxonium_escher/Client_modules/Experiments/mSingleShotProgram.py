@@ -129,7 +129,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
 class SingleShotProgram(ExperimentClass):
     """
-    Basic SingleShot experiement that takes a single piece of data
+    Basic SingleShot experiement that takes a single piece of data    # Jake memorial misspeling
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):

@@ -23,11 +23,11 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch, this is the gaussian part
         self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get gain2 register for qubit_ch, this is the flat part
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], ro_ch = self.cfg["ro_chs"][0])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
-                                 freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
+            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
+                                 freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"] )
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])    # conver f_res to dac register value
         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
