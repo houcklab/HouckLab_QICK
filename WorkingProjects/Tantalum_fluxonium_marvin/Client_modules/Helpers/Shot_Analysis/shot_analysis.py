@@ -34,7 +34,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analy
 
 class SingleShotAnalysis:
 
-    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, i_0_arr = None, q_0_arr = None,
+    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, book_keep = True, i_0_arr = None, q_0_arr = None,
                 centers = None, outerFolder = None, name = None, num_bins = None):
         """
         Initialize the class. 
@@ -51,6 +51,8 @@ class SingleShotAnalysis:
             The method to cluster the data. Options are 'gmm' and 'kmeans'
         fast: bool
             If to skip all error calculation which takes most of the time
+        bookkeep: bool
+            If to save fit results
         i_0_arr : ndarray
             The I values of training data to initialize the centers
         q_0_arr : ndarray
@@ -96,6 +98,7 @@ class SingleShotAnalysis:
         self.outerFolder = outerFolder
         self.num_bins = num_bins
         self.fast = fast
+        self.book_keep = book_keep
 
         # Set the path
         if self.outerFolder is not None:
@@ -125,7 +128,7 @@ class SingleShotAnalysis:
         
         
     # Estimate populations from the data
-    def estimate_populations(self):
+    def estimate_populations(self,i_arr=[], q_arr=[]):
         """
         Estimate the populations from the data
 
@@ -148,8 +151,10 @@ class SingleShotAnalysis:
             self.logger.info('Initial fitting completed')
             self.logger.info(self.inital_fit_results['result'].fit_report())
 
-            if self.fast is False:
+            if self.book_keep is True:
                 self.book_keeping(self.inital_fit_results, 'Initial')
+
+            if self.fast is False:
                 initial_params = self.inital_fit_results['result'].params
         
         else:
@@ -157,14 +162,21 @@ class SingleShotAnalysis:
             self.get_Centers(self.i_arr, self.q_arr)
 
         # Step 3 : Fit gaussians to the final data to get fit parameters
-        self.final_results = self.fit_gaussians(self.i_arr, self.q_arr, self.centers, initial_params = initial_params)
+
+        # if no IQ arrays are passed, it will use the arrays that belong to the object at instantiation
+        if not ( np.any(i_arr) or np.any(q_arr) ):
+           self.final_results = self.fit_gaussians(self.i_arr, self.q_arr, self.centers, initial_params = initial_params)
+
+        #use (truncated) arrays that are passed in as keyword arguments (see post_selection_SSA)
+        else:
+            self.final_results = self.fit_gaussians(i_arr, q_arr, self.centers, initial_params=initial_params)
 
         # Log the results
         self.logger.info('Fitting completed')
         self.logger.info((self.final_results['result'].fit_report()))
 
         # Bookkeeping
-        if self.fast is False:
+        if self.book_keep is True:
             self.book_keeping(self.final_results, 'Final')
 
         # Step 4 : Estimate the populations
@@ -228,7 +240,7 @@ class SingleShotAnalysis:
             params.add(prefix + 'sigmax', expr = 'sigma')
             params.add(prefix + 'sigmay', expr = 'sigma')
 
-        #TODO : Add in calculations for finding centers in the case there is no intialization data
+        #TODO : Add in calculations for finding centers in the case there is no initialization data
 
         # Add in the guess for the centers 
         # Add the bounds for the centers
@@ -382,7 +394,7 @@ class SingleShotAnalysis:
                 text_file.write(output)
 
     # function to plot the fit
-    def plot_Fit(self, result, X, Y, Z, plot_disp = False, plot_save = True, plot_title = 'Fit Comparision'):
+    def plot_Fit(self, result, X, Y, Z, plot_disp = False, plot_save = True, plot_title = 'Fit Comparison'):
         """
         Plot the fit and residuals of the data and the fit
 
