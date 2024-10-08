@@ -150,8 +150,8 @@ class SpecSlice_bkg_sub(ExperimentClass):
         sig = avgi + 1j * avgq
         amp = np.abs(sig)
         phase = np.angle(sig, deg=True)
-        avgi = np.abs(avgi)
-        avgq = np.abs(avgq)
+        # avgi = np.abs(avgi)
+        # avgq = np.abs(avgq)
 
         # All information in amp now
         f_reqd = self.qubit_freqs[np.argmax(amp)]

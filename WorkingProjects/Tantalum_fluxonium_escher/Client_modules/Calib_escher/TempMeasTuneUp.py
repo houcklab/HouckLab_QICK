@@ -3,8 +3,8 @@ import os
 
 import numpy as np
 
-path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+os.add_dll_directory(path)
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
@@ -47,7 +47,9 @@ SwitchConfig = {
 }
 
 BaseConfig = BaseConfig | SwitchConfig
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_07_29_cooldown\HouckCage_dev\\"
 
+#%%
 
 # # ################################################################################################################
 # # # ####################################### code for running basic single shot exerpiment
@@ -215,83 +217,84 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 # Instance_SingleShotProgram.display(data_SingleShot, plotDisp=True, save_fig=True)
 
 # # # #
+#%%
+#TITLE QNDness measurement
+UpdateConfig = {
+    # yoko
+    "yokoVoltage": 1.2869,
+    "yokoVoltage_freqPoint": 1.2869,
 
-# ####################################################################################################################
-###################################### QNDness measurement
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -1.4558,
-#     "yokoVoltage_freqPoint": -1.4558,
-#     ###### cavity
-#     "reps": 2000,  # this will used for all experiements below unless otherwise changed in between trials
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 30, # us
-#     "read_pulse_gain": 8000, # [DAC units]
-#     "read_pulse_freq": 7392.038, # [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 600,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.005,  ### units us, define a 20ns sigma
-#     "flat_top_length": 20.0, ### in us
-#     "qubit_freq": 4517.03,
-#     "relax_delay": 0.01,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 300000, ### this gets turned into "reps"
-#     #### define info for clustering
-#     "cen_num": 2,
-# #     ##### record the fridge temperature in units of mK
-#     "fridge_temp": fridge_temp,
-#     'use_switch':True,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\QND_Checks\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
-# #
-# yoko1.SetVoltage(config["yokoVoltage"])
-# #
-# # Instance_QNDmeas = QNDmeas(path="QND_Meas_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-# #                                                soc=soc, soccfg=soccfg)
-# # data_QNDmeas = Instance_QNDmeas.acquire()
-# # data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.999)
-# # Instance_QNDmeas.save_data(data_QNDmeas)
-# # Instance_QNDmeas.save_config()
-# # Instance_QNDmeas.display(data_QNDmeas, plotDisp=True)
-# # print('data saved: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# # #
-# # #
-# # # ##### loop over readout parameters and try to improve QNDness
-# avg = 1
-# read_length_vec = config["read_length"] + np.linspace(-10,5, 4)
-# read_gain_vec = config["read_pulse_gain"] + np.linspace(-2500, 0, 6, dtype = int)
-# Tempr = np.zeros((read_length_vec.size, read_gain_vec.size, avg))
-#
-# for idx_avg in range(avg):
-#     print(idx_avg)
-#     for idx_length in range(read_length_vec.size):
-#         for idx_gain in range(read_gain_vec.size):
-#             config["read_length"] = read_length_vec[idx_length]
-#             config["read_pulse_gain"] = read_gain_vec[idx_gain]
-#             Instance_QNDmeas = QNDmeas(path="QND_Meas_Sweeps_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
-#                                        soc=soc, soccfg=soccfg)
-#             data_QNDmeas = QNDmeas.acquire(Instance_QNDmeas)
-#             data_QNDmeas = Instance_QNDmeas.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.995)
-#             QNDmeas.save_data(Instance_QNDmeas, data_QNDmeas)
-#             QNDmeas.save_config(Instance_QNDmeas)
-#             Instance_QNDmeas.display(data_QNDmeas, plotDisp=False)
-#             Tempr[idx_length, idx_gain, idx_avg] = np.min([data_QNDmeas["data"]["T_0_0"], data_QNDmeas["data"]["T_1_1"]])
-# ###########
-#
-# plt.figure(figsize=(10, 6))
-# plt.imshow(np.average(Tempr, axis = 2).T, origin='lower', extent=[read_length_vec.min(), read_length_vec.max(), read_gain_vec.min(), read_gain_vec.max()], aspect='auto', cmap='viridis')
-# plt.colorbar(label='Tempr')
-# plt.xlabel('read_length_vec')
-# plt.ylabel('read_gain_vec')
-# plt.title('2D plot of Tempr')
-# plt.tight_layout()
-# plt.show()
+    # cavity
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 52,  # us
+    "read_pulse_gain": 1800,  # [DAC units]
+    "read_pulse_freq": 6230.509,
 
-# Create a 2d plot
+    # qubit tone
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 3000,
+    "qubit_length": 10,
+    "sigma": 1,
+    "flat_top_length": 10.0,
+    "qubit_freq": 471.5,
+
+    # Experiment
+    "shots": 200000,
+    "cen_num": 2,
+    "relax_delay": 10,
+    "fridge_temp": 10,
+    'use_switch': True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+
+# %%
+time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
+print("QND Measure Time Required: ", time_required, "min")
+inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                   soc=soc, soccfg=soccfg)
+
+data_QNDmeas = inst_qnd.acquire()
+data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+inst_qnd.save_data(data_QNDmeas)
+inst_qnd.save_config()
+inst_qnd.display(data_QNDmeas, plotDisp=True)
+#%%
+# TITLE : Brute Search best parameters
+param_bounds ={
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
+    'read_length': (20, 90),
+    'read_pulse_gain': (1100, 5000)
+}
+step_size = {
+    "read_pulse_freq" : 0.01,
+    'read_length': 10,
+    'read_pulse_gain': 250,
+}
+keys = ["read_pulse_gain"]
+config["shots"] = 300000
+inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
+inst_qndopt.brute_search_result_display(display = True)
+#%%
+param_bounds ={
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
+    'read_length': (40, 60),
+    'read_pulse_gain': (1100, 2400)
+}
+step_size = {
+    "read_pulse_freq" : 0.01,
+    'read_length': 2,
+    'read_pulse_gain': 100,
+}
+keys = ["read_length"]
+config["shots"] = 300000
+inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
+inst_qndopt.brute_search_result_display(display = True)
+#%%
 
 
 #####################################################################################################################

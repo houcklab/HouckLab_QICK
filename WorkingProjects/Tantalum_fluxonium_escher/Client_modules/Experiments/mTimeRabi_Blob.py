@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTimeRabi import LoopbackProgramTimeRabi
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTimeRabi import TimeRabi
 from tqdm.notebook import tqdm
 import time
 import datetime
@@ -63,18 +64,21 @@ class TimeRabi_Blob(ExperimentClass):
         for idx in range(len(X)):
             #### set new qubit frequency and aquire data
             self.cfg["qubit_freq"] = self.qubit_freqs[idx]
-            prog = LoopbackProgramTimeRabi(self.soccfg, self.cfg)
+            # Loop
+            #prog = LoopbackProgramTimeRabi(self.soccfg, self.cfg)
+            prog = TimeRabi(soccfg=self.soccfg, cfg = self.cfg, soc=self.soc)
 
-            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                             readouts_per_experiment=1, save_experiments=None,
-                                             start_src="internal", progress=False, debug=False)
-            Z_avgi[:, idx] = avgi[0][0]
-            self.data['data']['avgi_mat'][:, idx] = avgi[0][0]
+            # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+            #                                  readouts_per_experiment=1, save_experiments=None,
+            #                                  start_src="internal", progress=False, debug=False)
+            x_pts, avgi, avgq = prog.acquire()
+            Z_avgi[:, idx] = avgi
+            self.data['data']['avgi_mat'][:, idx] = avgi
 
-            Z_avgq[:, idx] = avgq[0][0]
-            self.data['data']['avgq_mat'][:, idx] = avgq[0][0]
+            Z_avgq[:, idx] = avgq
+            self.data['data']['avgq_mat'][:, idx] = avgq
 
-            sig = avgi[0][0] + 1j * avgq[0][0]
+            sig = avgi + 1j * avgq
             Z_amp[:, idx] = np.abs(sig)
             Z_phase[:, idx] = np.angle(sig, deg=True)
 

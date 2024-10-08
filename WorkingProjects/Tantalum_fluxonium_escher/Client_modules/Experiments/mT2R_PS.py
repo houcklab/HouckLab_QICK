@@ -76,10 +76,8 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
 
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
-            # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-            #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch = self.cfg["res_ch"]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg[

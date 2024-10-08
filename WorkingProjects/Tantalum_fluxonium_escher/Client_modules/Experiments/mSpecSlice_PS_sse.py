@@ -78,6 +78,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
         ### intial pause
         self.sync_all(self.us2cycles(0.010))
 
+
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"] and self.cfg["initialize_pulse"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switc
@@ -215,7 +216,7 @@ class SpecSlice_PS_sse(ExperimentClass):
                 centers.append(sse2.getCenters(iq_data_0, cen_num))
             else:
                 centers.append(sse2.getCenters(iq_data_0, cen_num, init_guess=centers[0]))
-
+            print("Centers are ", centers[indx_freq])
             # Fit Gaussian
             if 'bin_size' in kwargs:
                 bin_size = kwargs['bin_size']
@@ -340,9 +341,7 @@ class SpecSlice_PS_sse(ExperimentClass):
 
         if plotDisp:
             plt.show()
-        else:
-            plt.close()
-
+        plt.close()
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

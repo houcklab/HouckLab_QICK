@@ -2,7 +2,8 @@ from qick import *
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass # used to be WTF
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import \
+    ExperimentClass  # used to be WTF
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.MixedShots_analysis import *
 
@@ -14,53 +15,56 @@ class LoopbackProgramAmplitudeRabi_PS_sse(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        ### set up the experiment updates, only runs it once
+        # Set up the experiment
         cfg["start"] = 0
         cfg["step"] = 0
         cfg["reps"] = cfg["shots"]
         cfg["expts"] = 1
 
-        ### Configure Resonator Tone
+        # Define the resonator
         res_ch = cfg["res_ch"]
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"],
-                         ro_ch=cfg["ro_chs"][0])  # Declare the resonator channel
-        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch,
-                                  ro_ch=cfg["ro_chs"][0])  # Convert to clock ticks
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], ro_ch=cfg["ro_chs"][0])
+        '''Convert frequency to dac frequency (ensuring it is an available adc frequency)'''
+        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                  gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]), )  # define the pulse
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
 
-        ### Configure the Qubit Tone
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
-        qubit_ch = cfg["qubit_ch"]  # Get the qubit channel
-        self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])  # Declare the qubit channel
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # Convert qubit length to clock ticks
+        # Define the readout ADC
+        for ro_ch in cfg["ro_chs"]:
+            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch=self.cfg["res_ch"]),
+                                 gen_ch=cfg["res_ch"])
+
+        # Define the qubit tone
+        self.q_rp = self.ch_page(self.cfg["qubit_ch"])
+        self.r_gain = self.sreg(self.cfg["qubit_ch"], "gain")
+        qubit_ch = cfg["qubit_ch"]
+        self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
+        ''' convert frequency to dac frequency (ensuring it is an available adc frequency) '''
+        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=qubit_ch)
         self.qubit_freq = qubit_freq
-        # Define the qubit pulse
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit")
-            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4
         elif cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
-                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+                                     waveform="qubit",
+                                     length=self.us2cycles(self.cfg["flat_top_length"], gen_ch=self.cfg["qubit_ch"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg) * 4 + self.us2cycles(
+                self.cfg["flat_top_length"])
+
         else:
             print("define pi or flat top pulse")
-
-        ### Declare ADC Readout
-        for ro_ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -69,58 +73,64 @@ class LoopbackProgramAmplitudeRabi_PS_sse(RAveragerProgram):
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        ### intial pause
-        self.sync_all(self.us2cycles(0.010))
+        # Pause for sanity
+        self.sync_all(self.us2cycles(0.010, gen_ch=self.cfg["res_ch"]))
 
+        # Initialization Pulse, if desired. It will be a flat_top pulse
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"] and self.cfg["initialize_pulse"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switc
+            # Calculate pulse length
+            self.qubit_pulseLength = (self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4
+                                      + self.us2cycles(self.cfg["flat_top_length"], gen_ch=self.cfg["qubit_ch"]))
+
+            trig_len = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                      gen_ch=self.cfg["qubit_ch"]) + self.qubit_pulseLength
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"], gen_ch=self.cfg["qubit_ch"]),
+                         width=trig_len)
 
         if self.cfg["initialize_pulse"]:
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["initialize_qubit_gain"],
+            init_qubit_freq = self.freq2reg(self.cfg["initialize_qubit_freq"], gen_ch=self.cfg["qubit_ch"])
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="flat_top", freq=init_qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                     gain=self.cfg["initialize_qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-            self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+            self.pulse(ch=self.cfg["qubit_ch"])
 
-        ### Post Selection Measurement
+        self.sync_all(self.us2cycles(0.005, gen_ch=self.cfg["res_ch"]))
+
+        # measure beginning thermal state
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait = False)
+                     adcs=self.cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], gen_ch=self.cfg["res_ch"]),
+                     wait=False)
 
-        self.sync_all(self.us2cycles(0.01))
+        # self.sync_all(self.us2cycles(0.005))
 
-        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switc
+        # if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+        #     self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+        #                  width=self.cfg["trig_len"])  # trigger for switc
+        #
+        # self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
+        #                          phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+        #                          waveform="qubit")
+        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
-        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
-                                 phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                 waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
-
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
-
+        self.sync_all(self.us2cycles(0.005, gen_ch=self.cfg["res_ch"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update frequency list index
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])  # update frequency list index
 
-    def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
+    def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2,
+                save_experiments=[0, 1],
                 start_src="internal", progress=False, debug=False):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
-                        readouts_per_experiment=2, save_experiments=[0,1])
+                        readouts_per_experiment=2, save_experiments=[0, 1])
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        shots_i0 = self.di_buf[0] / self.us2cycles(self.cfg['read_length'], ro_ch=0)
+        shots_q0 = self.dq_buf[0] / self.us2cycles(self.cfg['read_length'], ro_ch=0)
 
         i_0 = shots_i0[0::2]
         i_1 = shots_i0[1::2]
@@ -142,7 +152,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, plotProgress = False):
+    def acquire(self, plotProgress=False):
 
         # Defining the sweeps
         qubit_freq_vec = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"],
@@ -176,7 +186,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
                 q_1_arr[indx_gain, indx_freq, :] = q_1
 
         data = {'config': self.cfg, 'data': {'qubit_freq_vec': qubit_freq_vec, 'qubit_gain_vec': qubit_gain_vec,
-                                             'i_0': i_0_arr, 'q_0': q_0_arr,'i_1': i_1_arr,
+                                             'i_0': i_0_arr, 'q_0': q_0_arr, 'i_1': i_1_arr,
                                              'q_1': q_1_arr, }}
         self.data = data
         return data
@@ -223,13 +233,14 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
                     bin_size = 51
                 hist2d = sse2.createHistogram(iq_data_0, bin_size)
                 no_of_params = 4
-                gaussians_0, popt, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centers[indx_gain][indx_freq], cen_num)
+                gaussians_0, popt, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centers[indx_gain][indx_freq],
+                                                                               cen_num)
 
                 # create bounds given current fit
                 bound = [popt - 1e-5, popt + 1e-5]
 
                 for idx_bound in range(cen_num):
-                    bound[0][0 + int(idx_bound*no_of_params)] = 0
+                    bound[0][0 + int(idx_bound * no_of_params)] = 0
                     bound[1][0 + int(idx_bound * no_of_params)] = np.inf
 
                 # Get probability function
@@ -270,7 +281,9 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
                     # Fit Gaussians
                     bin_size = 25
                     hist2d = sse2.createHistogram(selected_data, bin_size)
-                    gaussians_1, popt, x_points_1, y_points_1 = sse2.findGaussians(hist2d, centers[indx_gain][indx_freq], cen_num,
+                    gaussians_1, popt, x_points_1, y_points_1 = sse2.findGaussians(hist2d,
+                                                                                   centers[indx_gain][indx_freq],
+                                                                                   cen_num,
                                                                                    input_bounds=bound, p_guess=popt)
 
                     # Get probability function
@@ -281,13 +294,13 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
                     prob_1, std_1 = sse2.calcProbability(num_samples_1, num_std_1, cen_num)
                     pop[i, :, indx_gain, indx_freq] = prob_1
 
-        update_data = {"data" : {"pdf_0": pdf_0, "gaussians_0": gaussians_0, "x_points_0": x_points_0,
-                                 "y_points_0": y_points_0, "centers": centers, "pop": pop}}
+        update_data = {"data": {"pdf_0": pdf_0, "gaussians_0": gaussians_0, "x_points_0": x_points_0,
+                                "y_points_0": y_points_0, "centers": centers, "pop": pop}}
         data["data"] = data["data"] | update_data["data"]
         self.data = data
         return data
 
-    def display(self, data=None, plotDisp=False, saveFig = True, **kwargs):
+    def display(self, data=None, plotDisp=False, saveFig=True, **kwargs):
         if data is None:
             data = self.data
 
@@ -314,24 +327,45 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
 
         # Plot the blob distribution
         blob_axs = plt.subplot(gs[:, 0])
-        iq_data = np.stack((i_0[-1, -1, :], q_0[-1,-1, :]), axis=0)
+        iq_data = np.stack((i_0[-1, -1, :], q_0[-1, -1, :]), axis=0)
         sse2.plotFitAndData(pdf_0, gaussians_0, x_points_0, y_points_0, centers[-1][-1], iq_data, fig, blob_axs)
+        blob_axs.aspect = 'equal'
+
+        self.single_sweep = False
+        # Check if only one variable is being varied
+        if qubit_gain_vec.size == 1:
+            self.single_sweep = True
+            x = qubit_freq_vec
+            y = pop[:, :, 0, :]
+            xlabel = "Qubit Frequency (in MHz)"
+            ylabel = "Population"
+        elif qubit_freq_vec.size == 1:
+            self.single_sweep = True
+            x = qubit_gain_vec
+            y = pop[:, :, :, 0]
+            xlabel = "Qubit Gain (DAC Unit)"
+            ylabel = "Population"
 
         # Plot the Rabi Blob Distribution
         subplot_right = []
         for idx_start in range(cen_num):
             subplot_right.append(plt.subplot(gs[idx_start, 1]))
-            subplot_right[idx_start].imshow(pop[idx_start, idx_start, :,:],
-                                            extent=[qubit_freq_vec[0], qubit_freq_vec[-1], qubit_gain_vec[0],
-                                                    qubit_gain_vec[-1]],
-                                            origin='lower',interpolation='none',aspect = 'auto')
-            subplot_right[idx_start].set_xlabel("Qubit Frequency (in MHz)")
-            subplot_right[idx_start].set_ylabel("Qubit Gain (DAC Unit)")
+            if self.single_sweep:
+                subplot_right[idx_start].scatter(x, y[idx_start, idx_start], label="Blob " + str(idx_start + 1))
+                subplot_right[idx_start].set_xlabel(xlabel)
+                subplot_right[idx_start].set_ylabel(ylabel)
+            else:
+                subplot_right[idx_start].imshow(pop[idx_start, idx_start, :, :],
+                                                extent=[qubit_freq_vec[0], qubit_freq_vec[-1], qubit_gain_vec[0],
+                                                        qubit_gain_vec[-1]],
+                                                origin='lower', interpolation='none', aspect='auto')
+                subplot_right[idx_start].set_xlabel("Qubit Frequency (in MHz)")
+                subplot_right[idx_start].set_ylabel("Qubit Gain (DAC Unit)")
 
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
                             + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
                     self.cfg["relax_delay"])
-                            + "us." )
+                            + "us.")
         plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
         plt.tight_layout()
         if saveFig:
@@ -340,7 +374,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
         if plotDisp:
             plt.show()
         plt.close()
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
-
