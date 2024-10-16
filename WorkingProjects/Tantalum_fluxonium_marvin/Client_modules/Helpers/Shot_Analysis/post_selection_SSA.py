@@ -100,8 +100,8 @@ c
         # Store the fitted centers of initial IQ in an array
         centers = [(myparams['g0_centerx'].value, myparams['g0_centery'].value),(myparams['g1_centerx'].value, myparams['g1_centery'].value)]
 
-        #
-        pop, selected_data_init_arr, selected_data_fin_arr = self.calculate_ps_pop(self, sorted_prob, sorted_data_init, sorted_data_fin,centers, initial_params =myparams)
+        # Calculate populations in each blob using the post-selected data; return the post-selected initial and final IQ points in case of other post-processing
+        pop, selected_data_init_arr, selected_data_fin_arr = self.calculate_ps_pop(self, sorted_prob, sorted_data_init, sorted_data_fin,centers, initial_params=myparams)
 
 
 
@@ -116,10 +116,10 @@ c
         xedges_init = fit_results_i['X'][:, 0]
         yedges_init = fit_results_i['Y'][0, :]
         im1 = ax1.imshow(fit_results_i['hist2d'],extent=(xedges_init[0],xedges_init[-1],yedges_init[0],yedges_init[-1]))
-        ax1.set_title("raw (initial)")
+        ax1.set_title("Raw (initial)")
         fig.colorbar(im1)
-        print("selected data 0 is ",np.shape(selected_data_init_arr[0]))
-        print("selected data 1 is ", np.shape(selected_data_init_arr[1]))
+        print("Selected data 0 is ",np.shape(selected_data_init_arr[0]))
+        print("Selected data 1 is ", np.shape(selected_data_init_arr[1]))
         ax2.scatter(selected_data_init_arr[0][0,:],selected_data_init_arr[0][1,:],marker='.')
         ax2.scatter(selected_data_init_arr[1][0, :], selected_data_init_arr[1][1, :],marker='.')
         ax2.set_title("My final scatter")
@@ -130,25 +130,26 @@ c
         hist2d, xedges, yedges = SingleShotAnalysis.createHistogram(self, combined_initdata,bin_size=None)
         #hist2d, xedges, yedges = np.histogram2d(combined_findata[0,:],combined_findata[1,:], bins = 45)#self.num_bins)
         im3 = ax3.imshow(hist2d,extent=(xedges[0],xedges[-1],yedges[0],yedges[-1]))
-        ax3.set_title("post-selected (initial)")
+        ax3.set_title("Post-selected (initial)")
         fig.colorbar(im3)
         # Plot the initial and final points fitted to each Gaussian
         fig, axs = plt.subplots(1, self.cen_num)
         axs = axs.ravel()
         for i in range(self.cen_num):
-            axs[i].scatter(self.i_0_arr, self.q_0_arr, marker='.', label='initial no selection')
-            axs[i].scatter(selected_data_init_arr[i][0, :], selected_data_init_arr[i][1, :], marker='.',label='initial')
-            axs[i].scatter(selected_data_fin_arr[i][0,:],selected_data_fin_arr[i][1,:],marker='.',label='final')
+            #axs[i].scatter(self.i_0_arr, self.q_0_arr, marker='.', label='initial no selection')
+            axs[i].scatter(selected_data_init_arr[i][0, :], selected_data_init_arr[i][1, :], marker='.',label='Initial')
+            axs[i].scatter(selected_data_fin_arr[i][0,:],selected_data_fin_arr[i][1,:],marker='.',label='Final')
 
-            print("length of final arr is",np.shape(selected_data_fin_arr[i][0,:]))
-            print("length of initial arr is", np.shape(selected_data_init_arr[i][0, :]))
-            print("length of initial arr no selection is", np.shape(self.i_0_arr))
+            # print("length of final arr is",np.shape(selected_data_fin_arr[i][0,:]))
+            # print("length of initial arr is", np.shape(selected_data_init_arr[i][0, :]))
+            # print("length of initial arr no selection is", np.shape(self.i_0_arr))
             axs[i].set_xlim([xedges_init[0],xedges_init[-1]])
             axs[i].set_ylim([yedges_init[0], yedges_init[-1]])
             axs[i].legend()
             axs[i].set_xlabel("I (au)")
             axs[i].set_ylabel("Q (au)")
             axs[i].set_title(f"Gaussian {i}")
+            axs[i].set_aspect('equal')
         plt.show()
 
     # Calculate the population of the state with post-selected data
@@ -158,11 +159,10 @@ c
                sorted_data_init, np array of cen_num x 2 x length(IQ), the first shot sorted from smallest to largest
                sorted_data_fin, np array of cen_num x 2 x length(IQ), the second shot sorted from smallest to largest
 
-        Output: pop,
+        Output: pop, np array of populations
                 selected_data_init_arr,
                 selected_data_fin_arr,
         """
-        print("Shape of sorted data fin is ",np.shape(sorted_data_fin))
         # Store the probability
         pop = np.zeros((self.cen_num, self.cen_num))
 
@@ -180,33 +180,14 @@ c
             selected_data = sorted_data_fin[i, :, 0:idx_confidence + 1]
             selected_data_init = sorted_data_init[i, :, 0:idx_confidence+1]
 
-            # Fit the selected final data to the centers from the initial fit
-            fit_results_f = SingleShotAnalysis.fit_gaussians(self, selected_data[0,:], selected_data[1,:], centers, initial_params=initial_params)
-            #fit_results_f = SingleShotAnalysis.fit_gaussians(self, self.i_arr, self.q_arr, centers, initial_params=None)
+            selected_data_init_arr.append(selected_data_init)
+            selected_data_fin_arr.append(selected_data)
+            #print("shape of i arr is", np.shape(selected_data_fin_arr))
+            #print("shape of i arr is",np.shape(selected_data_fin_arr[0][0][:]))
 
-            myparams_f = fit_results_f['result'].params  # for ease of indexing fit parameters
-            gaussians_f = [gaussian_2d((fit_results_f['X'], fit_results_f['Y']), myparams_f['g0_amplitude'].value,
-                                       myparams_f['g0_centerx'].value, myparams_f['g0_centery'].value,
-                                       myparams_f['g0_sigmax'].value),
-                           gaussian_2d((fit_results_f['X'], fit_results_f['Y']), myparams_f['g1_amplitude'].value,
-                                       myparams_f['g1_centerx'].value, myparams_f['g1_centery'].value,
-                                       myparams_f['g1_sigmax'].value)]
-
-            selected_data_init_arr.append(selected_data)
-            selected_data_fin_arr.append(selected_data_init)
-
-            # Get probability function of final IQ
-            pmf_fin = self.get_pmf(gaussians_f)
-
-            # Get the expected values of probability and error
-            num_samples_1, num_std_1 = calcNumSamplesInGaussian(fit_results_f['hist2d'], pmf_fin, self.cen_num,fit_results_f['X'][:,0],fit_results_f['Y'][0,:])
-
-            # Calculate the probability of belonging to either gaussian
-            prob_1, std_1 = calcBelongstoGaussian(num_samples_1, num_std_1, self.cen_num)
-
-
-            print("prob1 is",prob_1)
-            pop[i, :] = prob_1
+            # get the populations using estimate_populations in parent shot_analysis class
+            pop_holder = self.estimate_populations(i_arr=selected_data_fin_arr[0][0][:], q_arr=selected_data_fin_arr[0][1][:])
+            pop[i,:] = pop_holder['mean']
 
         return pop, selected_data_init_arr, selected_data_fin_arr
 
@@ -235,19 +216,6 @@ c
             sorted_data_fin[i, :, :] = iq_data_fin[:, sorted_idx]
 
         return sorted_prob, sorted_data_init, sorted_data_fin
-
-    # # Given I and Q arrays and a probability array, sort and return the stacked IQ's of each Gaussian
-    # def sort_probabilities(self, i_arr, q_arr, probability):
-    #     iq_gaussian0 = []
-    #     iq_gaussian1 = []
-    #
-    #     for i in range(np.shape(probability)[1]):
-    #         if probability[0][i] >= probability[1][i]:
-    #             iq_gaussian0.append(np.stack(i_arr[i],q_arr[i]))
-    #         else:
-    #             iq_gaussian1.append(np.stack(i_arr[i],q_arr[i]))
-    #
-    #     return iq_gaussian0, iq_gaussian1
 
     # Calculate probability of I/Q points belonging to a given Gaussian
     def calculate_probability(self, i_arr, q_arr, cen_num, fit_results, pmf):
@@ -311,53 +279,53 @@ def gaussian_2d(points, A, x0, y0, sigma_x):
     c = np.sin(theta)**2 / (2*sigma_x**2) + np.cos(theta)**2 / (2*sigma_y**2)
     return A * np.exp(-(a*(x-x0)**2 + 2*b*(x-x0)*(y-y0) + c*(y-y0)**2))
 
-
+##### EXTRANEOUS FUNCTIONALITY, SEE PARENT CLASS SHOT_ANALYSIS #####
 # Returns the number of samples in a given gaussian and the std
-def calcNumSamplesInGaussian(hist2d, pmf, cen_num, x_points, y_points):
-    """
-    Input: hist2d, weights of a nbins x nbins 2d histogram
-           pmf,
-           cen_num
-           x_points, x-axis for bins of hist2d
-           y_points, y_axis for bins of hist2d
-
-    Output: num_samples_in_gaussian, cen_num x 1 array of number of samples in each distribution
-            num_samples_in_gaussian_std
-    """
-    num_samples_in_gaussian = np.zeros(cen_num)
-    num_samples_in_gaussian_std = np.zeros(cen_num)
-
-    # Create expected_dist to store the expected distribution of each gaussian
-    # The shape is (cen_num, hist2d[0].shape)
-    expected_dist = np.zeros((cen_num,) + hist2d.shape)
-    expected_dist_std = np.zeros((cen_num,) + hist2d.shape)
-    #print('pmf shape is ',np.shape(pmf))
-    print('hist2d shape is',np.shape(hist2d))
-    #print('expected dist shape is',np.shape(expected_dist))
-    for i in range(cen_num):
-        expected_dist[i] = pmf[i]*hist2d
-        expected_dist_std[i] = pmf[i] * (1 - pmf[i]) * hist2d
-
-        num_samples_in_gaussian[i] = np.sum(expected_dist[i])
-        num_samples_in_gaussian_std[i] = np.sqrt(np.sum(expected_dist_std[i]))
-
-    return num_samples_in_gaussian, num_samples_in_gaussian_std
-
-# Calc probability of belonging to one Gaussian
-def calcBelongstoGaussian(num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num):
-    """
-    Input: num_samples_in_gaussian, array of cen_num x 1
-           num_samples_in_gaussian_std
-
-    Output: probability, array of cen_num x cen_num
-            std_probability
-    """
-    probability = np.zeros(cen_num)
-    std_probability = np.zeros(cen_num)
-    total_samples = np.sum(num_samples_in_gaussian)
-    print("total samples is",total_samples)
-    for i in range(cen_num):
-        probability[i] = num_samples_in_gaussian[i] / total_samples
-        std_probability[i] = num_samples_in_gaussian_std[i] / total_samples
-
-    return probability, std_probability
+# def calcNumSamplesInGaussian(hist2d, pmf, cen_num, x_points, y_points):
+#     """
+#     Input: hist2d, weights of a nbins x nbins 2d histogram
+#            pmf,
+#            cen_num
+#            x_points, x-axis for bins of hist2d
+#            y_points, y_axis for bins of hist2d
+#
+#     Output: num_samples_in_gaussian, cen_num x 1 array of number of samples in each distribution
+#             num_samples_in_gaussian_std
+#     """
+#     num_samples_in_gaussian = np.zeros(cen_num)
+#     num_samples_in_gaussian_std = np.zeros(cen_num)
+#
+#     # Create expected_dist to store the expected distribution of each gaussian
+#     # The shape is (cen_num, hist2d[0].shape)
+#     expected_dist = np.zeros((cen_num,) + hist2d.shape)
+#     expected_dist_std = np.zeros((cen_num,) + hist2d.shape)
+#     #print('pmf shape is ',np.shape(pmf))
+#     print('hist2d shape is',np.shape(hist2d))
+#     #print('expected dist shape is',np.shape(expected_dist))
+#     for i in range(cen_num):
+#         expected_dist[i] = pmf[i]*hist2d
+#         expected_dist_std[i] = pmf[i] * (1 - pmf[i]) * hist2d
+#
+#         num_samples_in_gaussian[i] = np.sum(expected_dist[i])
+#         num_samples_in_gaussian_std[i] = np.sqrt(np.sum(expected_dist_std[i]))
+#
+#     return num_samples_in_gaussian, num_samples_in_gaussian_std
+#
+# # Calc probability of belonging to one Gaussian
+# def calcBelongstoGaussian(num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num):
+#     """
+#     Input: num_samples_in_gaussian, array of cen_num x 1
+#            num_samples_in_gaussian_std
+#
+#     Output: probability, array of cen_num x cen_num
+#             std_probability
+#     """
+#     probability = np.zeros(cen_num)
+#     std_probability = np.zeros(cen_num)
+#     total_samples = np.sum(num_samples_in_gaussian)
+#     print("total samples is",total_samples)
+#     for i in range(cen_num):
+#         probability[i] = num_samples_in_gaussian[i] / total_samples
+#         std_probability[i] = num_samples_in_gaussian_std[i] / total_samples
+#
+#     return probability, std_probability

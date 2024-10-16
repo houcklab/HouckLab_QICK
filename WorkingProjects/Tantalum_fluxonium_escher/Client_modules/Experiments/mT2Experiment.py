@@ -16,16 +16,18 @@ class LoopbackProgramT2Experiment(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
+        # Set the experiment parameters
         cfg["f_res"] = self.cfg["read_pulse_freq"]
         cfg["f_ge"] = self.cfg["qubit_freq"]
         cfg["res_gain"] = self.cfg["read_pulse_gain"]
 
-        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_wait = self.us2cycles(0.010)
-        self.r_phase2 = 4
-        self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
-        self.regwi(self.q_rp, self.r_wait, self.us2cycles(cfg["start"]))
-        self.regwi(self.q_rp, self.r_phase2, 0)
+        # T2 Parameters
+        self.q_rp = self.ch_page(cfg["qubit_ch"])                               # get register page for qubit_ch
+        self.r_wait = self.us2cycles(0.010)                                     # wait time between two π/2 pulses
+        self.r_phase2 = 4                                                       # phase of the pi/2 pulse
+        self.r_phase = self.sreg(cfg["qubit_ch"], "phase")                # Register to the phase
+        self.regwi(self.q_rp, self.r_wait, self.us2cycles(cfg["start"]))        # set the wait time between 2 π/2 pulses
+        self.regwi(self.q_rp, self.r_phase2, 0)                                 # set the phase of the second π/2 pulse
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit

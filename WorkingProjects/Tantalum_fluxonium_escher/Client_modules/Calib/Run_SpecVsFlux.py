@@ -20,27 +20,31 @@ plt.ioff()
 UpdateConfig = {
     ##### define attenuators
     ##### define the yoko voltage
-    "yokoVoltageStart": 0.0, #-0.65,
-    "yokoVoltageStop": 0.5, #-0.63,
-    "yokoVoltageNumPoints": 51,
+    "yokoVoltageStart": 1.0, #-0.65,
+    "yokoVoltageStop": 1.25, #-0.63,
+    "yokoVoltageNumPoints": 11,
     ###### cavity
     "trans_reps": 200,  # this will used for all experiements below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     "read_length": 100,  # us
     "read_pulse_gain": 1000,  # [DAC units]
-    "trans_freq_start": 6424.8 - 1.0,  # [MHz]
-    "trans_freq_stop": 6424.8 + 1.0,  # [MHz]
+    "trans_freq_start": 6423.0 - 0.8,  # [MHz]
+    "trans_freq_stop": 6423.0 + 0.8,  # [MHz]
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
     ##### qubit spec parameters
     "spec_reps": 500,
     "qubit_pulse_style": "const",
-    "qubit_gain": 10000,
-    "qubit_length": 1, ### in units of us
-    "qubit_freq_start": 2870 - 30,
-    "qubit_freq_stop": 2870 + 10,
-    "SpecNumPoints": 121,  ### number of points
+    "qubit_gain": 9000,
+    "qubit_length": 20, ### in units of us
+    "qubit_freq_start": 100,
+    "qubit_freq_stop": 800,
+    "SpecNumPoints": 201,  ### number of points
     "sigma": None,
     "relax_delay": 2,
+
+    # Changing qubit channel ( not the standard way !!! )
+    "qubit_ch": 2,
+    "qubit_nqz": 1,
 }
 config = BaseConfig | UpdateConfig
 
