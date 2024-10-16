@@ -5,6 +5,16 @@ import os
 
 os.add_dll_directory(os.getcwd())
 
+class attenuator:
+    def __init__(self, serialNum, attenuation_int=50, print_int=True):
+        self.serialNum = serialNum
+        self.attenuation = attenuation_int
+        setatten(attenu=attenuation_int, serial=self.serialNum, printv=print_int)
+
+    def SetAttenuation(self, attenuation, printOut=False):
+        self.attenuation = attenuation
+        setatten(attenu=attenuation, serial=self.serialNum, printv=printOut)
+
 def setatten(attenu, serial, printv):
     if printv == True:
         print("Setting attenuation")

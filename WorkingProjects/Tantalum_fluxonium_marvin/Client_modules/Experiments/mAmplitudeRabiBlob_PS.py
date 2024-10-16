@@ -79,7 +79,7 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
             # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
             #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch=self.cfg["res_ch"]), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)

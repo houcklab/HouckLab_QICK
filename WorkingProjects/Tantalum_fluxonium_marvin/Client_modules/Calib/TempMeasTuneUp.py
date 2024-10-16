@@ -108,28 +108,28 @@ for idx in range(loop_len):
 # TITLE : code finding T1 of a thermal state with and without pulses
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.1433,
-    "yokoVoltage_freqPoint": -0.1433,
+    "yokoVoltage": 0.74,
+    "yokoVoltage_freqPoint": 0.74,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 75,
+    "read_length": 30,
     "read_pulse_gain": 1300,
-    "read_pulse_freq": 6672.274,
+    "read_pulse_freq": 6431.898,
 
     # qubit tone
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
-    "qubit_length": 10,
+    "qubit_pulse_style": "const",
+    "qubit_gain": 32000,
+    "qubit_length": 80,
     "sigma": 1,
     "flat_top_length": 10.0,
-    "qubit_freq": 220,
+    "qubit_freq": 2801.855,
 
     # experiment
     "shots": 20000,
     "wait_start": 0,
-    "wait_stop": 13000,
-    "wait_num": 6,
+    "wait_stop": 5000,
+    "wait_num": 21,
     'wait_type': 'linear',
     "cen_num": 2,
     "fridge_temp": 10,
@@ -216,22 +216,22 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.1433,
-    "yokoVoltage_freqPoint": -0.1433,
+    "yokoVoltage": 0.74,
+    "yokoVoltage_freqPoint": 0.74,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 70,
-    "read_pulse_gain": 1600,
-    "read_pulse_freq": 6672.274,
+    "read_length": 30,
+    "read_pulse_gain": 1400,
+    "read_pulse_freq": 6431.898,
 
     # qubit tone
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
-    "qubit_length": 10,
+    "qubit_pulse_style": "const",
+    "qubit_gain": 30000,
+    "qubit_length": 50,
     "sigma": 1,
     "flat_top_length": 10.0,
-    "qubit_freq": 220,
+    "qubit_freq": 2801.855,
 
     # Experiment
     "shots": 1000000,
@@ -260,14 +260,14 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
     'read_length': (20, 90),
-    'read_pulse_gain': (1100, 2400)
+    'read_pulse_gain': (1000, 2400)
 }
 step_size = {
     "read_pulse_freq" : 0.01,
     'read_length': 10,
     'read_pulse_gain': 100,
 }
-keys = ["read_pulse_gain"]
+keys = ["read_length"]
 config["shots"] = 300000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)

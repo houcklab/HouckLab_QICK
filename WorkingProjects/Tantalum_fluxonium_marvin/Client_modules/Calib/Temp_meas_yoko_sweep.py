@@ -13,15 +13,19 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mQubit_ef_spectroscopy import Qubit_ef_spectroscopy
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import  Transmission
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_Enhance import \
+    Transmission_Enhance
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mAutoCalibrator import CalibratedFlux
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotOptimize import SingleShotMeasure
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotTemp_FullAnalysis import SingleShotFull
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mQND import QNDmeas
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS_sse import T1_PS_sse
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecFind import SpecFind
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\Magnet_Heat_Check_4\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\TemperatureDriftCheck\\"
+outerFolder_og = outerFolder
 
 # Defining the standard config files
 SwitchConfig = {
@@ -40,19 +44,19 @@ UpdateConfig_cal = {
     # define the yoko voltage
     "yokoVoltageStart": -0.4,
     "yokoVoltageStop": 0.7,
-    "yokoVoltageNumPoints": 801,
+    "yokoVoltageNumPoints": 601,
 
     # cavity and readout
-    "trans_reps": 100,
+    "trans_reps": 500,
     "read_pulse_style": "const",
-    "read_length": 30,  # us
-    "read_pulse_gain": 1500,  # [DAC units]
+    "read_length": 20,  # us
+    "read_pulse_gain": 1400,  # [DAC units]
     "trans_freq_start": 6671.5 - 1.5,  # [MHz]
     "trans_freq_stop": 6671.5 + 1.5,  # [MHz]
-    "TransNumPoints": 51,
+    "TransNumPoints": 101,
 
     # Experiment Parameters
-    "relax_delay": 2,
+    "relax_delay": 1,
     "flux_quantum": 0.635,
     'use_switch': True,
 }
@@ -65,10 +69,15 @@ yoko_calibration.calibrate(dev_name = "6p75_qcage_0729")
 yoko_calibration.save_data()
 yoko_calibration.display()
 config_cal['flux_quantum'] = yoko_calibration.flux_quantum
+#%%
+# Flux search
+yoko_voltage = -0.112
+flux = yoko_calibration.yoko_to_flux(yoko_voltage = yoko_voltage, zero_flux=yoko_calibration.zero_flux, half_flux=yoko_calibration.half_flux)
+print("Flux value at yoko = ", yoko_voltage, "V is ", flux)
 
 #%%
 # Calibrate for that quantum flux
-flux_val = 2.494
+flux_val = 2.42325
 config_cal["n_quantum"] = np.floor(flux_val)
 config_cal['yokoVoltageStart'] += np.floor(flux_val) * config_cal['flux_quantum']
 config_cal['yokoVoltageStop'] += np.floor(flux_val) * config_cal['flux_quantum']
@@ -76,6 +85,7 @@ config_cal['yokoVoltageStop'] += np.floor(flux_val) * config_cal['flux_quantum']
 print("Starting scan from : " , config_cal["yokoVoltageStart"], " V")
 print("Stopping scan at : ", config_cal["yokoVoltageStop"], " V")
 print("Flux Quantum is ", config_cal['flux_quantum'], " V")
+#%%
 yoko_calibration = CalibratedFlux(path="data_calibration", outerFolder=outerFolder, cfg=config_cal, soc=soc,
                                   soccfg=soccfg)
 yoko_calibration.calibrate(dev_name="6p75_qcage_0729")
@@ -99,47 +109,53 @@ UpdateConfig_transmission = {
     # cavity
     "read_pulse_style": "const",
     "read_length": 20,
-    "read_pulse_gain": 1500,
+    "read_pulse_gain": 1000,
     "read_pulse_freq":  6671.5, #6253.8,
 
     # Experiment Parameters
     "TransSpan": 3,  # [MHz] span will be center frequency +/- this parameter
-    "TransNumPoints": 101,  # number of points in the transmission frequency
+    "TransNumPoints": 601,  # number of points in the transmission frequency
 }
 
 config_trans = BaseConfig | UpdateConfig_transmission
 
 #%%
-Instance_trans = Transmission(path="dataTestTransmission", cfg=config_trans, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-data_trans = Instance_trans.acquire()
-Instance_trans.save_data(data_trans)
-Instance_trans.display(data_trans, plotDisp=True)
-plt.show()
+transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=config_trans, soc=soc, soccfg=soccfg,
+                                  outerFolder=outerFolder)
+data_transm = transm_exp.acquire()
+transm_exp.save_data(data_transm)
+transm_exp.save_config()
+transm_exp.display(data_transm, plotDisp=True)
+opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True)
 
 # Update the transmission frequency to be the peak
 
-config_trans["read_pulse_freq"] = Instance_trans.peakFreq
-print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+config_trans["read_pulse_freq"] = opt_freq
+print("Cavity freq IF [MHz] = ", opt_freq)
 #%%
 # TITLE Defining common experiment configurations
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": -0.082045,  # [in V]
-    "yokoVoltage_freqPoint": -0.082045,  # [in V] used for naming the file systems
-    "flux": 0.494,
+    "yokoVoltage": -0.0124,  # [in V]
+    "yokoVoltage_freqPoint": -0.0124,  # [in V] used for naming the file systems
+    "flux": 0,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 75,  # [in us]
-    "read_pulse_gain": 1500,  # [in DAC units]
-    "read_pulse_freq": 6672.16,  # [in MHz]
+    "read_length": 60,  # [in us]
+    "read_pulse_gain": 1900,  # [in DAC units]
+    "read_pulse_freq": 6671.326,  # [in MHz]
+    "mode_periodic": False,
 
     # qubit g-e drive parameters
-    "qubit_ge_freq": 259.0,  # [in MHz]
-    "qubit_pulse_style": "flat_top",
-    "qubit_ge_gain": 10000,
+    "qubit_ge_freq": 855,  # [in MHz]
+    'qubit_freq': 855,
+    "qubit_pulse_style": "const",
+    "qubit_length": 1,
+    "qubit_ge_gain": 20000,
+    "qubit_gain": 20000,
     "sigma": 1,
-    "flat_top_length": 10,
+    "flat_top_length": 1,
 
     # qubit e-f drive parameters
     "qubit_ef_freq": 10000,
@@ -147,7 +163,7 @@ UpdateConfig = {
 
     # experiment parameters
     "cen_num": 2,  # Number of states expected
-    "relax_delay": 10*1300,
+    "relax_delay": 10,
     'use_switch': True,
     'fridge_temp': 10,
 }
@@ -158,23 +174,23 @@ config = BaseConfig | UpdateConfig
 # For the spec slice experiment
 UpdateConfig_specfind = {
     # transmission Parameters
-    "reps": 500,
+    "reps": 3000,
     "TransSpan": 3,  # [MHz] span will be center frequency +/- this parameter
     "TransNumPoints": 201,  # number of points in the transmission frequency
 
     # define spec slice experiment parameters
-    "qubit_freq_start": 50,
-    "qubit_freq_stop": 650,
+    "qubit_freq_start": 600,
+    "qubit_freq_stop": 1000,
     "SpecNumPoints": 301,
-    'spec_reps': 1000,
-    'qubit_gain': 10000,
+    'spec_reps': 3000,
+    'qubit_gain': 20000,
     'relax_delay': 10,
 
     # search parameters
-    'w_trans' : 300,
-    'volt_step' : 0.0005,
-    'threshold' : 25,
-    'trials' : 10,
+    'w_trans' : 850,
+    'volt_step' : 0.001,
+    'threshold' : 30,
+    'trials' : 15,
 }
 config_specfind = config | UpdateConfig_specfind
 #%%
@@ -192,21 +208,21 @@ config["yokoVoltage_freqPoint"] = volt
 UpdateConfig_ss_opt = {
 
     # qubit spec
-    "qubit_pulse_style": "arb",
-    "qubit_ge_gain": 1,
+    "qubit_pulse_style": "const",
+    "qubit_ge_gain": 10000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 110,
+    "qubit_ge_freq": 850,
     "qubit_ef_freq": 110,
-    "apply_ge": False,
+    "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 10,
+    "qubit_length": 1,
     "sigma": 0.05,
-    "relax_delay": 200,
+    "relax_delay": 10,
 
     # Experiment
     "cen_num": 2,
     "keys": ['kl'],           # Possible keys ["mahalanobis", "bhattacharyya", "kl", "hellinger"]
-    "shots": 100000,
+    "shots": 20000,
     "use_switch": True,
     "relax_delay": 10,
 }
@@ -214,16 +230,16 @@ config_ss_opt = config | UpdateConfig_ss_opt
 
 #%%
 param_bounds ={
-    "read_pulse_freq" : (config_ss_opt["read_pulse_freq"] - 0.1, config_ss_opt["read_pulse_freq"] + 0.1),
+    "read_pulse_freq" : (config_ss_opt["read_pulse_freq"] - 0.2, config_ss_opt["read_pulse_freq"] + 0.2),
 }
 step_size = {
-    "read_pulse_freq" : 0.002,
+    "read_pulse_freq" : 0.01,
 }
 keys = ["read_pulse_freq"]
-config["shots"] = 10000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config_ss_opt,
                                        soc=soc, soccfg=soccfg, fast_analysis=True)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )
+inst_singleshotopt.display_opt(plotDisp = True)
 print(opt_param)
 config["read_pulse_freq"] = opt_param[0][0]
 #%%
@@ -246,11 +262,11 @@ plt.show()
 # For the spec slice experiment
 UpdateConfig_spec = {
     # define spec slice experiment parameters
-    "qubit_freq_start": 200,
-    "qubit_freq_stop": 300,
-    "SpecNumPoints": 101,
+    "qubit_freq_start": 800,
+    "qubit_freq_stop": 900,
+    "SpecNumPoints": 201,
     'spec_reps': 1000,
-    'qubit_gain': 10000,
+    'qubit_gain': 30000,
     'relax_delay': 20,
 }
 config_spec = config | UpdateConfig_spec
@@ -281,11 +297,11 @@ print(Instance_specSlice.qubitFreq)
 # For the spec slice experiment with PS
 UpdateConfig_spec_ps = {
     # define spec slice experiment parameters
-    "qubit_freq_start": 50,
-    "qubit_freq_stop": 550,
-    "SpecNumPoints": 201,
-    'spec_reps': 2000,
-    'qubit_gain': 10000,
+    "qubit_freq_start": 800,
+    "qubit_freq_stop": 900,
+    "SpecNumPoints": 101,
+    'spec_reps': 8000,
+    'qubit_gain': 32000,
     'relax_delay': 10,
     'initialize_pulse': False,
     'fridge_temp': 420,
@@ -332,11 +348,11 @@ config["qubit_ef_freq"] = data_ef_spec['data']['f_reqd']
 # TITLE: Optimize QND -> Get the optimal readout length and gain
 UpdateConfig_qnd = {
     # qubit tone
-    "qubit_pulse_style": "flat_top",
+    "qubit_pulse_style": "const",
     "qubit_gain": 10000,
-    "qubit_length": 10,
+    "qubit_length": 1,
     "sigma": 1,
-    "flat_top_length": 10.0,
+    "flat_top_length": 80.0,
 
     # Experiment
     "shots": 100000,
@@ -349,7 +365,7 @@ config_qnd = config | UpdateConfig_qnd
 #%%
 # TITLE : Optimizing readout gain
 param_bounds ={
-    'read_pulse_gain': (1000, 2500)
+    'read_pulse_gain': (500, 3000)
 }
 step_size = {
     'read_pulse_gain': 100,
@@ -359,13 +375,13 @@ config_qnd["shots"] = 300000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config_qnd, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
 inst_qndopt.brute_search_result_display(display = True)
-config['read_pulse_gain'] = opt_results[0]
-config_qnd['read_pulse_gain'] = opt_results[0]
+config['read_pulse_gain'] = opt_results[1]["read_pulse_gain"]
+config_qnd['read_pulse_gain'] = opt_results[1]["read_pulse_gain"]
 
 #%%
 # TITLE : Optimizng readout length
 param_bounds ={
-    'read_length': (20, 90),
+    'read_length': (10, 90),
 }
 step_size = {
     'read_length': 10,
@@ -375,24 +391,24 @@ config_qnd["shots"] = 300000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config_qnd, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
 inst_qndopt.brute_search_result_display(display = True)
-config['read_length'] = opt_results[0]
-config_qnd['read_length'] = opt_results[0]
+config['read_length'] = opt_results[1][keys[0]]
+config_qnd['read_length'] = opt_results[1][keys[0]]
 
 #%%
 # Measure T1
 UpdateConfig_t1 = {
     # qubit tone
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
+    "qubit_pulse_style": "const",
+    "qubit_gain": 32000,
     "qubit_length": 10,
     "sigma": 1,
     "flat_top_length": 10.0,
 
     # experiment
-    "shots": 20000,
+    "shots": 12000,
     "wait_start": 1,
-    "wait_stop": 13000,
-    "wait_num": 21,
+    "wait_stop": 15000,
+    "wait_num": 11,
     'wait_type': 'linear',
     "cen_num": 2,
     "fridge_temp": 10,
@@ -424,7 +440,8 @@ Instance_T1_PS.display(data_T1_PS, plotDisp=True)
 # For the single shot experiment
 UpdateConfig_ss = {
         ## define experiment parameters
-        "shots": int(1e5),
+        'qubit_pulse_style': "flat_top",
+        "shots": int(2e4),
         "use_switch": True,
         "initialize_pulse": True,
         "apply_ef": False
@@ -437,30 +454,37 @@ config_ss = config | UpdateConfig_ss
 time_required = config_ss["shots"] * config_ss["relax_delay"] * 1e-6 / 60
 print("SingleShot : Total time estimate is ", time_required, " mins")
 print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_yoko_" + str(config_ss["yokoVoltage_freqPoint"]),
-                                           outerFolder=outerFolder, cfg=config_ss,
-                                           soc=soc, soccfg=soccfg)
+Instance_SingleShotProgram = SingleShotFull(path="Tempr_ss",
+                                                   outerFolder=outerFolder, cfg=config_ss,
+                                                   soc=soc, soccfg=soccfg)
 data_SingleShot = Instance_SingleShotProgram.acquire()
-data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot, bin_size=51)
+data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot)
 Instance_SingleShotProgram.save_data(data_SingleShot)
-Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
-print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+Instance_SingleShotProgram.save_config()
+('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 
 #%%
 # Set up the Lakeshore
-rm = pyvisa.ResourceManager()
-LS370_connection = rm.open_resource('GPIB1::12::INSTR')
-lakeshore = lk.Lakeshore370(LS370_connection)
+# rm = pyvisa.ResourceManager()
+# LS370_connection = rm.open_resource('GPIB1::12::INSTR')
+# lakeshore = lk.Lakeshore370(LS370_connection)
 
 # Sweep over yoko voltage symmetry points
-N = 1 # will go from -N to N
-old_flux = chsn_phase = 0.494
-flux_list = old_flux*np.tile(np.array([-1,1]), 2*N + 1) + np.repeat(np.linspace(-N,N,2*N+1),2)
+N = 2 # will go from -N to N
+old_flux = chsn_phase = 0.5
+
+# Scanning same flux point
+n_times = 10
+flux_list = np.repeat(old_flux, n_times)
+
+# Scan of  Flux equivalents points
+shift = 2
+# flux_list = old_flux*np.tile(np.array([-1,1]), 2*N + 1) + np.repeat(np.linspace(-N,N,2*N+1),2) + shift
 # flux_list = np.array([-2.494, 2.494, -2.494, 2.494])
 print(flux_list) # For N = 1 -> -phi-phi_0,phi-phi_0,-phi,phi,-phi+phi_0,phi+phi_0
-flux_list = np.append(flux_list, [flux_list] * 2)
-print(flux_list)
+# flux_list = np.append(flux_list, [flux_list] * 2)
+# print(flux_list)
 
 # Creating empty lists to store the temperatures and error
 tempr_list = []
@@ -469,20 +493,22 @@ tempr_fridge = []
 yoko_list = []
 
 #%%
-run_calib = True
-run_spec_calib = True
-run_trans = True
-run_ss_opt = True
-run_ge_spec = False
+run_calib = False
+run_spec_calib = False
+run_trans = False
+run_ss_opt = False
+run_ge_spec = True
 run_ge_spec_ps = False
-run_qnd_gain = True
-run_qnd_length = True
+run_qnd_gain = False
+run_qnd_length = False
 run_ef_spec = False
 run_t1 = True
 run_ss = True
 
 from tqdm import tqdm
-for idx_flux in tqdm(range(flux_list.size)):
+for idx_flux in tqdm(range(len(flux_list))):
+    print("Measuring flux = ", flux_list[idx_flux])
+    outerFolder = outerFolder_og + "Flux_" + str(flux_list[idx_flux]) + "_" + str(idx_flux+15) + "\\"
 
     # Calibrate the flux
     if run_calib:
@@ -505,20 +531,22 @@ for idx_flux in tqdm(range(flux_list.size)):
         yoko_calibration.save_data()
         yoko_calibration.display()
 
-    # Find the new yoko voltage
-    new_yoko = yoko_calibration.flux_to_yoko(flux_list[idx_flux] - np.floor(flux_list[idx_flux]))
-    print("Setting the yoko to ", new_yoko)
-    yoko1.SetVoltage(new_yoko)
-    time.sleep(120)
+        # Find the new yoko voltage
+        new_yoko = yoko_calibration.flux_to_yoko(flux_list[idx_flux] - np.floor(flux_list[idx_flux]))
+        print("Setting the yoko to ", new_yoko)
+        yoko1.SetVoltage(new_yoko)
+        time.sleep(240)
 
-    # Update all
-    config["yokoVoltage"] = new_yoko
-    config["yokoVoltage_freqPoint"] = new_yoko
-    config["flux"] = flux_list[idx_flux]
-    yoko_list.append(new_yoko)
+        # Update all
+        config["yokoVoltage"] = new_yoko
+        config["yokoVoltage_freqPoint"] = new_yoko
+        config["flux"] = flux_list[idx_flux]
+
 
     # Find the right transition frequency
     if run_spec_calib:
+        # Update Config
+        config_specfind = config | UpdateConfig_specfind
         spec_finder = SpecFind(path="SpecSearch", cfg=config_specfind, soc=soc, soccfg=soccfg,
                                outerFolder=outerFolder, progress=True)
         volt, freq = spec_finder.findTransition(debug=True)
@@ -529,36 +557,39 @@ for idx_flux in tqdm(range(flux_list.size)):
         print("Yoko Voltage found is ", volt)
         config["yokoVoltage"] = volt
         config["yokoVoltage_freqPoint"] = volt
-
+        yoko_list.append(volt)
+    plt.close('all')
     # Get the cavity frequency
     if run_trans:
-        Instance_trans = Transmission(path="dataTestTransmission", cfg=config_trans, soc=soc, soccfg=soccfg,
+        transm_exp = Transmission_Enhance(path="dataTestTransmission", cfg=config_trans, soc=soc, soccfg=soccfg,
                                       outerFolder=outerFolder)
-        data_trans = Instance_trans.acquire()
-        Instance_trans.save_data(data_trans)
-        Instance_trans.save_config()
-        Instance_trans.display(data_trans, plotDisp=False)
+        data_transm = transm_exp.acquire()
+        transm_exp.save_data(data_transm)
+        transm_exp.save_config()
+        transm_exp.display(data_transm, plotDisp=False)
+        opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True)
 
         # Update the transmission frequency to be the peak
-        config_trans["read_pulse_freq"] = Instance_trans.peakFreq
-        print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-        config["read_pulse_freq"] = Instance_trans.peakFreq
+        config_trans["read_pulse_freq"] = opt_freq
+        print("Cavity freq IF [MHz] = ", opt_freq)
+        config["read_pulse_freq"] = opt_freq
 
+    plt.close('all')
     if run_ss_opt:
         # Update config
         config_ss_opt = config | UpdateConfig_ss_opt
         print("Running ss optmization")
         param_bounds = {
-            "read_pulse_freq": (config_ss_opt["read_pulse_freq"] - 0.25, config_ss_opt["read_pulse_freq"] + 0.25),
+            "read_pulse_freq": (config_ss_opt["read_pulse_freq"] - 0.2, config_ss_opt["read_pulse_freq"] + 0.2),
         }
         step_size = {
-            "read_pulse_freq": 0.005,
+            "read_pulse_freq": 0.004,
         }
         keys = ["read_pulse_freq"]
-        config_ss_opt["shots"] = 10000
+        config_ss_opt["shots"] = 8000
         inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder,
                                                cfg=config_ss_opt,
-                                               soc=soc, soccfg=soccfg, fast_analysis=True)
+                                               soc=soc, soccfg=soccfg, fast_analysis=True, disp_image=False)
         opt_param = inst_singleshotopt.brute_search(keys, param_bounds, step_size, )
         inst_singleshotopt.display_opt()
         inst_singleshotopt.save_config()
@@ -566,6 +597,7 @@ for idx_flux in tqdm(range(flux_list.size)):
         # Update Readout Frequency
         config["read_pulse_freq"] = opt_param[0][0]
 
+    plt.close('all')
     # Get the qubit g-e frequency
     if run_ge_spec:
         # Update config
@@ -578,8 +610,11 @@ for idx_flux in tqdm(range(flux_list.size)):
         Instance_specSlice.save_config()
         Instance_specSlice.save_data(data_specSlice)
         qubit_freq = data_specSlice["data"]["f_reqd"]
+        config['qubit_freq'] = qubit_freq
+        config["qubit_ge_freq"] = qubit_freq
         print("Qubit frequency according to spec slice ", qubit_freq)
 
+    plt.close('all')
     # Get qubit frequency using spec slice with PS
     if run_ge_spec_ps:
         # Update config
@@ -595,6 +630,7 @@ for idx_flux in tqdm(range(flux_list.size)):
         config['qubit_freq'] = data_specSlice_PS['data']['resonant_freq']
         config['qubit_ge_freq'] = data_specSlice_PS['data']['resonant_freq']
 
+    plt.close('all')
     # Get the qubit e-f frequency
     if run_ef_spec:
         # Update config
@@ -608,12 +644,13 @@ for idx_flux in tqdm(range(flux_list.size)):
         instance_ef_spec.display(data_ef_spec, plotDisp=False)
         config["qubit_ef_freq"] = data_ef_spec["data"]['f_reqd']
 
+    plt.close('all')
     # Optimize the readout gain
     if run_qnd_gain:
         config_qnd = config | UpdateConfig_qnd
         print("Optimizing over readout gain")
         param_bounds = {
-            'read_pulse_gain': (1000, 2500)
+            'read_pulse_gain': (1500, 3000)
         }
         step_size = {
             'read_pulse_gain': 100,
@@ -621,19 +658,20 @@ for idx_flux in tqdm(range(flux_list.size)):
         keys = ["read_pulse_gain"]
         config_qnd["shots"] = 300000
         inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config_qnd, soc=soc, soccfg=soccfg)
-        opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store=True)
+        opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store=False)
         inst_qndopt.brute_search_result_display(display=False)
         config['read_pulse_gain'] = int(opt_results[1]['read_pulse_gain'])
 
+    plt.close('all')
     if run_qnd_length:
         # Update config
         config_qnd = config | UpdateConfig_qnd
         print("Optimizing over readout length")
         param_bounds = {
-            'read_length': (20, 90),
+            'read_length': (5, 90),
         }
         step_size = {
-            'read_length': 10,
+            'read_length': 5,
         }
         keys = ["read_length"]
         config_qnd["shots"] = 300000
@@ -642,6 +680,7 @@ for idx_flux in tqdm(range(flux_list.size)):
         inst_qndopt.brute_search_result_display(display=False)
         config['read_length'] = int(opt_results[1]["read_length"])
 
+    plt.close('all')
     # Get the qubit T1
     if run_t1:
         config_t1 = config | UpdateConfig_t1
@@ -656,31 +695,35 @@ for idx_flux in tqdm(range(flux_list.size)):
         Instance_T1_PS.display(data_T1_PS, plotDisp=False)
         config['relax_delay'] = 10 * data_T1_PS['data']['T1']
 
+    plt.close('all')
     # Get the qubit temperature
     if run_ss:
         # Updating config
         config_ss = config | UpdateConfig_ss
+        config_ss['qubit_pulse_style'] = 'flat_top'
         print("Running Single Shot")
         time_required = config_ss["shots"] * config_ss["relax_delay"] * 1e-6 / 60
         print("SingleShot : Total time estimate is ", time_required, " mins")
-        Instance_SingleShotProgram = SingleShotSSE(path="TempMeas_yoko_" + str(config_ss["yokoVoltage_freqPoint"]),
+        Instance_SingleShotProgram = SingleShotFull(path="Tempr_ss",
                                                    outerFolder=outerFolder, cfg=config_ss,
                                                    soc=soc, soccfg=soccfg)
         data_SingleShot = Instance_SingleShotProgram.acquire()
-        data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot, bin_size=51)
+        data_SingleShot = Instance_SingleShotProgram.process_data(data_SingleShot)
         Instance_SingleShotProgram.save_data(data_SingleShot)
         Instance_SingleShotProgram.save_config()
-        Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
+        print("Temperature of the device is ", str(data_SingleShot['data']['mean_temp'][0,1]*1e3))
+        # Instance_SingleShotProgram.display(data_SingleShot, plotDisp=False, save_fig=True)
 
         # Getting the temperatures
-        tempr_list.append(data_SingleShot["data"]["tempr"])
-        tempr_std_list.append(data_SingleShot["data"]["tempr_std"])
+        tempr_list.append(data_SingleShot['data']['mean_temp'][0,1]*1e3)
+        tempr_std_list.append(data_SingleShot['data']['std_temp'][0,1]*1e3)
 
         # Getting the fridge temperature
-        tempr_fridge.append(float(lakeshore.get_temp(7)) * 1e3)
-        data_SingleShot["data"]["fridge_temp_meas"] = tempr_fridge[-1]
+        # tempr_fridge.append(float(lakeshore.get_temp(7)) * 1e3)
+        # data_SingleShot["data"]["fridge_temp_meas"] = tempr_fridge[-1]
 
         Instance_SingleShotProgram.save_config()
+    plt.close('all')
 
 #%%
 #TITLE Saving the data
@@ -725,7 +768,7 @@ for idx in range(len(tempr_list)):
 import matplotlib.pyplot as plt
 plt.close('all')
 fig, ax = plt.subplots(1, 1, figsize=(8, 6))
-ax.errorbar(np.array(yoko_list[:]), np.array(tempr01)*1e3, yerr=np.array(tempr01_std)*1e3, fmt='o', label = 'Temperature 01')
+ax.errorbar(np.array(yoko_list), np.array(tempr01)*1e3, yerr=np.array(tempr01_std)*1e3, fmt='o', label = 'Temperature 01')
 # ax.errorbar(np.array(yoko_list[:]), np.array(tempr12)*1e3, yerr=np.array(tempr12_std)*1e3, fmt='o', label = 'Temperature 12')
 # ax.errorbar(np.array(yoko_list[:]), np.array(tempr02)*1e3, yerr=np.array(tempr02_std)*1e3, fmt='o', label = 'Temperature 02')
 ax.plot(yoko_list[:], tempr_fridge, 'o', label = 'Fridge Temperature')

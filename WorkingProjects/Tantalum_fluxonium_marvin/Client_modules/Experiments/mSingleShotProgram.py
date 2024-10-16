@@ -78,8 +78,13 @@ class LoopbackProgramSingleShot(RAveragerProgram):
                                      # mode="periodic")
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch), mode="periodic")
+        if self.cfg["mode_periodic"]:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch), mode="periodic")
+        else:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],

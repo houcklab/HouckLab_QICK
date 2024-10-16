@@ -4,7 +4,7 @@
 # both channel 1 AND channel 0 will continue playing their respective tones.
 
 from qick import AveragerProgram
-from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 
 class ConstantTone(AveragerProgram):
     def __init__(self, soccfg, cfg):

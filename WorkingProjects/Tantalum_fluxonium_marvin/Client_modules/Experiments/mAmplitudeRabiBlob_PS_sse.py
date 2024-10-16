@@ -2,6 +2,7 @@ from qick import *
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
+from tqdm import tqdm
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass # used to be WTF
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.MixedShots_analysis import *
@@ -54,6 +55,11 @@ class LoopbackProgramAmplitudeRabi_PS_sse(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+        elif cfg["qubit_pulse_style"] == 'const':
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
             print("define pi or flat top pulse")
 
@@ -94,9 +100,10 @@ class LoopbackProgramAmplitudeRabi_PS_sse(RAveragerProgram):
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switc
 
-        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
-                                 phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                 waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+        if self.cfg["initialize_pulse"]:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
@@ -156,7 +163,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
         i_1_arr = np.full((qubit_gain_vec.size, qubit_freq_vec.size, int(self.cfg["shots"])), np.nan)
         q_1_arr = np.full((qubit_gain_vec.size, qubit_freq_vec.size, int(self.cfg["shots"])), np.nan)
 
-        for indx_gain in range(qubit_gain_vec.size):
+        for indx_gain in tqdm(range(qubit_gain_vec.size)):
             # Change qubit gain
             self.cfg["qubit_gain"] = qubit_gain_vec[indx_gain]
 
@@ -310,7 +317,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
 
         # Plotting
         gs = gridspec.GridSpec(cen_num, 2, width_ratios=[1, 1.2])
-        fig = plt.figure(figsize=[12, 5 * cen_num])
+        fig = plt.figure(figsize=[15, 5 * cen_num])
 
         # Plot the blob distribution
         blob_axs = plt.subplot(gs[:, 0])
@@ -321,12 +328,14 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
         subplot_right = []
         for idx_start in range(cen_num):
             subplot_right.append(plt.subplot(gs[idx_start, 1]))
-            subplot_right[idx_start].imshow(pop[idx_start, idx_start, :,:],
+            im = subplot_right[idx_start].imshow(pop[idx_start, idx_start, :,:],
                                             extent=[qubit_freq_vec[0], qubit_freq_vec[-1], qubit_gain_vec[0],
                                                     qubit_gain_vec[-1]],
                                             origin='lower',interpolation='none',aspect = 'auto')
             subplot_right[idx_start].set_xlabel("Qubit Frequency (in MHz)")
             subplot_right[idx_start].set_ylabel("Qubit Gain (DAC Unit)")
+            # Add colorbar
+            fig.colorbar(im, ax = subplot_right[idx_start])
 
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
                             + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
@@ -339,7 +348,8 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
 
         if plotDisp:
             plt.show()
-        plt.close()
+        else:
+            plt.close()
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

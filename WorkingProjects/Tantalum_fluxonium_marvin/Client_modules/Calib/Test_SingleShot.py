@@ -19,7 +19,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_Th
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT2R_PS import T2R_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotPS import SingleShotPS
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mAmplitudeRabiBlob_PS_sse import AmplitudeRabi_PS_sse
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mRepeatReadout import RepeatReadout
@@ -41,28 +41,29 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.7485,
+    "yokoVoltage": -0.0124,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 50,  # us
-    "read_pulse_gain": 1500,  # [DAC units]
-    "read_pulse_freq": 6672.143,
+    "read_length": 60,  # us
+    "read_pulse_gain": 1900,  # [DAC units]
+    "read_pulse_freq": 6671.326,
+    "mode_periodic": False,
 
     # qubit spec
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 1,
+    "qubit_pulse_style": "const",
+    "qubit_gain": 32000,
     "qubit_length": 10,  ###us, this is used if pulse style is const
-    "sigma": 0.05,  ### units us
-    "flat_top_length": 10,  ### in us
-    "qubit_freq": 220,
-    "relax_delay": 13000,
+    "sigma": 1,  ### units us
+    "flat_top_length": 80,  ### in us
+    "qubit_freq": 850,
+    "relax_delay": 10,
 
     # define shots
-    "shots": 5000,  ### this gets turned into "reps"
+    "shots": 50000,  ### this gets turned into "reps"
 
     # Added for switch
-    "use_switch": False,
+    "use_switch": True,
 
 }
 config = BaseConfig | UpdateConfig
@@ -85,16 +86,16 @@ plt.show()
 # # ##### run the single shot experiment
 loop_len = 21
 #config["read_pulse_freq"] = 6672.7
-freq_vec = config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len)
+freq_vec = config["read_pulse_freq"] + np.linspace(-0.04, 0.04, loop_len)
 #qubit_gain_vec = np.linspace(100, 2000, loop_len, dtype=int)
-read_gain_vec = np.linspace(2000, 8000, loop_len, dtype=int)
+read_gain_vec = np.linspace(600, 3000, loop_len, dtype=int)
 # yoko_vec = config["yokoVoltage"] + np.linspace(-0.08, 0.08, loop_len)
 read_len_vec = np.linspace(5,80, loop_len)
 from tqdm import tqdm
 for idx in tqdm(range(loop_len)):
-    config["read_pulse_freq"] = freq_vec[idx]
+    # config["read_pulse_freq"] = freq_vec[idx]
     # config["qubit_gain"] = qubit_gain_vec[idx]
-    # config["read_pulse_gain"] = read_gain_vec[idx]
+    config["read_pulse_gain"] = read_gain_vec[idx]
     # config["read_length"] = read_len_vec[idx]
     # yoko1.SetVoltage(yoko_vec[idx])
     # config["yokoVoltage"] = yoko_vec[idx]
@@ -257,41 +258,49 @@ for idx in tqdm(range(loop_len)):
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.1433,
+    "yokoVoltage": -0.035,
+    'yokoVoltage_freqPoint': -0.035,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 75,
+    "read_length": 70,
     "read_pulse_gain": 1500,
-    "read_pulse_freq": 6671.858,
+    "read_pulse_freq": 6671.2,
 
     # Qubit Tone
-    "qubit_freq_start": 10,
-    "qubit_freq_stop": 1000,
-    "RabiNumPoints": 1001,
-    "qubit_pulse_style": "flat_top",
-    "sigma": 1,
-    "flat_top_length": 10,
-    "relax_delay": 20,
+    "qubit_freq_start": 200,
+    "qubit_freq_stop": 300,
+    "RabiNumPoints": 26,
+    "qubit_pulse_style": "const",
+    "sigma": 0.005,
+    "flat_top_length": 0.06,
+    'qubit_length': 0.07,
+    "relax_delay": 5*1600,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 10000,
-    "qubit_gain_step": 2000,
-    "qubit_gain_expts": 6,
+    "qubit_gain_start": 10,
+    "qubit_gain_step": 4000,
+    "qubit_gain_expts": 9,
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 10000,
+    "shots": 5000,
     "use_switch":True,
+    'initialize_pulse': False,
+    'fridge_temp': 10,
+
 }
 config = BaseConfig | UpdateConfig
 
 # yoko1.SetVoltage(config["yokoVoltage"])
 
-Instance_AmplitudeRabi_PS = AmplitudeRabi_PS(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
-AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
-AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
+#%%
+Instance_AmplitudeRabi_PS = AmplitudeRabi_PS_sse(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_AmplitudeRabi_PS = AmplitudeRabi_PS_sse.acquire(Instance_AmplitudeRabi_PS)
+data_AmplitudeRabi_PS = Instance_AmplitudeRabi_PS.process_data(data_AmplitudeRabi_PS)
+AmplitudeRabi_PS_sse.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
+AmplitudeRabi_PS_sse.save_config(Instance_AmplitudeRabi_PS)
+Instance_AmplitudeRabi_PS.display(plotDisp=True, data=data_AmplitudeRabi_PS)
 
 # %%
 # # TITLE: T1 of a thermal state using pulses
@@ -340,13 +349,13 @@ AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 #     "relax_delay"]) * config["shots"] * 1e-6 / 60
 # print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
 #
-# Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
-#                        soc=soc, soccfg=soccfg)
-# data_T1_PS = T1_PS.acquire(Instance_T1_PS)
-# T1_PS.save_data(Instance_T1_PS, data_T1_PS)
-# print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# T1_PS.save_config(Instance_T1_PS)
-# T1_PS.process_data(Instance_T1_PS, data_T1_PS)
+Instance_T1_PS = T1_PS(path="dataTestT1_PS", outerFolder=outerFolder, cfg=config,
+                       soc=soc, soccfg=soccfg)
+data_T1_PS = T1_PS.acquire(Instance_T1_PS)
+T1_PS.save_data(Instance_T1_PS, data_T1_PS)
+print('scan complete starting data processing: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+T1_PS.save_config(Instance_T1_PS)
+T1_PS.process_data(Instance_T1_PS, data_T1_PS)
 # print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 # %%
 
@@ -395,25 +404,26 @@ AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.11750,
+    "yokoVoltage": 0.74,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 50,  # us
-    "read_pulse_gain": 1500,  # [DAC units]
-    "read_pulse_freq": 6672.143,
+    "read_length": 30,  # us
+    "read_pulse_gain": 1400,  # [DAC units]
+    "read_pulse_freq": 6431.898,
+    "mode_periodic" : True,
 
     # qubit spec
-    "qubit_pulse_style": "arb",
-    "qubit_ge_gain": 1,
+    "qubit_pulse_style": "const",
+    "qubit_ge_gain": 32000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 110,
+    "qubit_ge_freq": 1629,
     "qubit_ef_freq": 110,
-    "apply_ge": False,
+    "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 10,
+    "qubit_length": 40,
     "sigma": 0.05,
-    "relax_delay": 200,
+    "relax_delay": 10,
 
     # Experiment
     "cen_num": 2,
@@ -432,7 +442,7 @@ scan_time = (config["relax_delay"] * config["shots"] ) * 1e-6 / 60
 print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
 
 inst_singleshotopt = SingleShotMeasure(path="dataTestSingleShotOpt", outerFolder=outerFolder, cfg=config,
-                                       soc=soc, soccfg=soccfg, fast_analysis = False)
+                                       soc=soc, soccfg=soccfg, fast_analysis = False, disp_image = True)
 data_singleshot = inst_singleshotopt.acquire()
 inst_singleshotopt.process(data = data_singleshot)
 inst_singleshotopt.save_data(data_singleshot)
@@ -486,14 +496,14 @@ plt.show()
 
 #%%
 # TITLE Running automatic optimization
-config["read_pulse_freq"] = 6672.15
+config["read_pulse_freq"] = 6432
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.02, config["read_pulse_freq"] + 0.02),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.4, config["read_pulse_freq"] + 0.4),
     'read_length': (20, 90),
     'read_pulse_gain': (500, 4000)
 }
 step_size = {
-    "read_pulse_freq" : 0.001,
+    "read_pulse_freq" : 0.002,
     'read_length': 20,
     'read_pulse_gain': 500,
 }
@@ -502,6 +512,7 @@ config["shots"] = 10000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config,
                                        soc=soc, soccfg=soccfg, fast_analysis=True)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )
+inst_singleshotopt.display_opt()
 print(opt_param)
 
 #%%

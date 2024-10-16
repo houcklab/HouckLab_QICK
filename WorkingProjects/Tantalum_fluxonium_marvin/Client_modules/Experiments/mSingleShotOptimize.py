@@ -44,9 +44,14 @@ class SingleShotExperiment(RAveragerProgram):
         res_ch = cfg["res_ch"]
         self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
-        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                 gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch), mode="periodic")
+        if self.cfg["mode_periodic"]:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch), mode="periodic")
+        else:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch))
 
         # Configure the readout
         for ro_ch in cfg["ro_chs"]:
@@ -79,7 +84,12 @@ class SingleShotExperiment(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_ge_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-        # Don't know what kind of pulse we want
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4 + self.us2cycles(self.cfg["flat_top_length"], gen_ch=self.cfg["qubit_ch"])
+        elif cfg["qubit_pulse_style"] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_ge_freq, phase=0,
+                                    gain=cfg["qubit_ge_gain"],
+                                    length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
             print("define gaussian or flat top pulse")
 
@@ -100,9 +110,9 @@ class SingleShotExperiment(RAveragerProgram):
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                              width=self.cfg["trig_len"])  # trigger for switch
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
-                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-                                     waveform="qubit")
+            # self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
+            #                          phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
+            #                          waveform="qubit")
             self.pulse(ch=self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.005))
 
@@ -163,10 +173,11 @@ class SingleShotMeasure(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None,
-                 progress=None, fast_analysis=False):
+                 progress=None, fast_analysis=False, disp_image = True):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
         self.fast_analysis = fast_analysis
+        self.disp_image = disp_image
         self.params = []
         self.quants = []
         self.tolerance = []
@@ -199,7 +210,8 @@ class SingleShotMeasure(ExperimentClass):
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
-                                           name = self.datetimestring, num_bins = 151, fast = self.fast_analysis)
+                                           name = self.datetimestring, num_bins = 151, fast = self.fast_analysis,
+                                           disp_image = self.disp_image)
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
 
         # Calculating the distinctness of cluster
@@ -415,7 +427,7 @@ class SingleShotMeasure(ExperimentClass):
             # Create a 1D  plot
             plt.figure(figsize=(10, 8))
             scatter = plt.scatter(param1_values, quants)
-            plt.xlabel('Resonator Pulse Frequency')
+            plt.xlabel(self.keys[0])
             plt.ylabel('KL Divergence')
             plt.title('Optimization')
             plt.tight_layout()

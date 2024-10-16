@@ -10,6 +10,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.YOKO
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_Enhance import Transmission_Enhance
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
 
 # class LoopbackProgramTrans(AveragerProgram):
@@ -148,7 +149,7 @@ class SpecVsFlux(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
+    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, individ_fit = False):
         expt_cfg = {
             ### define the yoko parameters
             "yokoVoltageStart": self.cfg["yokoVoltageStart"],
@@ -183,13 +184,16 @@ class SpecVsFlux(ExperimentClass):
         X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = voltVec
+        Y = np.copy(voltVec)
+        if "yoko2" in self.cfg.keys():
+            Y += self.cfg["yoko2"]
         Y_step = Y[1] - Y[0]
         Z_trans = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
         Z_specamp = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specphase = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specI = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specQ = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
+        cavity_freq = np.full((expt_cfg["yokoVoltageNumPoints"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
         self.trans_Imat = np.zeros((expt_cfg["yokoVoltageNumPoints"], expt_cfg["TransNumPoints"]))
@@ -217,7 +221,7 @@ class SpecVsFlux(ExperimentClass):
             self.cfg["yokoVoltage"] = voltVec[i]
 
             ### take the transmission data
-            data_I, data_Q = self._aquireTransData()
+            data_I, data_Q = self._acquireTransData_enhance()
             self.data['data']['trans_Imat'][i,:] = data_I
             self.data['data']['trans_Qmat'][i,:] = data_Q
 
@@ -225,6 +229,8 @@ class SpecVsFlux(ExperimentClass):
             sig = data_I + 1j * data_Q
             avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
             Z_trans[i, :] = avgamp0
+            cavity_freq[i] = self.cfg["read_pulse_freq"]
+            # print(cavity_freq[i])
 
             if i ==0: #### if first sweep add a colorbar
                 ax_plot_0 = axs['b'].imshow(
@@ -237,6 +243,7 @@ class SpecVsFlux(ExperimentClass):
                 )
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
+                # sc = axs['b'].scatter(cavity_freq, Y, s = 20)
             else:
                 ax_plot_0.set_data(Z_trans)
                 ax_plot_0.set_clim(vmin=np.nanmin(Z_trans))
@@ -244,6 +251,7 @@ class SpecVsFlux(ExperimentClass):
                 cbar0.remove()
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
+                # sc.set_offsets(np.c_[cavity_freq, Y])
 
             axs['b'].set_ylabel("yoko voltage (V)")
             axs['b'].set_xlabel("Cavity Frequency (GHz)")
@@ -254,7 +262,7 @@ class SpecVsFlux(ExperimentClass):
                 plt.pause(0.1)
 
             ### take the spec data
-            data_I, data_Q = self._aquireSpecData()
+            data_I, data_Q = self._aquireSpecData(individ_fit= individ_fit)
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
@@ -384,7 +392,7 @@ class SpecVsFlux(ExperimentClass):
         print('actual end: '+ datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         if plotSave:
-            plt.savefig(self.iname) #### save the figure
+            plt.savefig(self.iname, dpi = 1000) #### save the figure
 
         if plotDisp == False:
             fig.clf(True)
@@ -400,6 +408,7 @@ class SpecVsFlux(ExperimentClass):
             "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
             "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequecny
         }
+
         ### take the transmission data
         self.cfg["reps"] = self.cfg["trans_reps"]
         fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
@@ -423,7 +432,31 @@ class SpecVsFlux(ExperimentClass):
 
         return data_I, data_Q
 
-    def _aquireSpecData(self):
+    def _acquireTransData_enhance(self):
+        # Create new dictionary entries to match with the old Transmission style experiments
+        self.cfg["read_pulse_freq"] = (self.cfg["trans_freq_start"]+self.cfg["trans_freq_stop"])/2
+        self.cfg["TransSpan"] = (self.cfg["trans_freq_stop"] - self.cfg["trans_freq_start"])/2
+        self.cfg['reps'] = self.cfg["trans_reps"]
+
+        # print("The read_pulse freq is ", self.cfg["read_pulse_freq"])
+        # print("The trans span is ", self.cfg["TransSpan"])
+        # print("The read gain is", self.cfg["read_pulse_gain"])
+        # print("The trans reps is", self.cfg['reps'])
+
+        transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                          outerFolder=self.outerFolder)
+        data_transm = transm_exp.acquire()
+        opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, plotDisp=False)
+
+        self.cfg["read_pulse_freq"] = opt_freq
+        data_I = data_transm['data']['results'][0][0][0]
+        data_Q = data_transm['data']['results'][0][0][1]
+
+        return data_I, data_Q
+
+
+
+    def _aquireSpecData(self, individ_fit = False):
         ##### code to aquire just the qubit spec data
         expt_cfg = {
             ### spec parameters
@@ -443,11 +476,13 @@ class SpecVsFlux(ExperimentClass):
         # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
         #                                  start_src="internal", progress=False, debug=False)
-        # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+
         my_spec = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-                                    outerFolder=r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\QCage_dev\dataTestSpecVsFlux', progress=True)
+                                    outerFolder=self.path_only, progress=True)
         data = my_spec.acquire()
-        my_spec.display(data, plotDisp=False)
+        # print("Finished Acquiring")
+        if individ_fit:
+            my_spec.display(data, plotDisp=False)
         data_I = data['data']['avgi']
         data_Q = data['data']['avgq']
 

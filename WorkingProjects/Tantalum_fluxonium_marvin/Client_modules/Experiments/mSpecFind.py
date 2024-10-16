@@ -10,6 +10,8 @@ from matplotlib import pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import Transmission
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_Enhance import \
+    Transmission_Enhance
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 import scqubits as scq
 # Create a class with parent as SpecSlice_bkg_sub
@@ -21,7 +23,7 @@ class SpecFind(SpecSlice_bkg_sub):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None,
                  progress=None):
-        self.my_trans = Transmission(path="dataTestTransmission", cfg=cfg, soc=soc, soccfg=soccfg,
+        self.my_trans = Transmission_Enhance(path="dataTestTransmission", cfg=cfg, soc=soc, soccfg=soccfg,
                                       outerFolder=outerFolder)
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
@@ -64,6 +66,7 @@ class SpecFind(SpecSlice_bkg_sub):
             v1 = v0 + self.dir*self.cfg["volt_step"]
         else:
             v1 = v0 - self.dir*self.cfg["volt_step"]
+        self.cfg['yokoVoltage'] = self.cfg['yokoVoltage_freqPoint'] = v1
         yoko1.SetVoltage(v1)
         self.new_file()
         self.data1 = self.acquire_calib()
@@ -82,6 +85,7 @@ class SpecFind(SpecSlice_bkg_sub):
         itr = 0
         while delta > self.cfg["threshold"] and itr < self.cfg["trials"]:
             v_new = self.getNewValue(w_trans, [v0,v1], [w0,w1])
+            self.cfg['yokoVoltage'] = self.cfg['yokoVoltage_freqPoint'] = v_new
             yoko1.SetVoltage(v_new)
             self.new_file()
             self.data_new = self.acquire_calib()
@@ -116,7 +120,8 @@ class SpecFind(SpecSlice_bkg_sub):
         self.my_trans.display(plotDisp=False)
         self.my_trans.save_data(data_trans)
         self.my_trans.save_config()
-        self.cfg['read_pulse_freq'] = self.my_trans.peakFreq
+        opt_freq = self.my_trans.findOptimalFrequency(data=data_trans, debug=False)
+        self.cfg['read_pulse_freq'] = opt_freq
 
         data_spec = self.acquire()
 

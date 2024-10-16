@@ -7,33 +7,33 @@ import datetime
 
 path = os.getcwd()
 os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib_escher.initialize import *
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTimeOfFlight_PS import TimeOfFlightPS
 
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.38,
-    "yokoVoltage_freqPoint": -0.38,
+    "yokoVoltage": 0.74,
+    "yokoVoltage_freqPoint": 0.74,
     ###### cavity
     "reps": 1,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 15,  # [us]
-    "read_length_tof": 2,  # [us]
-    "read_pulse_gain": 6000,  # [DAC units]
-    "read_pulse_freq": 7392.4,  # [MHz]
+    "read_length": 30,  # [us]
+    "read_length_tof": 0.5,  # [us]
+    "read_pulse_gain": 1300,  # [DAC units]
+    "read_pulse_freq": 6431.898,  # [MHz]
     ##### qubit spec parameters
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 30000,
-    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "qubit_pulse_style": "const",
+    "qubit_gain": 32000,
+    "qubit_length": 80,  ###us, this is used if pulse style is const
     "sigma": 0.005,  ### units us, define a 20ns sigma
     "flat_top_length": 20,  ### in us
-    "qubit_freq": 2974.6,
-    "relax_delay": 1,
+    "qubit_freq": 2801.855,
+    "relax_delay": 5,
     #### define experiment specific parameters
     "shots": 100000,
     "offset": 0,  # [us] placeholder for actual value
     "offset_start": 0,  # [us]
-    "offset_end": 200,  # [us]
+    "offset_end": 20,  # [us]
     "offset_num": 41,  # [Number of points]
     "max_pulse_length" : 5,
     ##### record the fridge temperature in units of mK
@@ -50,8 +50,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 time_required = np.sum((np.linspace(config["offset"], config["offset_end"],config["offset_num"]) + 2*config["max_pulse_length"])*config["shots"])*1e-6/60
 print("Time required is " + str(time_required) + " min")
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\TempChecks\\Yoko_" + str(
-    config["yokoVoltage_freqPoint"]) + "\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
 Instance_TimeOfFlightPS = TimeOfFlightPS(path="TimeOfFlightPS_temp_"+str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
                                                soc=soc, soccfg=soccfg)
 data_TimeOfFlightPS = Instance_TimeOfFlightPS.acquire()

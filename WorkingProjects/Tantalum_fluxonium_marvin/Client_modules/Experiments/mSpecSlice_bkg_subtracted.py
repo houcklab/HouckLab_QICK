@@ -59,7 +59,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         # Adding the resonator pulse
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
                                  gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -146,6 +146,12 @@ class SpecSlice_bkg_sub(ExperimentClass):
 
         # All information in amp now
         f_reqd = self.qubit_freqs[np.argmax(amp)]
+        try:
+            popt, pcov = curve_fit(gauss, x_pts, amp, p0=[max(amp) - min(amp), f_reqd, (max(x_pts) - min(x_pts)) / 7,
+                                                          min(amp) if f_reqd > np.average(amp) else max(amp)])
+            f_reqd = popt[1]
+        except:
+            print("Cannot amp-plot fit")
 
 
         ### Save Data

@@ -49,10 +49,10 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4 + self.us2cycles(self.cfg["flat_top_length"],gen_ch=cfg["qubit_ch"])
-            print(self.qubit_pulseLength)
+            # print(self.qubit_pulseLength)
         else:
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]),mode="periodic")
+                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
@@ -139,12 +139,12 @@ class AmplitudeRabi(ExperimentClass):
         axs[1].set_xlabel("Qubit gain (DAC units)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I")
+        ax2 = axs[2].plot(x_pts, avgi[0][0], 'o-', label="I")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Qubit gain (DAC units)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q")
+        ax3 = axs[3].plot(x_pts, avgq[0][0], 'o-', label="Q")
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Qubit gain (DAC units)")
         axs[3].legend()
@@ -155,7 +155,7 @@ class AmplitudeRabi(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

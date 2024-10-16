@@ -62,13 +62,19 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+        elif cfg['qubit_pulse_style'] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+                                     # mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
             print("define pi or flat top pulse")
 
         ### Declare ADC Readout
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch = cfg['res_ch']), gen_ch=cfg["res_ch"])
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],

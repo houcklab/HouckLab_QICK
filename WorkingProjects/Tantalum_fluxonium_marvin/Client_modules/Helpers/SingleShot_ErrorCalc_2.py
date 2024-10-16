@@ -410,6 +410,6 @@ def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, ax
     axs.set_xlabel('I')
     axs.set_ylabel('Q')
     axs.set_title('Data')
-    axs.set_aspect('auto')
+    axs.set_aspect('equal')
 
     return

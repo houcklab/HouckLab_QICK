@@ -34,8 +34,8 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analy
 
 class SingleShotAnalysis:
 
-    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, i_0_arr = None, q_0_arr = None,
-                centers = None, outerFolder = None, name = None, num_bins = None):
+    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, disp_image = True, i_0_arr = None, q_0_arr = None,
+                centers = None, outerFolder = None, name = None, num_bins = None, qubit_freq_mat = None):
         """
         Initialize the class. 
 
@@ -51,6 +51,8 @@ class SingleShotAnalysis:
             The method to cluster the data. Options are 'gmm' and 'kmeans'
         fast: bool
             If to skip all error calculation which takes most of the time
+        disp_image: bool
+            If to display the image, only used if fast is True
         i_0_arr : ndarray
             The I values of training data to initialize the centers
         q_0_arr : ndarray
@@ -69,6 +71,8 @@ class SingleShotAnalysis:
             The suffix to the name of the folder under which to save all data
         initialized : bool
             Whether the initialized state is provided or not
+        qubit_freq_mat : 2d array or None
+            The array of transition frequencies between each states
 
         Methods
         -------
@@ -96,6 +100,8 @@ class SingleShotAnalysis:
         self.outerFolder = outerFolder
         self.num_bins = num_bins
         self.fast = fast
+        self.disp_image = disp_image
+        self.qubit_freq_mat = qubit_freq_mat
 
         # Set the path
         if self.outerFolder is not None:
@@ -148,7 +154,7 @@ class SingleShotAnalysis:
             self.logger.info('Initial fitting completed')
             self.logger.info(self.inital_fit_results['result'].fit_report())
 
-            if self.fast is False:
+            if self.fast is False or self.disp_image:
                 self.book_keeping(self.inital_fit_results, 'Initial')
                 initial_params = self.inital_fit_results['result'].params
         
@@ -164,7 +170,7 @@ class SingleShotAnalysis:
         self.logger.info((self.final_results['result'].fit_report()))
 
         # Bookkeeping
-        if self.fast is False:
+        if self.fast is False or self.disp_image:
             self.book_keeping(self.final_results, 'Final')
 
         # Step 4 : Estimate the populations
@@ -494,6 +500,7 @@ class SingleShotAnalysis:
             # calculate the populations
             self.logger.info('Calculating populations')
             estimates = []
+            temperatures = []
             for idx_trial in tqdm(range(num_trials)):
                 amps = []
                 # find random indexes to try
@@ -513,16 +520,26 @@ class SingleShotAnalysis:
                 # append the estimates with the current population
                 estimates.append(self.Pop_calc(amps))
 
+                # Calculate the temperature
+                if self.qubit_freq_mat is not None:
+                    temperatures.append(utils.calc_tempr_mat(estimates[-1],self.qubit_freq_mat))
+
             # transpose for ease of use
+            temperatures = np.array(temperatures)
+            mean_temperature = np.mean(temperatures, axis = 0)
+            std_temperatures = np.std(temperatures, axis = 0)
             estimates = np.transpose(estimates)
             mean_estimate = np.mean(estimates, axis=1)
             std_estimate = np.std(estimates, axis=1)
 
             population_dict = {
-                'mean': mean_estimate,
-                'std': std_estimate,
+                'mean_pop': mean_estimate,
+                'std_pop': std_estimate,
                 'estimates': estimates,
                 'num_trials': num_trials,
+                'mean_temp': mean_temperature,
+                'std_temp': std_temperatures,
+                'temperatures': temperatures,
             }
         else:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]
@@ -585,7 +602,7 @@ class SingleShotAnalysis:
             means[i,:] = [params[key+"centerx"], params[key+"centery"]]
             sigmas[i,0,0] = sigmas[i,1,1] = params[key+'sigmax']
             amps[i] = params[key+'amplitude']
-
+        print(amps)
         if method == "mahalanobis":
             # Calculate the malalanabois distance
             for i in range(cen_num):
@@ -619,5 +636,13 @@ class SingleShotAnalysis:
 
         # Sum of all non-diagonal element
         quant = np.sum(quant) - np.trace(quant)
+
+        # Check if the amps have a sane value if not then quant is zero
+        total_amp = np.sum(amps)
+        percentage = amps/total_amp
+        # if any percentage less than 10 % we set to zero
+        if np.min(percentage) < 0.1:
+            quant = 0
+
 
         return quant
