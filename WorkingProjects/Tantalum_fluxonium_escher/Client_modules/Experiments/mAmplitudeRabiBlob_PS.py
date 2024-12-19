@@ -1,6 +1,6 @@
 from qick import *
 import matplotlib
-matplotlib.use('TkAgg')
+#matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass # used to be WTF
@@ -132,7 +132,7 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress, #debug=debug,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
@@ -184,6 +184,7 @@ class AmplitudeRabi_PS(ExperimentClass):
         if len(self.qubit_freqs) != 1 and len(self.qubit_amps) !=  1:
             X_step = X[1] - X[0]
             Y_step = Y[1] - Y[0]
+            self.single_sweep = False
         else:
             self.single_sweep = True
 

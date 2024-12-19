@@ -79,6 +79,7 @@ class SingleShotExperiment(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_ge_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         # Don't know what kind of pulse we want
         else:
             print("define gaussian or flat top pulse")
@@ -102,7 +103,7 @@ class SingleShotExperiment(RAveragerProgram):
                              width=self.cfg["trig_len"])  # trigger for switch
             self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                      phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-                                     waveform="qubit")
+                                     waveform="qubit",length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.pulse(ch=self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.005))
 
@@ -115,6 +116,16 @@ class SingleShotExperiment(RAveragerProgram):
                                      phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
                                      waveform="qubit")
             self.pulse(ch=self.cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(0.005))
+
+        # If we're not outputting any pulse, make sure to tell the RFSOC channel to output nothing, else it will continue whatever it was doing before
+        if not self.cfg["apply_ge"] and not self.cfg["apply_ef"]:
+            # self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
+            #                          phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=0,
+            #                          waveform="qubit")
+            # self.pulse(ch=self.cfg["qubit_ch"])
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=ge_freq, phase=0, gain=0,
+                                     length=self.us2cycles(1), mode="periodic")
             self.sync_all(self.us2cycles(0.005))
 
         # Measure the qubit
@@ -132,7 +143,7 @@ class SingleShotExperiment(RAveragerProgram):
                 save_experiments=None,
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress) # qick update, debug=debug)
 
         return self.collect_shots()
 

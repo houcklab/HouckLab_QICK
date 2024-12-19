@@ -11,11 +11,11 @@ class LoopbackProgram(AveragerProgram):
         res_ch = cfg["res_ch"]
 
         # set the nyquist zone
-        self.declare_gen(ch=cfg["res_ch"], nqz=1)
+        self.declare_gen(ch=cfg["res_ch"], nqz=self.cfg['nqz'])
 
         # configure the readout lengths and downconversion frequencies (ensuring it is an available DAC frequency)
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.cfg["readout_length"],
+            self.declare_readout(ch=ch, length=cfg["readout_length"], # do not sync clocks
                                  freq=self.cfg["pulse_freq"], gen_ch=cfg["res_ch"])
 
         # convert frequency to DAC frequency (ensuring it is an available ADC frequency)
@@ -31,7 +31,11 @@ class LoopbackProgram(AveragerProgram):
             self.add_gauss(ch=res_ch, name="measure", sigma=sigma, length=sigma * 5)
 
         if style == "const":
-            self.set_pulse_registers(ch=res_ch, style=style, length=cfg["length"])
+            if cfg["mode_periodic"]:
+                #print("Mode periodic") putting this in the main
+                self.set_pulse_registers(ch=res_ch, style=style, length=cfg["length"], mode='periodic')
+            else:
+                self.set_pulse_registers(ch=res_ch, style=style, length=cfg["length"])
         elif style == "flat_top":
             # The first half of the waveform ramps up the pulse, the second half ramps down the pulse
             self.set_pulse_registers(ch=res_ch, style=style, waveform="measure", length=cfg["length"])
@@ -39,6 +43,10 @@ class LoopbackProgram(AveragerProgram):
             self.set_pulse_registers(ch=res_ch, style=style, waveform="measure")
 
         self.synci(200)  # give processor some time to configure pulses
+
+        #Enable DDR4 buffer
+        self.trigger(ddr4=True, mr=True, adc_trig_offset=self.cfg["adc_trig_offset"]) # enable ddr4
+        self.synci(100)
 
     def body(self):
         # fire the pulse
@@ -78,7 +86,13 @@ class Loopback(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = LoopbackProgram(self.soccfg, self.cfg)
         self.soc.reset_gens()  # clear any DC or periodic values on generators
+        #i_mat = []
+        #q_mat = []
+        #for i in range(self.cfg['soft_avgs']):
         iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False, debug=False)
+        #    i_mat.append(iq_list[0])
+        #    q_mat.append(iq_list[1])
+        #iq_list = [np.mean(i_mat), np.mean(q_mat)]
         data={'config': self.cfg, 'data': {'iq_list': iq_list}}
         self.data=data
         return data

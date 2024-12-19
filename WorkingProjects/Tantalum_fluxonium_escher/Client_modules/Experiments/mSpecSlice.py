@@ -31,7 +31,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
@@ -39,9 +39,15 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         # qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg[
         #     "qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                 gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]))
+        # added for stark shift experiment
+        if cfg["ro_mode_periodic"]==True:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"]), mode="periodic")
+        else:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(self.cfg["read_length"]))
 
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -60,14 +66,17 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         elif cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
-                                     gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
-                                     mode="periodic")
+            if cfg["mode_periodic"] == True:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
+                                         gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
+                                         mode="periodic")
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
+                                         gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"])
-            self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                     gain=cfg["read_pulse_gain"], mode='periodic',
-                                     length=self.us2cycles(self.cfg["read_length"]))
 
 
         else:
@@ -129,7 +138,7 @@ class SpecSlice(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False) # qick update, debug=False)
         avgi = avgi[0][0]
         avgq = avgq[0][0]
         sig = avgi + 1j * avgq

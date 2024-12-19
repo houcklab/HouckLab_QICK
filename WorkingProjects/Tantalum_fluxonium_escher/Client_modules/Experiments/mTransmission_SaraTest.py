@@ -14,12 +14,12 @@ class LoopbackProgramTrans(AveragerProgram):
         cfg = self.cfg
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"],
+        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"], #mode='periodic',
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
         self.synci(200)  # give processor some time to configure pulses
 
@@ -41,6 +41,7 @@ class Transmission(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
+        print(self.cfg)
         expt_cfg = {
                 "center": self.cfg["read_pulse_freq"],
                 "span": self.cfg["TransSpan"],

@@ -68,11 +68,11 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
         ### Declare ADC Readout
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], ro_ch = self.cfg["res_ch"]), gen_ch=cfg["res_ch"])
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
-                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+                                              gen_ch=cfg["qubit_ch"]) + self.cfg["qubit_pulseLength"] #self.qubit_pulseLength  ####
 
         self.synci(200)  # give processor some time to configure pulses
 
@@ -112,7 +112,7 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
                 save_experiments=[0, 1],
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress,  # qick update - debug=debug,
                         readouts_per_experiment=2, save_experiments=[0, 1])
 
         return self.collect_shots()

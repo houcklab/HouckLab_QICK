@@ -11,7 +11,7 @@ from tqdm.notebook import tqdm
 import time
 import datetime
 
-class TransVsGain(ExperimentClass):
+class TransVsRelaxDelay(ExperimentClass):
     """
     Find the non-linearity in the cavity by sweeping the cavity gain and monitoring the cavity frequency
     """
@@ -23,9 +23,9 @@ class TransVsGain(ExperimentClass):
     def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
         expt_cfg = {
             ### define the gainuator parameters
-            "trans_gain_start": self.cfg["trans_gain_start"],
-            "trans_gain_stop": self.cfg["trans_gain_stop"],
-            "trans_gain_num": self.cfg["trans_gain_num"],
+            "read_length_start": self.cfg["read_length_start"],
+            "read_length_stop": self.cfg["read_length_stop"],
+            "read_length_num": self.cfg["read_length_num"],
             ### transmission parameters
             "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -33,11 +33,11 @@ class TransVsGain(ExperimentClass):
         }
 
         if self.cfg["units"] == "DAC":
-            gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"],
+            gainVec = np.linspace(expt_cfg["read_length_start"], expt_cfg["read_length_stop"], expt_cfg["read_length_num"],
                                    dtype=int) ### for current simplicity set it to an int
-        else:
-            gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"],
-                                   dtype = int)
+        #else:
+        #    gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"],
+        #                           dtype = int)
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -53,19 +53,19 @@ class TransVsGain(ExperimentClass):
         Y = gainVec
         print(gainVec)
         Y_step = Y[1] - Y[0]
-        Z = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
-        Z1 = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
+        Z = np.full((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]), np.nan)
+        Z1 = np.full((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]), np.nan)
 
-        Z_I = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
-        Z_Q = np.full((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]), np.nan)
+        Z_I = np.full((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]), np.nan)
+        Z_Q = np.full((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        self.Imat = np.zeros((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]))
-        self.Qmat = np.zeros((expt_cfg["trans_gain_num"], expt_cfg["TransNumPoints"]))
+        self.Imat = np.zeros((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]))
+        self.Qmat = np.zeros((expt_cfg["read_length_num"], expt_cfg["TransNumPoints"]))
         self.data= {
             'config': self.cfg,
             'data': {'Imat': self.Imat, 'Qmat': self.Qmat, 'trans_fpts':self.trans_fpts,
-                        'gainVec': gainVec
+                        'readLengthVec': gainVec
                      }
         }
 
@@ -82,8 +82,9 @@ class TransVsGain(ExperimentClass):
             print(Y[-1]**2/Y[-2])
             extents = [X[0] - X_step / 2, X[-1] + X_step / 2, 10*np.log10(Y[0]**2/Y[1]), 10*np.log10(Y[-1]**2/Y[-2])]
 
-        for i in range(expt_cfg["trans_gain_num"]):
-            self.cfg["read_pulse_gain"] = gainVec[i]
+        for i in range(expt_cfg["read_length_num"]):
+            #self.cfg["read_pulse_gain"] = gainVec[i]
+            self.cfg["read_length"] = gainVec[i]
 
             data_I, data_Q = self._acquireTransData()
             self.data['data']['Imat'][i, :] = data_I
@@ -222,7 +223,7 @@ class TransVsGain(ExperimentClass):
 
             if i ==0: ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start ### time for single full row in seconds
-                timeEst = t_delta*expt_cfg["trans_gain_num"] ### estimate for full scan
+                timeEst = t_delta*expt_cfg["read_length_num"] ### estimate for full scan
                 StopTime = startTime + datetime.timedelta(seconds=timeEst)
                 print('Time for 1 sweep: ' + str(round(t_delta/60, 2)) + ' min')
                 print('estimated total time: ' + str(round(timeEst/60, 2)) + ' min')

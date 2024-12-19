@@ -71,6 +71,15 @@ class LoopbackProgramSingleShot(RAveragerProgram):
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
 
+        elif cfg["qubit_pulse_style"] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["start"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
+                                     )
+            # mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
+
+
         else:
             print("define pi or flat top pulse")
 
@@ -88,8 +97,9 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         #### wait 10ns
         self.sync_all(self.us2cycles(0.01))
 
-        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+        if self.cfg["qubit_gain"] != 0:
+            if self.cfg["use_switch"]:
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
@@ -113,7 +123,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress) # qick update, debug=debug)
 
         return self.collect_shots()
 

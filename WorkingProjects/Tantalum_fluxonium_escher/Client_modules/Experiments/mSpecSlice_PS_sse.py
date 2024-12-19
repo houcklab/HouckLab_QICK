@@ -121,7 +121,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress, #debug=debug,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
