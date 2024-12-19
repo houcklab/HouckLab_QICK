@@ -103,8 +103,8 @@ yoko1.SetVoltage(chsn_yoko)
 #%%
 # TITLE : Get Transmission
 UpdateConfig_transmission = {
-    # Parameters
-    "reps": 4000,  # Number of repetitions
+    # Parameter3
+    "reps": 3000,  # Number of repetitions
 
     # cavity
     "read_pulse_style": "const",
@@ -114,7 +114,7 @@ UpdateConfig_transmission = {
 
     # Experiment Parameters
     "TransSpan": 3,  # [MHz] span will be center frequency +/- this parameter
-    "TransNumPoints": 601,  # number of points in the transmission frequency
+    "TransNumPoints": 301,  # number of points in the transmission frequency
 }
 
 config_trans = BaseConfig | UpdateConfig_transmission
@@ -136,26 +136,26 @@ print("Cavity freq IF [MHz] = ", opt_freq)
 # TITLE Defining common experiment configurations
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": -0.0124,  # [in V]
-    "yokoVoltage_freqPoint": -0.0124,  # [in V] used for naming the file systems
-    "flux": 0,
+    "yokoVoltage": -1.20151,  # [in V]
+    "yokoVoltage_freqPoint": -1.20151,  # [in V] used for naming the file systems
+    "flux": 0.5,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 60,  # [in us]
-    "read_pulse_gain": 1900,  # [in DAC units]
-    "read_pulse_freq": 6671.326,  # [in MHz]
+    "read_length": 50,  # [in us]
+    "read_pulse_gain": 1300,  # [in DAC units]
+    "read_pulse_freq": 6670.54,  # [in MHz]
     "mode_periodic": False,
 
     # qubit g-e drive parameters
-    "qubit_ge_freq": 855,  # [in MHz]
-    'qubit_freq': 855,
-    "qubit_pulse_style": "const",
-    "qubit_length": 1,
-    "qubit_ge_gain": 20000,
-    "qubit_gain": 20000,
+    "qubit_ge_freq": 157,  # [in MHz]
+    'qubit_freq': 157,
+    "qubit_pulse_style": "flat_top",
+    "qubit_length": 60,
+    "qubit_ge_gain": 7500,
+    "qubit_gain": 7500,
     "sigma": 1,
-    "flat_top_length": 1,
+    "flat_top_length": 60,
 
     # qubit e-f drive parameters
     "qubit_ef_freq": 10000,
@@ -208,14 +208,15 @@ config["yokoVoltage_freqPoint"] = volt
 UpdateConfig_ss_opt = {
 
     # qubit spec
-    "qubit_pulse_style": "const",
-    "qubit_ge_gain": 10000,
-    "qubit_ef_gain": 1,
-    "qubit_ge_freq": 850,
+    "qubit_pulse_style": "flat_top",
+    "qubit_ge_gain": 4000,
+    "qubit_ef_gain": 0,
+    "qubit_ge_freq": 157,
     "qubit_ef_freq": 110,
     "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 1,
+    "qubit_length": 50,
+    "flat_top_length": 60,
     "sigma": 0.05,
     "relax_delay": 10,
 
@@ -230,10 +231,10 @@ config_ss_opt = config | UpdateConfig_ss_opt
 
 #%%
 param_bounds ={
-    "read_pulse_freq" : (config_ss_opt["read_pulse_freq"] - 0.2, config_ss_opt["read_pulse_freq"] + 0.2),
+    "read_pulse_freq" : (config_ss_opt["read_pulse_freq"] - 0.4, config_ss_opt["read_pulse_freq"] + 0.4),
 }
 step_size = {
-    "read_pulse_freq" : 0.01,
+    "read_pulse_freq" : 0.025,
 }
 keys = ["read_pulse_freq"]
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config_ss_opt,
@@ -262,11 +263,11 @@ plt.show()
 # For the spec slice experiment
 UpdateConfig_spec = {
     # define spec slice experiment parameters
-    "qubit_freq_start": 800,
-    "qubit_freq_stop": 900,
+    "qubit_freq_start": 50,
+    "qubit_freq_stop": 100,
     "SpecNumPoints": 201,
-    'spec_reps': 1000,
-    'qubit_gain': 30000,
+    'spec_reps': 2000,
+    'qubit_gain': 25000,
     'relax_delay': 20,
 }
 config_spec = config | UpdateConfig_spec
@@ -299,13 +300,15 @@ UpdateConfig_spec_ps = {
     # define spec slice experiment parameters
     "qubit_freq_start": 800,
     "qubit_freq_stop": 900,
-    "SpecNumPoints": 101,
-    'spec_reps': 8000,
-    'qubit_gain': 32000,
-    'relax_delay': 10,
+    "SpecNumPoints": 31,
+    'spec_reps': 10000,
+    'qubit_gain': 19000,
+    'relax_delay': 2500,
     'initialize_pulse': False,
+    'initialize_qubit_gain': 19000,
     'fridge_temp': 420,
-    "qubit_pulse_style": "flat_top"
+    "qubit_pulse_style": "flat_top",
+    'relax_delay': 50,
 }
 config_spec_ps = config | UpdateConfig_spec_ps
 
@@ -348,11 +351,11 @@ config["qubit_ef_freq"] = data_ef_spec['data']['f_reqd']
 # TITLE: Optimize QND -> Get the optimal readout length and gain
 UpdateConfig_qnd = {
     # qubit tone
-    "qubit_pulse_style": "const",
-    "qubit_gain": 10000,
-    "qubit_length": 1,
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 4000,
+    "qubit_length": 60,
     "sigma": 1,
-    "flat_top_length": 80.0,
+    "flat_top_length": 60.0,
 
     # Experiment
     "shots": 100000,
@@ -365,7 +368,7 @@ config_qnd = config | UpdateConfig_qnd
 #%%
 # TITLE : Optimizing readout gain
 param_bounds ={
-    'read_pulse_gain': (500, 3000)
+    'read_pulse_gain': (700, 1900)
 }
 step_size = {
     'read_pulse_gain': 100,
@@ -399,21 +402,21 @@ config_qnd['read_length'] = opt_results[1][keys[0]]
 UpdateConfig_t1 = {
     # qubit tone
     "qubit_pulse_style": "const",
-    "qubit_gain": 32000,
-    "qubit_length": 10,
+    "qubit_gain": 0,
+    "qubit_length": 0.10,
     "sigma": 1,
     "flat_top_length": 10.0,
 
     # experiment
-    "shots": 12000,
+    "shots": 10000,
     "wait_start": 1,
-    "wait_stop": 15000,
+    "wait_stop": 3000,
     "wait_num": 11,
     'wait_type': 'linear',
     "cen_num": 2,
     "fridge_temp": 10,
-    "relax_delay": 10,
-    "use_switch": True
+    "relax_delay": 5000,
+    "use_switch": False
 }
 config_t1 = config | UpdateConfig_t1
 
@@ -475,7 +478,7 @@ N = 2 # will go from -N to N
 old_flux = chsn_phase = 0.5
 
 # Scanning same flux point
-n_times = 10
+n_times = 60
 flux_list = np.repeat(old_flux, n_times)
 
 # Scan of  Flux equivalents points
@@ -495,8 +498,8 @@ yoko_list = []
 #%%
 run_calib = False
 run_spec_calib = False
-run_trans = False
-run_ss_opt = False
+run_trans = True
+run_ss_opt = True
 run_ge_spec = True
 run_ge_spec_ps = False
 run_qnd_gain = False
@@ -508,7 +511,7 @@ run_ss = True
 from tqdm import tqdm
 for idx_flux in tqdm(range(len(flux_list))):
     print("Measuring flux = ", flux_list[idx_flux])
-    outerFolder = outerFolder_og + "Flux_" + str(flux_list[idx_flux]) + "_" + str(idx_flux+15) + "\\"
+    outerFolder = outerFolder_og + "Flux_" + str(flux_list[idx_flux]) + "_" + str(idx_flux+256) + "\\"
 
     # Calibrate the flux
     if run_calib:
@@ -561,6 +564,7 @@ for idx_flux in tqdm(range(len(flux_list))):
     plt.close('all')
     # Get the cavity frequency
     if run_trans:
+        config_trans = BaseConfig | UpdateConfig_transmission
         transm_exp = Transmission_Enhance(path="dataTestTransmission", cfg=config_trans, soc=soc, soccfg=soccfg,
                                       outerFolder=outerFolder)
         data_transm = transm_exp.acquire()
@@ -570,9 +574,9 @@ for idx_flux in tqdm(range(len(flux_list))):
         opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True)
 
         # Update the transmission frequency to be the peak
-        config_trans["read_pulse_freq"] = opt_freq
-        print("Cavity freq IF [MHz] = ", opt_freq)
-        config["read_pulse_freq"] = opt_freq
+        # config_trans["read_pulse_freq"] = opt_freq
+        # print("Cavity freq IF [MHz] = ", opt_freq)
+        # config["read_pulse_freq"] = opt_freq
 
     plt.close('all')
     if run_ss_opt:
@@ -580,13 +584,13 @@ for idx_flux in tqdm(range(len(flux_list))):
         config_ss_opt = config | UpdateConfig_ss_opt
         print("Running ss optmization")
         param_bounds = {
-            "read_pulse_freq": (config_ss_opt["read_pulse_freq"] - 0.2, config_ss_opt["read_pulse_freq"] + 0.2),
+            "read_pulse_freq": (config_ss_opt["read_pulse_freq"] - 0.1, config_ss_opt["read_pulse_freq"] + 0.1),
         }
         step_size = {
-            "read_pulse_freq": 0.004,
+            "read_pulse_freq": 0.01,
         }
         keys = ["read_pulse_freq"]
-        config_ss_opt["shots"] = 8000
+        config_ss_opt["shots"] = 5000
         inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder,
                                                cfg=config_ss_opt,
                                                soc=soc, soccfg=soccfg, fast_analysis=True, disp_image=False)
