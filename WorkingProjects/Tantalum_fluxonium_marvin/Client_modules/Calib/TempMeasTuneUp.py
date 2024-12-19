@@ -108,33 +108,33 @@ for idx in range(loop_len):
 # TITLE : code finding T1 of a thermal state with and without pulses
 UpdateConfig = {
     # yoko
-    "yokoVoltage": 0.74,
-    "yokoVoltage_freqPoint": 0.74,
+    "yokoVoltage": -3,
+    "yokoVoltage_freqPoint": -3,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 30,
-    "read_pulse_gain": 1300,
-    "read_pulse_freq": 6431.898,
+    "read_length": 60,
+    "read_pulse_gain": 1500,
+    "read_pulse_freq": 6244.2,
 
     # qubit tone
     "qubit_pulse_style": "const",
-    "qubit_gain": 32000,
-    "qubit_length": 80,
+    "qubit_gain": 10000,
+    "qubit_length": 20,
     "sigma": 1,
     "flat_top_length": 10.0,
-    "qubit_freq": 2801.855,
+    "qubit_freq": 881,
 
     # experiment
     "shots": 20000,
     "wait_start": 0,
-    "wait_stop": 5000,
+    "wait_stop": 4000,
     "wait_num": 21,
     'wait_type': 'linear',
     "cen_num": 2,
     "fridge_temp": 10,
     "relax_delay": 10,
-    "use_switch": True
+    "use_switch": False,
 }
 config = BaseConfig | UpdateConfig
 
@@ -170,8 +170,8 @@ UpdateConfig = {
     # Readout
     "reps": 2000,
     "read_pulse_style": "const",
-    "read_length": 25,
-    "read_pulse_gain": 1300,
+    "read_length": 60,
+    "read_pulse_gain": 1900,
     "read_pulse_freq": 6248.51,
 
     # Qubit Tone
@@ -187,7 +187,7 @@ UpdateConfig = {
     "shots": 100000,
     "cen_num": 3,
     "relax_delay": 2000,
-    "fridge_temp": fridge_temp,
+    "fridge_temp": 10,
     "use_switch": False,
     "initialize_pulse": False,
 }
@@ -216,25 +216,25 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": 0.74,
-    "yokoVoltage_freqPoint": 0.74,
+    "yokoVoltage": -1.021,
+    "yokoVoltage_freqPoint": -1.021,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 30,
-    "read_pulse_gain": 1400,
-    "read_pulse_freq": 6431.898,
+    "read_length": 60,
+    "read_pulse_gain": 2000,
+    "read_pulse_freq": 6671.37,
 
     # qubit tone
-    "qubit_pulse_style": "const",
-    "qubit_gain": 30000,
-    "qubit_length": 50,
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 19000,
+    "qubit_length": 60,
     "sigma": 1,
-    "flat_top_length": 10.0,
-    "qubit_freq": 2801.855,
+    "flat_top_length": 60.0,
+    "qubit_freq": 850,
 
     # Experiment
-    "shots": 1000000,
+    "shots": 100000,
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
@@ -260,7 +260,7 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
     'read_length': (20, 90),
-    'read_pulse_gain': (1000, 2400)
+    'read_pulse_gain': (1250, 1750)
 }
 step_size = {
     "read_pulse_freq" : 0.01,

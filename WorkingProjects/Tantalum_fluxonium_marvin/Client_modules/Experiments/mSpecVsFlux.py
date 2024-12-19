@@ -218,6 +218,7 @@ class SpecVsFlux(ExperimentClass):
         for i in range(expt_cfg["yokoVoltageNumPoints"]):
             ### set the yoko voltage for the specific run
             yoko1.SetVoltage(voltVec[i])
+            time.sleep(self.cfg['magnet_relax'])
             self.cfg["yokoVoltage"] = voltVec[i]
 
             ### take the transmission data
@@ -447,7 +448,7 @@ class SpecVsFlux(ExperimentClass):
                                           outerFolder=self.outerFolder)
         data_transm = transm_exp.acquire()
         opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, plotDisp=False)
-
+        print(opt_freq)
         self.cfg["read_pulse_freq"] = opt_freq
         data_I = data_transm['data']['results'][0][0][0]
         data_Q = data_transm['data']['results'][0][0][1]
@@ -472,27 +473,32 @@ class SpecVsFlux(ExperimentClass):
         fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
         results = []
         start = time.time()
-        # prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
-        # x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-        #                                  readouts_per_experiment=1, save_experiments=None,
-        #                                  start_src="internal", progress=False, debug=False)
 
-        my_spec = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-                                    outerFolder=self.path_only, progress=True)
-        data = my_spec.acquire()
-        # print("Finished Acquiring")
-        if individ_fit:
+        if self.cfg["measurement_style"] == "std" :
+            prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                             readouts_per_experiment=1, save_experiments=None,
+                                             start_src="internal", progress=False, debug=False)
+            data_I = avgi[0][0]
+            data_Q = avgq[0][0]
+
+        elif self.cfg["measurement_style"] == "bkg":
+            my_spec = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                        outerFolder=self.path_only, progress=True)
+            data = my_spec.acquire()
+            # print("Finished Acquiring")
+            if individ_fit:
+                my_spec.display(data, plotDisp=False)
+            data_I = data['data']['avgi']
+            data_Q = data['data']['avgq']
+        elif self.cfg["measurement_style"] == "ps":
+            my_spec = SpecSlice_PS_sse(path="dataTestSpecSlice_PS", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                       outerFolder=r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\QCage_dev\dataTestSpecVsFlux', progress=True)
+            data = my_spec.acquire()
+            data = my_spec.process_data(data=data)
             my_spec.display(data, plotDisp=False)
-        data_I = data['data']['avgi']
-        data_Q = data['data']['avgq']
-
-        # my_spec = SpecSlice_PS_sse(path="dataTestSpecSlice_PS", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-        #                            outerFolder=r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\QCage_dev\dataTestSpecVsFlux', progress=True)
-        # data = my_spec.acquire()
-        # data = my_spec.process_data(data=data)
-        # my_spec.display(data, plotDisp=False)
-        # data_I = data['data']['pop'][0,0,:]
-        # data_Q = data['data']['pop'][1,1,:]
+            data_I = data['data']['pop'][0,0,:]
+            data_Q = data['data']['pop'][1,1,:]
 
         return data_I, data_Q
 

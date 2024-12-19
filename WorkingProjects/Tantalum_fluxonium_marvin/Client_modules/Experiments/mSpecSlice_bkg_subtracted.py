@@ -42,9 +42,16 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                      waveform="qubit")
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
         elif self.cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]), mode="periodic")
-            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
+            if self.cfg["mode_periodic"] :
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]), mode = "periodic")
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
+                print("Mode set to periodic on qubit tone. Make sure switch is disconnected.")
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
+                                         gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
 
         elif self.cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -118,7 +125,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
                                        expt_cfg["SpecNumPoints"])
 
         ### Actual data
-        # self.cfg['use_switch'] = True
+        self.cfg['use_switch'] = True
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
@@ -128,7 +135,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
         ### Background data
         qubit_gain = self.cfg["qubit_gain"]
         self.cfg["qubit_gain"] = 0
-        # self.cfg['use_switch'] = False
+        self.cfg['use_switch'] = False
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
         x_pts_bkg, avgi_bkg, avgq_bkg = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,

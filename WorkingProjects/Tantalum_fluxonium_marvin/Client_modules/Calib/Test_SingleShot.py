@@ -41,26 +41,26 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.0124,
+    "yokoVoltage": -1.20151,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 60,  # us
-    "read_pulse_gain": 1900,  # [DAC units]
-    "read_pulse_freq": 6671.326,
+    "read_length": 100,  # us
+    "read_pulse_gain": 1600,  # [DAC units]
+    "read_pulse_freq": 6672.54,
     "mode_periodic": False,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 32000,
+    "qubit_gain": 4000,
     "qubit_length": 10,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
-    "flat_top_length": 80,  ### in us
-    "qubit_freq": 850,
-    "relax_delay": 10,
+    "flat_top_length": 60,  ### in us
+    "qubit_freq": 156,
+    "relax_delay": 2000,
 
     # define shots
-    "shots": 50000,  ### this gets turned into "reps"
+    "shots": 10000,  ### this gets turned into "reps"
 
     # Added for switch
     "use_switch": True,
@@ -68,7 +68,7 @@ UpdateConfig = {
 }
 config = BaseConfig | UpdateConfig
 
-yoko1.SetVoltage(config["yokoVoltage"])
+# yoko1.SetVoltage(config["yokoVoltage"])
 #%%
 plt.close('all')
 scan_time = (config["relax_delay"] * config["shots"] * 2) * 1e-6 / 60
@@ -84,18 +84,18 @@ SingleShotProgram.save_config(Instance_SingleShotProgram)
 plt.show()
 #%%
 # # ##### run the single shot experiment
-loop_len = 21
+loop_len = 51
 #config["read_pulse_freq"] = 6672.7
-freq_vec = config["read_pulse_freq"] + np.linspace(-0.04, 0.04, loop_len)
+freq_vec = config["read_pulse_freq"] + np.linspace(-1, 1, loop_len)
 #qubit_gain_vec = np.linspace(100, 2000, loop_len, dtype=int)
 read_gain_vec = np.linspace(600, 3000, loop_len, dtype=int)
 # yoko_vec = config["yokoVoltage"] + np.linspace(-0.08, 0.08, loop_len)
 read_len_vec = np.linspace(5,80, loop_len)
 from tqdm import tqdm
 for idx in tqdm(range(loop_len)):
-    # config["read_pulse_freq"] = freq_vec[idx]
+    config["read_pulse_freq"] = freq_vec[idx]
     # config["qubit_gain"] = qubit_gain_vec[idx]
-    config["read_pulse_gain"] = read_gain_vec[idx]
+    # config["read_pulse_gain"] = read_gain_vec[idx]
     # config["read_length"] = read_len_vec[idx]
     # yoko1.SetVoltage(yoko_vec[idx])
     # config["yokoVoltage"] = yoko_vec[idx]
@@ -258,33 +258,33 @@ for idx in tqdm(range(loop_len)):
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.035,
-    'yokoVoltage_freqPoint': -0.035,
+    "yokoVoltage": -1.20151,
+    'yokoVoltage_freqPoint': -1.20151,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 70,
-    "read_pulse_gain": 1500,
-    "read_pulse_freq": 6671.2,
+    "read_length": 80,
+    "read_pulse_gain": 1600,
+    "read_pulse_freq": 6672.54,
 
     # Qubit Tone
-    "qubit_freq_start": 200,
-    "qubit_freq_stop": 300,
-    "RabiNumPoints": 26,
-    "qubit_pulse_style": "const",
-    "sigma": 0.005,
-    "flat_top_length": 0.06,
-    'qubit_length': 0.07,
-    "relax_delay": 5*1600,
+    "qubit_freq_start": 140,
+    "qubit_freq_stop": 180,
+    "RabiNumPoints": 21,
+    "qubit_pulse_style": "flat_top",
+    "sigma": 1,
+    "flat_top_length": 60,
+    'qubit_length': 30,
+    "relax_delay": 10,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 10,
-    "qubit_gain_step": 4000,
-    "qubit_gain_expts": 9,
+    "qubit_gain_start": 1000,
+    "qubit_gain_step": 1000,
+    "qubit_gain_expts": 11,
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 5000,
+    "shots": 8000,
     "use_switch":True,
     'initialize_pulse': False,
     'fridge_temp': 10,
@@ -404,22 +404,22 @@ T1_PS.process_data(Instance_T1_PS, data_T1_PS)
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": 0.74,
+    "yokoVoltage": -3.0,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 30,  # us
-    "read_pulse_gain": 1400,  # [DAC units]
-    "read_pulse_freq": 6431.898,
+    "read_length": 40,  # us
+    "read_pulse_gain": 900,  # [DAC units]
+    "read_pulse_freq": 6244.03,
     "mode_periodic" : True,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_ge_gain": 32000,
+    "qubit_ge_gain": 10000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 1629,
+    "qubit_ge_freq": 880,
     "qubit_ef_freq": 110,
-    "apply_ge": True,
+    "apply_ge": False,
     "apply_ef": False,
     "qubit_length": 40,
     "sigma": 0.05,
@@ -496,14 +496,14 @@ plt.show()
 
 #%%
 # TITLE Running automatic optimization
-config["read_pulse_freq"] = 6432
+config["read_pulse_freq"] = 6244.03
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.4, config["read_pulse_freq"] + 0.4),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.5, config["read_pulse_freq"] + 0.5),
     'read_length': (20, 90),
     'read_pulse_gain': (500, 4000)
 }
 step_size = {
-    "read_pulse_freq" : 0.002,
+    "read_pulse_freq" : 0.01,
     'read_length': 20,
     'read_pulse_gain': 500,
 }
