@@ -122,7 +122,7 @@ class RabiAmp_ND(NDAveragerProgram):
         "qubit_gain_stop": 30000,  ### stepping amount of the qubit gain
         "qubit_gain_expts": 3,  ### number of steps
         "reps": 50,  # number of averages for the experiment
-        "sets": 1, # number of interations to loop over experiment
+        "sets": 1, # number of iterations to loop over experiment
     }
 
 
@@ -130,23 +130,36 @@ class RabiAmp_ND(NDAveragerProgram):
 
 class RabiAmp_ND_Experiment(ExperimentClass):
     """
-    Basic amplitude rabi experiment that can sweep both amplitude and frequecny
+    Basic amplitude rabi experiment that can sweep both amplitude and frequency
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        ##### code to aquire just the qubit spec data
+        ##### code to acquire just the qubit spec data
         prog = RabiAmp_ND(self.soccfg, self.cfg)
 
-        ### in the following the data are arrays in the dimensionality of of swept varibles
+        ### in the following the data are arrays in the dimensionality of swept variables
         x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True, debug=False)
 
-        print(avgi)
-        print(avgi[0][0])
+        # print(avgi)
+        # print(avgi[0][0])
+        #
+        # print(x_pts)
+        #
 
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+        x_pts_new = []
+
+        print(x_pts)
+
+        for idx in range(len(x_pts)):
+            x_pts_new.append(x_pts[idx].tolist())
+
+        print(x_pts_new)
+
+
+        data = {'config': self.cfg, 'data': {'x_pts': x_pts_new, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         self.avg_abs = Amplitude_IQ(avgi, avgq)
