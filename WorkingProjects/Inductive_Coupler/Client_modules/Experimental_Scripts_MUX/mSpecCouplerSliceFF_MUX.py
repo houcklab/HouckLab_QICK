@@ -11,9 +11,19 @@ import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
 
 class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
+    '''Attempt to readout coupler frequency on a coupler without a readout resonator
+     qubit - coupler - q0
+     Experiment:
+         1. Pi pulse q0 at the coupler frequency to place an excitation on the coupler
+         2. Drive the qubit
+         3. Drive the resonator and do readout
+     '''
+
     def initialize(self):
         cfg = self.cfg
+        print((cfg['qubit_gain'], cfg['coupler_gain']))
 
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit(s)
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
@@ -24,80 +34,101 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"], gen_ch=self.cfg["res_ch"]))
-
-
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+                                 length=self.us2cycles(cfg["length"]))
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
-        self.r_freq2 = 3
+        self.r_qfreq = 4  # to store coupler frequency while the qubit pulse frequency is loaded
 
+        ### Start fast flux
         FF.FFDefinitions(self)
+        # f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0)  # conver f_res to dac register value
 
-        # self.FFDefinitions() #define the FF pulses
-        self.f_qubit01 = self.freq2reg(cfg["qubit_freq01"], gen_ch=cfg["qubit_ch"])
         self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])  # get start/step frequencies
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
-        self.safe_regwi(self.q_rp, self.r_freq2, self.f_start) # send start frequency to r_freq2
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-        # print(self.pulse_sigma, self.pulse_qubit_lenth)
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit01", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
+        # add qubit pulse
+        if cfg['Gauss']:
+            self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
+            self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_lenth)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=cfg["qubit_freq"],
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+                                     waveform="qubit")
+            self.qubit_length_us = cfg["sigma"] * 4
+        else:
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["qubit_freq"], phase=0,
+                                     gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+            self.qubit_length_us = cfg["qubit_length"]
 
-        self.res_wait = self.pulse_qubit_lenth + self.us2cycles(0.02 + 0.05)
-
-        # print(cfg["qubit_freq01"], self.cfg["qubit_gain"], cfg["sigma"], cfg["start"], self.pulse_qubit_lenth, self.pulse_sigma, )
-
-        self.sync_all(self.us2cycles(0.1))
+        # add coupler pulse
+        if cfg['Coupler_Gauss']:
+            self.coupler_sigma = self.us2cycles(cfg["coupler_sigma"], gen_ch=self.cfg["qubit_ch"])
+            self.coupler_pulse_length = self.us2cycles(cfg["coupler_sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+            self.add_gauss(ch=cfg["qubit_ch"], name="coupler", sigma=self.coupler_sigma,
+                           length=self.coupler_pulse_length)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=self.f_start,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["coupler_gain"],
+                                     waveform="coupler")
+            self.coupler_length_us = cfg["coupler_sigma"] * 4
+        else:
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
+                                     gain=cfg["coupler_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+            self.coupler_length_us = cfg["qubit_length"]
+        self.mathi(self.q_rp, self.r_qfreq, self.r_freq, '+', 0)
 
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
 
-        offset_FFpulse = self.us2cycles(1.5)
-        if self.cfg['Gauss']:
-            self.FFPulses(self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01 )
-        else:
-            self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1.01 + self.cfg["qubit_length"] // 2)
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.01))  # play probe pulse
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_qubit01, phase=0,
-                             gain=self.cfg["qubit_gain01"], waveform="qubit01", t = self.us2cycles(1))
-        if self.cfg['Gauss']:
-            self.set_pulse_registers(
-                ch=self.cfg["qubit_ch"],
-                style="arb",
-                freq=self.f_start,  # freq set by update
-                phase=0,
-                gain=self.cfg["qubit_gain"],
-                waveform="qubit01")
-        else:
-            self.set_pulse_registers(
-                ch=self.cfg["qubit_ch"],
-                style="const",
-                freq=self.f_start, # freq set by update
-                phase=0,
-                gain=self.cfg["qubit_gain"],
-                length=self.us2cycles(self.cfg["qubit_length"] // 2))
-        self.mathi(self.q_rp, self.r_freq, self.r_freq2, "+", 0)
-        self.pulse(ch=self.cfg["qubit_ch"])
+        # First thing to try: 1) Pi pulse (gaussian) on coupler, then 2) drive qubit
+        # Could we continuously drive the coupler and qubit at the same time? We only have one qubit channel
+        #   so we'd have to figure out the muxing, maybe
+        self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
 
+        # 1) Set up and play coupler pulse
+        if self.cfg['Coupler_Gauss']:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_start,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["coupler_gain"],
+                                     waveform="coupler")
+        else:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", phase=0,freq=self.f_start,
+                                     gain=self.cfg["coupler_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+        self.mathi(self.q_rp, self.r_freq, self.r_qfreq, '+', 0) # Sets the channel frequency
+        self.pulse(ch=self.cfg["qubit_ch"])  # Drive at coupler frequency
+
+        # 2) Set up and perform qubit drive
+        if self.cfg['Gauss']:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.cfg["qubit_freq"],
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                     waveform="qubit")
+        else:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.cfg["qubit_freq"], phase=0,
+                                     gain=self.cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
+        # trigger measurement, play measurement pulse, wait for qubit to relax
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
+        # self.FFPulses(self.FFPulse, self.cfg["length"])
+        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.FFPulses(-1 * self.FFPulse,  self.cfg["sigma"] * 4 + 1.01 + self.cfg["qubit_length"] // 2)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
-
-    def update(self):
-        self.mathi(self.q_rp, self.r_freq2, self.r_freq2, '+', self.f_step) # update frequency list index
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
+
+    def update(self):
+        self.mathi(self.q_rp, self.r_qfreq, self.r_qfreq, '+', self.f_step)  # update frequency list index
 
     def collect_shots(self):
         shots_i0 = self.di_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
@@ -107,7 +138,7 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
 
         return shots_i0, shots_q0
 
-class SpecSliceFF_HigherExcMUX(ExperimentClass):
+class SpecSliceFF_CouplerMUX(ExperimentClass):
     """
     Basic spec experiement that takes a single slice of data
     """

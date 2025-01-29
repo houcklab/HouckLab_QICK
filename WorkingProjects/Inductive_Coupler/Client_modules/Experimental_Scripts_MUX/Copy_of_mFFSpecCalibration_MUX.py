@@ -10,26 +10,6 @@ import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFProg
 
 # ====================================================== #
-def Amplitude_IQ_angle(I, Q, phase_num_points = 200):
-    '''
-    IQ data is inputted and it will multiply by a phase such that all of the
-    information is in I
-    :param I:
-    :param Q:
-    :param phase_num_points:
-    :return:
-    '''
-    complex = I + 1j * Q
-    phase_values = np.linspace(0, np.pi, phase_num_points)
-    multiplied_phase = [complex * np.exp(1j * phase) for phase in phase_values]
-    Q_range = np.array([np.max(IQPhase.imag) - np.min(IQPhase.imag) for IQPhase in multiplied_phase])
-    phase_index = np.argmin(Q_range)
-    angle = phase_values[phase_index]
-    return(angle)
-
-def spec_normalize(Imat, Qmat):
-    angle = Amplitude_IQ_angle(Imat, Qmat)
-    return np.real((Imat + 1j * Qmat) * np.exp(-1j * angle))
 
 class LoopbackProgramSpecSlice(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -77,9 +57,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         print(self.FFRamp, self.FFExpts, self.FFReadouts, self.delay)
         self.sync_all(50, gen_t0=self.gen_t0)
         self.FFPulses(self.FFRamp, 2.02)
-        # self.FFPulses(self.FFExpts,self.cycles2us(self.delay) + 0.5)
-        self.FFPulses_direct(self.FFExpts, (self.delay + 200) * 16,
-                             self.FFRamp, IQPulseArray=self.cfg["IDataArray"])
+        self.FFPulses(self.FFExpts, 6)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(2.0) + self.delay)  # play probe pulse
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -89,19 +67,10 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                      wait=True,
                      syncdelay=self.us2cycles(10))
 
-        # self.FFPulses(-1 * self.FFRamp, 2.05)
-        self.FFPulses(-1 * self.FFRamp, 2.02)
-        self.FFPulses(-1 * self.FFExpts, self.cycles2us(self.delay) + 0.5)
+        self.FFPulses(-1 * self.FFExpts, 2.05)
+        self.FFPulses(-1 * self.FFExpts, 2)
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
-
-    def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
-        FF.FFPulses(self, list_of_gains, length_us, t_start, IQPulseArray, waveform_label)
-    def FFPulses_direct(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None, waveform_label='FF'):
-        FF.FFPulses_direct(self, list_of_gains, length_dt, previous_gains = previous_gains, t_start=t_start,
-                           IQPulseArray=IQPulseArray, waveform_label=waveform_label)
-    def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 
     # def body(self):
     #     print(self.delay, self.cfg["sigma"], self.pulse_qubit_lenth)
@@ -142,7 +111,13 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
     #                          IQPulseArray = self.cfg["IDataArray"], waveform_label='FF3')
     #     self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
-
+    def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
+        FF.FFPulses(self, list_of_gains, length_us, t_start, IQPulseArray, waveform_label)
+    def FFPulses_direct(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None, waveform_label='FF'):
+        FF.FFPulses_direct(self, list_of_gains, length_dt, previous_gains = previous_gains, t_start=t_start,
+                           IQPulseArray=IQPulseArray, waveform_label=waveform_label)
+    def update(self):
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 
 
 # ====================================================== #
@@ -198,9 +173,8 @@ class FFSpecCalibrationMUX(ExperimentClass):
         # create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
+        fig, axs = plt.subplots(1, 1, figsize=(10, 7), num=figNum)
         fig.suptitle(str(self.titlename), fontsize=16)
-        cbars = [None, None, None]
 
         # create the frequency arrays for both transmission and spec
         self.trans_fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
@@ -217,8 +191,6 @@ class FFSpecCalibrationMUX(ExperimentClass):
         Y_step = Y[1] - Y[0]
         Z_trans = np.full((self.cfg["DelayPoints"], self.cfg["TransNumPoints"]), np.nan)
         Z_spec = np.full((self.cfg["DelayPoints"], self.cfg["SpecNumPoints"]), np.nan)
-        I_spec = np.full((self.cfg["DelayPoints"], self.cfg["SpecNumPoints"]), np.nan)
-        Q_spec = np.full((self.cfg["DelayPoints"], self.cfg["SpecNumPoints"]), np.nan)
 
         # create an initial data dictionary that will be filled with data as it is taken during sweeps
         self.trans_Imat = np.zeros((self.cfg["DelayPoints"], self.cfg["TransNumPoints"]))
@@ -273,8 +245,8 @@ class FFSpecCalibrationMUX(ExperimentClass):
 
             # plot out the spec data
             sig = data_I + 1j * data_Q
-            #avgamp0 = np.abs(sig)
-            #Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
+            avgamp0 = np.abs(sig)
+            Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
             if i == 0:
                 rangeQ = np.max(data_Q) - np.min(data_Q)
                 rangeI = np.max(data_I) - np.min(data_I)
@@ -286,40 +258,34 @@ class FFSpecCalibrationMUX(ExperimentClass):
                     q_data = False
                     i_data = True
                     # Z_spec[i, :] = (data_Q - np.max(data_Q)) / (np.max(data_Q) - np.min(data_Q))#- self.cfg["minADC"]
+            if i_data:
+                Z_spec[i, :] = data_I
+            elif q_data:
+                Z_spec[i, :] = data_Q
+            else:
+                Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
 
-            I_spec[i, :] = data_I
-
-            Q_spec[i, :] = data_Q
-
-            Z_spec[:i+1, :] = spec_normalize(I_spec[:i+1, :], Q_spec[:i+1, :])
-            #Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
-
-
-            # To display I and Q, uncomment, and change number of subplots to 3
-            for j, (Z, title) in enumerate(((Z_spec, "Qubit Spec"),)):# (I_spec, "I Data"), (Q_spec, "Q Data"))):
             # print('zspec', Z_spec)
-                ax_plot_1 = axs.imshow(
-                    Z,
-                    aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
-                    origin='lower',
-                    interpolation='none'
-                )
-                if i == 0:  # if first sweep add a colorbar
-                    cbars = fig.colorbar(ax_plot_1, ax=axs, extend='both', location='right', pad=0.025)
-                    cbars.set_label('a.u.', rotation=90)
-                else:
-                    cbars.remove()
-                    cbars = fig.colorbar(ax_plot_1, ax=axs, extend='both', location='right', pad=0.025)
-                    cbars.set_label('a.u.', rotation=90)
+            ax_plot_1 = axs.imshow(
+                Z_spec,
+                aspect='auto',
+                extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
+                        np.max(Y) + Y_step / 2],
+                origin='lower',
+                interpolation='none',
+            )
+            if i == 0:  # if first sweep add a colorbar
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('a.u.', rotation=90)
+            else:
+                cbar1.remove()
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('a.u.', rotation=90)
 
+            axs.set_ylabel("Delay Time (clock cycles (2.35 ns))")
+            axs.set_xlabel("Spec Frequency (GHz)")
+            axs.set_title("Qubit Spec")
 
-
-                axs.set_title(title)
-            fig.supxlabel("Spec Frequency (GHz)")
-            fig.supylabel("Delay Time (clock cycles (2.35 ns))")
-            fig.tight_layout()
             if plotDisp:
                 plt.show(block=False)
                 plt.pause(0.1)
@@ -333,15 +299,13 @@ class FFSpecCalibrationMUX(ExperimentClass):
                 print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
 
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
+        plt.show(block=True)
         if plotSave:
             plt.savefig(self.iname)  # save the figure
 
         if not plotDisp:
             fig.clf(True)
             plt.close(fig)
-        else:
-            plt.show(block=True)
 
         return self.data
 

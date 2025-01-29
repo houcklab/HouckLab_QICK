@@ -4,6 +4,7 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFFSpecCalibration_MUX import FFSpecCalibrationMUX
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mRamseyFFCalibrationR import RamseyFFCalR
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mYPulseFFMUX import YPulseFFMUX
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_Generation import *
 
@@ -12,22 +13,27 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6998.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+    '1': {'Readout': {'Frequency': 7367.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 2650,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5502, 'Gain': 510},
+          'Qubit': {'Frequency': 5173.2, 'Gain': 4129},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7088.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
-          'Qubit': {'Frequency': 4679.7, 'Gain': 2100},
+    '2': {'Readout': {'Frequency': 0*7463.2 + 1*7464.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 0*3000+1*7500,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 1*2940.3 + 0*2943.4, 'Gain': 2680},
           'Pulse_FF': [0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7104.63 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 11600, 0]},
-          'Qubit': {'Frequency': 4663.13, 'Gain': 1770},
-          'Pulse_FF': [0, 0, 15000, 0]},
-    '4': {'Readout': {'Frequency': 7280.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+    '3': {'Readout': {'Frequency': 7550.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 2000,
+                    "FF_Gains": [0, 0, 0, 0], "Readout_Time": 3.0, "ADC_Offset": 0.3, 'cavmin': True},
+        'Qubit': {'Frequency': 4790.06, 'Gain': 1245},
+        'Pulse_FF': [0, 0, 0, 0]},
+    '4': {'Readout': {'Frequency': 7683 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 9000,
+                    "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+          'Qubit': {'Frequency': 3110, 'Gain': 2580},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7713.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 10000,
                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4620, 'Gain': 1275},
-          'Pulse_FF': [10000, 0, 0, 0]}
-    }
+          'Qubit': {'Frequency': 4261.5, 'Gain': 5800},
+          'Pulse_FF': [0, 0, 0, 0]}
+}
 # Qubit_Parameters = {
 #     '1': {'Readout': {'Frequency': 6952.79, 'Gain': 8000}, 'Qubit': {'Frequency': 4672, 'Gain': 1450}},
 #     '2': {'Readout': {'Frequency': 7055.84, 'Gain': 6000}, 'Qubit': {'Frequency': 4757, 'Gain': 990}},
@@ -35,7 +41,7 @@ Qubit_Parameters = {
 #     '4': {'Readout': {'Frequency': 7250.01, 'Gain': 6000}, 'Qubit': {'Frequency': 4700, 'Gain': 2630}}
 #     }
 
-Qubit_Pulse = 2
+Qubit_Pulse = 1
 # gain_test = -15000 #15000  # 6000  # maximum gain +/-3e4  # -20000 for left qubit, 20000 mid/right
 # initial (pre-step) values
 FF_gain1_expt = 0  # Left Qubit
@@ -53,17 +59,24 @@ FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3_read, 'Gain_Expt': FF_gain3_step,
 FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4_read, 'Gain_Expt': FF_gain4_step, 'Gain_Init': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
 
 
-RunTransmissionSweep = False  # determine cavity frequency
-Run2ToneSpec = False  # detrmine qubit frequency
-Spec_relevant_params = {"qubit_gain": 50, "SpecSpan": 4, "SpecNumPoints": 51, 'Gauss': False, "sigma": 0.03,
+RunTransmissionSweep = True # determine cavity frequency
+Run2ToneSpec = False # detrmine qubit frequency
+Spec_relevant_params = {"qubit_gain": 300, "SpecSpan": 20, "SpecNumPoints": 81, 'Gauss': False, "sigma": 0.03,
                         "gain": 4900}
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.03, "max_gain": 3000}
-RunCalibrationFF = True
-CalibrationFF_params = {'FFQubitIndex': 4, 'FFQubitExpGain': 17000,
-                        "start": 0, "step": 1, "expts": 10 * 16 * 10,
-                        "reps": 100, "rounds": 200, "relax_delay": 250,
+                         "sigma": 0.03, "max_gain": 6000}
+
+# Uses Amplitude_Rabi_params["sigma"] and Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
+# This was to check if the rfsoc had significant error in the pulse phase to make the Ramsey
+# slightly off from 90 degrees. We found no significant error from this.
+RunYPhase = False
+# Y_Phase_params = {"start": 82.5, "end": 90, "phase_pts": 10, "reps":1000, "rounds":1000}
+
+RunCalibrationFF = False
+CalibrationFF_params = {'FFQubitIndex': 3, 'FFQubitExpGain': 3000,
+                        "start": 0, "step": 1, "expts": 20 * 16 * 1,
+                        "reps": 100, "rounds": 200, "relax_delay": 100, "YPulseAngle": 93,
            }
 
 cavity_gain = Qubit_Parameters[str(Qubit_Pulse)]['Readout']['Gain']
@@ -190,10 +203,24 @@ if RunAmplitudeRabi:
     AmplitudeRabiFFMUX.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2)
     AmplitudeRabiFFMUX.save_data(iAmpRabi, dAmpRabi)
 
+if RunYPhase:
+    number_of_steps = Y_Phase_params["phase_pts"]
+    step = (Y_Phase_params["end"] - Y_Phase_params["start"]) / number_of_steps
+    YPhase_config = {'start': Y_Phase_params["start"], 'step': step, "expts": number_of_steps,
+                     "reps": Y_Phase_params["reps"], "rounds": Y_Phase_params["rounds"],
+                    "sigma": Amplitude_Rabi_params["sigma"], "f_ge": qubit_frequency_center,
+                    "qubit_gain" : qubit_gain,
+                    "relax_delay": 300}
+    config = config | YPhase_config
+    iYPulse = YPulseFFMUX(path="YPulse", cfg=config, soc=soc, soccfg=soccfg,
+                               outerFolder=outerFolder)
+    dYPulse = YPulseFFMUX.acquire(iYPulse)
+    YPulseFFMUX.display(iYPulse, dYPulse, plotDisp=True, figNum=2)
+    YPulseFFMUX.save_data(iYPulse, dYPulse)
 
 #Step and length are in Clock cycles!!!!!!!
 RamseyCal_cfg = {"SecondPulseAngle": 0,
-            "pi2_gain": qubit_gain // 2,
+            "pi2_gain": qubit_gain, #// 2,
             'f_ge': qubit_frequency_center,
             "sigma": Amplitude_Rabi_params["sigma"]
            }
@@ -210,16 +237,20 @@ if RunCalibrationFF:
 
     config['IDataArray'] = [None, None, None, None]
     # config['IDataArray'] = [-15000 * Compensated_AWG((20) * 16, Qubit1_parameters)[1], None, None, None]
+    # config['IDataArray'][2] = None
+    config['IDataArray'] = [None if Idata==None else Idata[:config['FFlength']] for Idata in config['IDataArray']]
+    print("config['IDataArray']:", config['IDataArray'])
 
     # RAveragerProgram
+    print('0 degrees: ')
     iRamsCal = RamseyFFCalR(path="RamseyFFCalR", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
     dRamsCal = RamseyFFCalR.acquire(iRamsCal)
-    RamseyFFCalR.display(iRamsCal, dRamsCal, plotDisp=False, figNum=2)
     RamseyFFCalR.save_data(iRamsCal, dRamsCal)
+    RamseyFFCalR.display(iRamsCal, dRamsCal, plotDisp=False, figNum=2)
     soc.reset_gens()
 
-    config["SecondPulseAngle"] = 90
-    print('90 degrees: ')
+    config["SecondPulseAngle"] = config["YPulseAngle"]
+    print(f'{config["SecondPulseAngle"]} degrees: ')
     iRamsCal = RamseyFFCalR(path="RamseyFFCalR", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
     dRamsCal = RamseyFFCalR.acquire(iRamsCal)
     RamseyFFCalR.display(iRamsCal, dRamsCal, plotDisp=False, figNum=2)

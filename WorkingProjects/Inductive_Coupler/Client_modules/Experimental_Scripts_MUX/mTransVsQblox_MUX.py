@@ -113,7 +113,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 # ====================================================== #
 
 
-class SpecVsQblox(ExperimentClass):
+class TransVsQblox(ExperimentClass):
     """
     Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a qblox to sweep
     Notes;
@@ -136,9 +136,9 @@ class SpecVsQblox(ExperimentClass):
             "qbloxStop": self.cfg["qbloxStop"],
             "qbloxNumPoints": self.cfg["qbloxNumPoints"],
             ### transmission parameters
-            # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
+            # "trans_freq_start": self.cfg["trans_freq_start"], # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
-            # "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequency
+            "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequency
             ### spec parameters
             "step": self.cfg["step"],
             "start": self.cfg["start"],
@@ -160,27 +160,32 @@ class SpecVsQblox(ExperimentClass):
         ### create the frequency arrays for both transmission and spec
         ### also create empty array to fill with transmission and spec data
         # self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
+        self.trans_fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
+                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
+                           self.cfg["TransNumPoints"])
         # self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
         self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
         print(self.spec_fpts)
 
         # X_trans = (self.trans_fpts + self.cfg["cavity_LO"]/1e6) /1e3
-        # X_trans_step = X_trans[1] - X_trans[0]
+        X_trans = (self.trans_fpts + self.cfg["cavity_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
+        X_trans += self.cfg['pulse_freq'] / 1e3
+        X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
         Y = qbloxVec[0]
         Y_step = Y[1] - Y[0]
-        # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
+        Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
         Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        # self.trans_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        # self.trans_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
+        self.trans_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
+        self.trans_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
         self.spec_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
         self.spec_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
         self.data= {
             'config': self.cfg,
-            'data': {#'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
+            'data': {'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts': X_trans,
                         'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
                         'qbloxVec': qbloxVec
                      }
@@ -213,91 +218,43 @@ class SpecVsQblox(ExperimentClass):
             # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data
-            # data_I, data_Q = self._aquireTransData()
-            # self.data['data']['trans_Imat'][i,:] = data_I
-            # self.data['data']['trans_Qmat'][i,:] = data_Q
-            #
-            # #### plot out the transmission data
-            # sig = data_I + 1j * data_Q
-            # avgamp0 = np.abs(sig)
-            # Z_trans[i, :] = avgamp0
-            # # axs[0].plot(x_pts, avgamp0, label="Amplitude; ADC 0")
-            # if i == 1:
-            #     ax_plot_0 = axs[0].imshow(
-            #         Z_trans,
-            #         aspect='auto',
-            #         extent=[np.min(X_trans)-X_trans_step/2,np.max(X_trans)+X_trans_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
-            #         origin= 'lower',
-            #         interpolation= 'none',
-            #     )
-            #     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
-            #     cbar0.set_label('a.u.', rotation=90)
-            # else:
-            #     ax_plot_0.set_data(Z_trans)
-            #     ax_plot_0.autoscale()
-            #     cbar0.remove()
-            #     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
-            #     cbar0.set_label('a.u.', rotation=90)
-            #
-            # axs[0].set_ylabel("Yoko Voltage (V)")
-            # axs[0].set_xlabel("Cavity Frequency (GHz)")
-            # axs[0].set_title("Cavity Transmission")
-            #
-            # if plotDisp:
-            #     plt.show(block=False)
-            #     plt.pause(0.1)
-            if i != expt_cfg["qbloxNumPoints"]:
-                time.sleep(self.cfg['sleep_time'])
+            data_I, data_Q = self._aquireTransData()
+            self.data['data']['trans_Imat'][i,:] = data_I
+            self.data['data']['trans_Qmat'][i,:] = data_Q
 
-            ### take the spec data
-            data_I, data_Q = self._aquireSpecData()
-            data_I = data_I[0]
-            data_Q = data_Q[0]
-
-            self.data['data']['spec_Imat'][i,:] = data_I
-            self.data['data']['spec_Qmat'][i,:] = data_Q
-
-            #### plot out the spec data
+            #### plot out the transmission data
             sig = data_I + 1j * data_Q
-
-
             avgamp0 = np.abs(sig)
-            if smart_normalize:
-                avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
-            Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
+            Z_trans[i, :] = avgamp0
+            # axs[0].plot(x_pts, avgamp0, label="Amplitude; ADC 0")
             if i == 0:
-
-                ax_plot_1 = axs.imshow(
-                    Z_spec,
+                ax_plot_0 = axs.imshow(
+                    Z_trans,
                     aspect='auto',
-                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
-                    origin='lower',
-                    interpolation = 'none',
+                    extent=[np.min(X_trans)-X_trans_step/2,np.max(X_trans)+X_trans_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                    origin= 'lower',
+                    interpolation= 'none',
                 )
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
+                cbar0 = fig.colorbar(ax_plot_0, ax=axs, extend='both')
+                cbar0.set_label('a.u.', rotation=90)
             else:
-                ax_plot_1.set_data(Z_spec)
-                ax_plot_1.autoscale()
-                cbar1.remove()
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
-            # if i ==0: #### if first sweep add a colorbar
-            #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-            #     cbar1.set_label('a.u.', rotation=90)
-            # else:
-            #     cbar1.remove()
-            #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-            #     cbar1.set_label('a.u.', rotation=90)
+                ax_plot_0.set_data(Z_trans)
+                ax_plot_0.autoscale()
+                cbar0.remove()
+                cbar0 = fig.colorbar(ax_plot_0, ax=axs, extend='both')
+                cbar0.set_label('a.u.', rotation=90)
 
-            axs.set_ylabel("Qblox (V)")
-            axs.set_xlabel("Spec Frequency (GHz)")
+            axs.set_ylabel("Yoko Voltage (V)")
+            axs.set_xlabel("Cavity Frequency (GHz)")
             axs.set_title(f"{self.titlename}, QDAC: {self.cfg['DACs']}, "
-                             f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
+                          f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
 
             if plotDisp:
                 plt.show(block=False)
                 plt.pause(0.1)
+            if i != expt_cfg["qbloxNumPoints"]:
+                time.sleep(self.cfg['sleep_time'])
+
 
             if i ==0: ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start + self.cfg["sleep_time"] * 2### time for single full row in seconds
@@ -321,9 +278,7 @@ class SpecVsQblox(ExperimentClass):
         return self.data
 
     def _aquireTransData(self, progress=False):
-        fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
-                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
-                           self.cfg["TransNumPoints"])
+        fpts = self.trans_fpts
         results = []
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
@@ -345,7 +300,7 @@ class SpecVsQblox(ExperimentClass):
         # self.peakFreq_max = data['data']['fpts'][peak_loc]
 
         # return data
-        return results[0][0][0], results['results'][0][0][1]
+        return results[0][0][0], results[0][0][1]
 
     # def _aquireTransData(self):
     #     ##### code to aquire just the cavity transmission data
