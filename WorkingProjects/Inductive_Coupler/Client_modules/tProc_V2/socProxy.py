@@ -9,9 +9,9 @@ def makeProxy():
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
     if 'Euler' in socket.gethostname() or 'euler' in socket.gethostname():
-        ns_host = "128.112.49.106"
+        ns_host = "128.112.49.105"
     else:
-        ns_host = "192.168.1.108" #Mac address is C6
+        ns_host = "192.168.1.105" #Mac address is C6
     ns_port = 8888
     server_name = "myqick"
 
@@ -26,5 +26,5 @@ def makeProxy():
     return(soc, soccfg)
 
 soc, soccfg = makeProxy()
-# print(soccfg.description())
+print(soccfg)
 #print("debug")

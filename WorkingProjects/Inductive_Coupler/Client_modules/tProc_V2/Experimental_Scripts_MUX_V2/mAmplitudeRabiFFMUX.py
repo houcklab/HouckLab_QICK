@@ -7,15 +7,16 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import Experime
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+import WorkingProjects.Inductive_Coupler.Client_modules.tProc_V2.Helpers_V2.FF_utils as FF
 
+from qick.asm_v2 import AveragerProgramV2
 
-class AmplitudeRabiFFProg(RAveragerProgram):
-    def initialize(self):
-        cfg = self.cfg
+class AmplitudeRabiFFProg(AveragerProgramV2):
+    def initialize(self, cfg):
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        # In V2, sweep is handled by QickSweep1D
+        #self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
+        #self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
 
@@ -25,49 +26,54 @@ class AmplitudeRabiFFProg(RAveragerProgram):
                          mux_gains= cfg["pulse_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=cfg["readout_length"],
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.add_pulse(ch=cfg["res_ch"], name='res_pulse', style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
+                                 length=cfg["length"])
 
-        f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
+        self.add_loop("qubit_gain_loop", self.cfg["expts"])
 
         FF.FFDefinitions(self)
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-        print(self.pulse_sigma, self.pulse_qubit_lenth)
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
+        self.pulse_sigma = cfg["sigma"]
+        self.pulse_qubit_length = cfg["sigma"] * 4
+        #print(self.pulse_sigma, self.pulse_qubit_lenth)
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
 
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-                                 phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-                                 waveform="qubit")
+        self.add_pulse(ch=cfg["qubit_ch"], name="qubit_pulse", style="arb", freq=cfg["f_ge"],
+                                 phase=90, gain=cfg["gain_sweep"],
+                                 envelope="qubit")
 
+        self.delay_auto(0.05)
 
-        self.sync_all(self.us2cycles(0.05))
+    def body(self, cfg):
+        self.delay_auto(0)
+        #self.sync_all(gen_t0=self.gen_t0)
 
-    def body(self):
-        self.sync_all(gen_t0=self.gen_t0)
-        # self.pulse(ch=self.cfg['ff_ch'])
         self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
-        self.sync_all(gen_t0=self.gen_t0)
+        self.pulse(ch=self.cfg["qubit_ch"], name="qubit_pulse", t=1)  # play probe pulse
+        self.delay_auto(0)
+        #self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
-                     syncdelay=self.us2cycles(10))
+        # Measure
+        self.trigger(ros=self.cfg["ro_chs"], pins=[0],
+                     t=self.cfg["adc_trig_offset"])
+        self.pulse(self.cfg["res_ch"], name='res_pulse')
+        self.delay_auto(10)
+
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
+
+        # Relax delay placed in program declaration
+        #self.delay_auto(self.cfg["relax_delay"])
+        #self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
 
-    def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])  # update gain of the Gaussian
+    #def update(self):
+    #    self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])  # update gain of the Gaussian
 
 class AmplitudeRabiFFMUX(ExperimentClass):
     """
@@ -81,10 +87,10 @@ class AmplitudeRabiFFMUX(ExperimentClass):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
-        prog = AmplitudeRabiFFProg(self.soccfg, self.cfg)
+        prog = AmplitudeRabiFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
+                                         soft_avgs = self.cfg['rounds'],
                                          start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
@@ -126,7 +132,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         # plt.legend()
         # plt.title(self.titlename)
         #
-        plt.savefig(self.iname)
+        # plt.savefig(self.iname)
         #
         # if plotDisp:
         #     plt.show(block=True)

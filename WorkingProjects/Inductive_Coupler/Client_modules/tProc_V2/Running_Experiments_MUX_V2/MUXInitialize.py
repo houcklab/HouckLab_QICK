@@ -17,11 +17,11 @@ import platform
 
 if 'macOS' in platform.platform():
     if "LD_LIBRARY_PATH" in os.environ.keys():
-        os.environ["LD_LIBRARY_PATH"] += ":.\..\\PythonDrivers"
+        os.environ["LD_LIBRARY_PATH"] += r":.\..\..\\PythonDrivers"
     else:
-        os.environ["LD_LIBRARY_PATH"] = ".\..\\PythonDrivers"
+        os.environ["LD_LIBRARY_PATH"] = r".\..\..\\PythonDrivers"
 else:
-    os.add_dll_directory(os.getcwd() + '.\..\\PythonDrivers')
+    os.add_dll_directory(os.getcwd() + r'.\..\..\\PythonDrivers')
 
 # if 'macOS' not in platform.platform():
 #     #### define a attenuator class to change define attenuators for the setup
@@ -61,12 +61,12 @@ outerFolder = r"Z:\QSimMeasurements\Measurements\RFSOC_4Qubit_AB\\"
 
 ###### define default configuration
 BaseConfig = {
-    "res_ch": 6,  # --Fixed
-    "qubit_ch": 4,  # --Fixed
-    "mixer_freq": 0, #7200,  # MHz
+    "res_ch": 1,  # --Fixed
+    "qubit_ch": 0,  # --Fixed
+    "mixer_freq": 7200,  # MHz
     "ro_chs": [0, 1],  # --Fixed
     "reps": 1000,  # --Fixed
-    "nqz": 2, #1,  #### refers to cavity
+    "nqz": 1, #1,  #### refers to cavity
     "qubit_nqz": 2,
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
@@ -75,16 +75,16 @@ BaseConfig = {
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 0.5,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
-    "cavity_LO": 0, #6.50e9,  #in Hz
+    "cavity_LO": 6.50e9,  #in Hz
     # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
     # 'cavity_winding_offset': -32.10723885 + np.pi #-15.77597 * 0
     "cavity_winding_freq": 1.0903695,
     'cavity_winding_offset': -15.77597
 }
 FF_channel1 = 0
-FF_channel2 = 1
-FF_channel3 = 2
-FF_channel4 = 3
+FF_channel2 = 0
+FF_channel3 = 0
+FF_channel4 = 0
 
 # FF_Qubits = {
 #     str(1): {'channel': FF_channel1, 'delay_time': 0.017},
