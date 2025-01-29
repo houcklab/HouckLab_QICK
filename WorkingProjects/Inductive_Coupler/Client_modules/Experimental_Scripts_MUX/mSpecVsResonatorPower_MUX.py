@@ -113,7 +113,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 # ====================================================== #
 
 
-class SpecVsQblox(ExperimentClass):
+class SpecVsResonatorPower(ExperimentClass):
     """
     Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a qblox to sweep
     Notes;
@@ -132,9 +132,9 @@ class SpecVsQblox(ExperimentClass):
                 smart_normalize = True):
         expt_cfg = {
             ### define the qblox parameters
-            "qbloxStart": self.cfg["qbloxStart"],
-            "qbloxStop": self.cfg["qbloxStop"],
-            "qbloxNumPoints": self.cfg["qbloxNumPoints"],
+            "gainStart": self.cfg["gainStart"],
+            "gainStop": self.cfg["gainStop"],
+            "gainNumPoints": self.cfg["gainNumPoints"],
             ### transmission parameters
             # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -146,9 +146,10 @@ class SpecVsQblox(ExperimentClass):
         }
         print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
 
-        qbloxVec = []
-        for n in range(len(expt_cfg["qbloxStart"])):
-            qbloxVec.append(np.linspace(expt_cfg["qbloxStart"][n],expt_cfg["qbloxStop"][n], expt_cfg["qbloxNumPoints"]))
+        gainVec = []
+        for n in range(len(expt_cfg["gainStart"])):
+            gains_list = np.linspace(expt_cfg["gainStart"][n], expt_cfg["gainStop"][n], expt_cfg["gainNumPoints"])
+            gainVec.append(gains_list)
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -168,25 +169,25 @@ class SpecVsQblox(ExperimentClass):
         # X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = qbloxVec[0]
+        Y = gainVec[0]
         Y_step = Y[1] - Y[0]
         # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
-        Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
+        Z_spec = np.full((expt_cfg["gainNumPoints"], expt_cfg["expts"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
         # self.trans_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
         # self.trans_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        self.spec_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
-        self.spec_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
+        self.spec_Imat = np.zeros((expt_cfg["gainNumPoints"], expt_cfg["expts"]))
+        self.spec_Qmat = np.zeros((expt_cfg["gainNumPoints"], expt_cfg["expts"]))
         self.data= {
             'config': self.cfg,
             'data': {#'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
                         'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
-                        'qbloxVec': qbloxVec
+                        'gainVec': gainVec
                      }
         }
 
-        print(qbloxVec)
+        print(gainVec)
 
         #### start a timer for estimating the time for the scan
         startTime = datetime.datetime.now()
@@ -197,19 +198,15 @@ class SpecVsQblox(ExperimentClass):
 
         QbloxClass = Qblox()
         #### loop over the qblox vector
-        for i in range(expt_cfg["qbloxNumPoints"]):
+        for i in range(expt_cfg["gainNumPoints"]):
             if i != 0:
                 time.sleep(self.cfg['sleep_time'])
             if i % 5 == 1:
                 self.save_data(self.data)
                 self.soc.reset_gens()
-            ### set the qblox voltage for the specific run
-            # self.qblox.SetVoltage(qbloxVec[i])
-            voltages_for_qblox = []
-            for m in range(len(self.cfg['DACs'])):
-                voltages_for_qblox.append(qbloxVec[m][i])
-            print(voltages_for_qblox)
-            QbloxClass.set_voltage(self.cfg['DACs'], voltages_for_qblox)
+            ### set the gain for the specific run
+            for m in range(len(self.cfg["pulse_gains"])):
+                self.cfg["pulse_gains"][m] = gainVec[m][i] / 32000.
             # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data
@@ -246,7 +243,7 @@ class SpecVsQblox(ExperimentClass):
             # if plotDisp:
             #     plt.show(block=False)
             #     plt.pause(0.1)
-            if i != expt_cfg["qbloxNumPoints"]:
+            if i != expt_cfg["gainNumPoints"]:
                 time.sleep(self.cfg['sleep_time'])
 
             ### take the spec data
@@ -290,24 +287,26 @@ class SpecVsQblox(ExperimentClass):
             #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
             #     cbar1.set_label('a.u.', rotation=90)
 
-            axs.set_ylabel("Qblox (V)")
+            axs.set_ylabel("Cavity Gain")
             axs.set_xlabel("Spec Frequency (GHz)")
-            axs.set_title(f"{self.titlename}, QDAC: {self.cfg['DACs']}, "
-                             f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
+            axs.set_title(f"{self.titlename}, "
+                          f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
 
             if plotDisp:
                 plt.show(block=False)
                 plt.pause(0.1)
+            if i != expt_cfg["gainNumPoints"]:
+                time.sleep(self.cfg['sleep_time'])
 
-            if i ==0: ### during the first run create a time estimate for the data aqcuisition
-                t_delta = time.time() - start + self.cfg["sleep_time"] * 2### time for single full row in seconds
-                timeEst = (t_delta )*expt_cfg["qbloxNumPoints"]  ### estimate for full scan
+            if i == 0:  ### during the first run create a time estimate for the data aqcuisition
+                t_delta = time.time() - start + self.cfg["sleep_time"] * 2  ### time for single full row in seconds
+                timeEst = (t_delta) * expt_cfg["gainNumPoints"]  ### estimate for full scan
                 StopTime = startTime + datetime.timedelta(seconds=timeEst)
-                print('Time for 1 sweep: ' + str(round(t_delta/60, 2)) + ' min')
-                print('estimated total time: ' + str(round(timeEst/60, 2)) + ' min')
+                print('Time for 1 sweep: ' + str(round(t_delta / 60, 2)) + ' min')
+                print('estimated total time: ' + str(round(timeEst / 60, 2)) + ' min')
                 print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
 
-        print('actual end: '+ datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+        print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         if plotSave:
             plt.savefig(self.iname) #### save the figure

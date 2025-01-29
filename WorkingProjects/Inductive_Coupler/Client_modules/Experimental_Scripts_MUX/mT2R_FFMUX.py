@@ -7,8 +7,10 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import Experime
 import datetime
 from tqdm.notebook import tqdm
 import time
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
-class T2EProgram(RAveragerProgram):
+
+class T2RProgram(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
@@ -32,7 +34,9 @@ class T2EProgram(RAveragerProgram):
                                  length=self.us2cycles(cfg["length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
-        self.f_ge = f_ge
+
+        ### Start fast flux
+        FF.FFDefinitions(self)
 
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
@@ -47,45 +51,34 @@ class T2EProgram(RAveragerProgram):
     def body(self):
         self.regwi(self.q_rp, self.r_phase, 0)
 
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.01))
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi2_gain"], waveform="qubit", t = self.us2cycles(0.01))
-
-
-        self.sync_all()
-        self.sync(self.q_rp, self.r_wait)
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi_gain"], waveform="qubit")
-
-
-
+        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.01))
         self.mathi(self.q_rp, self.r_phase, self.r_phase2, "+", 0)
 
         self.sync_all()
         self.sync(self.q_rp, self.r_wait)
 
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi2_gain"], waveform="qubit")
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
-    def update(self):
-        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"] / 2.))  # update the time between two π/2 pulses
-        # self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+',
-        #            self.cfg["phase_step"])  # advance the phase of the LO for the second π/2 pulse
+    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
+        FF.FFPulses(self, list_of_gains, length_us, t_start)
 
-class T2EMUX(ExperimentClass):
+    def update(self):
+        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"]))  # update the time between two π/2 pulses
+        self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+',
+                   self.cfg["phase_step"])  # advance the phase of the LO for the second π/2 pulse
+
+class T2RMUX(ExperimentClass):
     """
     Basic T2R
     """
@@ -97,7 +90,7 @@ class T2EMUX(ExperimentClass):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
-        prog = T2EProgram(self.soccfg, self.cfg)
+        prog = T2RProgram(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,

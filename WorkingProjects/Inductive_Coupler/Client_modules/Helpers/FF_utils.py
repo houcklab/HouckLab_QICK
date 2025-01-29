@@ -74,6 +74,7 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             extralen = 48 - len(IQPulse)
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
             print(IQPulse[:48])
+        print(IQPulse)
         # print(len(IQPulse))
 
         # figure out name and add pulse

@@ -57,7 +57,7 @@ else:
 # yoko72.SetVoltage(0)
 
 #Define Save folder
-outerFolder = "Z:\QSimMeasurements\Measurements\RFSOC_4Qubit_AB\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\\5QV3_Triangle_Lattice\\"
 
 ###### define default configuration
 BaseConfig = {
@@ -75,7 +75,7 @@ BaseConfig = {
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 0.5,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
-    "cavity_LO": 6.50e9,  #in Hz
+    "cavity_LO": 6.8e9,  #in Hz
     # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
     # 'cavity_winding_offset': -32.10723885 + np.pi #-15.77597 * 0
     "cavity_winding_freq": 1.0903695,
@@ -86,12 +86,10 @@ FF_channel2 = 1
 FF_channel3 = 2
 FF_channel4 = 3
 
-# FF_Qubits = {
-#     str(1): {'channel': FF_channel1, 'delay_time': 0.017},
-#     str(2): {'channel': FF_channel2, 'delay_time': 0},
-#     str(3): {'channel': FF_channel3, 'delay_time': 0},
-#     str(4): {'channel': FF_channel4, 'delay_time': 0},
-# }
+FF_channel1 = 2
+FF_channel2 = 3
+FF_channel3 = 0
+FF_channel4 = 1
 
 FF_Qubits = {
     str(1): {'channel': FF_channel1, 'delay_time': 0.005},

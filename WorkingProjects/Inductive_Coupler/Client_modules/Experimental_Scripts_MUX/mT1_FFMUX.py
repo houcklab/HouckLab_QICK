@@ -7,17 +7,16 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import Experime
 import datetime
 from tqdm.notebook import tqdm
 import time
+import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
-class T2EProgram(RAveragerProgram):
+
+class T1Program(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
-        self.q_rp=self.ch_page(cfg["qubit_ch"])     # get register page for qubit_ch
+        self.q_rp = self.ch_page(cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_wait = 3
-        self.r_phase2 = 4
-        self.r_phase=self.sreg(cfg["qubit_ch"], "phase")
         self.regwi(self.q_rp, self.r_wait, cfg["start"])
-        self.regwi(self.q_rp, self.r_phase2, 0)
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
@@ -32,62 +31,47 @@ class T2EProgram(RAveragerProgram):
                                  length=self.us2cycles(cfg["length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
-        self.f_ge = f_ge
 
+        ### Start fast flux
+        FF.FFDefinitions(self)
+
+        # add qubit and readout pulses to respective channels
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
-
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-                                 phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["pi2_gain"],
+                                 phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["pi_gain"],
                                  waveform="qubit")
 
-        self.sync_all(self.us2cycles(0.2))
+        self.sync_all(self.us2cycles(3))
 
     def body(self):
-        self.regwi(self.q_rp, self.r_phase, 0)
-
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.01))
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi2_gain"], waveform="qubit", t = self.us2cycles(0.01))
-
-
+        self.sync_all()
+        # self.FFPulses(self.FFPulse, self.pulse_qubit_lenth)
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all()
         self.sync(self.q_rp, self.r_wait)
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi_gain"], waveform="qubit")
-
-
-
-        self.mathi(self.q_rp, self.r_phase, self.r_phase2, "+", 0)
-
-        self.sync_all()
-        self.sync(self.q_rp, self.r_wait)
-
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
-                             phase= 0, #self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
-                             gain= self.cfg["pi2_gain"], waveform="qubit")
-        self.sync_all(self.us2cycles(0.05))
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        # self.FFPulses(-1 * self.FFPulse, self.pulse_qubit_lenth)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
-    def update(self):
-        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"] / 2.))  # update the time between two π/2 pulses
-        # self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+',
-        #            self.cfg["phase_step"])  # advance the phase of the LO for the second π/2 pulse
+    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
+        FF.FFPulses(self, list_of_gains, length_us, t_start)
 
-class T2EMUX(ExperimentClass):
+    def update(self):
+        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"]))  # update frequency l
+
+class T1MUX(ExperimentClass):
     """
-    Basic T2R
+    Basic T1
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
@@ -97,14 +81,13 @@ class T2EMUX(ExperimentClass):
 
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
-        prog = T2EProgram(self.soccfg, self.cfg)
+        prog = T1Program(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq, 'qfreq': self.cfg["f_ge"],
                                              'rfreq': self.cfg["mixer_freq"] + self.cfg["pulse_freqs"][0] + self.cfg["cavity_LO"] / 1e6}}
-        print(data['data']['qfreq'])
         self.data = data
 
         return data
@@ -126,7 +109,6 @@ class T2EMUX(ExperimentClass):
         plt.xlabel("Wait time (us)")
         plt.legend()
         plt.title(self.titlename)
-
         plt.savefig(self.iname[:-4] + 'I_Data.png')
 
         if plotDisp:
@@ -158,3 +140,4 @@ class T2EMUX(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+

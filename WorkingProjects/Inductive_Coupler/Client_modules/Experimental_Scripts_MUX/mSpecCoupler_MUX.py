@@ -44,10 +44,18 @@ class CavitySpecFFProg(AveragerProgram):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
 # ====================================================== #
 class QubitSpecSliceFFProg(RAveragerProgram):
+    '''Attempt to readout coupler frequency on a coupler without a readout resonator
+    qubit - coupler - q0
+    Experiment:
+        1. Pi pulse q0 at the coupler frequency to place an excitation on the coupler
+        2. Drive the qubit
+        3. Drive the resonator and do readout
+    '''
     def initialize(self):
         cfg = self.cfg
+        print((cfg['qubit_gain'], cfg['coupler_gain']))
 
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit(s)
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
@@ -62,6 +70,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
+        self.r_qfreq = 4 # to store qubit frequency while the coupler pulse frequency is loaded
 
         ### Start fast flux
         FF.FFDefinitions(self)
@@ -71,7 +80,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
 
-        # add qubit and readout pulses to respective channels
+        # add qubit pulse
         if cfg['Gauss']:
             self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
             self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
@@ -84,11 +93,52 @@ class QubitSpecSliceFFProg(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
                                      length=self.us2cycles(cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.qubit_length_us = cfg["qubit_length"]
+        self.mathi(self.q_rp, self.r_qfreq, self.r_freq, '+', 0)
 
+        # add coupler pulse
+        if cfg['Coupler_Gauss']:
+            self.coupler_sigma = self.us2cycles(cfg["coupler_sigma"], gen_ch = self.cfg["qubit_ch"])
+            self.coupler_pulse_length = self.us2cycles(cfg["coupler_sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
+            self.add_gauss(ch=cfg["qubit_ch"], name="coupler", sigma= self.coupler_sigma, length= self.coupler_pulse_length)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=cfg["CouplerFreq"],
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["coupler_gain"],
+                                     waveform="coupler")
+            self.coupler_length_us = cfg["coupler_sigma"] * 4
+        else:
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["CouplerFreq"], phase=0, gain=cfg["coupler_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+            self.coupler_length_us = cfg["qubit_length"]
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
+
+        # First thing to try: 1) Pi pulse (gaussian) on coupler, then 2) drive qubit
+        # Could we continuously drive the coupler and qubit at the same time? We only have one qubit channel
+        #   so we'd have to figure out the muxing, maybe
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
+
+        # 1) Set up and play coupler pulse
+        if self.cfg['Coupler_Gauss']:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.cfg["CouplerFreq"],
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["coupler_gain"],
+                                     waveform="coupler")
+        else:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.cfg["CouplerFreq"], phase=0,
+                                     gain=self.cfg["coupler_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1)) # Drive at coupler frequency
+
+
+        # 2) Set up and perform qubit drive
+        if self.cfg['Gauss']:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_start,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                     waveform="qubit")
+        else:
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=self.cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+        self.mathi(self.q_rp, self.r_freq, self.r_qfreq, '+', 0)
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -107,34 +157,34 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
 
     def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
+        self.mathi(self.q_rp, self.r_qfreq, self.r_qfreq, '+', self.f_step)  # update frequency list index
 
 
 # ====================================================== #
 
 
-class SpecVsQblox(ExperimentClass):
+class SpecVsCoupler(ExperimentClass):
     """
-    Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a qblox to sweep
+    Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a CouplerFreq to sweep
     Notes;
-        - this is set up such that it plots out the rows of data as it sweeps through qblox
+        - this is set up such that it plots out the rows of data as it sweeps through CouplerFreq
         - because the cavity frequency changes as a function of flux, it both finds the cavity peak then uses
             the cavity peak to perform the spec drive
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None,
-                 config_file=None, progress=None, qblox = None):
+                 config_file=None, progress=None, CouplerFreq = None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
-                         config_file=config_file, progress=progress, qblox = qblox)
+                         config_file=config_file, progress=progress, CouplerFreq = CouplerFreq)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
         expt_cfg = {
-            ### define the qblox parameters
-            "qbloxStart": self.cfg["qbloxStart"],
-            "qbloxStop": self.cfg["qbloxStop"],
-            "qbloxNumPoints": self.cfg["qbloxNumPoints"],
+            ### define the CouplerFreq parameters
+            "CouplerFreqStart": self.cfg["CouplerFreqStart"],
+            "CouplerFreqStop": self.cfg["CouplerFreqStop"],
+            "CouplerFreqNumPoints": self.cfg["CouplerFreqNumPoints"],
             ### transmission parameters
             # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -146,10 +196,8 @@ class SpecVsQblox(ExperimentClass):
         }
         print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
 
-        qbloxVec = []
-        for n in range(len(expt_cfg["qbloxStart"])):
-            qbloxVec.append(np.linspace(expt_cfg["qbloxStart"][n],expt_cfg["qbloxStop"][n], expt_cfg["qbloxNumPoints"]))
-
+        CouplerFreqVec = np.linspace(expt_cfg["CouplerFreqStart"],expt_cfg["CouplerFreqStop"], expt_cfg["CouplerFreqNumPoints"])
+        print(CouplerFreqVec)
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
             figNum += 1
@@ -168,25 +216,25 @@ class SpecVsQblox(ExperimentClass):
         # X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = qbloxVec[0]
+        Y = CouplerFreqVec
         Y_step = Y[1] - Y[0]
-        # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
-        Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
+        # Z_trans = np.full((expt_cfg["CouplerFreqNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
+        Z_spec = np.full((expt_cfg["CouplerFreqNumPoints"], expt_cfg["expts"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        # self.trans_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        # self.trans_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        self.spec_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
-        self.spec_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
+        # self.trans_Imat = np.zeros((expt_cfg["CouplerFreqNumPoints"], expt_cfg["TransNumPoints"]))
+        # self.trans_Qmat = np.zeros((expt_cfg["CouplerFreqNumPoints"], expt_cfg["TransNumPoints"]))
+        self.spec_Imat = np.zeros((expt_cfg["CouplerFreqNumPoints"], expt_cfg["expts"]))
+        self.spec_Qmat = np.zeros((expt_cfg["CouplerFreqNumPoints"], expt_cfg["expts"]))
         self.data= {
             'config': self.cfg,
             'data': {#'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
                         'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
-                        'qbloxVec': qbloxVec
+                        'CouplerFreqVec': CouplerFreqVec
                      }
         }
 
-        print(qbloxVec)
+        print(CouplerFreqVec)
 
         #### start a timer for estimating the time for the scan
         startTime = datetime.datetime.now()
@@ -194,23 +242,16 @@ class SpecVsQblox(ExperimentClass):
         print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
         start = time.time()
 
-
-        QbloxClass = Qblox()
-        #### loop over the qblox vector
-        for i in range(expt_cfg["qbloxNumPoints"]):
+        #### loop over the CouplerFreq vector
+        for i in range(expt_cfg["CouplerFreqNumPoints"]):
             if i != 0:
                 time.sleep(self.cfg['sleep_time'])
             if i % 5 == 1:
                 self.save_data(self.data)
                 self.soc.reset_gens()
-            ### set the qblox voltage for the specific run
-            # self.qblox.SetVoltage(qbloxVec[i])
-            voltages_for_qblox = []
-            for m in range(len(self.cfg['DACs'])):
-                voltages_for_qblox.append(qbloxVec[m][i])
-            print(voltages_for_qblox)
-            QbloxClass.set_voltage(self.cfg['DACs'], voltages_for_qblox)
-            # QbloxClass.print_voltages()
+            ### set the CouplerFreq for the specific run
+            self.cfg["CouplerFreq"] = CouplerFreqVec[i]
+
             time.sleep(1)
             ### take the transmission data
             # data_I, data_Q = self._aquireTransData()
@@ -246,7 +287,7 @@ class SpecVsQblox(ExperimentClass):
             # if plotDisp:
             #     plt.show(block=False)
             #     plt.pause(0.1)
-            if i != expt_cfg["qbloxNumPoints"]:
+            if i != expt_cfg["CouplerFreqNumPoints"]:
                 time.sleep(self.cfg['sleep_time'])
 
             ### take the spec data
@@ -260,13 +301,12 @@ class SpecVsQblox(ExperimentClass):
             #### plot out the spec data
             sig = data_I + 1j * data_Q
 
-
             avgamp0 = np.abs(sig)
-            if smart_normalize:
-                avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
+            # if smart_normalize:
+            #     avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
             Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
             if i == 0:
-
+                print([Y, Y[0], Y_step, Y[0]-Y_step/2,Y[-1]+Y_step/2])
                 ax_plot_1 = axs.imshow(
                     Z_spec,
                     aspect='auto',
@@ -290,9 +330,9 @@ class SpecVsQblox(ExperimentClass):
             #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
             #     cbar1.set_label('a.u.', rotation=90)
 
-            axs.set_ylabel("Qblox (V)")
+            axs.set_ylabel("Driving (Coupler) Frequency (GHz)")
             axs.set_xlabel("Spec Frequency (GHz)")
-            axs.set_title(f"{self.titlename}, QDAC: {self.cfg['DACs']}, "
+            axs.set_title(f"{self.titlename} "
                              f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
 
             if plotDisp:
@@ -301,7 +341,7 @@ class SpecVsQblox(ExperimentClass):
 
             if i ==0: ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start + self.cfg["sleep_time"] * 2### time for single full row in seconds
-                timeEst = (t_delta )*expt_cfg["qbloxNumPoints"]  ### estimate for full scan
+                timeEst = (t_delta )*expt_cfg["CouplerFreqNumPoints"]  ### estimate for full scan
                 StopTime = startTime + datetime.timedelta(seconds=timeEst)
                 print('Time for 1 sweep: ' + str(round(t_delta/60, 2)) + ' min')
                 print('estimated total time: ' + str(round(timeEst/60, 2)) + ' min')

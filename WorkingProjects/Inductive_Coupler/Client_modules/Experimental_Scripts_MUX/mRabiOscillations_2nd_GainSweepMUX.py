@@ -59,7 +59,7 @@ class OscillationsProgramSS(AveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
@@ -313,7 +313,7 @@ class Oscillations_Gain_2nd_SSMUX(ExperimentClass):
 #         self.measure(pulse_ch=self.cfg["res_ch"],
 #                      adcs=self.cfg["ro_chs"], pins=[0],
 #                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-#                      wait=False,
+#                      wait=True,
 #                      syncdelay=self.us2cycles(10))
 #
 #         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])

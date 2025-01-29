@@ -91,7 +91,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
@@ -195,7 +195,8 @@ class SingleShotProgram(AveragerProgram):
 
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + 1)
+        FF_Delay_time = 10
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
         # self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
         # print(self.cfg["qubit_gains"], self.cfg["f_ges"])
@@ -204,7 +205,7 @@ class SingleShotProgram(AveragerProgram):
                 gain_ = self.cfg["qubit_gains"][i]
                 freq_ = self.freq2reg(self.cfg["f_ges"][i], gen_ch=self.cfg["qubit_ch"])
                 if i == 0:
-                    time = self.us2cycles(1)
+                    time = self.us2cycles(FF_Delay_time)
                 else:
                     time = 'auto'
                 # print(freq_, gain_, time)
@@ -223,7 +224,7 @@ class SingleShotProgram(AveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])

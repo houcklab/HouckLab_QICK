@@ -10,38 +10,55 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6977.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 3000,
+    '1': {'Readout': {'Frequency': 7344.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5428, 'Gain': 740},
+          'Qubit': {'Frequency': 3712, 'Gain': 1500},
           'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7092.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
-          # 'Qubit': {'Frequency': 5107.4, 'Gain': 1150},
-          'Qubit': {'Frequency': 4724.7, 'Gain': 1150},
-          # 'Qubit': {'Frequency': 5256.4, 'Gain': 1500},
-          # 'Qubit': {'Frequency': 5100, 'Gain': 1150},
+    # '2': {'Readout': {'Frequency': 7092.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
+    #       # 'Qubit': {'Frequency': 5107.4, 'Gain': 1150},
+    #       'Qubit': {'Frequency': 4724.7, 'Gain': 1150},
+    #       # 'Qubit': {'Frequency': 5256.4, 'Gain': 1500},
+    #       # 'Qubit': {'Frequency': 5100, 'Gain': 1150},
+    #       'Pulse_FF': [0, 0, 0, 0]},
+
+    '2': {'Readout': {'Frequency': 7289.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7500,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4283, 'Gain': 15000},
           'Pulse_FF': [0, 0, 0, 0]},
     '3': {'Readout': {'Frequency': 7127.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 9000, "FF_Gains": [0, 0, 0, 0]},
           'Qubit': {'Frequency': 5096.2, 'Gain': 1400},
           'Pulse_FF': [0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7230.34 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 0, -11600]},
-          'Qubit': {'Frequency': 4659.32, 'Gain': 1650},
-          'Pulse_FF': [0, 0, 0, 0]}
+    '4': {'Readout': {'Frequency': 7458.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 0, 0]},
+          'Qubit': {'Frequency': 4280, 'Gain': 1650},
+          'Pulse_FF': [0, 0, 0, 10000]},
+    '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+              'Qubit': {'Frequency': 4047.84, 'Gain': 4000},
+              'Pulse_FF': [0, 0, 0, 0]}
     }
 
 Qubit_Pulse = 1
 
 RunTransmissionSweep = False  # determine cavity frequency
-Run2ToneSpec = False  # determine qubit frequency
+Run2ToneSpec = False # determine qubit frequency
 RunAmplitudeRabi = False
 RunFluxStability = True
-Spec_relevant_params = {"qubit_gain": 50, "SpecSpan": 10, "SpecNumPoints": 61, 'Gauss': False, "sigma": 0.05,
-                        "gain": 4900, 'reps': 60, 'rounds': 30}
+
+Spec_relevant_params = {"qubit_gain": 200, "SpecSpan": 50, "SpecNumPoints": 61, 'Gauss': False, "sigma": 0.15,
+                        "gain": 1000, 'reps': 30, 'rounds': 30}
+# Spec_relevant_params = {"qubit_gain": 50, "SpecSpan": 20, "SpecNumPoints": 61, 'Gauss': True, "sigma": 0.5,
+#                         "gain": 200, 'reps': 60, 'rounds': 30}
+Spec_relevant_params = {"qubit_gain": 30, "SpecSpan": 7, "SpecNumPoints": 61, 'Gauss': True, "sigma": 0.2,
+                        "gain": 2000, 'reps': 40, 'rounds': 40}
+
+# Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 61, 'Gauss': True, "sigma": 0.2,
+#                         "gain": 2000, 'reps': 30, 'rounds': 30}
 
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.012, "max_gain": 8000}
+                         "sigma": 0.2, "max_gain": 10000}
 
-hours = 9
-Flux_Stability_params = {'delaystep': 2, 'Gauss': False}  #DelayStep in minutes
+hours = 12
+Flux_Stability_params = {'delaystep': 1}  #DelayStep in minutes
 delay_points = int(hours * 60 // Flux_Stability_params['delaystep'])
 Flux_Stability_params['delaypoints'] = delay_points
 

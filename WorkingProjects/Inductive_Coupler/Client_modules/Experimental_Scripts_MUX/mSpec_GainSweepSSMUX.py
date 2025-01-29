@@ -82,9 +82,7 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mRabiOs
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
-
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["pulse_freqs"],
@@ -134,7 +132,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
