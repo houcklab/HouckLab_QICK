@@ -35,7 +35,7 @@ class AccountTabWidget(QWidget):
 
         self.rfsoc_is_connected = False
 
-        self.root_dir = os.getcwd()
+        self.root_dir = os.path.dirname(os.path.realpath(__file__))
         self.config_dir = os.path.join(self.root_dir, 'config')
         self.account_dir = os.path.join(self.config_dir, 'accounts')
 

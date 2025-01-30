@@ -59,8 +59,10 @@ from PlotWidget import PlotWidget
 from MasterProject.Client_modules.LAKE_GUI.ExperimentThread import ExperimentThread
 from qick import RAveragerProgram, AveragerProgram, NDAveragerProgram
 
-path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+# Get the directory of the current Python script
+script_directory = os.path.dirname(os.path.realpath(__file__))
+script_parent_directory = os.path.dirname(script_directory)
+os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 
 from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
@@ -266,7 +268,7 @@ class Window(QMainWindow):
     ########################################################################################################################
 
     def runExperiment(self):  # runExperimentButton
-        if self.rfsoc_is_connected():
+        if self.rfsoc_is_connected() or True:
             self.thread = QThread()  # Thread object
             ### update the config
             UpdateConfig = self.configEdit.config["Experiment Config"]
@@ -347,7 +349,9 @@ class Window(QMainWindow):
 
     def load_experiment_file_open(self):  # loadExperimentButton
         """ Runs when the load experiment file button is pressed. """
-        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", "..\\", "python files (*.py)", )
+        experiments_directory = os.path.join(script_parent_directory, 'Experiments')
+
+        filename, ok = QFileDialog.getOpenFileName(self, "Select a File", experiments_directory, "python files (*.py)", )
         if filename:
             self.loadExperiment(filename)
         self.runExperimentButton.setEnabled(True)  # The run button is now enabled
