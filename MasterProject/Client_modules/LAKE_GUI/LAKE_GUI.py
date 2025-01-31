@@ -268,7 +268,7 @@ class Window(QMainWindow):
     ########################################################################################################################
 
     def runExperiment(self):  # runExperimentButton
-        if self.rfsoc_is_connected() or True:
+        if self.rfsoc_is_connected():
             self.thread = QThread()  # Thread object
             ### update the config
             UpdateConfig = self.configEdit.config["Experiment Config"]
