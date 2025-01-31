@@ -18,15 +18,11 @@ import os
 import pyvisa as visa
 from pathlib import Path
 
-#### issue when adding PythonDrivers due to file location, adding a hacky solution for now
-DriverFolderBool = Path(os.getcwd() + '\\PythonDrivers').is_dir()
 
-if DriverFolderBool:
-    os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
-else:
-    path = os.getcwd()
-    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-
+# Get the directory of the current Python script
+script_directory = os.path.dirname(os.path.realpath(__file__))
+script_parent_directory = os.path.dirname(script_directory)
+os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 
 #### define a attenuator class to change define attenuators for the setup
 class attenuator:
