@@ -12,7 +12,7 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTimeO
 
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": -0.38,
+    "yokoVoltage": 1.02,
     "yokoVoltage_freqPoint": -0.38,
     ###### cavity
     "reps": 1,  # this will be used for all experiments below unless otherwise changed in between trials

@@ -5,20 +5,22 @@ import time
 import numpy as np
 import os
 
+foldername = r'Z:\TantalumFluxonium\Data\2024_07_20_BF2_cooldown\thermometer'
+
 rm = pyvisa.ResourceManager()
 LS370_connection = rm.open_resource('GPIB0::12::INSTR')
-lakeshore = lk.Lakeshore370(LS370_connection)
+lakeshore = lk.Lakeshore370(LS370_connection, outerFolder=foldername+"\\")
 #%%
 
-foldername = r'Z:\TantalumFluxonium\Data\2024_06_29_cooldown\thermometer'
+foldername = r'Z:\TantalumFluxonium\Data\2024_07_20_BF2_cooldown\thermometer'
 suffix = r'no_green_cable_'
 filename_temp = foldername + '\\' + time.strftime('%Y.%m.%d_%H.%M.%S_', time.localtime()) + suffix + 'temp.csv'
 filename_res = foldername + '\\' + time.strftime('%Y.%m.%d_%H.%M.%S_', time.localtime()) + suffix + 'res.csv'
 
-NUM_PTS = 15 # Number of points at each temperature
+NUM_PTS = 3 # Number of points at each temperature
 
 
-temps_list = [12, 14, 16, 18, 20, 22, 20, 18, 16, 14, 12, 10]#[12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100, 90, 80, 70, 60, 55, 50, 45, 40, 35, 30, 28, 26, 24, 22, 20, 18, 16, 14, 12, 10]
+temps_list = [200, 300, 400, 500]
 #temps_list = [100, 90, 80, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8]
 #temps_list = [10, 15]
 temps_meas_list = []

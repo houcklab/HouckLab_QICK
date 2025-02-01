@@ -133,7 +133,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False) # qick update -, debug=False)
 
         ### Background data
         qubit_gain = self.cfg["qubit_gain"]
@@ -141,7 +141,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
         x_pts_bkg, avgi_bkg, avgq_bkg = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False) # qick update - , debug=False)
         self.cfg["qubit_gain"] = qubit_gain
 
         # Subtracting
@@ -150,8 +150,8 @@ class SpecSlice_bkg_sub(ExperimentClass):
         sig = avgi + 1j * avgq
         amp = np.abs(sig)
         phase = np.angle(sig, deg=True)
-        avgi = np.abs(avgi)
-        avgq = np.abs(avgq)
+        # avgi = np.abs(avgi)
+        # avgq = np.abs(avgq)
 
         # All information in amp now
         f_reqd = self.qubit_freqs[np.argmax(amp)]

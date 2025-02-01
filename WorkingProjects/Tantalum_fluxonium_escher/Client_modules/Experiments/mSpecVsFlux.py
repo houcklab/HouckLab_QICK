@@ -25,7 +25,7 @@ class SpecVsFlux(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
+    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, subtract_avg=True):
         expt_cfg = {
             ### define the yoko parameters
             "yokoVoltageStart": self.cfg["yokoVoltageStart"],
@@ -98,7 +98,12 @@ class SpecVsFlux(ExperimentClass):
 
             #### plot out the transmission data
             sig = data_I + 1j * data_Q
-            avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
+
+            if subtract_avg:
+                avgamp0 = np.abs(sig) - np.mean(np.abs(sig)) #Do mean subtraction
+            else:
+                avgamp0 = np.abs(sig)
+
             Z_trans[i, :] = avgamp0
 
             if i == 0:  #### if first sweep add a colorbar
@@ -111,6 +116,7 @@ class SpecVsFlux(ExperimentClass):
                 )
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
+                #ax_plot_0_dots = axs['b'].plot(self.trans_fpts[np.argmin(avgamp0)], i, 'ro')
             else:
                 ax_plot_0.set_data(Z_trans)
                 ax_plot_0.set_clim(vmin=np.nanmin(Z_trans))
@@ -118,6 +124,7 @@ class SpecVsFlux(ExperimentClass):
                 cbar0.remove()
                 cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
                 cbar0.set_label('a.u.', rotation=90)
+                #ax_plot_0_dots.set_data(self.trans_fpts[np.argmin(Z_trans, axis=1)], range(i))
 
             axs['b'].set_ylabel("yoko voltage (V)")
             axs['b'].set_xlabel("Cavity Frequency (GHz)")
@@ -129,16 +136,30 @@ class SpecVsFlux(ExperimentClass):
 
             ### take the spec data
             data_I, data_Q = self._aquireSpecData()
+
+            data_I = np.array(data_I) # This broke after the qick update to 0.2.287. Returns I, Q as lists instead of np arrays
+            data_Q = np.array(data_Q)
+
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
             #### plot out the spec data
             sig = data_I + 1j * data_Q
-            avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
-            avgphase = np.angle(sig, deg = True) - np.mean(np.angle(sig, deg = True))
-            avgI = np.abs(data_I) - np.mean(np.abs(data_I))
-            avgQ = np.abs(data_Q) - np.mean(np.abs(data_Q))
-            ## Amplitude
+
+            if subtract_avg:
+                avgamp0 = np.abs(sig) - np.mean(np.abs(sig)) #Do mean subtraction
+                avgphase = np.angle(sig, deg=True) - np.mean(np.angle(sig, deg=True))
+                #avgI = np.abs(data_I) - np.mean(np.abs(data_I))
+                #avgQ = np.abs(data_Q) - np.mean(np.abs(data_Q))
+                avgI = data_I - np.mean(data_I)
+                avgQ = data_Q - np.mean(data_Q)
+            else:
+                avgamp0 = np.abs(sig)
+                avgphase = np.angle(sig, deg=True)
+                avgI = data_I
+                avgQ = data_Q
+
+                ## Amplitude
             Z_specamp[i, :] = avgamp0
 
             if i ==0: #### if first sweep add a colorbar
@@ -243,11 +264,13 @@ class SpecVsFlux(ExperimentClass):
             axs['e'].set_title("Qubit Spec : Q")
             plt.tight_layout()
 
-            if plotDisp:# and i == 0:
+            if plotDisp and i == 0:
                 plt.show(block=False)
-                plt.pause(0.1)
-            #else:
-            #    fig.canvas.draw()
+                #Parth's fix
+                plt.pause(5)
+            elif plotDisp:
+                plt.draw()
+                plt.pause(5)
 
             if i ==0: ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start ### time for single full row in seconds
@@ -295,6 +318,7 @@ class SpecVsFlux(ExperimentClass):
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
+
         # peak_loc = np.argmax(avgamp0)
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]
 
@@ -319,7 +343,7 @@ class SpecVsFlux(ExperimentClass):
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False) # qick update deprecated ? , debug=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         #Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
         #                                       outerFolder=r'Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\dataTestSpecVsFlux', progress=True)

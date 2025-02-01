@@ -20,13 +20,14 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         self.cfg["reps"] = self.cfg["AmpRabi_reps"]
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch, this is the gaussian part
+        self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get gain2 register for qubit_ch, this is the flat part
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], ro_ch = self.cfg["ro_chs"][0])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
-                                 freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
+            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
+                                 freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"] )
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])    # conver f_res to dac register value
         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
@@ -48,7 +49,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         elif cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0, #freq=cfg["start"]
                                      gain=cfg["start"],
                                      length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
                                      )
@@ -91,8 +92,11 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain of the Gaussian pi pulse
-
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain of the Gaussian part
+        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', self.cfg["step"] // 2) # update gain of the flat part
+        # This needs to be half the normal update, because something about the "arb" gain is different from const
+        # I think the reason is that arb is defined as the individual points vs. time, whereas the const is an envelope
+        # over the carrier, so const gets an extra bit and so is twice as big.
 
 
 

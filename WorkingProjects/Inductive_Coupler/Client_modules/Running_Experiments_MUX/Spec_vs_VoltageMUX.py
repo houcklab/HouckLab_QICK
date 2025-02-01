@@ -7,6 +7,9 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecVsQblox_MUX import SpecVsQblox
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransVsQblox_MUX import TransVsQblox
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mTransVsPower_MUX import TransVsPower
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecVsResonatorPower_MUX import SpecVsResonatorPower
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import \
     AmplitudeRabiFFMUX
@@ -21,23 +24,28 @@ print(BaseConfig["cavity_LO"] / 1e6)
 BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["has_mixer"] = True
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6975.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+    '1': {'Readout': {'Frequency': 7344.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4302.3, 'Gain': 740},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7060.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+          'Qubit': {'Frequency': 3600, 'Gain': 1500},
+          'Pulse_FF': [0, 10000, 10000, 10000]},
+    '2': {'Readout': {'Frequency': 7289 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5139.5, 'Gain': 1050},
+          'Qubit': {'Frequency': 4200, 'Gain': 1400},
           'Pulse_FF': [0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7127.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
+    '3': {'Readout': {'Frequency': 7126.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5012.2, 'Gain': 1250},
+          'Qubit': {'Frequency': 4450, 'Gain': 1250},
           'Pulse_FF': [0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7245.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+    '4': {'Readout': {'Frequency': 7459.65 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4302.3, 'Gain': 1350},
-          'Pulse_FF': [0, 0, 0, 0]}
-}
+          'Qubit': {'Frequency': 4238.8, 'Gain': 3000},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+              'Qubit': {'Frequency': 4063, 'Gain': 4000},
+              'Pulse_FF': [0, 0, 0, 0]}
+    }
+
 
 # expt
 FF_gain1_expt = 0  # 8000
@@ -45,9 +53,11 @@ FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = 1
-Qubit_PulseSS = [4]
+
+Qubit_Readout = [2]
+Qubit_Pulse = 2
+Qubit_PulseSS = [2]
+
 
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
@@ -69,32 +79,47 @@ gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Read
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False # determine cavity frequency
-Run2ToneSpec = False
-# Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 100, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.05,
-#                         "gain": 600, 'reps': 20, 'rounds': 20}
-Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 30, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
-                        "gain": 600, 'reps': 15, 'rounds': 15}
-Run_Spec_v_Voltage = True
-Spec_sweep_relevant_params = {"qubit_gain": 1, "SpecSpan": 0.8, "SpecNumPoints": 81,
-                              "DAC": [8],
-                              "Qblox_Vmin": [0.42475],
-                              "Qblox_Vmax": [0.42558], "Qblox_numpoints": 11,
-                              'reps': 10, 'rounds': 10, 'smart_normalize': True}
+Run2ToneSpec = True
+
+Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 200, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.01,
+                        "gain": 8000, 'reps': 30, 'rounds': 30}
+
+Run_Spec_v_Voltage = False
+Spec_sweep_relevant_params = {"qubit_gain": 1500, "SpecSpan": 200, "SpecNumPoints": 71,
+                              "DAC": [5],
+                              "Qblox_Vmin": [-0.5],
+                              "Qblox_Vmax": [0], "Qblox_numpoints": 11,
+                              'reps': 20, 'rounds': 20, 'smart_normalize': True}
+
+Run_Trans_v_Voltage = False
+Trans_sweep_relevant_params = {
+    "reps": 200, "readout_length": 3,  # [us]
+    "TransSpan": 3 * 1,  ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 61 * 1,  ### number of points in the transmission frequecny
+    "cav_relax_delay": 20
+}
+Run_Trans_v_Power = False
+Trans_power_relevant_params = {"gain_min": [1000],
+                              "gain_max": [15000], "gain_numpoints": 11}
+
+Run_Spec_v_ResonatorGain = False
+Spec_ResonatorGain_relevant_params = {"gain_min": [1000],
+                              "gain_max": [1040], "gain_numpoints": 31}
 
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.05, "max_gain": 4000}
+                         "sigma": 0.03, "max_gain": 5000}
 
 SingleShot = False
-SS_params = {"Shots": 2000, "Readout_Time": 2.5, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_PulseSS}
-# SS_params = {"Shots": 30000, "Readout_Time": 35, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_PulseSS}
+SS_params = {"Shots": 2000, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_PulseSS}
+
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 3000, "gain_stop": 10000, "gain_pts": 7, "span": 1.2, "trans_pts": 7}
+SS_R_params = {"gain_start": 500, "gain_stop": 6000, "gain_pts": 7, "span": 1.2, "trans_pts": 7}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"Optimize_Index": 0, "q_gain_span": 1000, "q_gain_pts": 6, "q_freq_span": 3, "q_freq_pts": 11}
+SS_Q_params = {"Optimize_Index": 0, "q_gain_span": 1000, "q_gain_pts": 9, "q_freq_span": 4, "q_freq_pts": 7}
 
 FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
 FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
@@ -216,6 +241,82 @@ if Run_Spec_v_Voltage:
     SpecVsQblox.save_data(Instance_SpecVQ, data_SpecVQ)
     SpecVsQblox.save_config(Instance_SpecVQ)
 
+if Run_Trans_v_Voltage:
+    # config["reps"] = 30  # want more reps and rounds for qubit data
+    # config["rounds"] = 30
+    config |= Trans_sweep_relevant_params
+    config["rounds"] = 1
+    config["qbloxNumPoints"] = Spec_sweep_relevant_params["Qblox_numpoints"]
+    config['sleep_time'] = 0
+    config['DACs'] = Spec_sweep_relevant_params["DAC"]
+    config["qbloxStart"] = Spec_sweep_relevant_params["Qblox_Vmin"]
+    config["qbloxStop"] = Spec_sweep_relevant_params["Qblox_Vmax"]
+
+    config["Gauss"] = False
+
+    config["qubit_gain"] = Spec_sweep_relevant_params["qubit_gain"]
+    config["step"] = 2 * Spec_sweep_relevant_params["SpecSpan"] / (Spec_sweep_relevant_params["SpecNumPoints"] - 1)
+    config["start"] = qubit_config["qubit_freq"] - Spec_sweep_relevant_params["SpecSpan"]
+    config["expts"] = Spec_sweep_relevant_params["SpecNumPoints"]
+    # expt_cfg = {
+    #     "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
+    #     "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
+    #     "expts": qubit_config["SpecNumPoints"]
+    # }
+
+    Instance_TransVQ = TransVsQblox(path="TransVsQblox", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+    data_TransVQ = TransVsQblox.acquire(Instance_TransVQ, plotDisp=True,
+                                      smart_normalize=Spec_sweep_relevant_params['smart_normalize'])
+    # print(data_SingleShotProgram)
+    # SpecVsQblox.display(Instance_SpecVQ, data_SpecVQ, plotDisp=False)
+
+    TransVsQblox.save_data(Instance_TransVQ, data_TransVQ)
+    TransVsQblox.save_config(Instance_TransVQ)
+
+if Run_Trans_v_Power:
+    config |= Trans_sweep_relevant_params
+    config["rounds"] = 1
+    config["gainNumPoints"] = Trans_power_relevant_params["gain_numpoints"]
+    config['sleep_time'] = 0
+    config["gainStart"] = Trans_power_relevant_params["gain_min"]
+    config["gainStop"] = Trans_power_relevant_params["gain_max"]
+
+    config["Gauss"] = False
+
+    config["qubit_gain"] = Spec_sweep_relevant_params["qubit_gain"]
+    config["step"] = 2 * Spec_sweep_relevant_params["SpecSpan"] / (Spec_sweep_relevant_params["SpecNumPoints"] - 1)
+    config["start"] = qubit_config["qubit_freq"] - Spec_sweep_relevant_params["SpecSpan"]
+    config["expts"] = Spec_sweep_relevant_params["SpecNumPoints"]
+
+
+    Instance_TransVG = TransVsPower(path="TransVsPower", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+    data_TransVG = TransVsPower.acquire(Instance_TransVG, plotDisp=True,
+                                      smart_normalize=Spec_sweep_relevant_params['smart_normalize'])
+
+    TransVsPower.save_data(Instance_TransVG, data_TransVG)
+    TransVsPower.save_config(Instance_TransVG)
+
+if Run_Spec_v_ResonatorGain:
+    config["gainNumPoints"] = Spec_ResonatorGain_relevant_params["gain_numpoints"]
+    config['sleep_time'] = 0
+    config["gainStart"] = Spec_ResonatorGain_relevant_params["gain_min"]
+    config["gainStop"] = Spec_ResonatorGain_relevant_params["gain_max"]
+
+    config["reps"] = Spec_relevant_params['reps']  # want more reps and rounds for qubit data
+    config["rounds"] = Spec_relevant_params['rounds']
+    config["Gauss"] = Spec_relevant_params['Gauss']
+    if Spec_relevant_params['Gauss']:
+        config['sigma'] = Spec_relevant_params["sigma"]
+        config["qubit_gain"] = Spec_relevant_params['gain']
+
+    Instance_SpecVG = SpecVsResonatorPower(path="SpecVsResonatorGain", outerFolder=outerFolder, cfg=config, soc=soc,
+                                    soccfg=soccfg)
+    data_SpecVG = SpecVsResonatorPower.acquire(Instance_SpecVG, plotDisp=True,
+                                        smart_normalize=Spec_sweep_relevant_params['smart_normalize'])
+
+    SpecVsResonatorPower.save_data(Instance_SpecVG, data_SpecVG)
+    SpecVsResonatorPower.save_config(Instance_SpecVG)
+
 # Amplitude Rabi
 number_of_steps = 31
 step = int(Amplitude_Rabi_params["max_gain"] / number_of_steps)
@@ -292,7 +393,7 @@ if SingleShot_ReadoutOptimize:
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
                                                            cfg=config, soc=soc, soccfg=soccfg)
     data_SingleShotProgramOptimize = ReadOpt_wSingleShotFFMUX.acquire(Instance_SingleShotOptimize,
-                                                                      cavityAtten=cavityAtten)
+                                                                      )
     # print(data_SingleShotProgram)
     ReadOpt_wSingleShotFFMUX.display(Instance_SingleShotOptimize, data_SingleShotProgramOptimize, plotDisp=True)
 

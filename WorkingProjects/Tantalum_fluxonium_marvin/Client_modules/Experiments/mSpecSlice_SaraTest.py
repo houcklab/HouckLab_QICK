@@ -39,9 +39,14 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                      waveform="qubit")
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
         elif self.cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]), mode="periodic")
-            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
+            if self.cfg["mode_periodic"] == True:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]), mode="periodic")
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
 
         elif self.cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -186,12 +191,14 @@ class SpecSlice(ExperimentClass):
         axs[1].set_xlabel("Qubit Frequency (GHz)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        # ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        ax2 = axs[2].plot(x_pts, avgi[0][0], 'o-', label="I - Data")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Qubit Frequency (GHz)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        # ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        ax3 = axs[3].plot(x_pts, avgq[0][0], 'o-', label="Q - Data")
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Qubit Frequency (GHz)")
         axs[3].legend()

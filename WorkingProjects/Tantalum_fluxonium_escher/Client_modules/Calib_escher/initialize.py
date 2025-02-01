@@ -43,6 +43,8 @@ class attenuator:
 # define yoko 1
 yoko1 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
 yoko1.SetMode('voltage')
+#yoko1 = None
+#print("Warning: not connecting to Yoko in initialize.py")
 
 # define yoko 2
 #yoko2 = YOKOGS200(VISAaddress = 'GPIB0::5::INSTR', rm = visa.ResourceManager())

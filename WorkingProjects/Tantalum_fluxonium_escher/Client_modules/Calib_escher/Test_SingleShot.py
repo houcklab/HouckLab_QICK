@@ -2,7 +2,7 @@
 
 import os
 # path = os.getcwd()
-
+from tqdm import tqdm
 
 # os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
 path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
@@ -13,23 +13,28 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingl
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mT1_PS_sse import T1_PS_sse
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotPS import SingleShotPS
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mAmplitudeRabiBlob_PS import AmplitudeRabi_PS
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mAmplitudeRabiBlob_PS_sse import AmplitudeRabi_PS_sse
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mAmplitudeRabiFlux_PS import AmplitudeRabiFlux_PS
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mT2R_PS import T2R_PS
 from matplotlib import pyplot as plt
 import datetime
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mRepeatReadout import RepeatReadout
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotOptimize import SingleShotMeasure
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mQND import QNDmeas
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTwoMeas import TwoMeas
 
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf_driver import *
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_10_14_cooldown\HouckCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
 
 # Define the switch cofidg
 SwitchConfig = {
-    "trig_buffer_start": 0.035, # in us
-    "trig_buffer_end": 0.024, # in us
+    "trig_buffer_start": 0.05, #0.035, # in us
+    "trig_buffer_end": 0.04, #0.024, # in us
     "trig_delay": 0.07, # in us
 }
 BaseConfig = BaseConfig | SwitchConfig
@@ -38,36 +43,43 @@ BaseConfig = BaseConfig | SwitchConfig
 
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
-    # set yoko
-    "yokoVoltage": 0.12,
+    # define yoko
+    "yokoVoltage": 0.1281, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
-    "reps": 1000,
-    "read_pulse_style": "const",
-    "read_length": 30,
-    "read_pulse_gain":  5000,
-    "read_pulse_freq": 6423.375,
-
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 20,  # us
+    "read_pulse_gain": 4000,  # [DAC units]
+    "read_pulse_freq": 6665.404, #6664.88, #6422.81,#7, #6422.757, #6423.025,
     # qubit spec parameters
-    "qubit_pulse_style": "arb",
-    "qubit_gain": 1,
-    "qubit_length": 32,
-    "sigma": 0.05,
-    "flat_top_length": 5,
-    "qubit_freq": 600,
-    "relax_delay": 5,
+    "qubit_pulse_style": "flat_top",
+
+    "qubit_gain": 0,
+    "qubit_length": 0.01,
+    "sigma": .5,
+    "flat_top_length": 0.01,
+    "qubit_freq": 2101.6,#2106.8,
+    "relax_delay": 100,#5000, #2500,
 
     # define shots
-    "shots": 100000,
+    "shots": int(50000),
     "use_switch": True,
 }
 config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 
+mlbf_filter = MLBFDriver("192.168.1.100")
+mlbf_filter.set_frequency(config["read_pulse_freq"])
 #%%
 # TITLE: Single shot experiment
 plt.close('all')
+startTime = datetime.datetime.now()
+print('') ### print empty row for spacing
+print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
+start = time.time()
+
+print("Estimated time: ", config["shots"]*(2*config["read_length"]+2*config["relax_delay"]+config["qubit_length"])/1e6, "s")
 Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
                                                soc=soc, soccfg=soccfg)
 data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
@@ -75,19 +87,107 @@ SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
 SingleShotProgram.save_config(Instance_SingleShotProgram)
 SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
 
+print('actual end: '+ datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+ #%%
+# TITLE: Single shot experiment looped
+# to do
+plt.close('all')
+
+#mlbf_filter = MLBFDriver("192.168.1.100")
+# Dictionary for multiple qubits
+
+qubit_dicts = {
+    "Q3_6p75_low_RO_pow": {
+    # define yoko
+    "yokoVoltage": 0.110, #0.093277, #816 , #0.09473, #25,
+
+    # cavity
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 30,  # us
+    "read_pulse_gain": 4000,  # [DAC units]
+    "read_pulse_freq": 6665.404 #6664.88, #6422.81,#7, #6422.757, #6423.025,
+    # qubit spec parameters
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 0,
+    "qubit_length": 0.01,
+    "sigma": .5,
+    "flat_top_length": 0.01,
+    "qubit_freq": 2100,#2106.8,
+    "relax_delay": 5000, #2500,
+
+    # define shots
+    "shots": int(2e6),
+    "use_switch": True,
+},
+    "Q3_6p75_high_RO_pow": {
+        # define yoko
+        "yokoVoltage": 0.110,  # 0.093277, #816 , #0.09473, #25,
+
+        # cavity
+        "read_pulse_style": "const",  # --Fixed
+        "read_length": 30,  # us
+        "read_pulse_gain": 500,  # [DAC units]
+        "read_pulse_freq": 6664.82686,  # 6664.88, #6422.81,#7, #6422.757, #6423.025,
+        # qubit spec parameters
+        "qubit_pulse_style": "flat_top",
+        "qubit_gain": 0,
+        "qubit_length": 0.01,
+        "sigma": .5,
+        "flat_top_length": 0.01,
+        "qubit_freq": 1640,  # 2106.8,
+        "relax_delay": 5000,  # 2500,
+
+        # define shots
+        "shots": int(2e6),
+        "use_switch": True,
+    }
+}
+
+# Loop over each qubit
+qubits = qubit_dicts.keys()
+for qubit in qubits:
+    print("Running single shot for ", qubit)
+    # Updating all the keys in config that are in qubit
+    config_keys = qubit_dicts[qubit].keys()
+    for config_key in config_keys:
+        config[config_key] = qubit_dicts[qubit][config_key]
+
+    # Updating the mlbf filter
+    #mlbf_filter.set_frequency(config["read_pulse_freq"])
+
+    # Run single shot
+    startTime = datetime.datetime.now()
+    print('')  ### print empty row for spacing
+    print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
+    start = time.time()
+    print("Estimated time: ",
+          config["shots"] * (2 * config["read_length"] + 2 * config["relax_delay"] + config["qubit_length"]) / 1e6, "s")
+    Instance_SingleShotProgram = SingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder,
+                                                   cfg=config,
+                                                   soc=soc, soccfg=soccfg)
+    data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+    SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+    SingleShotProgram.save_config(Instance_SingleShotProgram)
+    SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=True, save_fig=True)
+
+    print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+    # Close the plot
+    plt.close('all')
+
 #%%
 # TITLE: Optimize fidelity over different parameters
 plt.close('all')
 outerFolder_sweep = outerFolder + "singleShotSweeps_qubitFreq\\"
-loop_len = 6
+loop_len = 51
 param_dict = {
-    'read_pulse_freq': config["read_pulse_freq"] + np.linspace(-1.5, 1.5, 81),
+    'read_pulse_freq': config["read_pulse_freq"] + np.linspace(-0.6, 0.6, 21),
     'qubit_freq': config["qubit_freq"] + np.linspace(-50, 50, 21),
     'qubit_gain': np.linspace(15000, 22000, 21, dtype=int),
-    'read_pulse_gain': np.linspace(10000, 25000, 61, dtype=int),
-    'read_length':np.linspace(10,50,10, dtype=int)
+    'read_pulse_gain': np.linspace(500, 15000, 11, dtype=int),
+    'read_length':np.linspace(10,100,10, dtype=int)
 }
-vary = "read_pulse_gain"
+vary = "read_pulse_freq"
 
 for idx in range(param_dict[vary].shape[0]):
     config[vary] = param_dict[vary][idx]
@@ -149,31 +249,32 @@ for idx in range(param_dict[vary].shape[0]):
 # TITLE: T1 of a thermal state
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": 2.384,
-    "yokoVoltage_freqPoint": 2.384,
+    "yokoVoltage": -1.355,
+    "yokoVoltage_freqPoint": -1.355, #1.12,
 
     # cavity
-    "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 7392.3, # [MHz]
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 60,  # us
+    "read_pulse_gain": 400,  # [DAC units]
+    "read_pulse_freq": 6422.9,
 
     # qubit spec parameters
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 7000,
-    "flat_top_length": 20,
-    "sigma": 0.05,
-    "qubit_freq": 830.72,
-    "relax_delay": 100,
+    "qubit_gain": 0, #1,
+    "flat_top_length": .30,
+    "qubit_pulseLength": .30,
+    "sigma": 0.5,
+    "qubit_freq": 1315.37,
+    "relax_delay": 1500,
 
     # Experiment parameters
-    "shots": 10000,
+    "shots": 8000,
     "wait_start": 0,
-    "wait_stop": 20000,
+    "wait_stop": 900,
     "wait_num": 11,
     "wait_type": "linear",
     "cen_num": 2,
-    'use_switch': True,
+    'use_switch': False,
     "fridge_temp": 10,
 
 }
@@ -182,6 +283,12 @@ config = BaseConfig | UpdateConfig
 yoko1.SetVoltage(config["yokoVoltage"])
 #%%
 plt.close("all")
+
+# Estimating Time
+time_per_scan = config["shots"] * (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"]) + config["relax_delay"])) * 1e-6 /60
+print('total time estimate: ' + str(time_per_scan) + " minutes")
+
+#%%
 print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 Instance_T1_ThermalPS = T1_PS_sse(path="dataTestT1_ThermalPS", outerFolder=outerFolder, cfg=config,
                                                soc=soc, soccfg=soccfg)
@@ -295,45 +402,63 @@ print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 # SingleShotPS.save_config(Instance_SingleShotPS)
 # # #
 
+#%%
+# TITLE : Amplitude rabi Blob with post selection
+UpdateConfig = {
+    "yokoVoltage": -1.355,
 
-# #####################################################################################################################
-###################################### code for running Amplitude rabi Blob with post selection
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": -0.24,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 25, # us
-#     "read_pulse_gain": 7000, # [DAC units]
-#     "read_pulse_freq": 7392.0, # [MHz]
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 700,
-#     "qubit_freq_stop": 900,
-#     "RabiNumPoints": 101,  ### number of points
-#     "qubit_pulse_style": "flat_top",
-#     "sigma": 0.025,  ### units us, define a 20ns sigma
-#     "flat_top_length": 50.0, ### in us
-#     "relax_delay": 1000,  ### turned into us inside the run function
-#     ##### amplitude rabi parameters
-#     "qubit_gain_start": 25000,
-#     "qubit_gain_step": 5000, ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 2, ### number of steps
-#     # "AmpRabi_reps": 2000,  # number of averages for the experiment
-#     ##### define number of clusters to use
-#     "cen_num": 2,
-#     "shots": 3000,  ### this gets turned into "reps"
-#
-#     "use_switch": True,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-#
-# Instance_AmplitudeRabi_PS = AmplitudeRabi_PS(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-# data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
-# AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
-# AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 60,
+    "read_pulse_gain": 400,
+    "read_pulse_freq": 6422.9,
 
+    # spec parameters for finding the qubit frequency
+    "qubit_freq_start": 200, # Is also the qubit frequency if Rabi Num Points is 1
+    "qubit_freq_stop": 250,
+    "RabiNumPoints": 51,
+    "qubit_pulse_style": "arb",
+    "sigma": 0.6,
+    "flat_top_length": 30.0,
+    "relax_delay": 1500,
+
+    # amplitude rabi parameters
+    "qubit_gain_start": 2000, # Is also the qubit gain if the qubit gain expts is 1
+    "qubit_gain_step": 9000,
+    "qubit_gain_expts": 3,
+    "AmpRabi_reps": 2000,
+
+    # Experiment parameters
+    "cen_num": 2,
+    "shots": 8000,
+    "use_switch": True,
+    "initialize_pulse": False,
+    "initialize_qubit_gain": 0,
+    "initialize_qubit_freq": 2063,
+    "fridge_temp": 10,
+    "yokoVoltage_freqPoint": -1.355,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+Instance_AmplitudeRabi_PS = AmplitudeRabi_PS(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
+AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
+AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
+#%%
+# TITLE: Amplitude rabi Blob with post selection and SSE
+
+inst_rabi_sse = AmplitudeRabi_PS_sse(path="dataTestAmplitudeRabi_PS_sse", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_AmplitudeRabi_PS['data']['i_0'] = data_AmplitudeRabi_PS['data']['i_0_arr']
+data_AmplitudeRabi_PS['data']['q_0'] = data_AmplitudeRabi_PS['data']['q_0_arr']
+data_AmplitudeRabi_PS['data']['i_1'] = data_AmplitudeRabi_PS['data']['i_1_arr']
+data_AmplitudeRabi_PS['data']['q_1'] = data_AmplitudeRabi_PS['data']['q_1_arr']
+data_AmplitudeRabi_PS['data']['qubit_freq_vec'] = data_AmplitudeRabi_PS['data']['qubit_freqs']
+data_AmplitudeRabi_PS['data']['qubit_gain_vec'] = data_AmplitudeRabi_PS['data']['qubit_amps']
+data_AmplitudeRabi_PS_sse = inst_rabi_sse.process_data(data = data_AmplitudeRabi_PS)
+inst_rabi_sse.display(data_AmplitudeRabi_PS_sse, plotDisp=True)
+#%%
 
 # # ####################################### code for running repeated single shot measurements
 # UpdateConfig = {
@@ -371,56 +496,300 @@ print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 # RepeatReadout.save_data(Instance_RepeatReadout, data_RepeatReadout)
 # RepeatReadout.save_config(Instance_RepeatReadout)
 
+#%%
+# TITLE: T2R of a thermal state using pulses
 
-# # ####################################################################################
-# ################## code finding T2R of a thermal state using pulses
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -0.23,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 8000, # [DAC units]
-#     "read_pulse_freq": 7392.17, # [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "flat_top",
-#     "qubit_gain": 10000, #22000,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.025,  ### units us, define a 20ns sigma
-#     "flat_top_length": 10,
-#     "qubit_freq": 655.0,
-#     "relax_delay": 10,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 5000, ### this gets turned into "reps"
-#     ### define the wait times
-#     "wait_start": 0.0,
-#     "wait_stop": 2000.0,
-#     "wait_num": 11,
-#     ##### define number of clusters to use
-#     "cen_num": 2,
-#
-#     "use_switch": True,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# # Estimating Time
-# time_per_scan = config["shots"] * (
-#         np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])
-#         + config["relax_delay"]) * 1e-6
-# total_time = np.sum(time_per_scan) / 60
-# print('total time estimate: ' + str(total_time) + " minutes")
-#
-# Instance_T2R_PS = T2R_PS(path="dataTestT2R_PS", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_T2R_PS = T2R_PS.acquire(Instance_T2R_PS)
-# T2R_PS.save_data(Instance_T2R_PS, data_T2R_PS)
-# T2R_PS.save_config(Instance_T2R_PS)
-#
-# print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+UpdateConfig = {
+    # Readout Parameters
+    "read_pulse_style": "const",
+    "read_length": 52,
+    "read_pulse_gain": 1800,
+    "read_pulse_freq": 6422.98796,
+
+    # Qubit Parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 1800,
+    "sigma": 0.3,
+    "flat_top_length": 10,
+    "qubit_freq": 471.4,
+
+    # T2 Experiment Parameters
+    "wait_start": 0.0,
+    "wait_stop": 50.0,
+    "wait_num": 21,
+
+    # Experiment Parameters
+    "yokoVoltage": 1.2869,
+    "relax_delay": 10,
+    "shots": 10000,
+    "cen_num": 2,
+    "use_switch": True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+print('Starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+# Estimating Time
+time_per_scan = config["shots"] * (
+        np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"])
+        + config["relax_delay"]) * 1e-6
+total_time = np.sum(time_per_scan) / 60
+print('total time estimate: ' + str(total_time) + " minutes")
+
+# Running experiment
+inst_t2r_ps = T2R_PS(path="T2_Ramsey_PostSelected", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+data_t2r_ps = inst_t2r_ps.acquire()
+inst_t2r_ps.save_data(data_t2r_ps)
+inst_t2r_ps.save_config()
 
 
-#####################################################################################################################
-# print('program complete: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+#%%
+# TITLE: Single Shot Optimize
+UpdateConfig = {
+    # define yoko
+    "yokoVoltage": 0.128, #25,
+
+    # cavity
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 30,  # us
+    "read_pulse_gain": 4000,  # [DAC units]
+    "read_pulse_freq": 6665.404, #6422.81,#7, #6422.757, #6423.025,
+
+    # qubit spec
+    "qubit_pulse_style": "flat_top",
+    "flat_top_length": .10,
+    "qubit_ge_gain": 0,
+    "qubit_ef_gain": 0,
+    "qubit_ge_freq": 2063,
+    "qubit_ef_freq": 2110,
+    "apply_ge": False,
+    "apply_ef": False,
+    "qubit_length": .10,
+    "sigma": 0.5,
+    "relax_delay": 10,
+
+    # Experiment
+    "cen_num": 2,
+    "keys": ['kl'],           # Possible keys ["mahalanobis", "bhattacharyya", "kl", "hellinger"]
+    "shots": 5000,
+    "use_switch": True,
+
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+plt.close('all')
+#%%
+scan_time = (config["relax_delay"] * config["shots"] ) * 1e-6 / 60
+
+print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+
+inst_singleshotopt = SingleShotMeasure(path="dataTestSingleShotOpt", outerFolder=outerFolder, cfg=config,
+                                       soc=soc, soccfg=soccfg, fast_analysis = True,  max_iter = 1000, num_trials = 1000, pop_perc = 11)
+data_singleshot = inst_singleshotopt.acquire()
+inst_singleshotopt.process(data = data_singleshot)
+#print(data_singleshot['data'])
+print("Populations: ",data_singleshot['data']['mean'])
+inst_singleshotopt.save_data(data_singleshot)
+inst_singleshotopt.save_config()
+#%%
+# # TITLE: Loop over gain vector
+
+num_gain_steps = 8
+num_shots = 5
+
+scan_time = (config["relax_delay"] * config["shots"] ) * 1e-6 / 60 * num_gain_steps * num_shots
+print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
+
+read_gain_vec = np.linspace(0,700,num_gain_steps)
+pop_ratios = np.zeros((num_gain_steps,num_shots))
+for i in range(np.shape(read_gain_vec)[0]):
+
+    for j in range(num_shots):
+        inst_singleshotopt = SingleShotMeasure(path="dataTestSingleShotOpt", outerFolder=outerFolder, cfg=config,
+                                           soc=soc, soccfg=soccfg, fast_analysis = True,  max_iter = 1000, num_trials = 1000, pop_perc = 11)
+        data_singleshot = inst_singleshotopt.acquire()
+        inst_singleshotopt.process(data = data_singleshot)
+
+        print("Populations: ", data_singleshot['data']['mean'])
+        populations = data_singleshot['data']['mean']
+
+        pop_ratios[i][j] = np.min(populations)/np.max(populations)
+        inst_singleshotopt.save_data(data_singleshot)
+        inst_singleshotopt.save_config()
+
+plt.figure()
+#plt.plot(read_gain_vec,np.mean(pop_ratios,1))
+plt.errorbar(read_gain_vec,np.mean(pop_ratios,1),yerr=np.std(pop_ratios,1))
+plt.xlabel("Read gain")
+plt.ylabel("Low/High population ratio")
 plt.show()
+#%%
+# TITLE Varying One Parameter
+
+# Define varying parameters
+loop_len = 11
+#config["read_pulse_freq"] = 6664.9
+param_var = {
+    "read_pulse_freq": config["read_pulse_freq"] + np.linspace(-0.5, 0.5, loop_len),
+    "qubit_gain": np.linspace(100, 2000, loop_len, dtype=int),
+    "read_pulse_gain": np.linspace(1000, 6000, loop_len, dtype=int),
+    "read_length": np.linspace(5,80, loop_len),
+}
+param_key = "read_pulse_freq"
+
+# Define empty array to store the distinctness parameter
+keys = ["mahalanobis", "bhattacharyya", "kl", "hellinger"]
+quant_param = np.zeros((len(keys), loop_len))
+
+for idx in tqdm(range(loop_len)):
+
+    # update
+    config[param_key] = param_var[param_key][idx]
+
+    # Run experiment
+    inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p5", outerFolder=outerFolder, cfg=config,
+                                           soc=soc, soccfg=soccfg, fast_analysis=True)
+    data_singleshot = inst_singleshotopt.acquire()
+    data_singleshot = inst_singleshotopt.process(data=data_singleshot)
+    inst_singleshotopt.save_data(data_singleshot)
+    inst_singleshotopt.save_config()
+
+    # Collect the distinctness parameter
+    for i in range(len(keys)):
+        quant_param[i, idx] = data_singleshot["data"][keys[i]]
+
+
+# Plot the data
+fig, ax = plt.subplots()
+for i in range(len(keys)):
+    ax.scatter(param_var[param_key], quant_param[i], label = keys[i])
+ax.set_xlabel("Varying " + param_key)
+ax.set_ylabel("Distinctness")
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+#%%
+# TITLE Running automatic optimization
+param_bounds ={
+    "read_pulse_freq": (config["read_pulse_freq"] - 0.5, config["read_pulse_freq"] + 0.5 ),
+    'read_length': (15, 45),
+    'read_pulse_gain': (1000, 5000)
+}
+step_size = {
+    "read_pulse_freq": 0.05, #02,
+    'read_length': 5,
+    'read_pulse_gain': 500,
+}
+#keys = ["read_pulse_freq"]
+keys = ["read_length"]
+#keys = ["read_pulse_gain"]
+
+config["shots"] = 50000
+inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p5", outerFolder=outerFolder, cfg=config,
+                                       soc=soc, soccfg=soccfg, fast_analysis=True, max_iter = 1000, num_trials = 1000, pop_perc = 11)
+opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )
+inst_singleshotopt.display_opt(plotDisp=True)
+print(opt_param)
+
+#%%
+# TITLE :QNDness measurement
+UpdateConfig = {
+    # yoko
+    "yokoVoltage": 1.02,
+    "yokoVoltage_freqPoint": 1.02,
+
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 75,
+    "read_pulse_gain": 1000,
+    "read_pulse_freq": 6422.92,
+
+    # qubit tone
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 10000,
+    "qubit_length": 10,
+    "sigma": 1,
+    "flat_top_length": 10.0,
+    "qubit_freq": 220,
+
+    # Experiment
+    "shots": 1000000,
+    "cen_num": 2,
+    "relax_delay": 10,
+    "fridge_temp": 10,
+    'use_switch': True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+# %% QNDness measurement
+time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
+print("QND Measure Time Required: ", time_required, "min")
+inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                   soc=soc, soccfg=soccfg)
+
+data_QNDmeas = inst_qnd.acquire()
+data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+inst_qnd.save_data(data_QNDmeas)
+inst_qnd.save_config()
+inst_qnd.display(data_QNDmeas, plotDisp=True)
+
+# %%
+# TITLE: Two-tone measurement
+UpdateConfig = {
+    # yoko
+    "yokoVoltage": 1.02,
+    "yokoVoltage_freqPoint": 1.02,
+
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 75,
+    "read_init_gain": 1000,
+    "read_fin_gain": 1000,
+    "read_wait":10,
+    "read_pulse_freq": 6422.92,
+
+    # Experiment
+    "shots": 1000000,
+    "cen_num": 2,
+    "relax_delay": 10,
+    "fridge_temp": 10,
+    'use_switch': True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+
+time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
+print("Measure Time Required: ", time_required, "min")
+inst_tm = TwoMeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
+                   soc=soc, soccfg=soccfg)
+
+data_Twomeas = inst_tm.acquire()
+data_Twomeas = inst_tm.process_data(data_Twomeas, toPrint=True, confidence_selection=0.95)
+inst_tm.save_data(data_Twomeas)
+inst_tm.save_config()
+inst_tm.display(data_Twomeas, plotDisp=True)
+#%%
+# TITLE : Brute Search best parameters
+param_bounds ={
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.1, config["read_pulse_freq"] + 0.05),
+    'read_length': (20, 90),
+    'read_pulse_gain': (1100, 2400)
+}
+step_size = {
+    "read_pulse_freq" : 0.01,
+    'read_length': 10,
+    'read_pulse_gain': 100,
+}
+keys = ["read_pulse_gain"]
+config["shots"] = 300000
+inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
+inst_qndopt.brute_search_result_display(display = True)
+#%%

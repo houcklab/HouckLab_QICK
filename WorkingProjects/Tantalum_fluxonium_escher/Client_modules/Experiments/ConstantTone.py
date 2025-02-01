@@ -11,12 +11,17 @@ class ConstantTone(AveragerProgram):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
+        cfg = self.cfg
+        for ch in cfg["ro_chs"]:
+            self.declare_readout(ch=ch, length=self.us2cycles(1),
+                                 freq=cfg["freq"], gen_ch=cfg["channel"])
+
         freq = self.freq2reg(self.cfg["freq"], gen_ch=self.cfg["channel"], ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
         self.declare_gen(ch=self.cfg["channel"], nqz=self.cfg["nqz"])
         self.set_pulse_registers(ch=self.cfg["channel"], style="const", freq=freq, phase=0, gain=self.cfg["gain"],
                                  length=self.us2cycles(1), mode="periodic")
-        self.sync_all(self.us2cycles(0.5)) # TODO unnecessary, probably
-
+        #self.sync_all(self.us2cycles(0.5)) # TODO unnecessary, probably
+        self.synci(200)
     def body(self):
         self.pulse(ch=self.cfg["channel"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
@@ -48,10 +53,11 @@ class ConstantTone_Experiment(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, self.cfg)
 
-        a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
-
+        # a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+        #                                  readouts_per_experiment=1, save_experiments=None,
+        #                                  start_src="internal", progress=False)#, debug=False)
+        #a = prog.acquire(self.soc) #, load_pulses=True)
+        prog.run_rounds(self.soc) # Necessary instead of acquire, since we are not collecting any results
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display
 

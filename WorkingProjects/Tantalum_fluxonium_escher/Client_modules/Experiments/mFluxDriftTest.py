@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+#from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import Transmission
 from tqdm import tqdm
 import time
 import datetime
@@ -187,9 +188,11 @@ class FluxDriftTest(ExperimentClass):
         start = time.time()
         for f in tqdm(fpts, position=0, disable=True):
             self.cfg["read_pulse_freq"] = f
-            prog = LoopbackProgramTrans(self.soccfg, self.cfg)
+            prog = Transmission(self.soccfg, self.cfg)
+            #prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            #results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc))
         results = np.transpose(results)
         #### pull out I and Q data
         data_I = results[0][0][0]

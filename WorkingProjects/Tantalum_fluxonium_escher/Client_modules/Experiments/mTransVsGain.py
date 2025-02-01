@@ -97,7 +97,7 @@ class TransVsGain(ExperimentClass):
             sig = data_I + 1j * data_Q
             avgamp0 = np.abs(sig)
             avgamp0 = avgamp0 - np.min(avgamp0) #shift minimum value to 0
-            avgamp0 = avgamp0/np.max(avgamp0) # scale maximum value to 1
+            #avgamp0 = avgamp0/np.max(avgamp0) # scale maximum value to 1
             #avgamp0 = avgamp0 - np.mean(avgamp0)
             avgphase = np.angle(sig * np.exp(-X * 10j), deg = True)
             Z1[i, :] = avgphase

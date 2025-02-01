@@ -6,14 +6,14 @@ import datetime
 from matplotlib import pyplot as plt
 
 import numpy as np
-path = r'/WorkingProjects/Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
-os.add_dll_directory(path)
+#path = r'/WorkingProjects/Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+#os.add_dll_directory(path)
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFluxDriftTest import FluxDriftTest
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 
-# Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_03_25_BF2_cooldown_7\\WTF\\"
+# Define the saving path, MUST END ON \\
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_10_14_cooldown\HouckCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -30,19 +30,19 @@ BaseConfig = BaseConfig | SwitchConfig
 # Defining common experiment configurations
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": 3.6,  # [in V]
-    "yokoVoltage_freqPoint": 3.6,  # [in V] used for naming the file systems
+    "yokoVoltage": 0.14,  # [in V]
+    "yokoVoltage_freqPoint": 0.14,  # [in V] used for naming the file systems
 
     # cavity
-    "reps": 2000,  # placeholder for reps. Cannot be undefined
+    "reps": 500,  # placeholder for reps. Cannot be undefined
     "read_pulse_style": "const",
-    "read_length": 20,  # [in us]
-    "read_pulse_gain": 10000,  # [in DAC units]
-    "read_pulse_freq": 7392.3,  # [in MHz]
+    "read_length": 30,  # [in us]
+    "read_pulse_gain": 1000,  # [in DAC units]
+    "read_pulse_freq": 6664.634,  # [in MHz]
 
     # qubit drive parameters
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 12000,
+    "qubit_gain": 0,
     "sigma": 0.05,  ### units us, define a 20ns sigma
     "flat_top_length": 20,  ### in us
 
@@ -55,27 +55,28 @@ config = BaseConfig | UpdateConfig
 
 # For the flux drift experiment
 UpdateConfig = {
+    # THIS CODE IS SUPER BROKEN AND USES SPEC PARAMETERS FOR TRANSMISSION
     # Define trans slic experiment parameters
-    "trans_freq_start" : config["read_pulse_freq"] - 2.,
-    "trans_freq_stop" : config["read_pulse_freq"] + 2.,
-    "TransNumPoints" : 101,
-    "trans_reps": 500,
+    "trans_freq_start" : config["read_pulse_freq"] - 1,
+    "trans_freq_stop" : config["read_pulse_freq"] + 1,
+    "TransNumPoints" : 201,
+    "trans_reps": 1000,
 
     # define spec slice experiment parameters
-    "qubit_freq_start": 800,
-    "qubit_freq_stop": 900,
-    "SpecNumPoints": 101,
+    "qubit_freq_start": 6664,
+    "qubit_freq_stop": 6665.5,
+    "SpecNumPoints": 201,
     'spec_reps': 1000,
     'relax_delay': 10,
 
     # Define the parameters for the drift scan
-    "wait_num": 600,
+    "wait_num": 3,
     "wait_step": 0.1, # In minutes
 }
 config_fdrift = config | UpdateConfig
-
+print(config_fdrift['read_pulse_freq'])
 #%%
-yoko2.SetVoltage(config_fdrift["yokoVoltage"])
+yoko1.SetVoltage(config_fdrift["yokoVoltage"])
 # plt.close("all")
 # Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config_fdrift,soc=soc,soccfg=soccfg, outerFolder = outerFolder, progress = True)
 # data_specSlice= Instance_specSlice.acquire()

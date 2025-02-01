@@ -75,7 +75,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         # self.measure(pulse_ch=self.cfg["res_ch"],
         #              adcs=self.cfg["ro_chs"], pins=[0],
         #              adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-        #              wait=False,
+        #              wait=True,
         #              syncdelay=self.us2cycles(10))
         # # self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         # self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
@@ -93,7 +93,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
@@ -125,9 +125,10 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         self.data = data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
-
+        avgi = data['data']['avgi'][0]
+        avgq = data['data']['avgq'][0]
+        print(avgi)
+        print(avgq)
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)

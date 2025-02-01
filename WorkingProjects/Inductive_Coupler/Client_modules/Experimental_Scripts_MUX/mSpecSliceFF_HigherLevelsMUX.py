@@ -87,7 +87,7 @@ class PulseProbeSpectroscopyProgramFFMultipleFF(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse,  self.cfg["sigma"] * 4 + 1.01 + self.cfg["qubit_length"] // 2)
@@ -125,8 +125,9 @@ class SpecSliceFF_HigherExcMUX(ExperimentClass):
         self.data = data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
+        avgi = np.array(data['data']['avgi'])
+        avgq = np.array(data['data']['avgq'])
+
 
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq

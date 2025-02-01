@@ -10,6 +10,12 @@ class YOKOGS200:
     # Initializes session for device.
     # VISAaddress: address of device, rm: VISA resource manager
     def __init__(self, VISAaddress, rm):
+        print("--------------------------")
+        print("Connecting to ", VISAaddress)
+        print("Ramp Step = ", self._rampstep)
+        print("Ramp Interval = ", self._rampinterval)
+        print("--------------------------")
+        # print("Voltage precision = 1e-7 V")
         self.VISAaddress = VISAaddress 
         try: self.session = rm.open_resource(VISAaddress)
         except visa.Error as ex:
@@ -43,7 +49,7 @@ class YOKOGS200:
             time.sleep(self._rampinterval)
 
         if toPrint:
-            print("Yoko Voltage set to ", str(voltage), " V")
+            print("Yoko Voltage set to ", str(self.GetVoltage()), " V")
 
     # Ramp up the current (amps) in increments of _rampstep, waiting _rampinterval
     # between each increment.

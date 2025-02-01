@@ -59,6 +59,11 @@ class LoopbackProgramQND(RAveragerProgram):
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+        elif cfg["qubit_pulse_style"] == "const":
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
             print("define pi or flat top pulse")
 
@@ -131,6 +136,14 @@ class QNDmeas(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        self.params = []
+        self.quants = []
+        self.tolerance = []
+        self.keys = []
+        self.index = 0
+        self.total_size = 1
+        self.mesh_grid = 0
+        self.store = False
 
     def acquire(self, progress=False, debug=False):
         ### pull the data from the single hots
@@ -156,13 +169,13 @@ class QNDmeas(ExperimentClass):
         iq_data = np.stack((i_0, q_0), axis=0)
 
         # Get centers of the data
-        cen_num = 2
+        cen_num = self.cfg["cen_num"]
         centers = sse2.getCenters(iq_data, cen_num)
 
         if 'confidence_selection' in kwargs:
             confidence_selection = kwargs["confidence_selection"]
         else:
-            confidence_selection = 0.999
+            confidence_selection = 0.95
 
         # Calculate the probability
         (state0_probs, state0_probs_err, state0_num,
@@ -218,19 +231,19 @@ class QNDmeas(ExperimentClass):
         state1_0_probs = data["data"]["state0_probs"]   #
         state1_1_probs = data["data"]["state1_probs"]
 
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[12, 6], width_ratios=[1.2, 1, 1])
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[15, 6], width_ratios=[1.2, 1, 1])
         # Plot histogram of the initial measurement
         if "bin_size" in kwargs:
             bin_size = kwargs["bin_size"]
         else:
-            bin_size = 51
+            bin_size = 151
         iq_data = np.stack((i_0, q_0), axis=0)
         hist2d = sse2.createHistogram(iq_data, bin_size)
         xedges = hist2d[1]
         yedges = hist2d[2]
         x_points = (xedges[1:] + xedges[:-1]) / 2
         y_points = (yedges[1:] + yedges[:-1]) / 2
-        im = axs[0].imshow(np.transpose(hist2d[0]), extent=[x_points[0], x_points[-1], y_points[0], y_points[-1]],
+        im = axs[0].imshow(np.rint(np.transpose(hist2d[0])), extent=[x_points[0], x_points[-1], y_points[0], y_points[-1]],
                            origin='lower', aspect='auto')
         axs[0].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
         axs[0].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
@@ -275,4 +288,173 @@ class QNDmeas(ExperimentClass):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
+    def calculate_qnd(self, read_param):
+        params = {}
+        for i in range(len(self.keys)):
+            self.cfg[self.keys[i]] = read_param[i]
+            params[self.keys[i]] = read_param[i]
+        self.cfg["read_pulse_gain"] = int(self.cfg["read_pulse_gain"])
+        self.index += 1
 
+        if self.store :
+            # refresh datetimestring
+            self.new_file()
+
+        # Get QND Data and process
+        data = self.acquire()
+        data = self.process_data(data=data)
+
+        if self.store:
+            self.display(data=data)
+            self.save_data(data=data)
+            self.save_config()
+
+        # Get the quants
+        quant = [data["data"]["qnd"], data["data"]["state0_probs"], data["data"]["state1_probs"]]
+        self.quants.append(quant)
+        val = data["data"]["qnd"]
+        self.params.append(params)
+
+        # Pretty Print
+        print("Parameters Measured are : ", params , " | Finished = ", self.index*100/self.total_size, " %")
+        print("Quants Measured are : ", quant)
+
+        return val
+
+    def brute_search(self, keys, param_bounds, tolerance, store = False):
+        # Resetting
+        self.params = []
+        self.quants = []
+        self.tolerance = []
+        self.index = 0
+        self.total_size = 1
+        self.store = store
+
+        # Set base factor to 1
+        self.keys = keys
+
+        # Create parameter grid
+        param_grid = []
+        for key in keys:
+            # Check if it is a tuple
+            if type(param_bounds[key]) is not tuple:
+                raise Exception("Parameter bounds is not a dictionary of tuples")
+
+            self.tolerance.append(tolerance[key])
+            param_grid.append(np.arange(param_bounds[key][0], param_bounds[key][1] + tolerance[key], tolerance[key]))
+            self.total_size *= len(param_grid[-1])
+
+        # Generate all combinations of parameters
+        self.mesh_grid = np.meshgrid(*param_grid)
+        param_combinations = np.array(np.meshgrid(*param_grid)).T.reshape(-1, len(keys))
+
+        # Pretty Print
+        print("~~~~~~ Starting the Brute Force Optimizer~~~~~~~")
+        print("Ranges : ", param_bounds)
+        print("------------------------------------")
+
+        # Run brute force optimization
+        best_val = -np.inf
+        best_params = None
+        for i, params in enumerate(param_combinations):
+            value = self.calculate_qnd(params)
+            if best_val < value:
+                best_val = value
+                best_params = self.params[-1]
+
+        return best_val, best_params
+
+    def brute_search_result_display(self, display = False):
+        # Plotting
+        if len(self.mesh_grid) == 1:
+            X = self.mesh_grid[0]
+
+            # Get quants
+            qnd = []
+            state_pop = []
+            for i in range(len(self.quants)):
+                qnd.append(self.quants[i][0])
+                state_pop.append([self.quants[i][1], self.quants[i][2]])
+
+            qnd = np.array(qnd)
+            state_pop = np.array(state_pop)
+
+            # Plotting
+            fig, axs = plt.subplots(3, 1, figsize=(7, 5))
+
+            # plot the qnd
+            ax = axs[0]
+            art = ax.scatter(X, qnd)
+            ax.set_title('QND value')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            # Plot the P(0|1)
+            ax = axs[1]
+            art = ax.scatter(X,state_pop[ :, 0, 1])
+            ax.set_title('Probability of measuring in 1 given it was cooled to 0')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            # Plot the P(1|0)
+            ax = axs[2]
+            art = ax.scatter(X, state_pop[:, 1, 0])
+            ax.set_title('Probability of measuring in 0 given it was cooled to 1')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            plt.tight_layout()
+            plt.savefig(self.path_wDate + "total.png", dpi=400)
+            if display:
+                plt.show()
+            else:
+                plt.close()
+
+        elif len(self.mesh_grid) == 2:
+            X = read_length_grid = self.mesh_grid[0]
+            Y = read_gain_grid = self.mesh_grid[1]
+
+            # Get quants
+            qnd = []
+            state_pop = []
+            for i in range(len(self.quants)):
+                qnd.append(self.quants[i][0])
+                state_pop.append([self.quants[i][1], self.quants[i][2]])
+
+            qnd = np.array(qnd).reshape(read_length_grid.shape[::-1]).T
+            state_pop = np.array(state_pop).reshape(read_length_grid.shape[::-1] + (2, 2)).transpose((1, 0, 2, 3))
+
+            # Plotting
+            fig, axs = plt.subplots(3, 1, figsize=(7, 5))
+
+            # Define colorscheme
+            cmap = plt.get_cmap('viridis')
+
+            # plot the qnd
+            ax = axs[0]
+            art = ax.pcolor(X, Y, qnd, shading='auto', cmap=cmap)
+            plt.colorbar(art, ax=ax, label='z')
+            ax.set_title('QND value')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            # Plot the P(0|1)
+            ax = axs[1]
+            art = ax.pcolor(X, Y, state_pop[:, :, 0, 1], shading='auto', cmap=cmap)
+            plt.colorbar(art, ax=ax, label='z')
+            ax.set_title('Probability of measuring in 1 given it was cooled to 0')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            # Plot the P(1|0)
+            ax = axs[2]
+            art = ax.pcolor(X, Y, state_pop[:, :, 1, 0], shading='auto', cmap=cmap)
+            plt.colorbar(art, ax=ax, label='z')
+            ax.set_title('Probability of measuring in 0 given it was cooled to 1')
+            ax.set_xlabel('Read Length')
+            ax.set_ylabel("Read Gain")
+
+            plt.tight_layout()
+            plt.savefig(self.path_wDate + "total.png", dpi=400)
+            if display:
+                plt.show()
