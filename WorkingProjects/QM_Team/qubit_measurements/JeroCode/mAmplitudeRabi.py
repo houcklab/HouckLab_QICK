@@ -137,7 +137,7 @@ class AmplitudeRabi(ExperimentClass):
         axs[3].legend()
 
         fig.tight_layout()
-        plt.savefig(self.iname + '.png')
+        plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)
