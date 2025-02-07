@@ -185,7 +185,7 @@ class SingleShotProgram(ExperimentClass):
 
         #### plotting is handled by the helper histogram
         title = ('Read Length: ' + str(self.cfg["read_length"]) + "us, freq: " + str(self.cfg["read_pulse_freq"])
-                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + ", yoko: " +  str(self.cfg["yokoVoltage"]) )
+                    + "MHz, gain: " + str(self.cfg["read_pulse_gain"]) + ", yoko: " +  str(self.cfg["yokoVoltage"]) + ", qubit freq: " + str(self.cfg['qubit_freq']) + ' MHz')
         fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=plotDisp or save_fig, ran=ran, title = title)
 
 

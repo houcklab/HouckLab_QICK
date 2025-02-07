@@ -324,7 +324,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
         #### find the qubit frequency
         Instance_specSlice = SpecSlice(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
-        data_specSlice = SpecSlice.acquire(Instance_specSlice)
+        data_specSlice = SpecSlice.acquire()
         # SpecSlice.save_data(Instance_specSlice, data_specSlice)
         # SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=True)
 
@@ -339,7 +339,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print('starting T1: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         Instance_T1_PS = T1_PS(path="dataTempSweeps_T1_PS", outerFolder=outerFolder, cfg=config,
                                                        soc=soc, soccfg=soccfg)
-        data_T1_PS = T1_PS.acquire(Instance_T1_PS)
+        data_T1_PS = T1_PS.acquire()
         # T1_PS.display(Instance_T1_PS, data_T1_PS, plotDisp=True, save_fig=True)
         T1_PS.save_data(Instance_T1_PS, data_T1_PS)
         T1_PS.save_config(Instance_T1_PS)

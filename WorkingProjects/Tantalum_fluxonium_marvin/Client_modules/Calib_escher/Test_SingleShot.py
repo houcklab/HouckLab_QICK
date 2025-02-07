@@ -162,7 +162,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 
 Instance_T1_ThermalPS = T1_ThermalPS(path="dataTestT1_ThermalPS", outerFolder=outerFolder, cfg=config,
                                                soc=soc, soccfg=soccfg)
-data_T1_ThermalPS = T1_ThermalPS.acquire(Instance_T1_ThermalPS)
+data_T1_ThermalPS = T1_ThermalPS.acquire()
 # T1_ThermalPS.display(Instance_T1_ThermalPS, data_T1_ThermalPS, plotDisp=True, save_fig=True)
 T1_ThermalPS.save_data(Instance_T1_ThermalPS, data_T1_ThermalPS)
 

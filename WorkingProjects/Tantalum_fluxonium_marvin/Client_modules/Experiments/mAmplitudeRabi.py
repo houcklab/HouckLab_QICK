@@ -26,7 +26,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])    # conver f_res to dac register value
@@ -51,8 +51,21 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"],gen_ch=cfg["qubit_ch"]) * 4 + self.us2cycles(self.cfg["flat_top_length"],gen_ch=cfg["qubit_ch"])
             # print(self.qubit_pulseLength)
         else:
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-                                     length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
+            if "qb_periodic" in self.cfg.keys():
+                if self.cfg["qb_periodic"]:
+                    # print("Qubit Drive set to periodic mode")
+                    self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq,
+                                             phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
+                                             length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
+                                             mode="periodic")
+                else:
+                    self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq,
+                                             phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
+                                             length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
+
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,

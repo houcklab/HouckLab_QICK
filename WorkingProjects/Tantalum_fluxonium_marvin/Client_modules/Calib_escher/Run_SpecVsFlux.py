@@ -47,7 +47,7 @@ config = BaseConfig | UpdateConfig
 
 ##### run actual experiment
 Instance_SpecVsFlux = SpecVsFlux(path="dataTestSpecVsFlux", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux)
+data_SpecVsFlux = SpecVsFlux.acquire()
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
 

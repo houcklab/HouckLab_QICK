@@ -207,81 +207,82 @@ class SpecSlice(ExperimentClass):
         avgq = data['data']['avgq']
         amp = data['data']['amp']
         phase = data['data']['phase']
-        popti = data['data']['popti']
-        poptq = data['data']['poptq']
-        poptamp = data['data']['poptamp']
-        poptphase = data['data']['poptphase']
+        # We don't really need the fits 2025/01/16 JL
+        # popti = data['data']['popti']
+        # poptq = data['data']['poptq']
+        # poptamp = data['data']['poptamp']
+        # poptphase = data['data']['poptphase']
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
 
         axs[0].scatter(x_pts, avgi, c='b', label='data')
-        try:
-            axs[0].plot(x_pts, gauss(x_pts, *popti), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (popti[0],),
-                r'$x_0=%.2f$' % (popti[1],),
-                r'$\sigma=%.2f$' % (popti[2],),
-                r'$c=%.2f$' % (popti[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[0].text(0.05, 0.95, textstr, transform=axs[0].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot i-plot fit")
-
+        # try:
+        #     axs[0].plot(x_pts, gauss(x_pts, *popti), 'r', label='fit')
+        #     textstr = '\n'.join((
+        #         r'$a=%.2f$' % (popti[0],),
+        #         r'$x_0=%.2f$' % (popti[1],),
+        #         r'$\sigma=%.2f$' % (popti[2],),
+        #         r'$c=%.2f$' % (popti[3],)))
+        #     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        #     axs[0].text(0.05, 0.95, textstr, transform=axs[0].transAxes, fontsize=14,
+        #                 verticalalignment='top', bbox=props)
+        # except:
+        #     print("Cannot i-plot fit")
+        #
         axs[0].set_xlabel('Frequency (GHz)')
         axs[0].set_ylabel('I (a.u.)')
         axs[0].set_title('I vs Frequency')
-        # Add a text box with the fit parameters
+        # # Add a text box with the fit parameters
 
         axs[1].scatter(x_pts, avgq, c='b', label='data')
-        try:
-            axs[1].plot(x_pts, gauss(x_pts, *poptq), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptq[0],),
-                r'$x_0=%.2f$' % (poptq[1],),
-                r'$\sigma=%.2f$' % (poptq[2],),
-                r'$c=%.2f$' % (poptq[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[1].text(0.05, 0.95, textstr, transform=axs[1].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot i-plot fit")
+        # try:
+        #     axs[1].plot(x_pts, gauss(x_pts, *poptq), 'r', label='fit')
+        #     textstr = '\n'.join((
+        #         r'$a=%.2f$' % (poptq[0],),
+        #         r'$x_0=%.2f$' % (poptq[1],),
+        #         r'$\sigma=%.2f$' % (poptq[2],),
+        #         r'$c=%.2f$' % (poptq[3],)))
+        #     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        #     axs[1].text(0.05, 0.95, textstr, transform=axs[1].transAxes, fontsize=14,
+        #                 verticalalignment='top', bbox=props)
+        # except:
+        #     print("Cannot i-plot fit")
         axs[1].set_xlabel('Frequency (GHz)')
         axs[1].set_ylabel('Q (a.u.)')
         axs[1].set_title('Q vs Frequency')
 
         axs[2].scatter(x_pts, amp, c='b', label='data')
-        try:
-            axs[2].plot(x_pts, gauss(x_pts, *poptamp), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptamp[0],),
-                r'$x_0=%.2f$' % (poptamp[1],),
-                r'$\sigma=%.2f$' % (poptamp[2],),
-                r'$c=%.2f$' % (poptamp[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[2].text(0.05, 0.95, textstr, transform=axs[2].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot amp-plot fit")
+        # try:
+        #     axs[2].plot(x_pts, gauss(x_pts, *poptamp), 'r', label='fit')
+        #     textstr = '\n'.join((
+        #         r'$a=%.2f$' % (poptamp[0],),
+        #         r'$x_0=%.2f$' % (poptamp[1],),
+        #         r'$\sigma=%.2f$' % (poptamp[2],),
+        #         r'$c=%.2f$' % (poptamp[3],)))
+        #     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        #     axs[2].text(0.05, 0.95, textstr, transform=axs[2].transAxes, fontsize=14,
+        #                 verticalalignment='top', bbox=props)
+        # except:
+        #     print("Cannot amp-plot fit")
         axs[2].set_xlabel('Frequency (GHz)')
         axs[2].set_ylabel('Amplitude (a.u.)')
         axs[2].set_title('Amplitude vs Frequency')
 
         axs[3].scatter(x_pts, phase, c='b', label='data')
-        try:
-            axs[3].plot(x_pts, gauss(x_pts, *poptphase), 'r', label='fit')
-            textstr = '\n'.join((
-                r'$a=%.2f$' % (poptphase[0],),
-                r'$x_0=%.2f$' % (poptphase[1],),
-                r'$\sigma=%.2f$' % (poptphase[2],),
-                r'$c=%.2f$' % (poptphase[3],)))
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            axs[3].text(0.05, 0.95, textstr, transform=axs[3].transAxes, fontsize=14,
-                        verticalalignment='top', bbox=props)
-        except:
-            print("Cannot phase-plot fit")
+        # try:
+        #     axs[3].plot(x_pts, gauss(x_pts, *poptphase), 'r', label='fit')
+        #     textstr = '\n'.join((
+        #         r'$a=%.2f$' % (poptphase[0],),
+        #         r'$x_0=%.2f$' % (poptphase[1],),
+        #         r'$\sigma=%.2f$' % (poptphase[2],),
+        #         r'$c=%.2f$' % (poptphase[3],)))
+        #     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        #     axs[3].text(0.05, 0.95, textstr, transform=axs[3].transAxes, fontsize=14,
+        #                 verticalalignment='top', bbox=props)
+        # except:
+        #     print("Cannot phase-plot fit")
         axs[3].set_xlabel('Frequency (GHz)')
         axs[3].set_ylabel('Phase (rad)')
         axs[3].set_title('Phase vs Frequency')

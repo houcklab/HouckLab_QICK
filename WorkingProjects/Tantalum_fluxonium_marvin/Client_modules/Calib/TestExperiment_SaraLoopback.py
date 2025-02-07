@@ -185,7 +185,7 @@ config = BaseConfig | UpdateConfig
 
 prog = Rabi_ND(soccfg, config)
 
-expt_pts, avg_di, avg_dq = prog.acquire(soc, load_pulses=True, progress=True, debug=False)
+expt_pts, avg_di, avg_dq = prog.acquire()
 avg_abs = Amplitude_IQ(avg_di, avg_dq)
 avg_angle = np.angle(avg_di + 1j * avg_dq)
 # avg_abs, avg_angle = np.abs(avg_di + 1j * avg_dq), np.angle(avg_di + 1j * avg_dq)

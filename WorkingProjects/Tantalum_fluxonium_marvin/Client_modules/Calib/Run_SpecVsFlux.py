@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_10_14_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 # soc, soccfg = makeProxy()
@@ -19,35 +19,36 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -1.4,
-    "yokoVoltageStop": -1.0,
-    "yokoVoltageNumPoints": 51,
+    "yokoVoltageStart": -1,
+    "yokoVoltageStop": 7,
+    "yokoVoltageNumPoints": 1601,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 1000,
+    "trans_reps": 400,
     "read_pulse_style": "const",
-    "read_length": 15,  # us
-    "read_pulse_gain": 800,  # [DAC units]
+    "read_length": 10,  # us
+    "read_pulse_gain": 6000,  # [DAC units]
     "trans_freq_start": 6431,
     "trans_freq_stop": 6433,
-    "TransNumPoints": 151,
+    "TransNumPoints": 101,
 
     # qubit spec parameters
-    "spec_reps": 1000,
+    "spec_reps": 2,
     "qubit_pulse_style": "const",
-    "qubit_gain": 20000,
-    "qubit_length": 10,
+    "qubit_gain": 0,
+    "qubit_length": 0.01,
     "flat_top_length" : 10,
-    "qubit_freq_start": 10,
-    "qubit_freq_stop": 1200,
-    "SpecNumPoints": 601,
+    "qubit_freq_start": 100,
+    "qubit_freq_stop": 2500,
+    "SpecNumPoints": 2,
     "sigma": 0.05,
     "relax_delay": 10,
-    'use_switch': True,
+    'use_switch': False,
     'initialize_pulse': False,
     'fridge_temp': 420,
     "mode_periodic": False,
+    'ro_periodic': False,
     "measurement_style": "std", # std : standard, bkg : background subtracted, ps : post-selected
     "magnet_relax": 5, # [s] wait time after each magnet change
 }
@@ -66,7 +67,7 @@ SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
 # plt.show()
 
-#%%
+        #%%
 # TITLE : For multiple scans
 
 # define the saving path

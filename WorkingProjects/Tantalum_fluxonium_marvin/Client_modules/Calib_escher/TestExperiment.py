@@ -610,7 +610,7 @@ config = BaseConfig | UpdateConfig
 yoko1.SetVoltage(config["yokoVoltage"])
 # #
 Instance_Qubit_ef_spectroscopy = Qubit_ef_spectroscopy(path="dataQubit_ef_spectroscopy", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_Qubit_ef_spectroscopy = Qubit_ef_spectroscopy.acquire(Instance_Qubit_ef_spectroscopy)
+data_Qubit_ef_spectroscopy = Qubit_ef_spectroscopy.acquire()
 Qubit_ef_spectroscopy.save_data(Instance_Qubit_ef_spectroscopy, data_Qubit_ef_spectroscopy)
 Qubit_ef_spectroscopy.save_config(Instance_Qubit_ef_spectroscopy)
 Qubit_ef_spectroscopy.display(Instance_Qubit_ef_spectroscopy)

@@ -16,7 +16,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
@@ -59,9 +59,14 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                       + self.us2cycles(self.cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
 
         # Adding the resonator pulse
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
-                                 gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+        if self.cfg['ro_periodic'] == True:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+        elif  self.cfg['ro_periodic'] == False:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -84,7 +89,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -95,7 +100,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
 class SpecSlice(ExperimentClass):
     """
-    Basic spec experiement that takes a single slice of data
+    Basic spec experiment that takes a single slice of data
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
@@ -208,7 +213,7 @@ class SpecSlice(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

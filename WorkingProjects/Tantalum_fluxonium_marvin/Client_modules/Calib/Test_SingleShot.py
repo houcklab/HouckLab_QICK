@@ -26,7 +26,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mRepea
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotOptimize import SingleShotMeasure
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_10_14_cooldown\\QCage_dev\\"
 
 SwitchConfig = {
     "trig_buffer_start": 0.035,  # in us
@@ -41,23 +41,23 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.20151,
+    "yokoVoltage": -1.412,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 100,  # us
-    "read_pulse_gain": 1600,  # [DAC units]
-    "read_pulse_freq": 6672.54,
+    "read_length": 80,  # us
+    "read_pulse_gain": 900,  # [DAC units]
+    "read_pulse_freq": 6672.6597,
     "mode_periodic": False,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 4000,
-    "qubit_length": 10,  ###us, this is used if pulse style is const
+    "qubit_gain": 0,
+    "qubit_length": 0.01,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 60,  ### in us
     "qubit_freq": 156,
-    "relax_delay": 2000,
+    "relax_delay": 10,
 
     # define shots
     "shots": 10000,  ### this gets turned into "reps"
@@ -68,7 +68,7 @@ UpdateConfig = {
 }
 config = BaseConfig | UpdateConfig
 
-# yoko1.SetVoltage(config["yokoVoltage"])
+yoko1.SetVoltage(config["yokoVoltage"])
 #%%
 plt.close('all')
 scan_time = (config["relax_delay"] * config["shots"] * 2) * 1e-6 / 60
@@ -258,33 +258,33 @@ for idx in tqdm(range(loop_len)):
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -1.20151,
-    'yokoVoltage_freqPoint': -1.20151,
+    "yokoVoltage": -1.412,
+    'yokoVoltage_freqPoint': -1.412,
 
     # Readout
     "read_pulse_style": "const",
     "read_length": 80,
-    "read_pulse_gain": 1600,
-    "read_pulse_freq": 6672.54,
+    "read_pulse_gain": 2000,
+    "read_pulse_freq": 6672.66,
 
     # Qubit Tone
-    "qubit_freq_start": 140,
-    "qubit_freq_stop": 180,
-    "RabiNumPoints": 21,
+    "qubit_freq_start": 145,
+    "qubit_freq_stop": 150,
+    "RabiNumPoints": 25,
     "qubit_pulse_style": "flat_top",
     "sigma": 1,
-    "flat_top_length": 60,
+    "flat_top_length": 30,
     'qubit_length': 30,
     "relax_delay": 10,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 1000,
-    "qubit_gain_step": 1000,
+    "qubit_gain_start": 100,
+    "qubit_gain_step": 400,
     "qubit_gain_expts": 11,
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 8000,
+    "shots": 6000,
     "use_switch":True,
     'initialize_pulse': False,
     'fridge_temp': 10,
@@ -292,7 +292,7 @@ UpdateConfig = {
 }
 config = BaseConfig | UpdateConfig
 
-# yoko1.SetVoltage(config["yokoVoltage"])
+yoko1.SetVoltage(config["yokoVoltage"])
 
 #%%
 Instance_AmplitudeRabi_PS = AmplitudeRabi_PS_sse(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)

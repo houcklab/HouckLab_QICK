@@ -3,6 +3,7 @@
 Created on Tue Aug 15 09:29:45 2023
 
 @author: Jake and Lev
+@author: Parth (some edits)
 """
 
 import pyvisa
@@ -221,6 +222,20 @@ class Lakeshore370:
 
                 if temp != self.id_string:
                     return temp
+                else:
+                    time.sleep(1)
+
+            except:
+                time.sleep(1)
+
+    def get_resist(self, chan):
+        """Returns the resistance in Ohms of channel chan."""
+        while (True):
+            try:
+                resist = self.LS370.query('RDGR? ' + str(chan)).rstrip()
+
+                if resist != self.id_string:
+                    return resist
                 else:
                     time.sleep(1)
 
