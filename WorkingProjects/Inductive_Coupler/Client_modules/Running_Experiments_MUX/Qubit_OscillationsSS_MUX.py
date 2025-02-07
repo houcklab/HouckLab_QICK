@@ -32,30 +32,29 @@ Qubit_Parameters = {
           'Qubit01': {'Frequency': 4789.7, 'Gain': 800},
           'Qubit12': {'Frequency': 4531.2, 'Gain': 770 * 0},
           'Pulse_FF': [13000, 0, 0, 0]},
-    '2': {
-        'Readout': {'Frequency': 7089.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, -18000], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01':  {'Frequency': 4963 - 20, 'Gain': 6800},
+    '2': {'Readout': {'Frequency': 7107.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
+                      "FF_Gains": [0, 20000, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 4668.3, 'Gain': 8700},
           'Qubit12': {'Frequency': 4746, 'Gain': 750*0},
-          'Pulse_FF': [0, 0, 0, -18000]},
-    '3': {'Readout': {'Frequency': 7193.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6,
+          'Pulse_FF': [0, -10000, 0, 0]},
+    '3': {'Readout': {'Frequency': 7261.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6,
                       'Gain': 5500, "FF_Gains": [-30000, 0, 0, 0]},
           'Qubit01': {'Frequency': 5586.7, 'Gain': 840},
           'Qubit12': {'Frequency': 4504.8, 'Gain': 1000 * 0},
           'Pulse_FF': [-30000, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7281 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [-30000, 0, 0, 0], 'cavmin': True},
+    '4': {'Readout': {'Frequency': 7195.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, -7000, 0, 0], 'cavmin': True},
           'Qubit01': {'Frequency': 4644.8, 'Gain': 2150},
           'Qubit12': {'Frequency': 4532.5, 'Gain': 700 * 0},
-          'Pulse_FF': [-30000, 0, 0, 0]}
+          'Pulse_FF': [0, -7000, 0, 0]}
     }
 
 Qubit_Readout = [2]
 Qubit_Pulse = [2]
 
-FF_gain1_expt = 0  # 8000
+FF_gain1_expt = 0
 FF_gain2_expt = 0
-FF_gain3_expt = 2850
+FF_gain3_expt = 0
 FF_gain4_expt = 0
 #Changes for right to left
 # FF_gain4_expt = -260
@@ -64,11 +63,11 @@ FF_gain4_expt = 0
 swept_qubit_index = 4 #1 indexed
 
 Oscillation_Gain = True
-oscillation_gain_dict = {'reps': 200, 'start': int(0), 'step': int(0.25 * 16), 'expts': 300, 'gainStart': 1500,
-                         'gainStop': 5000, 'gainNumPoints': 11, 'relax_delay': 150}
+oscillation_gain_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 16), 'expts': 200, 'gainStart': -3000,
+                         'gainStop': 3000, 'gainNumPoints': 51, 'relax_delay': 150}
 
 Oscillation_Single = False
-oscillation_single_dict = {'reps': 3000, 'start': int(400 * 16 * 0), 'step': int(1 * 16), 'expts': 2040, 'relax_delay': 200}
+oscillation_single_dict = {'reps': 3000, 'start': int(400 * 16 * 0), 'step': int(1* 16), 'expts': 2040, 'relax_delay': 200}
 
 SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2, "ADC_Offset": 0.3}
 
@@ -192,9 +191,8 @@ if Oscillation_Gain:
     iOscillations = Oscillations_Gain_SSMUX(path="QubitOscillations_GainSweepMUX", cfg=config, soc=soc, soccfg=soccfg,
                                       outerFolder=outerFolder)
     dOscillations = Oscillations_Gain_SSMUX.acquire(iOscillations, angle=angle, threshold= threshold)
-    Oscillations_Gain_SSMUX.display(iOscillations, dOscillations, plotDisp=True, figNum=2)
     Oscillations_Gain_SSMUX.save_data(iOscillations, dOscillations)
-
+    Oscillations_Gain_SSMUX.display(iOscillations, dOscillations, plotDisp=True, figNum=2)
 
 if Oscillation_Single:
     config["reps"] = oscillation_single_dict['reps']

@@ -192,7 +192,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         plt.savefig(self.iname)  #### save the figure
-
+        plt.show(block=True)
         return self.data
 
 
@@ -485,7 +485,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         plt.savefig(self.iname)  #### save the figure
-
+        plt.show(block=True)
         return self.data
 
 

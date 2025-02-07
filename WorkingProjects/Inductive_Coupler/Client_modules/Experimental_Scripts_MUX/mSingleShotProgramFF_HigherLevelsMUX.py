@@ -180,7 +180,7 @@ class SingleShotProgram_Higher(AveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
 
         # self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
@@ -202,7 +202,7 @@ class SingleShotProgram_Higher(AveragerProgram):
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False):
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 

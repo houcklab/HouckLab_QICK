@@ -69,7 +69,7 @@ class AmplitudeRabiProgram(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
@@ -101,6 +101,8 @@ class AmplitudeRabiFF_HigherExcMUX(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False)
+
+        avgi, avgq = np.array(avgi), np.array(avgq)
         signal = (avgi + 1j * avgq) * np.exp(1j * (2 * np.pi * self.cfg['cavity_winding_freq'] *
                                                    self.cfg["pulse_freq"] + self.cfg['cavity_winding_offset']))
         avgi = signal.real

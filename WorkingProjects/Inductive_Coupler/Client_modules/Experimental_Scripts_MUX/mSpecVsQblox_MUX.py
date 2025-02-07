@@ -35,7 +35,7 @@ class CavitySpecFFProg(AveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
@@ -97,7 +97,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
@@ -138,7 +138,7 @@ class SpecVsQblox(ExperimentClass):
             ### transmission parameters
             # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
-            # "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequecny
+            # "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequency
             ### spec parameters
             "step": self.cfg["step"],
             "start": self.cfg["start"],
@@ -315,6 +315,8 @@ class SpecVsQblox(ExperimentClass):
         if plotDisp == False:
             fig.clf(True)
             plt.close(fig)
+        else:
+            plt.show(block=True)
 
         return self.data
 

@@ -44,9 +44,10 @@ DACs = [8, 2, 4, 6]
 
 # after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
 # 4Q device: [right qubit, top qubit, bottom qubit, left qubit]
+# no clue which is which for triangle lattice
 voltages = [0.428, 0.9, 0.63, 0]
 
-set_unused_to_zero = False
+set_unused_to_zero = True
 
 ################
 #

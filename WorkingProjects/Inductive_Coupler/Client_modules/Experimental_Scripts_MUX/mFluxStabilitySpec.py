@@ -31,6 +31,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
                                  length=self.us2cycles(cfg["length"], gen_ch=self.cfg["res_ch"]))
                 # Qubit configuration
+
         qubit_ch = cfg["qubit_ch"]
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
 
@@ -68,18 +69,18 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
+        self.FFPulses(self.FFPulse, self.qubit_length_us + 3)
+        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(3))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 3)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start = 'auto', IQPulseArray = None, waveform_label = "FF"):
@@ -118,7 +119,8 @@ class FluxStability(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, outerFolder=outerFolder, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, plotDisp=True, plotSave=True, figNum=1, i_data=False, q_data=False):
+    def acquire(self, plotDisp=True, plotSave=True, figNum=1, i_data=False, q_data=False,
+                smart_normalize = True):
         """
         Wait variable time (delay) then measure qubit frequency via two-tone
         :param plotDisp: bool, if True: plots data while it comes in
@@ -219,12 +221,16 @@ class FluxStability(ExperimentClass):
             self.data['data']['spec_Imat'][i, :] = sig_all_i.real
             self.data['data']['spec_Qmat'][i, :] = sig_all_i.imag
 
+
+
+
             # plot out the spec data
 
 
             # avgamp0 = np.abs(sig)
             # print(sig[10:20], sig_i[10:20])
             Z_spec[i, :] = sig_all_i.real  # - self.cfg["minADC"]
+
             # if i == 0:
             #     rangeQ = np.max(data_Q) - np.min(data_Q)
             #     rangeI = np.max(data_I) - np.min(data_I)
@@ -296,10 +302,14 @@ class FluxStability(ExperimentClass):
                            self.cfg["mixer_freq"] + self.cfg["TransSpan"],
                            self.cfg["TransNumPoints"])
         results = []
+
+        initial_mixer_freq = self.cfg["mixer_freq"]
         for f in fpts:
             self.cfg["mixer_freq"] = f
             prog = CavitySpecFFProg(self.soccfg, self.cfg)
             results.append(prog.acquire(self.soc, load_pulses=True))
+        self.cfg["mixer_freq"] = initial_mixer_freq
+
         results = np.transpose(results)
         # pull out I and Q data
         data_I = results[0][0][0]

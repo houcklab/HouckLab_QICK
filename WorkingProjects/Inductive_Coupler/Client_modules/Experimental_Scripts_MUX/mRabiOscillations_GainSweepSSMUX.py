@@ -128,11 +128,11 @@ class OscillationsProgramSS(AveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=False,
+                     wait=True,
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
+        IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]])#, dtype = object)
         self.FFPulses_direct(-1 * self.FFPulse, self.cfg["variable_wait"], -1 * self.FFPulse, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
@@ -153,7 +153,7 @@ class OscillationsProgramSS(AveragerProgram):
                 save_experiments=None,
                 start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)#, debug=debug)
 
         return self.collect_shots()
 
@@ -525,11 +525,10 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
                 print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
 
 
-        if plotSave:
-            plt.savefig(self.iname) #### save the figure
+        # if plotSave:
+        #     plt.savefig(self.iname) #### save the figure
 
         print(f'Time: {time.time() - start}')
-
 
         # results = np.transpose(results)
 
@@ -590,12 +589,12 @@ class Oscillations_Gain_SSMUX(ExperimentClass):
         # plt.title(self.titlename)
         # plt.savefig(self.iname)
         #
-        # if plotDisp:
-        #     plt.show(block=True)
-        #     plt.pause(0.1)
-        # else:
-        #     fig.clf(True)
-        #     plt.close(fig)
+        if plotDisp:
+            plt.show(block=True)
+            plt.pause(0.1)
+        else:
+            fig.clf(True)
+            plt.close(fig)
 
 
 
@@ -666,6 +665,11 @@ Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp
 Qubit2_[0] *= 0.75
 Qubit2_[2] *= 0.75
 Qubit2_[4] *= 1
+
+Qubit2_[0] *= 1.3
+Qubit2_[1] *= 1.2
+Qubit2_[2] *= 1.2
+Qubit2_[3] *= 1.2
 
 Qubit4_[0] *= 1.3
 Qubit4_[1] *= 1.2
