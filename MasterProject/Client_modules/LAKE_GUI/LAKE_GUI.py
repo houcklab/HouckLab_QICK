@@ -4,11 +4,8 @@
 # TODO: write proper error handling with boxes popping up
 # TODO: fix a single naming convention for funtion names
 
-
-# General imports
 import json
 import re
-
 import datetime
 import importlib
 import math
@@ -19,9 +16,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-
 # TODO handle different IP addresses
 # soc, soccfg = makeProxy()
 
@@ -44,7 +39,9 @@ from PyQt5.QtWidgets import (
     QProgressBar,
     QTabWidget,
     QGridLayout,
-    QFormLayout, QComboBox, QLineEdit,
+    QFormLayout,
+    QComboBox,
+    QLineEdit,
 )
 from PyQt5.QtGui import QIcon
 from QDictEdit import QDictEdit
@@ -54,6 +51,9 @@ from matplotlib.figure import Figure
 
 # Custom widgets
 from PlotWidget import PlotWidget
+from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
+from MasterProject.Client_modules.LAKE_GUI.log_console import LogConsoleWidget
+from MasterProject.Client_modules.Init.initialize import BaseConfig
 
 # RFSOC imports
 from MasterProject.Client_modules.LAKE_GUI.ExperimentThread import ExperimentThread
@@ -64,11 +64,6 @@ try:
     os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 except AttributeError:
     os.environ["PATH"] = os.path.dirname(path) + '\\PythonDrivers' + ";" + os.environ["PATH"]
-
-from MasterProject.Client_modules.Init.initialize import BaseConfig
-
-from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
-from MasterProject.Client_modules.LAKE_GUI.log_console import LogConsoleWidget
 
 #############
 #### this function should be moved elsewhere
