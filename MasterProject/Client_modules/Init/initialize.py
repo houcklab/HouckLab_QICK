@@ -25,7 +25,10 @@ if DriverFolderBool:
     os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 else:
     path = os.getcwd()
-    os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
+    try:
+        os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+    except AttributeError:
+        os.environ["PATH"] = os.path.dirname(path) + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
 
 #### define a attenuator class to change define attenuators for the setup

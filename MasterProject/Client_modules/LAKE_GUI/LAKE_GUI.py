@@ -60,7 +60,11 @@ from MasterProject.Client_modules.LAKE_GUI.ExperimentThread import ExperimentThr
 from qick import RAveragerProgram, AveragerProgram, NDAveragerProgram
 
 path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+try:
+    os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+except AttributeError:
+    os.environ["PATH"] = os.path.dirname(path) + '\\PythonDrivers' + ";" + os.environ["PATH"]
+
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 
 from MasterProject.Client_modules.LAKE_GUI.AccountTabWidget import AccountTabWidget
@@ -134,7 +138,7 @@ class Window(QMainWindow):
         self.__createExperimentTab()
 
         # experiment tab
-        self.__create_account_tab()
+        # self.__create_account_tab()
 
         # logging tab
         self.__create_logging_tab()
