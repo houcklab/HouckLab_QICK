@@ -11,7 +11,7 @@ def makeProxy():
     if 'Euler' in socket.gethostname() or 'euler' in socket.gethostname():
         ns_host = "128.112.49.115"
     else:
-        ns_host = "192.168.1.111" #Mac address is C6
+        ns_host = "192.168.1.113" #Mac address is C6
     ns_port = 8888
     server_name = "myqick"
 

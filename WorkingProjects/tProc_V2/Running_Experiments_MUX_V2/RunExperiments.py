@@ -18,7 +18,7 @@ from qick.asm_v2 import QickSpan, QickSweep1D
 
 mixer_freq = 500
 print(BaseConfig["cavity_LO"] / 1e6)
-BaseConfig["mixer_freq"] = mixer_freq
+BaseConfig["mixer_freq"] = 500
 BaseConfig["has_mixer"] = True
 Qubit_Parameters = {
     '1': {'Readout': {'Frequency': 6975.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
@@ -48,10 +48,14 @@ Qubit_Readout = [2]
 Qubit_Pulse = 2
 Qubit_PulseSS = [2]
 
-FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
-FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
+Q2_minfreq = RunTransmissionSweep(Qubit_Readout=[2])
+Qubit_Parameters['2']]'Readout']['Frequency'] = Q2_minfreq
 
-BaseConfig['ro_chs'] = [BaseConfig['mux_ro_chs'][i] for i in range(len(Qubit_Readout))]
+Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 30, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
+                        "gain": 600, 'reps': 2, 'rounds': 2}
+Run2ToneSpec(Qubit_Pulse=2, **Spec_relevant_params)
+
+
 
 '''in V2, define pulse freqs as absolute freq rather than relative to mixer freq!'''
 RunTransmissionSweep = True # determine cavity frequency
@@ -71,10 +75,8 @@ RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
                          "sigma": 0.05, "max_gain": 4000 / 32000}
 
-FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
-FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
-FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse}
-FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
+##### Define parameters
+BaseConfig['ro_chs'] = [BaseConfig['mux_ro_chs'][i] for i in range(len(Qubit_Readout))]
 
 cavity_gain = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Gain'] / 32000.
 cavity_gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout]
@@ -85,17 +87,23 @@ resonator_frequencies = [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for 
 qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
 qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
 
+FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
+FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
+FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
+FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
+FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse}
+FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
 
 trans_config = {
     "pulse_style": "const",  # --Fixed
     "readout_length": 3,  # [us]
-    "cavity_gain": cavity_gain,  # [DAC units]
+    "cavity_gain": cavity_gain,  # -1 to +1
     "cavity_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "cavity_gains": cavity_gains,  # [DAC units]
+    "cavity_gains": cavity_gains,  # -1 to +1
     "cavity_freqs": resonator_frequencies,
     "TransSpan": 1.5 * 1,  ### MHz, span will be center+/- this parameter
     "TransNumPoints": 61 * 1,  ### number of points in the transmission frequecny
-    "cav_relax_delay": 30
+    "cav_relax_delay": 30  # [us]
 }
 qubit_config = {
     "qubit_pulse_style": "const",
@@ -111,15 +119,12 @@ expt_cfg = {
                                     end=qubit_config["qubit_freq"] + qubit_config["SpecSpan"]),
 }
 
-print(trans_config)
 
 UpdateConfig = trans_config | qubit_config | expt_cfg
 config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
 config["FF_Qubits"] = FF_Qubits
 config['Read_Indices'] = Qubit_Readout
 
-#### update the qubit and cavity attenuation
-# cavityAtten.SetAttenuation(config["cav_Atten"], printOut=True)
 
 cavity_min = True
 config["cavity_min"] = cavity_min  # look for dip, not peak

@@ -16,86 +16,18 @@ from WorkingProjects.tProc_V2.Experimental_Scripts_MUX_V2.mAmplitudeRabiFFMUX im
 # for defining sweeps
 from qick.asm_v2 import QickSpan, QickSweep1D
 
-mixer_freq = 500
-print(BaseConfig["cavity_LO"] / 1e6)
-BaseConfig["mixer_freq"] = mixer_freq
-BaseConfig["has_mixer"] = True
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6975.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4302.3, 'Gain': 740},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7269.9 - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4341.5, 'Gain': 1050},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7524.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8800,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 5012.2, 'Gain': 1250},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7245.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4302.3, 'Gain': 1350},
-          'Pulse_FF': [0, 0, 0, 0]}
-}
-
-FF_gain1_expt = 0
-FF_gain2_expt = 0
-FF_gain3_expt = 0
-FF_gain4_expt = 0
-
-Qubit_Readout = [2]
-Qubit_Pulse = 2
-Qubit_PulseSS = [2]
-
-FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
-FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
-
-BaseConfig['ro_chs'] = [BaseConfig['mux_ro_chs'][i] for i in range(len(Qubit_Readout))]
-
-'''in V2, define pulse freqs as absolute freq rather than relative to mixer freq!'''
-RunTransmissionSweep = True # determine cavity frequency
-Run2ToneSpec = False
-
-Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 30, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.05,
-                        "gain": 600, 'reps': 2, 'rounds': 2}
-Run_Spec_v_Voltage = False
-Spec_sweep_relevant_params = {"qubit_gain": 1, "SpecSpan": 0.8, "SpecNumPoints": 3,
-                              "DAC": [8],
-                              "Qblox_Vmin": [0.42475],
-                              "Qblox_Vmax": [0.42558], "Qblox_numpoints": 3,
-                              'reps': 10, 'rounds': 10, 'smart_normalize': True}
-
-### NOTE: +/- 1 in V2 is equivalent to +/- 32766 in V1 ###
-RunAmplitudeRabi = False
-Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.05, "max_gain": 4000 / 32000}
-
-FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
-FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
-FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse}
-FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
-
-cavity_gain = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Gain'] / 32000.
-cavity_gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout]
-
-resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Frequency']
-resonator_frequencies = [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout]
-
-qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
-qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
 
 
 trans_config = {
     "pulse_style": "const",  # --Fixed
     "readout_length": 3,  # [us]
-    "cavity_gain": cavity_gain,  # [DAC units]
+    "cavity_gain": cavity_gain,  # -1 to +1
     "cavity_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "cavity_gains": cavity_gains,  # [DAC units]
+    "cavity_gains": cavity_gains,  # -1 to +1
     "cavity_freqs": resonator_frequencies,
     "TransSpan": 1.5 * 1,  ### MHz, span will be center+/- this parameter
     "TransNumPoints": 61 * 1,  ### number of points in the transmission frequecny
-    "cav_relax_delay": 30
+    "cav_relax_delay": 30  # [us]
 }
 qubit_config = {
     "qubit_pulse_style": "const",
@@ -111,20 +43,17 @@ expt_cfg = {
                                     end=qubit_config["qubit_freq"] + qubit_config["SpecSpan"]),
 }
 
-print(trans_config)
 
 UpdateConfig = trans_config | qubit_config | expt_cfg
 config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
 config["FF_Qubits"] = FF_Qubits
 config['Read_Indices'] = Qubit_Readout
 
-#### update the qubit and cavity attenuation
-# cavityAtten.SetAttenuation(config["cav_Atten"], printOut=True)
 
 cavity_min = True
 config["cavity_min"] = cavity_min  # look for dip, not peak
 # perform the cavity transmission experiment
-if RunTransmissionSweep:
+def RunTransmissionSweep():
     config["reps"] = 20  # fast axis number of points
     config["rounds"] = 20  # slow axis number of points
     Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config, soc=soc, soccfg=soccfg,

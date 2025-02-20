@@ -63,7 +63,7 @@ outerFolder = r"Z:\QSimMeasurements\Measurements\RFSOC_4Qubit_AB\\"
 BaseConfig = {
     "res_ch": 6,  # --Fixed
     "qubit_ch": 4,  # --Fixed
-    "mixer_freq": 0, #7200,  # MHz
+    "mixer_freq": 7200, #7200,  # MHz
     "ro_chs": [0, 1],  # --Fixed
     "reps": 1000,  # --Fixed
     "nqz": 2, #1,  #### refers to cavity
