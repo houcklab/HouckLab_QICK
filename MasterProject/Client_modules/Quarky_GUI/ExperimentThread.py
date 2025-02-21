@@ -54,7 +54,7 @@ class ExperimentThread(QObject):
             # Emit the signal with new data
             self.updateData.emit(data)
             # Update the setsComplete bar
-            self.updateProgress.emit(idx_set + 1, self.config['reps'], self.config['sets'])
+            self.updateProgress.emit(idx_set + 1)
             self.finished.emit()
 
             idx_set += 1

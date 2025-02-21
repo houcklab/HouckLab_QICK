@@ -1,5 +1,6 @@
 import os
 import importlib
+import h5py
 
 def import_file(full_path_to_module):
     """
@@ -18,3 +19,10 @@ def import_file(full_path_to_module):
     except Exception as e:
         raise ImportError(e)
     return module_obj, module_name
+
+def h5_to_dict(h5file):
+    with h5py.File(h5file, "r") as f:
+        data_dict = {}
+        for key in f.keys():
+            data_dict[key] = f[key][()]  # Load dataset into memory
+        return data_dict

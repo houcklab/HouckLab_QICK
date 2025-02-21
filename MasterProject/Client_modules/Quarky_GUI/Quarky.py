@@ -49,8 +49,8 @@ class Quarky(QMainWindow):
         self.soccfg = None
         self.soc_connected = False
 
-        self.ip_address = None
-        # self.ip_address =  "192.168.1.7" ### Need to change to accounts tab
+        # self.ip_address = None
+        self.ip_address =  "192.168.1.113" ### Need to change to accounts tab
 
         self.current_tab = None
         self.tabs_added = False
@@ -88,7 +88,7 @@ class Quarky(QMainWindow):
         self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self.wrapper)
-        self.experiment_progress_bar.setProperty("value", 0) # Show a peek of blue
+        self.experiment_progress_bar.setProperty("value", 0)
         self.experiment_progress_bar.setObjectName("experiment_progress_bar")
         self.experiment_stopwatch = QLabel(self.wrapper)
         self.experiment_stopwatch.setAlignment(Qt.AlignRight | Qt.AlignTrailing | Qt.AlignVCenter)
@@ -210,7 +210,7 @@ class Quarky(QMainWindow):
             config = BaseConfig | UpdateConfig
 
             experiment_instance = self.current_tab.experiment_instance
-            experiment_name = self.current_tab.experiment_name
+            experiment_name = self.current_tab.tab_name
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
             date_string = date_time_now.strftime("%Y_%m_%d")
@@ -225,8 +225,7 @@ class Quarky(QMainWindow):
             self.experiment_worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread
 
             self.thread.started.connect(self.experiment_worker.run)
-            self.thread.started.connect(self.current_tab.clear_plots)
-            self.experiment_worker.finished.connect(self.experiment_worker.quit)
+            self.experiment_worker.finished.connect(self.thread.quit)
             self.experiment_worker.finished.connect(self.experiment_worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
             self.thread.finished.connect(self.stop_experiment)
@@ -312,8 +311,9 @@ class Quarky(QMainWindow):
             current_tab_idx = self.central_tabs.currentIndex()
             self.change_tab(current_tab_idx)
 
-    def update_progress(self, sets_complete, reps, sets):
+    def update_progress(self, sets_complete):
         ### Function to run to update the progress bar
+        reps, sets = self.current_tab.config['reps'], self.current_tab.config['sets']
         self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100))
         self.experiment_progress_bar.setFormat(
             str(sets_complete * reps) + "/" + str(sets * reps))
