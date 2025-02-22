@@ -22,7 +22,11 @@ from pathlib import Path
 # Get the directory of the current Python script
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
-os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
+try:
+    os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
+except AttributeError:
+    os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
+
 
 #### define a attenuator class to change define attenuators for the setup
 class attenuator:

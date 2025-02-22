@@ -31,8 +31,6 @@ import MasterProject.Client_modules.Quarky_GUI.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
-os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
-
 try:
     os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 except AttributeError:
@@ -49,8 +47,8 @@ class Quarky(QMainWindow):
         self.soccfg = None
         self.soc_connected = False
 
-        # self.ip_address = None
-        self.ip_address =  "192.168.1.113" ### Need to change to accounts tab
+        self.ip_address = None
+        # self.ip_address =  "192.168.1.113" ### Need to change to accounts tab
 
         self.current_tab = None
         self.tabs_added = False
@@ -122,11 +120,11 @@ class Quarky(QMainWindow):
 
         ### Experiment Tabs
         self.central_tabs = QTabWidget(self.main_splitter)
-        sizePolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
-        self.central_tabs.setSizePolicy(sizePolicy)
+        central_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
+        central_tab_sizepolicy.setHorizontalStretch(0)
+        central_tab_sizepolicy.setVerticalStretch(0)
+        central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
+        self.central_tabs.setSizePolicy(central_tab_sizepolicy)
         self.central_tabs.setMinimumSize(QSize(400, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setTabShape(QTabWidget.Rounded)
@@ -135,7 +133,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setTabsClosable(True)
         self.central_tabs.setMovable(True)
         self.central_tabs.setTabBarAutoHide(False)
-        self.central_tabs.setObjectName("experiment_tabs")
+        self.central_tabs.setObjectName("central_tabs")
         self.central_tabs.setStyleSheet("background-color: #F8F8F8")  # Light gray background
 
         ### Template Experiment Tab
@@ -146,8 +144,32 @@ class Quarky(QMainWindow):
         ### Config Tree
         self.config_tree_panel = QConfigTree(self.main_splitter, template_experiment_tab.config)
 
+        ### Side Tabs Panel
+        self.side_tabs = QTabWidget(self.main_splitter)
+        side_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
+        side_tab_sizepolicy.setHorizontalStretch(0)
+        side_tab_sizepolicy.setVerticalStretch(0)
+        side_tab_sizepolicy.setHeightForWidth(self.side_tabs.sizePolicy().hasHeightForWidth())
+        self.side_tabs.setSizePolicy(side_tab_sizepolicy)
+        self.side_tabs.setMinimumSize(QSize(175, 0))
+        self.side_tabs.setTabPosition(QTabWidget.North)
+        self.side_tabs.setTabShape(QTabWidget.Rounded)
+        self.side_tabs.setDocumentMode(False)
+        self.side_tabs.setDocumentMode(True)
+        self.side_tabs.setTabsClosable(False)
+        self.side_tabs.setMovable(False)
+        self.side_tabs.setObjectName("side_tabs")
+
         ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel(self.main_splitter)
+        self.voltage_controller_panel = QVoltagePanel()
+        self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
+        ### Accounts Panel
+        self.accounts_panel = QVoltagePanel()
+        self.side_tabs.addTab(self.accounts_panel, "Accounts")
+        ### Log Panel
+        self.log_panel = QVoltagePanel()
+        self.side_tabs.addTab(self.log_panel, "Log")
+        self.side_tabs.setCurrentIndex(0)
 
         self.main_splitter.setStretchFactor(0, 8)
         self.main_splitter.setStretchFactor(1, 1)
