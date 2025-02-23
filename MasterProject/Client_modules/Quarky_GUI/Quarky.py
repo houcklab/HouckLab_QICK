@@ -26,6 +26,7 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Quarky_GUI.ExperimentThread import ExperimentThread
 from MasterProject.Client_modules.Quarky_GUI.QuarkTab import QQuarkTab
 from MasterProject.Client_modules.Quarky_GUI.VoltagePanel import QVoltagePanel
+from MasterProject.Client_modules.Quarky_GUI.AccountsPanel import QAccountPanel
 from MasterProject.Client_modules.Quarky_GUI.ConfigTree import QConfigTree
 import MasterProject.Client_modules.Quarky_GUI.Helpers as Helpers
 
@@ -164,12 +165,12 @@ class Quarky(QMainWindow):
         self.voltage_controller_panel = QVoltagePanel()
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
-        self.accounts_panel = QVoltagePanel()
+        self.accounts_panel = QAccountPanel()
         self.side_tabs.addTab(self.accounts_panel, "Accounts")
         ### Log Panel
         self.log_panel = QVoltagePanel()
         self.side_tabs.addTab(self.log_panel, "Log")
-        self.side_tabs.setCurrentIndex(0)
+        self.side_tabs.setCurrentIndex(1)
 
         self.main_splitter.setStretchFactor(0, 8)
         self.main_splitter.setStretchFactor(1, 1)

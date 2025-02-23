@@ -11,10 +11,10 @@ class QVoltagePanel(QWidget):
         super(QVoltagePanel, self).__init__(parent)
 
         # Set size policy
-        # sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
-        # sizepolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
-        # self.setSizePolicy(sizepolicy)
-        # self.setMinimumSize(QSize(175, 0))
+        sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
+        sizepolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
+        self.setSizePolicy(sizepolicy)
+        self.setMinimumSize(QSize(175, 0))
         self.setObjectName("voltage_controller_panel")
 
         # Voltage source combo box
