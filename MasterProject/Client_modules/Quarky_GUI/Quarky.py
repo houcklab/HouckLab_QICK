@@ -200,7 +200,7 @@ class Quarky(QMainWindow):
         # Signals for rfsoc
         self.accounts_panel.rfsoc_attempt_connection.connect(self.connect_rfsoc)
         self.accounts_panel.rfsoc_disconnect.connect(self.disconnect_rfsoc)
-        self.rfsoc_connection_updated.connect(self.account_tab.rfsoc_connection_updated)
+        self.rfsoc_connection_updated.connect(self.accounts_panel.rfsoc_connection_updated)
 
     def disconnect_rfsoc(self):
         self.soc = None

@@ -179,7 +179,8 @@ class QAccountPanel(QWidget):
                     if name == self.default_account_name:
                         item = QListWidgetItem(str(name + ' (default)'))
                         self.default_account_item = item
-                        if self.current_account_name is None and self.current_account_item is None:
+                        if self.current_account_name is None or self.current_account_item is None:
+                            self.current_account_name = self.default_account_name
                             self.current_account_item = item
                     else:
                         item = QListWidgetItem(str(name))
@@ -230,9 +231,12 @@ class QAccountPanel(QWidget):
 
                 if self.current_account_name == self.default_account_name:
                     self.update_default_account_name(new_account_name)
+                    self.current_account_item.setText(new_account_name + ' (default)')
+                else:
+                    self.current_account_item.setText(new_account_name)
 
                 self.current_account_name = new_account_name
-                self.load_accounts()
+                self.saved_indicate()
             except (json.JSONDecodeError, FileNotFoundError):
                 QMessageBox.critical(None, "Error", "Error updating Json file.")
                 return
@@ -248,6 +252,16 @@ class QAccountPanel(QWidget):
         if not all(part.isdigit() and 0 <= int(part) <= 255 for part in new_ip_address.split('.') if part):
             QMessageBox.critical(None, "Error", "IP address invalid.")
             return False
+
+        # no duplicate account names
+        for idx in range(self.accounts_list.count()):
+            item = self.accounts_list.item(idx)
+            account_name = item.text().strip()
+            if account_name.endswith("(default)"): account_name = account_name[:-9].strip()
+            if account_name == new_account_name:
+                QMessageBox.critical(None, "Error", "Account name already exists.")
+                return False
+
         return True
 
     def update_default_account_name(self, new_default_account_name):
@@ -275,9 +289,8 @@ class QAccountPanel(QWidget):
         self.select_item(item)
 
     def select_item(self, current, previous=None):
-        account_name = current.text().replace(" ", "")
-        if account_name.endswith("(default)"): account_name = account_name[:-9]
-        self.current_account_name = account_name
+        account_name = current.text().strip()
+        if account_name.endswith("(default)"): account_name = account_name[:-9].strip()
         self.current_account_item = current
         self.accounts_list.setCurrentItem(current)
 
