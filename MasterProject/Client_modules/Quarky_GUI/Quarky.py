@@ -3,7 +3,7 @@ import math
 import datetime
 from pathlib import Path
 from PyQt5.QtCore import (
-    Qt, QSize, QThread
+    Qt, QSize, QThread, pyqtSignal
 )
 
 from PyQt5.QtWidgets import (
@@ -39,6 +39,8 @@ except AttributeError:
 
 class Quarky(QMainWindow):
 
+    rfsoc_connection_updated = pyqtSignal(str, str)
+
     def __init__(self):
         super().__init__()
 
@@ -47,9 +49,6 @@ class Quarky(QMainWindow):
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
-
-        self.ip_address = None
-        # self.ip_address =  "192.168.1.113" ### Need to change to accounts tab
 
         self.current_tab = None
         self.tabs_added = False
@@ -165,7 +164,7 @@ class Quarky(QMainWindow):
         self.voltage_controller_panel = QVoltagePanel()
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
-        self.accounts_panel = QAccountPanel()
+        self.accounts_panel = QAccountPanel(parent=self.central_tabs)
         self.side_tabs.addTab(self.accounts_panel, "Accounts")
         ### Log Panel
         self.log_panel = QVoltagePanel()
@@ -185,8 +184,27 @@ class Quarky(QMainWindow):
         self.setCentralWidget(self.central_widget)
 
         self.setup_signals()
-        if self.ip_address is not None:
-            self.connect_rfsoc(self.ip_address)
+        self.accounts_panel.load_accounts()
+
+    def setup_signals(self):
+        # Signal Connecting
+        self.start_experiment_button.clicked.connect(self.run_experiment)
+        self.stop_experiment_button.clicked.connect(self.load_experiment_file)
+        # self.load_config_button.clicked.connect(self.load_experiment_file) #TODO
+        self.load_experiment_button.clicked.connect(self.load_experiment_file)
+        self.load_data_button.clicked.connect(self.load_data_file)
+
+        self.central_tabs.currentChanged.connect(self.change_tab)
+        self.central_tabs.tabCloseRequested.connect(self.close_tab)
+
+        # Signals for rfsoc
+        self.accounts_panel.rfsoc_attempt_connection.connect(self.connect_rfsoc)
+        self.accounts_panel.rfsoc_disconnect.connect(self.disconnect_rfsoc)
+        self.rfsoc_connection_updated.connect(self.account_tab.rfsoc_connection_updated)
+
+    def disconnect_rfsoc(self):
+        self.soc = None
+        self.soccfg = None
 
     def connect_rfsoc(self, ip_address):
         print("Attempting to connect to RFSoC")
@@ -200,23 +218,14 @@ class Quarky(QMainWindow):
                 self.soc_connected = False
                 self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
                 QMessageBox.critical(None, "Error", "RfSoc connection failed: " + str(e))
+                self.rfsoc_connection_updated.emit(ip_address, 'failure')
                 return
             else:
                 self.soc_connected = True
                 self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
+                self.rfsoc_connection_updated.emit(ip_address, 'success')
         else:
-            QMessageBox.critical(None, "Error", "RfSoc ip Address not given ")
-
-    def setup_signals(self):
-        # Signal Connecting
-        self.start_experiment_button.clicked.connect(self.run_experiment)
-        self.stop_experiment_button.clicked.connect(self.load_experiment_file)
-        # self.load_config_button.clicked.connect(self.load_experiment_file)
-        self.load_experiment_button.clicked.connect(self.load_experiment_file)
-        self.load_data_button.clicked.connect(self.load_data_file)
-
-        self.central_tabs.currentChanged.connect(self.change_tab)
-        self.central_tabs.tabCloseRequested.connect(self.close_tab)
+            QMessageBox.critical(None, "Error", "RfSoc IP Address not given ")
 
     def run_experiment(self):
         if self.soc_connected:
