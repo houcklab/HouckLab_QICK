@@ -210,14 +210,24 @@ class Quarky(QMainWindow):
         print("Attempting to connect to RFSoC")
 
         if ip_address is not None:
-            self.soc, self.soccfg = makeProxy(ip_address)
+            try:
+                self.soc, self.soccfg = makeProxy(ip_address) # should make separate thread
+            except Exception as e:
+                self.soc_connected = False
+                self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
+                QMessageBox.critical(None, "Error", "RfSoc connection to " + ip_address
+                                     + " failed: " + str(e))
+                self.rfsoc_connection_updated.emit(ip_address, 'failure')
+                return
+
             try:
                 print("Available methods:", self.soc._pyroMethods)
                 print("Configuration keys:", vars(self.soccfg))
             except Exception as e:
                 self.soc_connected = False
                 self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
-                QMessageBox.critical(None, "Error", "RfSoc connection failed: " + str(e))
+                QMessageBox.critical(None, "Error", "RfSoc connection to " + ip_address
+                                     + " failed: " + str(e))
                 self.rfsoc_connection_updated.emit(ip_address, 'failure')
                 return
             else:

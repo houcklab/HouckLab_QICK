@@ -154,6 +154,8 @@ class QAccountPanel(QWidget):
         self.accounts_list.currentItemChanged.connect(self.select_item)
 
     def load_accounts(self):
+        self.current_account_name = None
+        self.current_account_item = None
         self.accounts_list.clear()
 
         default_file = os.path.join(self.account_dir, "default.json")
@@ -193,11 +195,18 @@ class QAccountPanel(QWidget):
         if self.connected_account_name is None:
             ip_address = self.ip_edit.text().strip()
             if ip_address and all(char.isdigit() or char == '.' for char in ip_address):
-                self.rfsoc_attempt_connection.emit(self.current_ip_address)
+                self.rfsoc_attempt_connection.emit(ip_address)
             else:
-                QMessageBox.critical(None, "Error", "IP address invalid.")
+                QMessageBox.critical(None, "Error", "IP address " + ip_address + " invalid.")
         else:
             self.rfsoc_disconnect.emit()
+            self.connect_button.setText("Connect")
+            self.connected_account_name = None
+            self.load_accounts()
+            self.ip_edit.setDisabled(False)
+            self.name_edit.setDisabled(False)
+            self.saved_indicate()
+
 
     def unsaved_indicate(self):
         self.save_button.setText("Save")
@@ -211,11 +220,19 @@ class QAccountPanel(QWidget):
         self.create_new_button.setEnabled(False)
         self.set_default_button.setEnabled(True)
 
+    def disable_since_connected(self):
+        self.save_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
+        self.create_new_button.setEnabled(False)
+        self.set_default_button.setEnabled(False)
+        self.ip_edit.setDisabled(True)
+        self.name_edit.setDisabled(True)
+
     def update_account(self):
         if self.current_account_name:
             new_ip_address = self.ip_edit.text().strip()
             new_account_name = self.name_edit.text()
-            if not self.validate_account_input(new_ip_address, new_account_name): return
+            if not self.validate_account_input(new_ip_address, new_account_name, 'update'): return
 
             # Load the existing JSON file
             file = os.path.join(self.account_dir, self.current_account_name + '.json')
@@ -230,7 +247,7 @@ class QAccountPanel(QWidget):
                 os.rename(file, os.path.join(self.account_dir, new_filename))
 
                 if self.current_account_name == self.default_account_name:
-                    self.update_default_account_name(new_account_name)
+                    self.update_default_account_name(new_account_name, self.current_account_item)
                     self.current_account_item.setText(new_account_name + ' (default)')
                 else:
                     self.current_account_item.setText(new_account_name)
@@ -241,7 +258,7 @@ class QAccountPanel(QWidget):
                 QMessageBox.critical(None, "Error", "Error updating Json file.")
                 return
 
-    def validate_account_input(self, new_ip_address, new_account_name):
+    def validate_account_input(self, new_ip_address, new_account_name, purpose):
         invalid_chars = r'.\/:*?"<>| '
         if any(char in new_account_name for char in invalid_chars):
             QMessageBox.critical(None, "Error", "Invalid account name. No " + invalid_chars + "or spaces.")
@@ -253,20 +270,25 @@ class QAccountPanel(QWidget):
             QMessageBox.critical(None, "Error", "IP address invalid.")
             return False
 
-        # no duplicate account names
-        for idx in range(self.accounts_list.count()):
-            item = self.accounts_list.item(idx)
-            account_name = item.text().strip()
-            if account_name.endswith("(default)"): account_name = account_name[:-9].strip()
-            if account_name == new_account_name:
-                QMessageBox.critical(None, "Error", "Account name already exists.")
-                return False
+        if purpose != 'update':
+            # no duplicate account names
+            for idx in range(self.accounts_list.count()):
+                item = self.accounts_list.item(idx)
+                account_name = item.text().strip()
+                if account_name.endswith("(default)"): account_name = account_name[:-9]
+                if account_name.startswith("✔"): account_name = account_name[1:]
+                account_name = account_name.strip()
+                if account_name == new_account_name:
+                    QMessageBox.critical(None, "Error", "Account name already exists.")
+                    return False
 
         return True
 
-    def update_default_account_name(self, new_default_account_name):
+    def update_default_account_name(self, new_default_account_name, new_default_account_item):
         default_file = os.path.join(self.account_dir, "default.json")
         try:
+            self.default_account_name = new_default_account_name
+            self.default_account_item = new_default_account_item
             with open(default_file, "w") as f:
                 json.dump({"default_account_name": new_default_account_name}, f, indent=4)
         except (json.JSONDecodeError, FileNotFoundError):
@@ -289,19 +311,26 @@ class QAccountPanel(QWidget):
         self.select_item(item)
 
     def select_item(self, current, previous=None):
-        account_name = current.text().strip()
-        if account_name.endswith("(default)"): account_name = account_name[:-9].strip()
-        self.current_account_item = current
-        self.accounts_list.setCurrentItem(current)
+        if current is not None:
+            account_name = current.text().strip()
+            if account_name.endswith("(default)"): account_name = account_name[:-9]
+            if account_name.startswith("✔"): account_name = account_name[1:]
+            self.current_account_name = account_name.strip()
+            self.current_account_item = current
+            self.accounts_list.setCurrentItem(current)
 
-        file = os.path.join(self.account_dir, self.current_account_name + '.json')
-        with open(file, "r") as f:
-            data = json.load(f)
-            name = data["account_name"]
-            ip = data["ip_address"]
-            self.name_edit.setText(name)
-            self.ip_edit.setText(ip)
-        self.saved_indicate()
+            file = os.path.join(self.account_dir, self.current_account_name + '.json')
+            with open(file, "r") as f:
+                data = json.load(f)
+                name = data["account_name"]
+                ip = data["ip_address"]
+                self.name_edit.setText(name)
+                self.ip_edit.setText(ip)
+
+            if self.connected_account_name is not None:
+                self.disable_since_connected()
+            else:
+                self.saved_indicate()
 
     def delete_account(self):
         if self.current_account_name == self.default_account_name:
@@ -321,17 +350,25 @@ class QAccountPanel(QWidget):
         self.select_item(self.default_account_item)
 
     def set_as_default(self):
-        default_file = os.path.join(self.account_dir, "default.json")
-        with open(default_file, "w") as f:
-            json.dump({"default_account_name": str(self.current_account_name)}, f, indent=4)
+        self.update_default_account_name(self.current_account_name, self.current_account_item)
         self.load_accounts()
 
     def rfsoc_connection_updated(self, ip_address, status):
         if status == 'success':
             self.connected_account_name = self.current_account_name
+            if self.current_account_name == self.default_account_name:
+                self.current_account_item.setText('✔ ' + self.current_account_name + ' (default)')
+            else:
+                self.current_account_item.setText('✔ ' + self.current_account_name)
+
             self.connect_button.setText("Disconnect")
+            print("Connection established.")
+            self.disable_since_connected()
         else:
             self.connected_account_name = None
+            print("Connection not successful.")
+            self.saved_indicate()
 
     ### Connect (give '✔ ' + ) --- add signal back that says success or not (if success, then
     ### give the checkmark and change connected_account_name
+    ### if connected, prevent any changes. must disconnect first (disenable buttons maybe lock lineedits
