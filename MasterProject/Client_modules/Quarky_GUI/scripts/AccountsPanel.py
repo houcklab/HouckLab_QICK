@@ -1,8 +1,12 @@
 import os
 import json
-from ipaddress import ip_address
 
-from PyQt5.QtCore import QSize, QRect, Qt, pyqtSignal
+from PyQt5.QtCore import (
+    QSize,
+    QRect,
+    Qt,
+    pyqtSignal,
+)
 from PyQt5.QtWidgets import (
     QWidget,
     QSizePolicy,
@@ -35,7 +39,7 @@ class QAccountPanel(QWidget):
         self.default_account_item = None
         self.connected_account_name = None
 
-        self.root_dir = os.path.dirname(os.path.realpath(__file__))
+        self.root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
         self.account_dir = os.path.join(self.root_dir, 'accounts')
 
         sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
@@ -75,7 +79,7 @@ class QAccountPanel(QWidget):
         # List of Accounts
         self.accounts_list = QListWidget()
         self.accounts_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.accounts_list.setAlternatingRowColors(True)
+        self.accounts_list.setAlternatingRowColors(False)
         self.accounts_list.setSortingEnabled(True)
         self.accounts_list.setObjectName("accounts_list")
         self.accounts_layout.addWidget(self.accounts_list)
@@ -270,7 +274,7 @@ class QAccountPanel(QWidget):
             QMessageBox.critical(None, "Error", "IP address invalid.")
             return False
 
-        if purpose != 'update':
+        if purpose == 'create':
             # no duplicate account names
             for idx in range(self.accounts_list.count()):
                 item = self.accounts_list.item(idx)
@@ -298,7 +302,7 @@ class QAccountPanel(QWidget):
     def create_account(self):
         new_ip_address = self.ip_edit.text().strip()
         new_account_name = self.name_edit.text()
-        if not self.validate_account_input(new_ip_address, new_account_name): return
+        if not self.validate_account_input(new_ip_address, new_account_name, 'create'): return
 
         new_filename = (new_account_name.strip() + ".json")
         new_account_file = os.path.join(self.account_dir,new_filename)

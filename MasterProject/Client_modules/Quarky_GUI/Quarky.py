@@ -1,9 +1,26 @@
+"""
+Quarky.py
+~~~~~~~~~~
+Main entry point for the Quarky application.
+
+This module initializes the GUI, handles application-level logic,
+and manages interactions between different components.
+"""
+
+# TODO: Load Config Button
+# TODO: Experiment Class Plotter
+# TODO: include legend for plotter
+# TODO: write __init__ functions for each of our packages
+
 import sys, os
 import math
 import datetime
 from pathlib import Path
 from PyQt5.QtCore import (
-    Qt, QSize, QThread, pyqtSignal
+    Qt, QSize, QThread, pyqtSignal, qInstallMessageHandler, qDebug,
+    qInfo,
+    qWarning,
+    qCritical,
 )
 
 from PyQt5.QtWidgets import (
@@ -22,13 +39,17 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 
-from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-from MasterProject.Client_modules.Quarky_GUI.ExperimentThread import ExperimentThread
-from MasterProject.Client_modules.Quarky_GUI.QuarkTab import QQuarkTab
-from MasterProject.Client_modules.Quarky_GUI.VoltagePanel import QVoltagePanel
-from MasterProject.Client_modules.Quarky_GUI.AccountsPanel import QAccountPanel
-from MasterProject.Client_modules.Quarky_GUI.ConfigTree import QConfigTree
-import MasterProject.Client_modules.Quarky_GUI.Helpers as Helpers
+from scripts.CoreLib.Experiment import ExperimentClass
+from scripts.CoreLib.socProxy import makeProxy
+from scripts.Init.initialize import BaseConfig
+
+from scripts.ExperimentThread import ExperimentThread
+from scripts.QuarkTab import QQuarkTab
+from scripts.VoltagePanel import QVoltagePanel
+from scripts.AccountsPanel import QAccountPanel
+from scripts.LogPanel import QLogPanel
+from scripts.ConfigTree import QConfigTree
+import scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
@@ -52,6 +73,7 @@ class Quarky(QMainWindow):
 
         self.current_tab = None
         self.tabs_added = False
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -167,7 +189,7 @@ class Quarky(QMainWindow):
         self.accounts_panel = QAccountPanel(parent=self.central_tabs)
         self.side_tabs.addTab(self.accounts_panel, "Accounts")
         ### Log Panel
-        self.log_panel = QVoltagePanel()
+        self.log_panel = QLogPanel(parent=self.central_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
         self.side_tabs.setCurrentIndex(1)
 
@@ -201,6 +223,17 @@ class Quarky(QMainWindow):
         self.accounts_panel.rfsoc_attempt_connection.connect(self.connect_rfsoc)
         self.accounts_panel.rfsoc_disconnect.connect(self.disconnect_rfsoc)
         self.rfsoc_connection_updated.connect(self.accounts_panel.rfsoc_connection_updated)
+
+        qInstallMessageHandler(self.log_panel.message_handler)
+        self.test_logging()
+
+    def test_logging(self):
+        print("test_logging")
+        qDebug("This is a debug message.")
+        qInfo("This is an info message.")
+        qWarning("This is a warning message!")
+        qCritical("This is a critical error!")
+        qInfo("---------------------------")
 
     def disconnect_rfsoc(self):
         self.soc = None

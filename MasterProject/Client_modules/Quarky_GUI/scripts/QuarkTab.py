@@ -1,15 +1,11 @@
-import sys, os, inspect
-import h5py
+import inspect
 import numpy as np
-from pathlib import Path
-from PyQt5.QtCore import Qt, QSize, QRect
+from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtWidgets import (
     QWidget,
-    QPushButton,
     QVBoxLayout,
     QHBoxLayout,
     QSizePolicy,
-    QLayout,
     QSpacerItem,
     QToolButton,
     QMessageBox,
@@ -17,8 +13,8 @@ from PyQt5.QtWidgets import (
 )
 import pyqtgraph as pg
 
-from MasterProject.Client_modules.Init.initialize import BaseConfig
-import Helpers
+from scripts.Init.initialize import BaseConfig
+from scripts import Helpers
 
 class QQuarkTab(QWidget):
 
@@ -166,7 +162,7 @@ class QQuarkTab(QWidget):
                     if num_plots % 2 == 0:
                         self.plot_widget.nextRow()
                 self.plots.append(plot)
-        print("plotted", self.data)
+        # print("plotted", self.data)
 
     def clear_plots(self):
         self.plot_widget.ci.clear()
