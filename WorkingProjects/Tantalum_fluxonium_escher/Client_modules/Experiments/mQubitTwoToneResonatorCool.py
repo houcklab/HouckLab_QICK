@@ -28,12 +28,14 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
     read_pulse_freq: MHz, frequency of the readout pulse
     qubit_freq: MHz, frequency of the qubit 0-1 transition, does NOT include Delta or delta
     Delta: MHz, frequency detuning of both parametric drives
-    delta_start: MHz, start of additional detuning, to compensate for Stark shifts, etc.; applied to qubit parametric drive
-    delta_stop: MHz, stop o additional detuning
     T: us, length of the parametric drive
     read_length: us, length of the readout pulse
-    delta_steps: integer, number of steps to take in delta
+    steps: integer, number of steps to take in the sweep
     reps: integer, number of repetitions of the experiment at each point
+    sweep: string, which variable to sweep. "delta", "cavity_drive_gain", "T"
+    start: whatever unit as the sweep variable, value to start at
+    stop: what unit as the sweep variable, value to stop at
+    use_switch: bool, do we close the switch when driving qubit
     '''
 
     def __init__(self, soccfg, cfg):
@@ -67,13 +69,17 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
                                  length=self.us2cycles(cfg["T"], gen_ch=cfg["res_ch"]))
 
         # Initial parametric drive on qubit frequency
-        self.f_2_start = self.freq2reg(cfg["qubit_freq"] + cfg["Delta"] + cfg["delta_start"], gen_ch=cfg["qubit_ch"],
+        self.f_2_start = self.freq2reg(cfg["qubit_freq"] + cfg["Delta"] + cfg["start"], gen_ch=cfg["qubit_ch"],
                               ro_ch=cfg["ro_chs"][0])
         # Set the qubit pulse registers for the parametric drive to the initial value, just constant for now
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_2_start, phase=0, gain=cfg["qubit_drive_gain"],
                                  length=self.us2cycles(self.cfg["T"], gen_ch=cfg["qubit_ch"]))
-        # Get the register page for the qubit parametric drive frequency
+        self.cfg['trig_len'] = self.cfg['T']
+
+        # Get the register page for the qubit drive frequency
         self.qubit_freq_reg = self.get_gen_reg(cfg["qubit_ch"], "freq")
+        # Get the register page for the readout drive gain
+        self.cavity_gain_reg = self.get_gen_reg(cfg["res_ch"], "gain")
 
 
         # Calculate length of trigger pulse
@@ -81,14 +87,17 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
                                               gen_ch=cfg["qubit_ch"]) + self.us2cycles(self.cfg["T"], gen_ch=cfg["qubit_ch"])
 
         # Set up the sweep
-        # Below not necessary, let's just directly update the qubit frequency
-        # # Declare a new register in the qubit_ch register page that keeps track of the current delta value
-        # self.delta_reg = self.new_gen_reg(cfg["qubit_ch"], init_val=cfg["delta_start"], name="delta", reg_type="freq")
-        # QickRegister's, as new_gen_reg returns, are supposed to be smart enough to tell MHz from register units
-        # self.add_sweep(QickSweep(self, self.delta_reg, cfg["delta_start"], cfg["delta_stop"], cfg["delta_steps"]))
-
-        self.add_sweep(QickSweep(self, self.qubit_freq_reg, cfg["qubit_freq"] + cfg["Delta"] + cfg["delta_start"],
-                                 cfg["qubit_freq"] + cfg["Delta"] + cfg["delta_stop"], cfg["delta_steps"]))
+        if self.cfg['sweep'] == "delta":
+            self.add_sweep(QickSweep(self, self.qubit_freq_reg, cfg["qubit_freq"] + cfg["Delta"] + cfg["start"],
+                                 cfg["qubit_freq"] + cfg["Delta"] + cfg["stop"], cfg["steps"]))
+        elif self.cfg['sweep'] == 'cavity_drive_gain':
+            # Declare a new register in the res_ch register page that keeps track of the current cavity drive gain
+            self.cavity_drive_gain_reg = self.new_gen_reg(cfg["res_ch"], init_val=cfg["start"], name="cavity_drive_gain")
+            self.add_sweep(QickSweep(self, self.cavity_drive_gain_reg, cfg["start"], cfg["stop"], cfg["steps"]))
+        elif self.cfg['sweep'] == 'T':
+            pass #TODO
+        else:
+            pass # complain here
 
         self.synci(200)  # give processor some time to configure pulses
 
@@ -98,6 +107,10 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
         self.set_pulse_registers(ch=self.cfg["res_ch"], style="const", freq=self.f_1, phase=0,
                                  gain=self.cfg["cavity_drive_gain"],
                                  length=self.us2cycles(self.cfg["T"], gen_ch=self.cfg["res_ch"]))
+        # Update the gain if we are sweeping it
+        if self.cfg['sweep'] == 'cavity_drive_gain':
+            self.cavity_gain_reg.set_to(self.cavity_drive_gain_reg) # Adds 0 by default
+
         # Qubit drive -- no need to set pulse registers I'm already sweeping the qubit frequency
         # f_2 = self.freq2reg(self.cfg["qubit_freq"] + self.cfg["Delta"] + self.delta_reg.reg2val(self.cfg["qubit_ch"]),
         #                     gen_ch=self.cfg["qubit_ch"], ro_ch=self.cfg["ro_chs"][0])
@@ -105,7 +118,13 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
         #                          gain=self.cfg["qubit_drive_gain"],
         #                          length=self.us2cycles(self.cfg["T"], gen_ch=self.cfg["qubit_ch"]))
         # self.res_r_gain.set_to(self.res_r_gain_update)
+
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+
+        # Close switch, if necessary
+        if self.cfg["qubit_drive_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
 
         # Play the parametric drives
         self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
@@ -125,7 +144,7 @@ class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
-        # No update function with NDAverager
+    # No update function with NDAverager
 
 class QubitTwoToneResonatorCoolExperiment(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
@@ -140,7 +159,7 @@ class QubitTwoToneResonatorCoolExperiment(ExperimentClass):
         print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
 
         # Estimate runtime
-        estimated_runtime = datetime.timedelta(seconds = 1e-6 * (self.cfg['delta_steps'] * self.cfg['reps'] *
+        estimated_runtime = datetime.timedelta(seconds = 1e-6 * (self.cfg['steps'] * self.cfg['reps'] *
                 (self.cfg['T'] + self.cfg['read_length'] + self.cfg['relax_delay'])))
         print('estimated runtime: ' + str(estimated_runtime))
         print('estimated end time:' + (datetime.datetime.now() + estimated_runtime).strftime("%Y/%m/%d %H:%M:%S"))
@@ -152,7 +171,7 @@ class QubitTwoToneResonatorCoolExperiment(ExperimentClass):
                                          start_src="internal",
                                          progress=False)  # qick update deprecated ? , debug=False)
         # The returned x_pts variable is garbage, generate correct replacement
-        x_pts_correct = np.linspace(self.cfg['delta_start'], self.cfg['delta_stop'], num = self.cfg['delta_steps'])
+        x_pts_correct = np.linspace(self.cfg['start'], self.cfg['stop'], num = self.cfg['steps'])
         self.data = {'config': self.cfg, 'data': {'x_pts': x_pts_correct, 'avgi': avgi, 'avgq': avgq}}
 
         # Save the data before we have a chance to crash
@@ -176,23 +195,21 @@ class QubitTwoToneResonatorCoolExperiment(ExperimentClass):
         plt.figure(figsize=(16, 14))
         plt.subplot(4, 1, 1)
         plt.plot(x_pts, avgi)
-        #plt.xlabel('delta (MHz)')
         plt.ylabel('I')
 
         plt.subplot(4, 1, 2)
         plt.plot(x_pts, avgq)
-        #plt.xlabel('delta (MHz)')
         plt.ylabel('Q')
 
         plt.subplot(4, 1, 3)
         plt.plot(x_pts, avg_mag)
-        #plt.xlabel('delta (MHz)')
         plt.ylabel('mag')
 
         plt.subplot(4, 1, 4)
         plt.plot(x_pts, avg_phase)
-        plt.xlabel('delta (MHz)')
         plt.ylabel('phase (rad)')
+        if self.cfg['sweep'] == 'delta':
+            plt.xlabel('delta (MHz)')
 
     def save_data(self, data=None) -> None:
         """
