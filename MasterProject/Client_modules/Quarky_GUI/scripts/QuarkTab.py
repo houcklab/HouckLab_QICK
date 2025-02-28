@@ -87,9 +87,8 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(5)
         self.plot_utilities.setObjectName("plot_utilities")
-        self.copy_plot_button = Helpers.create_button("Copy", "copy_plot_button", True)
-        self.save_data_button = Helpers.create_button("Save", "save_data_button", True)
-        spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding) # spacer
+        self.copy_plot_button = Helpers.create_button("Copy", "copy_plot_button", True, self.plot_utilities_container)
+        self.save_data_button = Helpers.create_button("Save", "save_data_button", True, self.plot_utilities_container)
         self.plot_method_label = QLabel("Plot Method: ")  # coordinate of the mouse over the current plot
         self.plot_method_label.setStyleSheet("font-size: 10px;")
         self.plot_method_label.setObjectName("coord_label")
@@ -102,12 +101,14 @@ class QQuarkTab(QWidget):
         self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
 
+        spacerItem_1 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
+        spacerItem_2 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
         self.plot_utilities.addWidget(self.copy_plot_button)
         self.plot_utilities.addWidget(self.save_data_button)
-        self.plot_utilities.addItem(spacerItem)
+        self.plot_utilities.addItem(spacerItem_1)
         self.plot_utilities.addWidget(self.plot_method_label)
         self.plot_utilities.addWidget(self.plot_method_combo)
-        self.plot_utilities.addItem(spacerItem)
+        self.plot_utilities.addItem(spacerItem_2)
         self.plot_utilities.addWidget(self.coord_label)
         self.plot_layout.addWidget(self.plot_utilities_container)
 

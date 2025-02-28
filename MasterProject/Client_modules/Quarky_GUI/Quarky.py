@@ -8,10 +8,14 @@ This module initializes the GUI, handles application-level logic, and manages in
 different components.
 """
 
+# TODO: Attempt connection to default upon app open
 # TODO: Experiment Class Plotter
 # TODO: include legend for plotter
 # TODO: Saving Data Files, Screenshotting
 # TODO: Make a separate thread for proxy connections
+# TODO: Print out rfsoc info
+# TODO: Experiment run time estimate (in the experiment file)
+# TODO: Config overlap
 
 import sys, os
 import math
@@ -285,7 +289,7 @@ class Quarky(QMainWindow):
 
             # Verifying RFSoc connection
             try:
-                print("Available methods:", self.soc._pyroMethods)
+                qInfo("RFSoC Info:", self.soc.get_sys_info())
                 print("Configuration keys:", vars(self.soccfg))
             except Exception as e:
                 # Connection invalid despite makeProxy success
