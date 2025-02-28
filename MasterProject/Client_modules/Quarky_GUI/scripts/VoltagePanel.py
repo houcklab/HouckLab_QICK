@@ -19,7 +19,7 @@ class QVoltagePanel(QWidget):
 
         # Voltage source combo box
         self.voltage_source_combo = QComboBox(self)
-        self.voltage_source_combo.setGeometry(QRect(10, 10, 151, 26))
+        self.voltage_source_combo.setGeometry(QRect(10, 10, 150, 26))
         self.voltage_source_combo.setObjectName("voltage_source")
         self.voltage_source_combo.addItems(["qblox", "yoko"])
 

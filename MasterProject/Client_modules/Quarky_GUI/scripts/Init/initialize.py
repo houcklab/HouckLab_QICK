@@ -21,7 +21,7 @@ import os
 
 # Get the directory of the current Python script
 script_directory = os.path.dirname(os.path.realpath(__file__))
-script_parent_directory = os.path.dirname(script_directory)
+script_parent_directory = os.path.dirname(os.path.dirname(os.path.dirname(script_directory)))
 try:
     os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 except AttributeError:

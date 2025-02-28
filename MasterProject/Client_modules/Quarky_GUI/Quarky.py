@@ -167,7 +167,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setMovable(True)
         self.central_tabs.setTabBarAutoHide(False)
         self.central_tabs.setObjectName("central_tabs")
-        self.central_tabs.setStyleSheet("background-color: #F8F8F8")  # Light gray background
+        # self.central_tabs.setStyleSheet("background-color: #F8F8F8")  # Light gray background
         #Template Experiment Tab
         template_experiment_tab = QQuarkTab()
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")

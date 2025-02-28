@@ -10,21 +10,21 @@ data, and plotting.
 
 import inspect
 import numpy as np
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, qCritical, QRect
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QSizePolicy,
     QSpacerItem,
-    QToolButton,
     QMessageBox,
     QLabel,
+    QComboBox,
 )
 import pyqtgraph as pg
 
 from scripts.Init.initialize import BaseConfig
-from scripts import Helpers
+import scripts.Helpers as Helpers
 
 class QQuarkTab(QWidget):
     """
@@ -62,9 +62,10 @@ class QQuarkTab(QWidget):
         self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
         self.is_experiment = is_experiment
         self.data = None
-        self.experiment_type = None
         self.experiment_instance = None  # The actual experiment instance
         self.plots = []
+
+        self.experiment_type = None # Not currently used
 
         # Can specify an alternative colormap (e.g., 'viridis', 'inferno', etc.)
         cmap = pg.colormap.get('viridis')
@@ -74,40 +75,49 @@ class QQuarkTab(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         ### Plotter within Tab
-        self.plot_layout = QHBoxLayout(self)
-        self.plot_layout.setContentsMargins(2, 2, 2, 2)
+        self.plot_layout = QVBoxLayout(self)
+        self.plot_layout.setContentsMargins(5, 0, 5, 0)
+        self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
-        ### Plot Button Toolbar
-        self.plot_toolbar = QVBoxLayout()
-        self.plot_toolbar.setObjectName("plot_toolbar")
-        self.copy_plot_button = QToolButton()
-        self.copy_plot_button.setText("📋")
-        self.copy_plot_button.setObjectName("copy_plot_button")
-        self.save_data_button = QToolButton()
-        self.save_data_button.setText("💾")
-        self.save_data_button.setObjectName("save_data_button")
-        self.coord_label = QLabel("X: ___\nY: ___")
+        ### Plot Utilities Bar
+        self.plot_utilities_container = QWidget()
+        self.plot_utilities_container.setMaximumHeight(35)
+        self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
+        self.plot_utilities.setContentsMargins(0, 0, 0, 0)
+        self.plot_utilities.setSpacing(5)
+        self.plot_utilities.setObjectName("plot_utilities")
+        self.copy_plot_button = Helpers.create_button("Copy", "copy_plot_button", True)
+        self.save_data_button = Helpers.create_button("Save", "save_data_button", True)
+        spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding) # spacer
+        self.plot_method_label = QLabel("Plot Method: ")  # coordinate of the mouse over the current plot
+        self.plot_method_label.setStyleSheet("font-size: 10px;")
+        self.plot_method_label.setObjectName("coord_label")
+        self.plot_method_combo = QComboBox()
+        self.plot_method_combo.setGeometry(QRect(10, 10, 150, 26))
+        self.plot_method_combo.setObjectName("plot_method_combo")
+        self.plot_method_combo.addItems(["Auto (default)"]) # Plotting Options Dropdown
+        self.coord_label = QLabel("X: ___ Y: ___")  # coordinate of the mouse over the current plot
+        self.coord_label.setFixedWidth(100)
         self.coord_label.setStyleSheet("font-size: 10px;")
-        self.coord_label.setFixedWidth(50)  # Set a fixed width of 50 pixels
         self.coord_label.setObjectName("coord_label")
 
-        self.plot_toolbar.addWidget(self.copy_plot_button)
-        self.plot_toolbar.addWidget(self.save_data_button)
-        spacerItem = QSpacerItem(20, 318, QSizePolicy.Minimum, QSizePolicy.Expanding)
-        self.plot_toolbar.addItem(spacerItem)
-        self.plot_toolbar.addWidget(self.coord_label)
-        self.plot_layout.setSpacing(0)
-        self.plot_layout.addLayout(self.plot_toolbar)
+        self.plot_utilities.addWidget(self.copy_plot_button)
+        self.plot_utilities.addWidget(self.save_data_button)
+        self.plot_utilities.addItem(spacerItem)
+        self.plot_utilities.addWidget(self.plot_method_label)
+        self.plot_utilities.addWidget(self.plot_method_combo)
+        self.plot_utilities.addItem(spacerItem)
+        self.plot_utilities.addWidget(self.coord_label)
+        self.plot_layout.addWidget(self.plot_utilities_container)
 
-        # The actual plot itself
+        # The actual plot itself (lots of styling attributes
         self.plot_widget = pg.GraphicsLayoutWidget(self)
         self.plot_widget.setBackground("w")
         self.plot_widget.ci.setSpacing(2)  # Reduce spacing
-        self.plot_widget.ci.setContentsMargins(3, 3, 3, 3)  # Optional: Adjust margins
+        self.plot_widget.ci.setContentsMargins(3, 3, 3, 3)  # Adjust margins of plots
         self.plot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.plot_widget.setMinimumSize(QSize(375, 0))
-        self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates)
         self.plot_widget.setObjectName("plot_widget")
 
         self.plot_layout.addWidget(self.plot_widget)
@@ -115,13 +125,38 @@ class QQuarkTab(QWidget):
         self.plot_layout.setStretch(1, 10)
 
         self.setLayout(self.plot_layout)
+        self.setup_signals()
 
+        # either extract experiment instance of the dataset file depending on the tab type
         if self.is_experiment and self.experiment_obj is not None:
             self.extract_experiment_instance()
         elif not self.is_experiment and dataset_file is not None:
             self.load_dataset_file(dataset_file)
 
+    def setup_signals(self):
+        # self.plot_method_combo.currentIndexChanged.connect(self.plot_method_changed)
+        self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
+
+    def load_dataset_file(self, dataset_file):
+        """
+        Takes the dataset file and loads the dict, before calling the plotter.
+
+        :param dataset_file: The path to the dataset file.
+        :type dataset_file: str
+        """
+
+        self.data = Helpers.h5_to_dict(dataset_file)
+        self.plot_data()
+
     def extract_experiment_instance(self):
+        """
+        From the experiment module of the specific tab, find the correct class to make an instance of.
+
+        TODO: Based on the Experiment Class to-be set.
+        """
+
+        ############ Need to Revamp after Experiment Class set ############
+        # Loop through all members (classes) of the experiment module to find the matching one
         for name, obj, in inspect.getmembers(self.experiment_obj):
             if name == self.tab_name:
                 if inspect.isclass(obj):
@@ -130,28 +165,61 @@ class QQuarkTab(QWidget):
                     ### create instance of experiment
                     self.experiment_instance = obj
 
-                    ### reset the config
+                    ### set the config
                     if (not hasattr(self.experiment_instance, "config_template")
                             or self.experiment_instance.config_template is None):
                         QMessageBox.critical(None, "Error", "No Config Template given.")
-                    ### HANDLE CONFIG ERROR HANDLING
+                    ############ HANDLE CONFIG ERROR HANDLING #############
                     else:
                         self.config["Experiment Config"] = self.experiment_instance.config_template
 
                     # HANDLE EXPERIMENT TYPE????
                     self.experiment_type = None
                     ### check what kind of experiment class it is
-
                     return
 
+        # Verify experiment_instance
         if self.experiment_instance is None:
-            QMessageBox.critical(None, "Error", "No Experiment Class matching File Name Found.")
+            qCritical("No Experiment Class instance found within the module give. Must adhere to the experiment " +
+                      "class template provided.")
+            QMessageBox.critical(None, "Error", "No Experiment Class Found.")
 
-    def load_dataset_file(self, dataset_file):
-        self.data = Helpers.h5_to_dict(dataset_file)
-        self.plot_data()
+    def clear_plots(self):
+        """
+        Clears the plots.
+        """
+
+        self.plot_widget.ci.clear()
+        self.plots = []
+
+    def update_coordinates(self, pos):
+        """
+        Updates the coordinates label to reflect the cursor's location on a plot's axis.
+
+        :param pos: The coordinates of the cursor
+        :type pos: tuple
+        """
+
+        # find the active plot
+        for plot in self.plots:
+            vb = plot.vb  # ViewBox of each plot
+            if plot.sceneBoundingRect().contains(pos):
+                self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
+                mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
+                x, y = mouse_point.x(), mouse_point.y()
+                self.coord_label.setText(f"X: {x:.2f} Y: {y:.2f}")
+                break
 
     def plot_data(self):
+        """
+        Plots the data of the QQuarkTab experiment/dataset.
+        """
+
+        plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
+
+        if plotting_method != "Auto (default)":
+            return
+
         self.clear_plots()
         num_plots = 0
         f = self.data
@@ -199,21 +267,6 @@ class QQuarkTab(QWidget):
                 self.plots.append(plot)
         # print("plotted", self.data)
 
-    def clear_plots(self):
-        self.plot_widget.ci.clear()
-        self.plots = []
-
-    def update_coordinates(self, pos):
-        ### find the active plot
-        for plot in self.plots:
-            vb = plot.vb  # ViewBox of each plot
-            if plot.sceneBoundingRect().contains(pos):
-                self.plot_widget.setCursor(Qt.CrossCursor)
-                mouse_point = vb.mapSceneToView(pos)
-                x, y = mouse_point.x(), mouse_point.y()
-                self.coord_label.setText(f"X: {x:.2f}\nY: {y:.2f}")
-                break
-
     def process_data(self, data):
         self.data = data
 
@@ -240,6 +293,10 @@ class QQuarkTab(QWidget):
         #     plot_labels["y label 2"] = "Q (a.u.)"
 
     def update_data(self, data):
-        print("updating data")
+        """
+        Is the slot for the emission of data from the experiment thread.
+        Calls the methods to process and plot the data.
+        """
+
         self.process_data(data)
         self.plot_data()
