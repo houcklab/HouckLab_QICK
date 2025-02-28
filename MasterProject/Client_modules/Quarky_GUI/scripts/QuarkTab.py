@@ -213,7 +213,7 @@ class QQuarkTab(QWidget):
 
     def plot_data(self):
         """
-        Plots the data of the QQuarkTab experiment/dataset.
+        Plots the data of the QQuarkTab experiment/dataset using the specified plotting method.
         """
 
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
@@ -269,9 +269,15 @@ class QQuarkTab(QWidget):
         # print("plotted", self.data)
 
     def process_data(self, data):
+        """
+        Processes the dataset usually in the form of averaging.
+
+        :param data: The data to be processed.
+        :type data: dict
+        """
         self.data = data
 
-        ### check what set number is being run
+        # check what set number is being run and average the data
         set_num = data['data']['set_num']
         if set_num == 0:
             self.data_cur = data
