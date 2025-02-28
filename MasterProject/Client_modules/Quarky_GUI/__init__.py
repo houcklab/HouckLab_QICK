@@ -3,5 +3,4 @@
 Quarky_GUI package initialization.
 """
 
-
 from . import scripts

@@ -1,3 +1,13 @@
+"""
+============
+QuarkyTab.py
+============
+The custom QQuarkTab class for the central tabs module of the main application.
+
+Each QQuarkTab is either an experiment tab or a data tab that stores its own object attributes, configuration,
+data, and plotting.
+"""
+
 import inspect
 import numpy as np
 from PyQt5.QtCore import Qt, QSize
@@ -17,21 +27,46 @@ from scripts.Init.initialize import BaseConfig
 from scripts import Helpers
 
 class QQuarkTab(QWidget):
+    """
+    The class for QQuarkTabs that make up the central tabular module.
+    """
 
     def __init__(self, experiment_obj=None, tab_name=None, is_experiment=True, dataset_file=None):
+        """
+        Initializes an instance of a QQuarkTab widget.
+
+        :param experiment_obj: The experiment module object extracted from an experiment file.
+        :type experiment_obj: Experiment Module
+        :param tab_name: The name of the tab widget.
+        :type tab_name: str
+        :param is_experiment: Whether the tab corresponds to an experiment or dataset.
+        :type is_experiment: bool
+        :param dataset_file: The path to the dataset file.
+        :type dataset_file: str
+
+        **Important Attributes:**
+
+        * experiment_obj (Experiment Module): The experiment module object that was passed.
+        * experiment_instance (Experiment Class): An initialized instance of the experiment module with the config.
+        * config (dict): The configuration of the QQuarkTab experiment/dataset.
+        * data (dict): The data of the QQuarkTab experiment/dataset.
+        * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
+        * plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area
+        """
+
         super().__init__()
 
-        ### Experiment Variables ###
+        ### Experiment Variables
         self.experiment_obj = experiment_obj
         self.tab_name = str(tab_name)
-        self.config = {"Experiment Config": {}, "Base Config": BaseConfig}
+        self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
         self.is_experiment = is_experiment
         self.data = None
         self.experiment_type = None
-        self.experiment_instance = None  # The actual experiment object
+        self.experiment_instance = None  # The actual experiment instance
         self.plots = []
 
-        #colormap (e.g., 'viridis', 'inferno', etc.)
+        # Can specify an alternative colormap (e.g., 'viridis', 'inferno', etc.)
         cmap = pg.colormap.get('viridis')
         self.lut = cmap.getLookupTable()
 
@@ -43,7 +78,7 @@ class QQuarkTab(QWidget):
         self.plot_layout.setContentsMargins(2, 2, 2, 2)
         self.plot_layout.setObjectName("plot_layout")
 
-        # Plot Button Toolbar
+        ### Plot Button Toolbar
         self.plot_toolbar = QVBoxLayout()
         self.plot_toolbar.setObjectName("plot_toolbar")
         self.copy_plot_button = QToolButton()
@@ -54,7 +89,7 @@ class QQuarkTab(QWidget):
         self.save_data_button.setObjectName("save_data_button")
         self.coord_label = QLabel("X: ___\nY: ___")
         self.coord_label.setStyleSheet("font-size: 10px;")
-        self.coord_label.setFixedWidth(50)  # Set a fixed width of 100 pixels
+        self.coord_label.setFixedWidth(50)  # Set a fixed width of 50 pixels
         self.coord_label.setObjectName("coord_label")
 
         self.plot_toolbar.addWidget(self.copy_plot_button)
@@ -81,13 +116,13 @@ class QQuarkTab(QWidget):
 
         self.setLayout(self.plot_layout)
 
-        if self.is_experiment and experiment_obj is not None:
-            self.extract_experiment_instance(experiment_obj)
+        if self.is_experiment and self.experiment_obj is not None:
+            self.extract_experiment_instance()
         elif not self.is_experiment and dataset_file is not None:
             self.load_dataset_file(dataset_file)
 
-    def extract_experiment_instance(self, experiment_obj):
-        for name, obj, in inspect.getmembers(experiment_obj):
+    def extract_experiment_instance(self):
+        for name, obj, in inspect.getmembers(self.experiment_obj):
             if name == self.tab_name:
                 if inspect.isclass(obj):
                     print("found class instance: " + name)

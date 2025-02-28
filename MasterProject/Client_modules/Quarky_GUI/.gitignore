@@ -1,2 +1,3 @@
-# LAKE gui config files
 **/*.json
+/__pycache__/*
+/.idea/*
