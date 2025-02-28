@@ -172,7 +172,12 @@ class QQuarkTab(QWidget):
                         QMessageBox.critical(None, "Error", "No Config Template given.")
                     ############ HANDLE CONFIG ERROR HANDLING #############
                     else:
-                        self.config["Experiment Config"] = self.experiment_instance.config_template
+                        new_experiment_config = self.experiment_instance.config_template
+                        # Remove keys in experiment config from base config if there is overlap
+                        for key in new_experiment_config:
+                            self.config["Base Config"].pop(key, None)  # Removes the key if it exists, otherwise does nothing
+
+                        self.config["Experiment Config"] = new_experiment_config
 
                     # HANDLE EXPERIMENT TYPE????
                     self.experiment_type = None

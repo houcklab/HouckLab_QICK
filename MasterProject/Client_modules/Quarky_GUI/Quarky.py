@@ -13,9 +13,7 @@ different components.
 # TODO: include legend for plotter
 # TODO: Saving Data Files, Screenshotting
 # TODO: Make a separate thread for proxy connections
-# TODO: Print out rfsoc info
 # TODO: Experiment run time estimate (in the experiment file)
-# TODO: Config overlap
 
 import sys, os
 import math
@@ -245,7 +243,7 @@ class Quarky(QMainWindow):
 
         # Log message handler installation
         qInstallMessageHandler(self.log_panel.message_handler)
-        self.test_logging()
+        # self.test_logging()
 
     def test_logging(self):
         """
