@@ -70,7 +70,7 @@ class WalkProgramSS(AveragerProgram):
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
+        IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]])
         self.FFPulses_direct(-1 * self.FFPulse, self.cfg["variable_wait"], -1 * self.FFPulse, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
@@ -91,7 +91,7 @@ class WalkProgramSS(AveragerProgram):
                 save_experiments=None,
                 start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
