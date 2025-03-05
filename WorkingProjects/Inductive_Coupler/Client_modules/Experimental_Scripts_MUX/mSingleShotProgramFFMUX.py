@@ -196,7 +196,7 @@ class SingleShotProgram(AveragerProgram):
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
         # self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
         # print(self.cfg["qubit_gains"], self.cfg["f_ges"])
@@ -310,13 +310,15 @@ class SingleShotProgramFFMUX(ExperimentClass):
             self.data['data']['i_e' + str(read_index)] = i_e
             self.data['data']['q_e' + str(read_index)] = q_e
 
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None) ### arbitrary ran, change later
+            fid, threshold, angle, ne_contrast, ng_contrast = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, return_errors=True) ### arbitrary ran, change later
             self.data_in_hist = [i_g, q_g, i_e, q_e]
             self.fid.append(fid)
             self.threshold.append(threshold)
             self.angle.append(angle)
         self.data['data']['threshold'] = self.threshold
         self.data['data']['angle'] = self.angle
+        self.ne_contrast = ne_contrast
+        self.ng_contrast = ng_contrast
 
         return self.data
         #

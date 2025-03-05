@@ -9,9 +9,10 @@ from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.AdiabaticRamps import generate_ramp
 
 
-class WalkProgramSS(AveragerProgram):
+class AdiabaticRampCalibrationProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
@@ -58,7 +59,8 @@ class WalkProgramSS(AveragerProgram):
                                  gain=gain_,
                                  waveform="qubit", t=time)
 
-        self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
+
+        self.FFPulses_direct(self.FFExpts, self.cfg['ramp_length'], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
         self.sync_all(gen_t0=self.gen_t0)
 
         self.FFPulses(self.FFReadouts, self.cfg["length"])
@@ -70,9 +72,10 @@ class WalkProgramSS(AveragerProgram):
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        IQ_Array_Negative = [-1 * np.array(array) if type(array) != type(None) else None for array in self.cfg["IDataArray"]]
-        self.FFPulses_direct(-1 * self.FFPulse, self.cfg["variable_wait"], -1 * self.FFPulse, IQPulseArray = IQ_Array_Negative,
-                            waveform_label='FF2')
+        IQ_Array_Negative = [-1 * array for array in self.cfg["IDataArray"]]
+        self.FFPulses_direct(-1 * self.FFPulse, 1, -1 * self.FFPulse,
+                             IQPulseArray=IQ_Array_Negative,
+                             waveform_label='FF2')
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
@@ -115,54 +118,75 @@ class WalkProgramSS(AveragerProgram):
         return all_i,all_q
 
 
-class WalkFFSSMUX(ExperimentClass):
-    """
-    Basic T1
-    """
+class AdiabticRampCalibration(ExperimentClass):
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
+                 ):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
 
     def acquire(self, threshold = None, angle = None, progress=False):
-        tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
-        if np.array(self.cfg["IDataArray"]).any() != None:
-            self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '1']['Gain_Pulse'], 1)
-            self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '2']['Gain_Pulse'], 2)
-            self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '3']['Gain_Pulse'], 3)
-            self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                               '4']['Gain_Pulse'], 4)
-        # print(np.round(self.cfg["IDataArray"][0][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][1][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][2][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][3][:20], 4))
+
+        ramp_durations = np.linspace(self.cfg["duration_start"], self.cfg["duration_end"], self.cfg["duration_num_points"])
 
 
         results = [[] for i in range(len(self.cfg["ro_chs"]))]
         rotated_iq_array = [[] for i in range(len(self.cfg["ro_chs"]))]
         start = time.time()
-        for t in tqdm(tpts, position=0, disable=True):
-            self.cfg["variable_wait"] = t
+        for i in range(len(ramp_durations)):
+
+
+            ramp_length = 0
+            for j in range(4):
+                init_gain = self.cfg["FF_Qubits"][str(j+1)]["Gain_Pulse"]
+                init_gain = 0 # temporary
+                ramp = generate_ramp(init_gain, self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'], ramp_durations[i], ramp_shape=self.cfg['ramp_shape'])
+                if self.cfg['double_ramp']:
+                    reverse_ramp = generate_ramp(self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'], init_gain, ramp_durations[i], reverse=True, ramp_shape=self.cfg['ramp_shape'])
+
+                    ramp = np.concatenate([ramp, reverse_ramp])
+
+                self.cfg["IDataArray"][j] = ramp
+                plt.plot(ramp, color=['red', 'blue', 'green', 'orange'][j], label=j if i==0 else None)
+
+                if len(self.cfg["IDataArray"][j]) == 0:
+                    self.cfg["IDataArray"][j] = np.array([0])
+
+                # set ramp length to longest ramp duration
+                if len(self.cfg['IDataArray'][j]) > ramp_length:
+                    ramp_length = len(self.cfg['IDataArray'][j])
+
+            self.cfg['ramp_length'] = ramp_length
+
+
             self.soc.reset_gens()
-            prog = WalkProgramSS(self.soccfg, self.cfg)
+            prog = AdiabaticRampCalibrationProgram(self.soccfg, self.cfg)
             shots_i0, shots_q0 = prog.acquire(self.soc,
                                               load_pulses=True)
-            for i in range(len(self.cfg["ro_chs"])):
-                rotated_iq = rotate_data((shots_i0[i], shots_q0[i]), theta=angle[i])
-                rotated_iq_array[i].append(rotated_iq)
-                excited_percentage = count_percentage(rotated_iq, threshold=threshold[i])
-                results[i].append(excited_percentage)
+            for j in range(len(self.cfg["ro_chs"])):
+                rotated_iq = rotate_data((shots_i0[j], shots_q0[j]), theta=angle[j])
+                rotated_iq_array[j].append(rotated_iq)
 
+                if self.cfg['use_confusion_matrix']:
+                    excited_percentage = correct_occ(count_percentage(rotated_iq, threshold=threshold[j]), self.cfg['confusion_matrix'])[0]
+                else:
+                    excited_percentage = count_percentage(rotated_iq, threshold=threshold[j])
+
+
+                results[j].append(excited_percentage)
+
+        plt.xlabel("Time (2.34/16 ns)")
+        plt.ylabel("FF Gain")
+        plt.legend()
+        plt.title("FF Gain ramps")
+        plt.show(block=False)
         print(f'Time: {time.time() - start}')
         results = [np.transpose(r) for r in results]
 
         self.data= {
             'config': self.cfg,
             'data': {'Exp_values': results, 'RotatedIQ': rotated_iq_array, 'threshold':threshold,
-                        'angle': angle, 'wait_times': tpts,
+                        'angle': angle, 'ramp_durations': ramp_durations,
                      }
         }
 
@@ -173,7 +197,7 @@ class WalkFFSSMUX(ExperimentClass):
         if data is None:
             data = self.data
 
-        x_pts = data['data']['wait_times']
+        x_pts = data['data']['ramp_durations']
 
         for i, read_index in enumerate(self.cfg['Read_Indeces']):
             expectation_values = data['data']['Exp_values'][i]
@@ -183,8 +207,8 @@ class WalkFFSSMUX(ExperimentClass):
             fig = plt.figure(figNum)
             plt.plot(x_pts, expectation_values, 'o-', color = 'blue')
             plt.ylabel("Qubit Population")
-            plt.xlabel("Wait time (2.32/16 ns )")
-            plt.legend()
+            plt.xlabel("Ramp Duration (2.32/16 ns )")
+            # plt.legend()
             plt.title(self.titlename + ", Read: " + str(read_index))
             plt.savefig(self.iname[:-4] + "_Read_" + str(read_index) + '.png')
 
@@ -218,7 +242,7 @@ def Compensated_AWG(Num_Points, Fit_Parameters, maximum = 1.5):
 def DoubleExponentialFit(t, A1, T1, A2, T2):
     return (A1 * np.exp(-t / T1) + A2 * np.exp(-t / T2))
 
-def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 2):
+def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 1.5):
     step = 0.00232515 / 16
     time = np.arange(0,Num_Points)*step
     ideal_AWG = np.ones(Num_Points)
@@ -241,19 +265,16 @@ def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 2):
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected.p', 'rb'))
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_corrected_V3.p', 'rb'))
 # Qubit2_parameters_long = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected_LongTime_3.p', 'rb'))
-Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
-Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
-Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_PreFinal.p', 'rb'))
-# Qubit1_[0] *= 1.
-# Qubit1_[2] *= 1.
-# Qubit1_[4] *= 1.2
-#
-# # print(Qubit4_)
-# Qubit4_[0] *= 1.6
-# Qubit4_[2] *= 1.6
-# Qubit4_[4] *= 1.7
 
-# print(Qubit4_)
+# Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
+# Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
+# Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_PreFinal.p', 'rb'))
+
+'''Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_Final.p', 'rb'))
+Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
+Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_Final.p', 'rb'))
+
+
 
 Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_Final.p', 'rb'))
 Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_PreFinal.p', 'rb'))
@@ -262,24 +283,13 @@ Qubit2_[0] *= 0.75
 Qubit2_[2] *= 0.75
 Qubit2_[4] *= 1
 
-Qubit2_[0] *= 1.3
-Qubit2_[1] *= 1.2
-Qubit2_[2] *= 1.2
-Qubit2_[3] *= 1.2
+v_awg_Q1 = Compensated_AWG(600 * 16 * 5, Qubit1_)[1]
+v_awg_Q2 = Compensated_AWG(600 * 16 * 5, Qubit2_)[1]
+v_awg_Q4 = Compensated_AWG(600 * 16 * 5, Qubit4_)[1]'''
 
-Qubit4_[0] *= 1.3
-Qubit4_[1] *= 1.2
-Qubit4_[2] *= 1.2
-Qubit4_[3] *= 1.2
-# Qubit4_[0] *= 1.2
-
-
-
-v_awg_Q1 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit1_)[1]
-v_awg_Q2 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit2_)[1]
-v_awg_Q4 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit4_)[1]
-
-
+v_awg_Q1 = np.ones(600 * 16 * 3)
+v_awg_Q2 = np.ones(600 * 16 * 3)
+v_awg_Q4 = np.ones(600 * 16 * 3)
 
 print(v_awg_Q1[:20])
 

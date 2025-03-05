@@ -73,13 +73,13 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             # print("  Padding pulse to 3ccs")
             extralen = 48 - len(IQPulse)
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
-            print(IQPulse[:48])
-        print(IQPulse)
+            # print(IQPulse[:48])
+        # print(IQPulse)
         # print(len(IQPulse))
 
         # figure out name and add pulse
         # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
-        # print(IQPulse[:48])
+        # print("IQPulse[:48]:", i, IQPulse[:48])
         instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
                            idata=IQPulse, qdata=np.zeros_like(IQPulse))
         instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
