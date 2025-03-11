@@ -6,8 +6,6 @@ The custom QQuarkTab class for the central tabs module of the main application.
 
 Each QQuarkTab is either an experiment tab or a data tab that stores its own object attributes, configuration,
 data, and plotting.
-
-TODO: refresh button that updates the experiment instance for any changes made
 """
 
 import inspect

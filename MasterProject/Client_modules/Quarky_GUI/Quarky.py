@@ -8,13 +8,12 @@ This module initializes the GUI, handles application-level logic, and manages in
 different components.
 """
 
-# TODO: Attempt connection to default upon app open
-# TODO: Experiment Class Plotter
-# TODO: include legend for plotter
-# TODO: Saving Data Files, Screenshotting
-# TODO: Make a separate thread for proxy connections
+# TODO: Saving Data Files
+# TODO: re-retrieve module (refresh button)
+
 # TODO: Experiment run time estimate (in the experiment file)
-# TODO: re-retrieve module 
+# TODO: Make a separate thread for proxy connections
+
 
 import sys, os
 import math
@@ -335,6 +334,8 @@ class Quarky(QMainWindow):
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
             date_string = date_time_now.strftime("%Y_%m_%d")
+            #########################################################################
+            #########################################################################
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
