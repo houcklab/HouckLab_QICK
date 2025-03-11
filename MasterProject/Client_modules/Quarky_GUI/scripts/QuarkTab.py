@@ -6,6 +6,8 @@ The custom QQuarkTab class for the central tabs module of the main application.
 
 Each QQuarkTab is either an experiment tab or a data tab that stores its own object attributes, configuration,
 data, and plotting.
+
+TODO: refresh button that updates the experiment instance for any changes made
 """
 
 import inspect
@@ -24,6 +26,7 @@ from PyQt5.QtWidgets import (
 import pyqtgraph as pg
 
 from scripts.Init.initialize import BaseConfig
+from scripts.ExperimentObject import ExperimentObject
 import scripts.Helpers as Helpers
 
 class QQuarkTab(QWidget):
@@ -31,7 +34,7 @@ class QQuarkTab(QWidget):
     The class for QQuarkTabs that make up the central tabular module.
     """
 
-    def __init__(self, experiment_obj=None, tab_name=None, is_experiment=True, dataset_file=None):
+    def __init__(self, experiment_module=None, tab_name=None, is_experiment=True, dataset_file=None):
         """
         Initializes an instance of a QQuarkTab widget.
 
@@ -47,7 +50,6 @@ class QQuarkTab(QWidget):
         **Important Attributes:**
 
         * experiment_obj (Experiment Module): The experiment module object that was passed.
-        * experiment_instance (Experiment Class): An initialized instance of the experiment module with the config.
         * config (dict): The configuration of the QQuarkTab experiment/dataset.
         * data (dict): The data of the QQuarkTab experiment/dataset.
         * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
@@ -57,15 +59,12 @@ class QQuarkTab(QWidget):
         super().__init__()
 
         ### Experiment Variables
-        self.experiment_obj = experiment_obj
-        self.tab_name = str(tab_name)
         self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
+        self.tab_name = str(tab_name)
+        self.experiment_obj = ExperimentObject(self, self.tab_name, experiment_module)
         self.is_experiment = is_experiment
         self.data = None
-        self.experiment_instance = None  # The actual experiment instance
         self.plots = []
-
-        self.experiment_type = None # Not currently used
 
         # Can specify an alternative colormap (e.g., 'viridis', 'inferno', etc.)
         cmap = pg.colormap.get('viridis')
@@ -128,10 +127,8 @@ class QQuarkTab(QWidget):
         self.setLayout(self.plot_layout)
         self.setup_signals()
 
-        # either extract experiment instance of the dataset file depending on the tab type
-        if self.is_experiment and self.experiment_obj is not None:
-            self.extract_experiment_instance()
-        elif not self.is_experiment and dataset_file is not None:
+        # extract dataset file depending on the tab type being a dataset
+        if not self.is_experiment and dataset_file is not None:
             self.load_dataset_file(dataset_file)
 
     def setup_signals(self):
@@ -148,47 +145,6 @@ class QQuarkTab(QWidget):
 
         self.data = Helpers.h5_to_dict(dataset_file)
         self.plot_data()
-
-    def extract_experiment_instance(self):
-        """
-        From the experiment module of the specific tab, find the correct class to make an instance of.
-
-        TODO: Based on the Experiment Class to-be set.
-        """
-
-        ############ Need to Revamp after Experiment Class set ############
-        # Loop through all members (classes) of the experiment module to find the matching one
-        for name, obj, in inspect.getmembers(self.experiment_obj):
-            if name == self.tab_name:
-                if inspect.isclass(obj):
-                    print("found class instance: " + name)
-
-                    ### create instance of experiment
-                    self.experiment_instance = obj
-
-                    ### set the config
-                    if (not hasattr(self.experiment_instance, "config_template")
-                            or self.experiment_instance.config_template is None):
-                        QMessageBox.critical(None, "Error", "No Config Template given.")
-                    ############ HANDLE CONFIG ERROR HANDLING #############
-                    else:
-                        new_experiment_config = self.experiment_instance.config_template
-                        # Remove keys in experiment config from base config if there is overlap
-                        for key in new_experiment_config:
-                            self.config["Base Config"].pop(key, None)  # Removes the key if it exists, otherwise does nothing
-
-                        self.config["Experiment Config"] = new_experiment_config
-
-                    # HANDLE EXPERIMENT TYPE????
-                    self.experiment_type = None
-                    ### check what kind of experiment class it is
-                    return
-
-        # Verify experiment_instance
-        if self.experiment_instance is None:
-            qCritical("No Experiment Class instance found within the module give. Must adhere to the experiment " +
-                      "class template provided.")
-            QMessageBox.critical(None, "Error", "No Experiment Class Found.")
 
     def clear_plots(self):
         """

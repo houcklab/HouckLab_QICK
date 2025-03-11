@@ -14,6 +14,7 @@ different components.
 # TODO: Saving Data Files, Screenshotting
 # TODO: Make a separate thread for proxy connections
 # TODO: Experiment run time estimate (in the experiment file)
+# TODO: re-retrieve module 
 
 import sys, os
 import math
@@ -336,8 +337,9 @@ class Quarky(QMainWindow):
             date_string = date_time_now.strftime("%Y_%m_%d")
 
             # Create experiment object using updated config and current tab's experiment instance
-            experiment_instance = self.current_tab.experiment_instance
+            experiment_instance = self.current_tab.experiment_obj.experiment_instance
             self.experiment = experiment_instance(self.soccfg, config)
+
             # Creating the experiment worker from ExperimentThread
             self.experiment_worker = ExperimentThread(config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
@@ -361,7 +363,7 @@ class Quarky(QMainWindow):
 
             self.thread.start()
         else:
-            qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + self.soc)
+            qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
             QMessageBox.critical(None, "Error", "RfSoC Disconnected.")
             return
 
@@ -410,11 +412,11 @@ class Quarky(QMainWindow):
         """
 
         tab_count = self.central_tabs.count()
-        experiment_obj, experiment_name = Helpers.import_file(str(path)) # gets experiment object from file
+        experiment_module, experiment_name = Helpers.import_file(str(path)) # gets experiment object from file
 
         # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
-        new_experiment_tab = QQuarkTab(experiment_obj, experiment_name, True)
-        if new_experiment_tab.experiment_instance is None: # not valid experiment file
+        new_experiment_tab = QQuarkTab(experiment_module, experiment_name, True)
+        if new_experiment_tab.experiment_obj.experiment_instance is None: # not valid experiment file
             qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
             return
 
@@ -442,7 +444,7 @@ class Quarky(QMainWindow):
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # update config panel
 
-            if self.current_tab.experiment_instance is None: # check if tab is a data or experiment tab
+            if self.current_tab.experiment_obj.experiment_instance is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)
             else:
                 self.start_experiment_button.setEnabled(True)
