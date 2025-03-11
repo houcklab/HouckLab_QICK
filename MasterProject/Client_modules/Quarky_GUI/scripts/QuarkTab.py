@@ -190,11 +190,8 @@ class QQuarkTab(QWidget):
 
     def plot_data(self):
         """
-        Plots the data of the QQuarkTab experiment/dataset using the specified plotting method.
-
-        CHANGE PLOT DATA TO HANDLE THE SPECIAL DATASTRUCTURE RETURNED
-        CHANGE THE BELOW THING TO AN OPTION IN THE DROPDOWN
-        HAVE IT PLOT USING THE METHOD DEFINED IN THE DROPDOWN
+        Plots the data of the QQuarkTab experiment/dataset using prepared data that is prepared by
+        the specified plotting method of the dropdown menu.
         """
 
         self.clear_plots()
@@ -203,10 +200,12 @@ class QQuarkTab(QWidget):
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
         prepared_data = self.data
         if plotting_method == "Auto":
-            prepared_data = self.auto_plot_prepare()
+            prepared_data = self.auto_plot_prepare() # Use auto preparation
         elif plotting_method == self.tab_name:
-            prepared_data = self.experiment_obj.experiment_plotter(self.data)
+            prepared_data = self.experiment_obj.experiment_plotter(self.data) # Use the experiment's preparation
 
+
+        # Create the plots
         if "plots" in prepared_data:
             for i, plot in enumerate(prepared_data["plots"]):
                 p = self.plot_widget.addPlot(title=plot["label"])
@@ -257,6 +256,9 @@ class QQuarkTab(QWidget):
 
 
     def auto_plot_prepare(self):
+        """
+        Automatically prepares the data based on its shape. (Not always correct but tries to infer)
+        """
         prepared_data = {"plots": [], "images": [], "columns": []}
 
         f = self.data
