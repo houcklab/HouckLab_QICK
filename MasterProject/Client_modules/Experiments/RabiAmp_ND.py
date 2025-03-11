@@ -140,8 +140,8 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         ##### code to aquire just the qubit spec data
         prog = RabiAmp_ND(self.soccfg, self.cfg)
 
-        ### in the following the data are arrays in the dimensionality of of swept varibles
-        x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True, debug=False)
+        ### in the following the data are arrays in the dimensionality of swept varibles
+        x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True)
 
         print(avgi)
         print(avgi[0][0])
