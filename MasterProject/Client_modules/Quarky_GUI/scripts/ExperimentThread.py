@@ -38,6 +38,7 @@ class ExperimentThread(QObject):
 
             try:
                 data = self.experiment_instance.acquire()
+                data['data']['set_num'] = idx_set
             except Exception as e:
                 self.RFSOC_error.emit(e)
                 self.finished.emit()

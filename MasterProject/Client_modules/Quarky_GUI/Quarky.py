@@ -357,7 +357,7 @@ class Quarky(QMainWindow):
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
 
             # button and GUI updates
-            self.experiment_progress_bar.setProperty("value", 1)
+            self.experiment_progress_bar.setProperty("value", "--")
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
 

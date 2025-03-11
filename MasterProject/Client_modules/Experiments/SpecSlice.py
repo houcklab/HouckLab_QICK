@@ -147,6 +147,7 @@ class SpecSlice_Experiment(ExperimentClass):
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
+        #### Has a complex multiplication type error somewhere below
         # sig = data['data']['avgi'] + 1j * data['data']['avgq']
         # avgamp0 = np.abs(sig)
 
