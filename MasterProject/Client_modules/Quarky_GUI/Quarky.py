@@ -338,7 +338,7 @@ class Quarky(QMainWindow):
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_instance = self.current_tab.experiment_obj.experiment_instance
-            self.experiment = experiment_instance(self.soccfg, config)
+            self.experiment = experiment_instance(soc=self.soc, soccfg=self.soccfg, cfg=config)
 
             # Creating the experiment worker from ExperimentThread
             self.experiment_worker = ExperimentThread(config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
