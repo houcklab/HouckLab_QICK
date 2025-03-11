@@ -12,8 +12,11 @@ TODO: refresh button that updates the experiment instance for any changes made
 
 import inspect
 import numpy as np
-from PyQt5.QtCore import Qt, QSize, qCritical, QRect
+from PyQt5.QtCore import (
+    Qt, QSize, qCritical, qInfo, QRect, QTimer
+)
 from PyQt5.QtWidgets import (
+    QApplication,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -86,8 +89,8 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(5)
         self.plot_utilities.setObjectName("plot_utilities")
-        self.copy_plot_button = Helpers.create_button("Copy", "copy_plot_button", True, self.plot_utilities_container)
-        self.save_data_button = Helpers.create_button("Save", "save_data_button", True, self.plot_utilities_container)
+        self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
+        self.export_data_button = Helpers.create_button("Export", "export_data_button", True, self.plot_utilities_container)
         self.plot_method_label = QLabel("Plot Method: ")  # coordinate of the mouse over the current plot
         self.plot_method_label.setStyleSheet("font-size: 10px;")
         self.plot_method_label.setObjectName("coord_label")
@@ -102,8 +105,8 @@ class QQuarkTab(QWidget):
 
         spacerItem_1 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
         spacerItem_2 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
-        self.plot_utilities.addWidget(self.copy_plot_button)
-        self.plot_utilities.addWidget(self.save_data_button)
+        self.plot_utilities.addWidget(self.snip_plot_button)
+        self.plot_utilities.addWidget(self.export_data_button)
         self.plot_utilities.addItem(spacerItem_1)
         self.plot_utilities.addWidget(self.plot_method_label)
         self.plot_utilities.addWidget(self.plot_method_combo)
@@ -134,6 +137,8 @@ class QQuarkTab(QWidget):
     def setup_signals(self):
         # self.plot_method_combo.currentIndexChanged.connect(self.plot_method_changed)
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
+        self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
+        # self.save_data_button.clicked.connect(self.)
 
     def load_dataset_file(self, dataset_file):
         """
@@ -171,6 +176,16 @@ class QQuarkTab(QWidget):
                 x, y = mouse_point.x(), mouse_point.y()
                 self.coord_label.setText(f"X: {x:.2f} Y: {y:.2f}")
                 break
+
+    def capture_plot_to_clipboard(self):
+        # Capture screenshot of the plot_widget
+        pixmap = self.plot_widget.grab()  # This grabs the content of the plot_widget
+        clipboard = QApplication.clipboard()
+        clipboard.setPixmap(pixmap)
+        qInfo("Current graph snipped to clipboard!")
+
+        self.snip_plot_button.setText('Done!')
+        QTimer.singleShot(3000, lambda: self.snip_plot_button.setText('Snip'))
 
     def plot_data(self):
         """
