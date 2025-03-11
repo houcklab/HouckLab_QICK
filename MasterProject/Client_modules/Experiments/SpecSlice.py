@@ -141,19 +141,19 @@ class SpecSlice_Experiment(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
 
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
-        sig = data['data']['avgi'] + 1j * data['data']['avgq']
-        avgamp0 = np.abs(sig)
+        # sig = data['data']['avgi'] + 1j * data['data']['avgq']
+        # avgamp0 = np.abs(sig)
 
         # peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
+        # peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
         # print(np.max(np.abs(data['data']['avgq'])))
-        self.qubitFreq = data['data']['x_pts'][peak_loc]
+        # self.qubitFreq = data['data']['x_pts'][peak_loc]
 
         return data
 

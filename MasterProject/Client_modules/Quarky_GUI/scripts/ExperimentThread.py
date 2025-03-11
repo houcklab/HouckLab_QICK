@@ -37,7 +37,7 @@ class ExperimentThread(QObject):
         while self.running and idx_set < self.config["sets"]:
 
             try:
-                data = self.experiment_instance.acquire(self.soc)
+                data = self.experiment_instance.acquire()
             except Exception as e:
                 self.RFSOC_error.emit(e)
                 self.finished.emit()
