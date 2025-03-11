@@ -37,6 +37,7 @@ class ExperimentObject():
         """
         for name, obj, in inspect.getmembers(self.experiment_module):
 
+            # Cannot to issubclass as of now because inheriting from different ExperimentClass files.
             if inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj is not ExperimentClass:
                 qInfo("Found experiment class: " + name)
                 # Store the class reference
