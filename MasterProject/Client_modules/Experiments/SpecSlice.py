@@ -159,16 +159,16 @@ class SpecSlice_Experiment(ExperimentClass):
         return data
 
     @classmethod
-    def plotter(cls, data):
+    def plotter(cls, plot_widget, plots, data):
+
         x_pts = data['data']['x_pts']
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
-
         sig = avgi[0][0] + 1j * avgq[0][0]
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
 
-        # Create structured output
+        # Create structured data
         prepared_data = {
             "plots": [
                 {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
@@ -180,7 +180,16 @@ class SpecSlice_Experiment(ExperimentClass):
             ]
         }
 
-        return prepared_data
+        for i, plot in enumerate(prepared_data["plots"]):
+            p = plot_widget.addPlot(title=plot["label"])
+            p.addLegend()
+            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+            p.setLabel('bottom', plot["xlabel"])
+            p.setLabel('left', plot["ylabel"])
+            plots.append(p)
+            plot_widget.nextRow()
+
+        return
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 

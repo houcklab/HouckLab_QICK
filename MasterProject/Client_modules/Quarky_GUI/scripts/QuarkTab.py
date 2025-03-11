@@ -198,62 +198,10 @@ class QQuarkTab(QWidget):
         self.plots = []
 
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
-        prepared_data = self.data
-        if plotting_method == "Auto":
-            prepared_data = self.auto_plot_prepare() # Use auto preparation
-        elif plotting_method == self.tab_name:
-            prepared_data = self.experiment_obj.experiment_plotter(self.data) # Use the experiment's preparation
-
-
-        # Create the plots
-        if "plots" in prepared_data:
-            for i, plot in enumerate(prepared_data["plots"]):
-                p = self.plot_widget.addPlot(title=plot["label"])
-                p.addLegend()
-                p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
-                p.setLabel('bottom', plot["xlabel"])
-                p.setLabel('left', plot["ylabel"])
-                self.plots.append(p)
-                self.plot_widget.nextRow()
-
-        if "images" in prepared_data:
-            for i, img in enumerate(prepared_data["images"]):
-                # Create PlotItem
-                p = self.plot_widget.addPlot(title=img["label"])
-                p.setLabel('bottom', img["xlabel"])
-                p.setLabel('left', img["ylabel"])
-                p.showGrid(x=True, y=True)
-
-                # Create ImageItem
-                image_item = pg.ImageItem(img["data"].T)
-                p.addItem(image_item)
-                color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
-                image_item.setLookupTable(color_map.getLookupTable())
-
-                # Create ColorBarItem
-                color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()), colorMap=color_map)
-                color_bar.setImageItem(image_item, insert_in=p)  # Add color bar to the plot
-
-                self.plots.append(p)
-                if len(self.plots) % 2 == 0: self.plot_widget.nextRow()
-
-        if "columns" in prepared_data:
-            for i, column in enumerate(prepared_data["columns"]):
-                x_data = column["data"][:, 0]  # X-values (real part)
-                y_data = column["data"][:, 1]  # Y-values (imaginary part)
-
-                # Create PlotItem for IQ plot
-                p = self.plot_widget.addPlot(title=column["label"])
-                p.setLabel('bottom', column["xlabel"])
-                p.setLabel('left', column["ylabel"])
-
-                # Plot the scatter plot (IQ plot)
-                p.plot(x_data, y_data, pen=None, symbol='o', symbolSize=5, symbolBrush='b')
-
-                self.plots.append(p)
-                if len(self.plots) % 2 == 0:  # Move to next row every 2 plots
-                    self.plot_widget.nextRow()
-
+        if plotting_method == "Auto": # Use auto preparation
+            self.auto_plot_prepare()
+        elif plotting_method == self.tab_name: # Use the experiment's preparation
+            self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
 
     def auto_plot_prepare(self):
         """
@@ -305,7 +253,56 @@ class QQuarkTab(QWidget):
                     "colormap": "inferno"
                 })
 
-        return prepared_data
+        # Create the plots
+        if "plots" in prepared_data:
+            for i, plot in enumerate(prepared_data["plots"]):
+                p = self.plot_widget.addPlot(title=plot["label"])
+                p.addLegend()
+                p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+                p.setLabel('bottom', plot["xlabel"])
+                p.setLabel('left', plot["ylabel"])
+                self.plots.append(p)
+                self.plot_widget.nextRow()
+
+        if "images" in prepared_data:
+            for i, img in enumerate(prepared_data["images"]):
+                # Create PlotItem
+                p = self.plot_widget.addPlot(title=img["label"])
+                p.setLabel('bottom', img["xlabel"])
+                p.setLabel('left', img["ylabel"])
+                p.showGrid(x=True, y=True)
+
+                # Create ImageItem
+                image_item = pg.ImageItem(img["data"].T)
+                p.addItem(image_item)
+                color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
+                image_item.setLookupTable(color_map.getLookupTable())
+
+                # Create ColorBarItem
+                color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()),
+                                            colorMap=color_map)
+                color_bar.setImageItem(image_item, insert_in=p)  # Add color bar to the plot
+
+                self.plots.append(p)
+                if len(self.plots) % 2 == 0: self.plot_widget.nextRow()
+
+        if "columns" in prepared_data:
+            for i, column in enumerate(prepared_data["columns"]):
+                x_data = column["data"][:, 0]  # X-values (real part)
+                y_data = column["data"][:, 1]  # Y-values (imaginary part)
+
+                # Create PlotItem for IQ plot
+                p = self.plot_widget.addPlot(title=column["label"])
+                p.setLabel('bottom', column["xlabel"])
+                p.setLabel('left', column["ylabel"])
+
+                # Plot the scatter plot (IQ plot)
+                p.plot(x_data, y_data, pen=None, symbol='o', symbolSize=5, symbolBrush='b')
+
+                self.plots.append(p)
+                if len(self.plots) % 2 == 0:  # Move to next row every 2 plots
+                    self.plot_widget.nextRow()
+        return
 
     def process_data(self, data):
         """
