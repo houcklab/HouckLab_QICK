@@ -48,9 +48,9 @@ class ExperimentThread(QObject):
             self.updateData.emit(data)
             # Update the setsComplete bar
             self.updateProgress.emit(idx_set + 1)
-            self.finished.emit()
-
             idx_set += 1
+
+        self.finished.emit()
 
     def stop(self):
         self.running = False

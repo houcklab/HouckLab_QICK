@@ -227,7 +227,7 @@ class Quarky(QMainWindow):
 
         # Connecting the top bar buttons to their respective functions
         self.start_experiment_button.clicked.connect(self.run_experiment)
-        self.stop_experiment_button.clicked.connect(self.load_experiment_file)
+        self.stop_experiment_button.clicked.connect(self.stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
 
@@ -358,7 +358,8 @@ class Quarky(QMainWindow):
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
 
             # button and GUI updates
-            self.experiment_progress_bar.setProperty("value", "--")
+            self.update_progress(0)
+            self.experiment_progress_bar.setValue(1)
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
 
