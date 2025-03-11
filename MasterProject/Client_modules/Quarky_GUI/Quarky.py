@@ -337,11 +337,11 @@ class Quarky(QMainWindow):
             date_string = date_time_now.strftime("%Y_%m_%d")
 
             # Create experiment object using updated config and current tab's experiment instance
-            experiment_instance = self.current_tab.experiment_obj.experiment_instance
-            self.experiment = experiment_instance(soc=self.soc, soccfg=self.soccfg, cfg=config)
+            experiment_class = self.current_tab.experiment_obj.experiment_class
+            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=config)
 
             # Creating the experiment worker from ExperimentThread
-            self.experiment_worker = ExperimentThread(config, soccfg=self.soccfg, exp=self.experiment, soc=self.soc)
+            self.experiment_worker = ExperimentThread(config, soccfg=self.soccfg, exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
 
             # Connecting started and finished signals
@@ -416,7 +416,7 @@ class Quarky(QMainWindow):
 
         # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
         new_experiment_tab = QQuarkTab(experiment_module, experiment_name, True)
-        if new_experiment_tab.experiment_obj.experiment_instance is None: # not valid experiment file
+        if new_experiment_tab.experiment_obj.experiment_class is None: # not valid experiment file
             qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
             return
 
@@ -444,7 +444,7 @@ class Quarky(QMainWindow):
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # update config panel
 
-            if self.current_tab.experiment_obj.experiment_instance is None: # check if tab is a data or experiment tab
+            if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)
             else:
                 self.start_experiment_button.setEnabled(True)

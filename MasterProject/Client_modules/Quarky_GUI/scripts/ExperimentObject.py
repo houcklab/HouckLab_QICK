@@ -1,6 +1,6 @@
 import inspect
 import numpy as np
-from PyQt5.QtCore import qCritical, qInfo
+from PyQt5.QtCore import qCritical, qInfo, qDebug
 from PyQt5.QtWidgets import (
     QMessageBox
 )
@@ -12,13 +12,13 @@ from scripts.CoreLib.Experiment import ExperimentClass
 class ExperimentObject():
     def __init__(self, experiment_tab, experiment_name, experiment_module=None):
         if experiment_module is None:
-            return
+            return None
 
         self.experiment_module = experiment_module
         self.experiment_name = experiment_name
         self.experiment_tab = experiment_tab
-        self.experiment_instance = None
-        self.experiment_plotting = None
+        self.experiment_class = None
+        self.experiment_plotter = None
 
         self.extract_experiment_attributes()
 
@@ -41,7 +41,13 @@ class ExperimentObject():
             if inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj is not ExperimentClass:
                 qInfo("Found experiment class: " + name)
                 # Store the class reference
-                self.experiment_instance = obj
+                self.experiment_class = obj
+                # Store the class's plotter function
+                if hasattr(obj, "plotter") and callable(getattr(obj, "plotter")):
+                    qInfo("Found experiment plotter.")
+                    self.experiment_plotter = getattr(obj, "plotter")
+                else:
+                    qDebug("This experiment class does not have a plotter function.")
 
             if name == self.experiment_name:
                 if not hasattr(obj, "config_template") or obj.config_template is None:
@@ -56,7 +62,7 @@ class ExperimentObject():
                     self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
         # Verify experiment_instance
-        if self.experiment_instance is None:
+        if self.experiment_class is None:
             qCritical("No Experiment Class instance found within the module give. Must adhere to the experiment " +
                       "class template provided.")
             QMessageBox.critical(None, "Error", "No Experiment Class Found.")

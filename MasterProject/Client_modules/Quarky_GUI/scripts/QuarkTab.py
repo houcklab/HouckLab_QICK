@@ -11,6 +11,8 @@ TODO: refresh button that updates the experiment instance for any changes made
 """
 
 import inspect
+from multiprocessing.spawn import prepare
+
 import numpy as np
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, QRect, QTimer
@@ -27,6 +29,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
 )
 import pyqtgraph as pg
+from fontTools.ttx import process
 
 from scripts.Init.initialize import BaseConfig
 from scripts.ExperimentObject import ExperimentObject
@@ -64,53 +67,45 @@ class QQuarkTab(QWidget):
         ### Experiment Variables
         self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
         self.tab_name = str(tab_name)
-        self.experiment_obj = ExperimentObject(self, self.tab_name, experiment_module)
+        self.experiment_obj = None if experiment_module is None else ExperimentObject(self, self.tab_name, experiment_module)
         self.is_experiment = is_experiment
         self.data = None
         self.plots = []
-
-        # Can specify an alternative colormap (e.g., 'viridis', 'inferno', etc.)
-        cmap = pg.colormap.get('viridis')
-        self.lut = cmap.getLookupTable()
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         ### Plotter within Tab
         self.plot_layout = QVBoxLayout(self)
-        self.plot_layout.setContentsMargins(5, 0, 5, 0)
+        self.plot_layout.setContentsMargins(5, 5, 5, 0)
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
         ### Plot Utilities Bar
         self.plot_utilities_container = QWidget()
-        self.plot_utilities_container.setMaximumHeight(35)
+        self.plot_utilities_container.setMaximumHeight(30)
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
-        self.plot_utilities.setSpacing(5)
+        self.plot_utilities.setSpacing(3)
         self.plot_utilities.setObjectName("plot_utilities")
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.export_data_button = Helpers.create_button("Export", "export_data_button", True, self.plot_utilities_container)
-        self.plot_method_label = QLabel("Plot Method: ")  # coordinate of the mouse over the current plot
-        self.plot_method_label.setStyleSheet("font-size: 10px;")
+        self.plot_method_label = QLabel(" Plotter: ")  # coordinate of the mouse over the current plot
         self.plot_method_label.setObjectName("coord_label")
-        self.plot_method_combo = QComboBox()
-        self.plot_method_combo.setGeometry(QRect(10, 10, 150, 26))
+        self.plot_method_combo = QComboBox(self.plot_utilities_container)
+        self.plot_method_combo.setFixedWidth(150)
         self.plot_method_combo.setObjectName("plot_method_combo")
-        self.plot_method_combo.addItems(["Auto (default)"]) # Plotting Options Dropdown
-        self.coord_label = QLabel("X: ___ Y: ___")  # coordinate of the mouse over the current plot
-        self.coord_label.setFixedWidth(100)
+        self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
+        self.coord_label.setFixedWidth(130)
         self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
 
-        spacerItem_1 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
-        spacerItem_2 = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Expanding)  # spacer
+        spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
-        self.plot_utilities.addItem(spacerItem_1)
         self.plot_utilities.addWidget(self.plot_method_label)
         self.plot_utilities.addWidget(self.plot_method_combo)
-        self.plot_utilities.addItem(spacerItem_2)
+        self.plot_utilities.addItem(spacerItem)
         self.plot_utilities.addWidget(self.coord_label)
         self.plot_layout.addWidget(self.plot_utilities_container)
 
@@ -128,6 +123,7 @@ class QQuarkTab(QWidget):
         self.plot_layout.setStretch(1, 10)
 
         self.setLayout(self.plot_layout)
+        self.setup_plotter_options()
         self.setup_signals()
 
         # extract dataset file depending on the tab type being a dataset
@@ -139,6 +135,13 @@ class QQuarkTab(QWidget):
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
         # self.save_data_button.clicked.connect(self.)
+
+    def setup_plotter_options(self):
+        self.plot_method_combo.addItems(["Auto"])
+        if self.is_experiment and self.experiment_obj is not None:
+            if self.experiment_obj.experiment_plotter is not None:
+                self.plot_method_combo.addItems([self.tab_name])
+                self.plot_method_combo.setCurrentText(self.tab_name)
 
     def load_dataset_file(self, dataset_file):
         """
@@ -174,7 +177,7 @@ class QQuarkTab(QWidget):
                 self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
                 mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
                 x, y = mouse_point.x(), mouse_point.y()
-                self.coord_label.setText(f"X: {x:.2f} Y: {y:.2f}")
+                self.coord_label.setText(f"X: {x:.5f} Y: {y:.5f}")
                 break
 
     def capture_plot_to_clipboard(self):
@@ -190,15 +193,73 @@ class QQuarkTab(QWidget):
     def plot_data(self):
         """
         Plots the data of the QQuarkTab experiment/dataset using the specified plotting method.
+
+        CHANGE PLOT DATA TO HANDLE THE SPECIAL DATASTRUCTURE RETURNED
+        CHANGE THE BELOW THING TO AN OPTION IN THE DROPDOWN
+        HAVE IT PLOT USING THE METHOD DEFINED IN THE DROPDOWN
         """
 
-        plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
-
-        if plotting_method != "Auto (default)":
-            return
-
         self.clear_plots()
-        num_plots = 0
+        self.plots = []
+
+        plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
+        prepared_data = self.data
+        if plotting_method == "Auto":
+            prepared_data = self.auto_plot_prepare()
+        elif plotting_method == self.tab_name:
+            prepared_data = self.experiment_obj.experiment_plotter(self.data)
+
+        # Add Line Plots
+        for i, plot in enumerate(prepared_data["plots"]):
+            p = self.plot_widget.addPlot(title=plot["label"])
+            p.addLegend()
+            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+            p.setLabel('bottom', plot["xlabel"])
+            p.setLabel('left', plot["ylabel"])
+            self.plots.append(p)
+            self.plot_widget.nextRow()
+
+        # Add Image Plots
+        for i, img in enumerate(prepared_data["images"]):
+            # Create PlotItem
+            p = self.plot_widget.addPlot(title=img["label"])
+            p.setLabel('bottom', img["xlabel"])
+            p.setLabel('left', img["ylabel"])
+            p.showGrid(x=True, y=True)
+
+            # Create ImageItem
+            image_item = pg.ImageItem(img["data"].T)
+            p.addItem(image_item)
+            color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
+            image_item.setLookupTable(color_map.getLookupTable())
+
+            # Create ColorBarItem
+            color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()), colorMap=color_map)
+            color_bar.setImageItem(image_item, insert_in=p)  # Add color bar to the plot
+
+            self.plots.append(p)
+            if len(self.plots) % 2 == 0: self.plot_widget.nextRow()
+
+        for i, column in enumerate(prepared_data["columns"]):
+            x_data = column["data"][:, 0]  # X-values (real part)
+            y_data = column["data"][:, 1]  # Y-values (imaginary part)
+
+            # Create PlotItem for IQ plot
+            p = self.plot_widget.addPlot(title=column["label"])
+            p.setLabel('bottom', column["xlabel"])
+            p.setLabel('left', column["ylabel"])
+
+            # Plot the scatter plot (IQ plot)
+            p.plot(x_data, y_data, pen=None, symbol='o', symbolSize=5, symbolBrush='b')
+
+            self.plots.append(p)
+            if len(self.plots) % 2 == 0:  # Move to next row every 2 plots
+                self.plot_widget.nextRow()
+
+
+    def auto_plot_prepare(self):
+        prepared_data = {"plots": [], "images": [], "columns": []}
+
         f = self.data
         if 'data' in self.data:
             f = self.data['data']
@@ -209,40 +270,41 @@ class QQuarkTab(QWidget):
                 data = np.array(data[0][0])
             shape = data.shape
 
-            # 1D data -> 2D Plots
+            # Handle 1D data -> 2D Plots
             if len(shape) == 1:
                 x_data = None
                 if 'x_pts' in f:
                     x_data = list(f['x_pts'])
-                    # Iterate through all keys in the file
                     if name == 'x_pts':
                         continue
                     y_data = list(data)
                     if len(x_data) == len(y_data):
-                        num_plots += 1
-                        plot = self.plot_widget.addPlot()
-                        plot.plot(x_data, y_data, pen=None, symbol='o', symbolSize=3, symbolBrush='b',
-                                  name=name)  # Scatter plot
-                        plot.setLabel("left", name)
-                        plot.showGrid(x=True, y=True)
-                        self.plots.append(plot)
-                        self.plot_widget.nextRow()
+                        prepared_data["plots"].append({
+                            "x": x_data,
+                            "y": y_data,
+                            "label": name,
+                            "xlabel": "Qubit Frequency (GHz)",
+                            "ylabel": "a.u."
+                        })
+            # Handle 3D data -> Column Plots (you can define a specific format for 3D data)
+            elif len(shape) == 2 and shape[1] == 2:
+                prepared_data["columns"].append({
+                    "data": data,
+                    "label": name,
+                    "xlabel": "X-axis",
+                    "ylabel": "Y-axis"
+                })
+            # Handle 2D data -> Image Plots (e.g., heatmaps, spectrograms)
             elif len(shape) == 2:
-                num_plots += 1
-                plot = self.plot_widget.addPlot(title=name)
-                # 2-column data -> IQ scatter plot
-                if shape[1] == 2:
-                    plot.plot(data[:, 0], data[:, 1], pen=None, symbol="o")
-                    self.plot_widget.nextRow()
-                # General 2D data -> Heatmap
-                else:
-                    img = pg.ImageItem(data.T)  # Transpose for correct orientation
-                    img.setLookupTable(self.lut)
-                    plot.addItem(img)
-                    if num_plots % 2 == 0:
-                        self.plot_widget.nextRow()
-                self.plots.append(plot)
-        # print("plotted", self.data)
+                prepared_data["images"].append({
+                    "data": data,
+                    "label": name,
+                    "xlabel": "X-axis",
+                    "ylabel": "Y-axis",
+                    "colormap": "inferno"
+                })
+
+        return prepared_data
 
     def process_data(self, data):
         """
@@ -264,16 +326,6 @@ class QQuarkTab(QWidget):
             self.data_cur['data']['avgq'][0][0] = avgq
         self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
         self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
-
-        ### create a diction to feed into the plot widget for labels
-        # plot_labels = {
-        #     "x label": self.experiment.cfg["x_pts_label"],
-        #     "y label": self.experiment.cfg["y_pts_label"],
-        # }
-        ### check for if the y label is none (for single varible sweep) and set the y label to I/Q or amp/phase
-        # if plot_labels["y label"] == None:
-        #     plot_labels["y label 1"] = "I (a.u.)"
-        #     plot_labels["y label 2"] = "Q (a.u.)"
 
     def update_data(self, data):
         """

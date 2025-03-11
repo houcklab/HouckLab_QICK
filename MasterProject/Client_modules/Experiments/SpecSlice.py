@@ -158,6 +158,30 @@ class SpecSlice_Experiment(ExperimentClass):
 
         return data
 
+    @classmethod
+    def plotter(cls, data):
+        x_pts = data['data']['x_pts']
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
+
+        sig = avgi[0][0] + 1j * avgq[0][0]
+        avgsig = np.abs(sig)
+        avgphase = np.angle(sig, deg=True)
+
+        # Create structured output
+        prepared_data = {
+            "plots": [
+                {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
+                {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
+                {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
+                 "ylabel": "a.u."},
+                {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
+                 "ylabel": "a.u."}
+            ]
+        }
+
+        return prepared_data
+
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
         if data is None:
