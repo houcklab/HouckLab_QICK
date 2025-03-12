@@ -44,9 +44,8 @@ class ExperimentThread(QObject):
                 self.finished.emit()
                 return # Do not want to update data -- no new data was recorded!
 
-            # Emit the signal with new data
+            # Emit the signal with new data and update the progress bar with additional set complete
             self.updateData.emit(data)
-            # Update the setsComplete bar
             self.updateProgress.emit(idx_set + 1)
             idx_set += 1
 

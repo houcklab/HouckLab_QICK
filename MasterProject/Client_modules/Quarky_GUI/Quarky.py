@@ -17,7 +17,6 @@ different components.
 
 import sys, os
 import math
-import datetime
 from pathlib import Path
 from PyQt5.QtCore import (
     Qt, QSize, QThread, pyqtSignal, qInstallMessageHandler, qDebug,
@@ -326,17 +325,6 @@ class Quarky(QMainWindow):
             BaseConfig = self.config_tree_panel.config["Base Config"]
             config = self.current_tab.config = BaseConfig | UpdateConfig # symmetric difference and intersection
 
-            #########################################################################
-            ### TODO: Setting up directories, filenames, and other things to be saved
-            #########################################################################
-            # Setting up variables necessary for saving data files, probably move to QuarkTab
-            experiment_name = self.current_tab.tab_name
-            date_time_now = datetime.datetime.now()
-            date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-            date_string = date_time_now.strftime("%Y_%m_%d")
-            #########################################################################
-            #########################################################################
-
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
             self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=config)
@@ -346,6 +334,7 @@ class Quarky(QMainWindow):
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
 
             # Connecting started and finished signals
+            self.thread.started.connect(self.current_tab.prepare_file_naming)
             self.thread.started.connect(self.experiment_worker.run) # run experiment
             self.experiment_worker.finished.connect(self.thread.quit) # stop thread
             self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
@@ -376,9 +365,11 @@ class Quarky(QMainWindow):
 
         if self.experiment_worker:
             self.experiment_worker.stop()
+            qDebug("Stopping the experiment worker...")
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
+        qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
 
     def closeEvent(self, event):
         """
@@ -516,7 +507,7 @@ class Quarky(QMainWindow):
         new_data_tab = QQuarkTab(None, file_name, False, file)
 
         # Handle UI updates
-        tab_idx = self.central_tabs.addTab(new_data_tab, (file_name + ".h5"))
+        tab_idx = self.central_tabs.addTab(new_data_tab, (file_name))
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(False)
         self.config_tree_panel.set_config(new_data_tab.config) # update config (when data files have config)

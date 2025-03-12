@@ -8,12 +8,16 @@ Each QQuarkTab is either an experiment tab or a data tab that stores its own obj
 data, and plotting.
 """
 
-import inspect
-from multiprocessing.spawn import prepare
+import os
+import json
+import h5py
+from pathlib import Path
+import datetime
+import shutil
 
 import numpy as np
 from PyQt5.QtCore import (
-    Qt, QSize, qCritical, qInfo, QRect, QTimer
+    Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -25,6 +29,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QLabel,
     QComboBox,
+    QFileDialog,
 )
 import pyqtgraph as pg
 from fontTools.ttx import process
@@ -38,7 +43,7 @@ class QQuarkTab(QWidget):
     The class for QQuarkTabs that make up the central tabular module.
     """
 
-    def __init__(self, experiment_module=None, tab_name=None, is_experiment=True, dataset_file=None):
+    def __init__(self, experiment_module=None, tab_name=None, is_experiment=None, dataset_file=None):
         """
         Initializes an instance of a QQuarkTab widget.
 
@@ -67,8 +72,10 @@ class QQuarkTab(QWidget):
         self.tab_name = str(tab_name)
         self.experiment_obj = None if experiment_module is None else ExperimentObject(self, self.tab_name, experiment_module)
         self.is_experiment = is_experiment
+        self.dataset_file = dataset_file
         self.data = None
         self.plots = []
+        self.output_dir = None
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -88,20 +95,22 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setObjectName("plot_utilities")
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.export_data_button = Helpers.create_button("Export", "export_data_button", True, self.plot_utilities_container)
-        self.plot_method_label = QLabel(" Plotter: ")  # coordinate of the mouse over the current plot
-        self.plot_method_label.setObjectName("coord_label")
+        self.output_dir_button = Helpers.create_button("Output Dir", "output_dir_button", True, self.plot_utilities_container)
         self.plot_method_combo = QComboBox(self.plot_utilities_container)
         self.plot_method_combo.setFixedWidth(150)
         self.plot_method_combo.setObjectName("plot_method_combo")
         self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
-        self.coord_label.setFixedWidth(130)
+        self.coord_label.setAlignment(Qt.AlignRight)
         self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
+
+        self.export_data_button.setEnabled(False)
+        self.output_dir_button.setEnabled(False)
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
-        self.plot_utilities.addWidget(self.plot_method_label)
+        self.plot_utilities.addWidget(self.output_dir_button)
         self.plot_utilities.addWidget(self.plot_method_combo)
         self.plot_utilities.addItem(spacerItem)
         self.plot_utilities.addWidget(self.coord_label)
@@ -125,21 +134,31 @@ class QQuarkTab(QWidget):
         self.setup_signals()
 
         # extract dataset file depending on the tab type being a dataset
-        if not self.is_experiment and dataset_file is not None:
-            self.load_dataset_file(dataset_file)
+        if not self.is_experiment and self.dataset_file is not None:
+            self.load_dataset_file(self.dataset_file)
 
     def setup_signals(self):
         # self.plot_method_combo.currentIndexChanged.connect(self.plot_method_changed)
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
-        # self.save_data_button.clicked.connect(self.)
+        self.export_data_button.clicked.connect(self.export_data)
+        self.output_dir_button.clicked.connect(self.change_output_dir)
+
+        if self.is_experiment:
+            self.output_dir_button.setEnabled(True)
+            self.output_dir = os.path.join(os.path.abspath(""), "data")
+            qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
+            if not Path(self.output_dir).is_dir():
+                os.mkdir(self.output_dir)
+        if self.tab_name != "None":
+            self.export_data_button.setEnabled(True)
 
     def setup_plotter_options(self):
-        self.plot_method_combo.addItems(["Auto"])
+        self.plot_method_combo.addItems(["Plot: Auto"])
         if self.is_experiment and self.experiment_obj is not None:
             if self.experiment_obj.experiment_plotter is not None:
-                self.plot_method_combo.addItems([self.tab_name])
-                self.plot_method_combo.setCurrentText(self.tab_name)
+                self.plot_method_combo.addItems(["Plot: " + self.tab_name])
+                self.plot_method_combo.setCurrentText("Plot: " + self.tab_name)
 
     def load_dataset_file(self, dataset_file):
         """
@@ -197,7 +216,7 @@ class QQuarkTab(QWidget):
         self.clear_plots()
         self.plots = []
 
-        plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
+        plotting_method = self.plot_method_combo.currentText()[6:] # Get the Plotting Method
         if plotting_method == "Auto": # Use auto preparation
             self.auto_plot_prepare()
         elif plotting_method == self.tab_name: # Use the experiment's preparation
@@ -333,3 +352,99 @@ class QQuarkTab(QWidget):
 
         self.process_data(data)
         self.plot_data()
+        self.save_data()
+
+    def export_data(self):
+        self.prepare_file_naming()
+        self.save_data()
+
+        self.export_data_button.setText('Done!')
+        QTimer.singleShot(3000, lambda: self.export_data_button.setText('Export'))
+
+    def change_output_dir(self):
+        self.output_dir = QFileDialog.getExistingDirectory(self, "Select Folder for Autosave", self.output_dir)
+        qInfo("Output directory for experiment data changed to: " + self.output_dir)
+
+        self.output_dir_button.setText('Changed!')
+        QTimer.singleShot(3000, lambda: self.output_dir_button.setText('Output Dir'))
+
+    def prepare_file_naming(self):
+        # Setting up variables necessary for saving data files
+        date_time_now = datetime.datetime.now()
+        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+        date_string = date_time_now.strftime("%Y_%m_%d")
+
+        if not self.is_experiment and self.dataset_file is not None:
+            path_obj = Path(self.dataset_file)
+            self.folder_name = "data" + "_" + date_string
+            self.file_name = path_obj.stem
+        elif self.is_experiment:
+            self.folder_name = self.tab_name + "_" + date_string
+            self.file_name = self.tab_name + "_" + date_time_string
+
+    def save_data(self):
+        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
+            self.prepare_file_naming()
+
+        if not self.is_experiment:
+            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save Dataset")
+            folder_path = Path(os.path.join(folder_path, self.folder_name))
+            if not folder_path.is_dir():
+                folder_path.mkdir(parents=True, exist_ok=True)
+
+            if folder_path:
+                try:
+                    shutil.copy2(self.dataset_file, folder_path)
+                    pixmap = self.plot_widget.grab()
+                    file_path = os.path.join(folder_path, self.file_name + ".png")
+                    print(file_path)
+                    pixmap.save(file_path)
+                    qInfo("Saved dataset to " + str(folder_path))
+                except Exception as e:
+                    qCritical(f"Failed to save the dataset to {file_path}: {str(e)}")
+                    QMessageBox.critical(self, "Error", f"Failed to save dataset.")
+
+        elif self.is_experiment:
+            date_time_now = datetime.datetime.now()
+            date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+            data_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.h5')
+            config_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.json')
+            image_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.png')
+
+            # Make directories if they don't already exist
+            if not Path(self.output_dir + "/" + self.tab_name).is_dir():
+                os.mkdir(self.output_dir + "/" + self.tab_name)
+            if not Path(os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name)).is_dir():
+                os.mkdir(os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name))
+
+            # Save dataset
+            data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
+            if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
+                for key, datum in self.data['data'].items():
+                    datum = np.array(datum)
+                    try:
+                        data_file.create_dataset(key, shape=datum.shape,
+                                                 maxshape=tuple([None] * len(datum.shape)),
+                                                 dtype=str(datum.astype(np.float64).dtype))
+                    except RuntimeError as e:
+                        qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
+                        del data_file[key]
+                    data_file[key][...] = datum
+            data_file.close()
+
+            # Save config
+            try:
+                with open(config_filename, "w") as json_file:
+                    json.dump(self.config, json_file, indent=4)
+            except Exception as e:
+                qCritical(f"Failed to save the configuration to {config_filename}: {str(e)}")
+
+            # Save image
+            try:
+                pixmap = self.plot_widget.grab()
+                pixmap.save(image_filename, "PNG")
+            except Exception as e:
+                qCritical(f"Failed to save the plot image to {image_filename}: {str(e)}")
+
+            qDebug("Data export attempted at " + date_time_string +
+                  " to: " + self.output_dir + "/" + self.tab_name + "/" + self.folder_name)
