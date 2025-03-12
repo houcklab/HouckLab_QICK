@@ -8,13 +8,14 @@ import pyqtgraph as pg
 
 from scripts.Init.initialize import BaseConfig
 from scripts.CoreLib.Experiment import ExperimentClass
+import scripts.Helpers as Helpers
 
 class ExperimentObject():
-    def __init__(self, experiment_tab, experiment_name, experiment_module=None):
-        if experiment_module is None:
+    def __init__(self, experiment_tab, experiment_name, experiment_path=None):
+        if experiment_path is None:
             return None
 
-        self.experiment_module = experiment_module
+        self.experiment_path = experiment_path
         self.experiment_name = experiment_name
         self.experiment_tab = experiment_tab
         self.experiment_class = None
@@ -26,16 +27,16 @@ class ExperimentObject():
     def extract_experiment_attributes(self):
         """
         From the experiment module of the specific tab, find the correct class to make an instance of.
-
-        TODO: Based on the Experiment Class to-be set.
         """
 
         # Loop through all members (classes) of the experiment module to find the matching class
-        """
-        Changes: Instead of searching for a matching name, it looks for the ExperimentClass class, that is the wrapper 
-        class. But, the config attribute is given in the direct experiment class, not the wrapper.
-        """
-        for name, obj, in inspect.getmembers(self.experiment_module):
+
+        # Changes: Instead of searching for a matching name, it looks for the ExperimentClass class, that is the wrapper
+        # class. But, the config attribute is given in the direct experiment class, not the wrapper.
+
+        experiment_module, experiment_name = Helpers.import_file(str(self.experiment_path)) # gets experiment object from file
+
+        for name, obj, in inspect.getmembers(experiment_module):
 
             # Cannot to issubclass as of now because inheriting from different ExperimentClass files.
             if inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj is not ExperimentClass:

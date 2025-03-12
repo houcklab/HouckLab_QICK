@@ -43,7 +43,7 @@ class QQuarkTab(QWidget):
     The class for QQuarkTabs that make up the central tabular module.
     """
 
-    def __init__(self, experiment_module=None, tab_name=None, is_experiment=None, dataset_file=None):
+    def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
         """
         Initializes an instance of a QQuarkTab widget.
 
@@ -70,7 +70,7 @@ class QQuarkTab(QWidget):
         ### Experiment Variables
         self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
         self.tab_name = str(tab_name)
-        self.experiment_obj = None if experiment_module is None else ExperimentObject(self, self.tab_name, experiment_module)
+        self.experiment_obj = None if experiment_path is None else ExperimentObject(self, self.tab_name, experiment_path)
         self.is_experiment = is_experiment
         self.dataset_file = dataset_file
         self.data = None
@@ -93,9 +93,10 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(3)
         self.plot_utilities.setObjectName("plot_utilities")
+        self.reload_experiment_button = Helpers.create_button("Reload", "reload_experiment_button", False, self.plot_utilities_container)
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
-        self.export_data_button = Helpers.create_button("Export", "export_data_button", True, self.plot_utilities_container)
-        self.output_dir_button = Helpers.create_button("Output Dir", "output_dir_button", True, self.plot_utilities_container)
+        self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
+        self.output_dir_button = Helpers.create_button("Output Dir", "output_dir_button", False, self.plot_utilities_container)
         self.plot_method_combo = QComboBox(self.plot_utilities_container)
         self.plot_method_combo.setFixedWidth(150)
         self.plot_method_combo.setObjectName("plot_method_combo")
@@ -104,10 +105,8 @@ class QQuarkTab(QWidget):
         self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
 
-        self.export_data_button.setEnabled(False)
-        self.output_dir_button.setEnabled(False)
-
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
+        self.plot_utilities.addWidget(self.reload_experiment_button)
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
         self.plot_utilities.addWidget(self.output_dir_button)
@@ -130,12 +129,12 @@ class QQuarkTab(QWidget):
         self.plot_layout.setStretch(1, 10)
 
         self.setLayout(self.plot_layout)
-        self.setup_plotter_options()
-        self.setup_signals()
-
         # extract dataset file depending on the tab type being a dataset
         if not self.is_experiment and self.dataset_file is not None:
             self.load_dataset_file(self.dataset_file)
+
+        self.setup_plotter_options()
+        self.setup_signals()
 
     def setup_signals(self):
         # self.plot_method_combo.currentIndexChanged.connect(self.plot_method_changed)
@@ -143,8 +142,10 @@ class QQuarkTab(QWidget):
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
         self.export_data_button.clicked.connect(self.export_data)
         self.output_dir_button.clicked.connect(self.change_output_dir)
+        self.reload_experiment_button.clicked.connect(self.reload_experiment)
 
         if self.is_experiment:
+            self.reload_experiment_button.setEnabled(True)
             self.output_dir_button.setEnabled(True)
             self.output_dir = os.path.join(os.path.abspath(""), "data")
             qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
@@ -178,6 +179,14 @@ class QQuarkTab(QWidget):
 
         self.plot_widget.ci.clear()
         self.plots = []
+
+    def reload_experiment(self):
+        if self.experiment_obj is not None:
+            self.experiment_obj.extract_experiment_attributes()
+            qDebug("Reloaded Experiment: experiment attributes extracted.")
+
+            self.reload_experiment_button.setText('Reloaded!')
+            QTimer.singleShot(3000, lambda: self.reload_experiment_button.setText('Reload'))
 
     def update_coordinates(self, pos):
         """
@@ -397,7 +406,6 @@ class QQuarkTab(QWidget):
                     shutil.copy2(self.dataset_file, folder_path)
                     pixmap = self.plot_widget.grab()
                     file_path = os.path.join(folder_path, self.file_name + ".png")
-                    print(file_path)
                     pixmap.save(file_path)
                     qInfo("Saved dataset to " + str(folder_path))
                 except Exception as e:

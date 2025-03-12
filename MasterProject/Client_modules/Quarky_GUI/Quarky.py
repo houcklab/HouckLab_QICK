@@ -8,7 +8,6 @@ This module initializes the GUI, handles application-level logic, and manages in
 different components.
 """
 
-# TODO: Saving Data Files
 # TODO: re-retrieve module (refresh button)
 
 # TODO: Experiment run time estimate (in the experiment file)
@@ -159,7 +158,7 @@ class Quarky(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(400, 0))
+        self.central_tabs.setMinimumSize(QSize(560, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setTabShape(QTabWidget.Rounded)
         self.central_tabs.setUsesScrollButtons(True)
@@ -405,10 +404,10 @@ class Quarky(QMainWindow):
         """
 
         tab_count = self.central_tabs.count()
-        experiment_module, experiment_name = Helpers.import_file(str(path)) # gets experiment object from file
+        experiment_name = os.path.splitext(os.path.basename(path))[0]
 
         # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
-        new_experiment_tab = QQuarkTab(experiment_module, experiment_name, True)
+        new_experiment_tab = QQuarkTab(path, experiment_name, True)
         if new_experiment_tab.experiment_obj.experiment_class is None: # not valid experiment file
             qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
             return
