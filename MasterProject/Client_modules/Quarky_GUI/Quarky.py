@@ -8,11 +8,8 @@ This module initializes the GUI, handles application-level logic, and manages in
 different components.
 """
 
-# TODO: re-retrieve module (refresh button)
-
 # TODO: Experiment run time estimate (in the experiment file)
 # TODO: Make a separate thread for proxy connections
-
 
 import sys, os
 import math

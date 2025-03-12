@@ -415,15 +415,15 @@ class QQuarkTab(QWidget):
         elif self.is_experiment:
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-            data_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.h5')
-            config_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.json')
-            image_filename = os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name, self.file_name + '.png')
+            data_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.h5')
+            config_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.json')
+            image_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.png')
 
             # Make directories if they don't already exist
-            if not Path(self.output_dir + "/" + self.tab_name).is_dir():
-                os.mkdir(self.output_dir + "/" + self.tab_name)
-            if not Path(os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name)).is_dir():
-                os.mkdir(os.path.join(self.output_dir + "/" + self.tab_name, self.folder_name))
+            if not Path(os.path.join(self.output_dir, self.tab_name)).is_dir():
+                os.mkdir(os.path.join(self.output_dir, self.tab_name))
+            if not Path(os.path.join(self.output_dir, self.tab_name, self.folder_name)).is_dir():
+                os.mkdir(os.path.join(self.output_dir, self.tab_name, self.folder_name))
 
             # Save dataset
             data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
