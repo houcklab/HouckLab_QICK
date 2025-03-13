@@ -100,9 +100,9 @@ class QQuarkTab(QWidget):
         self.plot_method_combo = QComboBox(self.plot_utilities_container)
         self.plot_method_combo.setFixedWidth(120)
         self.plot_method_combo.setObjectName("plot_method_combo")
-        self.coord_label = QLabel("X: _____ Y: _____ \n press d to delete plot")  # coordinate of the mouse over the current plot
+        self.coord_label = QLabel("X: _____ Y: _____ \n press d to delete a plot")  # coordinate of the mouse over the current plot
         self.coord_label.setAlignment(Qt.AlignRight)
-        self.coord_label.setStyleSheet("font-size: 9px;")
+        self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
@@ -117,6 +117,7 @@ class QQuarkTab(QWidget):
 
         # The actual plot itself (lots of styling attributes
         self.plot_widget = pg.GraphicsLayoutWidget(self)
+        self.plot_widget.addLabel("Nothing to plot.", row=0, col=0, colspan=2, size='12pt')
         self.plot_widget.setBackground("w")
         self.plot_widget.ci.setSpacing(2)  # Reduce spacing
         self.plot_widget.ci.setContentsMargins(3, 3, 3, 3)  # Adjust margins of plots
@@ -206,7 +207,7 @@ class QQuarkTab(QWidget):
                 self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
                 mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
                 x, y = mouse_point.x(), mouse_point.y()
-                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
+                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} \n press d to delete a plot")
                 break
 
     def capture_plot_to_clipboard(self):
@@ -229,6 +230,7 @@ class QQuarkTab(QWidget):
         for plot in self.plots:
             vb = plot.vb  # ViewBox of each plot
             if plot.sceneBoundingRect().contains(pos):
+                self.plots.remove(plot)
                 self.plot_widget.removeItem(plot)
                 self.plot_widget.update()
 
@@ -240,6 +242,11 @@ class QQuarkTab(QWidget):
 
         self.clear_plots()
         self.plots = []
+
+        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
+            self.prepare_file_naming()
+        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+        self.plot_widget.nextRow()
 
         plotting_method = self.plot_method_combo.currentText()[6:] # Get the Plotting Method
         if plotting_method == "Auto": # Use auto preparation

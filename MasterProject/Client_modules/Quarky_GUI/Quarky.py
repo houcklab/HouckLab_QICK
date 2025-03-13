@@ -10,6 +10,7 @@ different components.
 
 # TODO: Experiment run time estimate (in the experiment file)
 # TODO: Make a separate thread for proxy connections
+# TODO: Add a title to the QGraphicsLayoutWidget
 
 import sys, os
 import math
