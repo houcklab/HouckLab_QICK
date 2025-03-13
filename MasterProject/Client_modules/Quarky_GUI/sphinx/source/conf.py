@@ -29,5 +29,12 @@ exclude_patterns = []
 
 # html_theme = 'sphinx_book_theme'
 html_theme = 'furo'
+# html_theme = 'pydata_sphinx_theme'
+
+# Theme options (customize appearance)
+html_theme_options = {
+    "github_url": "https://github.com/houcklab/HouckLab_QICK/tree/quarky-development/MasterProject/Client_modules/Quarky_GUI",
+    "secondary_sidebar_items": ["page-toc"],
+}
 
 html_static_path = ['_static']

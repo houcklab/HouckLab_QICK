@@ -243,11 +243,6 @@ class QQuarkTab(QWidget):
         self.clear_plots()
         self.plots = []
 
-        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
-            self.prepare_file_naming()
-        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
-        self.plot_widget.nextRow()
-
         plotting_method = self.plot_method_combo.currentText()[6:] # Get the Plotting Method
         if plotting_method == "Auto": # Use auto preparation
             self.auto_plot_prepare()
@@ -258,6 +253,11 @@ class QQuarkTab(QWidget):
         """
         Automatically prepares the data based on its shape. (Not always correct but tries to infer)
         """
+        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
+            self.prepare_file_naming()
+        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+        self.plot_widget.nextRow()
+
         prepared_data = {"plots": [], "images": [], "columns": []}
 
         f = self.data

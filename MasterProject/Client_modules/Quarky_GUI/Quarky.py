@@ -10,18 +10,17 @@ different components.
 
 # TODO: Experiment run time estimate (in the experiment file)
 # TODO: Make a separate thread for proxy connections
-# TODO: Add a title to the QGraphicsLayoutWidget
 
 import sys, os
 import math
 from pathlib import Path
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import (
     Qt, QSize, QThread, pyqtSignal, qInstallMessageHandler, qDebug,
     qInfo,
     qWarning,
     qCritical,
 )
-
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -104,6 +103,7 @@ class Quarky(QMainWindow):
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
         self.resize(1000, 550)
+        self.setWindowIcon(QIcon('QuarkyLogo.png'))
         self.central_widget = QWidget() # Defining the central widget that holds everything
         self.central_widget.setMinimumSize(820, 400)
         self.central_widget.setObjectName("central_widget")

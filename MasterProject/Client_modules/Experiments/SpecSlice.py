@@ -1,6 +1,7 @@
 from qick import RAveragerProgram
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -179,6 +180,12 @@ class SpecSlice_Experiment(ExperimentClass):
                  "ylabel": "a.u."}
             ]
         }
+
+        date_time_now = datetime.datetime.now()
+        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+        plot_title = "SpecSlice_" + date_time_string
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
+        plot_widget.nextRow()
 
         for i, plot in enumerate(prepared_data["plots"]):
             p = plot_widget.addPlot(title=plot["label"])

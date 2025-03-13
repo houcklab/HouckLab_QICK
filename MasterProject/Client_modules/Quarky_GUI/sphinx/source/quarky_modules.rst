@@ -8,6 +8,7 @@ GUI Packages
    Quarky
    QuarkTab
    ExperimentThread
+   ExperimentObject
    ConfigTreePanel
    AccountsPanel
    VoltagePanel
