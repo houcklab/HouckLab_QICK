@@ -148,14 +148,14 @@ class SpecSlice_Experiment(ExperimentClass):
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
-        #### Has a complex multiplication type error somewhere below
-        # sig = data['data']['avgi'] + 1j * data['data']['avgq']
-        # avgamp0 = np.abs(sig)
+        sig = np.array(data['data']['avgi']) + 1j * np.array(data['data']['avgq']) #modified to fix complex type error
+        avgamp0 = np.abs(sig)
 
-        # peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        # peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
-        # print(np.max(np.abs(data['data']['avgq'])))
-        # self.qubitFreq = data['data']['x_pts'][peak_loc]
+        peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
+        peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
+
+        print(np.max(np.abs(data['data']['avgq'])))
+        self.qubitFreq = data['data']['x_pts'][peak_loc]
 
         return data
 
