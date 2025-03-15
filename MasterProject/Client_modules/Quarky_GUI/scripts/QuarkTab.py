@@ -263,11 +263,14 @@ class QQuarkTab(QWidget):
         f = self.data
         if 'data' in self.data:
             f = self.data['data']
+
         for name, data in f.items():
             if isinstance(data, int):
                 continue
 
-            data = data.squeeze()
+            print(name, data)
+
+            data = np.array(data, dtype=np.float64).squeeze()
             data = np.nan_to_num(data, nan=0)
             shape = data.shape
 

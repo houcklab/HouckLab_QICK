@@ -149,8 +149,8 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
-        self.avg_abs = Amplitude_IQ(avgi, avgq)
-        self.avg_angle = np.angle(avgi + 1j * avgq)
+        self.avg_abs = Amplitude_IQ(np.array(avgi), np.array(avgq))
+        self.avg_angle = np.angle(np.array(avgi) + 1j * np.array(avgq))
 
         ### store the sweep axes
         if len(x_pts) == 1:

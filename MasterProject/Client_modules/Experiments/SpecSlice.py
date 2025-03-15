@@ -161,7 +161,7 @@ class SpecSlice_Experiment(ExperimentClass):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-
+        # print(data)
         x_pts = data['data']['x_pts']
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
