@@ -1,5 +1,7 @@
 #### ND averager program
 
+import datetime
+import pyqtgraph as pg
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
@@ -146,20 +148,103 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         print(avgi)
         print(avgi[0][0])
 
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
-        self.data = data
-
         self.avg_abs = Amplitude_IQ(np.array(avgi), np.array(avgq))
         self.avg_angle = np.angle(np.array(avgi) + 1j * np.array(avgq))
+
+        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq,
+                                             'avg_abs': self.avg_abs, 'avg_angle': self.avg_angle}}
 
         ### store the sweep axes
         if len(x_pts) == 1:
             self.xlabel = prog.sweep_var[0]
+            data['data']['sweeps']['xlabel'] = self.xlabel
         else:
             self.xlabel = prog.sweep_var[1]
             self.ylabel = prog.sweep_var[0]
+            data['data']['sweeps']['xlabel'] = self.xlabel
+            data['data']['sweeps']['ylabel'] = self.ylabel
 
-        return data 
+        self.data = data
+        return data
+
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        expt_pts = data['data']['x_pts']
+        avg_di = data['data']['avgi']
+        avg_dq = data['data']['avgq']
+        avg_abs = data['data']['avg_abs']
+        avg_angle = data['data']['avg_angle']
+
+        labels = ["I (a.u.)", "Q (a.u.)", "Amp (a.u.)", "Phase (deg.)"]
+
+        prepared_data = {"plots": [], "images": []}
+
+        if len(expt_pts) == 1:
+            xlabel = data['data']['sweeps']['xlabel']
+            for i, (d, label) in enumerate(zip([avg_di, avg_dq, avg_abs, avg_angle], labels)):
+                prepared_data["plots"].append({
+                    "x": expt_pts[0].tolist(),
+                    "y": d[0][0].tolist(),
+                    "label": label,
+                    "xlabel": xlabel,
+                    "ylabel": label
+                })
+        else:
+            xlabel = data['data']['sweeps']['xlabel']
+            ylabel = data['data']['sweeps']['ylabel']
+            for i, (d, label) in enumerate(zip([avg_di, avg_dq, avg_abs, avg_angle], labels)):
+                prepared_data["images"].append({
+                    "data": d[0, 0].T.tolist(),  # Convert NumPy array to list
+                    "x": expt_pts[0].tolist(),
+                    "y": expt_pts[1].tolist(),
+                    "label": label,
+                    "xlabel": xlabel,
+                    "ylabel": ylabel,
+                    "colormap": "inferno"
+                })
+
+        date_time_now = datetime.datetime.now()
+        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+        plot_title = "RabiAmp_ND" + date_time_string
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
+        plot_widget.nextRow()
+
+        for i, plot in enumerate(prepared_data["plots"]):
+            p = plot_widget.addPlot(title=plot["label"])
+            p.addLegend()
+            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+            p.setLabel('bottom', plot["xlabel"])
+            p.setLabel('left', plot["ylabel"])
+            plots.append(p)
+            plot_widget.nextRow()
+
+        for i, img in enumerate(prepared_data["images"]):
+            p = plot_widget.addPlot(title=img["label"])
+            p.setLabel("bottom", img["xlabel"])
+            p.setLabel("left", img["ylabel"])
+            p.showGrid(x=True, y=True)
+
+            # Create ImageItem
+            if i == 3:
+                image_item = pg.ImageItem(img["data"])
+            else:
+                image_item = pg.ImageItem(np.unwrap(np.array(img["data"])))
+            p.addItem(image_item)
+            color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
+            image_item.setLookupTable(color_map.getLookupTable())
+
+            # set axis
+            x_data = np.array(img["x"])  # Use your actual x-axis data here
+            y_data = np.array(img["y"])  # Use your actual y-axis data here
+            image_item.setRect(pg.QtCore.QRectF(x_data[0], y_data[0], x_data[-1] - x_data[0], y_data[-1] - y_data[0]))
+
+            # Create ColorBarItem
+            color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()),
+                                        colorMap=color_map)
+            color_bar.setImageItem(image_item, insert_in=p)  # Add color bar to the plot
+
+            plots.append(p)
+            if i % 2 == 0 and i != 0: plot_widget.nextRow()
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
