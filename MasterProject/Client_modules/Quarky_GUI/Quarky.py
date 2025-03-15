@@ -14,7 +14,7 @@ different components.
 import sys, os
 import math
 from pathlib import Path
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtCore import (
     Qt, QSize, QThread, pyqtSignal, qInstallMessageHandler, qDebug,
     qInfo,
@@ -58,22 +58,28 @@ except AttributeError:
 class Quarky(QMainWindow):
     """
     The class for the main Quarky application window.
-    """
 
-    ### Defining Signals
-    rfsoc_connection_updated = pyqtSignal(str, str)
-    """ The Signal sent to the accounts tab after an rfsoc connection attempt """
-
-    def __init__(self):
-        """
-        Initializes an instance of a Quarky GUI application.
-
-        **Important Attributes:**
+    **Important Attributes:**
 
         * experiment_worker (ExperimentThread): The instance of the experiment worker thread.
         * soc (Proxy): The instance of the RFSoC Proxy connection via Pyro4.
         * soccfg (QickConfig): The qick Config of the RFSoC.
         * central_widget (QWidget): The central widget of the Quarky GUI.
+    """
+
+    ### Defining Signals
+    rfsoc_connection_updated = pyqtSignal(str, str)
+    """ 
+    The Signal sent to the accounts tab after an rfsoc connection attempt 
+    :param ip_address: The IP address of the RFSoC instance.
+        :type ip_address: str
+    :param status: The status of the attempt, either success or failure.
+        :type status: str
+    """
+
+    def __init__(self):
+        """
+        Initializes an instance of a Quarky GUI application.
         """
 
         super().__init__()
@@ -94,7 +100,8 @@ class Quarky(QMainWindow):
 
     def setup_ui(self):
         """
-        Initializes the UI elements.
+        Initializes all the UI elements. The main sections include the central widgets tab, config panel, and the side
+        panel (voltage, accounts, log).
         """
 
         ### Central Widget, Layout, and Wrapper
@@ -123,6 +130,8 @@ class Quarky(QMainWindow):
         self.top_bar.setObjectName("top_bar")
 
         # Creating top bar items
+        self.quarky_icon = QLabel()
+        self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
         self.stop_experiment_button = Helpers.create_button("⏹","stop_experiment",False,self.wrapper)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
@@ -133,6 +142,7 @@ class Quarky(QMainWindow):
         self.load_experiment_button = Helpers.create_button("Load Experiment","load_experiment_button",True,self.wrapper)
 
         # Adding items to top bar, top bar to main layout
+        self.top_bar.addWidget(self.quarky_icon)
         self.top_bar.addWidget(self.start_experiment_button)
         self.top_bar.addWidget(self.stop_experiment_button)
         self.top_bar.addWidget(self.soc_status_label)
@@ -165,7 +175,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setMovable(True)
         self.central_tabs.setTabBarAutoHide(False)
         self.central_tabs.setObjectName("central_tabs")
-        # self.central_tabs.setStyleSheet("background-color: #F8F8F8")  # Light gray background
+
         #Template Experiment Tab
         template_experiment_tab = QQuarkTab()
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")
@@ -218,7 +228,8 @@ class Quarky(QMainWindow):
 
     def setup_signals(self):
         """
-        Sets up all signals and slots of the main application window.
+        Sets up all signals and slots of the main application window. These include button presses, RFSoC connections,
+        log messages, and tab changes.
         """
 
         # Connecting the top bar buttons to their respective functions
@@ -241,19 +252,9 @@ class Quarky(QMainWindow):
         qInstallMessageHandler(self.log_panel.message_handler)
         # self.test_logging()
 
-    def test_logging(self):
-        """
-        Tests the logging functionality and displays respective message colors.
-        """
-
-        qDebug("This is a debug message.")
-        qInfo("This is an info message.")
-        qWarning("This is a warning message!")
-        qCritical("This is a critical error!")
-
     def disconnect_rfsoc(self):
         """
-        Disconnects the RFSoC instance.
+        Disconnects the RFSoC instance by setting RFSoC attributes to None.
         """
         self.soc = None
         self.soccfg = None
@@ -262,7 +263,7 @@ class Quarky(QMainWindow):
 
     def connect_rfsoc(self, ip_address):
         """
-        Connects the RFSoC instance to the specified IP address.
+        Connects the RFSoC instance to the specified IP address by calling makeProxy.
 
         :param ip_address: The IP address of the RFSoC instance.
         :type ip_address: str
@@ -381,7 +382,7 @@ class Quarky(QMainWindow):
 
     def load_experiment_file(self):
         """
-        Gets an .py experiment file per user input.
+        Gets an .py experiment file per user input and calls the create_experiment_tab() function.
         """
         options = QFileDialog.Options()
         file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
@@ -395,7 +396,9 @@ class Quarky(QMainWindow):
 
     def create_experiment_tab(self, path):
         """
-        Creates a new QQuarkTab instance for the new experiment tab.
+        Creates a new QQuarkTab instance for the new tab of an experiment type by passing the absolute path of the
+        selected experiment file. Also handles UI updates. See QQuarkTab class for how information is extracted from
+        the given path.
 
         :param path: The path to the experiment file.
         :type path: str
@@ -441,7 +444,7 @@ class Quarky(QMainWindow):
 
     def close_tab(self, idx):
         """
-        Called upon a user closing a central experiment or data tab.
+        Called upon a user closing a central experiment or data tab. Updates tab list and UI.
 
         :param idx: The index of the closed tab widget.
         :type idx: int
@@ -457,7 +460,8 @@ class Quarky(QMainWindow):
 
     def update_progress(self, sets_complete):
         """
-        The function that updates the progress bar based on experiment progress.
+        The function that updates the progress bar based on experiment progress. It retrieves the reps and sets fields
+        of the current tab's config to do so. Usually called via a signal from an ExperimentThread.
 
         :param sets_complete: The number of sets of the experiment that have been completed
         :type sets_complete: int
@@ -470,7 +474,7 @@ class Quarky(QMainWindow):
 
     def RFSOC_error(self, e):
         """
-        The function called when RFSoC returns an error to display
+        The function called when RFSoC returns an error to display in the Log.
         """
 
         qCritical("RFSoC thew the error: " + str(e))
@@ -478,7 +482,7 @@ class Quarky(QMainWindow):
 
     def load_data_file(self):
         """
-        Gets an .h5 experiment file per user input.
+        Gets an .h5 experiment file per user input. Then calls the create_data_tab() function with the file's path.
         """
 
         # Load an data file
@@ -492,7 +496,8 @@ class Quarky(QMainWindow):
 
     def create_data_tab(self, file):
         """
-        Creates a new QQuarkTab instance for the new data tab.
+        Creates a new QQuarkTab instance for the new tab of type dataset. See QQuarkTab class for how dataset
+        information is extracted via the given path. Also handles UI updates.
 
         :param path: The path to the data file.
         :type path: str
@@ -517,7 +522,10 @@ class Quarky(QMainWindow):
 
 # Creating the Quarky GUI Main Window
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    ex = Quarky()
-    ex.show()
-    sys.exit(app.exec_())
+    try:
+        app = QApplication(sys.argv)
+        ex = Quarky()
+        ex.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        QMessageBox.critical(None, "Critical Error", f"A GUI error occurred: {e}")
