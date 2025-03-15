@@ -274,7 +274,8 @@ class QQuarkTab(QWidget):
                 shape = data.shape
             except Exception as e:
                 qDebug("Auto plotter could not handle data")
-                continue
+                self.plot_widget.addLabel("Could not handle plotting", colspan=2, size='12pt')
+                return
 
             # Handle 1D data -> 2D Plots
             if len(shape) == 1:
