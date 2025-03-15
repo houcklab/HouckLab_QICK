@@ -268,11 +268,13 @@ class QQuarkTab(QWidget):
             if isinstance(data, int):
                 continue
 
-            print(name, data)
-
-            data = np.array(data, dtype=np.float64).squeeze()
-            data = np.nan_to_num(data, nan=0)
-            shape = data.shape
+            try:
+                data = np.array(data, dtype=np.float64).squeeze()
+                data = np.nan_to_num(data, nan=0)
+                shape = data.shape
+            except Exception as e:
+                qDebug("Auto could not handle plotter")
+                continue
 
             # Handle 1D data -> 2D Plots
             if len(shape) == 1:
