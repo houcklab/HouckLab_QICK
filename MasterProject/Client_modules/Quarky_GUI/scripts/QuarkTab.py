@@ -273,7 +273,7 @@ class QQuarkTab(QWidget):
                 data = np.nan_to_num(data, nan=0)
                 shape = data.shape
             except Exception as e:
-                qDebug("Auto could not handle plotter")
+                qDebug("Auto plotter could not handle data")
                 continue
 
             # Handle 1D data -> 2D Plots
