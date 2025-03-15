@@ -7,7 +7,7 @@ Main entry point for the Quarky GUI application.
 This module initializes the GUI, handles application-level logic, and manages interactions between
 different components.
 """
-
+import inspect
 # TODO: Experiment run time estimate (in the experiment file)
 # TODO: Make a separate thread for proxy connections
 
@@ -325,6 +325,7 @@ class Quarky(QMainWindow):
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
+            print(inspect.getsourcelines(experiment_class))
             self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=config)
 
             # Creating the experiment worker from ExperimentThread

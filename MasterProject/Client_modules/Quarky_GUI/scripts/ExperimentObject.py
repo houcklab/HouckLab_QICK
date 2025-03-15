@@ -35,6 +35,7 @@ class ExperimentObject():
         # class. But, the config attribute is given in the direct experiment class, not the wrapper.
 
         experiment_module, experiment_name = Helpers.import_file(str(self.experiment_path)) # gets experiment object from file
+        # print(inspect.getsourcelines(experiment_module))
 
         for name, obj, in inspect.getmembers(experiment_module):
 
