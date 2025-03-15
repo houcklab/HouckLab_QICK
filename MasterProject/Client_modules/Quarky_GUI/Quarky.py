@@ -469,10 +469,12 @@ class Quarky(QMainWindow):
         :type sets_complete: int
         """
 
+        config = self.current_tab.config["Experiment Config"] | self.current_tab.config["Base Config"]
         # Getting the total reps and sets to be run from the experiment configs
-        reps, sets = self.current_tab.config['reps'], self.current_tab.config['sets']
-        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
-        self.experiment_progress_bar.setFormat(str(sets_complete * reps) + "/" + str(sets * reps)) # update text
+        if 'reps' in config and 'sets' in config:
+            reps, sets = config['reps'], config['sets']
+            self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
+            self.experiment_progress_bar.setFormat(str(sets_complete * reps) + "/" + str(sets * reps)) # update text
 
     def RFSOC_error(self, e):
         """
