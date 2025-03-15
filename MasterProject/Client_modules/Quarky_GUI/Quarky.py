@@ -321,7 +321,8 @@ class Quarky(QMainWindow):
             # Handling config specific to the current tab
             UpdateConfig = self.config_tree_panel.config["Experiment Config"]
             BaseConfig = self.config_tree_panel.config["Base Config"]
-            config = self.current_tab.config = BaseConfig | UpdateConfig # symmetric difference and intersection
+            self.current_tab.config = self.config_tree_panel.config
+            config = BaseConfig | UpdateConfig # symmetric difference and intersection
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class

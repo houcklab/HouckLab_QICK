@@ -68,7 +68,7 @@ class QQuarkTab(QWidget):
         super().__init__()
 
         ### Experiment Variables
-        self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default conifg found in initializ.py
+        self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default config found in initialize.py
         self.tab_name = str(tab_name)
         self.experiment_obj = None if experiment_path is None else ExperimentObject(self, self.tab_name, experiment_path)
         self.is_experiment = is_experiment
