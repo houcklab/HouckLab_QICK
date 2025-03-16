@@ -145,13 +145,13 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         ### in the following the data are arrays in the dimensionality of swept varibles
         x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=True)
 
-        print(avgi)
-        print(avgi[0][0])
+        # print(avgi)
+        # print(avgi[0][0])
 
         self.avg_abs = Amplitude_IQ(np.array(avgi), np.array(avgq))
         self.avg_angle = np.angle(np.array(avgi) + 1j * np.array(avgq))
 
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq,
+        data = {'config': self.cfg, 'data': {'sweeps': {}, 'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq,
                                              'avg_abs': self.avg_abs, 'avg_angle': self.avg_angle}}
 
         ### store the sweep axes
@@ -175,6 +175,8 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         avg_abs = data['data']['avg_abs']
         avg_angle = data['data']['avg_angle']
 
+        print(data)
+
         labels = ["I (a.u.)", "Q (a.u.)", "Amp (a.u.)", "Phase (deg.)"]
 
         prepared_data = {"plots": [], "images": []}
@@ -194,7 +196,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
             ylabel = data['data']['sweeps']['ylabel']
             for i, (d, label) in enumerate(zip([avg_di, avg_dq, avg_abs, avg_angle], labels)):
                 prepared_data["images"].append({
-                    "data": d[0, 0].T.tolist(),  # Convert NumPy array to list
+                    "data": d[0][0].T.tolist(),  # Convert NumPy array to list
                     "x": expt_pts[0].tolist(),
                     "y": expt_pts[1].tolist(),
                     "label": label,
@@ -202,6 +204,8 @@ class RabiAmp_ND_Experiment(ExperimentClass):
                     "ylabel": ylabel,
                     "colormap": "inferno"
                 })
+
+        print(prepared_data)
 
         date_time_now = datetime.datetime.now()
         date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
@@ -226,9 +230,9 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
             # Create ImageItem
             if i == 3:
-                image_item = pg.ImageItem(img["data"])
-            else:
                 image_item = pg.ImageItem(np.unwrap(np.array(img["data"])))
+            else:
+                image_item = pg.ImageItem(np.array(img["data"]))
             p.addItem(image_item)
             color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
             image_item.setLookupTable(color_map.getLookupTable())
@@ -244,7 +248,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
             color_bar.setImageItem(image_item, insert_in=p)  # Add color bar to the plot
 
             plots.append(p)
-            if i % 2 == 0 and i != 0: plot_widget.nextRow()
+            if len(plots) % 2 == 0: plot_widget.nextRow()
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 

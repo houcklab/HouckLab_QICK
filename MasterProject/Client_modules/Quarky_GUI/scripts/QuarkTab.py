@@ -462,6 +462,10 @@ class QQuarkTab(QWidget):
             data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
             if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
                 for key, datum in self.data['data'].items():
+
+                    self.convert_data_to_h5()
+
+
                     # Convert to NumPy array and handle jagged arrays
                     datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
                         if isinstance(datum, list) else np.array(datum, dtype=np.float64)
