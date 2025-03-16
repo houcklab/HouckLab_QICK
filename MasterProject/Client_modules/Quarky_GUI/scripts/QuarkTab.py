@@ -463,26 +463,27 @@ class QQuarkTab(QWidget):
             if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
                 for key, datum in self.data['data'].items():
 
-                    self.convert_data_to_h5()
+                    if isinstance(datum, dict):
+                        # somehow do something here
+                        print("cannot store dicts yet")
+                    else:
+                        # Convert to NumPy array and handle jagged arrays
+                        datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+                            if isinstance(datum, list) else np.array(datum, dtype=np.float64)
 
+                        # If datum is still a list of arrays, pad it to make a rectangular array
+                        if isinstance(datum, list):
+                            max_len = max(len(arr) for arr in datum)
+                            datum = np.array([np.pad(arr, (0, max_len-len(arr)), constant_values=np.nan) for arr in datum])
 
-                    # Convert to NumPy array and handle jagged arrays
-                    datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
-                        if isinstance(datum, list) else np.array(datum, dtype=np.float64)
-
-                    # If datum is still a list of arrays, pad it to make a rectangular array
-                    if isinstance(datum, list):
-                        max_len = max(len(arr) for arr in datum)
-                        datum = np.array([np.pad(arr, (0, max_len-len(arr)), constant_values=np.nan) for arr in datum])
-
-                    try:
-                        data_file.create_dataset(key, shape=datum.shape,
-                                                 maxshape=tuple([None] * len(datum.shape)),
-                                                 dtype=str(datum.astype(np.float64).dtype))
-                    except RuntimeError as e:
-                        qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
-                        del data_file[key]
-                    data_file[key][...] = datum
+                        try:
+                            data_file.create_dataset(key, shape=datum.shape,
+                                                     maxshape=tuple([None] * len(datum.shape)),
+                                                     dtype=str(datum.astype(np.float64).dtype))
+                        except RuntimeError as e:
+                            qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
+                            del data_file[key]
+                        data_file[key][...] = datum
             data_file.close()
 
             # Save config
