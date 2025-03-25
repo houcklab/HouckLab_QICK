@@ -1,3 +1,24 @@
+"""
+==================
+ConfigTreePanel.py
+==================
+The sidepanel that contains the interactable Tree object with the Experiment/Dataset configurations. These
+configurations are specified by each experiment file or in the metadata of a dataset. The Base Configuration
+is given by Init.initialize.py.
+
+This is the basic formatting of the Config dictionary:
+
+.. code-block:: python
+
+    { "Experiment Config" : {
+            "field_name" : 0,
+        },
+      "Base Config": {
+            "field_name" : 0,
+        },
+    }
+"""
+
 import os
 import json
 from PyQt5 import QtGui, QtCore
@@ -21,7 +42,29 @@ from PyQt5.QtWidgets import (
 import scripts.Helpers as Helpers
 
 class QConfigTreePanel(QTreeView):
+    """
+    A custom QTreeView class for the configurations panel.
+
+    **Important Attributes:**
+
+        * config (dict): The dictionary containing the active configuration
+        * tree (QTreeView): The TreeView containing the configuration
+    """
+
     def __init__(self, parent=None, config=None):
+        """
+        Initialize the custom QTreeView class.
+
+        Note: For UI spacing purposes, QConfigTreePanel is itself a QTreeView,
+        but not the Tree that consists of the configurations. Instead, the instance `tree` of type QTreeView that
+        resides within the parent tree is the one that has the configurations.
+
+        :param parent: The parent of the QTreeView
+        :type parent: QWidget
+        :param config: The dictionary containing the configuration to set (can be None)
+        :type config: dict
+        """
+
         super().__init__(parent)
         self.config = config if config else {}
 
@@ -70,12 +113,20 @@ class QConfigTreePanel(QTreeView):
         self.setup_signals()
 
     def setup_signals(self):
+        """
+        Sets up all the signals and slots of the Accounts Panel. Includes connecting the toolbar button functionality.
+        """
+
         self.save_config_button.clicked.connect(self.save_config)
         self.copy_config_button.clicked.connect(self.copy_config)
         self.load_config_button.clicked.connect(self.load_config)
 
     def populate_tree(self):
-        """Populates the tree with config data."""
+        """
+        Populates the `tree` QTreeView widget with the configuration data by iterating through the dictionary and
+        creating a QStandardItem for each Key (Parameter) and Value.
+        """
+
         self.model.clear()
         self.model.setHorizontalHeaderLabels(['Parameter', 'Value'])  # Reset headers after clear
 
@@ -83,6 +134,7 @@ class QConfigTreePanel(QTreeView):
             if not params:
                 continue
 
+            # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)
             parent.setFlags(QtCore.Qt.NoItemFlags)  # Category headers should not be selectable
 
@@ -100,20 +152,40 @@ class QConfigTreePanel(QTreeView):
         self.tree.expandAll()
 
     def set_config(self, config_update=None):
-        """Updates the config and repopulates the tree."""
+        """
+        Updates the config and repopulates the tree.
+
+        :param config_update: A dictionary containing the configuration to update to.
+        :type config_update: dict
+        """
+
         if config_update is not None:
             self.config = config_update
 
         self.populate_tree()
 
     def get_config(self):
-        """Returns the current configuration."""
+        """
+        Returns the current configuration dictionary.
+
+        :return: The configuration dictionary.
+        :rtype: dict
+        """
+
         return self.config
 
     def handleItemChanged(self, item):
-        """Handles updates when an item is edited."""
+        """
+        The function called that handles updates when the value of a parameter in the tree is edited. It modifies the
+        current configuration dictionary value.
+
+        :param item: The QStandardItem of the value of the QTreeView item that was altered.
+        :type item: QStandardItem
+        """
+
         if not item.parent():
             return  # Ignore category headers
+            # (if there is a way to disable editing in the value of a parent field that would work nicer)
 
         category = item.parent().text()
         key = item.parent().child(item.row(), 0).text()
@@ -126,7 +198,10 @@ class QConfigTreePanel(QTreeView):
                 pass  # Handle invalid input types gracefully
 
     def save_config(self):
-        """Prompts the user for a folder and saves the config dictionary as a JSON file."""
+        """
+        Prompts the user for a folder and saves the config dictionary as a JSON file.
+        """
+
         folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save Config")
 
         if folder_path:
@@ -141,7 +216,10 @@ class QConfigTreePanel(QTreeView):
 
 
     def copy_config(self):
-        """Copies the config dictionary as a formatted JSON string to the clipboard."""
+        """
+        opies the config dictionary as a formatted JSON string to the clipboard.
+        """
+
         json_string = json.dumps(self.config) # can incldue indent=4 if formatting wanted
         clipboard = QApplication.clipboard()
         clipboard.setText(json_string)
@@ -151,7 +229,10 @@ class QConfigTreePanel(QTreeView):
         QTimer.singleShot(3000, lambda: self.copy_config_button.setText('Copy'))
 
     def load_config(self):
-        """Prompts the user for a JSON file and loads it into self.config, then updates the tree."""
+        """
+        Prompts the user for a JSON file and loads it into the `config` variable, then updates the tree.
+        """
+
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Config File", "", "JSON Files (*.json)")
 
         if file_path:  # If a file is selected

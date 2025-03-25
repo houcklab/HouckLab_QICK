@@ -1,3 +1,13 @@
+"""
+===================
+ExperimentObject.py
+===================
+Each loaded experiment creates an ExperimentObject instance that extracts modules, important functions (such as
+plotting), and stores experiment specific variables (name, path, tab).
+
+How an experiment file should be written is defined in the Experiment Hub of documentation.
+"""
+
 import inspect
 import numpy as np
 from PyQt5.QtCore import qCritical, qInfo, qDebug
@@ -11,7 +21,28 @@ from scripts.CoreLib.Experiment import ExperimentClass
 import scripts.Helpers as Helpers
 
 class ExperimentObject():
+    """
+    An ExperimentObject class that represents an experiment by extracting information from the python experiment file.
+
+    **Important Attributes:**
+
+        * experiment_path (str): The absolute path to the experiment file.
+        * experiment_class (Class): The class of the custom experiment that is a subclass of ExperimentClass.
+        * experiment_plotter (Callable): A callable @classmethod of the experiment_class that handles plotting.
+    """
+
     def __init__(self, experiment_tab, experiment_name, experiment_path=None):
+        """
+        Initializes an ExperimentObject given the corresponding parameters.
+
+        :param experiment_tab: The QQuarkTab corresponding to the experiment.
+        :type experiment_tab: QQuarkTab
+        :param experiment_name: The name of the experiment.
+        :type experiment_name: str
+        :param experiment_path: The absolute path to the experiment file.
+        :type experiment_path: str
+        """
+
         if experiment_path is None:
             return None
 
@@ -26,7 +57,14 @@ class ExperimentObject():
 
     def extract_experiment_attributes(self):
         """
-        From the experiment module of the specific tab, find the correct class to make an instance of.
+        Extracts all important experiment attributes from the specified experiment_path. It does so by generating a
+        module for the python experiment file, retrieving all members, and iterating through them to find the subclass
+        of ExperimentClass (that is the wrapper class). Then it saves the class for the main module to make an instance
+        of when running an  experiment. It also searches for any important @classmethods such as the Plotter.
+
+        Currently, the config resides in a different class that matches the experiment file name, usually a
+        subclass of a qick averager program. Moving it to the wrapper class somehow would allow for the search to be
+        more efficient.
         """
 
         # Loop through all members (classes) of the experiment module to find the matching class

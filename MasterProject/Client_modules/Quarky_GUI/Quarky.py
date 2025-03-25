@@ -69,12 +69,13 @@ class Quarky(QMainWindow):
 
     ### Defining Signals
     rfsoc_connection_updated = pyqtSignal(str, str)
-    """ 
+    """
     The Signal sent to the accounts tab after an rfsoc connection attempt 
+    
     :param ip_address: The IP address of the RFSoC instance.
-        :type ip_address: str
+    :type ip_address: str
     :param status: The status of the attempt, either success or failure.
-        :type status: str
+    :type status: str
     """
 
     def __init__(self):
@@ -224,7 +225,6 @@ class Quarky(QMainWindow):
         self.setCentralWidget(self.central_widget)
 
         self.setup_signals()
-        self.accounts_panel.load_accounts() # Loads all accounts saved within accounts folder
 
     def setup_signals(self):
         """

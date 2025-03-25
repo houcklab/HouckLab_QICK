@@ -14,7 +14,7 @@ print(sys.path)
 project = 'Quarky'
 copyright = '2025, Lev, Jake, Matt, Sonny'
 author = 'Lev, Jake, Matt, Sonny'
-release = '1.0.0'
+release = '1.0.0 Beta'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -35,8 +35,7 @@ html_favicon = "../../QuarkyLogo.png"
 
 # Theme options (customize appearance)
 html_theme_options = {
-    "github_url": "https://github.com/houcklab/HouckLab_QICK/tree/quarky-development/MasterProject/Client_modules/Quarky_GUI",
-    "secondary_sidebar_items": ["page-toc"],
+    "github_url": "https://github.com/houcklab/HouckLab_QICK/tree/quarky-development/MasterProject/Client_modules/Quarky_GUI"
 }
 
 html_static_path = ['_static']
