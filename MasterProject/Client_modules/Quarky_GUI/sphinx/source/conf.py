@@ -34,8 +34,8 @@ html_theme = 'furo'
 html_favicon = "../../QuarkyLogo.png"
 
 # Theme options (customize appearance)
-html_theme_options = {
-    "github_url": "https://github.com/houcklab/HouckLab_QICK/tree/quarky-development/MasterProject/Client_modules/Quarky_GUI"
-}
+# html_theme_options = {
+#     "github_url": "https://github.com/houcklab/HouckLab_QICK/tree/quarky-development/MasterProject/Client_modules/Quarky_GUI"
+# }
 
 html_static_path = ['_static']

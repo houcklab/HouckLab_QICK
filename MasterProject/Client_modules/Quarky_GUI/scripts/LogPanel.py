@@ -1,5 +1,11 @@
-import os
+"""
+===========
+LogPanel.py
+===========
+The sidepanel that contains the read-only Log that displays GUI messages from the QtMsgType system.
+"""
 
+import os
 from PyQt5.QtCore import (QSize, QtMsgType, qInstallMessageHandler,
     qDebug,
     qInfo,
@@ -14,8 +20,20 @@ from PyQt5.QtWidgets import (
 )
 
 class QLogPanel(QWidget):
+    """
+    A custom QWidget class containing a simple QTextEdit that displays QtMsgType messages across the entire GUI
+    through catching signals slotted by qInstallMessageHandler.
+
+    **Important Attributes:**
+
+        * logger (QTextEdit): The Logger that displays all messages.
+    """
 
     def __init__(self, parent=None):
+        """
+        Initializes a QLogPanel widget.
+        """
+
         super(QLogPanel, self).__init__(parent)
 
         sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
@@ -45,6 +63,10 @@ class QLogPanel(QWidget):
         self.setLayout(self.main_layout)
 
     def message_handler(self, mode, context, message):
+        """
+        The function that handles all signals via qInstallMessageHandler. Color codes all messages to display on the
+        `logger`.
+        """
         color_map = {
             QtMsgType.QtDebugMsg: "#8AC6F2",  # Light blue
             QtMsgType.QtWarningMsg: "#E1B12C",  # Yellow

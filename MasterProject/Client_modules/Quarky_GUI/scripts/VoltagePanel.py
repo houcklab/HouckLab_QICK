@@ -1,3 +1,12 @@
+"""
+===============
+VoltagePanel.py
+===============
+Soon to be the home of a voltage controller interface panel [Qbox and Yoko].
+
+    *Coming Soon*
+"""
+
 from PyQt5.QtCore import QSize, QRect, Qt
 from PyQt5.QtWidgets import (
     QWidget,

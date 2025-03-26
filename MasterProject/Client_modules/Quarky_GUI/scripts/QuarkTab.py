@@ -5,7 +5,7 @@ QuarkyTab.py
 The custom QQuarkTab class for the central tabs module of the main application.
 
 Each QQuarkTab is either an experiment tab or a data tab that stores its own object attributes, configuration,
-data, and plotting.
+data, and plotting. Arguable is more important for functionality than the main Quarky.py file.
 """
 
 import os
@@ -40,12 +40,23 @@ import scripts.Helpers as Helpers
 
 class QQuarkTab(QWidget):
     """
-    The class for QQuarkTabs that make up the central tabular module.
+    The class for QQuarkTabs that make up the central tabular module that hold specific experiments or datasets.
+
+    **Important Attributes:**
+
+        * experiment_obj (Experiment Module): The experiment module object that was passed.
+        * config (dict): The configuration of the QQuarkTab experiment/dataset.
+        * data (dict): The data of the QQuarkTab experiment/dataset.
+        * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
+        * plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area
     """
 
     def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
         """
-        Initializes an instance of a QQuarkTab widget.
+        Initializes an instance of a QQuarkTab widget that will either be of type experiment based on the parameters
+        passed.
+            * An experiment will pass: [experiment_path, tab_name, is_experiment=True].
+            * A dataset will pass: [tab_name, is_experiment=False, dataset_file]
 
         :param experiment_obj: The experiment module object extracted from an experiment file.
         :type experiment_obj: Experiment Module
@@ -55,14 +66,6 @@ class QQuarkTab(QWidget):
         :type is_experiment: bool
         :param dataset_file: The path to the dataset file.
         :type dataset_file: str
-
-        **Important Attributes:**
-
-        * experiment_obj (Experiment Module): The experiment module object that was passed.
-        * config (dict): The configuration of the QQuarkTab experiment/dataset.
-        * data (dict): The data of the QQuarkTab experiment/dataset.
-        * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
-        * plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area
         """
 
         super().__init__()
@@ -70,7 +73,8 @@ class QQuarkTab(QWidget):
         ### Experiment Variables
         self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default config found in initialize.py
         self.tab_name = str(tab_name)
-        self.experiment_obj = None if experiment_path is None else ExperimentObject(self, self.tab_name, experiment_path)
+        self.experiment_obj = None if experiment_path is None \
+            else ExperimentObject(self, self.tab_name, experiment_path)
         self.is_experiment = is_experiment
         self.dataset_file = dataset_file
         self.data = None
@@ -138,6 +142,11 @@ class QQuarkTab(QWidget):
         self.setup_signals()
 
     def setup_signals(self):
+        """
+        Sets up all the signals and slots of the QQuarkTab widget. This includes the toolbar buttons, plot
+        functionalities, and export settings.
+        """
+
         # self.plot_method_combo.currentIndexChanged.connect(self.plot_method_changed)
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
@@ -148,6 +157,7 @@ class QQuarkTab(QWidget):
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
 
+        # Create the default export output_dir for autosaving if of type experiment
         if self.is_experiment:
             self.reload_experiment_button.setEnabled(True)
             self.output_dir_button.setEnabled(True)
@@ -159,6 +169,12 @@ class QQuarkTab(QWidget):
             self.export_data_button.setEnabled(True)
 
     def setup_plotter_options(self):
+        """
+        This method sets up the plotting options based on the current experiment. If the experiment gave a plotter
+        function, it is automatically set as the default method. Otherwise, the current methods available only include
+        'Auto'.
+        """
+
         self.plot_method_combo.addItems(["Plot: Auto"])
         if self.is_experiment and self.experiment_obj is not None:
             if self.experiment_obj.experiment_plotter is not None:
@@ -185,6 +201,11 @@ class QQuarkTab(QWidget):
         self.plots = []
 
     def reload_experiment(self):
+        """
+        Reloads the current experiment via the experiment_path given. This allows a user to change the experiment code
+        or even the plotter without having to exit the GUI, close any tabs, or import the experiment from scratch.
+        """
+
         if self.experiment_obj is not None:
             self.experiment_obj.extract_experiment_attributes()
             qDebug("Reloaded Experiment: experiment attributes extracted.")
@@ -211,7 +232,9 @@ class QQuarkTab(QWidget):
                 break
 
     def capture_plot_to_clipboard(self):
-        # Capture screenshot of the plot_widget
+        """
+        Captures a screenshot of the plot via a QPixmap and saves it to the users clipboard. Paste normally.
+        """
         pixmap = self.plot_widget.grab()  # This grabs the content of the plot_widget
         clipboard = QApplication.clipboard()
         clipboard.setPixmap(pixmap)
@@ -222,11 +245,15 @@ class QQuarkTab(QWidget):
 
     def remove_plot(self):
         """
-        Remove the plot from the layout
+        Retrieves the cursor's current position and removes the corresponding plot that it is hovering over
+        from the layout.
         """
-        global_pos = QCursor.pos()
-        pos = self.plot_widget.mapFromGlobal(global_pos)
 
+        # Get cursor position
+        global_pos = QCursor.pos()
+        pos = self.plot_widget.mapFromGlobal(global_pos) # maps it to its position relative to the plotting space
+
+        # Loops through the list of plots
         for plot in self.plots:
             vb = plot.vb  # ViewBox of each plot
             if plot.sceneBoundingRect().contains(pos):
@@ -251,8 +278,39 @@ class QQuarkTab(QWidget):
 
     def auto_plot_prepare(self):
         """
-        Automatically prepares the data based on its shape. (Not always correct but tries to infer)
+        Automatically prepares the data based on its shape. This is not always correct but attempts to infer. This
+        method can be helpful when writing a custom plotter function. Works for both loading data as well as experiment
+        data.
+
+        The prepared data will be in the format:
+
+        .. code-block:: python
+
+            {
+                "plots": [
+                    {"x": x_data,
+                    "y": y_data,
+                    "label": name,
+                    "xlabel": "Qubit Frequency (GHz)",
+                    "ylabel": "a.u."},
+                ],
+                "images": [
+                    {"data": data,
+                    "label": name,
+                    "xlabel": "X-axis",
+                    "ylabel": "Y-axis",
+                    "colormap": "inferno"},
+                ],
+                "columns": [
+                    {"data": data,
+                    "label": name,
+                    "xlabel": "X-axis",
+                    "ylabel": "Y-axis"},
+                ]
+            }
+
         """
+
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
         self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
@@ -372,6 +430,7 @@ class QQuarkTab(QWidget):
         :param data: The data to be processed.
         :type data: dict
         """
+
         self.data = data
 
         # check what set number is being run and average the data
@@ -388,8 +447,10 @@ class QQuarkTab(QWidget):
 
     def update_data(self, data):
         """
-        Is the slot for the emission of data from the experiment thread.
-        Calls the methods to process and plot the data.
+        Is the slot for the emission of data from the experiment thread. Calls the methods to process and plot the data.
+
+        :param data: The data to be processed.
+        :type data: dict
         """
 
         self.process_data(data)
@@ -397,13 +458,21 @@ class QQuarkTab(QWidget):
         self.save_data()
 
     def export_data(self):
+        """
+        Is the function called when the export button clicked. Prepares file naming and saves data.
+        """
+
         self.prepare_file_naming()
         self.save_data()
 
         self.export_data_button.setText('Done!')
-        QTimer.singleShot(3000, lambda: self.export_data_button.setText('Export'))
+        QTimer.singleShot(3000, lambda: self.export_data_button.setText('Export')) # called after 3 seconds
 
     def change_output_dir(self):
+        """
+        Changes the output directory that data is autosaved to via a file dialog.
+        """
+
         self.output_dir = QFileDialog.getExistingDirectory(self, "Select Folder for Autosave", self.output_dir)
         qInfo("Output directory for experiment data changed to: " + self.output_dir)
 
@@ -411,6 +480,10 @@ class QQuarkTab(QWidget):
         QTimer.singleShot(3000, lambda: self.output_dir_button.setText('Output Dir'))
 
     def prepare_file_naming(self):
+        """
+        Prepares naming conventions by creating folder and file names with experiment type and timestamps.
+        """
+
         # Setting up variables necessary for saving data files
         date_time_now = datetime.datetime.now()
         date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
@@ -425,6 +498,13 @@ class QQuarkTab(QWidget):
             self.file_name = self.tab_name + "_" + date_time_string
 
     def save_data(self):
+        """
+        [UNCOMPLETE]
+
+        Saves data by force dumping it into an h5 format. Works as is but doesn't save metadata that could be important
+        for sweeps and configurations.
+        """
+
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
 

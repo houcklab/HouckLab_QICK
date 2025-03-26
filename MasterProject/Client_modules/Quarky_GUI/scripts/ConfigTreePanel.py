@@ -114,7 +114,7 @@ class QConfigTreePanel(QTreeView):
 
     def setup_signals(self):
         """
-        Sets up all the signals and slots of the Accounts Panel. Includes connecting the toolbar button functionality.
+        Sets up all the signals and slots of the ConfigTree Panel. Includes connecting the toolbar button functionality.
         """
 
         self.save_config_button.clicked.connect(self.save_config)
