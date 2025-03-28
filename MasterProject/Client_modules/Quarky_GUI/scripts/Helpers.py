@@ -89,27 +89,22 @@ def dict_to_h5(data_file, dictionary):
             # Create a subgroup for nested dictionaries
             subgroup = data_file.create_group(key)
             dict_to_h5(subgroup, datum)  # Recurse
-        else:
-            if isinstance(datum, list):
-                # Handle list of numbers or strings
-                if all(isinstance(v, (int, float, np.number)) for v in datum):
-                    datum = np.array(datum, dtype=np.float64)  # Convert to NumPy array
-                    data_file.create_dataset(key, data=datum)
-                elif all(isinstance(v, str) for v in datum):
-                    dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
-                    data_file.create_dataset(key, data=np.array(datum, dtype=dt))
-                else:
-                    raise ValueError(f"Unsupported list type in key '{key}': Mixed types are not supported.")
+        elif isinstance(datum, list):
+            # Convert to NumPy array and handle jagged arrays
+            vlen_dtype = h5py.special_dtype(vlen=np.float64)
+            datum = [np.array(sub_arr, dtype=vlen_dtype) for sub_arr in datum] \
+                if isinstance(datum, list) else np.array(datum, dtype=vlen_dtype)
 
-            elif isinstance(datum, (int, float, np.ndarray)):
-                data_file.create_dataset(key, data=np.array(datum, dtype=np.float64))
+            try:
+                data_file.create_dataset(key, shape=datum.shape,
+                                         maxshape=tuple([None] * len(datum.shape)),
+                                         dtype=vlen_dtype)
+            except RuntimeError as e:
+                del data_file[key]
+                raise e
 
-            elif isinstance(datum, str):
-                dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
-                data_file.create_dataset(key, data=np.array(datum, dtype=dt))
+            data_file[key][...] = datum
 
-            print(key, datum)
-            # data_file[key][...] = datum
 
 def h5_to_dict(h5file):
     """
