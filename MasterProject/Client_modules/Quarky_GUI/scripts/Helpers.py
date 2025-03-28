@@ -6,6 +6,7 @@ Module containing all helper functions for the Quarky GUI.
 """
 
 import os
+import json
 import numpy as np
 import importlib
 import h5py
@@ -85,8 +86,7 @@ def dict_to_h5(data_file, dictionary):
     for key, datum in dictionary.items():
 
         if isinstance(datum, dict):
-            # somehow do something here
-            print("cannot store dicts yet")
+            data_file.attrs[key] = json.dumps(datum, cls=NpEncoder)
         else:
             # Convert to NumPy array and handle jagged arrays
             datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
@@ -107,7 +107,6 @@ def dict_to_h5(data_file, dictionary):
                 raise e
 
             data_file[key][...] = datum
-
 
 def h5_to_dict(h5file):
     """
@@ -131,3 +130,33 @@ def h5_to_dict(h5file):
                 result[key] = data
 
     return result
+
+
+def extract_metadata(h5file):
+    """
+    Extracts all attributes (metadata) from an HDF5 file.
+
+    :param h5file: Path to the HDF5 file.
+    :type h5file: str
+    :return: Dictionary containing all metadata attributes.
+    :rtype: dict
+    """
+    metadata = {}
+    with h5py.File(h5file, "r") as f:
+        for key in f.attrs.keys():
+            metadata[key] = f.attrs[key]  # Extract attribute values
+
+    return metadata
+
+class NpEncoder(json.JSONEncoder):
+    """
+    An encoder that ensures json dump can handle np arrays
+    """
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
