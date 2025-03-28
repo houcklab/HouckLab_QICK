@@ -170,6 +170,15 @@ class ExperimentClass:
     def display(self, data=None, **kwargs):
         pass
 
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        pass
+
+    @classmethod
+    def export_data(cls, data_file, data):
+        # WRITE GENERAL DATA SAVING METHOD HERE
+        pass
+
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:
             data=self.data

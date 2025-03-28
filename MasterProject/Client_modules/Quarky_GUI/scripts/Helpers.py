@@ -6,6 +6,7 @@ Module containing all helper functions for the Quarky GUI.
 """
 
 import os
+import numpy as np
 import importlib
 import h5py
 from PyQt5.QtWidgets import (
@@ -34,9 +35,9 @@ def import_file(full_path_to_module):
         raise ImportError(e)
     return module_obj, module_name
 
-def h5_to_dict(h5file):
+def simple_h5_to_dict(h5file):
     """
-    Converts a h5 file to a dictionary.
+    The simple direct conversion a h5 file to a dictionary that assums all key values are arrays.
 
     :param h5file: h5 file
     :type h5file: h5py.File
@@ -69,3 +70,63 @@ def create_button(text, name, enabled=True, parent=None):
     btn.setObjectName(name)
     btn.setEnabled(enabled)
     return btn
+
+def dict_to_h5(data_file, dictionary):
+    """
+    Recursively stores a dictionary into an HDF5 group.
+    Handles nested dictionaries, lists, strings, and numerical data.
+
+    :param data_file: A writeable reference to an h5 file
+    :type data_file: h5py.File
+    :param dictionary: The dictionary to convert into h5
+    :type dictionary: dict
+    """
+
+    for key, value in dictionary.items():
+        if isinstance(value, dict):
+            # Create a subgroup for nested dictionaries
+            subgroup = data_file.create_group(key)
+            dict_to_h5(subgroup, value)  # Recurse
+
+        elif isinstance(value, list):
+            # Handle list of numbers or strings
+            if all(isinstance(v, (int, float, np.number)) for v in value):
+                value = np.array(value, dtype=np.float64)  # Convert to NumPy array
+                data_file.create_dataset(key, data=value)
+            elif all(isinstance(v, str) for v in value):
+                dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
+                data_file.create_dataset(key, data=np.array(value, dtype=dt))
+            else:
+                raise ValueError(f"Unsupported list type in key '{key}': Mixed types are not supported.")
+
+        elif isinstance(value, (int, float, np.ndarray)):
+            data_file.create_dataset(key, data=np.array(value, dtype=np.float64))
+
+        elif isinstance(value, str):
+            dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
+            data_file.create_dataset(key, data=np.array(value, dtype=dt))
+
+        else:
+            raise ValueError(f"Unsupported data type in key '{key}': {type(value)}")
+
+def h5_to_dict(h5file):
+    """
+    Recursively converts an HDF5 group back into a dictionary.
+    Restores nested dictionaries, lists, and numerical/text data.
+    """
+    result = {}
+
+    with h5py.File(h5file, "r") as f:
+        for key, item in f.items():
+            if isinstance(item, h5py.Group):
+                result[key] = h5_to_dict(item)  # Recurse
+
+            elif isinstance(item, h5py.Dataset):
+                data = item[()]
+                if isinstance(data, np.ndarray):
+                    data = data.tolist()  # Convert NumPy arrays back to lists
+                elif isinstance(data, bytes):
+                    data = data.decode('utf-8')  # Convert bytes to string
+                result[key] = data
+
+    return result

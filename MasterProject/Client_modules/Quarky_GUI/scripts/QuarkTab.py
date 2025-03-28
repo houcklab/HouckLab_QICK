@@ -499,15 +499,16 @@ class QQuarkTab(QWidget):
 
     def save_data(self):
         """
-        [UNCOMPLETE]
-
-        Saves data by force dumping it into an h5 format. Works as is but doesn't save metadata that could be important
-        for sweeps and configurations.
+        Performs the saving of an experiment's data via 3 files:
+            * h5 : Saves data by force dumping it into an h5 format with the config stored as metadata
+            * json : Saves the config into a json file
+            * PNG : Saves the data as a PNG image
         """
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
 
+        # Saving datasets
         if not self.is_experiment:
             folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save Dataset")
             folder_path = Path(os.path.join(folder_path, self.folder_name))
@@ -525,6 +526,7 @@ class QQuarkTab(QWidget):
                     qCritical(f"Failed to save the dataset to {file_path}: {str(e)}")
                     QMessageBox.critical(self, "Error", f"Failed to save dataset.")
 
+        # Saving experiments
         elif self.is_experiment:
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
@@ -540,30 +542,13 @@ class QQuarkTab(QWidget):
 
             # Save dataset
             data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
-            if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
-                for key, datum in self.data['data'].items():
-
-                    if isinstance(datum, dict):
-                        # somehow do something here
-                        print("cannot store dicts yet")
-                    else:
-                        # Convert to NumPy array and handle jagged arrays
-                        datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
-                            if isinstance(datum, list) else np.array(datum, dtype=np.float64)
-
-                        # If datum is still a list of arrays, pad it to make a rectangular array
-                        if isinstance(datum, list):
-                            max_len = max(len(arr) for arr in datum)
-                            datum = np.array([np.pad(arr, (0, max_len-len(arr)), constant_values=np.nan) for arr in datum])
-
-                        try:
-                            data_file.create_dataset(key, shape=datum.shape,
-                                                     maxshape=tuple([None] * len(datum.shape)),
-                                                     dtype=str(datum.astype(np.float64).dtype))
-                        except RuntimeError as e:
-                            qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
-                            del data_file[key]
-                        data_file[key][...] = datum
+            if self.experiment_obj.experiment_exporter is not None:
+                try:
+                    self.experiment_obj.experiment_exporter(data_file, self.data, self.config)
+                except RuntimeError as e:
+                    qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
+            else :
+                self.backup_exporter(data_file)
             data_file.close()
 
             # Save config
@@ -582,3 +567,36 @@ class QQuarkTab(QWidget):
 
             qDebug("Data export attempted at " + date_time_string +
                   " to: " + self.output_dir + "/" + self.tab_name + "/" + self.folder_name)
+
+    def backup_exporter(self, data_file):
+        """
+        In the case where an exporter cannot be found (which shouldn't happen as the ExperimentClass provides a
+        default data exporter, this backup function will be used. It is the same as the one given in the
+        ExperimentClass.
+        """
+
+        if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
+            for key, datum in self.data['data'].items():
+
+                if isinstance(datum, dict):
+                    # somehow do something here
+                    print("cannot store dicts yet")
+                else:
+                    # Convert to NumPy array and handle jagged arrays
+                    datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+                        if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+
+                    # If datum is still a list of arrays, pad it to make a rectangular array
+                    if isinstance(datum, list):
+                        max_len = max(len(arr) for arr in datum)
+                        datum = np.array(
+                            [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
+
+                    try:
+                        data_file.create_dataset(key, shape=datum.shape,
+                                                 maxshape=tuple([None] * len(datum.shape)),
+                                                 dtype=str(datum.astype(np.float64).dtype))
+                    except RuntimeError as e:
+                        qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
+                        del data_file[key]
+                    data_file[key][...] = datum

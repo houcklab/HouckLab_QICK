@@ -29,6 +29,7 @@ class ExperimentObject():
         * experiment_path (str): The absolute path to the experiment file.
         * experiment_class (Class): The class of the custom experiment that is a subclass of ExperimentClass.
         * experiment_plotter (Callable): A callable @classmethod of the experiment_class that handles plotting.
+        * experiment_exporter (Callable): A callable @classmethod of the experiment_class that handles data exporting.
     """
 
     def __init__(self, experiment_tab, experiment_name, experiment_path=None):
@@ -51,6 +52,7 @@ class ExperimentObject():
         self.experiment_tab = experiment_tab
         self.experiment_class = None
         self.experiment_plotter = None
+        self.experiment_exporter = None
 
         self.extract_experiment_attributes()
 
@@ -82,6 +84,14 @@ class ExperimentObject():
                 qInfo("Found experiment class: " + name)
                 # Store the class reference
                 self.experiment_class = obj
+
+                # Store the class's export_data function
+                if hasattr(obj, "export_data") and callable(getattr(obj, "export_data")):
+                    qInfo("Found experiment data exporter.")
+                    self.experiment_exporter = getattr(obj, "export_data")
+                else:
+                    qDebug("This experiment class does not have a data exporter.")
+
                 # Store the class's plotter function
                 if hasattr(obj, "plotter") and callable(getattr(obj, "plotter")):
                     qInfo("Found experiment plotter.")
