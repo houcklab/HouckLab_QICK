@@ -29,18 +29,19 @@ To run the Quarky GUI for the first time, follow these steps:
 
     2. **Configuring Environment:**
 
-       Set up the required dependencies and environment variables for Quarky. All required packages are given in the ``environment.yaml`` file found in the ``Quarky_GUI`` folder.
+       Set up the required dependencies and environment variables for Quarky. All required packages are given in the ``requirements.txt`` file found in the ``Quarky_GUI`` folder.
        To use the file, ensure you are in the correct directory in command line and use the following commands as appropriate:
 
        ::
 
         # To update existing quarky_env conda environment
-        conda quarky_env update --file environment.yml --prune --update-deps --force-reinstall
+        conda activate your_env_name
+        pip install -r requirements.txt
 
         # To create a quarky_env conda environment from scratch if one does not exist
-        conda quarky_env create -f environment.yml
-
-        conda activate quarky_env # to activate environment
+        conda create --name your_env_name
+        conda activate your_env_name
+        pip install -r requirements.txt
 
     3. **Executing GUI**
        Launch the GUI after environment activation via ``python Quarky.py`` on the command line and verify that it runs correctly.

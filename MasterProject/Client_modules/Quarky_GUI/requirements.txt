@@ -1,0 +1,11 @@
+h5py==3.12.1
+matplotlib==3.10.1
+numpy==2.2.4
+python==3.9.21
+PyQt5==5.15.11
+PyQt5_sip==12.13.0
+pyqtgraph==0.13.7
+Pyro4==4.82
+Pyro4==4.82
+PyVISA==1.14.1
+qick==0.2.311
