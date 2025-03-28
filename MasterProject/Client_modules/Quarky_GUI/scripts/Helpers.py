@@ -105,6 +105,7 @@ def dict_to_h5(data_file, dictionary):
             except RuntimeError as e:
                 del data_file[key]
                 raise e
+
             data_file[key][...] = datum
 
 
@@ -113,9 +114,9 @@ def h5_to_dict(h5file):
     Recursively converts an HDF5 group back into a dictionary.
     Restores nested dictionaries, lists, and numerical/text data.
     """
+    result = {}
+
     with h5py.File(h5file, "r") as f:
-        print(f.items()[0])
-        result = {}
 
         for key, item in f.items():
             if isinstance(item, h5py.Group):
@@ -129,4 +130,4 @@ def h5_to_dict(h5file):
                     data = data.decode('utf-8')  # Convert bytes to string
                 result[key] = data
 
-        return result
+    return result
