@@ -250,6 +250,10 @@ class RabiAmp_ND_Experiment(ExperimentClass):
             plots.append(p)
             if len(plots) % 2 == 0: plot_widget.nextRow()
 
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        pass
+
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
         if data is None:

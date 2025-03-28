@@ -190,6 +190,7 @@ class QQuarkTab(QWidget):
         """
 
         self.data = Helpers.h5_to_dict(dataset_file)
+        print(self.data)
         # self.config = Helpers.extract_config_from_metadata(dataset_file)
         self.plot_data()
 

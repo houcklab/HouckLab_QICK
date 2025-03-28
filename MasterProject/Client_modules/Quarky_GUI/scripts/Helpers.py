@@ -82,41 +82,42 @@ def dict_to_h5(data_file, dictionary):
     :type dictionary: dict
     """
 
-    for key, value in dictionary.items():
-        if isinstance(value, dict):
+    for key, datum in dictionary.items():
+        if isinstance(datum, dict):
             # Create a subgroup for nested dictionaries
             subgroup = data_file.create_group(key)
-            dict_to_h5(subgroup, value)  # Recurse
-
-        elif isinstance(value, list):
-            # Handle list of numbers or strings
-            if all(isinstance(v, (int, float, np.number)) for v in value):
-                value = np.array(value, dtype=np.float64)  # Convert to NumPy array
-                data_file.create_dataset(key, data=value)
-            elif all(isinstance(v, str) for v in value):
-                dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
-                data_file.create_dataset(key, data=np.array(value, dtype=dt))
-            else:
-                raise ValueError(f"Unsupported list type in key '{key}': Mixed types are not supported.")
-
-        elif isinstance(value, (int, float, np.ndarray)):
-            data_file.create_dataset(key, data=np.array(value, dtype=np.float64))
-
-        elif isinstance(value, str):
-            dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
-            data_file.create_dataset(key, data=np.array(value, dtype=dt))
-
+            dict_to_h5(subgroup, datum)  # Recurse
         else:
-            raise ValueError(f"Unsupported data type in key '{key}': {type(value)}")
+            if isinstance(datum, list):
+                # Handle list of numbers or strings
+                if all(isinstance(v, (int, float, np.number)) for v in datum):
+                    datum = np.array(datum, dtype=np.float64)  # Convert to NumPy array
+                    data_file.create_dataset(key, data=datum)
+                elif all(isinstance(v, str) for v in datum):
+                    dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
+                    data_file.create_dataset(key, data=np.array(datum, dtype=dt))
+                else:
+                    raise ValueError(f"Unsupported list type in key '{key}': Mixed types are not supported.")
+
+            elif isinstance(datum, (int, float, np.ndarray)):
+                data_file.create_dataset(key, data=np.array(datum, dtype=np.float64))
+
+            elif isinstance(datum, str):
+                dt = h5py.special_dtype(vlen=str)  # Variable-length string dtype
+                data_file.create_dataset(key, data=np.array(datum, dtype=dt))
+
+            print(key, datum)
+            data_file[key][...] = datum
 
 def h5_to_dict(h5file):
     """
     Recursively converts an HDF5 group back into a dictionary.
     Restores nested dictionaries, lists, and numerical/text data.
     """
-    result = {}
-
     with h5py.File(h5file, "r") as f:
+        print(f.items()[0])
+        result = {}
+
         for key, item in f.items():
             if isinstance(item, h5py.Group):
                 result[key] = h5_to_dict(item)  # Recurse
@@ -129,4 +130,4 @@ def h5_to_dict(h5file):
                     data = data.decode('utf-8')  # Convert bytes to string
                 result[key] = data
 
-    return result
+        return result
