@@ -16,8 +16,8 @@ from PyQt5.QtWidgets import (
 )
 import pyqtgraph as pg
 
-from scripts.Init.initialize import BaseConfig
-from scripts.CoreLib.Experiment import ExperimentClass
+from MasterProject.Client_modules.Init.initialize import BaseConfig
+from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import scripts.Helpers as Helpers
 
 class ExperimentObject():

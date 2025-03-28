@@ -38,7 +38,7 @@ from PyQt5.QtWidgets import (
 )
 
 # Use absolute imports
-from scripts.CoreLib.socProxy import makeProxy
+from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from scripts.ExperimentThread import ExperimentThread
 from scripts.QuarkTab import QQuarkTab
 from scripts.VoltagePanel import QVoltagePanel

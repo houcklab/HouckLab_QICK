@@ -82,27 +82,29 @@ def dict_to_h5(data_file, dictionary):
     :type dictionary: dict
     """
 
-    print(dictionary)
     for key, datum in dictionary.items():
-        print(key, datum)
+
         if isinstance(datum, dict):
-            # Create a subgroup for nested dictionaries
-            subgroup = data_file.create_group(key)
-            dict_to_h5(subgroup, datum)  # Recurse
-        elif isinstance(datum, list):
+            # somehow do something here
+            print("cannot store dicts yet")
+        else:
             # Convert to NumPy array and handle jagged arrays
-            vlen_dtype = h5py.special_dtype(vlen=np.float64)
-            datum = [np.array(sub_arr, dtype=vlen_dtype) for sub_arr in datum] \
-                if isinstance(datum, list) else np.array(datum, dtype=vlen_dtype)
+            datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+                if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+
+            # If datum is still a list of arrays, pad it to make a rectangular array
+            if isinstance(datum, list):
+                max_len = max(len(arr) for arr in datum)
+                datum = np.array(
+                    [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
 
             try:
                 data_file.create_dataset(key, shape=datum.shape,
                                          maxshape=tuple([None] * len(datum.shape)),
-                                         dtype=vlen_dtype)
+                                         dtype=str(datum.astype(np.float64).dtype))
             except RuntimeError as e:
                 del data_file[key]
                 raise e
-
             data_file[key][...] = datum
 
 

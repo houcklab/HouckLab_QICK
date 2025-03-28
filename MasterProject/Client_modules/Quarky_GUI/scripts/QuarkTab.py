@@ -34,7 +34,7 @@ from PyQt5.QtWidgets import (
     QShortcut,
 )
 import pyqtgraph as pg
-from scripts.Init.initialize import BaseConfig
+from MasterProject.Client_modules.Init.initialize import BaseConfig
 from scripts.ExperimentObject import ExperimentObject
 import scripts.Helpers as Helpers
 
