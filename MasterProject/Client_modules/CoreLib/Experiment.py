@@ -5,6 +5,8 @@ import h5py
 import datetime
 from pathlib import Path
 
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
+
 class MakeFile(h5py.File):
     def __init__(self, *args, **kwargs):
         h5py.File.__init__(self, *args, **kwargs)
@@ -175,9 +177,28 @@ class ExperimentClass:
         pass
 
     @classmethod
-    def export_data(cls, data_file, data):
-        # WRITE GENERAL DATA SAVING METHOD HERE
-        pass
+    def export_data(cls, data_file, data, config):
+        """
+        Exports a dictionary with nested data into an HDF5 file.
+        Supports hierarchical storage for nested dictionaries and direct key-value pairs.
+
+        :param data_file: A writeable reference to an h5 file
+        :type data_file: h5py.File
+        :param data: The data dictionary
+        :type data: dict
+        :param config: The config dictionary
+        :type config: dict
+        """
+
+        # Store the config as metadata
+        if isinstance(config, dict) and config is not None:
+            data_file.attrs['config'] = json.dumps(config, cls=NpEncoder)
+
+        # Store the data dictionary
+        if isinstance(data, dict) and 'data' in data and isinstance(data['data'], dict):
+            Helpers.dict_to_h5(data_file, data['data'])
+        else:
+            Helpers.dict_to_h5(data_file, data)
 
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:

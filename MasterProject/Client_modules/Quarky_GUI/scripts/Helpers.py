@@ -82,7 +82,9 @@ def dict_to_h5(data_file, dictionary):
     :type dictionary: dict
     """
 
+    print(dictionary)
     for key, datum in dictionary.items():
+        print(key, datum)
         if isinstance(datum, dict):
             # Create a subgroup for nested dictionaries
             subgroup = data_file.create_group(key)
@@ -107,7 +109,7 @@ def dict_to_h5(data_file, dictionary):
                 data_file.create_dataset(key, data=np.array(datum, dtype=dt))
 
             print(key, datum)
-            data_file[key][...] = datum
+            # data_file[key][...] = datum
 
 def h5_to_dict(h5file):
     """

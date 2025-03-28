@@ -200,6 +200,7 @@ class SpecSlice_Experiment(ExperimentClass):
 
     @classmethod
     def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
         pass
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
