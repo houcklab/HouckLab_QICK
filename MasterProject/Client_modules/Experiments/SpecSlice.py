@@ -198,6 +198,10 @@ class SpecSlice_Experiment(ExperimentClass):
 
         return
 
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        pass
+
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
         if data is None:
