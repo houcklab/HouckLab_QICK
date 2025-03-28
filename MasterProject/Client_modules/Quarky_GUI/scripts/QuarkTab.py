@@ -190,14 +190,23 @@ class QQuarkTab(QWidget):
         """
 
         self.data = Helpers.h5_to_dict(dataset_file)
-        print(self.data)
+
+        # Extracting the Config
+        self.config["Base Config"] = {}
         metadata = Helpers.extract_metadata(dataset_file)
         if "config" in metadata:
             qInfo("Config in h5 metadata found")
-            self.config = json.loads(metadata["config"])
-            print(self.config)
+            temp_config = json.loads(metadata["config"])
+
+            if "Experiment Config" in temp_config:
+                self.config = temp_config
+            else:
+                self.config["Experiment Config"] = temp_config
+            print(temp_config)
+
         else:
             qDebug("No config in metadata found")
+
         self.plot_data()
 
     def clear_plots(self):
@@ -582,29 +591,31 @@ class QQuarkTab(QWidget):
         default data exporter, this backup function will be used. It is the same as the one given in the
         ExperimentClass.
         """
+        dictionary = self.data
+        if "data" in self.data:
+            dictionary = self.data["data"]
 
-        if isinstance(self.data, dict) and 'data' in self.data and isinstance(self.data['data'], dict):
-            for key, datum in self.data['data'].items():
+        for key, datum in dictionary.items():
 
-                if isinstance(datum, dict):
-                    # somehow do something here
-                    print("cannot store dicts yet")
-                else:
-                    # Convert to NumPy array and handle jagged arrays
-                    datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
-                        if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+            if isinstance(datum, dict):
+                data_file.attrs[key] = json.dumps(datum, cls=NpEncoder)
+            else:
+                # Convert to NumPy array and handle jagged arrays
+                datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+                    if isinstance(datum, list) else np.array(datum, dtype=np.float64)
 
-                    # If datum is still a list of arrays, pad it to make a rectangular array
-                    if isinstance(datum, list):
-                        max_len = max(len(arr) for arr in datum)
-                        datum = np.array(
-                            [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
+                # If datum is still a list of arrays, pad it to make a rectangular array
+                if isinstance(datum, list):
+                    max_len = max(len(arr) for arr in datum)
+                    datum = np.array(
+                        [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
 
-                    try:
-                        data_file.create_dataset(key, shape=datum.shape,
-                                                 maxshape=tuple([None] * len(datum.shape)),
-                                                 dtype=str(datum.astype(np.float64).dtype))
-                    except RuntimeError as e:
-                        qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
-                        del data_file[key]
-                    data_file[key][...] = datum
+                try:
+                    data_file.create_dataset(key, shape=datum.shape,
+                                             maxshape=tuple([None] * len(datum.shape)),
+                                             dtype=str(datum.astype(np.float64).dtype))
+                except RuntimeError as e:
+                    del data_file[key]
+                    raise e
+
+                data_file[key][...] = datum
