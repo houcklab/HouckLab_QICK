@@ -97,7 +97,7 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(3)
         self.plot_utilities.setObjectName("plot_utilities")
-        self.reload_experiment_button = Helpers.create_button("Reload", "reload_experiment_button", False, self.plot_utilities_container)
+        self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
         self.output_dir_button = Helpers.create_button("Output Dir", "output_dir_button", False, self.plot_utilities_container)
@@ -110,7 +110,7 @@ class QQuarkTab(QWidget):
         self.coord_label.setObjectName("coord_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
-        self.plot_utilities.addWidget(self.reload_experiment_button)
+        self.plot_utilities.addWidget(self.reExtract_experiment_button)
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
         self.plot_utilities.addWidget(self.output_dir_button)
@@ -152,14 +152,14 @@ class QQuarkTab(QWidget):
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
         self.export_data_button.clicked.connect(self.export_data)
         self.output_dir_button.clicked.connect(self.change_output_dir)
-        self.reload_experiment_button.clicked.connect(self.reload_experiment)
+        self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
 
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
 
         # Create the default export output_dir for autosaving if of type experiment
         if self.is_experiment:
-            self.reload_experiment_button.setEnabled(True)
+            self.reExtract_experiment_button.setEnabled(True)
             self.output_dir_button.setEnabled(True)
             self.output_dir = os.path.join(os.path.abspath(""), "data")
             qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
@@ -217,18 +217,18 @@ class QQuarkTab(QWidget):
         self.plot_widget.ci.clear()
         self.plots = []
 
-    def reload_experiment(self):
+    def reExtract_experiment(self):
         """
-        Reloads the current experiment via the experiment_path given. This allows a user to change the experiment code
+        ReExtracts the current experiment via the experiment_path given. This allows a user to change the experiment code
         or even the plotter without having to exit the GUI, close any tabs, or import the experiment from scratch.
         """
 
         if self.experiment_obj is not None:
             self.experiment_obj.extract_experiment_attributes()
-            qDebug("Reloaded Experiment: experiment attributes extracted.")
+            qDebug("ReExtracted Experiment: experiment attributes extracted.")
 
-            self.reload_experiment_button.setText('Reloaded!')
-            QTimer.singleShot(3000, lambda: self.reload_experiment_button.setText('Reload'))
+            self.reExtract_experiment_button.setText('ReExtracted!!')
+            QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))
 
     def update_coordinates(self, pos):
         """

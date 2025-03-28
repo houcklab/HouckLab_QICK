@@ -140,7 +140,7 @@ class Quarky(QMainWindow):
         self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)
         self.experiment_progress_bar.setObjectName("experiment_progress_bar")
         self.load_data_button = Helpers.create_button("Load Data","load_data_button",True,self.wrapper)
-        self.load_experiment_button = Helpers.create_button("Load Experiment","load_experiment_button",True,self.wrapper)
+        self.load_experiment_button = Helpers.create_button("Extract Experiment","load_experiment_button",True,self.wrapper)
 
         # Adding items to top bar, top bar to main layout
         self.top_bar.addWidget(self.quarky_icon)
