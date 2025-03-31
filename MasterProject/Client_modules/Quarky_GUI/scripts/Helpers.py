@@ -91,8 +91,8 @@ def _recursive_save(h, d):
     TODO
     """
     for key, val in d.items():
-        if key == 'attrs':
-            h.attrs.update(d[key])
+        if key == 'config':
+            continue
         elif isinstance(val, dict):
             h.create_group(key)
             _recursive_save(h[key], val)
@@ -141,8 +141,8 @@ def h5_to_dict(h5file):
     data = {}
 
     # Extract data
+    loaded_dict = {}
     with h5py.File(h5file, 'r') as f:
-        loaded_dict = {}
         _recursive_load(f, loaded_dict)
 
     loaded_dict.pop("attrs", None) # we handle metadata using the extract_metadata() function
@@ -150,10 +150,11 @@ def h5_to_dict(h5file):
 
     # Extract other metadata (dictionaries)
     metadata = extract_metadata(h5file)
+    print(metadata)
     for key in metadata.keys():
         data[key] = json.loads(metadata[key])
 
-    print(data)
+    # print(data)
     return data
 
 def _recursive_load(h, d):
