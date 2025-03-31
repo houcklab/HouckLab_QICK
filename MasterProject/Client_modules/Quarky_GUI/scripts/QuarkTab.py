@@ -156,6 +156,7 @@ class QQuarkTab(QWidget):
         self.output_dir_button.clicked.connect(self.change_output_dir)
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
         self.replot_button.clicked.connect(self.replot_data)
+        self.plot_method_combo.currentIndexChanged.connect(self.handle_plot_combo_selection)
 
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
@@ -179,11 +180,26 @@ class QQuarkTab(QWidget):
         'Auto'.
         """
 
-        self.plot_method_combo.addItems(["Plot: Auto"])
+        self.plot_method_combo.addItems(["Autoplot"])
+        self.plot_method_combo.addItems(["Add..."])
+
         if self.is_experiment and self.experiment_obj is not None:
             if self.experiment_obj.experiment_plotter is not None:
-                self.plot_method_combo.addItems(["Plot: " + self.tab_name])
-                self.plot_method_combo.setCurrentText("Plot: " + self.tab_name)
+                self.plot_method_combo.addItems([self.tab_name])
+                self.plot_method_combo.setCurrentText(self.tab_name)
+
+    def handle_plot_combo_selection(self):
+        """
+        Handler for when the Plotting Methods Combo is changed. If it is changed to "Plot: Add...", then it performs the
+        functionality for adding a plotter function. This method is used because a PyQt Combo cannot add buttons,
+        this is the workaround.
+        """
+        if self.plot_method_combo.currentText() == "Add...":
+            # TODO: open dialog, extract experiment plotter, save it somewhere, set it to be current combo selection
+            print("Load a plotting method")
+
+        if self.data is not None:
+            self.replot_data()
 
     def load_dataset_file(self, dataset_file):
         """
@@ -206,7 +222,7 @@ class QQuarkTab(QWidget):
                 self.config = temp_config
             else:
                 self.config["Experiment Config"] = temp_config
-            print(temp_config)
+            # print(temp_config)
 
         else:
             qDebug("No config in metadata found")
@@ -291,8 +307,8 @@ class QQuarkTab(QWidget):
         self.clear_plots()
         self.plots = []
 
-        plotting_method = self.plot_method_combo.currentText()[6:] # Get the Plotting Method
-        if plotting_method == "Auto": # Use auto preparation
+        plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
+        if plotting_method == "Autoplot": # Use auto preparation
             self.auto_plot_prepare()
         elif plotting_method == self.tab_name: # Use the experiment's preparation
             self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
@@ -390,6 +406,9 @@ class QQuarkTab(QWidget):
                     "colormap": "inferno"
                 })
 
+        # print(self.data)
+        # print(prepared_data)
+
         # Create the plots
         if "plots" in prepared_data:
             for i, plot in enumerate(prepared_data["plots"]):
@@ -399,6 +418,12 @@ class QQuarkTab(QWidget):
                 p.setLabel('bottom', plot["xlabel"])
                 p.setLabel('left', plot["ylabel"])
                 p.showGrid(x=True, y=True)
+
+                # Automatically adjust the x and y axis ranges
+                x_min, x_max = min(plot["x"]), max(plot["x"])
+                y_min, y_max = min(plot["y"]), max(plot["y"])
+                print(x_min, x_max, y_min, y_max)
+                p.setRange(xRange=[x_min, x_max], yRange=[y_min, y_max])
 
                 self.plots.append(p)
                 self.plot_widget.nextRow()

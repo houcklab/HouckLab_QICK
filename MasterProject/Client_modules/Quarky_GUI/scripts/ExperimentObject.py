@@ -52,7 +52,7 @@ class ExperimentObject():
         self.experiment_tab = experiment_tab
         self.experiment_class = None
         self.experiment_plotter = None
-        self.experiment_exporter = None
+        self.experiment_exporter = ExperimentClass.export_data
 
         self.extract_experiment_attributes()
 
@@ -90,7 +90,7 @@ class ExperimentObject():
                     qInfo("Found experiment data exporter.")
                     self.experiment_exporter = getattr(obj, "export_data")
                 else:
-                    qDebug("This experiment class does not have a data exporter.")
+                    qDebug("This experiment class does not have a custom data exporter, using default ExperimentClass exporter.")
 
                 # Store the class's plotter function
                 if hasattr(obj, "plotter") and callable(getattr(obj, "plotter")):
