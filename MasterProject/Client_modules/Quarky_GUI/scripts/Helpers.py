@@ -87,6 +87,9 @@ def dict_to_h5(data_filename, dictionary):
         _recursive_save(f, dictionary)
 
 def _recursive_save(h, d):
+    """
+    TODO
+    """
     for key, val in d.items():
         if key == 'attrs':
             h.attrs.update(d[key])
@@ -100,7 +103,23 @@ def _recursive_save(h, d):
                 h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
             else:
                 # Handle list of numbers as a variable-length array
-                h.create_dataset(key, data=np.array(val, dtype=np.float64))
+                datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+                            if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+
+                # If datum is still a list of arrays, pad it to make a rectangular array
+                if isinstance(datum, list):
+                    max_len = max(len(arr) for arr in datum)
+                    datum = np.array(
+                        [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
+
+                try:
+                    h.create_dataset(key, shape=datum.shape,
+                                             maxshape=tuple([None] * len(datum.shape)),
+                                             dtype=str(datum.astype(np.float64).dtype))
+                except RuntimeError as e:
+                    del h[key]
+                    raise e
+
         elif isinstance(val, str):
             # Store single strings
             dt = h5py.string_dtype(encoding='utf-8')
@@ -138,6 +157,9 @@ def h5_to_dict(h5file):
     return data
 
 def _recursive_load(h, d):
+    """
+    TODO
+    """
     attrs = dict(h.attrs)
     if len(attrs) > 0:
         d['attrs'] = attrs
