@@ -256,10 +256,6 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
     @classmethod
     def export_data(cls, data_file, data, config):
-        pass
-
-    @classmethod
-    def export_data(cls, data_file, data, config):
         super().export_data(data_file, data, config)
         pass
 

@@ -92,7 +92,7 @@ def _recursive_save(h, d):
     """
     for key, val in d.items():
         if key == 'config':
-            continue
+            h.attrs['config'] = json.dumps(val, cls=NpEncoder)
         elif isinstance(val, dict):
             h.create_group(key)
             _recursive_save(h[key], val)
