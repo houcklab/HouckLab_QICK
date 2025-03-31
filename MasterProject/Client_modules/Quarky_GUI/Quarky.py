@@ -446,6 +446,7 @@ class Quarky(QMainWindow):
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel
+            self.current_tab.setup_plotter_options()
 
             if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)

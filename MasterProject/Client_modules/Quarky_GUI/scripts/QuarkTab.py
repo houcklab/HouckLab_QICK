@@ -52,6 +52,11 @@ class QQuarkTab(QWidget):
         * custom_plot_methods (dict): A dictionary of the added custom plotting methods.
     """
 
+    custom_plot_methods = {}
+    """
+    custom_plot_methods (dict): A dictionary of the added custom plotting methods.
+    """
+
     def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
         """
         Initializes an instance of a QQuarkTab widget that will either be of type experiment based on the parameters
@@ -81,7 +86,6 @@ class QQuarkTab(QWidget):
         self.data = None
         self.plots = []
         self.output_dir = None
-        self.custom_plot_methods = {}
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -187,6 +191,12 @@ class QQuarkTab(QWidget):
             qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
             if not Path(self.output_dir).is_dir():
                 os.mkdir(self.output_dir)
+
+            # add custom plotter to options
+            if self.is_experiment and self.experiment_obj is not None:
+                if self.experiment_obj.experiment_plotter is not None:
+                    self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
             self.replot_button.setEnabled(True)
@@ -197,14 +207,17 @@ class QQuarkTab(QWidget):
         function, it is automatically set as the default method. Otherwise, the current methods available only include
         'Auto'.
         """
-
+        self.plot_method_combo.clear()
         self.plot_method_combo.addItems(["Autoplot"])
-        self.plot_method_combo.addItems(["Add..."])
 
-        if self.is_experiment and self.experiment_obj is not None:
-            if self.experiment_obj.experiment_plotter is not None:
-                self.plot_method_combo.insertItem(0, self.tab_name)
-                self.plot_method_combo.setCurrentText(self.tab_name)
+        for key in self.custom_plot_methods.keys():
+            if self.tab_name is not None and key == self.tab_name:
+                self.plot_method_combo.insertItem(0, key)
+                self.plot_method_combo.setCurrentText(key)
+            else:
+                self.plot_method_combo.addItems([key])
+
+        self.plot_method_combo.addItems(["Add..."])
 
     def handle_plot_combo_selection(self):
         """
@@ -346,8 +359,8 @@ class QQuarkTab(QWidget):
         try:
             if plotting_method == "Autoplot": # Use auto preparation
                 self.auto_plot_prepare()
-            elif plotting_method == self.tab_name: # Use the experiment's preparation
-                self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
+            # elif plotting_method == self.tab_name: # Use the experiment's preparation
+            #     self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
             elif plotting_method in self.custom_plot_methods:
                 self.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
