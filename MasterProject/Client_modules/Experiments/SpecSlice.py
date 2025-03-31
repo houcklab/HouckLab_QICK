@@ -144,7 +144,8 @@ class SpecSlice_Experiment(ExperimentClass):
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False)
 
-        data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
+        data = {'config': self.cfg,
+                'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         #### find the frequency corresponding to the qubit dip

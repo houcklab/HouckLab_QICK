@@ -14,8 +14,6 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 
-import h5ify
-
 def import_file(full_path_to_module):
     """
     Imports a python file to load it as a module (meaning an iterable list of classes and callables).
@@ -74,6 +72,8 @@ def create_button(text, name, enabled=True, parent=None):
     btn.setEnabled(enabled)
     return btn
 
+# h5 functionality inspired by h5ify
+
 def dict_to_h5(data_filename, dictionary):
     """
     Stores a dictionary to a h5 file using h5ify.
@@ -83,7 +83,18 @@ def dict_to_h5(data_filename, dictionary):
     :param dictionary: The dictionary to store.
     :type dictionary: dict
     """
-    h5ify.save(data_filename, dictionary, mode = 'w')
+    with h5py.File(data_filename, 'w') as f:
+        _recursive_save(f, dictionary)
+
+def _recursive_save(h, d):
+    for key, val in d.items():
+        if key == 'attrs':
+            h.attrs.update(d[key])
+        elif isinstance(val, dict):
+            h.create_group(key)
+            _recursive_save(h[key], val)
+        else:
+            h.create_dataset(key, data = val)
 
 def h5_to_dict(h5file):
     """
@@ -92,10 +103,35 @@ def h5_to_dict(h5file):
     :param h5file: The path to the h5 file to load.
     :type h5file: str
     """
-    data = h5ify.load(h5file)
-    data.pop("attrs", None) # we handle metadata using the extract_metadata() function
+    data = {}
+
+    # Extract data
+    with h5py.File(h5file, 'r') as f:
+        loaded_dict = {}
+        _recursive_load(f, loaded_dict)
+
+    loaded_dict.pop("attrs", None) # we handle metadata using the extract_metadata() function
+    data['data'] = loaded_dict
+
+    # Extract other metadata (dictionaries)
+    metadata = extract_metadata(h5file)
+    for key in metadata.keys():
+        data[key] = json.loads(metadata[key])
+
     print(data)
     return data
+
+def _recursive_load(h, d):
+    attrs = dict(h.attrs)
+    if len(attrs) > 0:
+        d['attrs'] = attrs
+    for key, val in h.items():
+        if isinstance(val, h5py.Group):
+            d[key] = {}
+            _recursive_load(val, d[key])
+        elif isinstance(val, h5py.Dataset):
+            d[key] = val[()]
+    return d
 
 def extract_metadata(h5file):
     """

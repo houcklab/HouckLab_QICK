@@ -251,17 +251,14 @@ class QQuarkTab(QWidget):
 
         # Extracting the Config
         self.config["Base Config"] = {}
-        metadata = Helpers.extract_metadata(dataset_file)
-        if "config" in metadata:
+        if "config" in self.data:
             qInfo("Config in h5 metadata found")
-            temp_config = json.loads(metadata["config"])
+            temp_config = self.data["config"]
 
             if "Experiment Config" in temp_config:
                 self.config = temp_config
             else:
                 self.config["Experiment Config"] = temp_config
-            # print(temp_config)
-
         else:
             qDebug("No config in metadata found")
 
