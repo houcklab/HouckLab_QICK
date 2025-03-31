@@ -636,15 +636,13 @@ class QQuarkTab(QWidget):
                 os.mkdir(os.path.join(self.output_dir, self.tab_name, self.folder_name))
 
             # Save dataset
-            data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
             if self.experiment_obj.experiment_exporter is not None:
                 try:
-                    self.experiment_obj.experiment_exporter(data_file, self.data, self.config)
+                    self.experiment_obj.experiment_exporter(data_filename, self.data, self.config)
                 except RuntimeError as e:
                     qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
             else :
-                self.backup_exporter(data_file)
-            data_file.close()
+                self.backup_exporter(data_filename)
 
             # Save config
             try:
@@ -663,12 +661,14 @@ class QQuarkTab(QWidget):
             qDebug("Data export attempted at " + date_time_string +
                   " to: " + self.output_dir + "/" + self.tab_name + "/" + self.folder_name)
 
-    def backup_exporter(self, data_file):
+    def backup_exporter(self, data_filename):
         """
         In the case where an exporter cannot be found (which shouldn't happen as the ExperimentClass provides a
         default data exporter, this backup function will be used. It is the same as the one given in the
         ExperimentClass.
         """
+        data_file = h5py.File(data_filename, 'w')  # Create file if does not exist, truncate mode if exists
+
         dictionary = self.data
         if "data" in self.data:
             dictionary = self.data["data"]
@@ -697,3 +697,5 @@ class QQuarkTab(QWidget):
                     raise e
 
                 data_file[key][...] = datum
+
+        data_file.close()

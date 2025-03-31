@@ -14,6 +14,8 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 
+import h5ify
+
 def import_file(full_path_to_module):
     """
     Imports a python file to load it as a module (meaning an iterable list of classes and callables).
@@ -72,65 +74,27 @@ def create_button(text, name, enabled=True, parent=None):
     btn.setEnabled(enabled)
     return btn
 
-def dict_to_h5(data_file, dictionary):
+def dict_to_h5(data_filename, dictionary):
     """
-    Recursively stores a dictionary into an HDF5 group.
-    Handles nested dictionaries, lists, strings, and numerical data.
+    Stores a dictionary to a h5 file using h5ify.
 
-    :param data_file: A writeable reference to an h5 file
-    :type data_file: h5py.File
-    :param dictionary: The dictionary to convert into h5
+    :param data_filename: The path and name of the h5 file.
+    :type data_filename: str
+    :param dictionary: The dictionary to store.
     :type dictionary: dict
     """
-
-    for key, datum in dictionary.items():
-
-        if isinstance(datum, dict):
-            data_file.attrs[key] = json.dumps(datum, cls=NpEncoder)
-        else:
-            # Convert to NumPy array and handle jagged arrays
-            datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
-                if isinstance(datum, list) else np.array(datum, dtype=np.float64)
-
-            # If datum is still a list of arrays, pad it to make a rectangular array
-            if isinstance(datum, list):
-                max_len = max(len(arr) for arr in datum)
-                datum = np.array(
-                    [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
-
-            try:
-                data_file.create_dataset(key, shape=datum.shape,
-                                         maxshape=tuple([None] * len(datum.shape)),
-                                         dtype=str(datum.astype(np.float64).dtype))
-            except RuntimeError as e:
-                del data_file[key]
-                raise e
-
-            data_file[key][...] = datum
+    h5ify.save(data_filename, dictionary, mode = 'w')
 
 def h5_to_dict(h5file):
     """
-    Recursively converts an HDF5 group back into a dictionary.
-    Restores nested dictionaries, lists, and numerical/text data.
+    Loads an h5 file and returns a dictionary of the data.
+
+    :param h5file: The path to the h5 file to load.
+    :type h5file: str
     """
-    result = {}
-
-    with h5py.File(h5file, "r") as f:
-
-        for key, item in f.items():
-            if isinstance(item, h5py.Group):
-                result[key] = h5_to_dict(item)  # Recurse
-
-            elif isinstance(item, h5py.Dataset):
-                data = item[()]
-                if isinstance(data, np.ndarray):
-                    data = data.tolist()  # Convert NumPy arrays back to lists
-                elif isinstance(data, bytes):
-                    data = data.decode('utf-8')  # Convert bytes to string
-                result[key] = data
-
-    return result
-
+    data = h5ify.load(h5file)
+    data.pop("attrs", None) # we handle metadata using the extract_metadata() function
+    return data
 
 def extract_metadata(h5file):
     """
@@ -160,3 +124,64 @@ class NpEncoder(json.JSONEncoder):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
+
+
+
+# def dict_to_h5(data_file, dictionary):
+#     """
+#     Recursively stores a dictionary into an HDF5 group.
+#     Handles nested dictionaries, lists, strings, and numerical data.
+#
+#     :param data_file: A writeable reference to an h5 file
+#     :type data_file: h5py.File
+#     :param dictionary: The dictionary to convert into h5
+#     :type dictionary: dict
+#     """
+#
+#     for key, datum in dictionary.items():
+#
+#         if isinstance(datum, dict):
+#             data_file.attrs[key] = json.dumps(datum, cls=NpEncoder)
+#         else:
+#             # Convert to NumPy array and handle jagged arrays
+#             datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
+#                 if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+#
+#             # If datum is still a list of arrays, pad it to make a rectangular array
+#             if isinstance(datum, list):
+#                 max_len = max(len(arr) for arr in datum)
+#                 datum = np.array(
+#                     [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
+#
+#             try:
+#                 data_file.create_dataset(key, shape=datum.shape,
+#                                          maxshape=tuple([None] * len(datum.shape)),
+#                                          dtype=str(datum.astype(np.float64).dtype))
+#             except RuntimeError as e:
+#                 del data_file[key]
+#                 raise e
+#
+#             data_file[key][...] = datum
+#
+# def h5_to_dict(h5file):
+#     """
+#     Recursively converts an HDF5 group back into a dictionary.
+#     Restores nested dictionaries, lists, and numerical/text data.
+#     """
+#     result = {}
+#
+#     with h5py.File(h5file, "r") as f:
+#
+#         for key, item in f.items():
+#             if isinstance(item, h5py.Group):
+#                 result[key] = h5_to_dict(item)  # Recurse
+#
+#             elif isinstance(item, h5py.Dataset):
+#                 data = item[()]
+#                 if isinstance(data, np.ndarray):
+#                     data = data.tolist()  # Convert NumPy arrays back to lists
+#                 elif isinstance(data, bytes):
+#                     data = data.decode('utf-8')  # Convert bytes to string
+#                 result[key] = data
+#
+#     return result

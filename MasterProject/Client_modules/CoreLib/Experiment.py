@@ -177,13 +177,13 @@ class ExperimentClass:
         pass
 
     @classmethod
-    def export_data(cls, data_file, data, config):
+    def export_data(cls, data_filename, data, config):
         """
         Exports a dictionary with nested data into an HDF5 file.
         Supports hierarchical storage for nested dictionaries and direct key-value pairs.
 
-        :param data_file: A writeable reference to an h5 file
-        :type data_file: h5py.File
+        :param data_file: A path to the dataset file that is to be created
+        :type data_file: str
         :param data: The data dictionary
         :type data: dict
         :param config: The config dictionary
@@ -191,14 +191,15 @@ class ExperimentClass:
         """
 
         # Store the config as metadata
-        if isinstance(config, dict) and config is not None:
-            data_file.attrs['config'] = json.dumps(config, cls=NpEncoder)
+        with h5py.File(data_filename, "w") as f:
+            if isinstance(config, dict) and config is not None:
+                f.attrs['config'] = json.dumps(config, cls=NpEncoder)
 
         # Store the data dictionary
         if isinstance(data, dict) and 'data' in data and isinstance(data['data'], dict):
-            Helpers.dict_to_h5(data_file, data['data'])
+            Helpers.dict_to_h5(data_filename, data['data'])
         else:
-            Helpers.dict_to_h5(data_file, data)
+            Helpers.dict_to_h5(data_filename, data)
 
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:
