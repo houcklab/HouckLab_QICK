@@ -141,35 +141,34 @@ def h5_to_dict(h5file):
     data = {}
 
     # Extract data
-    loaded_dict = {}
     with h5py.File(h5file, 'r') as f:
-        _recursive_load(f, loaded_dict)
+        _recursive_load(f, data)
 
-    loaded_dict.pop("attrs", None) # we handle metadata using the extract_metadata() function
-    data['data'] = loaded_dict
-
-    # Extract other metadata (dictionaries)
+    data.pop("attrs", None) # we handle metadata using the extract_metadata() function
+    # Extract metadata
     metadata = extract_metadata(h5file)
-    print(metadata)
     for key in metadata.keys():
         data[key] = json.loads(metadata[key])
 
-    # print(data)
+    print(data)
     return data
 
 def _recursive_load(h, d):
     """
     TODO
     """
-    attrs = dict(h.attrs)
-    if len(attrs) > 0:
-        d['attrs'] = attrs
     for key, val in h.items():
         if isinstance(val, h5py.Group):
             d[key] = {}
             _recursive_load(val, d[key])
         elif isinstance(val, h5py.Dataset):
-            d[key] = val[()]
+            datum = val[()]
+            if isinstance(datum, np.ndarray):
+                # Convert NumPy arrays back to lists, filter NaN
+                datum = np.where(np.isnan(datum), 0, val)
+            elif isinstance(datum, bytes):
+                datum = datum.decode('utf-8')  # Convert bytes to string
+            d[key] = datum
     return d
 
 def extract_metadata(h5file):
