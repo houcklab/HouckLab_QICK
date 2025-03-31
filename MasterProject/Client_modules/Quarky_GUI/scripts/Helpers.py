@@ -94,7 +94,9 @@ def _recursive_save(h, d):
             h.create_group(key)
             _recursive_save(h[key], val)
         else:
-            h.create_dataset(key, data = val)
+            # Handle lists/arrays of variable length using special dtype
+            dt = h5py.special_dtype(vlen=np.dtype("float64"))  # Adjust dtype as needed
+            h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
 
 def h5_to_dict(h5file):
     """
