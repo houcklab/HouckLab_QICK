@@ -195,7 +195,7 @@ class QQuarkTab(QWidget):
             # add custom plotter to options
             if self.is_experiment and self.experiment_obj is not None:
                 if self.experiment_obj.experiment_plotter is not None:
-                    self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+                    QQuarkTab.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
 
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
@@ -210,7 +210,9 @@ class QQuarkTab(QWidget):
         self.plot_method_combo.clear()
         self.plot_method_combo.addItems(["Autoplot"])
 
-        for key in self.custom_plot_methods.keys():
+        print(QQuarkTab.custom_plot_methods)
+
+        for key in QQuarkTab.custom_plot_methods.keys():
             if self.tab_name is not None and key == self.tab_name:
                 self.plot_method_combo.insertItem(0, key)
                 self.plot_method_combo.setCurrentText(key)
@@ -240,7 +242,7 @@ class QQuarkTab(QWidget):
                 if temp_experiment.experiment_plotter is not None:
                     self.plot_method_combo.insertItem(0, experiment_name)
                     self.plot_method_combo.setCurrentText(experiment_name)
-                    self.custom_plot_methods[experiment_name] = temp_experiment.experiment_plotter
+                    QQuarkTab.custom_plot_methods[experiment_name] = temp_experiment.experiment_plotter
                     qInfo("Added " + experiment_name + " plotter.")
                     self.replot_data()
                 else:
@@ -272,8 +274,13 @@ class QQuarkTab(QWidget):
                 self.config = temp_config
             else:
                 self.config["Experiment Config"] = temp_config
+            self.data.pop("config")
         else:
             qDebug("No config in metadata found")
+
+        if "data" in self.data:
+            self.data = self.data["data"]
+        print(self.data)
 
         self.plot_data()
 
@@ -361,8 +368,8 @@ class QQuarkTab(QWidget):
                 self.auto_plot_prepare()
             # elif plotting_method == self.tab_name: # Use the experiment's preparation
             #     self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
-            elif plotting_method in self.custom_plot_methods:
-                self.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
+            elif plotting_method in QQuarkTab.custom_plot_methods:
+                QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
             qCritical("Failed to plot using method [" + plotting_method + "]: " + str(e))
 

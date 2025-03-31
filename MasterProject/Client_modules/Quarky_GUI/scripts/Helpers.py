@@ -150,7 +150,6 @@ def h5_to_dict(h5file):
     for key in metadata.keys():
         data[key] = json.loads(metadata[key])
 
-    print(data)
     return data
 
 def _recursive_load(h, d):
