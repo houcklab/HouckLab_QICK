@@ -94,6 +94,7 @@ def h5_to_dict(h5file):
     """
     data = h5ify.load(h5file)
     data.pop("attrs", None) # we handle metadata using the extract_metadata() function
+    print(data)
     return data
 
 def extract_metadata(h5file):

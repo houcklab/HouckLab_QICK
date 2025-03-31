@@ -178,7 +178,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         avg_abs = data['avg_abs']
         avg_angle = data['avg_angle']
 
-        print(data)
+        # print(data)
 
         labels = ["I (a.u.)", "Q (a.u.)", "Amp (a.u.)", "Phase (deg.)"]
 
@@ -208,7 +208,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
                     "colormap": "inferno"
                 })
 
-        print(prepared_data)
+        # print(prepared_data)
 
         date_time_now = datetime.datetime.now()
         date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")

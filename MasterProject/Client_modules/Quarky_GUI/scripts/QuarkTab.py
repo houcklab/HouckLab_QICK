@@ -465,7 +465,7 @@ class QQuarkTab(QWidget):
                 # Automatically adjust the x and y axis ranges
                 x_min, x_max = min(plot["x"]), max(plot["x"])
                 y_min, y_max = min(plot["y"]), max(plot["y"])
-                print(x_min, x_max, y_min, y_max)
+                # print(x_min, x_max, y_min, y_max)
                 p.setRange(xRange=[x_min, x_max], yRange=[y_min, y_max])
 
                 self.plots.append(p)
