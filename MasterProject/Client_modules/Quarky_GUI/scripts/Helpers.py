@@ -93,10 +93,25 @@ def _recursive_save(h, d):
         elif isinstance(val, dict):
             h.create_group(key)
             _recursive_save(h[key], val)
+        elif isinstance(val, (list, np.ndarray)):
+            if all(isinstance(x, str) for x in val):
+                # Handle list of strings with variable-length dtype
+                dt = h5py.string_dtype(encoding='utf-8')
+                h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
+            else:
+                # Handle lists/arrays of variable length using special dtype
+                dt = h5py.special_dtype(vlen=np.float64)  # Adjust dtype as needed
+                h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
+        elif isinstance(val, str):
+            # Store single strings
+            dt = h5py.string_dtype(encoding='utf-8')
+            h.create_dataset(key, data=val, dtype=dt)
+        elif isinstance(val, (int, float, np.number)):
+            # Store individual numbers directly
+            h.create_dataset(key, data=val)
         else:
-            # Handle lists/arrays of variable length using special dtype
-            dt = h5py.special_dtype(vlen=np.dtype("float64"))  # Adjust dtype as needed
-            h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
+            raise TypeError(f"Unsupported data type {type(val)} for key '{key}'")
+
 
 def h5_to_dict(h5file):
     """
