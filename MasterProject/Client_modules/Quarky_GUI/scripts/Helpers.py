@@ -99,9 +99,8 @@ def _recursive_save(h, d):
                 dt = h5py.string_dtype(encoding='utf-8')
                 h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
             else:
-                # Handle lists/arrays of variable length using special dtype
-                dt = h5py.special_dtype(vlen=np.float64)  # Adjust dtype as needed
-                h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
+                # Handle list of numbers as a variable-length array
+                h.create_dataset(key, data=np.array(val, dtype=np.float64))
         elif isinstance(val, str):
             # Store single strings
             dt = h5py.string_dtype(encoding='utf-8')
