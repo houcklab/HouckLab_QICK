@@ -103,8 +103,8 @@ def _recursive_save(h, d):
                 h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
             else:
                 # Handle list of numbers as a variable-length array
-                datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in datum] \
-                            if isinstance(datum, list) else np.array(datum, dtype=np.float64)
+                datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in val] \
+                            if isinstance(val, list) else np.array(val, dtype=np.float64)
 
                 # If datum is still a list of arrays, pad it to make a rectangular array
                 if isinstance(datum, list):
@@ -113,7 +113,7 @@ def _recursive_save(h, d):
                         [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
 
                 try:
-                    h.create_dataset(key, shape=datum.shape,
+                    h.create_dataset(key, data=datum, shape=datum.shape,
                                              maxshape=tuple([None] * len(datum.shape)),
                                              dtype=str(datum.astype(np.float64).dtype))
                 except RuntimeError as e:
