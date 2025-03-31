@@ -49,6 +49,7 @@ class QQuarkTab(QWidget):
         * data (dict): The data of the QQuarkTab experiment/dataset.
         * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
         * plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area
+        * custom_plot_methods (dict): A dictionary of the added custom plotting methods.
     """
 
     def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
@@ -80,6 +81,7 @@ class QQuarkTab(QWidget):
         self.data = None
         self.plots = []
         self.output_dir = None
+        self.custom_plot_methods = {}
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -201,7 +203,7 @@ class QQuarkTab(QWidget):
 
         if self.is_experiment and self.experiment_obj is not None:
             if self.experiment_obj.experiment_plotter is not None:
-                self.plot_method_combo.addItems([self.tab_name])
+                self.plot_method_combo.insertItem(0, self.tab_name)
                 self.plot_method_combo.setCurrentText(self.tab_name)
 
     def handle_plot_combo_selection(self):
@@ -211,11 +213,31 @@ class QQuarkTab(QWidget):
         this is the workaround.
         """
         if self.plot_method_combo.currentText() == "Add...":
-            # TODO: open dialog, extract experiment plotter, save it somewhere, set it to be current combo selection
-            print("Load a plotting method")
+            self.plot_method_combo.blockSignals(True) # Prevent adding a new combo from calling it again in a loop
 
-        if self.data is not None:
-            self.replot_data()
+            # TODO: open dialog, extract experiment plotter, save it somewhere, set it to be current combo selection
+            options = QFileDialog.Options()
+            file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
+                                                  "Python Files (*.py)", options=options)
+            if file:
+                path = str(Path(file))
+                qInfo("Retrieving experiment plotter from: " + path)
+                experiment_name = os.path.splitext(os.path.basename(path))[0]
+                temp_experiment = ExperimentObject(self, experiment_name, path)
+                if temp_experiment.experiment_plotter is not None:
+                    self.plot_method_combo.insertItem(0, experiment_name)
+                    self.plot_method_combo.setCurrentText(experiment_name)
+                    self.custom_plot_methods[experiment_name] = temp_experiment.experiment_plotter
+                    qInfo("Added " + experiment_name + " plotter.")
+                    self.replot_data()
+                else:
+                    self.plot_method_combo.setCurrentText("Autoplot")
+                    qDebug("No plotter function found within " + experiment_name)
+
+            self.plot_method_combo.blockSignals(False) # re_enable plotting
+        else:
+            if self.data is not None:
+                self.replot_data()
 
     def load_dataset_file(self, dataset_file):
         """
@@ -324,10 +346,15 @@ class QQuarkTab(QWidget):
         self.plots = []
 
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
-        if plotting_method == "Autoplot": # Use auto preparation
-            self.auto_plot_prepare()
-        elif plotting_method == self.tab_name: # Use the experiment's preparation
-            self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
+        try:
+            if plotting_method == "Autoplot": # Use auto preparation
+                self.auto_plot_prepare()
+            elif plotting_method == self.tab_name: # Use the experiment's preparation
+                self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
+            elif plotting_method in self.custom_plot_methods:
+                self.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
+        except Exception as e:
+            qCritical("Failed to plot using method [" + plotting_method + "]: " + str(e))
 
     def auto_plot_prepare(self):
         """

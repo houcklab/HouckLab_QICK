@@ -71,7 +71,7 @@ class QConfigTreePanel(QTreeView):
 
         # Set up layout
         self.toolbar_layout = QHBoxLayout()
-        self.toolbar_layout.setContentsMargins(0, 7, 0, 0)
+        self.toolbar_layout.setContentsMargins(0, 7, 0, 2)
         self.toolbar_layout.setSpacing(5)
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(10, 5, 10, 10)

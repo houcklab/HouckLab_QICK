@@ -162,12 +162,20 @@ class SpecSlice_Experiment(ExperimentClass):
     @classmethod
     def plotter(cls, plot_widget, plots, data):
         # print(data)
-        x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
+        if 'data' in data:
+            data = data['data']
+
+        x_pts = data['x_pts']
+        avgi = data['avgi']
+        avgq = data['avgq']
+
+        print("reached")
+
         sig = avgi[0][0] + 1j * avgq[0][0]
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
+
+        print("reached 2")
 
         # Create structured data
         prepared_data = {

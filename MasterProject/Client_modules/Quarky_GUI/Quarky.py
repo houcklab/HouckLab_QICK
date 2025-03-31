@@ -137,7 +137,7 @@ class Quarky(QMainWindow):
         self.documentation_button.setStyleSheet("border: 1px solid gray; font-size: 10px; border-radius:6px; color: gray; width: 12px;")
 
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
-        self.stop_experiment_button = Helpers.create_button("⏹","stop_experiment",False,self.wrapper)
+        self.stop_experiment_button = Helpers.create_button("◼️","stop_experiment",False,self.wrapper)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)
@@ -376,7 +376,8 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
-        qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
+        if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_bane
+            qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
 
     def closeEvent(self, event):
         """
@@ -547,6 +548,7 @@ class Quarky(QMainWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
+        app.setStyle("Macintosh")
         ex = Quarky()
         ex.show()
         sys.exit(app.exec_())

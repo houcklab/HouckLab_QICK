@@ -169,11 +169,14 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-        expt_pts = data['data']['x_pts']
-        avg_di = data['data']['avgi']
-        avg_dq = data['data']['avgq']
-        avg_abs = data['data']['avg_abs']
-        avg_angle = data['data']['avg_angle']
+        if 'data' in data:
+            data = data['data']
+
+        expt_pts = data['x_pts']
+        avg_di = data['avgi']
+        avg_dq = data['avgq']
+        avg_abs = data['avg_abs']
+        avg_angle = data['avg_angle']
 
         print(data)
 
@@ -182,7 +185,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
         prepared_data = {"plots": [], "images": []}
 
         if len(expt_pts) == 1:
-            xlabel = data['data']['sweeps']['xlabel']
+            xlabel = data['sweeps']['xlabel']
             for i, (d, label) in enumerate(zip([avg_di, avg_dq, avg_abs, avg_angle], labels)):
                 prepared_data["plots"].append({
                     "x": expt_pts[0].tolist(),
@@ -192,8 +195,8 @@ class RabiAmp_ND_Experiment(ExperimentClass):
                     "ylabel": label
                 })
         else:
-            xlabel = data['data']['sweeps']['xlabel']
-            ylabel = data['data']['sweeps']['ylabel']
+            xlabel = data['sweeps']['xlabel']
+            ylabel = data['sweeps']['ylabel']
             for i, (d, label) in enumerate(zip([avg_di, avg_dq, avg_abs, avg_angle], labels)):
                 prepared_data["images"].append({
                     "data": d[0][0].T.tolist(),  # Convert NumPy array to list
