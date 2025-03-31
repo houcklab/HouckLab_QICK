@@ -38,6 +38,7 @@ class QLogPanel(QWidget):
 
         sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
         sizepolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
+        self.parent = parent
         self.setMinimumSize(QSize(175, 0))
         self.setSizePolicy(sizepolicy)
         self.setObjectName("log_panel")
@@ -56,8 +57,8 @@ class QLogPanel(QWidget):
             }
         """)
         read_only_message = f'<span style="color:#CCCCCC">(Read Only)</span>'
-        self.logger.append(read_only_message)
-        self.logger.setReadOnly(True)
+        # self.logger.append(read_only_message)
+        # self.logger.setReadOnly(True)
 
         self.main_layout.addWidget(self.logger)
         self.setLayout(self.main_layout)
@@ -80,3 +81,8 @@ class QLogPanel(QWidget):
 
         self.logger.append(formatted_message)
         # self.logger.ensureCursorVisible()
+
+        # Check if Log tab open for unread symbol
+        index = self.parent.indexOf(self)
+        if index != self.parent.currentIndex():
+            self.parent.setTabText(index, "Log*")

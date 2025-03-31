@@ -98,19 +98,21 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setSpacing(3)
         self.plot_utilities.setObjectName("plot_utilities")
         self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)
+        self.replot_button = Helpers.create_button("RePlot", "replot_button", False, self.plot_utilities_container)
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
-        self.output_dir_button = Helpers.create_button("Output Dir", "output_dir_button", False, self.plot_utilities_container)
+        self.output_dir_button = Helpers.create_button("Save To...", "output_dir_button", False, self.plot_utilities_container)
         self.plot_method_combo = QComboBox(self.plot_utilities_container)
-        self.plot_method_combo.setFixedWidth(120)
+        self.plot_method_combo.setFixedWidth(130)
         self.plot_method_combo.setObjectName("plot_method_combo")
-        self.coord_label = QLabel("X: _____ Y: _____ \n press d to delete a plot")  # coordinate of the mouse over the current plot
+        self.coord_label = QLabel("X: _____ Y: _____ \n hover + \'d\' to delete")  # coordinate of the mouse over the current plot
         self.coord_label.setAlignment(Qt.AlignRight)
         self.coord_label.setStyleSheet("font-size: 10px;")
         self.coord_label.setObjectName("coord_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
         self.plot_utilities.addWidget(self.reExtract_experiment_button)
+        self.plot_utilities.addWidget(self.replot_button)
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
         self.plot_utilities.addWidget(self.output_dir_button)
@@ -153,6 +155,7 @@ class QQuarkTab(QWidget):
         self.export_data_button.clicked.connect(self.export_data)
         self.output_dir_button.clicked.connect(self.change_output_dir)
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
+        self.replot_button.clicked.connect(self.replot_data)
 
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
@@ -167,6 +170,7 @@ class QQuarkTab(QWidget):
                 os.mkdir(self.output_dir)
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
+            self.replot_button.setEnabled(True)
 
     def setup_plotter_options(self):
         """
@@ -227,7 +231,7 @@ class QQuarkTab(QWidget):
             self.experiment_obj.extract_experiment_attributes()
             qDebug("ReExtracted Experiment: experiment attributes extracted.")
 
-            self.reExtract_experiment_button.setText('ReExtracted!!')
+            self.reExtract_experiment_button.setText('Done!')
             QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))
 
     def update_coordinates(self, pos):
@@ -245,7 +249,7 @@ class QQuarkTab(QWidget):
                 self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
                 mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
                 x, y = mouse_point.x(), mouse_point.y()
-                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} \n press d to delete a plot")
+                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} \n hover + d to delete")
                 break
 
     def capture_plot_to_clipboard(self):
@@ -473,6 +477,12 @@ class QQuarkTab(QWidget):
         self.process_data(data)
         self.plot_data()
         self.save_data()
+
+    def replot_data(self):
+        """
+        Function called when RePlot button pressed. As of now, it simply calls the plot_data() function.
+        """
+        self.plot_data()
 
     def export_data(self):
         """

@@ -7,19 +7,19 @@ Main entry point for the Quarky GUI application.
 This module initializes the GUI, handles application-level logic, and manages interactions between
 different components.
 """
-import inspect
-# TODO: Experiment run time estimate (in the experiment file)
-# TODO: Make a separate thread for proxy connections
 
+import inspect
 import sys, os
 import math
 from pathlib import Path
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices
 from PyQt5.QtCore import (
-    Qt, QSize, QThread, pyqtSignal, qInstallMessageHandler, qDebug,
-    qInfo,
-    qWarning,
-    qCritical,
+    qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
+    Qt,
+    QSize,
+    QThread,
+    pyqtSignal,
+    QUrl,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -110,10 +110,10 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.resize(1000, 550)
+        self.resize(1075, 600)
         self.setWindowIcon(QIcon('QuarkyLogo.png'))
         self.central_widget = QWidget() # Defining the central widget that holds everything
-        self.central_widget.setMinimumSize(820, 400)
+        self.central_widget.setMinimumSize(1000, 600)
         self.central_widget.setObjectName("central_widget")
         self.central_layout = QVBoxLayout(self.central_widget)
         self.wrapper = QWidget()
@@ -131,8 +131,11 @@ class Quarky(QMainWindow):
         self.top_bar.setObjectName("top_bar")
 
         # Creating top bar items
-        self.quarky_icon = QLabel()
-        self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        # self.quarky_icon = QLabel()
+        # self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.documentation_button = Helpers.create_button("?", "documentation", True, self.wrapper)
+        self.documentation_button.setStyleSheet("border: 1px solid gray; font-size: 10px; border-radius:6px; color: gray; width: 12px;")
+
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
         self.stop_experiment_button = Helpers.create_button("⏹","stop_experiment",False,self.wrapper)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
@@ -143,13 +146,14 @@ class Quarky(QMainWindow):
         self.load_experiment_button = Helpers.create_button("Extract Experiment","load_experiment_button",True,self.wrapper)
 
         # Adding items to top bar, top bar to main layout
-        self.top_bar.addWidget(self.quarky_icon)
+        # self.top_bar.addWidget(self.quarky_icon)
         self.top_bar.addWidget(self.start_experiment_button)
         self.top_bar.addWidget(self.stop_experiment_button)
         self.top_bar.addWidget(self.soc_status_label)
         self.top_bar.addWidget(self.experiment_progress_bar)
         self.top_bar.addWidget(self.load_data_button)
         self.top_bar.addWidget(self.load_experiment_button)
+        self.top_bar.addWidget(self.documentation_button)
         self.main_layout.addLayout(self.top_bar)
 
         ### Main Splitter with Tabs, Voltage Panel, Config Tree
@@ -201,13 +205,13 @@ class Quarky(QMainWindow):
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel()
+        self.voltage_controller_panel = QVoltagePanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
-        self.accounts_panel = QAccountPanel(parent=self.central_tabs)
-        self.side_tabs.addTab(self.accounts_panel, "Accounts")
+        self.accounts_panel = QAccountPanel(parent=self.side_tabs)
+        self.side_tabs.addTab(self.accounts_panel, "RFSoC")
         ### Log Panel
-        self.log_panel = QLogPanel(parent=self.central_tabs)
+        self.log_panel = QLogPanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
         self.side_tabs.setCurrentIndex(1) # select accounts panel by default
 
@@ -237,10 +241,12 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.clicked.connect(self.stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
+        self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
 
         # Tab Change and Close signals
         self.central_tabs.currentChanged.connect(self.change_tab)
         self.central_tabs.tabCloseRequested.connect(self.close_tab)
+        self.side_tabs.currentChanged.connect(self.check_log_read)
 
         # Signals for RFSoC from the accounts panel
         self.accounts_panel.rfsoc_attempt_connection.connect(self.connect_rfsoc)
@@ -318,19 +324,20 @@ class Quarky(QMainWindow):
 
             self.thread = QThread()
 
+
+
             # Handling config specific to the current tab
-            UpdateConfig = self.config_tree_panel.config["Experiment Config"]
-            BaseConfig = self.config_tree_panel.config["Base Config"]
             self.current_tab.config = self.config_tree_panel.config
-            config = BaseConfig | UpdateConfig # symmetric difference and intersection
+            unformatted_config = self.current_tab.config["Base Config"] | self.current_tab.config["Experiment Config"]
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
             # print(inspect.getsourcelines(experiment_class))
-            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=config)
+            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=unformatted_config)
 
             # Creating the experiment worker from ExperimentThread
-            self.experiment_worker = ExperimentThread(config, soccfg=self.soccfg, exp=self.experiment_instance, soc=self.soc)
+            self.experiment_worker = ExperimentThread(unformatted_config, soccfg=self.soccfg,
+                                                      exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
 
             # Connecting started and finished signals
@@ -419,7 +426,7 @@ class Quarky(QMainWindow):
         tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(True)
-        self.config_tree_panel.set_config(new_experiment_tab.config)
+        self.config_tree_panel.set_config(new_experiment_tab.config) # important, update config panel
         self.current_tab = new_experiment_tab
 
         # Remove the template tab created on GUI initialization
@@ -437,7 +444,7 @@ class Quarky(QMainWindow):
 
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
-            self.config_tree_panel.set_config(self.current_tab.config) # update config panel
+            self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel
 
             if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)
@@ -469,10 +476,10 @@ class Quarky(QMainWindow):
         :type sets_complete: int
         """
 
-        config = self.current_tab.config["Experiment Config"] | self.current_tab.config["Base Config"]
+        unformatted_config = self.current_tab.config["Base Config"] | self.current_tab.config["Experiment Config"]
         # Getting the total reps and sets to be run from the experiment configs
-        if 'reps' in config and 'sets' in config:
-            reps, sets = config['reps'], config['sets']
+        if 'reps' in unformatted_config and 'sets' in unformatted_config:
+            reps, sets = unformatted_config['reps'], unformatted_config['sets']
             self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
             self.experiment_progress_bar.setFormat(str(sets_complete * reps) + "/" + str(sets * reps)) # update text
 
@@ -496,6 +503,8 @@ class Quarky(QMainWindow):
         if not file:
             return
         else:
+            path = Path(file)
+            qInfo("Loading dataset file: " + str(path))
             self.create_data_tab(file)  # pass full path of the data file
 
     def create_data_tab(self, file):
@@ -523,6 +532,16 @@ class Quarky(QMainWindow):
             if tab_count == 1:
                 self.central_tabs.removeTab(0)
         self.tabs_added = True
+
+    def check_log_read(self):
+        """
+        Check if the Log tab has been opened and set the Log to the state read.
+        """
+        log_index = self.side_tabs.indexOf(self.log_panel)
+
+        if log_index == self.side_tabs.currentIndex():
+            self.side_tabs.setTabText(log_index, "Log")
+            self.log_panel.logger.setFocus()
 
 # Creating the Quarky GUI Main Window
 if __name__ == '__main__':
