@@ -90,6 +90,21 @@ class QQuarkTab(QWidget):
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
+        ### Experiment Information Bar
+        self.experiment_infobar_container = QWidget()
+        self.experiment_infobar_container.setMaximumHeight(15)
+        self.experiment_infobar = QHBoxLayout(self.experiment_infobar_container)
+        self.experiment_infobar.setContentsMargins(0, 0, 0, 0)
+        self.experiment_infobar.setSpacing(3)
+        self.experiment_infobar.setObjectName("experiment_infobar")
+
+        self.runtime_label = QLabel("Estimated Total Runtime: 00h 00m 00s 000ms")  # estimated experiment time
+        self.runtime_label.setStyleSheet("font-size: 11px;")
+        # TODO: Runtime Functions: calculate estimation, at updateprogress, calc runtime remaining, log actual time used
+
+        self.experiment_infobar.addWidget(self.runtime_label)
+        self.plot_layout.addWidget(self.experiment_infobar_container)
+
         ### Plot Utilities Bar
         self.plot_utilities_container = QWidget()
         self.plot_utilities_container.setMaximumHeight(35)
@@ -97,6 +112,7 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(3)
         self.plot_utilities.setObjectName("plot_utilities")
+
         self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)
         self.replot_button = Helpers.create_button("RePlot", "replot_button", False, self.plot_utilities_container)
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)

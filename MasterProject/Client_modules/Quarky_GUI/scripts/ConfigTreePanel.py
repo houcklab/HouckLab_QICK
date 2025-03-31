@@ -22,8 +22,8 @@ This is the basic formatting of the Config dictionary:
 import os
 import json
 from PyQt5 import QtGui, QtCore
-from PyQt5.QtGui import QClipboard
 from PyQt5.QtCore import (
+    Qt,
     qInfo,
     qWarning,
     qCritical,
@@ -36,7 +36,8 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QAbstractItemView,
     QMessageBox,
-    QApplication
+    QApplication,
+    QLabel,
 )
 
 import scripts.Helpers as Helpers
@@ -70,14 +71,18 @@ class QConfigTreePanel(QTreeView):
 
         # Set up layout
         self.toolbar_layout = QHBoxLayout()
-        self.toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self.toolbar_layout.setContentsMargins(0, 7, 0, 0)
         self.toolbar_layout.setSpacing(5)
         self.main_layout = QVBoxLayout()
-        self.main_layout.addLayout(self.toolbar_layout)
         self.main_layout.setContentsMargins(10, 5, 10, 10)
         self.main_layout.setSpacing(0)
         self.setLayout(self.main_layout)
         self.setMinimumSize(200, 0)
+
+        self.title_label = QLabel("Configuration Panel")  # estimated experiment time
+        self.title_label.setStyleSheet("font-size: 11px; background-color: #ECECEC; padding: 3px;")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.main_layout.addWidget(self.title_label)
 
         # toolbar setup
         self.save_config_button = Helpers.create_button("Save", "save_config", True, self)
@@ -86,6 +91,7 @@ class QConfigTreePanel(QTreeView):
         self.toolbar_layout.addWidget(self.save_config_button)
         self.toolbar_layout.addWidget(self.copy_config_button)
         self.toolbar_layout.addWidget(self.load_config_button)
+        self.main_layout.addLayout(self.toolbar_layout)
 
         # Create and configure the tree view
         self.tree = QTreeView(self)
