@@ -169,13 +169,10 @@ class SpecSlice_Experiment(ExperimentClass):
         avgi = data['avgi']
         avgq = data['avgq']
 
-        print("reached")
-
-        sig = avgi[0][0] + 1j * avgq[0][0]
+        sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
+        print(sig)
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
-
-        print("reached 2")
 
         # Create structured data
         prepared_data = {
