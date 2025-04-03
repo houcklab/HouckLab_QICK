@@ -5,7 +5,7 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
-class SampleExperiment(RAveragerProgram):
+class SampleProgram(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
@@ -47,7 +47,7 @@ class SampleExperiment_Experiment(ExperimentClassV2):
             },
         },
 
-        "Experiment Config": {
+        "Experiment Config": { # Corresponds to the cfg given to the program (ie, SampleProgram)
             "reps": 100,
             "sets": 5,
         }
@@ -69,7 +69,7 @@ class SampleExperiment_Experiment(ExperimentClassV2):
         self.expt_cfg = self.cfg["Experiment Config"]
 
         ### Define the program
-        prog = SampleExperiment(self.soccfg, self.expt_cfg)
+        prog = SampleProgram(self.soccfg, self.expt_cfg)
 
 
         voltVec = np.linspace(self.volt_cfg["1"]["VoltageStart"], self.volt_cfg["1"]["VoltageStop"],
@@ -83,8 +83,12 @@ class SampleExperiment_Experiment(ExperimentClassV2):
                                              readouts_per_experiment=1, save_experiments=None,
                                              start_src="internal", progress=False)
 
-        data = {'config': self.cfg,
-                'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
+            data = {'config': self.cfg,
+                    'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
+
+            # perform some averaging across iterations / some data handling
+
+
         self.data = data
 
         return data
