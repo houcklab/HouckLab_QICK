@@ -4,7 +4,10 @@
 # both channel 1 AND channel 0 will continue playing their respective tones.
 
 from qick import AveragerProgram
-from Experiment import ExperimentClass
+from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
+from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+from MasterProject.Client_modules.Init.initialize import BaseConfig
+import Pyro4.util
 
 class ConstantTone(AveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -33,6 +36,7 @@ class ConstantTone(AveragerProgram):
         "freq": 2000, # [MHz]
         "channel": 1, # TODO default value
         "nqz": 1,     # TODO default value
+        "sets": 1,
     }
 
 # ====================================================== #
@@ -48,12 +52,45 @@ class ConstantTone_Experiment(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, self.cfg)
 
-        a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+        prog.run_rounds(self.soc)
+
+        return {'data': {}}
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display
 
     def save_data(self, data=None):
         pass # No data collected
+
+
+
+
+
+
+#%%
+# TITLE: Constant Tone Experiment
+exp_cfg = {
+    ###### cavity
+    "read_pulse_style": "const",  # --Fixed
+    "gain": 10000, # [DAC units]
+    "freq": 500, # [MHz]
+    "channel": 6, # TODO default value
+    "nqz": 1,     # TODO default value
+    "sets": 1,
+}
+config = BaseConfig | exp_cfg
+outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Quarky_GUI"
+soc, soccfg = makeProxy("192.168.1.137")
+ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+try:
+    ConstantTone_Experiment.acquire(ConstantTone_Instance)
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
+ConstantTone_Experiment.save_data(ConstantTone_Instance)
+ConstantTone_Experiment.save_config(ConstantTone_Instance)
+
+# using the 10MHz-1GHz balun
+# f_center = 10e9 #Hz
+# settings = set_filter(f_center)
+# print(settings)
