@@ -278,8 +278,6 @@ class QQuarkTab(QWidget):
         else:
             qDebug("No config in metadata found")
 
-        if "data" in self.data:
-            self.data = self.data["data"]
         print(self.data)
 
         self.plot_data()

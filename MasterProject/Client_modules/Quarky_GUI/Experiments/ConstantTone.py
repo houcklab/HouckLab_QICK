@@ -8,6 +8,7 @@ from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 import Pyro4.util
+import numpy as np
 
 class ConstantTone(AveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -51,18 +52,86 @@ class ConstantTone_Experiment(ExperimentClass):
 
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, self.cfg)
-
         prog.run_rounds(self.soc)
 
-        return {'data': {}}
+        # default values for ZCU216 I think
+        dac_max = 16383  # 14-bit DAC
+        v_full_scale = 1.0  # 1.0 Vpp (differential)
+        resistance = 50  # Standard RF load
+
+        gain = self.cfg["gain"]
+        freq = self.cfg["freq"]
+
+
+        # 1. Period in microseconds seconds
+        period = 1 / freq
+        # 2. Peak Voltage from DAC gain
+        v_peak = (gain / dac_max) * (v_full_scale / 2)  # Assuming Vpp = v_full_scale
+        # 3. RMS Voltage
+        v_rms = v_peak / np.sqrt(2)
+        # 4. Power in Watts
+        power_watts = (v_rms ** 2) / resistance
+        # 5. Power in dBm
+        power_dbm = 10 * np.log10(power_watts * 1000)
+
+        print(f"Period: {period * 1e9:.2f} μs")
+        print(f"Power: {power_dbm:.2f} dBm")
+        print(f"Peak Voltage: {v_peak:.3f} V")
+
+        # 7. Plot Voltage vs Time
+        t = np.linspace(0, 3 * period, 1000)
+        v_t = v_peak * np.sin(2 * np.pi * freq * t)
+
+        data =  {'config': self.cfg,
+            'data': {'xpts': t, 'v_t': v_t},}
+
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        # print(data)
+        gain = 0
+        freq = 0
+        if "config" in data:
+            gain = data["config"]["gain"]
+            freq = data["config"]["freq"]
+
+        if 'data' in data:
+            data = data['data']
+
+        x_pts = data['x_pts']
+        v_t = data['v_t']
+
+        # Create structured data
+        prepared_data = {
+            "plots": [
+                {"x": x_pts, "y": v_t, "label": "Voltage vs Time (μs)", "xlabel": "Time (μs)", "ylabel": "Voltage (V)"},
+            ]
+        }
+
+        plot_title = "Gain: " + gain + " dBm, Freq: " + freq + " Hz"
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
+        plot_widget.nextRow()
+
+        for i, plot in enumerate(prepared_data["plots"]):
+            p = plot_widget.addPlot(title=plot["label"])
+            p.addLegend()
+            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+            p.setLabel('bottom', plot["xlabel"])
+            p.setLabel('left', plot["ylabel"])
+            plots.append(p)
+            plot_widget.nextRow()
+
+        return
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display
 
     def save_data(self, data=None):
         pass # No data collected
-
-
 
 
 
@@ -79,7 +148,7 @@ exp_cfg = {
     "sets": 1,
 }
 config = BaseConfig | exp_cfg
-outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Quarky_GUI"
+outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Quarky_GUI\data\ConstantTone\data"
 soc, soccfg = makeProxy("192.168.1.137")
 ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 try:
