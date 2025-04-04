@@ -167,8 +167,8 @@ class SpecSlice_Experiment(ExperimentClass):
             data = data['data']
 
         x_pts = data['x_pts']
-        avgi = data['avgi'].squeeze()
-        avgq = data['avgq'].squeeze()
+        avgi = data['avgi']
+        avgq = data['avgq']
 
         sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
         print(sig)
@@ -180,9 +180,9 @@ class SpecSlice_Experiment(ExperimentClass):
             "plots": [
                 {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
                 {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgi), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
+                {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
                  "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgq), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
+                {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
                  "ylabel": "a.u."}
             ]
         }
