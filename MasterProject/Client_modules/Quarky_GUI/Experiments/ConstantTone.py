@@ -118,15 +118,13 @@ class ConstantTone_Experiment(ExperimentClass):
         power_watts = (v_rms ** 2) / resistance
         power_dbm = 10 * np.log10(power_watts * 1000)
 
-        period_label = f"Period: {period * 1e9:.2f} μs"
-        power_lavel = f"Power: {power_dbm:.2f} dBm"
-        peakVoltage_label = f"Peak Voltage: {v_peak:.3f} V"
+        period_label = f" Period: {period*1000:.3f} ns, "
+        power_label = f" Power: {power_dbm:.4f} dBm, "
+        peakVoltage_label = f" Peak Voltage: {v_peak:.3f} V, "
 
-        plot_title = "Gain: " + str(gain) + " dBm, Freq: " + str(freq) + " Hz"
-        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='10pt')
-        plot_widget.addLabel(period_label, row=0, col=0, colspan=2, size='10pt')
-        plot_widget.addLabel(power_lavel, row=0, col=0, colspan=2, size='10pt')
-        plot_widget.addLabel(peakVoltage_label, row=0, col=0, colspan=2, size='10pt')
+        plot_title = ("[Gain: " + str(gain) + " dBm, Freq: " + str(freq) + " Hz] Expected: " + period_label +
+                      power_label + peakVoltage_label)
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='8pt')
 
         plot_widget.nextRow()
 
