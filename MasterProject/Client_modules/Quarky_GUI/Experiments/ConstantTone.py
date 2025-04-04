@@ -63,11 +63,10 @@ class ConstantTone_Experiment(ExperimentClass):
         gain = self.cfg["gain"]
         freq = self.cfg["freq"]
 
-
         # 1. Period in microseconds seconds
         period = 1 / freq
         # 2. Peak Voltage from DAC gain
-        v_peak = (gain / dac_max) * (v_full_scale / 2)  # Assuming Vpp = v_full_scale
+        v_peak = (gain / dac_max) * (v_full_scale / 2)
         # 3. RMS Voltage
         v_rms = v_peak / np.sqrt(2)
         # 4. Power in Watts
@@ -104,12 +103,31 @@ class ConstantTone_Experiment(ExperimentClass):
         # Create structured data
         prepared_data = {
             "plots": [
-                {"x": x_pts, "y": v_t, "label": "Voltage vs Time (μs)", "xlabel": "Time (μs)", "ylabel": "Voltage (V)"},
+                {"x": x_pts, "y": v_t, "label": "Expected Voltage vs Time (μs)", "xlabel": "Time (μs)",
+                 "ylabel": "Voltage (V)"},
             ]
         }
 
+        dac_max = 16383  # 14-bit DAC
+        v_full_scale = 1.0  # 1.0 Vpp (differential)
+        resistance = 50  # Standard RF load
+
+        period = 1 / freq
+        v_peak = (gain / dac_max) * (v_full_scale / 2)
+        v_rms = v_peak / np.sqrt(2)
+        power_watts = (v_rms ** 2) / resistance
+        power_dbm = 10 * np.log10(power_watts * 1000)
+
+        period_label = f"Period: {period * 1e9:.2f} μs"
+        power_lavel = f"Power: {power_dbm:.2f} dBm"
+        peakVoltage_label = f"Peak Voltage: {v_peak:.3f} V"
+
         plot_title = "Gain: " + str(gain) + " dBm, Freq: " + str(freq) + " Hz"
-        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='10pt')
+        plot_widget.addLabel(period_label, row=0, col=0, colspan=2, size='10pt')
+        plot_widget.addLabel(power_lavel, row=0, col=0, colspan=2, size='10pt')
+        plot_widget.addLabel(peakVoltage_label, row=0, col=0, colspan=2, size='10pt')
+
         plot_widget.nextRow()
 
         for i, plot in enumerate(prepared_data["plots"]):

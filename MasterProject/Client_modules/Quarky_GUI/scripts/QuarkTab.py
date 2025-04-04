@@ -19,6 +19,7 @@ import numpy as np
 from PyQt5.QtGui import QKeySequence, QCursor
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
+    pyqtSignal,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -55,6 +56,11 @@ class QQuarkTab(QWidget):
     custom_plot_methods = {}
     """
     custom_plot_methods (dict): A dictionary of the added custom plotting methods.
+    """
+
+    updated_tab = pyqtSignal()  # argument is ip_address
+    """
+    The Signal sent to the main application (Quarky.py) that tells the program the current tab was updated.
     """
 
     def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
@@ -298,8 +304,9 @@ class QQuarkTab(QWidget):
 
         if self.experiment_obj is not None:
             self.experiment_obj.extract_experiment_attributes()
+            self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
             qDebug("ReExtracted Experiment: experiment attributes extracted.")
-
+            self.updated_tab.emit()
 
             self.reExtract_experiment_button.setText('Done!')
             QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))

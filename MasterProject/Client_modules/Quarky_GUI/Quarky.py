@@ -430,10 +430,19 @@ class Quarky(QMainWindow):
         self.config_tree_panel.set_config(new_experiment_tab.config) # important, update config panel
         self.current_tab = new_experiment_tab
 
+        # Signals from QuarkTabs
+        self.current_tab.updated_tab.connect(self.update_tab)
+
         # Remove the template tab created on GUI initialization
         if not self.tabs_added and tab_count == 1:
                 self.central_tabs.removeTab(0)
         self.tabs_added = True
+
+    def update_tab(self):
+        """
+        Updates a tab UI, which currently just means the config.
+        """
+        self.config_tree_panel.set_config(self.current_tab.config) # important, update config panel
 
     def change_tab(self, idx):
         """
