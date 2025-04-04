@@ -5,14 +5,20 @@ import h5py
 import datetime
 from pathlib import Path
 
+from Pyro4 import Proxy
+from qick import QickConfig
+
 import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
-class ExperimentClassV2:
+class ExperimentClassT2:
     """
     The Base class for all experiments
     """
 
-    hardware_keywords = ["RFSoC", "VoltageInterface", "ReadoutFilter"]
+    hardware_types = [Proxy, QickConfig, "VoltageInterface", "ReadoutFilter"]
+    """
+    All allowable (it can be anything but these are the only reasonable ones) hardware class types.
+    """
 
     def __init__(self, path='', outerFolder='', prefix='data',
                  hardware=None, hardware_requirement=None,

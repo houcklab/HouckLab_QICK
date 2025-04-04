@@ -5,5 +5,7 @@ PyQt5==5.15.10
 PyQt5_sip==12.13.0
 pyqtgraph==0.13.7
 Pyro4==4.82
-PyVISA==1.14.1
+# PyVISA==1.14.1
+pyvisa==4.12.1
 qick==0.2.324
+spirack==0.2.5

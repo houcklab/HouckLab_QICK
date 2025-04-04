@@ -1,9 +1,7 @@
 from qick import RAveragerProgram
-from MasterProject.Client_modules.CoreLib.ExperimentV2 import ExperimentClassV2
 
-import datetime
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 class SampleProgram(RAveragerProgram):
     def __init__(self, soccfg, cfg):
