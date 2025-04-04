@@ -300,6 +300,7 @@ class QQuarkTab(QWidget):
             self.experiment_obj.extract_experiment_attributes()
             qDebug("ReExtracted Experiment: experiment attributes extracted.")
 
+
             self.reExtract_experiment_button.setText('Done!')
             QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))
 
@@ -538,16 +539,18 @@ class QQuarkTab(QWidget):
         self.data = data
 
         # check what set number is being run and average the data
-        set_num = data['data']['set_num']
-        if set_num == 0:
-            self.data_cur = data
-        elif set_num > 0:
-            avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
-            avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
-            self.data_cur['data']['avgi'][0][0] = avgi
-            self.data_cur['data']['avgq'][0][0] = avgq
-        self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
-        self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
+
+        if "avgi" in self.data["data"] and "avgq" in self.data["data"]:
+            set_num = data['data']['set_num']
+            if set_num == 0:
+                self.data_cur = data
+            elif set_num > 0:
+                avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
+                avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
+                self.data_cur['data']['avgi'][0][0] = avgi
+                self.data_cur['data']['avgq'][0][0] = avgq
+            self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
+            self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
 
     def update_data(self, data):
         """

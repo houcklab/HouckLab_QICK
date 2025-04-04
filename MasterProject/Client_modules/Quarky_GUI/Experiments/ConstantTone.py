@@ -37,6 +37,7 @@ class ConstantTone(AveragerProgram):
         "freq": 2000, # [MHz]
         "channel": 1, # TODO default value
         "nqz": 1,     # TODO default value
+        "reps": 1,
         "sets": 1,
     }
 
@@ -82,12 +83,12 @@ class ConstantTone_Experiment(ExperimentClass):
         t = np.linspace(0, 3 * period, 1000)
         v_t = v_peak * np.sin(2 * np.pi * freq * t)
 
-        data =  {'config': self.cfg,
-            'data': {'xpts': t, 'v_t': v_t},}
+        data = {'config': self.cfg, 'data': {'x_pts': t, 'v_t': v_t},}
+
+        return data
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-        # print(data)
         gain = 0
         freq = 0
         if "config" in data:
@@ -107,7 +108,7 @@ class ConstantTone_Experiment(ExperimentClass):
             ]
         }
 
-        plot_title = "Gain: " + gain + " dBm, Freq: " + freq + " Hz"
+        plot_title = "Gain: " + str(gain) + " dBm, Freq: " + str(freq) + " Hz"
         plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
         plot_widget.nextRow()
 
@@ -138,26 +139,26 @@ class ConstantTone_Experiment(ExperimentClass):
 
 #%%
 # TITLE: Constant Tone Experiment
-exp_cfg = {
-    ###### cavity
-    "read_pulse_style": "const",  # --Fixed
-    "gain": 10000, # [DAC units]
-    "freq": 500, # [MHz]
-    "channel": 6, # TODO default value
-    "nqz": 1,     # TODO default value
-    "sets": 1,
-}
-config = BaseConfig | exp_cfg
-outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Quarky_GUI\data\ConstantTone\data"
-soc, soccfg = makeProxy("192.168.1.137")
-ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-try:
-    ConstantTone_Experiment.acquire(ConstantTone_Instance)
-except Exception:
-    print("Pyro traceback:")
-    print("".join(Pyro4.util.getPyroTraceback()))
-ConstantTone_Experiment.save_data(ConstantTone_Instance)
-ConstantTone_Experiment.save_config(ConstantTone_Instance)
+# exp_cfg = {
+#     ###### cavity
+#     "read_pulse_style": "const",  # --Fixed
+#     "gain": 10000, # [DAC units]
+#     "freq": 500, # [MHz]
+#     "channel": 6, # TODO default value
+#     "nqz": 1,     # TODO default value
+#     "sets": 1,
+# }
+# config = BaseConfig | exp_cfg
+# outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Quarky_GUI\data\ConstantTone\data"
+# soc, soccfg = makeProxy("192.168.1.137")
+# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+# try:
+#     ConstantTone_Experiment.acquire(ConstantTone_Instance)
+# except Exception:
+#     print("Pyro traceback:")
+#     print("".join(Pyro4.util.getPyroTraceback()))
+# ConstantTone_Experiment.save_data(ConstantTone_Instance)
+# ConstantTone_Experiment.save_config(ConstantTone_Instance)
 
 # using the 10MHz-1GHz balun
 # f_center = 10e9 #Hz
