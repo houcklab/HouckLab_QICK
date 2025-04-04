@@ -11,6 +11,7 @@ different components.
 import inspect
 import sys, os
 import math
+import traceback
 from pathlib import Path
 from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices
 from PyQt5.QtCore import (
@@ -500,6 +501,7 @@ class Quarky(QMainWindow):
         """
 
         qCritical("RFSoC thew the error: " + str(e))
+        qCritical(traceback.print_exc())
         QMessageBox.critical(None, "RFSOC error", "RfSoc has thrown an error (see log).")
 
     def load_data_file(self):

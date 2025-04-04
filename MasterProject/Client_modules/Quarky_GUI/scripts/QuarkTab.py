@@ -11,6 +11,7 @@ data, and plotting. Arguable is more important for functionality than the main Q
 import os
 import json
 import h5py
+import traceback
 from pathlib import Path
 import datetime
 import shutil
@@ -378,6 +379,7 @@ class QQuarkTab(QWidget):
                 QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
             qCritical("Failed to plot using method [" + plotting_method + "]: " + str(e))
+            qCritical(traceback.print_exc())
 
     def auto_plot_prepare(self):
         """
@@ -434,7 +436,8 @@ class QQuarkTab(QWidget):
                 data = np.nan_to_num(data, nan=0)
                 shape = data.shape
             except Exception as e:
-                qDebug("Auto plotter could not handle data")
+                qDebug("Auto plotter could not handle data: " + str(e))
+                qDebug(traceback.print_exc())
                 self.plot_widget.addLabel("Could not handle plotting", colspan=2, size='12pt')
                 return
 
@@ -644,6 +647,7 @@ class QQuarkTab(QWidget):
                     qInfo("Saved dataset to " + str(folder_path))
                 except Exception as e:
                     qCritical(f"Failed to save the dataset to {file_path}: {str(e)}")
+                    qCritical(traceback.print_exc())
                     QMessageBox.critical(self, "Error", f"Failed to save dataset.")
 
         # Saving experiments
