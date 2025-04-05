@@ -9,13 +9,16 @@ from Pyro4 import Proxy
 from qick import QickConfig
 
 import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
+from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
+from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
 
 class ExperimentClassT2:
     """
     The Base class for all experiments
     """
 
-    hardware_types = [Proxy, QickConfig, "VoltageInterface", "ReadoutFilter"]
+    hardware_types = [Proxy, QickConfig, VoltageInterface, QBLOX, YOKOGS200]
     """
     All allowable (it can be anything but these are the only reasonable ones) hardware class types.
     """
@@ -102,12 +105,15 @@ class ExperimentClassT2:
         pass
 
     def handle_hardware(self):
-        for item in self.hardware_requirement:
-            if item not in self.hardware_keywords:
-                raise ValueError(f"Missing key: {item}")
-                break
-        else:
-            print("All hardware items provided")
+        """
+        Verify that the given hardware list match the classes of required hardware.
+        """
+
+        for i, (have, require) in enumerate(zip(self.hardware, self.hardware_requirement)):
+            if not isinstance(have, require):
+                raise TypeError(f"Mismatch at given {i}: {type(have).__name__} which is not of type {require.__name__}")
+
+        print("All hardware items provided")
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):

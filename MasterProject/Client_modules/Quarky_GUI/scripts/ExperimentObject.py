@@ -9,15 +9,18 @@ How an experiment file should be written is defined in the Experiment Hub of doc
 """
 
 import inspect
-import numpy as np
+
+from Pyro4 import Proxy
+from qick import QickConfig
+
 from PyQt5.QtCore import qCritical, qInfo, qDebug
 from PyQt5.QtWidgets import (
     QMessageBox
 )
-import pyqtgraph as pg
 
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
 import scripts.Helpers as Helpers
 
 class ExperimentObject():
@@ -30,6 +33,7 @@ class ExperimentObject():
         * experiment_class (Class): The class of the custom experiment that is a subclass of ExperimentClass.
         * experiment_plotter (Callable): A callable @classmethod of the experiment_class that handles plotting.
         * experiment_exporter (Callable): A callable @classmethod of the experiment_class that handles data exporting.
+        * experiment_hardware_req (list): A list containing the hardware requirements for a T2 experiment.
     """
 
     def __init__(self, experiment_tab, experiment_name, experiment_path=None):
@@ -53,6 +57,8 @@ class ExperimentObject():
         self.experiment_class = None
         self.experiment_plotter = None
         self.experiment_exporter = ExperimentClass.export_data
+        self.experiment_type = None # ExperimentClass, or ExperimentClassT2
+        self.experiment_hardware_req = [Proxy, QickConfig]
 
         self.extract_experiment_attributes()
 
@@ -77,29 +83,62 @@ class ExperimentObject():
         experiment_module, experiment_name = Helpers.import_file(str(self.experiment_path)) # gets experiment object from file
         # print(inspect.getsourcelines(experiment_module))
 
+        cfg_found = False
         for name, obj, in inspect.getmembers(experiment_module):
 
             # Cannot to issubclass as of now because inheriting from different ExperimentClass files.
-            if inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj is not ExperimentClass:
-                qInfo("Found experiment class: " + name)
-                # Store the class reference
+            if ((inspect.isclass(obj) and obj.__bases__[0] == ExperimentClass and obj is not ExperimentClass)
+                    or
+                    (inspect.isclass(obj) and obj.__bases__[0] == ExperimentClassT2 and obj is not ExperimentClassT2)):
+
+                ### Extract the class type (either ExperimentClass or ExperimentClassT2)
+                if inspect.isclass(obj) and obj.__bases__[0] == ExperimentClass:
+                    self.experiment_type = ExperimentClass
+                else:
+                    self.experiment_type = ExperimentClassT2
+
+                    ### Store the hardware_requirement if given (only in T2 experiments)
+                    if hasattr(obj, "hardware_requirement") and obj.hardware_requirement is not None:
+                        qInfo("Found experiment hardware requirements.")
+                        self.experiment_hardware_req = getattr(obj, "hardware_requirement")
+                    else:
+                        qDebug("This experiment class does not have a hardware_requirement list.")
+
+
+                qInfo("Found " + str(self.experiment_type.__name__) + " class: " + name)
+
+                ### Store the class reference
                 self.experiment_class = obj
 
-                # Store the class's export_data function
+                ### Store the class's export_data function
                 if hasattr(obj, "export_data") and callable(getattr(obj, "export_data")):
                     qInfo("Found experiment data exporter.")
                     self.experiment_exporter = getattr(obj, "export_data")
                 else:
-                    qDebug("This experiment class does not have a custom data exporter, using default ExperimentClass exporter.")
+                    qDebug("This experiment class doesn't have a custom exporter, using default.")
 
-                # Store the class's plotter function
+                ### Store the class's plotter function
                 if hasattr(obj, "plotter") and callable(getattr(obj, "plotter")):
                     qInfo("Found experiment plotter.")
                     self.experiment_plotter = getattr(obj, "plotter")
                 else:
                     qDebug("This experiment class does not have a plotter function.")
 
-            if name == self.experiment_name:
+                ### Store the classes config if given
+                if hasattr(obj, "config_template") and obj.config_template is not None:
+                    cfg_found = True
+
+                    qInfo("Found config variable in the class: " + name)
+                    new_experiment_config = obj.config_template
+                    # Remove overlapping keys from base config
+                    for key in new_experiment_config:
+                        self.experiment_tab.config["Base Config"].pop(key, None)
+
+                    self.experiment_tab.config = self.experiment_tab.config | new_experiment_config
+
+
+            ### If config not found yet, Look for config in program classes
+            if not cfg_found and name == self.experiment_name:
                 if not hasattr(obj, "config_template") or obj.config_template is None:
                     QMessageBox.critical(None, "Error", "No Config Template given.")
                 else:
@@ -109,10 +148,9 @@ class ExperimentObject():
                     for key in new_experiment_config:
                         self.experiment_tab.config["Base Config"].pop(key, None)
 
-                    self.experiment_tab.config["Experiment Config"] = new_experiment_config
+                    self.experiment_tab.config = self.experiment_tab.config | new_experiment_config
 
         # Verify experiment_instance
         if self.experiment_class is None:
-            qCritical("No Experiment Class instance found within the module give. Must adhere to the experiment " +
-                      "class template provided.")
-            QMessageBox.critical(None, "Error", "No Experiment Class Found.")
+            qCritical("No valid Class found within the module given. Must adhere to the experiment guidelines.")
+            QMessageBox.critical(None, "Error", "No ExperimentClass or ExperimentClassT2 Found.")

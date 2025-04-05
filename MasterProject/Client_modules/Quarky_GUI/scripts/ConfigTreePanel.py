@@ -109,7 +109,7 @@ class QConfigTreePanel(QTreeView):
         self.tree.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.tree.setColumnWidth(0, 100)
         self.tree.setColumnWidth(1, 50)
-        self.tree.setIndentation(10)
+        self.tree.setIndentation(6)
 
         # Connect item change signal
         self.model.itemChanged.connect(self.handleItemChanged)
@@ -139,6 +139,8 @@ class QConfigTreePanel(QTreeView):
         for category, params in self.config.items():
             if not params:
                 continue
+            if category == 'Voltage Config':
+                continue # voltage config is displayed in the voltage panel
 
             # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)

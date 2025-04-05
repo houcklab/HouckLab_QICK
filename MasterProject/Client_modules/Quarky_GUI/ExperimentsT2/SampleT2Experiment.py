@@ -1,7 +1,12 @@
-from qick import RAveragerProgram
-
 import numpy as np
 
+from qick import RAveragerProgram
+from Pyro4 import Proxy
+from qick import QickConfig
+
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
 
 class SampleProgram(RAveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -11,7 +16,6 @@ class SampleProgram(RAveragerProgram):
         print("The initialized config is: " + str(self.cfg))
 
     def body(self):
-        print("Syncing channels")
         print("Measuring")
 
     def update(self):
@@ -26,23 +30,20 @@ class SampleProgram(RAveragerProgram):
 
 # ====================================================== #
 
-class SampleExperiment_Experiment(ExperimentClassV2):
+class SampleExperiment_Experiment(ExperimentClassT2):
     """
     Basic sample experiment wrapper class
     """
-
-    # Specify the hardware requirement for this experiment
-    hardware_requirement = ["RFSoC", "VoltageInterface"]
 
     ### Define the experiment template config ###
     config_template = {
         "Voltage Config": {
             "ChannelCount": 1,
-            "1": {
-                "VoltageStart": 0,
-                "VoltageStop": 10,
-                "VoltageNumPoints": 10,
-            },
+            "VoltageNumPoints": 10,
+            "Channels" : {
+                1: [1,3], # start, stop
+                2: [-1,1]
+            }
         },
 
         "Experiment Config": { # Corresponds to the cfg given to the program (ie, SampleProgram)
@@ -51,6 +52,9 @@ class SampleExperiment_Experiment(ExperimentClassV2):
         }
     }
 
+    ### Specify the hardware requirement for this experiment
+    hardware_requirement = [Proxy, QickConfig, QBLOX]
+
     def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
                  cfg = None, config_file=None, progress=None):
 
@@ -58,37 +62,31 @@ class SampleExperiment_Experiment(ExperimentClassV2):
                          config_file=config_file, progress=progress)
 
         # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg = hardware["RFSoC"]
-        self.voltage_interface = hardware["VoltageInterface"]
+        self.soc, self.soccfg, self.qblox = hardware
 
     def acquire(self, progress=False, debug=False):
 
         self.volt_cfg = self.cfg["Voltage Config"]
         self.expt_cfg = self.cfg["Experiment Config"]
 
-        ### Define the program
-        prog = SampleProgram(self.soccfg, self.expt_cfg)
+        DACs = [key for key in self.volt_cfg["Channels"]]
+        VoltageNumPoints = self.volt_cfg["VoltageNumPoints"]
 
+        for i in range(VoltageNumPoints):
 
-        voltVec = np.linspace(self.volt_cfg["1"]["VoltageStart"], self.volt_cfg["1"]["VoltageStop"],
-                              self.volt_cfg["1"]["VoltageNumPoints"])
+            # Setting voltage in the case where each channel sweeping a different range
+            for channel in DACs:
+                voltVec = np.linspace(self.volt_cfg[channel][0], self.volt_cfg["1"][1], VoltageNumPoints)
+                self.qblox.set_voltage(voltVec[i], channel)
 
-
-        for i in voltVec:
-            self.voltage_interface.SetVoltage(i)
-
-            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                             readouts_per_experiment=1, save_experiments=None,
-                                             start_src="internal", progress=False)
+            prog = SampleProgram(self.soccfg, self.expt_cfg)
+            # data = prog.acquire(...)
+            # add data to something
 
             data = {'config': self.cfg,
-                    'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
-
-            # perform some averaging across iterations / some data handling
-
+                    'data': {}}
 
         self.data = data
-
         return data
 
     @classmethod

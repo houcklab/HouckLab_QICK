@@ -214,10 +214,12 @@ class QQuarkTab(QWidget):
         function, it is automatically set as the default method. Otherwise, the current methods available only include
         'Auto'.
         """
+        self.plot_method_combo.blockSignals(True)
+
         self.plot_method_combo.clear()
         self.plot_method_combo.addItems(["Autoplot"])
 
-        print(QQuarkTab.custom_plot_methods)
+        # print(QQuarkTab.custom_plot_methods)
 
         for key in QQuarkTab.custom_plot_methods.keys():
             if self.tab_name is not None and key == self.tab_name:
@@ -227,6 +229,8 @@ class QQuarkTab(QWidget):
                 self.plot_method_combo.addItems([key])
 
         self.plot_method_combo.addItems(["Add..."])
+
+        self.plot_method_combo.blockSignals(False)
 
     def handle_plot_combo_selection(self):
         """

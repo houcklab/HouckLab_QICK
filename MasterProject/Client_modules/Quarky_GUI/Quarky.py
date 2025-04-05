@@ -206,7 +206,7 @@ class Quarky(QMainWindow):
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel(parent=self.side_tabs)
+        self.voltage_controller_panel = QVoltagePanel(self.config_tree_panel, template_experiment_tab, parent=self.side_tabs)
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
         self.accounts_panel = QAccountPanel(parent=self.side_tabs)
@@ -456,6 +456,7 @@ class Quarky(QMainWindow):
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel
+            self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
             self.current_tab.setup_plotter_options()
 
             if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
