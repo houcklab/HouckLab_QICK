@@ -134,8 +134,12 @@ class ExperimentObject():
                     for key in new_experiment_config:
                         self.experiment_tab.config["Base Config"].pop(key, None)
 
-                    self.experiment_tab.config = self.experiment_tab.config | new_experiment_config
+                    self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
+                ### Store the classes voltage config if given
+                if hasattr(obj, "voltage_config") and obj.voltage_config is not None:
+                    qInfo("Found voltage config variable.")
+                    self.experiment_tab.config["Voltage Config"] = obj.voltage_config
 
             ### If config not found yet, Look for config in program classes
             if not cfg_found and name == self.experiment_name:
@@ -148,7 +152,7 @@ class ExperimentObject():
                     for key in new_experiment_config:
                         self.experiment_tab.config["Base Config"].pop(key, None)
 
-                    self.experiment_tab.config = self.experiment_tab.config | new_experiment_config
+                    self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
         # Verify experiment_instance
         if self.experiment_class is None:

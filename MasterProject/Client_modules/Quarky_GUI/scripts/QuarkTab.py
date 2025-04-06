@@ -47,7 +47,7 @@ class QQuarkTab(QWidget):
     **Important Attributes:**
 
         * experiment_obj (Experiment Module): The experiment module object that was passed.
-        * config (dict): The configuration of the QQuarkTab experiment/dataset.
+        * config (dict): The full configuration of the QQuarkTab experiment/dataset.
         * data (dict): The data of the QQuarkTab experiment/dataset.
         * plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.
         * plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area
@@ -289,7 +289,7 @@ class QQuarkTab(QWidget):
         else:
             qDebug("No config in metadata found")
 
-        print(self.data)
+        # print(self.data)
 
         self.plot_data()
 
@@ -681,6 +681,7 @@ class QQuarkTab(QWidget):
             try:
                 with open(config_filename, "w") as json_file:
                     json.dump(self.config, json_file, indent=4)
+
             except Exception as e:
                 qCritical(f"Failed to save the configuration to {config_filename}: {str(e)}")
 

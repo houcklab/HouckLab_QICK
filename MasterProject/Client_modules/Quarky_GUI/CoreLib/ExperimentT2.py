@@ -24,8 +24,7 @@ class ExperimentClassT2:
     """
 
     def __init__(self, path='', outerFolder='', prefix='data',
-                 hardware=None, hardware_requirement=None,
-                 cfg = None, config_file=None, **kwargs):
+                 hardware=None, hardware_requirement=None, cfg = None, config_file=None, **kwargs):
         """
         Initializes experiment class.
 
@@ -60,6 +59,11 @@ class ExperimentClassT2:
             self.load_config(os.path.join(path, config_file))
         else:
             self.cfg = cfg
+
+        # Checking Voltage Config
+        if any(issubclass(cls, VoltageInterface) for cls in hardware_requirement if isinstance(cls, type)):
+            if self.cfg["Voltage Config"] is None:
+                print("WARNING: Experiment requires Voltage Interface but no Voltage Config provided.")
 
         # Handling hardware
         self.hardware = hardware

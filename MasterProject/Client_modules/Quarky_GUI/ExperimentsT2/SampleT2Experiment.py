@@ -37,18 +37,17 @@ class SampleExperiment_Experiment(ExperimentClassT2):
 
     ### Define the experiment template config ###
     config_template = {
-        "Voltage Config": {
-            "ChannelCount": 1,
-            "VoltageNumPoints": 10,
-            "Channels" : {
-                1: [1,3], # start, stop
-                2: [-1,1]
-            }
-        },
+        "reps": 100,
+        "sets": 5,
+    }
 
-        "Experiment Config": { # Corresponds to the cfg given to the program (ie, SampleProgram)
-            "reps": 100,
-            "sets": 5,
+    ## Define the Voltage Config ###
+    voltage_config = {
+        "ChannelCount": 2,
+        "VoltageNumPoints": 10,
+        "Channels": {
+            1: [1, 3],  # start, stop
+            2: [-1, 1]
         }
     }
 
@@ -66,8 +65,8 @@ class SampleExperiment_Experiment(ExperimentClassT2):
 
     def acquire(self, progress=False, debug=False):
 
-        self.volt_cfg = self.cfg["Voltage Config"]
-        self.expt_cfg = self.cfg["Experiment Config"]
+        self.volt_cfg = self.cfg.get("Voltage Config", None) # will be none if Voltage Config doesnt exist
+        self.expt_cfg = {key: value for key, value in self.cfg.items() if key != "Voltage Config"}
 
         DACs = [key for key in self.volt_cfg["Channels"]]
         VoltageNumPoints = self.volt_cfg["VoltageNumPoints"]

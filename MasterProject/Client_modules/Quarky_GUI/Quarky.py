@@ -314,6 +314,27 @@ class Quarky(QMainWindow):
         Runs the experiment instance of the current active tab via the RFSoC connection. This function is where the
         new Experiment Worker Thread is created and all signals for data updating and experiment termination
         are connected.
+
+        The desired config format for running an experiment merges Base and Experiment Config as well as downgrades
+        their level. If Voltage Config exists, it is not touched:
+
+        .. code-block:: python
+
+            config = {
+              "Voltage Config": { # if T2 experiment and experiment gives Voltage Config
+                "ChannelCount": 1,
+                "VoltageNumPoints": 10,
+                "Channels": {
+                    1: [1, 3],  # start, stop
+                    2: [-1, 1]
+                }
+              },
+              "config_field1": 000,
+              "config_field2": 000,
+              "config_field3": 000,
+              ...
+              "config_field": 000,
+            }
         """
 
         if self.soc_connected: # ensure RFSoC connection
@@ -329,15 +350,17 @@ class Quarky(QMainWindow):
 
             # Handling config specific to the current tab
             self.current_tab.config = self.config_tree_panel.config
-            unformatted_config = self.current_tab.config["Base Config"] | self.current_tab.config["Experiment Config"]
+            experiment_format_config = self.current_tab.config.copy()
+            experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
+            experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
             # print(inspect.getsourcelines(experiment_class))
-            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=unformatted_config)
+            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
 
             # Creating the experiment worker from ExperimentThread
-            self.experiment_worker = ExperimentThread(unformatted_config, soccfg=self.soccfg,
+            self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
                                                       exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
 
@@ -472,13 +495,18 @@ class Quarky(QMainWindow):
         :type idx: int
         """
 
-        self.central_tabs.removeTab(idx)
+        tab_to_delete = self.central_tabs.widget(idx)
+
+        self.central_tabs.removeTab(idx) # remove tab from widget
+
         if self.central_tabs.count() == 0: # if no tabs remaining
             self.start_experiment_button.setEnabled(False)
             self.current_tab = None
         else:
             current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
             self.change_tab(current_tab_idx)
+
+        tab_to_delete.deleteLater() # safely delete the tab
 
     def update_progress(self, sets_complete):
         """

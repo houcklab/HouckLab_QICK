@@ -16,6 +16,15 @@ This is the basic formatting of the Config dictionary:
       "Base Config": {
             "field_name" : 0,
         },
+      "Voltage Config": { # Only exists for T2 experiments
+        "ChannelCount": 2,
+        "VoltageNumPoints": 10,
+        "Channels": {
+            1: [1, 3],  # start, stop
+            4: [-1, 1],
+            ...
+        }
+      }
     }
 """
 
@@ -139,13 +148,12 @@ class QConfigTreePanel(QTreeView):
         for category, params in self.config.items():
             if not params:
                 continue
-            if category == 'Voltage Config':
-                continue # voltage config is displayed in the voltage panel
 
             # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)
             parent.setFlags(QtCore.Qt.NoItemFlags)  # Category headers should not be selectable
 
+            # print(params)
             for key, value in params.items():
                 child_key = QtGui.QStandardItem(key)
                 child_key.setFlags(QtCore.Qt.ItemIsEnabled)
