@@ -4,11 +4,13 @@
 # both channel 1 AND channel 0 will continue playing their respective tones.
 
 from qick import AveragerProgram
-from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 import Pyro4.util
 import numpy as np
+from Pyro4 import Proxy
+from qick import QickConfig
 
 class ConstantTone(AveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -43,13 +45,22 @@ class ConstantTone(AveragerProgram):
 
 # ====================================================== #
 
-class ConstantTone_Experiment(ExperimentClass):
+class ConstantTone_Experiment(ExperimentClassT2):
     """
     This experiment just sets the RFSOC to output a constant tone on a given chanel at a given frequency and gain.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    ### Specify the hardware requirement for this experiment
+    hardware_requirement = [Proxy, QickConfig]
+
+    def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
+                 cfg=None, config_file=None, progress=None):
+
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware, cfg=cfg,
+                         config_file=config_file, progress=progress)
+
+        # retrieve the hardware that corresponds to what was required
+        self.soc, self.soccfg = hardware
 
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, self.cfg)

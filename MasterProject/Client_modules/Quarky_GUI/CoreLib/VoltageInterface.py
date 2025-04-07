@@ -4,8 +4,8 @@ class VoltageInterface:
     Extremely simple, and its purpose is so the GUI can pass references to Yoko or Qblox without caring about the class.
     """
 
-    def __init__(self, interface):
-        self.interface = interface
+    def __init__(self):
+        pass
 
     def set_voltage(self, voltage, DACs=None):
         raise NotImplementedError("Subclasses must implement setVoltage")

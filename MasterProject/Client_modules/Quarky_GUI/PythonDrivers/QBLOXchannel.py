@@ -1,5 +1,6 @@
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
-from spirack import SPI_rack, D5a_module
+from spirack import D5a_module, SPI_rack
+
 import numpy as np
 import time
 
@@ -12,21 +13,27 @@ class QBLOXchannel(D5a_module, VoltageInterface):
     A Qblox Driver for a single channel. Implemented as a fixed channel D5a_module.
     """
 
-    def __init__(self, channel, range_num=2, module=2, reset_voltages=False, num_dacs=16):
+    def __init__(self, channel, spi_rack=None, range_num=2, module=2, reset_voltages=False, num_dacs=16,
+                 ramp_step=0.003, ramp_interval=0.05, COM_speed=1e6, port='COM3', timeout=1):
         """
         Initializes a single Qblox channel.
         """
         self.DAC = int(channel)
-        self.ramp_step = 0.003
-        self.ramp_interval = 0.05
-        self.COM_speed = 1e6
-        self.port = 'COM3'
-        self.timeout = 1
+
+        self.ramp_step = ramp_step
+        self.ramp_interval = ramp_interval
+        self.COM_speed = COM_speed
+        self.port = port
+        self.timeout = timeout
 
         self.range_num = range_num
         self.set_range(self.range_num)
 
-        self.spi_rack = SPIRack(self.port, self.COM_speed, self.timeout)
+        if spi_rack is None:
+            self.spi_rack = SPIRack(self.port, self.COM_speed, self.timeout)
+        else:
+            self.spi_rack = spi_rack
+
         super(QBLOXchannel, self).__init__(self.spi_rack, module=module,
                                            reset_voltages=reset_voltages, num_dacs=num_dacs)
 
@@ -96,7 +103,6 @@ class QBLOXchannel(D5a_module, VoltageInterface):
 
     def __del__(self):
         self.spi_rack.close()
-
 
 class SPIRack(SPI_rack):
 

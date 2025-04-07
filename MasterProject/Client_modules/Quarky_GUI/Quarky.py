@@ -135,10 +135,13 @@ class Quarky(QMainWindow):
         # self.quarky_icon = QLabel()
         # self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.documentation_button = Helpers.create_button("?", "documentation", True, self.wrapper)
+        self.documentation_button.setToolTip("Documentation")
         self.documentation_button.setStyleSheet("border: 1px solid gray; font-size: 10px; border-radius:6px; color: gray; width: 12px;")
 
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
+        self.start_experiment_button.setToolTip("Run")
         self.stop_experiment_button = Helpers.create_button("◼️","stop_experiment",False,self.wrapper)
+        self.stop_experiment_button.setToolTip("Stop")
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)

@@ -33,7 +33,15 @@ class YOKOGS200(VoltageInterface):
         except visa.Error as ex:
             sys.stderr.write('Couldn\'t connect to \'%s\', exiting now...' \
                     %VISAaddress)
-            sys.exit()
+            raise ex
+
+    def __del__(self):
+        if hasattr(self, "session") and self.session is not None:
+            try:
+                self.session.close()
+                del self.session
+            except Exception as e:
+                print(f"Warning: Failed to close session: {e}")
 
     def output_on(self):
         """
