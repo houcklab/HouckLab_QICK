@@ -13,7 +13,7 @@ class QBLOXchannel(VoltageInterface):
     A Qblox Driver for a single channel. Implemented as a fixed channel D5a_module.
     """
 
-    def __init__(self, channel, spi_rack=None, D5a=None, range_num=2, module=2, reset_voltages=False, num_dacs=16,
+    def __init__(self, channel, range_num=2, module=2, reset_voltages=False, num_dacs=16,
                  ramp_step=0.003, ramp_interval=0.05, COM_speed=1e6, port='COM3', timeout=1):
         """
         Initializes a single Qblox channel.
@@ -26,19 +26,12 @@ class QBLOXchannel(VoltageInterface):
         self.port = port
         self.timeout = timeout
         self.range_num = range_num
+        self.module = module
+        self.reset_voltages = reset_voltages
+        self.num_dacs = num_dacs
 
-        if spi_rack is None:
-            self.spi_rack = SPI_rack(self.port, self.COM_speed, self.timeout, use_locks=True)
-        else:
-            self.spi_rack = spi_rack
-
-        if D5a is None:
-            self.D5a = D5a_module(self.spi_rack, module=module, reset_voltages=reset_voltages)
-            self.set_range(self.range_num)
-        else:
-            self.D5a = D5a
-
-        print(self.D5a.get_settings(0)[1])
+        # self.set_range(range_num)
+        self.get_voltage()
 
         super().__init__()
 
@@ -49,24 +42,25 @@ class QBLOXchannel(VoltageInterface):
         # -4 to 4 Volt: range_4V_bi (span 2)
         # -2 to 2 Volt: range_2V_bi (span 4)
         """
-        # self.spi_rack.unlock()
+        spi_rack = SPI_rack(self.port, self.COM_speed, self.timeout, use_locks=True)
+        D5a = D5a_module(spi_rack, module=self.module, reset_voltages=self.reset_voltages, num_dacs=self.num_dacs)
 
         DAC = self.DAC
-        # time.sleep(2)
+        time.sleep(1)
         if type(range_number) == int:
-            if not self.D5a.get_settings(DAC)[1] == range_number:
-                # current_settings = self.D5a.get_settings(DAC)
-                self.D5a.change_span(DAC, range_number)
-                # self.D5a.set_voltage(DAC, current_settings[0])
+            if not D5a.get_settings(DAC)[1] == range_number:
+                current_settings = D5a.get_settings(DAC)
+                D5a.change_span(DAC, range_number)
+                D5a.set_voltage(DAC, current_settings[0])
         else:
-            span = self.D5a.range_4V_bi
-            if not self.D5a.get_settings(DAC)[1] == span:
-                # current_settings = self.D5a.get_settings(DAC)
-                self.D5a.change_span(DAC, span)
-                # self.D5a.set_voltage(DAC, current_settings[0])
-        # time.sleep(2)
+            span = D5a.range_4V_bi
+            if not D5a.get_settings(DAC)[1] == span:
+                current_settings = D5a.get_settings(DAC)
+                D5a.change_span(DAC, span)
+                D5a.set_voltage(DAC, current_settings[0])
+        time.sleep(1)
 
-        # self.spi_rack.close()
+        spi_rack.close()
 
     def set_voltage(self, voltage, DACs=None):
         """
@@ -78,33 +72,35 @@ class QBLOXchannel(VoltageInterface):
         :param DACs: Should not be specified in QBLOXchannel.
         :type DACs: list
         """
-        # self.spi_rack.unlock()
 
+        spi_rack = SPI_rack(self.port, self.COM_speed, self.timeout, use_locks=True)
+        D5a = D5a_module(spi_rack, module=self.module, reset_voltages=self.reset_voltages)
+
+        # Slow ramp up
         DAC = self.DAC
-        if self.D5a.span[self.DAC] == self.D5a.range_4V_uni:
+        if D5a.span[self.DAC] == D5a.range_4V_uni:
             raise ValueError('Span is set to range_4V_uni (0). Negative values wanted. ')
-
-        current_voltage = self.D5a.get_settings(DAC)[0]
+        current_voltage = D5a.get_settings(DAC)[0]
         if np.abs(current_voltage - voltage) < self.ramp_step:  # No ramp up needed
-            self.D5a.set_voltage(DAC, voltage)
+            D5a.set_voltage(DAC, voltage)
             return
 
         steps = np.arange(current_voltage, voltage, np.sign(voltage - current_voltage) * self.ramp_step)
         for v in steps:
-            self.D5a.set_voltage(DAC, v)
+            D5a.set_voltage(DAC, v)
             time.sleep(self.ramp_interval)
-        self.D5a.set_voltage(DAC, voltage)
+        D5a.set_voltage(DAC, voltage)
 
-        # self.spi_rack.close()
+        spi_rack.close()
 
-    def print_voltages(self):
-        self.spi_rack.unlock()
+    def get_voltage(self):
 
-        for i in range(self.D5a._num_dacs):
-            print(f'{i}: {np.round(self.D5a.get_settings(i)[0], 4)} V')
+        spi_rack = SPI_rack(self.port, self.COM_speed, self.timeout, use_locks=True)
+        D5a = D5a_module(spi_rack, module=self.module, reset_voltages=self.reset_voltages)
+        DAC = self.DAC
+        curr_voltage = D5a.get_settings(DAC)[0]
 
-        self.spi_rack.close()
+        print(f'{DAC}: {np.round(curr_voltage, 4)} V')
+        spi_rack.close()
 
-    def __del__(self):
-        if self.spi_rack:
-            self.spi_rack.close()
+        return curr_voltage

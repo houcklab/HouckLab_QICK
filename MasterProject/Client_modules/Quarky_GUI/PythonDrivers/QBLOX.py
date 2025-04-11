@@ -19,26 +19,11 @@ class QBLOX(VoltageInterface):
 
         self.channels = {}
         self.num_dacs = num_dacs
-        self.spi_rack = SPI_rack(port, COM_speed, timeout, use_locks=True)
-        print("Creating D5a")
-        print(port, COM_speed, timeout, module, reset_voltages, num_dacs)
-        self.D5a = D5a_module(self.spi_rack, module=module, reset_voltages=reset_voltages, num_dacs=num_dacs)
 
-        print(self.D5a.get_settings(0)[1])
-
-        print("Creating Channels")
         for i in range(self.num_dacs):
-            self.channels[i] = QBLOXchannel(i, spi_rack=self.spi_rack, D5a=self.D5a, range_num=range_num, module=module,
+            self.channels[i] = QBLOXchannel(i, range_num=range_num, module=module,
                                             reset_voltages=reset_voltages, num_dacs=num_dacs, ramp_step=ramp_step,
                                             ramp_interval=ramp_interval, COM_speed=COM_speed, port=port, timeout=timeout)
-
-        # self.spi_rack.unlock()
-        # self.spi_rack.close()
-
-        print('yes')
-
-        self.spi_rack.open()
-        self.spi_rack.close()
 
         self.set_range(range_num)
 
@@ -51,16 +36,10 @@ class QBLOX(VoltageInterface):
         # -4 to 4 Volt: range_4V_bi (span 2)
         # -2 to 2 Volt: range_2V_bi (span 4)
         """
-        self.spi_rack.unlock()
 
-        # time.sleep(2)
         for i in range(self.num_dacs):
-            print(f' setting range for channel {i}')
+            time.sleep(1)
             self.channels[i].set_range(range_number)
-        # time.sleep(2)
-
-        self.spi_rack.close()
-
 
     def set_voltage(self, voltage, DACs=None):
         """
