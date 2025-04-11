@@ -59,6 +59,3 @@ class QBLOX(VoltageInterface):
         for i in range(self.num_dacs):
             if i in self.channels:
                 del self.channels[i]
-        if self.spi_rack is not None:
-            self.spi_rack.close()
-            del self.spi_rack
