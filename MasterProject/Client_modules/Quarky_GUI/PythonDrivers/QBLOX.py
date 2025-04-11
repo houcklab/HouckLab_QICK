@@ -50,12 +50,9 @@ class QBLOX(VoltageInterface):
         :param DACs: list of DACs to ramp to
         :type DACs: list
         """
-        self.spi_rack.unlock()
 
         for i in DACs:
             self.channels[i].set_voltage(voltage)
-
-        self.spi_rack.close()
 
         pass
 
