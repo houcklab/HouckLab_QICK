@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QGroupBox,
     QTextEdit,
-    QMessageBox
+    QMessageBox, QHBoxLayout, QLineEdit, QScrollArea, QFrame, QLCDNumber
 )
 
 import scripts.Helpers as Helpers
@@ -48,8 +48,13 @@ class QVoltagePanel(QWidget):
         "range_num": 2, "module": 2, "reset_voltages": False, "num_dacs": 16,"ramp_step": 0.003,
         "ramp_interval": 0.05, "COM_speed": 1e6, "port": 'COM3',"timeout": 1
     }
+    range_numbers = { 0: [0,4], 2: [-4,4], 4: [-2,2]}
     """
     The qblox_settings. Change this code to set default values.
+        range_numbers:
+            * 0 to 4 Volt: range_4V_uni (span 0)
+            * -4 to 4 Volt: range_4V_bi (span 2) default
+            * -2 to 2 Volt: range_2V_bi (span 4)
     """
 
     def __init__(self, config_tree_panel, current_Tab, parent=None):
@@ -57,6 +62,7 @@ class QVoltagePanel(QWidget):
 
         self.connected = False
         self.voltage_interface = None
+        self.range = [0,0]
 
         # Storing the config tree in order to change its config values via the UI
         self.config_tree_panel = config_tree_panel
@@ -84,12 +90,13 @@ class QVoltagePanel(QWidget):
         self.voltage_interface_combo = QComboBox(self)
         self.voltage_interface_combo.setObjectName("voltage_interface_combo")
         self.voltage_interface_combo.addItems(["Qblox", "Yoko"])
+        self.voltage_interface_currtype = "Qblox"
 
         self.voltage_interface_settings = QTextEdit(self)
         self.voltage_interface_settings.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.voltage_interface_settings.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.voltage_interface_settings.setMaximumHeight(60)
-        self.voltage_interface_settings.setStyleSheet("font-size: 10pt;")
+        self.voltage_interface_settings.setStyleSheet("font-size: 12pt;")
         self.setup_voltage_interface_settings()
 
         self.create_connection_button = Helpers.create_button("Create Connection","create_connection_button",True,self)
@@ -105,24 +112,73 @@ class QVoltagePanel(QWidget):
         self.controller_layout.setSpacing(0)
 
         # Voltage Channels Section
-        self.voltage_channels_group = QGroupBox("Voltage Channels")
+        self.voltage_channels_group = QGroupBox("Channels")
         self.voltage_channels_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.voltage_channels_group.setObjectName("voltage_channels_group")
+        self.voltage_channels_group.setMinimumHeight(100)
+
+        # Contains all channel components
         self.voltage_channels_layout = QVBoxLayout(self.voltage_channels_group)
-        self.voltage_channels_layout.setContentsMargins(0, 0, 0, 0)
+        self.voltage_channels_layout.setContentsMargins(0, 5, 0, 0)
+        self.voltage_channels_layout.setSpacing(3)
         self.voltage_channels_layout.setObjectName("voltage_channels_layout")
+
+        self.voltage_range_label = QLabel("  Voltage Range: [0,0]")
+        self.voltage_range_label.setStyleSheet("font-size: 12pt;")
+        self.voltage_channels_layout.addWidget(self.voltage_range_label)
+
+        # Scroll area to contain list of channels
+        self.channel_scroll_area = QScrollArea()
+        self.channel_scroll_area.setObjectName("channel_scroll_area")
+        self.channel_scroll_area.setFrameShape(QFrame.NoFrame)  # Remove the frame
+        self.channel_scroll_area.setWidgetResizable(True)
+        # Widget + layout to put into the scroll area (one for qblox, one for yoko)
+        self.channel_list = QWidget()
+        self.channel_list_layout = QVBoxLayout()
+        self.channel_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.channel_list.setLayout(self.channel_list_layout)
+
+        # The one for QBLOX
+        self.qblox_channel_list = QWidget()
+        self.qblox_channel_list_layout = QVBoxLayout()
+        self.qblox_channel_list_layout.setContentsMargins(5, 0, 10, 0)
+        self.qblox_channel_list_layout.setSpacing(0)
+        self.qblox_channel_list_layout.setObjectName("qblox_channel_list_layout")
+        self.qblox_channel_list.setLayout(self.qblox_channel_list_layout)
+        # The one for YOKO
+        self.yoko_channel_list = QWidget()
+        self.yoko_channel_list_layout = QVBoxLayout()
+        self.yoko_channel_list_layout.setContentsMargins(5, 0, 10, 0)
+        self.yoko_channel_list_layout.setSpacing(0)
+        self.yoko_channel_list_layout.setObjectName("yoko_channel_list_layout")
+        self.yoko_channel_list.setLayout(self.yoko_channel_list_layout)
+        self.yoko_channel_list.hide()
+
+        self.channel_list_layout.addWidget(self.qblox_channel_list)
+        self.channel_list_layout.addWidget(self.yoko_channel_list)
+
+        self.channel_scroll_area.setWidget(self.channel_list)
+        # Adding it all to voltage_channels_layout
+        self.voltage_channels_layout.addWidget(self.channel_scroll_area)
+        self.voltage_channels_group.setLayout(self.voltage_channels_layout)
+
+        self.setup_voltage_channels()
 
         # Sweeps Section
         self.sweeps_group = QGroupBox("Sweeps")
         self.sweeps_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.sweeps_group.setObjectName("sweeps_group")
+        self.sweeps_group.setMinimumHeight(100)
         self.sweeps_layout = QVBoxLayout(self.sweeps_group)
         self.sweeps_layout.setContentsMargins(0, 0, 0, 0)
         self.sweeps_layout.setObjectName("sweeps_layout")
 
-        self.voltage_channels_group.setLayout(self.voltage_channels_layout)
-        self.controller_layout.addWidget(self.voltage_channels_group)
-        self.controller_layout.addWidget(self.sweeps_group)
+        self.sweeps_edit = QTextEdit(self.sweeps_group)
+        self.sweeps_layout.addWidget(self.sweeps_edit)
+        self.sweeps_group.setLayout(self.sweeps_layout)
+
+        self.controller_layout.addWidget(self.voltage_channels_group, stretch=2)
+        self.controller_layout.addWidget(self.sweeps_group, stretch=1)
 
         # Adding it all to main layout
         self.main_layout.addLayout(self.interface_connect_layout)
@@ -131,10 +187,6 @@ class QVoltagePanel(QWidget):
         self.setLayout(self.main_layout)
 
         self.setup_signals()
-
-        # TODO: create the set voltage buttons
-        # TODO: create the sweep section
-        self.update_sweeps()
 
     def setup_signals(self):
         """
@@ -153,8 +205,19 @@ class QVoltagePanel(QWidget):
         """
         Handle when the user changes the voltage interface type.
         """
+        self.voltage_interface_currtype = self.voltage_interface_combo.currentText()
+
+        if self.voltage_interface_currtype == "Yoko":
+            self.yoko_channel_list.show()
+            self.qblox_channel_list.hide()
+            self.voltage_channels_group.setMaximumHeight(100)
+        else:
+            self.yoko_channel_list.hide()
+            self.qblox_channel_list.show()
+            self.voltage_channels_group.setMaximumHeight(16777215) # basically removes height constraint
 
         self.setup_voltage_interface_settings()
+        # Change which voltage channel is showing
 
     def toggle_create_connection(self):
         """
@@ -169,6 +232,7 @@ class QVoltagePanel(QWidget):
                 self.create_connection_button.setText("Delete Connection")
                 self.voltage_interface_combo.setEnabled(False)
                 self.voltage_interface_settings.setEnabled(False)
+                self.voltage_interface_settings.hide()
                 self.voltage_channels_group.setEnabled(True)
 
                 self.changed_tabs()
@@ -178,6 +242,7 @@ class QVoltagePanel(QWidget):
             self.create_connection_button.setText("Create Connection")
             self.voltage_interface_combo.setEnabled(True)
             self.voltage_interface_settings.setEnabled(True)
+            self.voltage_interface_settings.show()
             self.voltage_channels_group.setEnabled(False)
             self.sweeps_group.setEnabled(False)
 
@@ -194,10 +259,9 @@ class QVoltagePanel(QWidget):
 
         if self.connected and self.current_Tab.experiment_obj is not None:
             if self.current_Tab.experiment_obj.experiment_type == ExperimentClassT2:
-                print(self.current_Tab.experiment_obj.experiment_type)
                 self.sweeps_group.setEnabled(True)
 
-                self.update_sweeps()
+        self.update_sweeps()
 
     def setup_voltage_interface_settings(self):
         """
@@ -206,7 +270,7 @@ class QVoltagePanel(QWidget):
         self.voltage_interface_settings.clear()
         width = self.voltage_interface_settings.width()
 
-        if self.voltage_interface_combo.currentText() == "Yoko":
+        if self.voltage_interface_currtype == "Yoko":
             formatted_json = json.dumps(self.yoko_settings, indent=2)
             self.voltage_interface_settings.setText(str(formatted_json)[2:-2])
         else:
@@ -216,7 +280,7 @@ class QVoltagePanel(QWidget):
         self.voltage_interface_settings.adjustSize()
         self.voltage_interface_settings.resize(width, 60)
 
-        # TODO handle setting changes
+        # TODO handle setting change validation
 
     def create_connection(self):
         """
@@ -227,22 +291,26 @@ class QVoltagePanel(QWidget):
         :rtype: bool
         """
 
-        voltage_interface_type = self.voltage_interface_combo.currentText()
-
         # retrieve the textedit settings
         settings = "{" + self.voltage_interface_settings.toPlainText() + "}"
         try:
-            if voltage_interface_type == "Yoko":
+            if self.voltage_interface_currtype == "Yoko":
                 self.yoko_settings = json.loads(settings)
+                self.range = [0,1.3] # Manually set max
             else:
                 self.qblox_settings = json.loads(settings)
+                self.range = self.range_numbers[self.qblox_settings["range_num"]]
+            self.voltage_range_label.setText("  Voltage Range " + str(self.range))
         except json.JSONDecodeError as e:
             qCritical("Invalid settings format:" + str(e))
             QMessageBox.critical(self, "Error", f"Invalid settings format.")
             return False
 
+        self.connected = True # For Testing
+        return True # For Testing
+
         try:
-            if voltage_interface_type == "Yoko":
+            if self.voltage_interface_currtype == "Yoko":
                 # Create yoko connection
                 rm = visa.ResourceManager()
                 self.voltage_interface = YOKOGS200(**self.yoko_settings, rm=rm)
@@ -265,12 +333,91 @@ class QVoltagePanel(QWidget):
 
         self.connected = False
         del self.voltage_interface
+        self.voltage_interface = None
         qInfo("Successfully disconnected from Voltage Controller")
+
+    def setup_voltage_channels(self):
+        """
+        Sets up the UI for the voltage channels for both Qblox and Yoko.
+        """
+
+        for i in range(1,17):
+            single_channel_group = QHBoxLayout()
+            single_channel_group.setSpacing(1)
+            single_channel_group.setObjectName("single_channel_group")
+            channel_label = QLabel(str(i).zfill(2) + " : ")
+            channel_label.setStyleSheet("color: #4A90E2;")
+            channel_voltage_input = QLineEdit()
+            channel_voltage_input.setPlaceholderText("0.0")
+            channel_voltage_input.setAlignment(Qt.AlignRight)
+            channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True)
+            single_channel_group.addWidget(channel_label)
+            single_channel_group.addWidget(channel_voltage_input)
+            single_channel_group.addWidget(channel_voltage_setbutton)
+
+            # Use default arguments in the lambda to capture the current loop variables (i and input box)
+            # This avoids the late binding issue where all lambdas would otherwise reference the final loop value
+            channel_voltage_setbutton.clicked.connect(
+                lambda _, ch=i, input_box=channel_voltage_input: self.set_voltage(ch, input_box)
+            )
+            self.qblox_channel_list_layout.addLayout(single_channel_group)
+
+        single_channel_group = QHBoxLayout()
+        single_channel_group.setSpacing(1)
+        single_channel_group.setObjectName("single_channel_group")
+        channel_label = QLabel(str(1).zfill(2) + " : ")
+        channel_label.setStyleSheet("color: #4A90E2;")
+        channel_voltage_input = QLineEdit()
+        channel_voltage_input.setPlaceholderText("0.0V")
+        channel_voltage_input.setAlignment(Qt.AlignRight)
+        channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True)
+        single_channel_group.addWidget(channel_label)
+        single_channel_group.addWidget(channel_voltage_input)
+        single_channel_group.addWidget(channel_voltage_setbutton)
+
+        channel_voltage_setbutton.clicked.connect(lambda: self.set_voltage(1, channel_voltage_input))
+        self.yoko_channel_list_layout.addLayout(single_channel_group)
+
+
+    def set_voltage(self, channel, voltage_input):
+        """
+        Setting voltage of the connected Voltage Interface given the specified channel and voltage.
+
+        :param channel: Voltage channel input QLineEdit.
+        :type channel: QLineEdit
+        :param voltage: Voltage value
+        :type voltage: float
+        """
+        voltage = float(voltage_input.text())
+
+        if self.connected and self.voltage_interface is not None:
+            # Check ranges first
+            if self.range[0] > voltage or voltage > self.range[1]:
+                qCritical("Voltage Range " + str(voltage) + " is out of range.")
+                QMessageBox.critical(self, "Error", f"Voltage range out of range.")
+                return
+
+            try:
+                self.voltage_interface.set_voltage(voltage, [channel])
+                voltage_input.clear()
+                voltage_input.setPlaceholderText(str(voltage))
+            except Exception as e:
+                qCritical("Failed to set voltage: " + str(e))
+                QMessageBox.critical(self, "Error", "Faled to set voltage.")
+        else:
+            qCritical("No connected voltage interface.") # Should never call
 
     def update_sweeps(self):
         """
         If Experiment offers a Voltage Config (sweeps), we populate the sweep section with editable configs.
         """
-        pass # TODO
+        formatted_json = ""
+        if self.current_Tab.experiment_obj is not None:
+            if self.current_Tab.experiment_obj.experiment_type == ExperimentClassT2:
+                if "Voltage Config" in self.config_tree_panel.config:
+                    qInfo("Voltage Config found to populate sweeps.")
+                    print(self.config_tree_panel.config)
+                    formatted_json = json.dumps(self.config_tree_panel.config["Voltage Config"], indent=2)
+        self.sweeps_edit.setText(formatted_json)
 
 
