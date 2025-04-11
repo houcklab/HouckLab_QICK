@@ -420,4 +420,6 @@ class QVoltagePanel(QWidget):
                     formatted_json = json.dumps(self.config_tree_panel.config["Voltage Config"], indent=2)
         self.sweeps_edit.setText(formatted_json)
 
+        # TODO HANDLE EDIT UPDATING
+
 
