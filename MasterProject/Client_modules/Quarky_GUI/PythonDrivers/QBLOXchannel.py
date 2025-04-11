@@ -31,7 +31,7 @@ class QBLOXchannel(VoltageInterface):
         self.num_dacs = num_dacs
 
         # self.set_range(range_num)
-        self.get_voltage()
+        # self.get_voltage()
 
         super().__init__()
 
@@ -92,6 +92,7 @@ class QBLOXchannel(VoltageInterface):
         D5a.set_voltage(DAC, voltage)
 
         spi_rack.close()
+        return voltage
 
     def get_voltage(self):
 
@@ -100,7 +101,7 @@ class QBLOXchannel(VoltageInterface):
         DAC = self.DAC
         curr_voltage = D5a.get_settings(DAC)[0]
 
-        print(f'{DAC}: {np.round(curr_voltage, 4)} V')
+        # print(f'{DAC}: {np.round(curr_voltage, 4)} V')
         spi_rack.close()
 
         return curr_voltage

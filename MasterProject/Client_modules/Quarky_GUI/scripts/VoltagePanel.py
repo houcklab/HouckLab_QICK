@@ -10,7 +10,7 @@ Soon to be the home of a voltage controller interface panel [Qbox and Yoko].
 import pyvisa as visa
 import json
 import traceback
-from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo
+from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer
 from PyQt5.QtGui import QTextOption
 from PyQt5.QtWidgets import (
     QWidget,
@@ -360,7 +360,8 @@ class QVoltagePanel(QWidget):
             # Use default arguments in the lambda to capture the current loop variables (i and input box)
             # This avoids the late binding issue where all lambdas would otherwise reference the final loop value
             channel_voltage_setbutton.clicked.connect(
-                lambda _, ch=i, input_box=channel_voltage_input: self.set_voltage(ch-1, input_box)
+                lambda _, ch=i, input_box=channel_voltage_input, set_button=channel_voltage_setbutton:
+                    self.set_voltage(ch-1, input_box, set_button)
             )
             self.qblox_channel_list_layout.addLayout(single_channel_group)
 
@@ -377,11 +378,12 @@ class QVoltagePanel(QWidget):
         single_channel_group.addWidget(channel_voltage_input)
         single_channel_group.addWidget(channel_voltage_setbutton)
 
-        channel_voltage_setbutton.clicked.connect(lambda: self.set_voltage(1, channel_voltage_input))
+        channel_voltage_setbutton.clicked.connect(lambda: self.set_voltage(0, channel_voltage_input,
+                                                                           channel_voltage_setbutton))
         self.yoko_channel_list_layout.addLayout(single_channel_group)
 
 
-    def set_voltage(self, channel, voltage_input):
+    def set_voltage(self, channel, voltage_input, set_button):
         """
         Setting voltage of the connected Voltage Interface given the specified channel and voltage.
 
@@ -403,6 +405,9 @@ class QVoltagePanel(QWidget):
                 self.voltage_interface.set_voltage(voltage, [channel])
                 voltage_input.clear()
                 voltage_input.setPlaceholderText(str(voltage))
+
+                set_button.setText("Done")
+                QTimer.singleShot(2000, lambda: set_button.setText('Set'))
             except Exception as e:
                 qCritical("Failed to set voltage: " + str(e))
                 QMessageBox.critical(self, "Error", "Faled to set voltage.")
