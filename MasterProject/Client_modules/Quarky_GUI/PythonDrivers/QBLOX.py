@@ -38,7 +38,6 @@ class QBLOX(VoltageInterface):
         """
 
         for i in range(self.num_dacs):
-            time.sleep(1)
             self.channels[i].set_range(range_number)
 
     def set_voltage(self, voltage, DACs=None):

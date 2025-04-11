@@ -132,6 +132,7 @@ class QVoltagePanel(QWidget):
         self.channel_scroll_area = QScrollArea()
         self.channel_scroll_area.setObjectName("channel_scroll_area")
         self.channel_scroll_area.setFrameShape(QFrame.NoFrame)  # Remove the frame
+        self.channel_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.channel_scroll_area.setWidgetResizable(True)
         # Widget + layout to put into the scroll area (one for qblox, one for yoko)
         self.channel_list = QWidget()
@@ -291,6 +292,7 @@ class QVoltagePanel(QWidget):
         :return: Status of connection, True successful, False otherwise.
         :rtype: bool
         """
+        self.create_connection_button.setText("Creating...")
 
         # retrieve the textedit settings
         settings = "{" + self.voltage_interface_settings.toPlainText() + "}"
