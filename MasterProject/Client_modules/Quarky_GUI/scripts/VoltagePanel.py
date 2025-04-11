@@ -239,6 +239,7 @@ class QVoltagePanel(QWidget):
 
                 self.changed_tabs()
             else:
+                self.create_connection_button.setText("Create Connection")
                 QMessageBox.critical(self, "Error", f"Failed to create voltage interface connection.")
         else:
             self.create_connection_button.setText("Create Connection")
