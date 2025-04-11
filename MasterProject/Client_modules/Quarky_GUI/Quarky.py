@@ -598,3 +598,4 @@ if __name__ == '__main__':
         sys.exit(app.exec_())
     except Exception as e:
         QMessageBox.critical(None, "Critical Error", f"A GUI error occurred: {e}")
+        traceback.print_exc()

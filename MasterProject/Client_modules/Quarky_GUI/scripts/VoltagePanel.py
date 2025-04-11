@@ -9,6 +9,7 @@ Soon to be the home of a voltage controller interface panel [Qbox and Yoko].
 
 import pyvisa as visa
 import json
+import traceback
 from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo
 from PyQt5.QtGui import QTextOption
 from PyQt5.QtWidgets import (
@@ -96,7 +97,7 @@ class QVoltagePanel(QWidget):
         self.voltage_interface_settings.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.voltage_interface_settings.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.voltage_interface_settings.setMaximumHeight(60)
-        self.voltage_interface_settings.setStyleSheet("font-size: 12pt;")
+        self.voltage_interface_settings.setStyleSheet("font-size: 10pt;")
         self.setup_voltage_interface_settings()
 
         self.create_connection_button = Helpers.create_button("Create Connection","create_connection_button",True,self)
@@ -124,7 +125,7 @@ class QVoltagePanel(QWidget):
         self.voltage_channels_layout.setObjectName("voltage_channels_layout")
 
         self.voltage_range_label = QLabel("  Voltage Range: [0,0]")
-        self.voltage_range_label.setStyleSheet("font-size: 12pt;")
+        self.voltage_range_label.setStyleSheet("font-size: 10pt;")
         self.voltage_channels_layout.addWidget(self.voltage_range_label)
 
         # Scroll area to contain list of channels
@@ -306,8 +307,8 @@ class QVoltagePanel(QWidget):
             QMessageBox.critical(self, "Error", f"Invalid settings format.")
             return False
 
-        self.connected = True # For Testing
-        return True # For Testing
+        # self.connected = True # For Testing
+        # return True # For Testing
 
         try:
             if self.voltage_interface_currtype == "Yoko":
@@ -318,12 +319,13 @@ class QVoltagePanel(QWidget):
                 # Create Qblox connection
                 self.voltage_interface = QBLOX(**self.qblox_settings)
 
-            qInfo("Successfully connected to " + voltage_interface_type + ".")
+            qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
             self.connected = True
 
             return True
         except Exception as e:
             qCritical("Failed to connect to Voltage Controller: " + str(e))
+            qCritical(traceback.print_exc())
             return False
 
     def delete_connection(self):
@@ -358,7 +360,7 @@ class QVoltagePanel(QWidget):
             # Use default arguments in the lambda to capture the current loop variables (i and input box)
             # This avoids the late binding issue where all lambdas would otherwise reference the final loop value
             channel_voltage_setbutton.clicked.connect(
-                lambda _, ch=i, input_box=channel_voltage_input: self.set_voltage(ch, input_box)
+                lambda _, ch=i, input_box=channel_voltage_input: self.set_voltage(ch-1, input_box)
             )
             self.qblox_channel_list_layout.addLayout(single_channel_group)
 

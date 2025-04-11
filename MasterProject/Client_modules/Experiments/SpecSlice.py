@@ -121,6 +121,9 @@ class SpecSlice_Experiment(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
+        print(type(soc))
+        print(type(soccfg))
+
     def acquire(self, progress=False, debug=False):
         ##### code to aquire just the qubit spec data
         expt_cfg = {

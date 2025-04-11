@@ -170,6 +170,7 @@ class RabiAmp_ND_Experiment(ExperimentClass):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
+        print(data)
         if 'data' in data:
             data = data['data']
 
