@@ -43,12 +43,13 @@ class SampleExperiment_Experiment(ExperimentClassT2):
 
     ## Define the Voltage Config ###
     voltage_config = {
-        "ChannelCount": 2,
-        "VoltageNumPoints": 10,
-        "Channels": {
-            1: [1, 3],  # start, stop
-            2: [-1, 1]
-        }
+        "Channels": [1, 3, 5, 8, 9], # Specifies which channels to use
+        "VoltageMatrix": [np.linspace(-2,2,7),
+                          np.linspace(-1,4,7),
+                          np.linspace(-1, 4, 7),
+                          np.linspace(-1, 4, 7),
+                          [1,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
+                                                    # corresponds to the ith channel in the channels list
     }
 
     ### Specify the hardware requirement for this experiment

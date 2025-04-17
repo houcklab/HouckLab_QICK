@@ -55,6 +55,16 @@ class QBLOX(VoltageInterface):
 
         pass
 
+    def get_voltage(self, DAC=None):
+        """
+        Calls the get_voltage function on the specified DAC channel
+
+        :param DAC: DAC to get voltage from
+        :type DAC: int
+        """
+
+        self.channels[DAC].get_voltage()
+
     def __del__(self):
         for i in range(self.num_dacs):
             if i in self.channels:

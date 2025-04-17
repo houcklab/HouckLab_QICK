@@ -148,6 +148,8 @@ class QConfigTreePanel(QTreeView):
         for category, params in self.config.items():
             if not params:
                 continue
+            if category == 'Voltage Config':
+                continue
 
             # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)

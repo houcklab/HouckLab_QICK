@@ -9,9 +9,11 @@ Soon to be the home of a voltage controller interface panel [Qbox and Yoko].
 
 import pyvisa as visa
 import json
+import ast
+import numpy as np
 import traceback
-from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer
-from PyQt5.QtGui import QTextOption
+from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer, qDebug
+from PyQt5.QtGui import QTextOption, QDoubleValidator
 from PyQt5.QtWidgets import (
     QWidget,
     QSizePolicy,
@@ -20,7 +22,12 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QGroupBox,
     QTextEdit,
-    QMessageBox, QHBoxLayout, QLineEdit, QScrollArea, QFrame, QLCDNumber
+    QMessageBox,
+    QHBoxLayout,
+    QLineEdit,
+    QScrollArea,
+    QFrame,
+    QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog
 )
 
 import scripts.Helpers as Helpers
@@ -58,12 +65,13 @@ class QVoltagePanel(QWidget):
             * -2 to 2 Volt: range_2V_bi (span 4)
     """
 
-    def __init__(self, config_tree_panel, current_Tab, parent=None):
+    def __init__(self, config_tree_panel, current_Tab, parent):
         super(QVoltagePanel, self).__init__(parent)
 
         self.connected = False
         self.voltage_interface = None
         self.range = [0,0]
+        self.parent = parent
 
         # Storing the config tree in order to change its config values via the UI
         self.config_tree_panel = config_tree_panel
@@ -138,6 +146,7 @@ class QVoltagePanel(QWidget):
         self.channel_list = QWidget()
         self.channel_list_layout = QVBoxLayout()
         self.channel_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.channel_list_layout.setSpacing(0)
         self.channel_list.setLayout(self.channel_list_layout)
 
         # The one for QBLOX
@@ -170,15 +179,12 @@ class QVoltagePanel(QWidget):
         self.sweeps_group = QGroupBox("Sweeps")
         self.sweeps_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.sweeps_group.setObjectName("sweeps_group")
-        self.sweeps_group.setMinimumHeight(100)
-        self.sweeps_layout = QVBoxLayout(self.sweeps_group)
-        self.sweeps_layout.setContentsMargins(0, 0, 0, 0)
-        self.sweeps_layout.setObjectName("sweeps_layout")
+        self.sweeps_group.setMinimumHeight(200)
 
-        self.sweeps_edit = QTextEdit(self.sweeps_group)
-        self.sweeps_layout.addWidget(self.sweeps_edit)
+        self.sweeps_layout = VoltageSweepTable(self.config_tree_panel, self.voltage_interface_combo, self.parent)
         self.sweeps_group.setLayout(self.sweeps_layout)
 
+        # Adding to controller
         self.controller_layout.addWidget(self.voltage_channels_group, stretch=2)
         self.controller_layout.addWidget(self.sweeps_group, stretch=1)
 
@@ -198,7 +204,6 @@ class QVoltagePanel(QWidget):
 
         self.voltage_channels_group.setEnabled(False)
         self.sweeps_group.setEnabled(False)
-
 
         self.voltage_interface_combo.currentIndexChanged.connect(self.handle_voltInterface_change)
         self.create_connection_button.clicked.connect(self.toggle_create_connection)
@@ -262,7 +267,8 @@ class QVoltagePanel(QWidget):
 
         if self.connected and self.current_Tab.experiment_obj is not None:
             if self.current_Tab.experiment_obj.experiment_type == ExperimentClassT2:
-                self.sweeps_group.setEnabled(True)
+                if "Voltage Config" in self.config_tree_panel.config:
+                    self.sweeps_group.setEnabled(True)
 
         self.update_sweeps()
 
@@ -310,8 +316,8 @@ class QVoltagePanel(QWidget):
             QMessageBox.critical(self, "Error", f"Invalid settings format.")
             return False
 
-        # self.connected = True # For Testing
-        # return True # For Testing
+        self.connected = True # For Testing
+        return True # For Testing
 
         try:
             if self.voltage_interface_currtype == "Yoko":
@@ -324,7 +330,7 @@ class QVoltagePanel(QWidget):
 
             qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
             self.connected = True
-
+            self.update_voltage_channels()
             return True
         except Exception as e:
             qCritical("Failed to connect to Voltage Controller: " + str(e))
@@ -385,6 +391,18 @@ class QVoltagePanel(QWidget):
                                                                            channel_voltage_setbutton))
         self.yoko_channel_list_layout.addLayout(single_channel_group)
 
+    def update_voltage_channels(self):
+
+        ############## UNTESTED
+
+        if self.connected:
+            if self.voltage_interface_currtype == "Yoko":
+                channel_voltage_input = self.yoko_channel_list_layout.itemAt(0).layout().itemAt(1).widget()
+                channel_voltage_input.setPlaceholderText(str(self.voltage_interface.GetVoltage()) + "V")
+            else:
+                for i in range(self.qblox_channel_list_layout.count()):
+                    channel_voltage_input = self.qblox_channel_list_layout.itemAt(i).layout().itemAt(1).widget()
+                    channel_voltage_input.setPlaceholderText(str(self.voltage_interface.get_voltage(i)) + "V")
 
     def set_voltage(self, channel, voltage_input, set_button):
         """
@@ -421,16 +439,218 @@ class QVoltagePanel(QWidget):
         """
         If Experiment offers a Voltage Config (sweeps), we populate the sweep section with editable configs.
         """
-        formatted_json = ""
-        if self.current_Tab.experiment_obj is not None:
-            if self.current_Tab.experiment_obj.experiment_type == ExperimentClassT2:
-                if "Voltage Config" in self.config_tree_panel.config:
-                    qInfo("Voltage Config found to populate sweeps.")
-                    print(self.config_tree_panel.config)
-                    formatted_json = json.dumps(self.config_tree_panel.config["Voltage Config"], indent=2)
-        self.sweeps_edit.setText(formatted_json)
+        self.sweeps_layout.populate_table()
 
 
-        # TODO HANDLE EDIT UPDATING
+class VoltageSweepTable(QVBoxLayout):
+    def __init__(self, config_tree_panel, voltage_interface_combo, parent):
+        super().__init__()
+        self.config_tree_panel = config_tree_panel
+        self.voltage_interface_combo = voltage_interface_combo
+        self.parent = parent
 
+        if "Voltage Config" in self.config_tree_panel.config:
+            if "Channels" not in self.config_tree_panel.config["Voltage Config"]:
+                qCritical("No Channels field found to Voltage Config.")
+            elif "VoltageMatrix" not in self.config_tree_panel.config["Voltage Config"]:
+                qCritical("No VoltageMatrix field found to Voltage Config.")
 
+        # the channel list is self.config_tree_panel.config["Voltage Config"]["Channels"]
+        # the voltage matrix is at self.config_tree_panel.config["Voltage Config"]["VoltageMatrix"]
+
+        self.retrieve_references()
+
+        ### Creating the UI
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(1)
+        self.setObjectName("sweeps_layout")
+
+        # Buttons
+        self.load_matrix_btn = Helpers.create_button("Load", "load_matrix_button", True)
+
+        self.toolbar = QHBoxLayout()
+        self.toolbar.setContentsMargins(0, 0, 0, 0)
+        self.toolbar.setSpacing(0)
+        self.toolbar.addWidget(self.load_matrix_btn)
+
+        # Table
+        self.table_layout = QHBoxLayout()
+        self.table_layout.setContentsMargins(0, 0, 0, 0)
+        self.table_layout.setSpacing(0)
+
+        self.channel_table = QTableWidget(self.num_rows, 1)
+        self.channel_table.setAlternatingRowColors(True)
+        self.channel_table.setColumnWidth(0, 30)
+        self.channel_table.horizontalHeader().setStretchLastSection(True)
+        self.channel_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.channel_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.channel_table.setFixedWidth(30)
+        self.channel_table.verticalHeader().setVisible(False)
+        self.channel_table.setHorizontalHeaderLabels(["Ch"])
+
+        self.voltage_table = QTableWidget(self.num_rows, self.num_cols)
+        self.voltage_table.setAlternatingRowColors(True)
+        self.voltage_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.voltage_table.setEditTriggers(QTableWidget.AllEditTriggers)
+        self.voltage_table.verticalHeader().setVisible(False)
+        # self.voltage_table.setVerticalHeaderLabels([f"Ch {channel}" for channel in self.channels])
+
+        self.table_layout.addWidget(self.channel_table)
+        self.table_layout.addWidget(self.voltage_table)
+
+        # Adding it all together
+        self.addLayout(self.toolbar)
+        self.addLayout(self.table_layout)
+
+        self.setup_signals()
+
+    def setup_signals(self):
+        self.voltage_table.itemChanged.connect(self.table_edited)
+        self.channel_table.itemChanged.connect(self.channel_edited)
+
+        # Sync Scroll
+        self.voltage_table.verticalScrollBar().valueChanged.connect(
+            self.channel_table.verticalScrollBar().setValue
+        )
+        self.channel_table.verticalScrollBar().valueChanged.connect(
+            self.voltage_table.verticalScrollBar().setValue
+        )
+
+        self.load_matrix_btn.clicked.connect(self.load_matrix)
+        pass
+
+    def retrieve_references(self):
+        voltage_config = self.config_tree_panel.config.get("Voltage Config")
+        if voltage_config:
+            self.channels = voltage_config.get("Channels")
+            self.matrix = voltage_config.get("VoltageMatrix")
+            self.num_rows = len(self.matrix)
+            self.num_cols = len(self.matrix[0])
+            if self.num_rows != len(self.channels):
+                qCritical("Number of rows and channels do not match.")
+        else:
+            self.channels = []
+            self.matrix = [[]]
+            self.num_rows = 0
+            self.num_cols = 0
+
+    def _set_item(self, row, col, text):
+        item = QTableWidgetItem(f"{float(text):.3f}")
+        item.setTextAlignment(Qt.AlignCenter)
+        item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+        self.voltage_table.setItem(row, col, item)
+
+    def populate_table(self, matrix=None):
+        """Populate the table to match the shape of the given matrix."""
+        self.retrieve_references()
+
+        # Channel Table
+        self.channel_table.clear()
+        self.channel_table.setRowCount(self.num_rows)
+        self.channel_table.setColumnCount(1)
+        self.channel_table.setHorizontalHeaderLabels(["Ch"])
+        for i, channel in enumerate(self.channels):
+            item = QTableWidgetItem(str(channel))
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            self.channel_table.setItem(i, 0, item)
+
+        # Voltage Table
+        if matrix is not None:
+            if (len(matrix) != len(self.matrix) or
+                    any(len(self.matrix[0]) != len(self.matrix[i]) for i in range(len(matrix)))):
+                qCritical("Error: Matrix dimensions do not match - load aborted.")
+                return
+
+            # Truncate extra columns in matrix
+            self.num_cols = len(matrix[0])
+            for i in range(len(self.matrix)):
+                # Truncate or extend each row
+                if len(self.matrix[i]) < self.num_cols:
+                    self.matrix[i].extend([0.0] * (self.num_cols - len(self.matrix[i])))
+                elif len(self.matrix[i]) > self.num_cols:
+                    self.matrix[i] = self.matrix[i][:self.num_cols]
+
+            # copy entires over (copying so to preserve the self.matrix reference
+            for i in range(len(matrix)):
+                for j in range(len(matrix[i])):
+                    self.matrix[i][j] = matrix[i][j]
+
+        self.voltage_table.clear()
+        self.voltage_table.setRowCount(self.num_rows)
+        self.voltage_table.setColumnCount(self.num_cols)
+
+        for row in range(self.num_rows):
+            for col in range(self.num_cols):
+                value = self.matrix[row][col]
+                self._set_item(row, col, value)
+
+        if self.channels and len(self.channels) == self.num_rows:
+            self.voltage_table.setVerticalHeaderLabels([f"Ch {channel}" for channel in self.channels])
+        self.voltage_table.setEditTriggers(QTableWidget.AllEditTriggers)
+
+    def table_edited(self, item):
+        row = item.row()
+        col = item.column()
+
+        try:
+            value = float(item.text())
+            self.matrix[row][col] = value
+        except ValueError:
+            # If the conversion fails, reset to a default value
+            qDebug(f"Invalid value at row {row}, col {col} - resetting.")
+            item.setText(self.matrix[row][col])
+
+        # do some verification
+
+    def channel_edited(self, item):
+        row = item.row()
+
+        try:
+            value = int(item.text())
+            self.channels[row] = value
+        except ValueError:
+            # If the conversion fails, reset to a default value
+            qDebug(f"Invalid channel at row {row} - resetting.")
+            item.setText(self.channels[row])
+
+        # do some verification
+
+    def load_matrix(self):
+        self.retrieve_references()
+
+        text, ok = QInputDialog.getMultiLineText(
+            self.parent,
+            "Load Matrix",
+            "Paste matrix in Python syntax (numpy supported): \n e.g., [[1, 2], [3, 4], np.linspace(1,2,2)] :"
+        )
+        if not ok or not text.strip():
+            return
+
+        try:
+            safe_globals = {"np": np}
+            data = self.convert_to_list_matrix(eval(text.strip(), {"__builtins__": {}}, safe_globals))
+
+            if not isinstance(data, (list, np.ndarray)) or any(not isinstance(row, (list, np.ndarray)) for row in data):
+                raise ValueError("Input is not a 2D list.")
+            elif len(data) != self.num_rows or any(len(row) != len(data[0]) for row in data):
+                QMessageBox.critical(self.parent, f"Matrix must have {self.num_rows} rows and consistent column lengths.")
+                return
+
+            self.populate_table(data)
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Invalid Input", f"Error parsing matrix: {e}")
+
+    def convert_to_list_matrix(self, matrix):
+        """
+        Recursively converts any numpy arrays in a matrix to lists.
+        :param matrix: A list or numpy array that may contain nested lists/arrays.
+        :return: A matrix (list of lists) with all numpy arrays converted to lists.
+        """
+        if isinstance(matrix, np.ndarray):
+            matrix = matrix.tolist()
+
+        return [
+            row.tolist() if isinstance(row, np.ndarray) else row
+            for row in matrix
+        ]

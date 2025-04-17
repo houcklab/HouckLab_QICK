@@ -38,7 +38,9 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 
-# Use absolute imports
+# Use absolute imports maybe
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from scripts.ExperimentThread import ExperimentThread
 from scripts.QuarkTab import QQuarkTab
@@ -350,8 +352,8 @@ class Quarky(QMainWindow):
             self.thread = QThread()
 
 
-
             # Handling config specific to the current tab
+            # An experiment (both old and T2, want base and experiment config combined and flatted. Voltage Config stays as is.
             self.current_tab.config = self.config_tree_panel.config
             experiment_format_config = self.current_tab.config.copy()
             experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
@@ -360,7 +362,33 @@ class Quarky(QMainWindow):
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
             # print(inspect.getsourcelines(experiment_class))
-            self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+
+            ######## UNTESTED START
+
+            experiment_type = self.current_tab.experiment_obj.experiment_type
+            if experiment_type == ExperimentClassT2:
+                # Retrieving hardware (ie. if voltage interface required, make sure it is included)
+                collected_hardware = [self.soc, self.soccfg]
+                hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
+
+                if isinstance(VoltageInterface, tuple(hardware_req)):
+                    if not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
+                        QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
+                        qCritical("Voltage Controller needed but not connected.")
+
+                    voltage_interface = self.voltage_controller_panel.voltage_interface # get the connected interface
+                    if not any(issubclass(type(voltage_interface), cls) for cls in hardware_req): # check it is of the right type
+                        QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
+                        qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
+                    else:
+                        collected_hardware.append(voltage_interface)
+
+                self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
+
+                ########### UNTESTED END
+
+            else:
+                self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
 
             # Creating the experiment worker from ExperimentThread
             self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
@@ -403,6 +431,7 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
+        self.voltage_controller_panel.update_voltage_channels() # update voltages
         if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_bane
             qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
 
@@ -467,9 +496,10 @@ class Quarky(QMainWindow):
 
     def update_tab(self):
         """
-        Updates a tab UI, which currently just means the config.
+        Updates a tab UI, which currently just means the config and voltage panel.
         """
         self.config_tree_panel.set_config(self.current_tab.config) # important, update config panel
+        self.voltage_controller_panel.update_sweeps()
 
     def change_tab(self, idx):
         """
