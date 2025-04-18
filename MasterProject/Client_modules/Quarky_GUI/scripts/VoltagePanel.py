@@ -601,6 +601,8 @@ class VoltageSweepTable(QVBoxLayout):
         self.voltage_table.setEditTriggers(QTableWidget.AllEditTriggers)
 
     def table_edited(self, item):
+        self.voltage_table.blockSignals(True)
+
         row = item.row()
         col = item.column()
 
@@ -614,6 +616,8 @@ class VoltageSweepTable(QVBoxLayout):
             # If the conversion fails, reset to a default value
             qDebug(f"Invalid value at row {row}, col {col}, must be in range and a float. Resetting.")
             self._set_item(row, col, self.matrix[row][col])
+
+        self.voltage_table.blockSignals(False)
 
     def channel_edited(self, item):
         row = item.row()
