@@ -113,9 +113,16 @@ class QQuarkTab(QWidget):
 
         self.runtime_label = QLabel("Estimated Total Runtime: 00h 00m 00s 000ms")  # estimated experiment time
         self.runtime_label.setStyleSheet("font-size: 11px;")
+        self.hardware_label = QLabel("Hardware Requirement: [Proxy, QickConfig]")
+        if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
+            hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
+            self.hardware_label.setText("Hardware Requirement: " + hardware_str)
+        self.hardware_label.setAlignment(Qt.AlignRight)
+        self.hardware_label.setStyleSheet("font-size: 11px;")
         # TODO: Runtime Functions: calculate estimation, at updateprogress, calc runtime remaining, log actual time used
 
         self.experiment_infobar.addWidget(self.runtime_label)
+        self.experiment_infobar.addWidget(self.hardware_label)
         self.plot_layout.addWidget(self.experiment_infobar_container)
 
         ### Plot Utilities Bar
@@ -310,6 +317,10 @@ class QQuarkTab(QWidget):
         if self.experiment_obj is not None:
             self.experiment_obj.extract_experiment_attributes()
             self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+            if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
+                hardware_str = "[" + (
+                    ", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
+                self.hardware_label.setText("Hardware Requirement: " + hardware_str)
             qDebug("ReExtracted Experiment: experiment attributes extracted.")
             self.updated_tab.emit()
 

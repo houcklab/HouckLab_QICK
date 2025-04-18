@@ -12,9 +12,10 @@ import json
 import ast
 import numpy as np
 import traceback
-from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer, qDebug
-from PyQt5.QtGui import QTextOption, QDoubleValidator
+from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer, qDebug, qWarning
+from PyQt5.QtGui import QTextOption, QDoubleValidator, QColor
 from PyQt5.QtWidgets import (
+    QApplication,
     QWidget,
     QSizePolicy,
     QComboBox,
@@ -70,7 +71,7 @@ class QVoltagePanel(QWidget):
 
         self.connected = False
         self.voltage_interface = None
-        self.range = [0,0]
+        self.range = [-4,4] # default
         self.parent = parent
 
         # Storing the config tree in order to change its config values via the UI
@@ -176,12 +177,12 @@ class QVoltagePanel(QWidget):
         self.setup_voltage_channels()
 
         # Sweeps Section
-        self.sweeps_group = QGroupBox("Sweeps")
+        self.sweeps_group = QGroupBox("Voltage Config (Sweeps)")
         self.sweeps_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.sweeps_group.setObjectName("sweeps_group")
         self.sweeps_group.setMinimumHeight(200)
 
-        self.sweeps_layout = VoltageSweepTable(self.config_tree_panel, self.voltage_interface_combo, self.parent)
+        self.sweeps_layout = VoltageSweepTable(self.config_tree_panel, self.voltage_interface_combo, self)
         self.sweeps_group.setLayout(self.sweeps_layout)
 
         # Adding to controller
@@ -466,12 +467,14 @@ class VoltageSweepTable(QVBoxLayout):
         self.setObjectName("sweeps_layout")
 
         # Buttons
-        self.load_matrix_btn = Helpers.create_button("Load", "load_matrix_button", True)
+        self.load_matrix_button = Helpers.create_button("Load", "load_matrix_button", True)
+        self.copy_matrix_button = Helpers.create_button("Copy", "copy_matrix_button", True)
 
         self.toolbar = QHBoxLayout()
         self.toolbar.setContentsMargins(0, 0, 0, 0)
         self.toolbar.setSpacing(0)
-        self.toolbar.addWidget(self.load_matrix_btn)
+        self.toolbar.addWidget(self.load_matrix_button)
+        self.toolbar.addWidget(self.copy_matrix_button)
 
         # Table
         self.table_layout = QHBoxLayout()
@@ -516,7 +519,8 @@ class VoltageSweepTable(QVBoxLayout):
             self.voltage_table.verticalScrollBar().setValue
         )
 
-        self.load_matrix_btn.clicked.connect(self.load_matrix)
+        self.load_matrix_button.clicked.connect(self.load_matrix)
+        self.copy_matrix_button.clicked.connect(self.copy_matrix)
         pass
 
     def retrieve_references(self):
@@ -535,9 +539,16 @@ class VoltageSweepTable(QVBoxLayout):
             self.num_cols = 0
 
     def _set_item(self, row, col, text):
+        # Verification
         item = QTableWidgetItem(f"{float(text):.3f}")
         item.setTextAlignment(Qt.AlignCenter)
         item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+
+        lower, upper = self.parent.range[0], self.parent.range[1]
+        if lower != 0 and upper != 0:
+            if float(text) < lower or float(text) > upper:
+                item.setBackground(QColor("lightcoral"))
+
         self.voltage_table.setItem(row, col, item)
 
     def populate_table(self, matrix=None):
@@ -595,13 +606,14 @@ class VoltageSweepTable(QVBoxLayout):
 
         try:
             value = float(item.text())
+            if value < self.parent.range[0] or value > self.parent.range[1]:
+                raise ValueError
             self.matrix[row][col] = value
+            self._set_item(row, col, value)
         except ValueError:
             # If the conversion fails, reset to a default value
-            qDebug(f"Invalid value at row {row}, col {col} - resetting.")
-            item.setText(self.matrix[row][col])
-
-        # do some verification
+            qDebug(f"Invalid value at row {row}, col {col}, must be in range and a float. Resetting.")
+            self._set_item(row, col, self.matrix[row][col])
 
     def channel_edited(self, item):
         row = item.row()
@@ -612,9 +624,9 @@ class VoltageSweepTable(QVBoxLayout):
         except ValueError:
             # If the conversion fails, reset to a default value
             qDebug(f"Invalid channel at row {row} - resetting.")
-            item.setText(self.channels[row])
+            item.setText(str(self.channels[row]))
 
-        # do some verification
+        # TODO do some verification
 
     def load_matrix(self):
         self.retrieve_references()
@@ -654,3 +666,13 @@ class VoltageSweepTable(QVBoxLayout):
             row.tolist() if isinstance(row, np.ndarray) else row
             for row in matrix
         ]
+
+    def copy_matrix(self):
+        clipboard = QApplication.clipboard()
+        temp_matrix = self.convert_to_list_matrix(self.matrix.copy())
+
+        clipboard.setText(str(temp_matrix))
+        qInfo("Current voltage matrix copied to clipboard!")
+
+        self.copy_matrix_button.setText('Done!')
+        QTimer.singleShot(3000, lambda: self.copy_matrix_button.setText('Copy'))

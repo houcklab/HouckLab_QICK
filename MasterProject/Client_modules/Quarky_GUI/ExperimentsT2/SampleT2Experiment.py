@@ -45,7 +45,7 @@ class SampleExperiment_Experiment(ExperimentClassT2):
     voltage_config = {
         "Channels": [1, 3, 5, 8, 9], # Specifies which channels to use
         "VoltageMatrix": [np.linspace(-2,2,7),
-                          np.linspace(-1,4,7),
+                          np.linspace(-1,5,7),
                           np.linspace(-1, 4, 7),
                           np.linspace(-1, 4, 7),
                           [1,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
