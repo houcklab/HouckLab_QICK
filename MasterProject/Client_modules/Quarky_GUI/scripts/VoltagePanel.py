@@ -323,9 +323,6 @@ class QVoltagePanel(QWidget):
             QMessageBox.critical(self, "Error", f"Invalid settings format.")
             return False
 
-        self.connected = True # For Testing
-        return True # For Testing
-
         try:
             if self.voltage_interface_currtype == "Yoko":
                 # Create yoko connection
@@ -404,13 +401,12 @@ class QVoltagePanel(QWidget):
     def update_voltage_channels(self):
 
         ############## UNTESTED
-
-        if self.connected:
+        if self.connected and self.voltage_interface is not None:
             if self.voltage_interface_currtype == "Yoko":
                 channel_voltage_input = self.yoko_channel_list_layout.itemAt(0).layout().itemAt(1).widget()
                 channel_voltage_input.setPlaceholderText(str(self.voltage_interface.GetVoltage()) + "V")
             else:
-                for i in range(self.qblox_channel_list_layout.count()):
+                for i in range(16):
                     channel_voltage_input = self.qblox_channel_list_layout.itemAt(i).layout().itemAt(1).widget()
                     channel_voltage_input.setPlaceholderText(str(self.voltage_interface.get_voltage(i)) + "V")
 
@@ -433,6 +429,7 @@ class QVoltagePanel(QWidget):
                 return
 
             try:
+                set_button.setText("Setting")
                 self.voltage_interface.set_voltage(voltage, [channel])
                 voltage_input.clear()
                 voltage_input.setPlaceholderText(str(voltage))
@@ -458,7 +455,7 @@ class VoltageSweepBox(QVBoxLayout):
         self.voltage_interface_combo = voltage_interface_combo
         self.parent = parent
 
-        self.setContentsMargins(0, 0, 0, 0)
+        self.setContentsMargins(0, 5, 0, 5)
         self.setSpacing(1)
         self.setObjectName("sweeps_layout")
 
@@ -543,16 +540,16 @@ class VoltageSweepBox(QVBoxLayout):
     def on_channel_edited(self):
         try:
             channel = self.channel_dropdown.currentText()
-            if channel == "None" or channel == "Yoko":
+            if channel == "None" or channel == "Yoko" or not channel:
                 self.parent.voltage_hardware = self.parent.voltage_interface
             else:
                 value = int(channel)
                 try:
-                    self.parent.voltage_hardware = self.parent.voltage_interface.channels[value-1]
+                    self.parent.voltage_hardware = self.parent.voltage_interface.channels[(value-1)]
                 except:
                     raise ValueError
         except ValueError:
-            QMessageBox.critical(self, "Error", "Something went wrong when setting channel.")
+            QMessageBox.critical(self.parent, "Error", "Something went wrong when setting channel.")
             qDebug(f"Something went wrong when setting the voltage channel to sweep.")
             self.channel_dropdown.setCurrentIndex(0)
 

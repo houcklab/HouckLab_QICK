@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 from qick import RAveragerProgram
 from Pyro4 import Proxy
@@ -24,7 +25,7 @@ class SampleProgram(RAveragerProgram):
     ### Define the program template config ###
     config_template = {
         "reps": 100,
-        "sets": 5,
+        "sets": 1,
     }
 
 
@@ -38,10 +39,10 @@ class SampleExperiment_Experiment(ExperimentClassT2):
     ### Define the experiment template config ###
     config_template = {
         "reps": 100,
-        "sets": 5,
+        "sets": 1,
         "VoltageStart": 0,
-        "VoltageStop": 3,
-        "VoltageNumPoints": 10,
+        "VoltageStop": 0.6,
+        "VoltageNumPoints": 3,
     }
 
     ## Define the Voltage Config ### NOT USING VOLTAGE CONFIG ANYMORE
@@ -56,38 +57,40 @@ class SampleExperiment_Experiment(ExperimentClassT2):
     # }
 
     ### Specify the hardware requirement for this experiment
-    hardware_requirement = [Proxy, QickConfig, QBLOX]
+    hardware_requirement = [Proxy, QickConfig, VoltageInterface]
 
     def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
-                 cfg = None, config_file=None, progress=None):
+                 cfg=None, config_file=None, progress=None):
 
-        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware, cfg=cfg,
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
+                         hardware_requirement=self.hardware_requirement, cfg=cfg,
                          config_file=config_file, progress=progress)
 
         # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg, self.qblox = hardware
+        self.soc, self.soccfg, self.voltage_interface = hardware
 
     def acquire(self, progress=False, debug=False):
 
-        self.volt_cfg = self.cfg.get("Voltage Config", None) # will be none if Voltage Config doesnt exist
-        self.expt_cfg = {key: value for key, value in self.cfg.items() if key != "Voltage Config"}
+        # self.volt_cfg = self.cfg.get("Voltage Config", None) # will be none if Voltage Config doesnt exist
+        # expt_cfg = {key: value for key, value in self.cfg.items() if key != "Voltage Config"}
+        expt_cfg = self.cfg
 
-        DACs = [key for key in self.volt_cfg["Channels"]]
-        VoltageNumPoints = self.volt_cfg["VoltageNumPoints"]
+        voltage_vec = np.linspace(expt_cfg["VoltageStart"], expt_cfg["VoltageStop"], expt_cfg["VoltageNumPoints"])
+        print(voltage_vec)
 
-        for i in range(VoltageNumPoints):
+        for voltage in voltage_vec:
 
-            # Setting voltage in the case where each channel sweeping a different range
-            for channel in DACs:
-                voltVec = np.linspace(self.volt_cfg[channel][0], self.volt_cfg["1"][1], VoltageNumPoints)
-                self.qblox.set_voltage(voltVec[i], channel)
+            print("setting voltage to: ", voltage)
+            self.voltage_interface.set_voltage(voltage)
 
-            prog = SampleProgram(self.soccfg, self.expt_cfg)
+            # prog = SampleProgram(self.soccfg, expt_cfg)
             # data = prog.acquire(...)
             # add data to something
 
             data = {'config': self.cfg,
-                    'data': {}}
+                    'data': {'x_pts': [0,0]}}
+
+            time.sleep(4)
 
         self.data = data
         return data
@@ -99,12 +102,13 @@ class SampleExperiment_Experiment(ExperimentClassT2):
 
     @classmethod
     def export_data(cls, data_file, data, config):
+        return
         super().export_data(data_file, data, config)
-        pass
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         # Your own display function using matplotlib or other if you'd like
         pass
 
     def save_data(self, data=None):
+        pass
         super().save_data(data=data['data'])

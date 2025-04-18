@@ -375,11 +375,13 @@ class Quarky(QMainWindow):
                     if not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
                         QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
                         qCritical("Voltage Controller needed but not connected.")
+                        return
 
-                    voltage_interface = self.voltage_controller_panel.voltage_interface # get the connected interface
+                    voltage_interface = self.voltage_controller_panel.voltage_hardware # get the connected interface
                     if not any(issubclass(type(voltage_interface), cls) for cls in hardware_req): # check it is of the right type
                         QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
                         qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
+                        return
                     else:
                         collected_hardware.append(voltage_interface)
 
@@ -431,7 +433,7 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
-        self.voltage_controller_panel.update_voltage_channels() # update voltages
+        self.voltage_controller_panel.update_voltage_channels()  # update voltages
         if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_bane
             qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
 

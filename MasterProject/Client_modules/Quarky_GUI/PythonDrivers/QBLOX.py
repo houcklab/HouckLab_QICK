@@ -63,7 +63,7 @@ class QBLOX(VoltageInterface):
         :type DAC: int
         """
 
-        self.channels[DAC].get_voltage()
+        return self.channels[DAC].get_voltage()
 
     def __del__(self):
         for i in range(self.num_dacs):

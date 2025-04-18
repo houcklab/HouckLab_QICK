@@ -75,7 +75,7 @@ class QBLOXchannel(VoltageInterface):
 
         spi_rack = SPI_rack(self.port, self.COM_speed, self.timeout, use_locks=True)
         D5a = D5a_module(spi_rack, module=self.module, reset_voltages=self.reset_voltages)
-        time.sleep(1)
+        time.sleep(0.3)
 
         # Slow ramp up
         DAC = self.DAC
@@ -92,7 +92,6 @@ class QBLOXchannel(VoltageInterface):
             time.sleep(self.ramp_interval)
         D5a.set_voltage(DAC, voltage)
 
-        time.sleep(1)
         spi_rack.close()
         return voltage
 

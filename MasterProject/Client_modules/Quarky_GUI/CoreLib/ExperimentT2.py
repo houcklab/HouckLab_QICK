@@ -61,9 +61,9 @@ class ExperimentClassT2:
             self.cfg = cfg
 
         # Checking Voltage Config
-        if any(issubclass(cls, VoltageInterface) for cls in hardware_requirement if isinstance(cls, type)):
-            if self.cfg["Voltage Config"] is None:
-                print("WARNING: Experiment requires Voltage Interface but no Voltage Config provided.")
+        # if any(issubclass(cls, VoltageInterface) for cls in hardware_requirement if isinstance(cls, type)):
+        #     if self.cfg["Voltage Config"] is None:
+        #         print("WARNING: Experiment requires Voltage Interface but no Voltage Config provided.")
 
         # Handling hardware
         self.hardware = hardware
