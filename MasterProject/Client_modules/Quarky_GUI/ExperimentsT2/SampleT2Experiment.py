@@ -48,7 +48,7 @@ class SampleExperiment_Experiment(ExperimentClassT2):
                           np.linspace(-1,5,7),
                           np.linspace(-1, 4, 7),
                           np.linspace(-1, 4, 7),
-                          [1,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
+                          [0,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
                                                     # corresponds to the ith channel in the channels list
     }
 

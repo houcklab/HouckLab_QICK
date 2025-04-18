@@ -11,7 +11,7 @@ class QBLOX(VoltageInterface):
     """
 
     def __init__(self, range_num=2, module=2, reset_voltages=False, num_dacs=16,
-                 ramp_step=0.003, ramp_interval=0.05, COM_speed=1e6, port='COM3', timeout=1):
+                 ramp_step=0.004, ramp_interval=0.005, COM_speed=1e6, port='COM3', timeout=1):
         """
         Initializes QBLOX Driver.
         """
