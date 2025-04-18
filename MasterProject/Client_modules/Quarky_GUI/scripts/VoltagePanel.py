@@ -28,10 +28,12 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QScrollArea,
     QFrame,
+    QFormLayout,
     QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog
 )
 
 import scripts.Helpers as Helpers
+
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
@@ -70,13 +72,14 @@ class QVoltagePanel(QWidget):
         super(QVoltagePanel, self).__init__(parent)
 
         self.connected = False
-        self.voltage_interface = None
+        self.voltage_interface = None # the interface used to control voltages
+        self.voltage_hardware = None # the hardware to send to the experiment
         self.range = [-4,4] # default
         self.parent = parent
 
         # Storing the config tree in order to change its config values via the UI
         self.config_tree_panel = config_tree_panel
-        self.current_Tab = current_Tab
+        self.current_tab = current_Tab
 
         # Set size policy
         sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
@@ -180,9 +183,10 @@ class QVoltagePanel(QWidget):
         self.sweeps_group = QGroupBox("Voltage Config (Sweeps)")
         self.sweeps_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.sweeps_group.setObjectName("sweeps_group")
-        self.sweeps_group.setMinimumHeight(200)
+        # self.sweeps_group.setMinimumHeight(200)
+        self.sweeps_group.setFixedHeight(125)
 
-        self.sweeps_layout = VoltageSweepTable(self.config_tree_panel, self.voltage_interface_combo, self)
+        self.sweeps_layout = VoltageSweepBox(self.config_tree_panel, self.voltage_interface_combo, self)
         self.sweeps_group.setLayout(self.sweeps_layout)
 
         # Adding to controller
@@ -263,13 +267,15 @@ class QVoltagePanel(QWidget):
         whether it not it provides a Voltage Config to perform sweeps.
         """
         if current_tab is not None:
-            self.current_Tab = current_tab
+            self.current_tab = current_tab
         self.sweeps_group.setEnabled(False)
 
-        if self.connected and self.current_Tab.experiment_obj is not None:
-            if self.current_Tab.experiment_obj.experiment_type == ExperimentClassT2:
-                if "Voltage Config" in self.config_tree_panel.config:
+        if self.connected and self.current_tab.experiment_obj is not None:
+            if self.current_tab.experiment_obj.experiment_type == ExperimentClassT2:
+                hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
+                if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
                     self.sweeps_group.setEnabled(True)
+                    self.config_tree_panel.populate_tree(False)
 
         self.update_sweeps()
 
@@ -331,7 +337,9 @@ class QVoltagePanel(QWidget):
 
             qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
             self.connected = True
+            self.voltage_hardware = self.voltage_interface
             self.update_voltage_channels()
+            self.sweeps_layout.populate_channel_dropdown()
             return True
         except Exception as e:
             qCritical("Failed to connect to Voltage Controller: " + str(e))
@@ -346,6 +354,7 @@ class QVoltagePanel(QWidget):
         self.connected = False
         del self.voltage_interface
         self.voltage_interface = None
+        self.config_tree_panel.populate_tree()
         qInfo("Successfully disconnected from Voltage Controller")
 
     def setup_voltage_channels(self):
@@ -440,10 +449,144 @@ class QVoltagePanel(QWidget):
         """
         If Experiment offers a Voltage Config (sweeps), we populate the sweep section with editable configs.
         """
-        self.sweeps_layout.populate_table()
+        self.sweeps_layout.populate_form()
+
+class VoltageSweepBox(QVBoxLayout):
+    def __init__(self, config_tree_panel, voltage_interface_combo, parent):
+        super().__init__()
+        self.config_tree_panel = config_tree_panel
+        self.voltage_interface_combo = voltage_interface_combo
+        self.parent = parent
+
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(1)
+        self.setObjectName("sweeps_layout")
+
+        # Voltage Sweep Form
+        self.sweep_form_layout = QFormLayout()
+        self.sweep_form_layout.setContentsMargins(0, 0, 0, 0)
+        self.sweep_form_layout.setVerticalSpacing(2)
+        self.sweep_form_layout.setObjectName("form_layout")
+
+        self.channel_dropdown_label = QLabel()
+        self.channel_dropdown_label.setText("Channel: ")
+        self.channel_dropdown_label.setObjectName("channel_dropdown_label")
+        self.sweep_form_layout.setWidget(0, QFormLayout.LabelRole, self.channel_dropdown_label)
+        self.channel_dropdown = QComboBox()
+        self.channel_dropdown.setFixedWidth(70)
+        self.sweep_form_layout.setWidget(0, QFormLayout.FieldRole, self.channel_dropdown)
+
+        self.start_label = QLabel()
+        self.start_label.setText("Start: ")
+        self.start_label.setObjectName("start_label")
+        self.sweep_form_layout.setWidget(1, QFormLayout.LabelRole, self.start_label)
+        self.start_edit = QLineEdit()
+        self.start_edit.setObjectName("start_edit")
+        self.sweep_form_layout.setWidget(1, QFormLayout.FieldRole, self.start_edit)
+
+        self.stop_label = QLabel()
+        self.stop_label.setText("Stop: ")
+        self.stop_label.setObjectName("stop_label")
+        self.sweep_form_layout.setWidget(2, QFormLayout.LabelRole, self.stop_label)
+        self.stop_edit = QLineEdit()
+        self.stop_edit.setObjectName("stop_edit")
+        self.sweep_form_layout.setWidget(2, QFormLayout.FieldRole, self.stop_edit)
+
+        self.numPoints_label = QLabel()
+        self.numPoints_label.setText("#Points: ")
+        self.numPoints_label.setObjectName("numPoints_label")
+        self.sweep_form_layout.setWidget(3, QFormLayout.LabelRole, self.numPoints_label)
+        self.numPoints_edit = QLineEdit()
+        self.numPoints_edit.setObjectName("numPoints_edit")
+        self.sweep_form_layout.setWidget(3, QFormLayout.FieldRole, self.numPoints_edit)
+
+        self.addLayout(self.sweep_form_layout)
+
+        self.setup_signals()
+
+    def setup_signals(self):
+        self.populate_form()
+        self.channel_dropdown.currentIndexChanged.connect(self.on_channel_edited)
+        self.start_edit.editingFinished.connect(self.on_start_edited)
+        self.stop_edit.editingFinished.connect(self.on_stop_edited)
+        self.numPoints_edit.editingFinished.connect(self.on_num_points_edited)
+
+    def populate_channel_dropdown(self):
+        self.voltage_interface_currtype = self.voltage_interface_combo.currentText()
+        self.channel_dropdown.clear()
+        self.channel_dropdown.addItem(str("None"))
+
+        if self.voltage_interface_currtype == "Yoko":
+            self.channel_dropdown.addItem(str("Yoko"))
+        else:
+            num_channels = 16
+            for i in range(num_channels):
+                self.channel_dropdown.addItem(str(i+1))
+
+    def populate_form(self):
+        self.populate_channel_dropdown()
+        if "VoltageStart" in self.config_tree_panel.config["Experiment Config"]:
+            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
+        else:
+            self.start_edit.setText(str(0.0))
+
+        if "VoltageStop" in self.config_tree_panel.config["Experiment Config"]:
+            self.stop_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStop"]))
+        else:
+            self.stop_edit.setText(str(0.0))
+
+        if "VoltageNumPoints" in self.config_tree_panel.config["Experiment Config"]:
+            self.numPoints_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageNumPoints"]))
+        else:
+            self.numPoints_edit.setText(str(0))
+
+    def on_channel_edited(self):
+        try:
+            channel = self.channel_dropdown.currentText()
+            if channel == "None" or channel == "Yoko":
+                self.parent.voltage_hardware = self.parent.voltage_interface
+            else:
+                value = int(channel)
+                try:
+                    self.parent.voltage_hardware = self.parent.voltage_interface.channels[value-1]
+                except:
+                    raise ValueError
+        except ValueError:
+            QMessageBox.critical(self, "Error", "Something went wrong when setting channel.")
+            qDebug(f"Something went wrong when setting the voltage channel to sweep.")
+            self.channel_dropdown.setCurrentIndex(0)
+
+    def on_start_edited(self):
+        try:
+            value = float(self.start_edit.text())
+            if value < self.parent.range[0] or value > self.parent.range[1]:
+                raise ValueError
+            self.config_tree_panel.config["Experiment Config"]["VoltageStart"] = value
+        except ValueError:
+            qDebug(f"Invalid voltage start value (check range). Resetting.")
+            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
+
+    def on_stop_edited(self):
+        try:
+            value = float(self.stop_edit.text())
+            if value < self.parent.range[0] or value > self.parent.range[1]:
+                raise ValueError
+            self.config_tree_panel.config["Experiment Config"]["VoltageStop"] = value
+        except ValueError:
+            qDebug(f"Invalid voltage stop value. Resetting.")
+            self.stop_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStop"]))
+
+    def on_num_points_edited(self):
+        try:
+            value = int(self.numPoints_edit.text())
+            self.config_tree_panel.config["Experiment Config"]["VoltageNumPoints"] = value
+        except ValueError:
+            qDebug(f"Invalid voltage stop value. Resetting.")
+            self.numPoints_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageNumPoints"]))
 
 
 class VoltageSweepTable(QVBoxLayout):
+    # TODO OUTDATED
     def __init__(self, config_tree_panel, voltage_interface_combo, parent):
         super().__init__()
         self.config_tree_panel = config_tree_panel

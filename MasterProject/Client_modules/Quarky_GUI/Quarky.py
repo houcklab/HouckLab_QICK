@@ -321,7 +321,7 @@ class Quarky(QMainWindow):
         are connected.
 
         The desired config format for running an experiment merges Base and Experiment Config as well as downgrades
-        their level. If Voltage Config exists, it is not touched:
+        their level. If Voltage Config exists, it is not touched: (Voltage Config not used)
 
         .. code-block:: python
 
@@ -371,7 +371,7 @@ class Quarky(QMainWindow):
                 collected_hardware = [self.soc, self.soccfg]
                 hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
 
-                if isinstance(VoltageInterface, tuple(hardware_req)):
+                if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
                     if not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
                         QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
                         qCritical("Voltage Controller needed but not connected.")
@@ -622,7 +622,11 @@ class Quarky(QMainWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
-        app.setStyle("Macintosh")
+
+        # with open("style.qss", "r") as file:
+        #     style = file.read()
+        # app.setStyleSheet(style)
+
         ex = Quarky()
         ex.show()
         sys.exit(app.exec_())

@@ -39,18 +39,21 @@ class SampleExperiment_Experiment(ExperimentClassT2):
     config_template = {
         "reps": 100,
         "sets": 5,
+        "VoltageStart": 0,
+        "VoltageStop": 3,
+        "VoltageNumPoints": 10,
     }
 
-    ## Define the Voltage Config ###
-    voltage_config = {
-        "Channels": [1, 3, 5, 8, 9], # Specifies which channels to use
-        "VoltageMatrix": [np.linspace(-2,2,7),
-                          np.linspace(-1,5,7),
-                          np.linspace(-1, 4, 7),
-                          np.linspace(-1, 4, 7),
-                          [0,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
-                                                    # corresponds to the ith channel in the channels list
-    }
+    ## Define the Voltage Config ### NOT USING VOLTAGE CONFIG ANYMORE
+    # voltage_config = {
+    #     "Channels": [1, 3, 5, 8, 9], # Specifies which channels to use
+    #     "VoltageMatrix": [np.linspace(-2,2,7),
+    #                       np.linspace(-1,5,7),
+    #                       np.linspace(-1, 4, 7),
+    #                       np.linspace(-1, 4, 7),
+    #                       [0,1.1,1.2,1.3,1.4,3.9,3.7]], # Specifies the voltage points where the ith row
+    #                                                 # corresponds to the ith channel in the channels list
+    # }
 
     ### Specify the hardware requirement for this experiment
     hardware_requirement = [Proxy, QickConfig, QBLOX]

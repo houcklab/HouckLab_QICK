@@ -136,7 +136,7 @@ class QConfigTreePanel(QTreeView):
         self.copy_config_button.clicked.connect(self.copy_config)
         self.load_config_button.clicked.connect(self.load_config)
 
-    def populate_tree(self):
+    def populate_tree(self, allow_voltage_editing=True):
         """
         Populates the `tree` QTreeView widget with the configuration data by iterating through the dictionary and
         creating a QStandardItem for each Key (Parameter) and Value.
@@ -148,8 +148,8 @@ class QConfigTreePanel(QTreeView):
         for category, params in self.config.items():
             if not params:
                 continue
-            if category == 'Voltage Config':
-                continue
+            # if category == 'Voltage Config':
+            #     continue
 
             # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)
@@ -157,6 +157,9 @@ class QConfigTreePanel(QTreeView):
 
             # print(params)
             for key, value in params.items():
+                if not allow_voltage_editing and str(key)[:7] == "Voltage":
+                    continue
+
                 child_key = QtGui.QStandardItem(key)
                 child_key.setFlags(QtCore.Qt.ItemIsEnabled)
 
