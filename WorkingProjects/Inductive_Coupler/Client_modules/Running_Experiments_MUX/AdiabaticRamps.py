@@ -8,6 +8,8 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabaticRampSingleShot import AdiabaticRampSingleShot
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFFSweepARampSS import FFSweepAdiabaticRampSingleShot
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFFSweepRampOsc import FFSweepRampOscillations
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabaticT1 import AdiabaticRampT1SS
+from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mRampDelayVsPopulation import SweepDelayVsPopulation
 
 import numpy as np
 # yoko69.rampstep = 0.0005
@@ -98,104 +100,215 @@ Qubit_Parameters = {
 
 
 # Joshua parameters
+# Qubit_Parameters = {
+#     '1': {'Readout': {'Frequency': 7322.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+#                       "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4634.2, 'Gain': 3000},
+#           'Pulse_FF': [0, 3000, 6150, 0]},
+#     '2': {'Readout': {'Frequency': 7269.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+#                       "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4491.8, 'Gain': 1390},
+#           'Pulse_FF': [0, 3000, 6150, 0]},
+#     '3': {'Readout': {'Frequency': 7525.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+#                       "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4713.0, 'Gain': 3150},
+#           'Pulse_FF': [0, 3000, 6150, 0]},
+#     '4': {'Readout': {'Frequency': 7459.85 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+#                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+#           'Qubit': {'Frequency': 4372.9, 'Gain': 3000},
+#           'Pulse_FF': [0, 0, 0, 0]},
+#     '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+#               'Qubit': {'Frequency': 4047.84, 'Gain': 7500},
+#               'Pulse_FF': [0, 0, 0, 0]},
+#     }
+# Qubit_Parameters['plus'] = Qubit_Parameters['3']
+# Qubit_Parameters['minus'] = Qubit_Parameters['1']
+
+
+### 3Q Chain Parameters
+# Qubit_Parameters = {
+#     '1': {'Readout': {'Frequency': 7322.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7300,
+#                       "FF_Gains": [5000, -4000, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4585.3, 'Gain': 2130},
+#           'Pulse_FF': [5000, -4000, -2000, 0]},
+#     '2': {'Readout': {'Frequency': 7269.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
+#                       "FF_Gains": [5000, -4000, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4069, 'Gain': 2810},
+#           'Pulse_FF': [5000, -4000, -2000, 0]},
+#     '3': {'Readout': {'Frequency': 7524.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6500,
+#                       "FF_Gains": [5000, -4000, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4322.6, 'Gain': 3705},
+#           'Pulse_FF': [5000, -4000, -2000, 0]},
+#     '5': {'Readout': {'Frequency': 7305.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
+#                       "FF_Gains": [5000, -4000, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#               'Qubit': {'Frequency': 4933.6, 'Gain': 2552},
+#               'Pulse_FF': [5000, -4000, -2000, 0]},
+#     'A': {'Readout': {'Frequency': 7524.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6300,
+#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+#               'Qubit': {'Frequency': 4464.7, 'Gain': 1522},
+#               'Pulse_FF': [0, -4000, 0, 0]},
+#     'B': {'Readout': {'Frequency': 7322.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7300,
+#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4584.3, 'Gain': 2050},
+#           'Pulse_FF': [0, -4000, 0, 0]},
+#     'C': {'Readout': {'Frequency': 7305.4 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
+#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+#               'Qubit': {'Frequency': 4662.8, 'Gain': 2470},
+#               'Pulse_FF': [0, -4000, 0, 0]},
+#     }
+
+# A is the lowest energy (Q3)
+# B is the middle energy (Q1)
+# C is the highest energy (Q5)
+
+# 3/26/25 parameters
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7322.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4634.2, 'Gain': 3000},
-          'Pulse_FF': [0, 3000, 6150, 0]},
-    '2': {'Readout': {'Frequency': 7269.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
-                      "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4491.8, 'Gain': 1390},
-          'Pulse_FF': [0, 3000, 6150, 0]},
-    '3': {'Readout': {'Frequency': 7525.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
-                      "FF_Gains": [0, 0, 11000, 0], "Readout_Time": 2, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4713.0, 'Gain': 3150},
-          'Pulse_FF': [0, 3000, 6150, 0]},
-    '4': {'Readout': {'Frequency': 7459.85 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
-                    "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4372.9, 'Gain': 3000},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-              'Qubit': {'Frequency': 4047.84, 'Gain': 7500},
-              'Pulse_FF': [0, 0, 0, 0]},
+    # Locations for readout and readout fidelity characterization
+    '1': {'Readout': {'Frequency': 7322.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [-7000, -7000, -7000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5027.76, 'Gain': 1200},
+          'Pulse_FF': [-7000, -7000, -7000, 0]},
+    '2': {'Readout': {'Frequency': 7269.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6800,
+                      "FF_Gains": [5000, -8000, 5000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4664.6, 'Gain': 2215},
+          'Pulse_FF': [5000, -8000, 5000, 0]},
+    '3': {'Readout': {'Frequency': 7525.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5800,
+                      "FF_Gains": [7000, 7500, -3750, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4826.8, 'Gain': 1434},
+          'Pulse_FF': [7000, 7500, -3750, 0]},
+    '5': {'Readout': {'Frequency': 7304.98 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5600,
+                      "FF_Gains": [-7500, 7500, 7500, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4560.1, 'Gain': 2050},
+          'Pulse_FF': [-7500, 7500, 7500, 0]},
+    # Location for preparing the 3 eigenstates
+    'High': {'Qubit': {'Frequency': 5033.5, 'Gain': 1540}, # Q1 driven
+          'Pulse_FF': [0, -4000, -965, 0]},
+    'Middle': {'Qubit': {'Frequency': 5027.7, 'Gain': 950}, # Q1 driven
+              'Pulse_FF': [0, -4000, 1400, 0]},
+    'Low': {'Qubit': {'Frequency': 4970.5, 'Gain': 1630}, # Q5 driven
+          'Pulse_FF': [0, -4000, 1400, 0]}
     }
-Qubit_Parameters['plus'] = Qubit_Parameters['3']
-Qubit_Parameters['minus'] = Qubit_Parameters['1']
+
+# Qubit_Parameters = {
+#     # Locations for readout and readout fidelity characterization
+#     '1': {'Readout': {'Frequency': 7322.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+#                       "FF_Gains": [-7000, -7000, -7000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 5027.76, 'Gain': 1200},
+#           'Pulse_FF': [-7000, -7000, -7000, 0]},
+#     '2': {'Readout': {'Frequency': 7269.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+#                       "FF_Gains": [0, 5000, -5000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4488.1, 'Gain': 1600},
+#           'Pulse_FF': [0, 0, -800, 0]},
+#     '3': {'Readout': {'Frequency': 7525.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+#                       "FF_Gains": [0, 5000, -5000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4536.3, 'Gain': 1300},
+#           'Pulse_FF': [0, 0, -800, 0]},
+#     '5': {'Readout': {'Frequency': 7304.98 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5600,
+#                       "FF_Gains": [-7500, 7500, 7500, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4560.1, 'Gain': 2050},
+#           'Pulse_FF': [-7500, 7500, 7500, 0]},
+#     # Location for preparing the 3 eigenstates
+#     'High': {'Qubit': {'Frequency': 5033.5, 'Gain': 1540}, # Q1 driven
+#           'Pulse_FF': [0, -4000, -965, 0]},
+#     'Middle': {'Qubit': {'Frequency': 5027.7, 'Gain': 950}, # Q1 driven
+#               'Pulse_FF': [0, -4000, 1400, 0]},
+#     'Low': {'Qubit': {'Frequency': 4970.5, 'Gain': 1630}, # Q5 driven
+#           'Pulse_FF': [0, -4000, 1400, 0]}
+#     }
+
+Qubit_Parameters = {
+    # Locations for readout and readout fidelity characterization
+    '1': {'Readout': {'Frequency': 7322.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [-10000, -10000, -10000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5026.56, 'Gain': 1200},
+          'Pulse_FF': [-10000, -10000, -10000, 0]},
+    '2': {'Readout': {'Frequency': 7270.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5770,
+                      "FF_Gains": [10000, -8000, 10000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4666.0, 'Gain': 2250},
+          'Pulse_FF': [10000, -8000, 10000, 0]},
+    '3': {'Readout': {'Frequency': 7525.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [10000, 10000, -4000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4813.5, 'Gain': 1448},
+          'Pulse_FF': [10000, 10000, -4000, 0]},
+    '5': {'Readout': {'Frequency': 7304.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5700,
+                      "FF_Gains": [-7500, 10000, 10000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4559.4, 'Gain': 2160},
+          'Pulse_FF': [-7500, 10000, 10000, 0]},
+    # Location for preparing the 3 eigenstates
+    'High': {'Qubit': {'Frequency': 5033.5, 'Gain': 1450}, # Q1 driven
+          'Pulse_FF': [0, -4000, -965, 0]},
+    'Middle': {'Qubit': {'Frequency': 5028.2, 'Gain': 1020}, # Q1 driven
+              'Pulse_FF': [0, -4000, 1400, 0]},
+    'Low': {'Qubit': {'Frequency': 4971.0, 'Gain': 1666}, # Q5 driven
+          'Pulse_FF': [0, -4000, 1400, 0]}
+    }
 
 Qubit_Readout = [1]
-Qubit_Pulse = ['minus']
+Qubit_Pulse = ['Middle']
 
 # final gain to ramp to after qubit pulse
-FF_gain1_ramp = 0
-FF_gain2_ramp = 3000
-FF_gain3_ramp = 4805
+FF_gain1_ramp = 1400
+FF_gain2_ramp = -4000
+FF_gain3_ramp = 469
 FF_gain4_ramp = 0
 
+JUMP_Q2 = False
 # gain to jump to for swaps
-FF_gain1_expt = 0
-FF_gain2_expt = 5892
-FF_gain3_expt = 4805
+FF_gain1_expt = 1400
+FF_gain2_expt = 1498 if JUMP_Q2 else -9000
+FF_gain3_expt = 469
 FF_gain4_expt = 0
-
-# # final gain to ramp to after qubit pulse
-# FF_gain1_ramp = 0
-# FF_gain2_ramp = 0
-# FF_gain3_ramp = -990
-# FF_gain4_ramp = 0
-#
-# # gain to jump to for swaps
-# FF_gain1_expt = 0
-# FF_gain2_expt = 4874
-# FF_gain3_expt = -990
-# FF_gain4_expt = 0
 
 
 runSpecVsAdiabatic = False
-Spec_sweep_relevant_params = {"qubit_gain": 500, "SpecSpan": 250, "SpecNumPoints": 71, 'spec_center': 4500,
-                              "ramp_duration": int(2*7000), "ramp_num_points": 11,
+Spec_sweep_relevant_params = {"qubit_gain": 500, "SpecSpan": 180, "SpecNumPoints": 201, 'spec_center': 4700,
+                              "ramp_duration": int(6000), "ramp_num_points": 11,
                               'reps': 10, 'rounds': 10, 'smart_normalize': True, 'Gauss': False,
                               'ramp_shape': 'cubic', 'double': True}
 
 
-runAdiabaticRampCalibration = False
-adiabatic_ramp_calibration_dict = {'reps': 500, 'duration_start': int(1), 'duration_end': int(1500), 'duration_num_points': 21,
-                                   'relax_delay': 200, 'ramp_shape': 'cubic', 'double': False,
+runAdiabaticRampCalibration = True
+adiabatic_ramp_calibration_dict = {'reps': 1000, 'duration_start': int(1), 'duration_end': int(1250), 'duration_num_points': 61,
+                                   'ramp_wait_timesteps': 0,
+                                   'relax_delay': 200, 'ramp_shape': 'cubic', 'double': True,
                                    'use_confusion_matrix': True}
 
 runAdiabaticRampSingleShot = False
 # this experiment will adiabatically prepare an initial state the same way as the AdiabaticRampOcillations experiment,
 # then do single shot readout
-adiabatic_ramp_single_shot_dict = {"Shots": 1000, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_Pulse,
-                                   'ramp_duration': int(2000), 'ramp_shape': 'cubic'}
+adiabatic_ramp_single_shot_dict = {"Shots": 1200, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_Pulse,
+                                   'ramp_duration': int(16 * 500), 'ramp_shape': 'cubic'}
 FFSweepAdiabaticRampSS = False
 # this experiment runs the above experiment multiple times, sweeping the FF gain of a particular index
 # (uses the confusion matrix)
 ff_sweep_adiabatic_ss_dict = {'swept_index': 3,
-                              'gain_start': 4700, 'gain_end': 4900, 'num_points': 11}  # 1-indexed
+                              'gain_start': -100, 'gain_end': 200, 'num_points': 11, "fit_point": 0.5}  # 1-indexed
+# ff_sweep_adiabatic_ss_dict = {'swept_index': 1,
+#                               'gain_start': -1330, 'gain_end': -1230, 'num_points': 8, "fit_point": 0.5}  # 1-indexed
+
+runDelayVsPopulation = False
+delay_vs_pop_dict = {'ramp_duration' : 10000, 'ramp_shape': 'cubic',
+        'delay_start': 0, 'delay_stop' : 20000, 'delay_steps' : 20,
+                     'shots':4000}
+
+runAdiabaticRampOscillations = False
+oscillation_single_dict = {'reps': 1000, 'start': int(0), 'step': int(10), 'expts': 200, 'relax_delay': 300,
+                           'ramp_duration': int(20000), 'ramp_shape': 'cubic'}
+
+runAdiabaticT1 = False
+# AdiabaticT1Params = {'wait_times': np.linspace(0, 150, 21),
+#                 'meas_shots': 200, 'repeated_nums': 10, 'ramp_duration': int(16 * 500), 'ramp_shape': 'cubic',
+#                 'qubitIndex': int(Qubit_Pulse[0]), 'relax_delay': 200}
 
 
-runAdiabaticRampOscillations = True
-# oscillation_single_dict = {'reps': 8000, 'start': int(0), 'step': int(0.25 * 40 *4), 'expts': 71*10, 'relax_delay': 400,
-#                            'ramp_duration': int(2000), 'ramp_shape': 'cubic'}
-oscillation_single_dict = {'reps': 3000, 'start': int(0), 'step': int(0.25 * 40), 'expts': 71+30, 'relax_delay': 300,
-                           'ramp_duration': int(2200), 'ramp_shape': 'cubic'}
-# oscillation_single_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 20), 'expts': 501, 'relax_delay': 300,
-#                            'ramp_duration': int(800), 'ramp_shape': 'cubic'}
-# oscillation_single_dict = {'reps': 2000, 'start': int(0), 'step': int(0.25 * 20), 'expts': 1001, 'relax_delay': 200,
-#                            'ramp_duration': int(800), 'ramp_shape': 'cubic'}
-# oscillation_single_dict = {'reps': 2000, 'start': int(0), 'step': int(0.25 * 20), 'expts': 4001, 'relax_delay': 200,
-#                            'ramp_duration': int(800), 'ramp_shape': 'cubic'}
-
-
-
-runFFSweepRampOscillations = True
+runFFSweepRampOscillations = False
 ff_sweep_ramp_osc_dict = {'swept_index': 2, # 1-indexed
                               'gain_start': 6000, 'gain_end': 8000, 'num_points': 21}
 
 
 # SS params for reading out qubits after ramp or oscillations
-SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
+SS_params_2States = {"ground": 0, 'excited': 1, "shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 
 
 
@@ -245,8 +358,8 @@ UpdateConfig_FF = {
 UpdateConfig_transmission = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
-    "readout_length": 2,  # [Clock ticks]
-    "pulse_gain": cavity_gain,  # [DAC units]
+    "readout_length": 3,  # [Clock ticks]
+    "pulse_gain": int(cavity_gain),  # [DAC units]
     # "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
     "pulse_gains": gains,  # [DAC units]
     "pulse_freqs": resonator_frequencies,
@@ -266,9 +379,10 @@ config['Read_Indeces'] = Qubit_Readout
 config["rounds"] = 1
 config["sigma"] = 0.05
 
-config["shots"] = 10000
-config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Readout]
-config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Readout]
+
+
+### Calculate confusion matrices, assuming error is mostly due to readout and not pulses
+config["shots"] = 5000
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Readout[0])]['Pulse_FF']
 config["FF_Qubits"]['1']['Gain_Pulse'] = FF_gain1_pulse
 config["FF_Qubits"]['2']['Gain_Pulse'] = FF_gain2_pulse
@@ -279,27 +393,41 @@ config["readout_length"] = SS_params_2States["Readout_Time"]  # us (length of th
 config["adc_trig_offset"] = SS_params_2States["ADC_Offset"]
 print(config["pulse_freqs"])
 
-Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,
-                                                         soc=soc, soccfg=soccfg)
-# data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
-data_SingleShotProgram = Instance_SingleShotProgram.acquire()
+angle = []
+threshold = []
+confusion_matrix = []
+# Do SingleShots for each qubit separately, otherwise the fidelities will be affected by the ZZ interaction
+for j, Q in enumerate(Qubit_Readout):
+    config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit']['Gain']]
+    config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency']]
 
-angle, threshold = Instance_SingleShotProgram.angle, Instance_SingleShotProgram.threshold
-print("angle and threshold:", Instance_SingleShotProgram.angle,Instance_SingleShotProgram.threshold)
+    Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,
+                                                             soc=soc, soccfg=soccfg)
+    # data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
+    data_SingleShotProgram = Instance_SingleShotProgram.acquire()
 
-ne_contrast, ng_contrast = Instance_SingleShotProgram.ne_contrast, Instance_SingleShotProgram.ng_contrast,
-confusion_matrix = np.array([[1-ng_contrast, ne_contrast], [ng_contrast, 1-ne_contrast]])
-print("Confusion_matrix:", confusion_matrix)
+    angle.append(Instance_SingleShotProgram.angle[j])
+    threshold.append(Instance_SingleShotProgram.threshold[j])
+    print("angle and threshold:", Instance_SingleShotProgram.angle[j],Instance_SingleShotProgram.threshold[j])
+
+    ne_contrast, ng_contrast = Instance_SingleShotProgram.ne_contrast, Instance_SingleShotProgram.ng_contrast
+    conf_mat = np.array([[1-ng_contrast[j], ne_contrast[j]],
+                         [ng_contrast[j], 1-ne_contrast[j]]])
+    print("Confusion_matrix:", conf_mat)
+    confusion_matrix.append(conf_mat)
+
+    SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True, display_indices=[Q])
+    SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
+    SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
+
 config['confusion_matrix'] = confusion_matrix
 
 # data_SingleShotProgram = SingleShotProgramFFMUX.analyze(Instance_SingleShotProgram, data_SingleShotProgram)
 
-SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True)
-SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
-SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
 
 
-config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Pulse]
+config['Read_Indeces'] = Qubit_Readout
+config['qubit_gains'] = [int(Qubit_Parameters[str(Q)]['Qubit']['Gain']) for Q in Qubit_Pulse]
 config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse]
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
 config["FF_Qubits"]['1']['Gain_Pulse'] = FF_gain1_pulse
@@ -314,7 +442,8 @@ if runAdiabaticRampCalibration:
     expt_cfg = {"duration_start": adiabatic_ramp_calibration_dict['duration_start'], "duration_end": adiabatic_ramp_calibration_dict['duration_end'],
                 "duration_num_points": adiabatic_ramp_calibration_dict['duration_num_points'], "relax_delay": adiabatic_ramp_calibration_dict['relax_delay'],
                 "ramp_shape": adiabatic_ramp_calibration_dict['ramp_shape'], "double_ramp": adiabatic_ramp_calibration_dict['double'],
-                "use_confusion_matrix": adiabatic_ramp_calibration_dict["use_confusion_matrix"]}
+                "use_confusion_matrix": adiabatic_ramp_calibration_dict["use_confusion_matrix"],
+                "ramp_wait_timesteps": adiabatic_ramp_calibration_dict['ramp_wait_timesteps']}
 
     config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Pulse]
     config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse]
@@ -337,8 +466,6 @@ if runAdiabaticRampCalibration:
 
 
 if runSpecVsAdiabatic:
-
-
     # update config with qubit spec parameters
     config['qubit_length'] = 100
     config['qubit_freq'] = Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['Frequency']
@@ -352,7 +479,7 @@ if runSpecVsAdiabatic:
 
     config["Gauss"] = Spec_sweep_relevant_params['Gauss']
 
-    config["qubit_gain"] = Spec_sweep_relevant_params["qubit_gain"]
+    config["qubit_gain"] = int(Spec_sweep_relevant_params["qubit_gain"])
     config["step"] = 2 * Spec_sweep_relevant_params["SpecSpan"] / (Spec_sweep_relevant_params["SpecNumPoints"] - 1)
     config["start"] = config['qubit_freq'] - Spec_sweep_relevant_params["SpecSpan"]
     config["expts"] = Spec_sweep_relevant_params["SpecNumPoints"]
@@ -371,7 +498,7 @@ if runSpecVsAdiabatic:
     spec_vs_adiabatic_ramp_experiment.save_config()
 
 if runAdiabaticRampSingleShot:
-    config['Shots'] = adiabatic_ramp_single_shot_dict['Shots']
+    config['shots'] = adiabatic_ramp_single_shot_dict['Shots']
     config['Readout_Time'] = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time']
     config['ADC_Offset'] = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['ADC_Offset']
 
@@ -381,13 +508,13 @@ if runAdiabaticRampSingleShot:
 
     adiabatic_ramp_single_shot_experiment = AdiabaticRampSingleShot(path="AdiabaticRampSingleShot", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
     adiabatic_ramp_single_shot_data = adiabatic_ramp_single_shot_experiment.acquire()
-    adiabatic_ramp_single_shot_experiment.display(adiabatic_ramp_single_shot_data, plotDisp=True)
 
     adiabatic_ramp_single_shot_experiment.save_data(adiabatic_ramp_single_shot_data)
     adiabatic_ramp_single_shot_experiment.save_config()
+    adiabatic_ramp_single_shot_experiment.display(adiabatic_ramp_single_shot_data, plotDisp=True)
 
 if FFSweepAdiabaticRampSS:
-    config['Shots'] = adiabatic_ramp_single_shot_dict['Shots']
+    config['shots'] = adiabatic_ramp_single_shot_dict['Shots']
     config['Readout_Time'] = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time']
     config['ADC_Offset'] = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['ADC_Offset']
 
@@ -403,10 +530,12 @@ if FFSweepAdiabaticRampSS:
                                                                     outerFolder=outerFolder, cfg=config, soc=soc,
                                                                     soccfg=soccfg)
     ff_sweep_adiabatic_ss_experiment_data = ff_sweep_adiabatic_ss_experiment.acquire()
-    ff_sweep_adiabatic_ss_experiment.display(ff_sweep_adiabatic_ss_experiment_data, plotDisp=True)
 
     ff_sweep_adiabatic_ss_experiment.save_data(ff_sweep_adiabatic_ss_experiment_data)
     ff_sweep_adiabatic_ss_experiment.save_config()
+    ff_sweep_adiabatic_ss_experiment.display(ff_sweep_adiabatic_ss_experiment_data, plotDisp=True)
+
+
 
 if runFFSweepRampOscillations:
     config["sigma"] = 0.05
@@ -453,5 +582,29 @@ if runAdiabaticRampOscillations:
     adiabatic_oscillation_data = adiabatic_oscillation_experiment.acquire(angle=angle, threshold= threshold)
     adiabatic_oscillation_experiment.display(adiabatic_oscillation_data, plotDisp=True, figNum=2)
     adiabatic_oscillation_experiment.save_data(adiabatic_oscillation_data)
+
+if runAdiabaticT1:
+    config["FF_Qubits"] = FF_Qubits
+    config["reps"] = AdiabaticT1Params['meas_shots']
+
+    for key in config["FF_Qubits"].keys():
+        config["FF_Qubits"][key]['Gain_Expt'] = config["FF_Qubits"][key]['Gain_Pulse']
+    config = config | AdiabaticT1Params
+
+    Instance_T1_SS = AdiabaticRampT1SS(path="Adiabatic_T1", outerFolder=outerFolder, cfg=config,
+                                                        soc=soc, soccfg=soccfg)
+    data_T1_SS = Instance_T1_SS.acquire(angle = angle, threshold = threshold)
+    print()
+    # SingleShotProgramFFMUX.display(Instance_T1_TLS, data_T1_TLS, plotDisp=True)
+    AdiabaticRampT1SS.save_data(Instance_T1_SS, data_T1_SS)
+    AdiabaticRampT1SS.save_config(Instance_T1_SS)
+
+if runDelayVsPopulation:
+    config = config | delay_vs_pop_dict
+    config = config | {"threshold": threshold, "angle": angle, "confusion_matrix": confusion_matrix}
+
+    DelayVsPop_Exp = SweepDelayVsPopulation(path="SweepDelayVsPopulation", outerFolder=outerFolder, cfg=config,
+                                       soc=soc, soccfg=soccfg)
+    DelayVsPop_Exp.acquire_save_display(plotDisp=True)
 
 print(config)

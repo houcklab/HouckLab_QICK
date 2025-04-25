@@ -25,11 +25,8 @@ class FFSweepAdiabaticRampSingleShot(ExperimentClass):
         # Gets the keys 'swept_index', 'gain_start', 'gain_end', and 'num_points'
         self.data = {}
         gainVec = np.linspace(self.cfg['gain_start'], self.cfg['gain_end'], self.cfg['num_points'])
-        excited_pop_vec = np.zeros_like(gainVec)
+        excited_pop_vecs = [np.zeros_like(gainVec) for _ in range(len(self.cfg['Read_Indeces']))]
 
-        read_index = self.cfg['Read_Indeces'][0]
-        angle = self.cfg['angle'][0]
-        threshold = self.cfg['threshold'][0]
 
         for j, gain in enumerate(gainVec):
             self.cfg['FF_Qubits'][str(self.cfg['swept_index'])]['Gain_Ramp'] = gain
@@ -38,21 +35,25 @@ class FFSweepAdiabaticRampSingleShot(ExperimentClass):
                                                                             soc=self.soc,
                                                                             soccfg=self.soccfg)
             data = adiabatic_ramp_single_shot_experiment.acquire()
+            for read_index, angle, threshold, confusion_mat, i in \
+                    zip(self.cfg['Read_Indeces'], self.cfg['angle'], self.cfg['threshold'],
+                        self.cfg['confusion_matrix'], range(len(self.cfg['Read_Indeces']))):
 
-            i_g = data['data']['i_g' + str(read_index)]
-            q_g = data['data']['q_g' + str(read_index)]
-            i_e = data['data']['i_e' + str(read_index)]
-            q_e = data['data']['q_e' + str(read_index)]
+                i_g = data['data']['i_g' + str(read_index)]
+                q_g = data['data']['q_g' + str(read_index)]
+                i_e = data['data']['i_e' + str(read_index)]
+                q_e = data['data']['q_e' + str(read_index)]
 
-            e_data = rotate_data((i_e, q_e), angle)[0]
-            print(j, 'threshold', threshold)
-            print(e_data)
-            excited_pop = np.sum(e_data > threshold) / len(e_data)
+                e_data = rotate_data((i_e, q_e), angle)[0]
+                print(j, 'threshold', threshold)
+                # print(e_data)
+                excited_pop = np.sum(e_data > threshold) / len(e_data)
 
-            excited_pop_vec[j] = correct_occ(excited_pop, self.cfg['confusion_matrix'])
+                excited_pop_vecs[i][j] = correct_occ(excited_pop, confusion_mat)
+
 
         self.data['gainVec'] = gainVec
-        self.data['excited_pop_vec'] = excited_pop_vec
+        self.data['excited_pop_vecs'] = excited_pop_vecs
 
         return self.data
 
@@ -63,17 +64,27 @@ class FFSweepAdiabaticRampSingleShot(ExperimentClass):
             data = self.data
 
 
-        plt.suptitle(self.titlename + " , Read: " + str(self.cfg["Read_Indeces"][0]))
+        plt.suptitle(self.titlename )
         #
         def lin_func(gain, g0, m):
-            return m*(gain - g0) + 0.5
+            return m*(gain - g0) + self.cfg['fit_point']
 
-        (g0, m), _ = curve_fit(lin_func, data['gainVec'], data['excited_pop_vec'], [np.median(data['gainVec']), 1e-3])
-        print(m)
-        plt.plot(data['gainVec'], data['excited_pop_vec'], marker='o', color='red')
-        plt.axhline(0.5, ls='dotted', color='black')
-        plt.plot(data['gainVec'], lin_func(data['gainVec'], g0, m), ls='dashed', color='red')
-        plt.axvline(g0, ls='dotted', color='black', label=f'gain = {g0}')
+        for i in range(len(self.cfg['Read_Indeces'])):
+            try:
+                (g0, m), _ = curve_fit(lin_func, data['gainVec'], data['excited_pop_vecs'][i], [np.median(data['gainVec']), 1e-3])
+                print(m)
+
+                plt.axvline(g0, ls='dotted', color='black', label=f'Read: {self.cfg["Read_Indeces"][i]}, gain = {g0}')
+                plt.plot(data['gainVec'], lin_func(data['gainVec'], g0, m), ls='dashed',
+                         color=['red','magenta','violet','crimson'][i], )
+            except Exception:
+                print("Couldn't fit data.")
+
+            plt.plot(data['gainVec'], data['excited_pop_vecs'][i], marker='o', color=['red','magenta','violet','crimson'][i],
+                     label=f'Read: {self.cfg["Read_Indeces"][i]}')
+
+        plt.axhline(self.cfg['fit_point'], ls='dotted', color='black')
+
         plt.xlabel(f"Ramp {self.cfg['swept_index']} FF Gain")
         plt.ylabel("Excited population")
         plt.legend()

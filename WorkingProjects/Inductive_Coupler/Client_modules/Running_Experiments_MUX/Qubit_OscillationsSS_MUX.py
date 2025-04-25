@@ -116,41 +116,47 @@ Qubit_Parameters = {
 #               'Qubit01': {'Frequency': 4047.84, 'Gain': 7500},
 #               'Pulse_FF': [0, 0, 0, 0]},
 #     }
-# Qubit_Parameters['plus'] = Qubit_Parameters['3']
-# Qubit_Parameters['minus'] = Qubit_Parameters['1']
 
-Qubit_Readout = [3]
-Qubit_Pulse = [3]
 
-FF_gain1_expt = 0
-FF_gain2_expt = 5970
-FF_gain2_expt = 0
-FF_gain3_expt = 3899
-FF_gain3_expt = 8000
+### 3Q Chain Parameters
+Qubit_Parameters = {
+    '1': {'Readout': {'Frequency': 7322.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 10000,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 5028.25, 'Gain': 1050},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    '2': {'Readout': {'Frequency': 7270.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 4840.73, 'Gain': 1500},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    '3': {'Readout': {'Frequency': 7526.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 5081.3, 'Gain': 1716},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    '5': {'Readout': {'Frequency': 7305.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 4970.3, 'Gain': 1600},
+          'Pulse_FF': [0, -4000, 1400, 0]}
+}
+
+Qubit_Readout = [1]
+Qubit_Pulse = [1]
+
+FF_gain1_expt = -7000
+FF_gain2_expt = -9000
+FF_gain3_expt = 15000
 FF_gain4_expt = 0
 
 
-
-# FF_gain2_expt = 5892
-# FF_gain3_expt = 4805
-
-swept_qubit_index = 3 #1 indexed
+swept_qubit_index = 2 #1 indexed
 
 Oscillation_Gain = True
-oscillation_gain_dict = {'reps': 100, 'start': int(0), 'step': int(0.25 * 32), 'expts': 100, 'gainStart': 3600,
-                         'gainStop': 6500, 'gainNumPoints': 16, 'relax_delay': 150}
-oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 32), 'expts': 200, 'gainStart': -1400,
-                         'gainStop': -800, 'gainNumPoints': 11, 'relax_delay': 150}
-# oscillation_gain_dict = {'reps': 1, 'start': int(0), 'step': int(0.25 * 20), 'expts': 2, 'gainStart': 5970,
-#                          'gainStop': 5971, 'gainNumPoints': 2, 'relax_delay': 150}
-# oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 32), 'expts': 200, 'gainStart': 5700,
-#                          'gainStop': 6300, 'gainNumPoints': 11, 'relax_delay': 150}
+oscillation_gain_dict = {'reps': 1200, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 750,
+                         'gainStop': 2250, 'gainNumPoints': 31, 'relax_delay': 150}
+
 
 Oscillation_Single = False
 oscillation_single_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 40), 'expts': 11, 'relax_delay': 200}
-# oscillation_single_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 70), 'expts': 201, 'relax_delay': 200}
-# oscillation_single_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 20), 'expts': 1001, 'relax_delay': 200}
-# oscillation_single_dict = {'reps': 2000, 'start': int(0), 'step': int(0.25 * 20), 'expts': 4001, 'relax_delay': 200}
+
 
 SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 

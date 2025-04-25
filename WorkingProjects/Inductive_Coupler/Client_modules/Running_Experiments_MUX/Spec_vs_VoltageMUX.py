@@ -24,10 +24,10 @@ print(BaseConfig["cavity_LO"] / 1e6)
 BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["has_mixer"] = True
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7322 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 12000,
+    '1': {'Readout': {'Frequency': 6978.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4610, 'Gain': 2600},
-          'Pulse_FF': [0, 2100, 3850, 0]},
+          'Qubit': {'Frequency': 4441.5, 'Gain': 4800},
+          'Pulse_FF': [0, 0, 0, 0]},  # second index
     '2': {'Readout': {'Frequency': 7269.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 9000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit': {'Frequency': 4280, 'Gain': 3380},
@@ -40,11 +40,118 @@ Qubit_Parameters = {
                     "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
           'Qubit': {'Frequency': 4238.8, 'Gain': 3000},
           'Pulse_FF': [0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+    '5': {'Readout': {'Frequency': 7305.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-              'Qubit': {'Frequency': 4063, 'Gain': 4000},
-              'Pulse_FF': [0, 0, 0, 0]}
+              'Qubit': {'Frequency': 4700, 'Gain': 7500},
+              'Pulse_FF': [0, 0, 0, 0]},
     }
+
+Qubit_Parameters = {
+    '1': {'Readout': {'Frequency': 7322.56 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7200,
+                      "FF_Gains": [0, 0, 12000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4639.0, 'Gain': 2828},
+          'Qubit12': {'Frequency': 4452.9, 'Gain': 1130},
+          'Pulse_FF': [0, 0, 9000, 0]},
+    '2': {'Readout': {'Frequency': 7269.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+                      "FF_Gains": [0, 0, 12000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4315.4, 'Gain': 4590},
+          'Qubit12': {'Frequency': 4330.4, 'Gain': 1700},
+          'Pulse_FF': [0, 0, 9000, 0]},
+    '3': {'Readout': {'Frequency': 7525.55 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4320,
+                      "FF_Gains": [0, 0, 12000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4867.0, 'Gain': 1700},
+          'Qubit12': {'Frequency': 4686.0, 'Gain': 1700},
+          'Pulse_FF': [0, 0, 9000, 0]},
+}
+
+#Hybridization of Q1 and Q3, with Q2 far, to find T1 & T2 of + and -
+# Qubit_Parameters = {
+#     '1': {'Readout': {'Frequency': 7321.45 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7200,
+#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4390, 'Gain': 2828},
+#           'Pulse_FF': [0, 0, 0, 0]},
+#     '3': {'Readout': {'Frequency': 7524.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4320,
+#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4390, 'Gain': 1700},
+#           'Pulse_FF': [0, 0, 0, 0]},
+# }
+
+
+Qubit_Parameters = {
+    # Locations for readout and readout fidelity characterization
+    '1': {'Readout': {'Frequency': 7322.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+                      "FF_Gains": [-4500, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5032.5, 'Gain': 1150},
+          'Pulse_FF': [-4500, -9000, 15000, 0]},
+    '2': {'Readout': {'Frequency': 7269.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6200,
+                      "FF_Gains": [-5500, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4614.9, 'Gain': 2575},
+          'Pulse_FF': [-4500, -9000, 15000, 0]},
+    '3': {'Readout': {'Frequency': 7526.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+                      "FF_Gains": [-5500, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5373.5, 'Gain': 1340},
+          'Pulse_FF': [-4500, -9000, 15000, 0]},
+    '5': {'Readout': {'Frequency': 7305.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [-4500, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4746.6, 'Gain': 1350},
+          'Pulse_FF': [-4500, -9000, 15000, 0]},
+    # Location for preparing the 3 eigenstates
+    'A': {'Qubit': {'Frequency': 5028.25, 'Gain': 1050},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    'B': {'Qubit': {'Frequency': 5081.3, 'Gain': 1716},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    'C': {'Qubit': {'Frequency': 4975.6, 'Gain': 1630},
+          'Pulse_FF': [0, -4000, 1400, 0]}
+    }
+
+
+Qubit_Parameters = {
+    # Locations for readout and readout fidelity characterization
+    '1': {'Readout': {'Frequency': 7322.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+                      "FF_Gains": [-4500, -9000, 8000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 5032.5, 'Gain': 1150},
+          'Pulse_FF': [-4500, -9000, 8000, 0]},
+    '2': {'Readout': {'Frequency': 7270.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
+                      "FF_Gains": [0, 5000, -5000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4525.3, 'Gain': 1350},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '3': {'Readout': {'Frequency': 7525.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [0, 5000, -5000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4485, 'Gain': 1400},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7305.2 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [-4500, -9000, 8000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4746.6, 'Gain': 1350},
+          'Pulse_FF': [-4500, -9000, 8000, 0]},
+    # Location for preparing the 3 eigenstates
+    'A': {'Qubit': {'Frequency': 5028.25, 'Gain': 1050},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    'B': {'Qubit': {'Frequency': 5032.5, 'Gain': 1540},
+          'Pulse_FF': [0, -4000, -965, 0]},
+    'C': {'Qubit': {'Frequency': 4975.6, 'Gain': 1630},
+          'Pulse_FF': [0, -4000, 1400, 0]}
+    }
+
+Qubit_Parameters = {
+    '1': {'Readout': {'Frequency': 6979.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4900, 'Gain': 4800},
+          'Pulse_FF': [0, 0, 0, 0]},  # second index
+    '2': {'Readout': {'Frequency': 7096 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4900, 'Gain': 4740},
+          'Pulse_FF':[0, 0, 0, 0]}, #Thirf index
+    '3': {'Readout': {'Frequency': 7526.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 5081.3, 'Gain': 1716},
+          'Pulse_FF': [0, -4000, 1400, 0]},
+    '5': {'Readout': {'Frequency': 7305.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4970.3, 'Gain': 1600},
+          'Pulse_FF': [0, -4000, 1400, 0]}
+}
+
+
 
 
 # expt
@@ -53,25 +160,14 @@ FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 0
 
-
-Qubit_Readout = [2]
-Qubit_Pulse = 2
-Qubit_PulseSS = [2]
+Q = 2
+Qubit_Readout = [Q]
+Qubit_Pulse = Q
+Qubit_PulseSS = [Q]
 
 
 FF_gain1, FF_gain2, FF_gain3, FF_gain4 = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse)]['Pulse_FF']
-
-# Qubit_Read_Gain = 0
-# Qubit_Sweep = 4
-# Qubit_Sweep_Gain = 13000
-# FF_Gains = [-30000, -30000, -30000, -30000]
-# # FF_Gains = [0, 0, 0, 0]
-# FF_Gains[Qubit_Readout[0] - 1] = Qubit_Read_Gain
-# FF_Gains[Qubit_Sweep - 1] = Qubit_Sweep_Gain
-# FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = FF_Gains
-# FF_Gains[Qubit_Readout[0] - 1] = 0
-# FF_gain1, FF_gain2, FF_gain3, FF_gain4 = FF_Gains
 
 
 gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout]
@@ -80,27 +176,26 @@ BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False # determine cavity frequency
 Run2ToneSpec = False
-
-Spec_relevant_params = {"qubit_gain": 200, "SpecSpan": 300, "SpecNumPoints": 201, 'Gauss': False, "sigma": 0.01,
+Spec_relevant_params = {"qubit_gain": 1, "SpecSpan": 5, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.01,
                         "gain": 8000, 'reps': 15, 'rounds': 15}
 
-Run_Spec_v_Voltage = True
-Spec_sweep_relevant_params = {"qubit_gain": 500, "SpecSpan": 200, "SpecNumPoints": 71,
-                              "DAC": [8],
-                              "Qblox_Vmin": [0.5],
-                              "Qblox_Vmax": [0.7], "Qblox_numpoints": 41,
+Run_Spec_v_Voltage = False
+Spec_sweep_relevant_params = {"qubit_gain": 8000, "SpecSpan": 300, "SpecNumPoints": 101,
+                              "DAC": [10],
+                              "Qblox_Vmin": [-0.5],
+                              "Qblox_Vmax": [0.5], "Qblox_numpoints":15,
                               'reps': 20, 'rounds': 20, 'smart_normalize': True}
 
 Run_Trans_v_Voltage = False
 Trans_sweep_relevant_params = {
-    "reps": 200, "readout_length": 3,  # [us]
-    "TransSpan": 1.5 * 1,  ### MHz, span will be center+/- this parameter
-    "TransNumPoints": 121 * 1,  ### number of points in the transmission frequecny
-    "cav_relax_delay": 20
+    "reps": 100, "readout_length": 3,  # [us]
+    "TransSpan": 3,  ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 61 * 1,  ### number of points in the transmission frequecny
+    "cav_relax_delay": 5
 }
 Run_Trans_v_Power = False
-Trans_power_relevant_params = {"gain_min": [1000],
-                              "gain_max": [15000], "gain_numpoints": 11}
+Trans_power_relevant_params = {"gain_min": [2000],
+                              "gain_max": [12000], "gain_numpoints": 11}
 
 Run_Spec_v_ResonatorGain = False
 Spec_ResonatorGain_relevant_params = {"gain_min": [1000],
@@ -109,9 +204,9 @@ Spec_ResonatorGain_relevant_params = {"gain_min": [1000],
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "sigma": 0.03, "max_gain": 5000}
+                         "sigma": 0.05, "max_gain": 3000}
 
-SingleShot = False
+SingleShot =False
 SS_params = {"Shots": 2000, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_PulseSS}
 
 
@@ -354,7 +449,7 @@ UpdateConfig = {
     "f_ges": qubit_frequency_centers,
     ##### define shots
     "shots": SS_params["Shots"],  ### this gets turned into "reps"
-    "relax_delay": 1000,  # us
+    "relax_delay": 200,  # us
 }
 
 config = BaseConfig | UpdateConfig

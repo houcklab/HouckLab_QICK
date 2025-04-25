@@ -23,6 +23,7 @@ def correct_occ(pop_data, confusion_matrix):
              confusion_matrix: [[ngg, nge], [neg, nee]] characterizing state preparation and readout error
        Returns: 1d array of excited state percentages, adjusted by confusion matrix'''
 
-    vec = np.vstack([1-pop_data, pop_data])
+    vec = np.vstack([1.-pop_data, pop_data])
+
     return (np.linalg.inv(confusion_matrix)  @  vec)[1].flatten()
 

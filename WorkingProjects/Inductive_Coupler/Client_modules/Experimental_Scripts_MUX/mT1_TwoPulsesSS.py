@@ -102,7 +102,7 @@ class T1Program(AveragerProgram):
                 save_experiments=None,
                 start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)#, debug=debug)
 
         return self.collect_shots()
 

@@ -25,26 +25,26 @@ class SpecVsAdiabaticRampProgram(RAveragerProgram):
                          mux_gains= cfg["pulse_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=int(self.us2cycles(cfg["readout_length"])),
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+                                 length=int(self.us2cycles(cfg["length"])))
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
+        self.q_rp = int(self.ch_page(self.cfg["qubit_ch"]))  # get register page for qubit_ch
+        self.r_freq = int(self.sreg(cfg["qubit_ch"], "freq"))  # get frequency register for qubit_ch
 
         ### Start fast flux
         FF.FFDefinitions(self)
         # f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0)  # conver f_res to dac register value
 
-        self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])  # get start/step frequencies
-        self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
+        self.f_start = int(self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"]))  # get start/step frequencies
+        self.f_step = int(self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"]))
 
 
         # add qubit and readout pulses to respective channels
         if cfg['Gauss']:
-            self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-            self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
+            self.pulse_sigma = int(self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"]))
+            self.pulse_qubit_lenth = int(self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"]))
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=self.f_start,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
@@ -106,7 +106,7 @@ class SpecVsAdiabaticRamp(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
                          config_file=config_file, progress=progress, qblox = qblox)
 
-    #### during the aquire function here the data is plotted while it comes in if plotDisp is true
+    #### during the acquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
 

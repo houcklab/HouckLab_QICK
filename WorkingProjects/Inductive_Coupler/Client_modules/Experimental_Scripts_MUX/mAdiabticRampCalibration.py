@@ -139,8 +139,11 @@ class AdiabticRampCalibration(ExperimentClass):
             ramp_length = 0
             for j in range(4):
                 init_gain = self.cfg["FF_Qubits"][str(j+1)]["Gain_Pulse"]
-                init_gain = 0 # temporary
+                # init_gain = 0 # temporary
                 ramp = generate_ramp(init_gain, self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'], ramp_durations[i], ramp_shape=self.cfg['ramp_shape'])
+                # the delay after the initial ramp
+                ramp_delay = np.full(self.cfg['ramp_wait_timesteps'], self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'])
+                ramp = np.concatenate([ramp, ramp_delay])
                 if self.cfg['double_ramp']:
                     reverse_ramp = generate_ramp(self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'], init_gain, ramp_durations[i], reverse=True, ramp_shape=self.cfg['ramp_shape'])
 
@@ -168,7 +171,7 @@ class AdiabticRampCalibration(ExperimentClass):
                 rotated_iq_array[j].append(rotated_iq)
 
                 if self.cfg['use_confusion_matrix']:
-                    excited_percentage = correct_occ(count_percentage(rotated_iq, threshold=threshold[j]), self.cfg['confusion_matrix'])[0]
+                    excited_percentage = correct_occ(count_percentage(rotated_iq, threshold=threshold[j]), self.cfg['confusion_matrix'][j])[0]
                 else:
                     excited_percentage = count_percentage(rotated_iq, threshold=threshold[j])
 

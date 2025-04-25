@@ -8,36 +8,26 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.hist_analysis impo
 from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
+from scipy.optimize import curve_fit
 
 
 # ====================================================== #
-class AdiabaticRampSingleShotProgram(AveragerProgram):
+class AdiabaticRampT1SSProgram(AveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
         cfg = self.cfg
-        # self.cfg["IDataArray"] = [None, None, None, None]
-        # self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
-        # self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Pulse'], 0, 2)
-        # self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Pulse'], 0, 3)
-        # self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Pulse'], 0, 4)
-
-        #### first do nothing, then apply the pi pulse
         cfg = self.cfg
-        cfg["reps"] = cfg["shots"]
         self.cfg["rounds"] = 1
+        print(cfg["reps"])
         if "number_of_pulses" not in self.cfg.keys():
             self.cfg["number_of_pulses"] = 1
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        # self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
-        # self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get frequency register for qubit_ch
-
-        # Qubit configuration
         qubit_ch = cfg["qubit_ch"]
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
-
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["pulse_freqs"],
@@ -50,10 +40,9 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
         #                          length=self.us2cycles(cfg["length"], gen_ch=self.cfg["res_ch"]))
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
                                  length=self.us2cycles(cfg["readout_length"] + cfg["adc_trig_offset"] + 1, gen_ch=self.cfg["res_ch"]))
-        # print(cfg["mixer_freq"], cfg["pulse_freqs"])
-        # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
         FF.FFDefinitions(self)
+        self.FFRamp = np.array([self.cfg["FF_Qubits"][q]["Gain_Ramp"] for q in self.FFQubits])
 
         # print("generator freq:", self.reg2freq(freq, gen_ch=res_ch))
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
@@ -67,9 +56,7 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
         self.sync_all(gen_t0=self.gen_t0)
         FF_Delay_time = 10
         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
-        # self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
-        #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
-        # print(self.cfg["qubit_gains"], self.cfg["f_ges"])
+
         if self.cfg["Pulse"]:
             for i in range(len(self.cfg["qubit_gains"])):
                 gain_ = self.cfg["qubit_gains"][i]
@@ -88,6 +75,8 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
 
         # Do adiabatic ramp
         self.FFPulses_direct(self.FFPulse, self.cfg["ramp_duration"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
+        if self.cfg["delay_length"] > 0:
+            self.FFPulses(self.FFRamp, self.cfg["delay_length"])
         self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
@@ -99,10 +88,11 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        if self.cfg["delay_length"] > 0:
+            self.FFPulses(-1 * self.FFRamp, self.cfg["delay_length"])
+
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1)
-        # IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
-        # self.FFPulses_direct(-1 * self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
-        #                      np.array([0, 0, 0, 0]), IQPulseArray = IQ_Array_Negative, waveform_label='FF2')
+
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
@@ -134,7 +124,7 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
         return all_i,all_q
 
 
-class AdiabaticRampSingleShot(ExperimentClass):
+class AdiabaticRampT1SS(ExperimentClass):
     """
     Basic SingleShot experiement that takes a single piece of data
     """
@@ -144,7 +134,9 @@ class AdiabaticRampSingleShot(ExperimentClass):
         self.threshold = []
         self.angle = []
 
-    def acquire(self, progress=False):
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
+                plotSave = True):
+
         for j in range(4):
             # FF ramp to put initial qubits onto resonance
             init_gain = self.cfg['FF_Qubits'][str(j + 1)]['Gain_Pulse']
@@ -155,77 +147,124 @@ class AdiabaticRampSingleShot(ExperimentClass):
             if len(self.cfg['IDataArray'][j]) == 0:
                 self.cfg['IDataArray'][j] = np.full(self.cfg['ramp_duration'], init_gain)
 
-            # plt.plot(self.cfg['IDataArray'][j])
+        while plt.fignum_exists(num = figNum):
+            figNum += 1
+        fig, axs = plt.subplots(1,1, figsize = (10,8), num = figNum)
+        fig.suptitle(str(self.titlename), fontsize=16)
 
-        self.cfg["Pulse"] = False
-        prog = AdiabaticRampSingleShotProgram(self.soccfg, self.cfg)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
-
-        self.cfg["Pulse"] = True
-        prog = AdiabaticRampSingleShotProgram(self.soccfg, self.cfg)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
-
-        data = {'config': self.cfg, 'data': {}}
-                # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
-        self.data = data
-        self.fid = []
-        for i, read_index in enumerate(self.cfg['Read_Indeces']):
-            i_g = shots_ig[i][0]
-            q_g = shots_qg[i][0]
-            i_e = shots_ie[i][0]
-            q_e = shots_qe[i][0]
-            self.data['data']['i_g' + str(read_index)] = i_g
-            self.data['data']['q_g' + str(read_index)] = q_g
-            self.data['data']['i_e' + str(read_index)] = i_e
-            self.data['data']['q_e' + str(read_index)] = q_e
-
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None) ### arbitrary ran, change later
-            self.data_in_hist = [i_g, q_g, i_e, q_e]
-            self.fid.append(fid)
-            self.threshold.append(threshold)
-            self.angle.append(angle)
-        self.data['data']['threshold'] = self.threshold
-        self.data['data']['angle'] = self.angle
-
-        return self.data
+        self.wait_times = self.cfg["wait_times"]
+        Z_values = np.full((len(self.wait_times)), np.nan)
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
-        if data is None:
-            data = self.data
-
-        for read_index in self.cfg['Read_Indeces']:
-
-            i_g = data["data"]["i_g" + str(read_index)]
-            q_g = data["data"]["q_g" + str(read_index)]
-            i_e = data["data"]["i_e" + str(read_index)]
-            q_e = data["data"]["q_e" + str(read_index)]
-
-            #### plotting is handled by the helper histogram
-            title = 'Read Length: ' + str(self.cfg["readout_length"]) + "us" + ", Read: " + str(read_index)
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=True, ran=None, title = title)
-
-            plt.suptitle(self.titlename + " , Read: " + str(read_index))
+        X = self.wait_times
+        X_step = X[1] - X[0]
+        Z_fid = np.full(len(X), np.nan)
+        Z_overlap = np.full(len(X), np.nan)
+        ####create arrays for storing the data
 
 
-            self.fid = fid
-            self.threshold = threshold
-            self.angle = angle
+        self.data= {
+            'config': self.cfg,
+            'data': {'Exp_values': Z_values, 'threshold':threshold,
+                        'angle': angle, 'wait_time': self.wait_times,
+                     }
+        }
 
-            plt.savefig(self.iname)
+        tpts = self.wait_times
+
+        startTime = datetime.datetime.now()
+        print('') ### print empty row for spacing
+        print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
+        start = time.time()
+        for i_del in range(len(tpts)):
+            # if i_del % 5 == 1:
+            self.save_data(self.data)
+                # self.soc.reset_gens()
+            self.cfg['delay_length'] = tpts[i_del]
+                # print
+            all_percentage = []
+            for r_num in range(self.cfg['repeated_nums']):
+                print(self.cfg['reps'], self.cfg['shots'], self.cfg['rounds'])
+                prog = AdiabaticRampT1SSProgram(self.soccfg, self.cfg)
+                shots_i0, shots_q0 = prog.acquire(self.soc,
+                                                  load_pulses=True)
+                rotated_iq = rotate_data((shots_i0[0], shots_q0[0]), theta=angle)
+                excited_percentage = count_percentage(rotated_iq, threshold = threshold)
+                all_percentage.append(excited_percentage[0])
+
+            Z_values[i_del] = np.mean(all_percentage)
+            self.data['data']['Exp_values'][i_del] = np.mean(all_percentage)
+
+            if i_del == 0:
+
+                ax_plot_0, = axs.plot(self.wait_times,
+                                      Z_values * 100, 'o-', color='black'
+                                      )
+                step_ = self.wait_times[1] - self.wait_times[0]
+                axs.set_xlim(self.wait_times[0] - step_, self.wait_times[-1] + step_)
+            else:
+                ax_plot_0.set_data(self.wait_times, Z_values * 100)
+                y_min, y_max = min(Z_values * 100), max(Z_values * 100)
+                axs.set_ylim(0, y_max + 5)
+                # axs.relim()  # Recalculate the limits based on the new data
+                axs.autoscale_view()  # Autoscale the view to fit the new data
+                axs.grid()
+
+            axs.grid()
+            axs.set_ylabel("Qubit Population")
+            axs.set_xlabel("Delay time (us)")
+            axs.set_title('')
 
             if plotDisp:
-                plt.show(block=True)
+                plt.show(block=False)
                 plt.pause(0.1)
-        # else:
-            # fig.clf(True)
-            # plt.close(fig)
+
+        if i_del == 0:  ### during the first run create a time estimate for the data aqcuisition
+            t_delta = time.time() - start  ### time for single full row in seconds
+            timeEst = t_delta * len(self.wait_times)  ### estimate for full scan
+            StopTime = startTime + datetime.timedelta(seconds=timeEst)
+            print('Time for 1 sweep: ' + str(round(t_delta / 60, 2)) + ' min')
+            print('estimated total time: ' + str(round(timeEst / 60, 2)) + ' min')
+            print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
+
+        print(f'Time: {time.time() - start}')
+        self.save_data(self.data)
+        plt.savefig(self.iname)
+
+
+
+        if plotDisp:
+            def _expFit(x, a, T1, c):
+                return a * np.exp(-1 * x / T1) + c
+
+            Z_values_only = Z_values * 100
+
+            a_guess = Z_values_only[0] - Z_values_only[-1]
+            b_guess = Z_values_only[-1]
+            approx_t1_val = a_guess / 2.6 + b_guess
+            index_t1_guess = np.argmin(np.abs(Z_values_only - approx_t1_val))
+            t1_guess = self.wait_times[index_t1_guess]
+            guess = [a_guess, t1_guess, b_guess]
+            pOpt, pCov = curve_fit(_expFit,  self.wait_times, Z_values_only, p0=guess)
+            perr = np.sqrt(np.diag(pCov))
+
+            T1_fit = _expFit(self.wait_times, *pOpt)
+
+            T1_est = pOpt[1]
+            T1_err = perr[1]
+            plt.plot(self.wait_times, T1_fit, '-', label="fit", color='red')
+            plt.ylabel("Qubit Population")
+            plt.xlabel("Wait time (us)")
+            plt.title(f'T1: {T1_est:.2f} us $\pm$ {T1_err:.2f}')
+            plt.savefig(self.iname)
+
+            plt.show(block=True)
+
+        return self.data
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
-
-
 
 
 import pickle

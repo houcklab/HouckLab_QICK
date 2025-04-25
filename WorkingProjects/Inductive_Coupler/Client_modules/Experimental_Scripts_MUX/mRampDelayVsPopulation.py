@@ -8,21 +8,17 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.hist_analysis impo
 from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 
 
 # ====================================================== #
-class AdiabaticRampSingleShotProgram(AveragerProgram):
+class DelayVsPopulationProgram(AveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
         cfg = self.cfg
         # self.cfg["IDataArray"] = [None, None, None, None]
-        # self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
-        # self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Pulse'], 0, 2)
-        # self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Pulse'], 0, 3)
-        # self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Pulse'], 0, 4)
-
         #### first do nothing, then apply the pi pulse
         cfg = self.cfg
         cfg["reps"] = cfg["shots"]
@@ -31,8 +27,6 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
             self.cfg["number_of_pulses"] = 1
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        # self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
-        # self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get frequency register for qubit_ch
 
         # Qubit configuration
         qubit_ch = cfg["qubit_ch"]
@@ -87,7 +81,8 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
                                      waveform="qubit", t=time)
 
         # Do adiabatic ramp
-        self.FFPulses_direct(self.FFPulse, self.cfg["ramp_duration"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
+        if self.cfg["delay_timesteps"] > 0:
+            self.FFPulses_direct(self.FFPulse, int(self.cfg["delay_timesteps"]), self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
         self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
@@ -134,58 +129,70 @@ class AdiabaticRampSingleShotProgram(AveragerProgram):
         return all_i,all_q
 
 
-class AdiabaticRampSingleShot(ExperimentClass):
+class DelayVsPopulation(ExperimentClass):
     """
-    Basic SingleShot experiement that takes a single piece of data
+    Delay vs Population on an adiabatic ramp experiment
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
-        self.threshold = []
-        self.angle = []
+        self.data = {'config': self.cfg, 'data': {}}
 
     def acquire(self, progress=False):
+        """
+        From config dictionary expect:
+            'ramp_duration' : int, ramp duration in timesteps (0.145 ns)
+            'delay_timesteps': int, total delay in timesteps (0.145 ns)
+            'threshold', 'angle', 'confusion_matrix': list, with length = self.cfg['Read_Indeces']
+        """
+
+        # Generate FF
         for j in range(4):
             # FF ramp to put initial qubits onto resonance
             init_gain = self.cfg['FF_Qubits'][str(j + 1)]['Gain_Pulse']
+            final_gain = self.cfg['FF_Qubits'][str(j + 1)]['Gain_Ramp']
             # init_gain = 0 # temporary
             self.cfg['IDataArray'][j] = generate_ramp(init_gain,
-                                 self.cfg['FF_Qubits'][str(j + 1)]['Gain_Ramp'],
+                                 final_gain,
                                  self.cfg['ramp_duration'], ramp_shape=self.cfg['ramp_shape'])
             if len(self.cfg['IDataArray'][j]) == 0:
                 self.cfg['IDataArray'][j] = np.full(self.cfg['ramp_duration'], init_gain)
 
-            # plt.plot(self.cfg['IDataArray'][j])
+            # Set total waveform length to delay_timesteps
+            # For this experiment, want to measure the population at points both before and after ramp
+            if self.cfg['delay_timesteps'] == 0:
+                pass
+            elif self.cfg['ramp_duration'] >= self.cfg['delay_timesteps']:
+                self.cfg['IDataArray'][j] = self.cfg['IDataArray'][j][:int(self.cfg['delay_timesteps'])] # truncate
+            else:
+                self.cfg['IDataArray'][j] = np.append(self.cfg['IDataArray'][j], np.full(self.cfg['delay_timesteps']-self.cfg['ramp_duration'], final_gain))
+                # if waveform memory becomes a problem, rewrite this to use another delay instead
 
-        self.cfg["Pulse"] = False
-        prog = AdiabaticRampSingleShotProgram(self.soccfg, self.cfg)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
-
+        # Acquire SS data
         self.cfg["Pulse"] = True
-        prog = AdiabaticRampSingleShotProgram(self.soccfg, self.cfg)
+        prog = DelayVsPopulationProgram(self.soccfg, self.cfg)
         shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
 
+
+        # Convert to population
         data = {'config': self.cfg, 'data': {}}
-                # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
-        self.data = data
-        self.fid = []
+        excited_pop = np.zeros(len(self.cfg['Read_Indeces']))
+
         for i, read_index in enumerate(self.cfg['Read_Indeces']):
-            i_g = shots_ig[i][0]
-            q_g = shots_qg[i][0]
             i_e = shots_ie[i][0]
             q_e = shots_qe[i][0]
-            self.data['data']['i_g' + str(read_index)] = i_g
-            self.data['data']['q_g' + str(read_index)] = q_g
-            self.data['data']['i_e' + str(read_index)] = i_e
-            self.data['data']['q_e' + str(read_index)] = q_e
 
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None) ### arbitrary ran, change later
-            self.data_in_hist = [i_g, q_g, i_e, q_e]
-            self.fid.append(fid)
-            self.threshold.append(threshold)
-            self.angle.append(angle)
-        self.data['data']['threshold'] = self.threshold
-        self.data['data']['angle'] = self.angle
+            e_data = rotate_data((i_e, q_e), self.cfg['angle'][i])[0]
+
+            e_pop_uncorrected = np.sum(e_data > self.cfg['threshold'][i]) / len(e_data)
+            excited_pop[i] = correct_occ(e_pop_uncorrected, self.cfg['confusion_matrix'][i])[0]
+
+
+        data['data']['excited_pop'] = excited_pop
+        data['data']['shots_ie'] = shots_ie
+        data['data']['shots_qe'] = shots_qe
+
+        self.data = data
 
         return self.data
 
@@ -194,30 +201,24 @@ class AdiabaticRampSingleShot(ExperimentClass):
         if data is None:
             data = self.data
 
-        for read_index in self.cfg['Read_Indeces']:
+        # One time point: plot bar graph
+        bars = plt.bar(self.cfg['Read_Indeces'], data['data']['excited_pop'],
+                       color=plt.rcParams['axes.prop_cycle'].by_key()['color'])
+        for bar in bars:
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                     f'{bar.get_height():.3f}', ha='center', va='bottom', fontsize=12)
+        plt.xticks(self.cfg['Read_Indeces'])
+        plt.xlabel("Qubit Read")
+        plt.ylabel("Occupation")
 
-            i_g = data["data"]["i_g" + str(read_index)]
-            q_g = data["data"]["q_g" + str(read_index)]
-            i_e = data["data"]["i_e" + str(read_index)]
-            q_e = data["data"]["q_e" + str(read_index)]
+        plt.suptitle(self.titlename)
 
-            #### plotting is handled by the helper histogram
-            title = 'Read Length: ' + str(self.cfg["readout_length"]) + "us" + ", Read: " + str(read_index)
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=True, ran=None, title = title)
+        plt.savefig(self.iname)
 
-            plt.suptitle(self.titlename + " , Read: " + str(read_index))
-
-
-            self.fid = fid
-            self.threshold = threshold
-            self.angle = angle
-
-            plt.savefig(self.iname)
-
-            if plotDisp:
-                plt.show(block=True)
-                plt.pause(0.1)
-        # else:
+        if plotDisp:
+            plt.show(block=True)
+            plt.pause(0.1)
+    # else:
             # fig.clf(True)
             # plt.close(fig)
 
@@ -225,6 +226,76 @@ class AdiabaticRampSingleShot(ExperimentClass):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
+class SweepDelayVsPopulation(ExperimentClass):
+    """
+    Delay vs Population on an adiabatic ramp experiment
+    From config dictionary expect:
+        'ramp_duration' : int, ramp duration in timesteps (0.145 ns)
+        'delay_start', 'delay_stop' : int, delay start and stop time in timesteps (0.145 ns)
+        'delay_steps' : int, number of delay steps
+        'threshold', 'angle', 'confusion_matrix': list, with length = self.cfg['Read_Indeces']
+
+    """
+
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        self.data = {'config': self.cfg, 'data': {}}
+
+    def acquire(self, progress=False):
+        delay_vec = np.linspace(self.cfg['delay_start'], self.cfg['delay_stop'], self.cfg['delay_steps'], dtype=int)
+        excited_pop_matrix = np.zeros((len(self.cfg['Read_Indeces']), self.cfg['delay_steps']))
+
+        for j, delay in enumerate(delay_vec):
+            print(f'Delay = {delay} -> {delay*0.145} ns')
+            self.cfg['delay_timesteps'] = delay
+            prog = DelayVsPopulation(cfg=self.cfg,
+                                       soc=self.soc, soccfg=self.soccfg)
+            data = prog.acquire(self.soc)
+            excited_pop_matrix[:,j] = data['data']['excited_pop']
+
+        self.data['data']['excited_pop_matrix'] = excited_pop_matrix
+        self.data['data']['delay_vec'] = delay_vec
+        self.data['data']['ramp_duration'] = self.cfg['ramp_duration']
+
+        return self.data
+
+
+    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
+        if data is None:
+            data = self.data
+
+        if data['data']['excited_pop_matrix'].shape[1] == 1:
+            bars = plt.bar(self.cfg['Read_Indeces'], data['data']['excited_pop_matrix'][:,0],
+                           color=plt.rcParams['axes.prop_cycle'].by_key()['color'])
+            for bar in bars:
+                plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                         f'{bar.get_height():.3f}', ha='center', va='bottom', fontsize=12)
+            plt.xticks(self.cfg['Read_Indeces'])
+            plt.xlabel("Qubit Read")
+            plt.ylabel("Occupation")
+        else:
+            for j, read in enumerate(self.cfg['Read_Indeces']):
+                plt.plot(data['data']['delay_vec'], data['data']['excited_pop_matrix'][j,:], marker='o', label=f"Read: {read}")
+            plt.axvline(data['data']['ramp_duration'], label='Ramp duration', ls='--', color='black')
+            plt.legend()
+            plt.xlabel("Delay (timesteps)")
+            plt.ylabel("Occupation")
+
+
+        plt.suptitle(self.titlename)
+
+        plt.savefig(self.iname)
+
+        if plotDisp:
+            plt.show(block=True)
+            plt.pause(0.1)
+    # else:
+            # fig.clf(True)
+            # plt.close(fig)
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])
 
 
 
