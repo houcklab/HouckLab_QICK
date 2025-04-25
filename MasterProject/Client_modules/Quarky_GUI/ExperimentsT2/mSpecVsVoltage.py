@@ -1,12 +1,17 @@
 from qick import *
-from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
-import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
 import time
+import datetime
+import numpy as np
+import matplotlib.pyplot as plt
+from qick.helpers import gauss
+from tqdm.notebook import tqdm
+from Pyro4 import Proxy
+from qick import QickConfig
+
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
+
+from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
 
@@ -43,6 +48,7 @@ class CavitySpecFFProg(AveragerProgram):
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
 # ====================================================== #
+
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):
         cfg = self.cfg
@@ -113,7 +119,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 # ====================================================== #
 
 
-class SpecVsQblox(ExperimentClass):
+class SpecVsQblox(ExperimentClassT2):
     """
     Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a qblox to sweep
     Notes;
@@ -122,14 +128,30 @@ class SpecVsQblox(ExperimentClass):
             the cavity peak to perform the spec drive
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None,
-                 config_file=None, progress=None, qblox = None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
-                         config_file=config_file, progress=progress, qblox = qblox)
+    ### define the template config
+    config_template = {
+
+    }
+
+    ### Hardware Requirement
+    hardware_requirement = [Proxy, QickConfig, VoltageInterface]
+
+    def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
+                 cfg=None, config_file=None, progress=None):
+
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
+                         hardware_requirement=self.hardware_requirement, cfg=cfg,
+                         config_file=config_file, progress=progress)
+
+        # retrieve the hardware that corresponds to what was required
+        self.soc, self.soccfg, self.voltage_interface = hardware
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
+
+
+        ########## TODO CHANGE THIS
         expt_cfg = {
             ### define the qblox parameters
             "qbloxStart": self.cfg["qbloxStart"],
@@ -145,6 +167,8 @@ class SpecVsQblox(ExperimentClass):
             "expts": self.cfg["expts"],
         }
         print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
+        ###########
+
 
         qbloxVec = []
         for n in range(len(expt_cfg["qbloxStart"])):

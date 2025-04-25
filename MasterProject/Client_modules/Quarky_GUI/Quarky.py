@@ -321,19 +321,11 @@ class Quarky(QMainWindow):
         are connected.
 
         The desired config format for running an experiment merges Base and Experiment Config as well as downgrades
-        their level. If Voltage Config exists, it is not touched: (Voltage Config not used)
+        their level.
 
         .. code-block:: python
 
             config = {
-              "Voltage Config": { # if T2 experiment and experiment gives Voltage Config
-                "ChannelCount": 1,
-                "VoltageNumPoints": 10,
-                "Channels": {
-                    1: [1, 3],  # start, stop
-                    2: [-1, 1]
-                }
-              },
               "config_field1": 000,
               "config_field2": 000,
               "config_field3": 000,
@@ -363,8 +355,6 @@ class Quarky(QMainWindow):
             experiment_class = self.current_tab.experiment_obj.experiment_class
             # print(inspect.getsourcelines(experiment_class))
 
-            ######## UNTESTED START
-
             experiment_type = self.current_tab.experiment_obj.experiment_type
             if experiment_type == ExperimentClassT2:
                 # Retrieving hardware (ie. if voltage interface required, make sure it is included)
@@ -392,7 +382,9 @@ class Quarky(QMainWindow):
             else:
                 self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
 
-            # Creating the experiment worker from ExperimentThread
+
+
+            ### Creating the experiment worker from ExperimentThread and Connecting Signals
             self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
                                                       exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
@@ -410,7 +402,8 @@ class Quarky(QMainWindow):
             self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
 
-            # button and GUI updates
+
+            ### button and GUI updates
             self.update_progress(0)
             self.experiment_progress_bar.setValue(1)
             self.start_experiment_button.setEnabled(False)
@@ -500,8 +493,9 @@ class Quarky(QMainWindow):
         """
         Updates a tab UI, which currently just means the config and voltage panel.
         """
-        self.config_tree_panel.set_config(self.current_tab.config) # important, update config panel
-        self.voltage_controller_panel.update_sweeps()
+        self.config_tree_panel.set_config(self.current_tab.config) # Important, update config panel
+        self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
+        self.current_tab.setup_plotter_options()  # setup plotter options
 
     def change_tab(self, idx):
         """
@@ -515,7 +509,7 @@ class Quarky(QMainWindow):
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel
             self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
-            self.current_tab.setup_plotter_options()
+            self.current_tab.setup_plotter_options() # setup plotter options
 
             if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)

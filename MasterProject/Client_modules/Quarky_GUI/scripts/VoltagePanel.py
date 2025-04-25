@@ -400,7 +400,6 @@ class QVoltagePanel(QWidget):
 
     def update_voltage_channels(self):
 
-        ############## UNTESTED
         if self.connected and self.voltage_interface is not None:
             if self.voltage_interface_currtype == "Yoko":
                 channel_voltage_input = self.yoko_channel_list_layout.itemAt(0).layout().itemAt(1).widget()
