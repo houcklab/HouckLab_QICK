@@ -131,6 +131,8 @@ class ExperimentClassT2:
         :type plots: list
         :param data: Data to be plotted
         :type data: list
+        :param instance: An instance of the class
+        :type instance: class
         """
         pass
 

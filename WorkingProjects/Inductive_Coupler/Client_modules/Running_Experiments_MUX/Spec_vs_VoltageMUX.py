@@ -46,6 +46,30 @@ Qubit_Parameters = {
               'Pulse_FF': [0, 0, 0, 0]}
     }
 
+Qubit_Parameters = {
+
+    '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4401.7, 'Gain': 10000},
+          'Pulse_FF': [0, 0, 0, 0]},  # second index'
+    '2': {'Readout': {'Frequency': 7290.25 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+                      "FF_Gains": [10000, 0, 10000, 10000], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4608, 'Gain': 2000},
+          'Pulse_FF': [0, 0, 10000, 0]},
+    '3': {'Readout': {'Frequency': 7547.75 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5500,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 1.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4544.1, 'Gain': 1800},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '4': {'Readout': {'Frequency': 7459.85 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 7000,
+                    "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+          'Qubit': {'Frequency': 4372.9, 'Gain': 3000},
+          'Pulse_FF': [0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7325.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+              'Qubit': {'Frequency': 4047.84, 'Gain': 7000},
+              'Pulse_FF': [0, 0, 0, 0]}
+    }
+
 
 # expt
 FF_gain1_expt = 0  # 8000
@@ -79,12 +103,12 @@ gains = [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Read
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 RunTransmissionSweep = False # determine cavity frequency
-Run2ToneSpec = True
+Run2ToneSpec = False
 
 Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 200, "SpecNumPoints": 101, 'Gauss': False, "sigma": 0.01,
                         "gain": 8000, 'reps': 30, 'rounds': 30}
 
-Run_Spec_v_Voltage = False
+Run_Spec_v_Voltage = True
 Spec_sweep_relevant_params = {"qubit_gain": 1500, "SpecSpan": 200, "SpecNumPoints": 71,
                               "DAC": [5],
                               "Qblox_Vmin": [-0.5],
@@ -174,6 +198,7 @@ config["cavity_min"] = cavity_min  # look for dip, not peak
 if RunTransmissionSweep:
     config["reps"] = 20  # fast axis number of points
     config["rounds"] = 20  # slow axis number of points
+    print(config)
     Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config, soc=soc, soccfg=soccfg,
                                      outerFolder=outerFolder)
     data_trans = CavitySpecFFMUX.acquire(Instance_trans)
@@ -231,6 +256,8 @@ if Run_Spec_v_Voltage:
     #     "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
     #     "expts": qubit_config["SpecNumPoints"]
     # }
+
+    print(config)
 
     Instance_SpecVQ = SpecVsQblox(path="SpecVsQblox", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
     data_SpecVQ = SpecVsQblox.acquire(Instance_SpecVQ, plotDisp=True,

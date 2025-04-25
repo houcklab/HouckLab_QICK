@@ -16,15 +16,6 @@ This is the basic formatting of the Config dictionary:
       "Base Config": {
             "field_name" : 0,
         },
-      "Voltage Config": { # Only exists for T2 experiments
-        "ChannelCount": 2,
-        "VoltageNumPoints": 10,
-        "Channels": {
-            1: [1, 3],  # start, stop
-            4: [-1, 1],
-            ...
-        }
-      }
     }
 """
 

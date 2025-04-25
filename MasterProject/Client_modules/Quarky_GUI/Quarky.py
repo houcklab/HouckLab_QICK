@@ -351,6 +351,11 @@ class Quarky(QMainWindow):
             experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
             experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
 
+
+            if "sets" not in experiment_format_config:
+                experiment_format_config["sets"] = 1
+
+
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
             # print(inspect.getsourcelines(experiment_class))
