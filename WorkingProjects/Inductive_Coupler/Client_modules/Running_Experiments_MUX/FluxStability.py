@@ -10,10 +10,14 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Compensated_Pulse_
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6978.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
+    # '1': {'Readout': {'Frequency': 6978.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
+    #                   "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+    #       'Qubit': {'Frequency': 4441.5, 'Gain': 4800},
+    #       'Pulse_FF': [0, 0, 0, 0]},  # second index
+    '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4441.5, 'Gain': 4800},
-          'Pulse_FF': [0, 0, 0, 0]},  # second index
+          'Qubit': {'Frequency': 4401.7, 'Gain': 10000},
+          'Pulse_FF': [0, 0, 0, 0]},  #second index' for flux stability
     # '2': {'Readout': {'Frequency': 7092.3 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000, "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3},
     #       # 'Qubit': {'Frequency': 5107.4, 'Gain': 1150},
     #       'Qubit': {'Frequency': 4724.7, 'Gain': 1150},
@@ -56,7 +60,7 @@ Spec_relevant_params = {"qubit_gain": 1000, "SpecSpan": 5, "SpecNumPoints": 91, 
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
                          "sigma": 0.2, "max_gain": 10000}
 
-hours = 12
+hours = 16
 Flux_Stability_params = {'delaystep': 1}  #DelayStep in minutes
 delay_points = int(hours * 60 // Flux_Stability_params['delaystep'])
 Flux_Stability_params['delaypoints'] = delay_points

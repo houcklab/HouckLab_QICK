@@ -120,13 +120,13 @@ Qubit_Parameters = {
 
 ### 3Q Chain Parameters
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7322.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 10000,
+    '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit01': {'Frequency': 4425, 'Gain': 6200},
+          'Pulse_FF': [0, 0, 0, 0]},  #second index' for currents
+    '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
                       "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01': {'Frequency': 5028.25, 'Gain': 1050},
-          'Pulse_FF': [0, -4000, 1400, 0]},
-    '2': {'Readout': {'Frequency': 7270.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-                      "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit01': {'Frequency': 4840.73, 'Gain': 1500},
+          'Qubit01': {'Frequency': 4500, 'Gain': 3000},
           'Pulse_FF': [0, -4000, 1400, 0]},
     '3': {'Readout': {'Frequency': 7526.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
                       "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
@@ -138,24 +138,28 @@ Qubit_Parameters = {
           'Pulse_FF': [0, -4000, 1400, 0]}
 }
 
+
 Qubit_Readout = [1]
 Qubit_Pulse = [1]
 
-FF_gain1_expt = -7000
-FF_gain2_expt = -9000
-FF_gain3_expt = 15000
+FF_gain1_expt = 0
+FF_gain2_expt = 0
+FF_gain3_expt = 1156
 FF_gain4_expt = 0
 
 
-swept_qubit_index = 2 #1 indexed
+swept_qubit_index = 3 #1 indexed
 
-Oscillation_Gain = True
-oscillation_gain_dict = {'reps': 1200, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 750,
-                         'gainStop': 2250, 'gainNumPoints': 31, 'relax_delay': 150}
+Oscillation_Gain = False
+oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 1000,
+                         'gainStop': 1300, 'gainNumPoints': 11, 'relax_delay': 150}
+
+# oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 32), 'expts': 241, 'gainStart': 1000,
+#                          'gainStop': 1300, 'gainNumPoints': 41, 'relax_delay': 150}
 
 
-Oscillation_Single = False
-oscillation_single_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 40), 'expts': 11, 'relax_delay': 200}
+Oscillation_Single = True
+oscillation_single_dict = {'reps': 500, 'start': int(0), 'step': int(0.25 * 40), 'expts': 101, 'relax_delay': 200}
 
 
 SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}

@@ -22,7 +22,8 @@ for i in range(D5a._num_dacs):
 
 # DACs = [9, 8, 5, 1, 3, 12, 10, 14]
 DACs = [9, 8, 5, 3, 12, 10, 14]
-
+# 9: left, Q1
+# 10: top, Q2
 
 # [Q1, Q2, Q3, Q5, C1, C2, C3]
 
@@ -82,8 +83,17 @@ voltages = [-1.174, 0, 0, 0, 0, 0.65, 0]
 voltages = [-1.14, 0, 0, 0, 0, 0.65, 0]
 # voltages = [-0.35, 0, 0, 0, 0, 0, 0]
 voltages = [0, 0, 0, 0, 0, 0.7, 0]
-voltages = [-0.6, 0, 0, 0, 0, 0, 0]
 
+# flux stability scans
+voltages = [-0.6, 0, 0, 0, 0, 0, 0]
+# voltages = [-0.52, 0, 0, 0, 0, 0, 0]
+
+# currents
+voltages = [-0.6, 0, 0, 0, 0, 0.64, 0]
+
+
+# voltage = {'Q1': 0,
+#            'Q2': 0}
 
 # voltages = [0, 0, 0, 0, 0, 0, 0]
 

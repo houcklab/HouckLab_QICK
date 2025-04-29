@@ -69,6 +69,7 @@ class CurrentCalibrationProgramSS(AveragerProgram):
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+
         IQ_Array_Negative_BS = np.array([-1 * array if type(array) != type(None) else None for array in
                                       self.cfg["IDataArrayBS"]])
         self.FFPulses_direct(-1 * self.cfg['Gains_BS'], self.cfg["t_BS"], -1 * self.FFExpts, IQPulseArray=IQ_Array_Negative_BS,
@@ -185,7 +186,7 @@ class CurrentCalibration_SSMUX(ExperimentClass):
                 # self.soc.reset_gens()
 
             for index in self.cfg["qubit_BS_indices"]:
-                self.cfg['Gains_BS'][index] = int(gainVec[i])
+                self.cfg['Gains_BS'][index] = self.cfg['FF_Qubits'][str(index+1)]['Gain_BS']
 
 
             if np.array(self.cfg["IDataArrayBS"]).any() != None:
@@ -209,8 +210,16 @@ class CurrentCalibration_SSMUX(ExperimentClass):
                 channel = channel_1
 
             previous_gain = self.cfg['FF_Qubits'][str(channel + 1)]['Gain_Expt']
-            self.cfg["IDataArrayBS"][channel] = np.pad(self.cfg["IDataArrayBS"][channel], (self.cfg['t_offset'], 0),
-                                                       constant_values=previous_gain)
+            for channel_index in range(len(self.cfg["IDataArrayBS"])):
+                if channel_index == channel:
+                    # pad at beginning to delay this channel
+                    self.cfg["IDataArrayBS"][channel_index] = np.pad(self.cfg["IDataArrayBS"][channel_index], (abs(self.cfg['t_offset']), 0),
+                                                               constant_values=previous_gain)
+                else:
+                    # pad at end to match lengths
+                    self.cfg["IDataArrayBS"][channel_index] = np.pad(self.cfg["IDataArrayBS"][channel_index],
+                                                               (0, abs(self.cfg['t_offset'])),
+                                                               constant_values=previous_gain)
 
             # if type(self.cfg["IDataArray"][0]) != type(None):
             #     self.cfg["IDataArray"][self.cfg["qubitIndex"] - 1] = Compensated_Pulse(int(gainVec[i]),
@@ -296,6 +305,7 @@ class CurrentCalibration_SSMUX(ExperimentClass):
         percent_excited = data['data']['Exp_values'][0]
         gainVec = data['data']['gainVec']
 
+
         for i, read_index in enumerate(self.cfg['Read_Indeces']):
             while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
                 figNum += 1
@@ -304,13 +314,13 @@ class CurrentCalibration_SSMUX(ExperimentClass):
             fig.suptitle(str(self.titlename), fontsize=16)
 
             ax_plot, = axs.plot(gainVec, percent_excited, label="Excited Population")  # Line plot
-            axs.set_xlabel("Gain")
+            axs.set_xlabel("FF Gain (a.u.)")
             axs.set_ylabel("Excited Population")
             axs.legend()
 
-            axs.set_ylabel("FF Gain (a.u.)")
-            axs.set_xlabel("Wait time (2.32/16 ns )")
-            axs.set_title(f"Beam Splitter Calibration, $t_offset$ = {self.cfg['t_offset']}")
+            # axs.set_ylabel("FF Gain (a.u.)")
+            # axs.set_xlabel("Wait time (2.32/16 ns )")
+            # axs.set_title(f"Beam Splitter Calibration, $t_offset$ = {self.cfg['t_offset']}")
             plt.title(self.titlename + ", Read: " + str(read_index))
             plt.savefig(self.iname[:-4] + "_Read_" + str(read_index) + '.png')
         # fig = plt.figure(figNum)
@@ -349,7 +359,7 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
     def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
                 plotSave = True):
 
-        gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
+        timeVec = np.array([int(x) for x in np.linspace(self.cfg["timeStart"],self.cfg["timeStop"], self.cfg["timeNumPoints"])])
         offsetVec = np.array([int(x) for x in np.linspace(self.cfg["offsetStart"],self.cfg["offsetStop"], self.cfg["offsetNumPoints"])])
 
         print(f'offsetVec: {offsetVec}')
@@ -361,15 +371,15 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
         fig, axs = plt.subplots(1,1, figsize = (10,8), num = figNum)
         fig.suptitle(str(self.titlename), fontsize=16)
 
-        Z_values = np.full((self.cfg["offsetNumPoints"], self.cfg["gainNumPoints"]), np.nan)
+        Z_values = np.full((self.cfg["offsetNumPoints"], self.cfg["timeNumPoints"]), np.nan)
         # self.I_data = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
         # self.Q_data = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
-        self.rotatedIQ = np.full((self.cfg["gainNumPoints"], self.cfg["offsetNumPoints"]), np.nan)
+        self.rotatedIQ = np.full((self.cfg["offsetNumPoints"], self.cfg["timeNumPoints"]), np.nan)
 
         self.data= {
             'config': self.cfg,
             'data': {'Exp_values': [Z_values for i in range(len(self.cfg["ro_chs"]))], 'RotatedIQ': self.rotatedIQ, 'threshold':threshold,
-                        'angle': angle, 'gainVec': gainVec, 'offsetVec': offsetVec,
+                        'angle': angle, 'timeVec': timeVec, 'offsetVec': offsetVec,
                      }
         }
 
@@ -388,17 +398,16 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
                                                                                    '3']['Gain_Pulse'], 3)
             self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
                                                                                '4']['Gain_Pulse'], 4)
-
-        # self.cfg['Gains_BS'] = {qubit: 0 for qubit in self.cfg['FF_Qubits']}
         self.cfg['Gains_BS'] = np.zeros(len(self.cfg['FF_Qubits']))
-
+        for index in self.cfg["qubit_BS_indices"]:
+            self.cfg['Gains_BS'][index] = self.cfg['FF_Qubits'][str(index + 1)]['Gain_BS']
 
         # print(np.round(self.cfg["IDataArray"][0][:20], 4))
         # print(np.round(self.cfg["IDataArray"][1][:20], 4))
         # print(np.round(self.cfg["IDataArray"][2][:20], 4))
         # print(np.round(self.cfg["IDataArray"][3][:20], 4))
 
-        X = gainVec
+        X = timeVec
         X_step = X[1] - X[0]
         Y = offsetVec
         Y_step = Y[1] - Y[0]
@@ -409,42 +418,61 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
             self.cfg["t_offset"] = offsetVec[i]
             t_offset = self.cfg["t_offset"]
 
+            if np.array(self.cfg["IDataArrayBS"]).any() != None:
+                self.cfg["IDataArrayBS"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_BS'],
+                                                                self.cfg['FF_Qubits'][
+                                                                    '1']['Gain_Expt'], 1)
+                self.cfg["IDataArrayBS"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_BS'],
+                                                                self.cfg['FF_Qubits'][
+                                                                    '2']['Gain_Expt'], 2)
+                self.cfg["IDataArrayBS"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_BS'],
+                                                                self.cfg['FF_Qubits'][
+                                                                    '3']['Gain_Expt'], 3)
+                self.cfg["IDataArrayBS"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_BS'],
+                                                                self.cfg['FF_Qubits'][
+                                                                    '4']['Gain_Expt'], 4)
+
+            # offset one channel from the other by t_offset (units of 1/16 clock cycles
+            channel_1 = self.cfg['qubit_BS_indices'][0]
+            channel_2 = self.cfg['qubit_BS_indices'][1]
+
+            # unpadded_array_1 = self.cfg["IDataArrayBS"][channel_1]
+            # unpadded_array_2 = self.cfg["IDataArrayBS"][channel_2]
+
+            if t_offset > 0:
+                # play pulse on channel 2 t_offset later than channel 1
+                channel = channel_2
+            else:
+                # play pulse on channel 1 t_offset later than channel 2
+                channel = channel_1
+
+            previous_gain = self.cfg['FF_Qubits'][str(channel + 1)]['Gain_Expt']
+            for channel_index in range(len(self.cfg["IDataArrayBS"])):
+                if channel_index == channel:
+                    # pad at beginning to delay this channel
+                    self.cfg["IDataArrayBS"][channel_index] = np.pad(self.cfg["IDataArrayBS"][channel_index],
+                                                                     (abs(t_offset), 0),
+                                                                     constant_values=previous_gain)
+                else:
+                    # pad at end to match lengths
+                    self.cfg["IDataArrayBS"][channel_index] = np.pad(self.cfg["IDataArrayBS"][channel_index],
+                                                                     (0, abs(t_offset)),
+                                                                     mode='edge')
+
+            # for l in range(len(self.cfg['FF_Qubits'])):
+            #     plt.plot(self.cfg["IDataArrayBS"][l], label=f'channel {l + 1}')
+            # plt.legend()
+            # plt.title(f'IDataArrayBS for t_offset={t_offset}')
+            # plt.xlim(0, 500)
+            # plt.show()
+
             if i % 5 == 1:
                 self.save_data(self.data)
                 # self.soc.reset_gens()
 
-            for j in range(self.cfg["gainNumPoints"]):
+            for j in range(self.cfg["timeNumPoints"]):
 
-                for index in self.cfg["qubit_BS_indices"]:
-                    self.cfg['Gains_BS'][index] = int(gainVec[j])
-
-                # if np.array(self.cfg["IDataArrayBS"]).any() != None:
-                self.cfg["IDataArrayBS"][0] = Compensated_Pulse(self.cfg['Gains_BS'][0],
-                                                                self.cfg['FF_Qubits']['1']['Gain_Expt'], 1)
-                self.cfg["IDataArrayBS"][1] = Compensated_Pulse(self.cfg['Gains_BS'][1],
-                                                                self.cfg['FF_Qubits']['2']['Gain_Expt'], 2)
-                self.cfg["IDataArrayBS"][2] = Compensated_Pulse(self.cfg['Gains_BS'][2],
-                                                                self.cfg['FF_Qubits']['3']['Gain_Expt'], 3)
-                self.cfg["IDataArrayBS"][3] = Compensated_Pulse(self.cfg['Gains_BS'][3],
-                                                                self.cfg['FF_Qubits']['4']['Gain_Expt'], 4)
-
-                # offset one channel from the other by t_offset (units of 1/16 clock cycles
-                channel_1 = self.cfg['qubit_BS_indices'][0]
-                channel_2 = self.cfg['qubit_BS_indices'][1]
-
-                # unpadded_array_1 = self.cfg["IDataArrayBS"][channel_1]
-                # unpadded_array_2 = self.cfg["IDataArrayBS"][channel_2]
-
-                if t_offset > 0:
-                    # play pulse on channel 2 t_offset later than channel 1
-                    channel = channel_2
-                else:
-                    # play pulse on channel 1 t_offset later than channel 2
-                    channel = channel_1
-
-                previous_gain = self.cfg['FF_Qubits'][str(channel + 1)]['Gain_Expt']
-                self.cfg["IDataArrayBS"][channel] = np.pad(self.cfg["IDataArrayBS"][channel], (abs(t_offset), 0),
-                                                           constant_values=previous_gain)
+                self.cfg['t_BS'] = timeVec[j]
 
 
                 for k in range(len(self.cfg["ro_chs"])):
@@ -469,8 +497,8 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
                         origin='lower',
                         interpolation='none',
                     )
-                    axs.set_xlabel("FF Gain (a.u.)")
-                    axs.set_ylabel("Wait time (2.32/16 ns )")
+                    axs.set_xlabel("Wait time (2.32/16 ns )")
+                    axs.set_ylabel("Offset time (2.32/16 ns )")
                     cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
                     cbar1.set_label('Excited Population', rotation=90)
                 else:
@@ -488,7 +516,7 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
 
             if i == 0:  ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start + 5 * 2  ### time for single full row in seconds
-                timeEst = (t_delta) * self.cfg["gainNumPoints"]  ### estimate for full scan
+                timeEst = (t_delta) * self.cfg["timeNumPoints"]  ### estimate for full scan
                 StopTime = startTime + datetime.timedelta(seconds=timeEst)
                 print('Time for 1 sweep: ' + str(round(t_delta / 60, 2)) + ' min')
                 print('estimated total time: ' + str(round(timeEst / 60, 2)) + ' min')
@@ -505,11 +533,11 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
         if data is None:
             data = self.data
 
-        gainVec = data['data']['gainVec']
+        timeVec = data['data']['timeVec']
         percent_excited = data['data']['Exp_values']
         offsetVec = data['data']['offsetVec']
 
-        X = gainVec
+        X = timeVec
         Y = offsetVec
 
         X_step = X[1] - X[0]
@@ -532,9 +560,9 @@ class CurrentCalibration_OffsetSweep_SSMUX(ExperimentClass):
             cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
             cbar1.set_label('Excited Population', rotation=90)
 
-            axs.set_xlabel("FF Gain (a.u.)")
-            axs.set_ylabel("Wait time (2.32/16 ns )")
-            axs.set_title(f"Beam Splitter Calibration")
+            axs.set_xlabel("Wait time (2.32/16 ns )")
+            axs.set_ylabel("Offset time (2.32/16 ns )")
+            # axs.set_title(f"Beam Splitter Calibration")
             plt.title(self.titlename + ", Read: " + str(read_index))
             plt.savefig(self.iname[:-4] + "_Read_" + str(read_index) + '.png')
 
@@ -594,6 +622,10 @@ class CurrentCalibration_GainSweep_SSMUX(ExperimentClass):
         print('') ### print empty row for spacing
         print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
         if np.array(self.cfg["IDataArray"]).any() != None:
+            print(f'creating IDataArray')
+
+            print(f"channel 3: {self.cfg['FF_Qubits']['3']['Gain_Pulse']}")
+
 
             self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'], self.cfg['FF_Qubits'][
                                                                                    '1']['Gain_Pulse'], 1)
@@ -604,9 +636,16 @@ class CurrentCalibration_GainSweep_SSMUX(ExperimentClass):
             self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
                                                                                '4']['Gain_Pulse'], 4)
 
+        print(self.cfg["IDataArray"][2])
         # self.cfg['Gains_BS'] = {qubit: 0 for qubit in self.cfg['FF_Qubits']}
         self.cfg['Gains_BS'] = np.zeros(len(self.cfg['FF_Qubits']))
 
+        #
+        # for i in range(len(self.cfg['FF_Qubits'])):
+        #     plt.plot(self.cfg["IDataArray"][i], label=f'channel {i+1}')
+        # plt.legend()
+        # plt.title('IDataArray')
+        # plt.show()
 
         # print(np.round(self.cfg["IDataArray"][0][:20], 4))
         # print(np.round(self.cfg["IDataArray"][1][:20], 4))
@@ -620,26 +659,38 @@ class CurrentCalibration_GainSweep_SSMUX(ExperimentClass):
 
         start = time.time()
 
-        swept_qubit_index = self.cfg["qubit_BS_indices"][0]
-        self.cfg['Gains_BS'][1] = self.cfg["fixed_gain"]
+        fixed_qubit_index = self.cfg["qubit_BS_indices"][0]
+        swept_qubit_index = self.cfg["qubit_BS_indices"][1]
+        self.cfg['Gains_BS'][fixed_qubit_index] = self.cfg["fixed_gain"]
+        print(f'setting {fixed_qubit_index} to {self.cfg["fixed_gain"]}')
 
         for i in range(self.cfg["gainNumPoints"]):
             self.cfg['Gains_BS'][swept_qubit_index] = int(gainVec[i])
+            print(f'setting {swept_qubit_index} to {int(gainVec[i])}')
 
+            print(f'index: {i}')
 
             if i % 5 == 1:
                 self.save_data(self.data)
                 # self.soc.reset_gens()
 
-            # if np.array(self.cfg["IDataArrayBS"]).any() != None:
-            self.cfg["IDataArrayBS"][0] = Compensated_Pulse(self.cfg['Gains_BS'][0],
-                                                            self.cfg['FF_Qubits']['1']['Gain_Expt'], 1)
-            self.cfg["IDataArrayBS"][1] = Compensated_Pulse(self.cfg['Gains_BS'][1],
-                                                            self.cfg['FF_Qubits']['2']['Gain_Expt'], 2)
-            self.cfg["IDataArrayBS"][2] = Compensated_Pulse(self.cfg['Gains_BS'][2],
-                                                            self.cfg['FF_Qubits']['3']['Gain_Expt'], 3)
-            self.cfg["IDataArrayBS"][3] = Compensated_Pulse(self.cfg['Gains_BS'][3],
-                                                            self.cfg['FF_Qubits']['4']['Gain_Expt'], 4)
+            if np.array(self.cfg["IDataArrayBS"]).any() != None:
+                print(f'creating IDataArrayBS')
+                self.cfg["IDataArrayBS"][0] = Compensated_Pulse(self.cfg['Gains_BS'][0],
+                                                                self.cfg['FF_Qubits']['1']['Gain_Expt'], 1)
+                self.cfg["IDataArrayBS"][1] = Compensated_Pulse(self.cfg['Gains_BS'][1],
+                                                                self.cfg['FF_Qubits']['2']['Gain_Expt'], 2)
+                self.cfg["IDataArrayBS"][2] = Compensated_Pulse(self.cfg['Gains_BS'][2],
+                                                                self.cfg['FF_Qubits']['3']['Gain_Expt'], 3)
+                self.cfg["IDataArrayBS"][3] = Compensated_Pulse(self.cfg['Gains_BS'][3],
+                                                                self.cfg['FF_Qubits']['4']['Gain_Expt'], 4)
+
+            # if i % 5 == 0:
+            #     for l in range(len(self.cfg['FF_Qubits'])):
+            #         plt.plot(self.cfg["IDataArrayBS"][l], label=f'channel {l + 1}')
+            #     plt.legend()
+            #     plt.title('IDataArrayBS')
+            #     plt.show()
 
             # offset one channel from the other by t_offset (units of 1/16 clock cycles
             channel_1 = self.cfg['qubit_BS_indices'][0]
@@ -724,12 +775,12 @@ class CurrentCalibration_GainSweep_SSMUX(ExperimentClass):
         if data is None:
             data = self.data
 
+        timeVec = data['data']['timeVec']
         gainVec = data['data']['gainVec']
         percent_excited = data['data']['Exp_values']
-        offsetVec = data['data']['offsetVec']
 
-        X = gainVec
-        Y = offsetVec
+        X = timeVec
+        Y = gainVec
 
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]

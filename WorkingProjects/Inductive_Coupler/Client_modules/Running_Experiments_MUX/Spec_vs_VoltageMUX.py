@@ -133,14 +133,14 @@ Qubit_Parameters = {
     }
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6979.0 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+    '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 11000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4900, 'Gain': 4800},
-          'Pulse_FF': [0, 0, 0, 0]},  # second index
-    '2': {'Readout': {'Frequency': 7096 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
+          'Qubit': {'Frequency': 4401.7, 'Gain': 10000},
+          'Pulse_FF': [0, 0, 0, 0]},  #second index'
+    '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4900, 'Gain': 4740},
-          'Pulse_FF':[0, 0, 0, 0]}, #Thirf index
+          'Qubit': {'Frequency': 4500, 'Gain': 3400},
+          'Pulse_FF':[0, 0, 0, 0]}, #Third index
     '3': {'Readout': {'Frequency': 7526.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4500,
                       "FF_Gains": [-7000, -9000, 15000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
           'Qubit01': {'Frequency': 5081.3, 'Gain': 1716},
@@ -179,12 +179,12 @@ Run2ToneSpec = False
 Spec_relevant_params = {"qubit_gain": 1, "SpecSpan": 5, "SpecNumPoints": 71, 'Gauss': False, "sigma": 0.01,
                         "gain": 8000, 'reps': 15, 'rounds': 15}
 
-Run_Spec_v_Voltage = False
-Spec_sweep_relevant_params = {"qubit_gain": 8000, "SpecSpan": 300, "SpecNumPoints": 101,
+Run_Spec_v_Voltage = True
+Spec_sweep_relevant_params = {"qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 101,
                               "DAC": [10],
-                              "Qblox_Vmin": [-0.5],
-                              "Qblox_Vmax": [0.5], "Qblox_numpoints":15,
-                              'reps': 20, 'rounds': 20, 'smart_normalize': True}
+                              "Qblox_Vmin": [0.6],
+                              "Qblox_Vmax": [0.7], "Qblox_numpoints": 21,
+                              'reps': 30, 'rounds': 30, 'smart_normalize': True}
 
 Run_Trans_v_Voltage = False
 Trans_sweep_relevant_params = {

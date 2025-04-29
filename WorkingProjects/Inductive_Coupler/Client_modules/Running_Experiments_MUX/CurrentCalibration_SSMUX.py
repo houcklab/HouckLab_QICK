@@ -8,33 +8,17 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mCurrentCalibration_SSMUX import \
     CurrentCalibration_SSMUX, CurrentCalibration_OffsetSweep_SSMUX, CurrentCalibration_GainSweep_SSMUX
 
-# yoko69.rampstep = 0.0005
-# yoko70.rampstep = 0.0005
-# yoko71.rampstep = 0.0005
-# yoko72.rampstep = 0.0005
-#
-# # yoko69.SetVoltage(-0.0479)
-# # yoko70.SetVoltage(0.0904)
-# # yoko71.SetVoltage(-0.1262)
-# # yoko72.SetVoltage(0.0051)
-#
-# yoko69.SetVoltage(-0.1368)
-# yoko70.SetVoltage(-0.1542)
-# yoko71.SetVoltage(-0.2343)
-# yoko72.SetVoltage(0.1055)
-
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7321.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 3,
-                      "ADC_Offset": 0.5},
-          'Qubit': {'Frequency': 4789.7, 'Gain': 800},
-          'Pulse_FF': [0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7269.6 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4668.3, 'Gain': 8700},
-          'Pulse_FF': [0, 0, 0, 0]},
+    '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
+                      "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4425, 'Gain': 6200},
+          'Pulse_FF': [0, 0, 0, 0]},  #second index' for currents
+    '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+                      "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4618, 'Gain': 3160},
+          'Pulse_FF':[0, 0, -2000, 0]}, #Third index
     '3': {'Readout': {'Frequency': 7524.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,},
           'Qubit': {'Frequency': 4488, 'Gain': 10900},
@@ -47,21 +31,29 @@ Qubit_Parameters = {
 
 
 
-Qubit_Readout = [5]
-Qubit_Pulse = [5]
+Qubit_Readout = [1]
+Qubit_Pulse = [1]
 # qubits involved in beamsplitter interaction
-Qubit_BS = [3, 5]
+Qubit_BS = [1,2]
 
-qubit_to_FF_dict = {5: 0, 2: 1, 3: 2, 4: 3}
+qubit_to_FF_dict = {5: 0, 1: 1, 2: 2, 4: 3}
 
-# convert Qubit_BS to index based on the order [5, 2, 3, 4]
+# convert Qubit_BS to index based on the order [5, 1, 2, 4]
 Qubit_BS_indices = [qubit_to_FF_dict[qubit] for qubit in Qubit_BS]
 print(Qubit_BS_indices)
 
 FF_gain1_expt = 0
 FF_gain2_expt = 0
-FF_gain3_expt = 2020
+FF_gain3_expt = 1156
 FF_gain4_expt = 0
+
+
+FF_gain1_BS = 0
+FF_gain2_BS = -3000
+FF_gain2_BS = -20000
+FF_gain3_BS = 2170
+FF_gain3_BS = 5160
+FF_gain4_BS = 0
 
 swept_qubit_index = 3 #1 indexed
 
@@ -73,23 +65,30 @@ oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 20), 
 CurrentCalibration = False
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # t_BS: beam splitter interaction time in units of 1/16 clock cycles
-current_calibration_dict = {'reps': 2000, 't_evolve': 125, 't_BS': 125,  't_offset': 0, 'gainStart': 500,
-                         'gainStop': 5000, 'gainNumPoints': 21, 'relax_delay': 150, "plotDisp": False}
+# sweep gain during beamsplitter interaction
+current_calibration_dict = {'reps': 1000, 't_evolve': 255, 't_BS': 255//2,  't_offset': 0, 'gainStart': 500,
+                         'gainStop': 5000, 'gainNumPoints': 11, 'relax_delay': 150, "plotDisp": False}
 
-CurrentCalibration_GainSweep = True
-current_calibration_gain_dict = {'reps': 1000, 't_evolve': 350//2, 't_offset': 0, 'relax_delay': 150, "plotDisp": True,
-                            'gainStart': 0, 'gainStop': 5000, 'gainNumPoints': 21, 'fixed_gain': 3000,
+CurrentCalibration_GainSweep = False
+# sweep gain of the first beamsplitter qubit relative to other qubit during beamsplitter interaction and sweep  time
+current_calibration_gain_dict = {'reps': 1000, 't_evolve': 0, 't_offset': 0, 'relax_delay': 150, "plotDisp": True,
+                            'gainStart': 5000, 'gainStop': 5400, 'gainNumPoints': 11, 'fixed_gain': -20000,
                             'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,}
 
-CurrentCalibration_OffsetSweep = False
+CurrentCalibration_OffsetSweep = True
 # t_evolve: time spent swapping in units of 1/16 clock cycles
-# t_BS: beam splitter interaction time in units of 1/16 clock cycles
-current_calibration_offset_dict = {'reps': 2000, 't_evolve': 350, 't_BS': 350, 'relax_delay': 150, "plotDisp": True,
-                            'gainStart': 0, 'gainStop': 5000, 'gainNumPoints': 41,
-                            'offsetStart': -100, 'offsetStop': 100, 'offsetNumPoints': 11,}
-current_calibration_offset_dict = {'reps': 1000, 't_evolve': 350, 't_BS': 350, 'relax_delay': 150, "plotDisp": True,
-                            'gainStart': 0, 'gainStop': 5000, 'gainNumPoints': 21,
-                            'offsetStart': -100, 'offsetStop': 100, 'offsetNumPoints': 3,}
+# sweep t_BS time and sweep offset time
+current_calibration_offset_dict = {'reps': 1000, 't_evolve': 280*4//4, 'relax_delay': 150, "plotDisp": True,
+                                   'timeStart': 0, 'timeStop': 300, 'timeNumPoints': 101,
+                                   'offsetStart': -50, 'offsetStop': 50, 'offsetNumPoints': 21}
+
+current_calibration_offset_dict = {'reps': 1000, 't_evolve': 280*2//4, 'relax_delay': 150, "plotDisp": True,
+                                   'timeStart': 0, 'timeStop': 300, 'timeNumPoints': 101,
+                                   'offsetStart': -50, 'offsetStop': 50, 'offsetNumPoints': 201}
+
+current_calibration_offset_dict = {'reps': 1000, 't_evolve': 280//2, 'relax_delay': 150, "plotDisp": True,
+                                   'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,
+                                   'offsetStart': -50, 'offsetStop': 50, 'offsetNumPoints': 201}
 
 SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 
@@ -108,13 +107,15 @@ qubit_gains = [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Pulse]
 qubit_frequency_centers = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse]
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
 
+print(f'FF_gain2_pulse: {FF_gain2_pulse}')
+
 BaseConfig['ro_chs'] = [i for i in range(len(Qubit_Readout))]
 
 
-FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
-FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
-FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse}
-FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
+FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse, 'Gain_BS': FF_gain1_BS}
+FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse, 'Gain_BS': FF_gain2_BS}
+FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse, 'Gain_BS': FF_gain3_BS}
+FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse, 'Gain_BS': FF_gain4_BS}
 
 # Configure for qubit experiment
 UpdateConfig_qubit = {
@@ -158,7 +159,7 @@ config['Read_Indeces'] = Qubit_Readout
 #### update the qubit and cavity attenuation
 
 config["rounds"] = 1
-config["sigma"] = 0.007
+config["sigma"] = 0.05
 
 config["shots"] = 2000
 config['qubit_gains'] = [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Readout]
@@ -271,9 +272,10 @@ if CurrentCalibration_OffsetSweep:
     #                             'gainStop': 1500, 'gainNumPoints': 21, 'relax_delay': 150}
 
     config["reps"] = current_calibration_offset_dict['reps']
-    expt_cfg = {"t_evolve": current_calibration_offset_dict["t_evolve"], "t_BS": current_calibration_offset_dict["t_BS"], "gainStart": current_calibration_offset_dict['gainStart'],
-                "gainStop": current_calibration_offset_dict['gainStop'], "gainNumPoints": current_calibration_offset_dict['gainNumPoints'], "offsetStart": current_calibration_offset_dict['offsetStart'],
-                "offsetStop": current_calibration_offset_dict['offsetStop'], "offsetNumPoints": current_calibration_offset_dict['offsetNumPoints'],
+    expt_cfg = {"t_evolve": current_calibration_offset_dict["t_evolve"], "timeStart": current_calibration_offset_dict['timeStart'],
+                "timeStop": current_calibration_offset_dict['timeStop'], "timeNumPoints": current_calibration_offset_dict['timeNumPoints'],
+                "offsetStart": current_calibration_offset_dict['offsetStart'], "offsetStop": current_calibration_offset_dict['offsetStop'],
+                "offsetNumPoints": current_calibration_offset_dict['offsetNumPoints'],
                 "qubit_BS_indices": Qubit_BS_indices, "relax_delay": current_calibration_offset_dict['relax_delay'],
                 }
     config['IDataArray'] = [1, None, None, None]

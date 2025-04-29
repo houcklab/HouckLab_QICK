@@ -65,6 +65,7 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
                                                                                       gencfg['maxv']))
 
         IQPulse = IQPulse[:length_dt]  # truncate pulse to desired length
+        # print(f'truncated IQPulse: {IQPulse}')
         if len(IQPulse) % 16 != 0:  # need to pad beginning
             extralen = 16 - (len(IQPulse) % 16)
             # print("  Padding pulse beginning: length {}, value {}".format(extralen, padval))
@@ -213,6 +214,9 @@ def FFDefinitions(instance):
 
     if "Gain_Pulse" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFPulse = np.array([instance.cfg["FF_Qubits"][q]["Gain_Pulse"] for q in instance.FFQubits])
+
+    if "Gain_BS" in instance.cfg["FF_Qubits"][str(1)]:
+        instance.FFBS = np.array([instance.cfg["FF_Qubits"][q]["Gain_BS"] for q in instance.FFQubits])
 
     # FFDelays = np.array([instance.cfg["FF_Channels"][str(c)]["delay_time"] for c in instance.FFChannels])
     FFDelays = np.array([instance.cfg["FF_Qubits"][q]["delay_time"] for q in instance.FFQubits])
