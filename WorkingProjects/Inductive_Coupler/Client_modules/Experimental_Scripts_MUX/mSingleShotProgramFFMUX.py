@@ -196,7 +196,7 @@ class SingleShotProgram(AveragerProgram):
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
         # self.FFPulses_direct(self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
         #                      np.array([0, 0, 0, 0]), IQPulseArray= self.cfg["IDataArray"])
         # print(self.cfg["qubit_gains"], self.cfg["f_ges"])
@@ -279,6 +279,8 @@ class SingleShotProgramFFMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
         self.threshold = []
         self.angle = []
+        self.ne_contrast = []
+        self.ng_contrast = []
 
     def acquire(self, progress=False):
         #### pull the data from the single hots
@@ -310,13 +312,19 @@ class SingleShotProgramFFMUX(ExperimentClass):
             self.data['data']['i_e' + str(read_index)] = i_e
             self.data['data']['q_e' + str(read_index)] = q_e
 
-            fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None) ### arbitrary ran, change later
+            fid, threshold, angle, ne_contrast, ng_contrast = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, return_errors=True) ### arbitrary ran, change later
             self.data_in_hist = [i_g, q_g, i_e, q_e]
             self.fid.append(fid)
             self.threshold.append(threshold)
             self.angle.append(angle)
+            self.ne_contrast.append(ne_contrast)
+            self.ng_contrast.append(ng_contrast)
+
+
         self.data['data']['threshold'] = self.threshold
         self.data['data']['angle'] = self.angle
+        self.data['ne_contrast'] = self.ne_contrast
+        self.data['ng_contrast'] = self.ng_contrast
 
         return self.data
         #
@@ -396,11 +404,13 @@ class SingleShotProgramFFMUX(ExperimentClass):
     #     #
     #     # return data
 
-    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, ran=None, display_indices=None, **kwargs):
         if data is None:
             data = self.data
+        if display_indices is None:
+            display_indices = self.cfg['Read_Indeces']
 
-        for read_index in self.cfg['Read_Indeces']:
+        for read_index in display_indices:
 
             i_g = data["data"]["i_g" + str(read_index)]
             q_g = data["data"]["q_g" + str(read_index)]
@@ -424,8 +434,8 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 plt.show(block=True)
                 plt.pause(0.1)
         # else:
-            # fig.clf(True)
-            # plt.close(fig)
+            plt.clf()
+            plt.close()
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

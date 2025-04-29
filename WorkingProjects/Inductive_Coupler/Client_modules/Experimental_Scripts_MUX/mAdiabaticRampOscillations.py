@@ -1,4 +1,6 @@
 from qick import *
+
+from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.AdiabaticRamps import generate_ramp
 from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +13,7 @@ import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.rotate_SS_data import *
 
 
-class WalkProgramSS(AveragerProgram):
+class AdiabaticRampOscillationsProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
@@ -57,10 +59,11 @@ class WalkProgramSS(AveragerProgram):
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
                                  gain=gain_,
                                  waveform="qubit", t=time)
-
-        self.FFPulses_direct(self.FFExpts, self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
+        # Do adiabatic ramp
+        self.FFPulses_direct(self.FFPulse, self.cfg["ramp_duration"] + self.cfg["variable_wait"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"])
         self.sync_all(gen_t0=self.gen_t0)
 
+        self.FFPulses(2*self.FFReadouts, 2.32515/1e3*3)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -95,14 +98,6 @@ class WalkProgramSS(AveragerProgram):
 
         return self.collect_shots()
 
-    # def collect_shots(self):
-    #     shots_i0 = self.di_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
-    #         self.cfg['readout_length'], ro_ch=0)
-    #     shots_q0 = self.dq_buf[0].reshape((1, self.cfg["reps"])) / self.us2cycles(
-    #         self.cfg['readout_length'], ro_ch=0)
-    #
-    #     return shots_i0, shots_q0
-
     def collect_shots(self):
         all_i = []
         all_q = []
@@ -115,10 +110,7 @@ class WalkProgramSS(AveragerProgram):
         return all_i,all_q
 
 
-class WalkFFSSMUX(ExperimentClass):
-    """
-    Basic T1
-    """
+class AdiabaticRampOscillations(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
@@ -126,20 +118,19 @@ class WalkFFSSMUX(ExperimentClass):
 
     def acquire(self, threshold = None, angle = None, progress=False):
         tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
-        if np.array(self.cfg["IDataArray"]).any() != None:
-            self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '1']['Gain_Pulse'], 1)
-            self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '2']['Gain_Pulse'], 2)
-            self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                                   '3']['Gain_Pulse'], 3)
-            self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
-                                                                               '4']['Gain_Pulse'], 4)
-        # print(np.round(self.cfg["IDataArray"][0][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][1][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][2][:20], 4))
-        # print(np.round(self.cfg["IDataArray"][3][:20], 4))
 
+        for j in range(4):
+            # FF ramp to put initial qubits onto resonance
+            ramp = generate_ramp(self.cfg['FF_Qubits'][str(j+1)]['Gain_Pulse'],
+                                                      self.cfg['FF_Qubits'][str(j + 1)]['Gain_Ramp'],
+                                                      self.cfg['ramp_duration'], ramp_shape=self.cfg['ramp_shape'])
+            if len(ramp) == 0:
+                ramp = np.zeros(self.cfg['ramp_duration'])
+
+            # FF jump during expt, to initiate swaps
+            FF_jump = Compensated_Pulse(self.cfg['FF_Qubits'][str(j+1)]['Gain_Expt'], self.cfg['FF_Qubits'][str(j+1)]['Gain_Ramp'])
+            self.cfg['IDataArray'][j] = np.concatenate([ramp, FF_jump])
+            # plt.plot(self.cfg['IDataArray'][j][:self.cfg["ramp_duration"]])
 
         results = [[] for i in range(len(self.cfg["ro_chs"]))]
         rotated_iq_array = [[] for i in range(len(self.cfg["ro_chs"]))]
@@ -147,7 +138,7 @@ class WalkFFSSMUX(ExperimentClass):
         for t in tqdm(tpts, position=0, disable=True):
             self.cfg["variable_wait"] = t
             self.soc.reset_gens()
-            prog = WalkProgramSS(self.soccfg, self.cfg)
+            prog = AdiabaticRampOscillationsProgram(self.soccfg, self.cfg)
             shots_i0, shots_q0 = prog.acquire(self.soc,
                                               load_pulses=True)
             for i in range(len(self.cfg["ro_chs"])):
@@ -198,6 +189,186 @@ class WalkFFSSMUX(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+
+class Oscillations_Gain_SSMUX(ExperimentClass):
+    """
+    Basic T1
+    """
+
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
+                 I_Ground = 0, I_Excited = 1, Q_Ground = 0, Q_Excited = 1):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
+                         config_file=config_file, progress=progress)
+
+    def acquire(self, threshold = None, angle = None, progress=False, figNum = 1, plotDisp = True,
+                plotSave = True):
+
+        gainVec = np.array([int(x) for x in np.linspace(self.cfg["gainStart"],self.cfg["gainStop"], self.cfg["gainNumPoints"])])
+        while plt.fignum_exists(num = figNum):
+            figNum += 1
+        fig, axs = plt.subplots(1,1, figsize = (10,8), num = figNum)
+        fig.suptitle(str(self.titlename), fontsize=16)
+
+        self.wait_times = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
+        Z_values = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
+        # self.I_data = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
+        # self.Q_data = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
+        self.rotatedIQ = np.full((self.cfg["gainNumPoints"], self.cfg["expts"]), np.nan)
+
+        self.data= {
+            'config': self.cfg,
+            'data': {'Exp_values': [Z_values for i in range(len(self.cfg["ro_chs"]))], 'RotatedIQ': self.rotatedIQ, 'threshold':threshold,
+                        'angle': angle, 'wait_times': self.wait_times,
+                        'gainVec': gainVec,
+                     }
+        }
+
+        tpts = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
+
+        X = tpts
+        X_step = X[1] - X[0]
+        Y = gainVec
+        Y_step = Y[1] - Y[0]
+
+        startTime = datetime.datetime.now()
+        start = time.time()
+        for i in range(self.cfg["gainNumPoints"]):
+            if i % 5 == 1:
+                self.save_data(self.data)
+                # self.soc.reset_gens()
+            self.cfg['FF_Qubits'][str(self.cfg["qubitIndex"])]['Gain_Expt'] = int(gainVec[i])
+
+            # create FF IDaraArray
+            for j in range(4):
+                # FF ramp to put initial qubits onto resonance
+                ramp = generate_ramp(self.cfg['FF_Qubits'][str(j + 1)]['Gain_Pulse'],
+                                     self.cfg['FF_Qubits'][str(j + 1)]['Gain_Expt'],
+                                     self.cfg['ramp_duration'], ramp_shape=self.cfg['ramp_shape'])
+                if len(ramp) == 0:
+                    ramp = np.zeros(self.cfg['ramp_duration'])
+
+                # FF jump during expt, to initiate swaps
+                FF_jump = Compensated_Pulse(self.cfg['FF_Qubits'][str(j + 1)]['Gain_Expt'],
+                                            self.cfg['FF_Qubits'][str(j + 1)]['Gain_Ramp'])
+                self.cfg['IDataArray'][j] = np.concatenate(ramp, FF_jump)
+
+            for j in range(len(self.cfg["ro_chs"])):
+                results = []
+                rotated_iq_array = []
+                start = time.time()
+                for t in tqdm(tpts, position=0, disable=True):
+                    self.cfg["variable_wait"] = t
+                    # print('wait time: ', t)
+                    prog = AdiabaticRampOscillationProgram(self.soccfg, self.cfg)
+                    shots_i0, shots_q0 = prog.acquire(self.soc,
+                                                      load_pulses=True)
+                    rotated_iq = rotate_data((shots_i0[j], shots_q0[j]), theta=angle[j])
+                    rotated_iq_array.append(rotated_iq)
+                    excited_percentage = count_percentage(rotated_iq, threshold = threshold[j])
+                    results.append(excited_percentage)
+                print(f'Time: {time.time() - start}')
+
+                self.data['data']["Exp_values"][j][i, :] = np.array(results)
+
+                # results = np.transpose(results)
+                # self.data['data']["RotatedIQ"][i, :] = np.array(rotated_iq_array)
+                if j == 0:
+                    Z_values[i, :] = np.array(results)
+
+            if i == 0:
+                ax_plot_1 = axs.imshow(
+                    Z_values,
+                    aspect='auto',
+                    extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
+                            Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                    origin='lower',
+                    interpolation='none',
+                )
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('Excited Population', rotation=90)
+            else:
+                ax_plot_1.set_data(Z_values)
+                ax_plot_1.autoscale()
+                cbar1.remove()
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('Excited Population', rotation=90)
+
+            axs.set_ylabel("FF Gain (a.u.)")
+            axs.set_xlabel("Wait time (2.32/16 ns )")
+            axs.set_title("Oscillations")
+
+
+            if plotDisp:
+                plt.show(block=False)
+                plt.pause(0.1)
+
+            if i ==0: ### during the first run create a time estimate for the data aqcuisition
+                t_delta = time.time() - start + 5 * 2### time for single full row in seconds
+                timeEst = (t_delta )*self.cfg["gainNumPoints"]  ### estimate for full scan
+                StopTime = startTime + datetime.timedelta(seconds=timeEst)
+                print('Time for 1 sweep: ' + str(round(t_delta/60, 2)) + ' min')
+                print('estimated total time: ' + str(round(timeEst/60, 2)) + ' min')
+                print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
+
+
+
+        print(f'Time: {time.time() - start}')
+
+
+        return self.data
+
+
+    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+        if data is None:
+            data = self.data
+
+        x_pts = data['data']['wait_times']
+        percent_excited = data['data']['Exp_values']
+        gainVec = data['data']['gainVec']
+
+        X = x_pts
+        Y = gainVec
+
+        X_step = X[1] - X[0]
+        Y_step = Y[1] - Y[0]
+
+        for i, read_index in enumerate(self.cfg['Read_Indeces']):
+            while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
+                figNum += 1
+
+            fig, axs = plt.subplots(1,1, figsize = (10,8), num = figNum)
+            fig.suptitle(str(self.titlename), fontsize=16)
+            ax_plot_1 = axs.imshow(
+                percent_excited[i],
+                aspect='auto',
+                extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
+                        Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+                origin='lower',
+                interpolation='none',
+            )
+            cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+            cbar1.set_label('Excited Population', rotation=90)
+
+            axs.set_ylabel("FF Gain (a.u.)")
+            axs.set_xlabel("Wait time (2.32/16 ns )")
+            axs.set_title("Oscillations")
+            plt.title(self.titlename + ", Read: " + str(read_index))
+            plt.savefig(self.iname[:-4] + "_Read_" + str(read_index) + '.png')
+        if plotDisp:
+            plt.show(block=True)
+            plt.pause(0.1)
+        else:
+            fig.clf(True)
+            plt.close(fig)
+
+
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])
+
+
 
 import pickle
 def QuadExponentialFit(t, A1, T1, A2, T2, A3, T3, A4, T4):

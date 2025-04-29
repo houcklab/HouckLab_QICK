@@ -32,7 +32,7 @@ class T1Program(RAveragerProgram):
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
-
+        FF.FFDefinitions(self)
         # add qubit and readout pulses to respective channels
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
         self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
@@ -50,13 +50,17 @@ class T1Program(RAveragerProgram):
         self.sync(self.q_rp, self.r_wait)
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.FFPulses(self.FFReadouts, self.cfg["length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
+    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
+        FF.FFPulses(self, list_of_gains, length_us, t_start)
 
     def update(self):
         self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"]))  # update frequency l

@@ -18,4 +18,12 @@ def average_data(data):
     i = data[0][0]
     return(np.mean(i))
 
+def correct_occ(pop_data, confusion_matrix):
+    '''Args: pop_data: 1d array of excited state percentages
+             confusion_matrix: [[ngg, nge], [neg, nee]] characterizing state preparation and readout error
+       Returns: 1d array of excited state percentages, adjusted by confusion matrix'''
+
+    vec = np.vstack([1.-pop_data, pop_data])
+
+    return (np.linalg.inv(confusion_matrix)  @  vec)[1].flatten()
 

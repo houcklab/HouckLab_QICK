@@ -4,7 +4,7 @@ from h5py import File
 import os
 import datetime
 
-def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha = 0.5, print_fidelities = True):
+def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha = 0.5, print_fidelities = True, return_errors=False):
     ig = data[0]
     qg = data[1]
     ie = data[2]
@@ -97,4 +97,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
         # axs[2].set_title(f"Fidelity = {fid * 100:.2f}%; Thresh: {threshold:.3f}")
         axs[2].set_title(f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}")
 
-    return fid, threshold, theta
+    if not return_errors:
+        return fid, threshold, theta
+    else:
+        return fid, threshold, theta, ne_contrast, ng_contrast

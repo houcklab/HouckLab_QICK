@@ -185,3 +185,15 @@ class ExperimentClass:
             data[k]=np.array(f[k])
         data['attrs']=f.get_dict()
         return data
+
+    def acquire_save_display(self, **kwargs):
+        data = self.acquire()
+        self.save_data(data)
+        self.save_config()
+        self.display(data, **kwargs)
+
+    def acquire_display_save(self, **kwargs):
+        data = self.acquire()
+        self.display(data, **kwargs)
+        self.save_data(data)
+        self.save_config()

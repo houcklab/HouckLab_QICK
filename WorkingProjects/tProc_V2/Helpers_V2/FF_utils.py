@@ -65,7 +65,6 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
                                                                                       gencfg['maxv']))
 
         IQPulse = IQPulse[:length_dt]  # truncate pulse to desired length
-        # print(f'truncated IQPulse: {IQPulse}')
         if len(IQPulse) % 16 != 0:  # need to pad beginning
             extralen = 16 - (len(IQPulse) % 16)
             # print("  Padding pulse beginning: length {}, value {}".format(extralen, padval))
@@ -74,13 +73,12 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             # print("  Padding pulse to 3ccs")
             extralen = 48 - len(IQPulse)
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
-            # print(IQPulse[:48])
-        # print(IQPulse)
+            print(IQPulse[:48])
         # print(len(IQPulse))
 
         # figure out name and add pulse
         # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
-        # print("IQPulse[:48]:", i, IQPulse[:48])
+        # print(IQPulse[:48])
         instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
                            idata=IQPulse, qdata=np.zeros_like(IQPulse))
         instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
@@ -155,23 +153,24 @@ def FFPulses_hires(instance, list_of_gains, length_dt, t_start='auto', IQPulseAr
         instance.pulse(ch=channel, t=t_start_)
 
 def FFPulses(instance, list_of_gains, length_us, t_start='auto', IQPulseArray=None, waveform_label="FF"):
-    for i, gain in enumerate(list_of_gains):
-        length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
-        gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
-        IQPulseArray = [None] * len(list_of_gains) if IQPulseArray is None else IQPulseArray
+    IQPulseArray = [None] * len(list_of_gains) if IQPulseArray is None else IQPulseArray
+    instance.FF_pulse_count += 1
 
-        if IQPulseArray[i] is None:
-            instance.set_pulse_registers(ch=instance.FFChannels[i], style='const', freq=0, phase=0,
+    for i, gain in enumerate(list_of_gains):
+        gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
+        length_cycles = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
+        if IQPulseArray[i] is None: # None -> Constant Pulse
+            instance.add_pulse(ch=instance.FFChannels[i], name=f'ff_pulse{instance.FFChannels[i]}_{instance.FF_pulse_count}', style='const', freq=0, phase=0,
                                          gain=gain,
-                                         length=length)
+                                         length=length_us)
         else:
             # print('Using IQPulseArray')
-            if length > len(IQPulseArray[i]):  # pulse array only has 1 clock cycle (2.4 ns) resolution
-                additional_array = np.ones(length - len(IQPulseArray[i]))
+            if length_cycles > len(IQPulseArray[i]):  # pulse array only has 1 clock cycle (2.4 ns) resolution
+                additional_array = np.ones(length_cycles - len(IQPulseArray[i]))
             else:
                 additional_array = np.array([])
             # print(np.array(IQPulseArray[i][:length]), additional_array)
-            idata = np.concatenate([np.array(IQPulseArray[i][:length]), additional_array])  # ensures
+            idata = np.concatenate([np.array(IQPulseArray[i][:length_cycles]), additional_array])  # ensures
             # print(idata)
             maximum_value = np.max(np.abs(idata))
             if maximum_value < 1:
@@ -179,7 +178,7 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', IQPulseArray=No
             idata = idata.repeat(16)  # if you want more resolution, remove this and add it in your definition
             idata = (idata * gencfg['maxv'] * gencfg['maxv_scale']) / maximum_value
             idata[idata > gencfg['maxv'] * gencfg['maxv_scale']] = gencfg['maxv'] * gencfg['maxv_scale']
-            qdata = np.zeros(length * 16) * gencfg['maxv']
+            qdata = np.zeros(length_cycles * 16) * gencfg['maxv']
             instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
                            idata=idata, qdata=qdata)
             instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
@@ -194,16 +193,17 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', IQPulseArray=No
             t_start_ = 'auto'
             # t_start_ = int(instance._dac_ts[channel]) + instance.dac_t0[channel]
         # print(t_start_)
-        instance.pulse(ch=channel, t=t_start_)
+        instance.pulse(ch=channel, t=t_start_, name=f'ff_pulse{instance.FFChannels[i]}_{instance.FF_pulse_count}')
 
 
 def FFDefinitions(instance):
     # Start fast flux
+    instance.FF_pulse_count = 0
     instance.FFQubits = sorted(instance.cfg["FF_Qubits"].keys())
     instance.FFChannels = [instance.cfg["FF_Qubits"][q]['channel'] for q in instance.FFQubits]
 
     for channel in instance.FFChannels:
-        instance.declare_gen(ch=int(channel))
+        instance.declare_gen(ch=int(channel), mixer_freq=0)
 
     instance.FFReadouts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Readout"] for q in instance.FFQubits])
     if "Gain_Expt" in instance.cfg["FF_Qubits"][str(1)]:
@@ -215,9 +215,6 @@ def FFDefinitions(instance):
     if "Gain_Pulse" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFPulse = np.array([instance.cfg["FF_Qubits"][q]["Gain_Pulse"] for q in instance.FFQubits])
 
-    if "Gain_BS" in instance.cfg["FF_Qubits"][str(1)]:
-        instance.FFBS = np.array([instance.cfg["FF_Qubits"][q]["Gain_BS"] for q in instance.FFQubits])
-
     # FFDelays = np.array([instance.cfg["FF_Channels"][str(c)]["delay_time"] for c in instance.FFChannels])
     FFDelays = np.array([instance.cfg["FF_Qubits"][q]["delay_time"] for q in instance.FFQubits])
 
@@ -227,10 +224,10 @@ def FFDefinitions(instance):
     # print()
     additional_delay_keys = instance.cfg['Additional_Delays'].keys()
     Additional_delay_channels = [instance.cfg['Additional_Delays'][k]['channel'] for k in additional_delay_keys]
-    Additional_delay_times = [instance.us2cycles(instance.cfg['Additional_Delays'][k]['delay_time']) for k in additional_delay_keys]
+    Additional_delay_times = [instance.cfg['Additional_Delays'][k]['delay_time'] for k in additional_delay_keys]
     # print(additional_delay_keys, Additional_delay_channels, Additional_delay_times)
     instance.gen_t0 = np.array([0] * len(instance._gen_ts))
-    instance.gen_t0[instance.FFChannels] = [instance.us2cycles(d) for d in FFDelays]
+    instance.gen_t0[instance.FFChannels] = [d for d in FFDelays]
     instance.gen_t0[Additional_delay_channels] = Additional_delay_times
     instance.gen_t0 = list(instance.gen_t0)
 
