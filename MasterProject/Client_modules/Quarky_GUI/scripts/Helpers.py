@@ -7,6 +7,7 @@ Module containing all helper functions for the Quarky GUI.
 
 import os
 import json
+import ast
 import numpy as np
 import importlib
 import h5py

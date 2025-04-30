@@ -10,6 +10,7 @@ different components.
 
 import inspect
 import sys, os
+import ast
 import math
 import traceback
 from pathlib import Path
@@ -177,7 +178,7 @@ class Quarky(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(560, 0))
+        self.central_tabs.setMinimumSize(QSize(620, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setTabShape(QTabWidget.Rounded)
         self.central_tabs.setUsesScrollButtons(True)
@@ -351,10 +352,8 @@ class Quarky(QMainWindow):
             experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
             experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
 
-
             if "sets" not in experiment_format_config:
                 experiment_format_config["sets"] = 1
-
 
             # Create experiment object using updated config and current tab's experiment instance
             experiment_class = self.current_tab.experiment_obj.experiment_class
@@ -372,21 +371,19 @@ class Quarky(QMainWindow):
                         qCritical("Voltage Controller needed but not connected.")
                         return
 
-                    voltage_interface = self.voltage_controller_panel.voltage_hardware # get the connected interface
+                    voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
                     if not any(issubclass(type(voltage_interface), cls) for cls in hardware_req): # check it is of the right type
                         QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
                         qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
                         return
                     else:
-                        collected_hardware.append(voltage_interface)
+                        collected_hardware.append(voltage_hardware)
 
                 self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
 
-                ########### UNTESTED END
-
+            # Normal Experiments
             else:
                 self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
-
 
 
             ### Creating the experiment worker from ExperimentThread and Connecting Signals
@@ -450,6 +447,7 @@ class Quarky(QMainWindow):
         """
         Gets an .py experiment file per user input and calls the create_experiment_tab() function.
         """
+
         options = QFileDialog.Options()
         file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
                                               "Python Files (*.py)", options=options)
@@ -457,6 +455,13 @@ class Quarky(QMainWindow):
             return
         else:
             path = Path(file)
+
+            imports = self.extract_direct_imports(str(path))
+            if "socProxy" in imports:
+                qCritical("Do not import socProxy in your experiment files, connect to an RFSoc via the GUI (comment out that import line).")
+                QMessageBox.critical(None, "Error", "No socProxy import allowed (see log).")
+                return
+
             qInfo("Loading experiment file: " + str(path))
             self.create_experiment_tab(str(path)) # pass full path of the experiment file
 
@@ -618,6 +623,34 @@ class Quarky(QMainWindow):
         if log_index == self.side_tabs.currentIndex():
             self.side_tabs.setTabText(log_index, "Log")
             self.log_panel.logger.setFocus()
+
+    def extract_direct_imports(self, file_path):
+        """
+        Extracts and returns the most direct module name from each import statement in a Python file.
+
+        :param file_path: Full path to the Python file.
+        :type file_path: str
+        :returns: List of direct module names from the import statements.
+        :rtype: list[str]
+        """
+        with open(file_path, "r") as file:
+            tree = ast.parse(file.read(), filename=file_path)
+
+        # List to store the direct module names
+        direct_imports = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    # Split the full module path and take the last part as the direct module name
+                    module_name = alias.name.split('.')[-1]
+                    direct_imports.append(module_name)
+            elif isinstance(node, ast.ImportFrom):
+                # Split the full module path and take the last part as the direct module name
+                module_name = node.module.split('.')[-1]
+                direct_imports.append(module_name)
+
+        return direct_imports
 
 # Creating the Quarky GUI Main Window
 if __name__ == '__main__':

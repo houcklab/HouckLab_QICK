@@ -9,7 +9,7 @@ How an experiment file should be written is defined in the Experiment Hub of doc
 """
 
 import inspect
-
+import ast
 from Pyro4 import Proxy
 from qick import QickConfig
 
@@ -87,14 +87,12 @@ class ExperimentObject():
         for name, obj, in inspect.getmembers(experiment_module):
 
             # Cannot to issubclass as of now because inheriting from different ExperimentClass files.
-            if ((inspect.isclass(obj) and obj.__bases__[0] == ExperimentClass and obj is not ExperimentClass)
+            if ((inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj.__name__ != "ExperimentClass")
                     or
                     (inspect.isclass(obj) and obj.__bases__[0] == ExperimentClassT2 and obj is not ExperimentClassT2)):
 
                 ### Extract the class type (either ExperimentClass or ExperimentClassT2)
-                if inspect.isclass(obj) and obj.__bases__[0] == ExperimentClass:
-                    self.experiment_type = ExperimentClass
-                else:
+                if inspect.isclass(obj) and obj.__bases__[0] == ExperimentClassT2:
                     self.experiment_type = ExperimentClassT2
 
                     ### Store the hardware_requirement if given (only in T2 experiments)
@@ -103,6 +101,8 @@ class ExperimentObject():
                         self.experiment_hardware_req = getattr(obj, "hardware_requirement")
                     else:
                         qDebug("This experiment class does not have a hardware_requirement list.")
+                else:
+                    self.experiment_type = ExperimentClass
 
 
                 qInfo("Found " + str(self.experiment_type.__name__) + " class: " + name)
