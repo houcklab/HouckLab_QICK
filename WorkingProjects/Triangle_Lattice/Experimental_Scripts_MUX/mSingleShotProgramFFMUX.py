@@ -35,7 +35,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         qubit_ch = cfg["qubit_ch"]
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -43,8 +43,8 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
@@ -87,14 +87,14 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
         # IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
         # self.FFPulses_direct(-1 * self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
@@ -168,7 +168,7 @@ class SingleShotProgram(AveragerProgram):
         qubit_ch = cfg["qubit_ch"]
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -176,9 +176,9 @@ class SingleShotProgram(AveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        # self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-        #                          length=self.us2cycles(cfg["length"], gen_ch=self.cfg["res_ch"]))
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
+        # self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+        #                          length=self.us2cycles(cfg["res_length"], gen_ch=self.cfg["res_ch"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
                                  length=self.us2cycles(cfg["readout_length"] + cfg["adc_trig_offset"] + 1, gen_ch=self.cfg["res_ch"]))
         # print(cfg["mixer_freq"], cfg["res_freqs"])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
@@ -220,14 +220,14 @@ class SingleShotProgram(AveragerProgram):
         self.sync_all(gen_t0=self.gen_t0)
 
         # self.FFPulses(self.FFReadouts * 1.5, 0.03)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
 
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1)
         # IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
         # self.FFPulses_direct(-1 * self.FFPulse, (self.pulse_qubit_lenth + self.us2cycles(1) + 4) * 16,
@@ -302,7 +302,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
                 # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
         self.data = data
         self.fid = []
-        for i, read_index in enumerate(self.cfg['Readout_indices']):
+        for i, read_index in enumerate(self.cfg["Qubit_Readout_List"]):
             i_g = shots_ig[i][0]
             q_g = shots_qg[i][0]
             i_e = shots_ie[i][0]
@@ -364,7 +364,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
     #     data = {'config': self.cfg, 'data': {}}
     #             # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
     #     self.data = data
-    #     for i, read_index in enumerate(self.cfg['Readout_indices']):
+    #     for i, read_index in enumerate(self.cfg["Qubit_Readout_List"]):
     #         i_g = shots_i0[i][0]
     #         q_g = shots_q0[i][0]
     #         i_e = shots_i0[i][1]
@@ -408,7 +408,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
         if data is None:
             data = self.data
         if display_indices is None:
-            display_indices = self.cfg['Readout_indices']
+            display_indices = self.cfg["Qubit_Readout_List"]
 
         for read_index in display_indices:
 
@@ -461,7 +461,7 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
 
         res_ch = cfg["res_ch"]
         #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["res_nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
 
         # Qubit configuration
         qubit_ch = cfg["qubit_ch"]
@@ -469,12 +469,12 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
 
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
-            # self.declare_readout(ch=ro_ch, freq=cfg["pulse_freq"],
+            # self.declare_readout(ch=ro_ch, freq=cfg["res_freq"],
             #                      length=self.us2cycles(self.cfg["state_readout_length"]), gen_ch=cfg["res_ch"])
-            self.declare_readout(ch=ro_ch, freq=cfg["pulse_freq"],
+            self.declare_readout(ch=ro_ch, freq=cfg["res_freq"],
                                  length=self.us2cycles(self.cfg["readout_length"]), gen_ch=cfg["res_ch"])
 
-        read_freq = self.freq2reg(cfg["pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
+        read_freq = self.freq2reg(cfg["res_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         # convert frequency to dac frequency (ensuring it is an available adc frequency)
         qubit_freq = self.freq2reg(cfg["qubit_freq"],
                                    gen_ch=qubit_ch)  # convert frequency to dac frequency (ensuring it is an available adc frequency)
@@ -527,8 +527,8 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
         #                          length=self.us2cycles(self.cfg["readout_length"] + self.cfg["adc_trig_offset"]),
         #                          ) # mode="periodic")
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=read_freq, phase=cfg["res_phase"],
-                                 gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+                                 gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
         self.sync_all(200)  # give processor some time to configure pulses
 
     def body(self):
@@ -544,7 +544,7 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
         self.sync_all() # align
 
 
-        self.FFPulses(self.FFReadouts, self.us2cycles(self.cfg["length"]))
+        self.FFPulses(self.FFReadouts, self.us2cycles(self.cfg["res_length"]))
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=[0],
@@ -552,7 +552,7 @@ class LoopbackProgramSingleShotWorking(RAveragerProgram):
                      wait=True,
                      syncdelay=self.us2cycles(1))
 
-        self.FFPulses(-1 * self.FFReadouts, self.us2cycles(self.cfg["length"]))
+        self.FFPulses(-1 * self.FFReadouts, self.us2cycles(self.cfg["res_length"]))
 
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 

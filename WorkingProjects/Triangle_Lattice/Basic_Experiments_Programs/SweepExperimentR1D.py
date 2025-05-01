@@ -40,7 +40,7 @@ class SweepExperimentR1D(ExperimentClass):
         self.xlabel = None  # for plotting
         self.confusion_matrix = None  # for population correction
 
-    def before_each_program(self):
+    def set_up_instance(self):
         '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
         pass
 
@@ -54,7 +54,7 @@ class SweepExperimentR1D(ExperimentClass):
         while plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum += 1
 
-        readout_list = self.cfg['Readout_indices']
+        readout_list = self.cfg["Qubit_Readout_List"]
 
 
         Y = self.y_points
@@ -91,7 +91,7 @@ class SweepExperimentR1D(ExperimentClass):
             else:
                 set_nested_item(self.cfg, self.y_key, y_pt)
 
-            self.before_each_program()
+            self.set_up_instance()
             Instance = self.Program(self.soccfg, self.cfg)
             assert (isinstance(Instance, RAveragerProgram))
 
@@ -155,7 +155,7 @@ class SweepExperimentR1D(ExperimentClass):
         while plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum += 1
 
-        readout_list = self.cfg['Readout_indices']
+        readout_list = self.cfg["Qubit_Readout_List"]
         if len(readout_list) == 1:
             fig, ax = plt.subplots(1, 1, figsize=(10, 8), num=figNum)
             axs = [ax]

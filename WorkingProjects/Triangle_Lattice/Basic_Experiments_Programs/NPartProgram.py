@@ -26,7 +26,7 @@ class ThreePartProgramOneFF(AveragerProgramFF):
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
 
         # Readout (MUX): resonator DAC gen and readout ADCs
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -34,8 +34,8 @@ class ThreePartProgramOneFF(AveragerProgramFF):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         FF.FFDefinitions(self)
 
@@ -60,7 +60,7 @@ class ThreePartProgramOneFF(AveragerProgramFF):
 
         # 3: FFReadouts
         self.FFPulses(self.FFExpt + 2*(self.FFReadouts - self.FFExpt), 2.32515/1e3*3) # Overshoot to freeze dynamics
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -69,7 +69,7 @@ class ThreePartProgramOneFF(AveragerProgramFF):
                      syncdelay=self.us2cycles(10))
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 2.32515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform
@@ -91,7 +91,7 @@ class TwoPartProgram(AveragerProgramFF):
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
 
         # Readout (MUX): resonator DAC gen and readout ADCs
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -99,8 +99,8 @@ class TwoPartProgram(AveragerProgramFF):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         FF.FFDefinitions(self)
 
@@ -122,7 +122,7 @@ class TwoPartProgram(AveragerProgramFF):
 
         # 2: FFReadouts
         self.sync_all(self.cfg['delay_cycles'], gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -131,7 +131,7 @@ class TwoPartProgram(AveragerProgramFF):
                      syncdelay=self.us2cycles(10))
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 2.32515/1e3*3)
 
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
@@ -153,7 +153,7 @@ class TwoPartProgram(AveragerProgramFF):
 
         # 2: FFReadouts
         self.sync_all(self.cfg['delay_cycles'], gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
@@ -162,7 +162,7 @@ class TwoPartProgram(AveragerProgramFF):
                      syncdelay=self.us2cycles(10))
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 2.32515/1e3*3)
 
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)

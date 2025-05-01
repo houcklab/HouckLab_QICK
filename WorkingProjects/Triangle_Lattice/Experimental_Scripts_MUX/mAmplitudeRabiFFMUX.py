@@ -19,7 +19,7 @@ class AmplitudeRabiFFProg(RAveragerProgram):
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
 
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -27,8 +27,8 @@ class AmplitudeRabiFFProg(RAveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
@@ -52,14 +52,14 @@ class AmplitudeRabiFFProg(RAveragerProgram):
         self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 
@@ -78,9 +78,13 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False):
+        # You would overwrite these in the config if you wanted to
+        cfg_ARabi_defaults = {'start': 0, "expts": 31, "reps": 30, "rounds": 30,
+                                "f_ge": self.cfg["qubit_freqs"][0]}
+        self.cfg = cfg_ARabi_defaults  | self.cfg
+        self.cfg['step'] = int(self.cfg["max_gain"] / self.cfg['expts'])
 
-        #### pull the data from the amp rabi sweep
-        # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
+
         prog = AmplitudeRabiFFProg(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,

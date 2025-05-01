@@ -21,7 +21,7 @@ class T2RProgram(RAveragerProgram):
         self.regwi(self.q_rp, self.r_phase2, 0)
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
@@ -29,8 +29,8 @@ class T2RProgram(RAveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
@@ -81,7 +81,7 @@ class T2RProgramFF(RAveragerProgram):
         self.regwi(self.q_rp, self.r_phase2, 0)
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
@@ -89,8 +89,8 @@ class T2RProgramFF(RAveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 

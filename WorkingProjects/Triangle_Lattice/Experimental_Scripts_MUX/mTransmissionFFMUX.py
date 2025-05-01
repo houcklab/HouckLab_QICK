@@ -15,7 +15,7 @@ import WorkingProjects.Triangle_Lattice.Helpers.FF_utils as FF
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains= cfg["res_gains"],
@@ -23,36 +23,25 @@ class CavitySpecFFProg(AveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"], gen_ch = self.cfg["res_ch"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"], gen_ch = self.cfg["res_ch"]))
 
         FF.FFDefinitions(self)
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        cfg = self.cfg
+
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
-        # self.pulse(ch=self.cfg["res_ch"],t=0)
-        #
-        # self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-        #                          length=self.us2cycles(cfg["length"], gen_ch = self.cfg["res_ch"]))
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
-        #
-        # self.synci(200) # give processor time to get ahead of the pulses
-        # self.trigger(adcs=self.ro_chs, pins=[0],adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]))  # trigger the adc acquisition
-        # self.pulse(ch=self.cfg["res_ch"],t=0)
-        #
-        # # control should wait until the readout is over
-        # self.waiti(0, self.us2cycles(self.cfg["adc_trig_offset"])+self.us2cycles(self.cfg["readout_length"]))
-        # self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]))  # sync all channels
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)

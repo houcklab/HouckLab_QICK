@@ -27,16 +27,16 @@ outerFolder = "Z:\QSimMeasurements\Measurements\\4Q_Test_Scalinq\\"
 BaseConfig = {
     "res_ch": 6,  # --Fixed
     "qubit_ch": 4,  # --Fixed
-    # "mixer_freq": 7200,  # MHz # Overwritten
+    "mixer_freq": 500, # 7200  # MHz
     "ro_chs": [0, 1],  # --Fixed
     "reps": 1000,  # --Fixed
-    "nqz": 1, #1,  #### refers to cavity
+    "res_nqz": 1,
     "qubit_nqz": 2,
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
-    "pulse_style": "const",  # --Fixed
-    "length": 20,  # length of cavity pulse for readout in us
-    "pulse_gain": 30000,  # [DAC units]
+    "res_pulse_style": "const",  # --Fixed
+    "res_length": 20,  # length of cavity pulse for readout in us
+    "res_gain": 30000,  # [DAC units]
     "adc_trig_offset": 0.5,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
     "cavity_LO": 6.8e9,  #in Hz
@@ -44,10 +44,7 @@ BaseConfig = {
     # "cavity_winding_freq": 1.0903695,
     # 'cavity_winding_offset': -15.77597
 }
-FF_channel1 = 0
-FF_channel2 = 1
-FF_channel3 = 2
-FF_channel4 = 3
+
 
 FF_channel1 = 3
 FF_channel2 = 2

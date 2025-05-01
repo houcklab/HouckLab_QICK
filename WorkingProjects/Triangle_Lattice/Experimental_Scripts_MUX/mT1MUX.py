@@ -19,7 +19,7 @@ class T1Program(RAveragerProgram):
         self.regwi(self.q_rp, self.r_wait, cfg["start"])
 
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
@@ -27,8 +27,8 @@ class T1Program(RAveragerProgram):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["res_gain"],
+                                 length=self.us2cycles(cfg["res_length"]))
 
         f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
@@ -50,13 +50,13 @@ class T1Program(RAveragerProgram):
         self.sync(self.q_rp, self.r_wait)
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.FFPulses(self.FFReadouts, self.cfg["length"])
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):

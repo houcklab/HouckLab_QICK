@@ -30,7 +30,7 @@ class FFvsSpec(SweepExperiment2D):
                                                                                '4']['Gain_Pulse'], 4)
 
 
-    def before_each_program(self):
+    def set_up_instance(self):
         '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
         if type(self.cfg["IDataArray"][0]) != type(None):
             self.cfg["IDataArray"][self.cfg["qubit_FF_index"] - 1] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Expt'],

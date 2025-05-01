@@ -1,31 +1,18 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-from WorkingProjects.Triangle_Lattice.Running_Experiments_MUX.MUXInitialize import *
+from WorkingProjects.Triangle_Lattice.MUXInitialize import *
 from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabticRampCalibration import AdiabticRampCalibration
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mSpecVsAdiabaticRamp import SpecVsAdiabaticRamp
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticRampOscillations import AdiabaticRampOscillations
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticRampSingleShot import AdiabaticRampSingleShot
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mFFSweepARampSS import FFSweepAdiabaticRampSingleShot
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mFFSweepRampOsc import FFSweepRampOscillations
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticT1 import AdiabaticRampT1SS
-from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mRampDelayVsPopulation import SweepDelayVsPopulation
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabticRampCalibration import AdiabticRampCalibration
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mSpecVsAdiabaticRamp import SpecVsAdiabaticRamp
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticRampOscillations import AdiabaticRampOscillations
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticRampSingleShot import AdiabaticRampSingleShot
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mFFSweepARampSS import FFSweepAdiabaticRampSingleShot
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mFFSweepRampOsc import FFSweepRampOscillations
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mAdiabaticT1 import AdiabaticRampT1SS
+# from WorkingProjects.Triangle_Lattice.Experimental_Scripts_MUX.mRampDelayVsPopulation import SweepDelayVsPopulation
 
 import numpy as np
-# yoko69.rampstep = 0.0005
-# yoko70.rampstep = 0.0005
-# yoko71.rampstep = 0.0005
-# yoko72.rampstep = 0.0005
-#
-# # yoko69.SetVoltage(-0.0479)
-# # yoko70.SetVoltage(0.0904)
-# # yoko71.SetVoltage(-0.1262)
-# # yoko72.SetVoltage(0.0051)
-#
-# yoko69.SetVoltage(-0.1368)
-# yoko70.SetVoltage(-0.1542)
-# yoko71.SetVoltage(-0.2343)
-# yoko72.SetVoltage(0.1055)
+
 
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
@@ -357,10 +344,10 @@ UpdateConfig_FF = {
 
 UpdateConfig_transmission = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
-    "pulse_style": "const",  # --Fixed
+    "res_pulse_style": "const",  # --Fixed
     "readout_length": 3,  # [Clock ticks]
-    "pulse_gain": int(cavity_gain),  # [DAC units]
-    # "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
+    "res_gain": int(cavity_gain),  # [DAC units]
+    # "res_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
     "res_gains": gains,  # [DAC units]
     "res_freqs": resonator_frequencies,
     ##### define tranmission experiment parameters
@@ -371,7 +358,7 @@ UpdateConfig_transmission = {
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit | UpdateConfig_FF
 config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
 config["FF_Qubits"] = FF_Qubits
-config['Readout_indices'] = Qubit_Readout
+config["Qubit_Readout_List"] = Qubit_Readout
 
 
 #### update the qubit and cavity attenuation
@@ -426,7 +413,7 @@ config['confusion_matrix'] = confusion_matrix
 
 
 
-config['Readout_indices'] = Qubit_Readout
+config["Qubit_Readout_List"] = Qubit_Readout
 config['qubit_gains'] = [int(Qubit_Parameters[str(Q)]['Qubit']['Gain']) for Q in Qubit_Pulse]
 config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse]
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']

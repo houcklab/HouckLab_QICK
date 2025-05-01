@@ -11,6 +11,7 @@ import WorkingProjects.Triangle_Lattice.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice.Helpers.rotate_SS_data import *
 from qick import AveragerProgram, RAveragerProgram
 import scipy
+from WorkingProjects.Triangle_Lattice.Helpers.IQ_contrast import *
 
 class AveragerProgramFF(AveragerProgram):
     '''Averager Program but adds FF and acquire helpers'''
@@ -115,14 +116,4 @@ class RAveragerProgramFF(RAveragerProgram):
             return excited_percentages, shots_i0, shots_q0 ###, rotated_iq_array
         else:
             return excited_percentages
-    
-def IQ_angle(Imat, Qmat):
-    def newQvariance(theta):
-        newQ = np.sin(theta)*Imat + np.cos(theta)*Qmat
-        return np.max(newQ) - np.min(newQ)
-    angle = scipy.optimize.minimize(newQvariance, (np.pi/4,)).x
-    return angle
-
-def rotate(theta, Imat, Qmat):
-    return np.cos(theta)*Imat - np.sin(theta)*Qmat, np.sin(theta)*Imat + np.cos(theta)*Qmat # newI, newQ
         
