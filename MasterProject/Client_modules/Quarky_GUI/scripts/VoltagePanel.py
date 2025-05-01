@@ -464,37 +464,45 @@ class VoltageSweepBox(QVBoxLayout):
         self.sweep_form_layout.setVerticalSpacing(2)
         self.sweep_form_layout.setObjectName("form_layout")
 
-        self.channel_dropdown_label = QLabel()
-        self.channel_dropdown_label.setText("Channel: ")
-        self.channel_dropdown_label.setObjectName("channel_dropdown_label")
-        self.sweep_form_layout.setWidget(0, QFormLayout.LabelRole, self.channel_dropdown_label)
-        self.channel_dropdown = QComboBox()
-        self.channel_dropdown.setFixedWidth(70)
-        self.sweep_form_layout.setWidget(0, QFormLayout.FieldRole, self.channel_dropdown)
+        # self.channel_dropdown_label = QLabel()
+        # self.channel_dropdown_label.setText("Channel: ")
+        # self.channel_dropdown_label.setObjectName("channel_dropdown_label")
+        # self.sweep_form_layout.setWidget(0, QFormLayout.LabelRole, self.channel_dropdown_label)
+        # self.channel_dropdown = QComboBox()
+        # self.channel_dropdown.setFixedWidth(70)
+        # self.sweep_form_layout.setWidget(0, QFormLayout.FieldRole, self.channel_dropdown)
+
+        self.dacs_label = QLabel()
+        self.dacs_label.setText("DAC(s): ")
+        self.dacs_label.setObjectName("dacs_label")
+        self.sweep_form_layout.setWidget(1, QFormLayout.LabelRole, self.dacs_label)
+        self.dacs_edit = QLineEdit()
+        self.dacs_edit.setObjectName("dacs_edit")
+        self.sweep_form_layout.setWidget(1, QFormLayout.FieldRole, self.dacs_edit)
 
         self.start_label = QLabel()
         self.start_label.setText("Start: ")
         self.start_label.setObjectName("start_label")
-        self.sweep_form_layout.setWidget(1, QFormLayout.LabelRole, self.start_label)
+        self.sweep_form_layout.setWidget(2, QFormLayout.LabelRole, self.start_label)
         self.start_edit = QLineEdit()
         self.start_edit.setObjectName("start_edit")
-        self.sweep_form_layout.setWidget(1, QFormLayout.FieldRole, self.start_edit)
+        self.sweep_form_layout.setWidget(2, QFormLayout.FieldRole, self.start_edit)
 
         self.stop_label = QLabel()
         self.stop_label.setText("Stop: ")
         self.stop_label.setObjectName("stop_label")
-        self.sweep_form_layout.setWidget(2, QFormLayout.LabelRole, self.stop_label)
+        self.sweep_form_layout.setWidget(3, QFormLayout.LabelRole, self.stop_label)
         self.stop_edit = QLineEdit()
         self.stop_edit.setObjectName("stop_edit")
-        self.sweep_form_layout.setWidget(2, QFormLayout.FieldRole, self.stop_edit)
+        self.sweep_form_layout.setWidget(3, QFormLayout.FieldRole, self.stop_edit)
 
         self.numPoints_label = QLabel()
         self.numPoints_label.setText("#Points: ")
         self.numPoints_label.setObjectName("numPoints_label")
-        self.sweep_form_layout.setWidget(3, QFormLayout.LabelRole, self.numPoints_label)
+        self.sweep_form_layout.setWidget(4, QFormLayout.LabelRole, self.numPoints_label)
         self.numPoints_edit = QLineEdit()
         self.numPoints_edit.setObjectName("numPoints_edit")
-        self.sweep_form_layout.setWidget(3, QFormLayout.FieldRole, self.numPoints_edit)
+        self.sweep_form_layout.setWidget(4, QFormLayout.FieldRole, self.numPoints_edit)
 
         self.addLayout(self.sweep_form_layout)
 
@@ -502,25 +510,31 @@ class VoltageSweepBox(QVBoxLayout):
 
     def setup_signals(self):
         self.populate_form()
-        self.channel_dropdown.currentIndexChanged.connect(self.on_channel_edited)
+        # self.channel_dropdown.currentIndexChanged.connect(self.on_channel_edited)
+        self.dacs_edit.editingFinished.connect(self.on_dacs_edited)
         self.start_edit.editingFinished.connect(self.on_start_edited)
         self.stop_edit.editingFinished.connect(self.on_stop_edited)
         self.numPoints_edit.editingFinished.connect(self.on_num_points_edited)
 
-    def populate_channel_dropdown(self):
-        self.voltage_interface_currtype = self.voltage_interface_combo.currentText()
-        self.channel_dropdown.clear()
-        self.channel_dropdown.addItem(str("None"))
-
-        if self.voltage_interface_currtype == "Yoko":
-            self.channel_dropdown.addItem(str("Yoko"))
-        else:
-            num_channels = 16
-            for i in range(num_channels):
-                self.channel_dropdown.addItem(str(i+1))
+    # def populate_channel_dropdown(self):
+    #     self.voltage_interface_currtype = self.voltage_interface_combo.currentText()
+    #     self.channel_dropdown.clear()
+    #     self.channel_dropdown.addItem(str("None"))
+    #
+    #     if self.voltage_interface_currtype == "Yoko":
+    #         self.channel_dropdown.addItem(str("Yoko"))
+    #     else:
+    #         num_channels = 16
+    #         for i in range(num_channels):
+    #             self.channel_dropdown.addItem(str(i+1))
 
     def populate_form(self):
-        self.populate_channel_dropdown()
+        # self.populate_channel_dropdown()
+        if "DACs" in self.config_tree_panel.config["Experiment Config"]:
+            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"])[1:-1])
+        else:
+            self.start_edit.setText("")
+
         if "VoltageStart" in self.config_tree_panel.config["Experiment Config"]:
             self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
         else:
@@ -536,21 +550,43 @@ class VoltageSweepBox(QVBoxLayout):
         else:
             self.numPoints_edit.setText(str(0))
 
-    def on_channel_edited(self):
+    # def on_channel_edited(self):
+    #     try:
+    #         channel = self.channel_dropdown.currentText()
+    #         if channel == "None" or channel == "Yoko" or not channel:
+    #             self.parent.voltage_hardware = self.parent.voltage_interface
+    #         else:
+    #             value = int(channel)
+    #             self.parent.voltage_hardware = self.parent.voltage_interface
+    #             # try:
+    #             #     self.parent.voltage_hardware = self.parent.voltage_interface.channels[(value-1)]
+    #             # except:
+    #             #     raise ValueError
+    #     except ValueError:
+    #         QMessageBox.critical(self.parent, "Error", "Something went wrong when setting channel.")
+    #         qDebug(f"Something went wrong when setting the voltage channel to sweep.")
+    #         self.channel_dropdown.setCurrentIndex(0)
+
+    def on_dacs_edited(self):
         try:
-            channel = self.channel_dropdown.currentText()
-            if channel == "None" or channel == "Yoko" or not channel:
-                self.parent.voltage_hardware = self.parent.voltage_interface
+            # Get the string of numbers from the text edit field
+            dacs = self.dacs_edit.text()
+            dacs_list = [int(x.strip()) for x in dacs.split(',')]
+
+            if self.voltage_interface_currtype == "Yoko":
+                if dacs in dacs_list:
+                    if not (dacs != 1):
+                        raise ValueError
             else:
-                value = int(channel)
-                try:
-                    self.parent.voltage_hardware = self.parent.voltage_interface.channels[(value-1)]
-                except:
-                    raise ValueError
+                for dac in dacs_list:
+                    if not (1 <= dac <= 16):
+                        raise ValueError
+
+            self.config_tree_panel.config["Experiment Config"]["DACs"] = dacs_list
         except ValueError:
-            QMessageBox.critical(self.parent, "Error", "Something went wrong when setting channel.")
-            qDebug(f"Something went wrong when setting the voltage channel to sweep.")
-            self.channel_dropdown.setCurrentIndex(0)
+            # If there's any issue (e.g., a non-number value), raise an error
+            qDebug(f"The input is not in the correct format. Please enter a comma-separated list of integers within the channel range. Resetting.")
+            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"])[1:-1])
 
     def on_start_edited(self):
         try:

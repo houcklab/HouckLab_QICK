@@ -11,10 +11,7 @@ from qick import QickConfig
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 
-from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
-from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
-
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
@@ -144,19 +141,17 @@ class SpecVsQblox(ExperimentClassT2):
                          config_file=config_file, progress=progress)
 
         # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg, self.voltage_interface = hardware
+        self.soc, self.soccfg, self.qblox = hardware
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
 
-
-        ########## TODO CHANGE THIS
         expt_cfg = {
             ### define the qblox parameters
-            "qbloxStart": self.cfg["qbloxStart"],
-            "qbloxStop": self.cfg["qbloxStop"],
-            "qbloxNumPoints": self.cfg["qbloxNumPoints"],
+            "qbloxStart": self.cfg["VoltageStart"],
+            "qbloxStop": self.cfg["VoltageStop"],
+            "qbloxNumPoints": self.cfg["VoltageNumPoints"],
             ### transmission parameters
             # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -167,8 +162,6 @@ class SpecVsQblox(ExperimentClassT2):
             "expts": self.cfg["expts"],
         }
         print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
-        ###########
-
 
         qbloxVec = []
         for n in range(len(expt_cfg["qbloxStart"])):
@@ -219,7 +212,7 @@ class SpecVsQblox(ExperimentClassT2):
         start = time.time()
 
 
-        QbloxClass = Qblox()
+        QbloxClass = self.qblox
         #### loop over the qblox vector
         for i in range(expt_cfg["qbloxNumPoints"]):
             if i != 0:
@@ -233,7 +226,7 @@ class SpecVsQblox(ExperimentClassT2):
             for m in range(len(self.cfg['DACs'])):
                 voltages_for_qblox.append(qbloxVec[m][i])
             print(voltages_for_qblox)
-            QbloxClass.set_voltage(self.cfg['DACs'], voltages_for_qblox)
+            QbloxClass.set_voltage(voltages_for_qblox, self.cfg['DACs'])
             # QbloxClass.print_voltages()
             time.sleep(1)
             ### take the transmission data

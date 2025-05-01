@@ -150,6 +150,8 @@ class QConfigTreePanel(QTreeView):
             for key, value in params.items():
                 if not allow_voltage_editing and str(key)[:7] == "Voltage":
                     continue
+                if not allow_voltage_editing and str(key) == "DACs":
+                    continue
 
                 child_key = QtGui.QStandardItem(key)
                 child_key.setFlags(QtCore.Qt.ItemIsEnabled)
