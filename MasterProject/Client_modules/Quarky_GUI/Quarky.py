@@ -372,7 +372,7 @@ class Quarky(QMainWindow):
                         return
 
                     voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
-                    if not any(issubclass(type(voltage_interface), cls) for cls in hardware_req): # check it is of the right type
+                    if not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
                         QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
                         qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
                         return
