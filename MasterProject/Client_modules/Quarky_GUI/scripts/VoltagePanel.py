@@ -2,9 +2,10 @@
 ===============
 VoltagePanel.py
 ===============
-Soon to be the home of a voltage controller interface panel [Qbox and Yoko].
+The home of a voltage controller interface panel [Qbox and Yoko].
 
-    *Coming Soon*
+Allows for an easy space to manually set voltages by channel and perform basic uniform sweeps.
+Sweeps functionality and passing a reference of the voltage interface are only supported for ExperimentT2 experiments.
 """
 
 import pyvisa as visa
@@ -44,8 +45,8 @@ class QVoltagePanel(QWidget):
     A custom QWidget class for the voltage control panel.
 
     **Important Attributes:**
-
-        * -----
+        * voltage_interface (VoltageInterface): The actual connection to the specified voltage interface.
+        * voltage_hardware (VoltageInterface): The hardware that is passed to the experiment, usually the same as voltage_interface.
     """
 
     yoko_settings = {
@@ -69,6 +70,17 @@ class QVoltagePanel(QWidget):
     """
 
     def __init__(self, config_tree_panel, current_Tab, parent):
+        """
+        Initialise the custom QWidget class that is the Voltage Panel.
+
+        :param config_tree_panel: The configuration tree panel.
+        :type config_tree_panel: QConfigTreePanel
+        :param current_Tab: The current tab widget.
+        :type current_Tab: QQuarkTab
+        :param parent: The parent widget.
+        :type parent: QWidget
+        """
+
         super(QVoltagePanel, self).__init__(parent)
 
         self.connected = False
@@ -216,6 +228,8 @@ class QVoltagePanel(QWidget):
     def handle_voltInterface_change(self, index):
         """
         Handle when the user changes the voltage interface type.
+
+        :param index: The index of the selection made in the combo box (not used).
         """
         self.voltage_interface_currtype = self.voltage_interface_combo.currentText()
 
@@ -265,6 +279,9 @@ class QVoltagePanel(QWidget):
         """
         The function activated when the experiment tab is changed, where then it retrieves the experiment type, and
         whether it not it provides a Voltage Config to perform sweeps.
+
+        :param current_tab: The tab object of the current tab.
+        :type current_tab: QQuarkTab
         """
         if current_tab is not None:
             self.current_tab = current_tab
@@ -283,6 +300,7 @@ class QVoltagePanel(QWidget):
         """
         Set up the voltage interface settings with the default values depending on whether Yoko or Qblox is selected.
         """
+
         self.voltage_interface_settings.clear()
         width = self.voltage_interface_settings.width()
 
@@ -306,6 +324,7 @@ class QVoltagePanel(QWidget):
         :return: Status of connection, True successful, False otherwise.
         :rtype: bool
         """
+
         self.create_connection_button.setText("Creating...")
 
         # retrieve the textedit settings
@@ -399,6 +418,9 @@ class QVoltagePanel(QWidget):
         self.yoko_channel_list_layout.addLayout(single_channel_group)
 
     def update_voltage_channels(self):
+        """
+        With the voltage interface connection, it retrieves all the current voltages of all channels to display.
+        """
 
         if self.connected and self.voltage_interface is not None:
             if self.voltage_interface_currtype == "Yoko":
@@ -448,6 +470,13 @@ class QVoltagePanel(QWidget):
         self.sweeps_layout.populate_form()
 
 class VoltageSweepBox(QVBoxLayout):
+    """
+    A custom QVBoxLayout layout that contains the form for voltage sweep functionality.
+
+    This part of the GUI is still relatively experimental. It is recommended for now to just create regular ExperimentClass
+    experiments that perform a connection themselves and sweep.
+    """
+
     def __init__(self, config_tree_panel, voltage_interface_combo, parent):
         super().__init__()
         self.config_tree_panel = config_tree_panel

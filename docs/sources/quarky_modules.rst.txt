@@ -10,7 +10,7 @@ A simple overview of the Quarky GUI, including its main components, navigation, 
 
 
 Documentation Navigation
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. toctree::
    :maxdepth: 2

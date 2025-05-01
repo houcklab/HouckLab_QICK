@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../quarky_modules.html">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
@@ -262,18 +259,257 @@
 <span id="voltagepanel-class"></span><h1>VoltagePanel Class<a class="headerlink" href="#module-scripts.VoltagePanel" title="Link to this heading">¶</a></h1>
 <section id="voltagepanel-py">
 <h2>VoltagePanel.py<a class="headerlink" href="#voltagepanel-py" title="Link to this heading">¶</a></h2>
-<p>Soon to be the home of a voltage controller interface panel [Qbox and Yoko].</p>
-<blockquote>
-<div><p><em>Coming Soon</em></p>
-</div></blockquote>
+<p>The home of a voltage controller interface panel [Qbox and Yoko].</p>
+<p>Allows for an easy space to manually set voltages by channel and perform basic uniform sweeps.
+Sweeps functionality and passing a reference of the voltage interface are only supported for ExperimentT2 experiments.</p>
 </section>
 <dl class="py class">
 <dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">scripts.VoltagePanel.</span></span><span class="sig-name descname"><span class="pre">QVoltagePanel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel" title="Link to this definition">¶</a></dt>
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">scripts.VoltagePanel.</span></span><span class="sig-name descname"><span class="pre">QVoltagePanel</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_Tab</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QWidget</span></code></p>
+<p>A custom QWidget class for the voltage control panel.</p>
+<dl class="simple">
+<dt><strong>Important Attributes:</strong></dt><dd><ul class="simple">
+<li><p>voltage_interface (VoltageInterface): The actual connection to the specified voltage interface.</p></li>
+<li><p>voltage_hardware (VoltageInterface): The hardware that is passed to the experiment, usually the same as voltage_interface.</p></li>
+</ul>
+</dd>
+</dl>
 <dl class="py method">
 <dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.__init__">
-<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.__init__" title="Link to this definition">¶</a></dt>
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">current_Tab</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.__init__" title="Link to this definition">¶</a></dt>
+<dd><p>Initialise the custom QWidget class that is the Voltage Panel.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>config_tree_panel</strong> (<a class="reference internal" href="ConfigTreePanel.html#scripts.ConfigTreePanel.QConfigTreePanel" title="scripts.ConfigTreePanel.QConfigTreePanel"><em>QConfigTreePanel</em></a>) – The configuration tree panel.</p></li>
+<li><p><strong>current_Tab</strong> (<a class="reference internal" href="QuarkTab.html#scripts.QuarkTab.QQuarkTab" title="scripts.QuarkTab.QQuarkTab"><em>QQuarkTab</em></a>) – The current tab widget.</p></li>
+<li><p><strong>parent</strong> (<em>QWidget</em>) – The parent widget.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.changed_tabs">
+<span class="sig-name descname"><span class="pre">changed_tabs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">current_tab</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.changed_tabs" title="Link to this definition">¶</a></dt>
+<dd><p>The function activated when the experiment tab is changed, where then it retrieves the experiment type, and
+whether it not it provides a Voltage Config to perform sweeps.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>current_tab</strong> (<a class="reference internal" href="QuarkTab.html#scripts.QuarkTab.QQuarkTab" title="scripts.QuarkTab.QQuarkTab"><em>QQuarkTab</em></a>) – The tab object of the current tab.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.create_connection">
+<span class="sig-name descname"><span class="pre">create_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.create_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Creates a new connection dependent on what the user has selected on the dropdown. Also retrieves the
+specified connection settings.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Status of connection, True successful, False otherwise.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.delete_connection">
+<span class="sig-name descname"><span class="pre">delete_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.delete_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Deletes the connection to the voltage interface by deleting the voltage_interface variable.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change">
+<span class="sig-name descname"><span class="pre">handle_voltInterface_change</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">index</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change" title="Link to this definition">¶</a></dt>
+<dd><p>Handle when the user changes the voltage interface type.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>index</strong> – The index of the selection made in the combo box (not used).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.qblox_settings">
+<span class="sig-name descname"><span class="pre">qblox_settings</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'COM_speed':</span> <span class="pre">1000000.0,</span> <span class="pre">'module':</span> <span class="pre">2,</span> <span class="pre">'num_dacs':</span> <span class="pre">16,</span> <span class="pre">'port':</span> <span class="pre">'COM3',</span> <span class="pre">'ramp_interval':</span> <span class="pre">0.05,</span> <span class="pre">'ramp_step':</span> <span class="pre">0.003,</span> <span class="pre">'range_num':</span> <span class="pre">2,</span> <span class="pre">'reset_voltages':</span> <span class="pre">False,</span> <span class="pre">'timeout':</span> <span class="pre">1}</span></em><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.qblox_settings" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.range_numbers">
+<span class="sig-name descname"><span class="pre">range_numbers</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{0:</span> <span class="pre">[0,</span> <span class="pre">4],</span> <span class="pre">2:</span> <span class="pre">[-4,</span> <span class="pre">4],</span> <span class="pre">4:</span> <span class="pre">[-2,</span> <span class="pre">2]}</span></em><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.range_numbers" title="Link to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt>The qblox_settings. Change this code to set default values.</dt><dd><dl class="simple">
+<dt>range_numbers:</dt><dd><ul class="simple">
+<li><p>0 to 4 Volt: range_4V_uni (span 0)</p></li>
+<li><p>-4 to 4 Volt: range_4V_bi (span 2) default</p></li>
+<li><p>-2 to 2 Volt: range_2V_bi (span 4)</p></li>
+</ul>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.set_voltage">
+<span class="sig-name descname"><span class="pre">set_voltage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">channel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_input</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">set_button</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.set_voltage" title="Link to this definition">¶</a></dt>
+<dd><p>Setting voltage of the connected Voltage Interface given the specified channel and voltage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>channel</strong> (<em>QLineEdit</em>) – Voltage channel input QLineEdit.</p></li>
+<li><p><strong>voltage</strong> (<em>float</em>) – Voltage value</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_signals">
+<span class="sig-name descname"><span class="pre">setup_signals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_signals" title="Link to this definition">¶</a></dt>
+<dd><p>Sets up all the signals and slots of the Accounts Panel. Including changing voltage interface type, and
+set voltage buttons.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels">
+<span class="sig-name descname"><span class="pre">setup_voltage_channels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels" title="Link to this definition">¶</a></dt>
+<dd><p>Sets up the UI for the voltage channels for both Qblox and Yoko.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings">
+<span class="sig-name descname"><span class="pre">setup_voltage_interface_settings</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings" title="Link to this definition">¶</a></dt>
+<dd><p>Set up the voltage interface settings with the default values depending on whether Yoko or Qblox is selected.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.toggle_create_connection">
+<span class="sig-name descname"><span class="pre">toggle_create_connection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.toggle_create_connection" title="Link to this definition">¶</a></dt>
+<dd><p>Toggles the create connection button between create and delete connection. Ensures we are not just
+creating many instances of voltage interfaces.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.update_sweeps">
+<span class="sig-name descname"><span class="pre">update_sweeps</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.update_sweeps" title="Link to this definition">¶</a></dt>
+<dd><p>If Experiment offers a Voltage Config (sweeps), we populate the sweep section with editable configs.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.update_voltage_channels">
+<span class="sig-name descname"><span class="pre">update_voltage_channels</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.update_voltage_channels" title="Link to this definition">¶</a></dt>
+<dd><p>With the voltage interface connection, it retrieves all the current voltages of all channels to display.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.QVoltagePanel.yoko_settings">
+<span class="sig-name descname"><span class="pre">yoko_settings</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'VISAaddress':</span> <span class="pre">'USB0::0x0B21::0x0039::91S929901::0::INSTR'}</span></em><a class="headerlink" href="#scripts.VoltagePanel.QVoltagePanel.yoko_settings" title="Link to this definition">¶</a></dt>
+<dd><p>The yoko_settings. Change this code to set default values.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">scripts.VoltagePanel.</span></span><span class="sig-name descname"><span class="pre">VoltageSweepBox</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_interface_combo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QVBoxLayout</span></code></p>
+<p>A custom QVBoxLayout layout that contains the form for voltage sweep functionality.</p>
+<p>This part of the GUI is still relatively experimental. It is recommended for now to just create regular ExperimentClass
+experiments that perform a connection themselves and sweep.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_interface_combo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.__init__" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.on_dacs_edited">
+<span class="sig-name descname"><span class="pre">on_dacs_edited</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.on_dacs_edited" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.on_num_points_edited">
+<span class="sig-name descname"><span class="pre">on_num_points_edited</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.on_num_points_edited" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.on_start_edited">
+<span class="sig-name descname"><span class="pre">on_start_edited</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.on_start_edited" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.on_stop_edited">
+<span class="sig-name descname"><span class="pre">on_stop_edited</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.on_stop_edited" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.populate_form">
+<span class="sig-name descname"><span class="pre">populate_form</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.populate_form" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepBox.setup_signals">
+<span class="sig-name descname"><span class="pre">setup_signals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepBox.setup_signals" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">scripts.VoltagePanel.</span></span><span class="sig-name descname"><span class="pre">VoltageSweepTable</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_interface_combo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">QVBoxLayout</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_tree_panel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">voltage_interface_combo</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.__init__" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.channel_edited">
+<span class="sig-name descname"><span class="pre">channel_edited</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">item</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.channel_edited" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.convert_to_list_matrix">
+<span class="sig-name descname"><span class="pre">convert_to_list_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">matrix</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.convert_to_list_matrix" title="Link to this definition">¶</a></dt>
+<dd><p>Recursively converts any numpy arrays in a matrix to lists.
+:param matrix: A list or numpy array that may contain nested lists/arrays.
+:return: A matrix (list of lists) with all numpy arrays converted to lists.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.copy_matrix">
+<span class="sig-name descname"><span class="pre">copy_matrix</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.copy_matrix" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.load_matrix">
+<span class="sig-name descname"><span class="pre">load_matrix</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.load_matrix" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.populate_table">
+<span class="sig-name descname"><span class="pre">populate_table</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">matrix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.populate_table" title="Link to this definition">¶</a></dt>
+<dd><p>Populate the table to match the shape of the given matrix.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.retrieve_references">
+<span class="sig-name descname"><span class="pre">retrieve_references</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.retrieve_references" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.setup_signals">
+<span class="sig-name descname"><span class="pre">setup_signals</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.setup_signals" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.VoltagePanel.VoltageSweepTable.table_edited">
+<span class="sig-name descname"><span class="pre">table_edited</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">item</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.VoltagePanel.VoltageSweepTable.table_edited" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
@@ -339,6 +575,42 @@
 <li><a class="reference internal" href="#voltagepanel-py">VoltagePanel.py</a></li>
 <li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel</span></code></a><ul>
 <li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.__init__"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.changed_tabs"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.changed_tabs()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.create_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.create_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.delete_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.delete_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.handle_voltInterface_change"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.handle_voltInterface_change()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.qblox_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.qblox_settings</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.range_numbers"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.range_numbers</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.set_voltage"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.set_voltage()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_signals"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_signals()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_channels"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_voltage_channels()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.setup_voltage_interface_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.setup_voltage_interface_settings()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.toggle_create_connection"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.toggle_create_connection()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.update_sweeps"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.update_sweeps()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.update_voltage_channels"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.update_voltage_channels()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.QVoltagePanel.yoko_settings"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel.yoko_settings</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.__init__"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.on_dacs_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.on_dacs_edited()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.on_num_points_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.on_num_points_edited()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.on_start_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.on_start_edited()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.on_stop_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.on_stop_edited()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.populate_form"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.populate_form()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepBox.setup_signals"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox.setup_signals()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.__init__"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.__init__()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.channel_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.channel_edited()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.convert_to_list_matrix"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.convert_to_list_matrix()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.copy_matrix"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.copy_matrix()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.load_matrix"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.load_matrix()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.populate_table"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.populate_table()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.retrieve_references"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.retrieve_references()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.setup_signals"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.setup_signals()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.VoltagePanel.VoltageSweepTable.table_edited"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable.table_edited()</span></code></a></li>
 </ul>
 </li>
 </ul>

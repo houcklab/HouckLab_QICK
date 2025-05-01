@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../quarky_modules.html">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
@@ -304,6 +301,12 @@ different components.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="Quarky.Quarky.check_log_read">
+<span class="sig-name descname"><span class="pre">check_log_read</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Quarky.Quarky.check_log_read" title="Link to this definition">¶</a></dt>
+<dd><p>Check if the Log tab has been opened and set the Log to the state read.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="Quarky.Quarky.closeEvent">
 <span class="sig-name descname"><span class="pre">closeEvent</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">event</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Quarky.Quarky.closeEvent" title="Link to this definition">¶</a></dt>
 <dd><p>Overrides the default closeEvent() function in a PyQt widget by first ensuring all threads have stopped.</p>
@@ -368,6 +371,23 @@ the given path.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="Quarky.Quarky.extract_direct_imports">
+<span class="sig-name descname"><span class="pre">extract_direct_imports</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Quarky.Quarky.extract_direct_imports" title="Link to this definition">¶</a></dt>
+<dd><p>Extracts and returns the most direct module name from each import statement in a Python file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>file_path</strong> (<em>str</em>) – Full path to the Python file.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>List of direct module names from the import statements.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>list[str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="Quarky.Quarky.load_data_file">
 <span class="sig-name descname"><span class="pre">load_data_file</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Quarky.Quarky.load_data_file" title="Link to this definition">¶</a></dt>
 <dd><p>Gets an .h5 experiment file per user input. Then calls the create_data_tab() function with the file’s path.</p>
@@ -399,6 +419,17 @@ the given path.</p>
 <dd><p>Runs the experiment instance of the current active tab via the RFSoC connection. This function is where the
 new Experiment Worker Thread is created and all signals for data updating and experiment termination
 are connected.</p>
+<p>The desired config format for running an experiment merges Base and Experiment Config as well as downgrades
+their level.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="s2">&quot;config_field1&quot;</span><span class="p">:</span> <span class="mi">000</span><span class="p">,</span>
+  <span class="s2">&quot;config_field2&quot;</span><span class="p">:</span> <span class="mi">000</span><span class="p">,</span>
+  <span class="s2">&quot;config_field3&quot;</span><span class="p">:</span> <span class="mi">000</span><span class="p">,</span>
+  <span class="o">...</span>
+  <span class="s2">&quot;config_field&quot;</span><span class="p">:</span> <span class="mi">000</span><span class="p">,</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 </dd></dl>
 
 <dl class="py method">
@@ -431,6 +462,12 @@ of the current tab’s config to do so. Usually called via a signal from an Expe
 <dd class="field-odd"><p><strong>sets_complete</strong> (<em>int</em>) – The number of sets of the experiment that have been completed</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Quarky.Quarky.update_tab">
+<span class="sig-name descname"><span class="pre">update_tab</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Quarky.Quarky.update_tab" title="Link to this definition">¶</a></dt>
+<dd><p>Updates a tab UI, which currently just means the config and voltage panel.</p>
 </dd></dl>
 
 </dd></dl>
@@ -498,12 +535,14 @@ of the current tab’s config to do so. Usually called via a signal from an Expe
 <li><a class="reference internal" href="#Quarky.Quarky.RFSOC_error"><code class="docutils literal notranslate"><span class="pre">Quarky.RFSOC_error()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.__init__"><code class="docutils literal notranslate"><span class="pre">Quarky.__init__()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.change_tab"><code class="docutils literal notranslate"><span class="pre">Quarky.change_tab()</span></code></a></li>
+<li><a class="reference internal" href="#Quarky.Quarky.check_log_read"><code class="docutils literal notranslate"><span class="pre">Quarky.check_log_read()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.closeEvent"><code class="docutils literal notranslate"><span class="pre">Quarky.closeEvent()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.close_tab"><code class="docutils literal notranslate"><span class="pre">Quarky.close_tab()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.connect_rfsoc"><code class="docutils literal notranslate"><span class="pre">Quarky.connect_rfsoc()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.create_data_tab"><code class="docutils literal notranslate"><span class="pre">Quarky.create_data_tab()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.create_experiment_tab"><code class="docutils literal notranslate"><span class="pre">Quarky.create_experiment_tab()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.disconnect_rfsoc"><code class="docutils literal notranslate"><span class="pre">Quarky.disconnect_rfsoc()</span></code></a></li>
+<li><a class="reference internal" href="#Quarky.Quarky.extract_direct_imports"><code class="docutils literal notranslate"><span class="pre">Quarky.extract_direct_imports()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.load_data_file"><code class="docutils literal notranslate"><span class="pre">Quarky.load_data_file()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.load_experiment_file"><code class="docutils literal notranslate"><span class="pre">Quarky.load_experiment_file()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.rfsoc_connection_updated"><code class="docutils literal notranslate"><span class="pre">Quarky.rfsoc_connection_updated</span></code></a></li>
@@ -512,6 +551,7 @@ of the current tab’s config to do so. Usually called via a signal from an Expe
 <li><a class="reference internal" href="#Quarky.Quarky.setup_ui"><code class="docutils literal notranslate"><span class="pre">Quarky.setup_ui()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.stop_experiment"><code class="docutils literal notranslate"><span class="pre">Quarky.stop_experiment()</span></code></a></li>
 <li><a class="reference internal" href="#Quarky.Quarky.update_progress"><code class="docutils literal notranslate"><span class="pre">Quarky.update_progress()</span></code></a></li>
+<li><a class="reference internal" href="#Quarky.Quarky.update_tab"><code class="docutils literal notranslate"><span class="pre">Quarky.update_tab()</span></code></a></li>
 </ul>
 </li>
 </ul>

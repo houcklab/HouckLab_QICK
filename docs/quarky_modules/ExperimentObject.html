@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../quarky_modules.html">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
@@ -277,6 +274,8 @@ plotting), and stores experiment specific variables (name, path, tab).</p>
 <li><p>experiment_path (str): The absolute path to the experiment file.</p></li>
 <li><p>experiment_class (Class): The class of the custom experiment that is a subclass of ExperimentClass.</p></li>
 <li><p>experiment_plotter (Callable): A callable &#64;classmethod of the experiment_class that handles plotting.</p></li>
+<li><p>experiment_exporter (Callable): A callable &#64;classmethod of the experiment_class that handles data exporting.</p></li>
+<li><p>experiment_hardware_req (list): A list containing the hardware requirements for a T2 experiment.</p></li>
 </ul>
 </div></blockquote>
 <dl class="py method">

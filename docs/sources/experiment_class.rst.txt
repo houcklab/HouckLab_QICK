@@ -9,7 +9,3 @@ experiment file, implementing methods, setting up configurations, and executing 
 .. toctree::
    :maxdepth: 2
    :caption: Module Contents
-
-   experiment_hub/experiment_class
-   experiment_hub/socProxy
-   experiment_hub/initialize

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="genindex.html" /><link rel="search" title="Search" href="search.html" /><link rel="next" title="Quarky Main" href="quarky_modules/Quarky.html" /><link rel="prev" title="Initializer" href="experiment_hub/initialize.html" />
+<link rel="index" title="Index" href="genindex.html" /><link rel="search" title="Search" href="search.html" /><link rel="next" title="Quarky Main" href="quarky_modules/Quarky.html" /><link rel="prev" title="Experiment Hub" href="experiment_class.html" />
 
     <link rel="shortcut icon" href="static/QuarkyLogo.png"/><!-- Generated with Sphinx 7.4.7 and Furo 2024.08.06 -->
         <title>Quarky GUI - Quarky 1.0.0 Beta documentation</title>
@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
@@ -306,6 +303,8 @@
 <li class="toctree-l1"><a class="reference internal" href="quarky_modules/VoltagePanel.html">VoltagePanel Class</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/VoltagePanel.html#voltagepanel-py">VoltagePanel.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/VoltagePanel.html#scripts.VoltagePanel.QVoltagePanel"><code class="docutils literal notranslate"><span class="pre">QVoltagePanel</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/VoltagePanel.html#scripts.VoltagePanel.VoltageSweepBox"><code class="docutils literal notranslate"><span class="pre">VoltageSweepBox</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/VoltagePanel.html#scripts.VoltagePanel.VoltageSweepTable"><code class="docutils literal notranslate"><span class="pre">VoltageSweepTable</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="quarky_modules/LogPanel.html">LogPanel Class</a><ul>
@@ -315,9 +314,13 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="quarky_modules/Helpers.html">Helpers Module</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#helpers-py">Helpers.py</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.NpEncoder"><code class="docutils literal notranslate"><span class="pre">NpEncoder</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.create_button"><code class="docutils literal notranslate"><span class="pre">create_button()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.dict_to_h5"><code class="docutils literal notranslate"><span class="pre">dict_to_h5()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.extract_metadata"><code class="docutils literal notranslate"><span class="pre">extract_metadata()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.h5_to_dict"><code class="docutils literal notranslate"><span class="pre">h5_to_dict()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.import_file"><code class="docutils literal notranslate"><span class="pre">import_file()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarky_modules/Helpers.html#scripts.Helpers.simple_h5_to_dict"><code class="docutils literal notranslate"><span class="pre">simple_h5_to_dict()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -339,14 +342,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="experiment_hub/initialize.html">
+          <a class="prev-page" href="experiment_class.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Initializer</div>
+                <div class="title">Experiment Hub</div>
                 
               </div>
             </a>

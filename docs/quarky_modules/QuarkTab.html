@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../quarky_modules.html">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
@@ -275,10 +272,11 @@ data, and plotting. Arguable is more important for functionality than the main Q
 <blockquote>
 <div><ul class="simple">
 <li><p>experiment_obj (Experiment Module): The experiment module object that was passed.</p></li>
-<li><p>config (dict): The configuration of the QQuarkTab experiment/dataset.</p></li>
+<li><p>config (dict): The full configuration of the QQuarkTab experiment/dataset.</p></li>
 <li><p>data (dict): The data of the QQuarkTab experiment/dataset.</p></li>
 <li><p>plots (pyqtgraph.PlotWidget[]): Array of the pyqtgraph plots of the data.</p></li>
 <li><p>plot_widget (pyqtgraph.GraphicsLayoutWidget): The graphics layout of the plotting area</p></li>
+<li><p>custom_plot_methods (dict): A dictionary of the added custom plotting methods.</p></li>
 </ul>
 </div></blockquote>
 <dl class="py method">
@@ -338,6 +336,14 @@ data.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.backup_exporter">
+<span class="sig-name descname"><span class="pre">backup_exporter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_filename</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.backup_exporter" title="Link to this definition">¶</a></dt>
+<dd><p>In the case where an exporter cannot be found (which shouldn’t happen as the ExperimentClass provides a
+default data exporter, this backup function will be used. It is the same as the one given in the
+ExperimentClass.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.capture_plot_to_clipboard">
 <span class="sig-name descname"><span class="pre">capture_plot_to_clipboard</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.capture_plot_to_clipboard" title="Link to this definition">¶</a></dt>
 <dd><p>Captures a screenshot of the plot via a QPixmap and saves it to the users clipboard. Paste normally.</p>
@@ -355,10 +361,24 @@ data.</p>
 <dd><p>Clears the plots.</p>
 </dd></dl>
 
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.custom_plot_methods">
+<span class="sig-name descname"><span class="pre">custom_plot_methods</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.custom_plot_methods" title="Link to this definition">¶</a></dt>
+<dd><p>custom_plot_methods (dict): A dictionary of the added custom plotting methods.</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.export_data">
 <span class="sig-name descname"><span class="pre">export_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.export_data" title="Link to this definition">¶</a></dt>
 <dd><p>Is the function called when the export button clicked. Prepares file naming and saves data.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.handle_plot_combo_selection">
+<span class="sig-name descname"><span class="pre">handle_plot_combo_selection</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.handle_plot_combo_selection" title="Link to this definition">¶</a></dt>
+<dd><p>Handler for when the Plotting Methods Combo is changed. If it is changed to “Plot: Add…”, then it performs the
+functionality for adding a plotter function. This method is used because a PyQt Combo cannot add buttons,
+this is the workaround.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -397,9 +417,9 @@ the specified plotting method of the dropdown menu.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.reload_experiment">
-<span class="sig-name descname"><span class="pre">reload_experiment</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.reload_experiment" title="Link to this definition">¶</a></dt>
-<dd><p>Reloads the current experiment via the experiment_path given. This allows a user to change the experiment code
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.reExtract_experiment">
+<span class="sig-name descname"><span class="pre">reExtract_experiment</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.reExtract_experiment" title="Link to this definition">¶</a></dt>
+<dd><p>ReExtracts the current experiment via the experiment_path given. This allows a user to change the experiment code
 or even the plotter without having to exit the GUI, close any tabs, or import the experiment from scratch.</p>
 </dd></dl>
 
@@ -411,11 +431,22 @@ from the layout.</p>
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.replot_data">
+<span class="sig-name descname"><span class="pre">replot_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.replot_data" title="Link to this definition">¶</a></dt>
+<dd><p>Function called when RePlot button pressed. As of now, it simply calls the plot_data() function.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.save_data">
 <span class="sig-name descname"><span class="pre">save_data</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.save_data" title="Link to this definition">¶</a></dt>
-<dd><p>[UNCOMPLETE]</p>
-<p>Saves data by force dumping it into an h5 format. Works as is but doesn’t save metadata that could be important
-for sweeps and configurations.</p>
+<dd><dl class="simple">
+<dt>Performs the saving of an experiment’s data via 3 files:</dt><dd><ul class="simple">
+<li><p>h5 : Saves data by force dumping it into an h5 format with the config stored as metadata</p></li>
+<li><p>json : Saves the config into a json file</p></li>
+<li><p>PNG : Saves the data as a PNG image</p></li>
+</ul>
+</dd>
+</dl>
 </dd></dl>
 
 <dl class="py method">
@@ -453,6 +484,12 @@ functionalities, and export settings.</p>
 <dd class="field-odd"><p><strong>data</strong> (<em>dict</em>) – The data to be processed.</p>
 </dd>
 </dl>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="scripts.QuarkTab.QQuarkTab.updated_tab">
+<span class="sig-name descname"><span class="pre">updated_tab</span></span><a class="headerlink" href="#scripts.QuarkTab.QQuarkTab.updated_tab" title="Link to this definition">¶</a></dt>
+<dd><p>The Signal sent to the main application (Quarky.py) that tells the program the current tab was updated.</p>
 </dd></dl>
 
 </dd></dl>
@@ -519,21 +556,26 @@ functionalities, and export settings.</p>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab"><code class="docutils literal notranslate"><span class="pre">QQuarkTab</span></code></a><ul>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.__init__"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.__init__()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.auto_plot_prepare"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.auto_plot_prepare()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.backup_exporter"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.backup_exporter()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.capture_plot_to_clipboard"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.capture_plot_to_clipboard()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.change_output_dir"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.change_output_dir()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.clear_plots"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.clear_plots()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.custom_plot_methods"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.custom_plot_methods</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.export_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.export_data()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.handle_plot_combo_selection"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.handle_plot_combo_selection()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.load_dataset_file"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.load_dataset_file()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.plot_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.plot_data()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.prepare_file_naming"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.prepare_file_naming()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.process_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.process_data()</span></code></a></li>
-<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.reload_experiment"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.reload_experiment()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.reExtract_experiment"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.reExtract_experiment()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.remove_plot"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.remove_plot()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.replot_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.replot_data()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.save_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.save_data()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.setup_plotter_options"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.setup_plotter_options()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.setup_signals"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.setup_signals()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.update_coordinates"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.update_coordinates()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.update_data"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.update_data()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.QuarkTab.QQuarkTab.updated_tab"><code class="docutils literal notranslate"><span class="pre">QQuarkTab.updated_tab</span></code></a></li>
 </ul>
 </li>
 </ul>

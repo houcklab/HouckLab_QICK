@@ -200,10 +200,7 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/experiment_class.html">Experiment Class</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/socProxy.html">SocProxy</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../experiment_hub/initialize.html">Initializer</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../experiment_class.html">Experiment Hub</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Experiment Hub</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../quarky_modules.html">Quarky GUI</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of Quarky GUI</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
@@ -264,6 +261,34 @@
 <h2>Helpers.py<a class="headerlink" href="#helpers-py" title="Link to this heading">¶</a></h2>
 <p>Module containing all helper functions for the Quarky GUI.</p>
 </section>
+<dl class="py class">
+<dt class="sig sig-object py" id="scripts.Helpers.NpEncoder">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">NpEncoder</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">skipkeys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ensure_ascii</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_circular</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">allow_nan</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sort_keys</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">separators</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.NpEncoder" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">JSONEncoder</span></code></p>
+<p>An encoder that ensures json dump can handle np arrays</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="scripts.Helpers.NpEncoder.default">
+<span class="sig-name descname"><span class="pre">default</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">obj</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.NpEncoder.default" title="Link to this definition">¶</a></dt>
+<dd><p>Implement this method in a subclass such that it returns
+a serializable object for <code class="docutils literal notranslate"><span class="pre">o</span></code>, or calls the base implementation
+(to raise a <code class="docutils literal notranslate"><span class="pre">TypeError</span></code>).</p>
+<p>For example, to support arbitrary iterators, you could
+implement default like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">o</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">iterable</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">o</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">iterable</span><span class="p">)</span>
+    <span class="c1"># Let the base class default method raise the TypeError</span>
+    <span class="k">return</span> <span class="n">JSONEncoder</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">o</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="scripts.Helpers.create_button">
 <span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">create_button</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enabled</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parent</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.create_button" title="Link to this definition">¶</a></dt>
@@ -287,18 +312,43 @@
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="scripts.Helpers.h5_to_dict">
-<span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">h5_to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">h5file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.h5_to_dict" title="Link to this definition">¶</a></dt>
-<dd><p>Converts a h5 file to a dictionary.</p>
+<dt class="sig sig-object py" id="scripts.Helpers.dict_to_h5">
+<span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">dict_to_h5</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_filename</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dictionary</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.dict_to_h5" title="Link to this definition">¶</a></dt>
+<dd><p>Stores a dictionary to a h5 file using h5ify.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><p><strong>h5file</strong> (<em>h5py.File</em>) – h5 file</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data_filename</strong> (<em>str</em>) – The path and name of the h5 file.</p></li>
+<li><p><strong>dictionary</strong> (<em>dict</em>) – The dictionary to store.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="scripts.Helpers.extract_metadata">
+<span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">extract_metadata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">h5file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.extract_metadata" title="Link to this definition">¶</a></dt>
+<dd><p>Extracts all attributes (metadata) from an HDF5 file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>h5file</strong> (<em>str</em>) – Path to the HDF5 file.</p>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A dictionary containing the h5 file’s data.</p>
+<dd class="field-even"><p>Dictionary containing all metadata attributes.</p>
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>dict</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="scripts.Helpers.h5_to_dict">
+<span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">h5_to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">h5file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.h5_to_dict" title="Link to this definition">¶</a></dt>
+<dd><p>Loads an h5 file and returns a dictionary of the data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>h5file</strong> (<em>str</em>) – The path to the h5 file to load.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -316,6 +366,23 @@
 </dd>
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p>tuple[ModuleType, str]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="scripts.Helpers.simple_h5_to_dict">
+<span class="sig-prename descclassname"><span class="pre">scripts.Helpers.</span></span><span class="sig-name descname"><span class="pre">simple_h5_to_dict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">h5file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#scripts.Helpers.simple_h5_to_dict" title="Link to this definition">¶</a></dt>
+<dd><p>The simple direct conversion a h5 file to a dictionary that assums all key values are arrays.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>h5file</strong> (<em>h5py.File</em>) – h5 file</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A dictionary containing the h5 file’s data.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>dict</p>
 </dd>
 </dl>
 </dd></dl>
@@ -371,9 +438,16 @@
             <ul>
 <li><a class="reference internal" href="#">Helpers Module</a><ul>
 <li><a class="reference internal" href="#helpers-py">Helpers.py</a></li>
+<li><a class="reference internal" href="#scripts.Helpers.NpEncoder"><code class="docutils literal notranslate"><span class="pre">NpEncoder</span></code></a><ul>
+<li><a class="reference internal" href="#scripts.Helpers.NpEncoder.default"><code class="docutils literal notranslate"><span class="pre">NpEncoder.default()</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#scripts.Helpers.create_button"><code class="docutils literal notranslate"><span class="pre">create_button()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.Helpers.dict_to_h5"><code class="docutils literal notranslate"><span class="pre">dict_to_h5()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.Helpers.extract_metadata"><code class="docutils literal notranslate"><span class="pre">extract_metadata()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.Helpers.h5_to_dict"><code class="docutils literal notranslate"><span class="pre">h5_to_dict()</span></code></a></li>
 <li><a class="reference internal" href="#scripts.Helpers.import_file"><code class="docutils literal notranslate"><span class="pre">import_file()</span></code></a></li>
+<li><a class="reference internal" href="#scripts.Helpers.simple_h5_to_dict"><code class="docutils literal notranslate"><span class="pre">simple_h5_to_dict()</span></code></a></li>
 </ul>
 </li>
 </ul>
