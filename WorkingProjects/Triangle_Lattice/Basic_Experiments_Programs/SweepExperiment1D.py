@@ -43,6 +43,10 @@ class SweepExperiment1D(ExperimentClass):
         self.xlabel = None  # for plotting
         self.confusion_matrix = None  # for population correction
 
+    def before_each_program(self):
+        '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
+        pass
+
     def acquire(self, angle=None, threshold=None, progress=False, plotDisp=True, plotSave=True, figNum=1):
         while plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum += 1
@@ -79,6 +83,7 @@ class SweepExperiment1D(ExperimentClass):
             else:
                 set_nested_item(self.cfg, self.y_key, y_pt)
 
+            self.before_each_program()
             Instance = self.Program(self.soccfg, self.cfg)
             assert(isinstance(Instance, AveragerProgram))
 
@@ -95,7 +100,7 @@ class SweepExperiment1D(ExperimentClass):
                     Z_array[ro_index][:j+1] = rotated_i
 
                 elif self.z_value == 'population':
-                    excited_populations = acquire_populations(soc=self.soc, angle=angle,
+                    excited_populations = Instance.acquire_populations(soc=self.soc, angle=angle,
                                                                    threshold=threshold, return_shots=False,
                                                                    load_pulses=True)
                     Z_array[ro_index][j] = excited_populations[ro_index]
@@ -120,8 +125,14 @@ class SweepExperiment1D(ExperimentClass):
                 # Update figure
                 else:
                     for ro_index, ro_ch in enumerate(readout_list):
-                        ax_lines[ro_index].set_ydata(Z_array[ro_index])
-                        ax_lines[ro_index].autoscale()
+                        if self.z_value == 'IQ':
+                            ax_lines[ro_index][0].set_ydata(I_array[ro_index])
+                            ax_lines[ro_index][0].autoscale()
+                            ax_lines[ro_index][1].set_ydata(Q_array[ro_index])
+                            ax_lines[ro_index][1].autoscale()
+                        else:
+                            ax_lines[ro_index][0].set_ydata(Z_array[ro_index])
+                            ax_lines[ro_index][0].autoscale()
 
 
                     plt.show(block=False)
@@ -179,7 +190,14 @@ class SweepExperiment1D(ExperimentClass):
 
         ax_lines = [None] * len(readout_list)
         for ro_index, ro_ch in enumerate(readout_list):
-            ax_lines[ro_index] = axs[ro_index].plot(X, Z_array[ro_index])
+            if self.z_value == 'IQ':
+                I_array = data['data']['I_array']
+                Q_array = data['data']['Q_array']
+                ax_lines[ro_index] =      axs[ro_index].plot(X, I_array[ro_index], label='I')
+                ax_lines[ro_index].append(axs[ro_index].plot(X, Q_array[ro_index], label='Q')[0])
+                axs[ro_index].legend()
+            else:
+                ax_lines[ro_index] = axs[ro_index].plot(X, Z_array[ro_index])
             axs[ro_index].set_ylabel(ylabel)
             axs[ro_index].set_xlabel(self.xlabel)
             axs[ro_index].set_title(f"Read: {ro_ch}")

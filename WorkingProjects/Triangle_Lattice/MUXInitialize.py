@@ -27,7 +27,7 @@ outerFolder = "Z:\QSimMeasurements\Measurements\\4Q_Test_Scalinq\\"
 BaseConfig = {
     "res_ch": 6,  # --Fixed
     "qubit_ch": 4,  # --Fixed
-    "mixer_freq": 7200,  # MHz
+    # "mixer_freq": 7200,  # MHz # Overwritten
     "ro_chs": [0, 1],  # --Fixed
     "reps": 1000,  # --Fixed
     "nqz": 1, #1,  #### refers to cavity

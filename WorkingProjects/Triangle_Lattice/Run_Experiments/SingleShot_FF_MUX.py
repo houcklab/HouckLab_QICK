@@ -36,7 +36,7 @@ Qubit_Parameters = {
                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,},
           'Qubit': {'Frequency': 4488, 'Gain': 10900},
           'Pulse_FF': [0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7305.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5130,
+    '4': {'Readout': {'Frequency': 7305.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5130,
                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
           'Qubit': {'Frequency': 4625.1, 'Gain': 28000},
           'Pulse_FF': [0, 0, 0, 0]}
@@ -104,6 +104,10 @@ SS_params = {"Shots":200, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse":
              'number_of_pulses': 1, 'relax_delay': 250}
 # SS_params = {"Shots": 100000, "Readout_Time": 35, "ADC_Offset": 0.5, "Qubit_Pulse": Qubit_Pulse}
 
+Oscillation_Gain = False
+oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 1000,
+                         'gainStop': 1300, 'gainNumPoints': 11, 'relax_delay': 150}
+
 SingleShot_ReadoutOptimize = False
 SS_R_params = {"gain_start": 3000, "gain_stop": 20000, "gain_pts": 7, "span": 3, "trans_pts": 9, 'number_of_pulses': 1}
 # SS_R_params = {"gain_start": 4000, "gain_stop": 6000, "gain_pts": 7, "span": 1, "trans_pts": 7}
@@ -135,29 +139,12 @@ qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['Frequen
 resonator_frequencies = [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout]
 
 
-# FF_Qubits[str(Swept_Qubit)]['Gain_Readout'] = Swept_Qubit_Gain
-# FF_Qubits[str(Swept_Qubit)]['Gain_Expt'] = Swept_Qubit_Gain
-# FF_Qubits[str(Qubit_Readout)]['Gain_Readout'] = Read_Qubit_Gain
-# FF_Qubits[str(Qubit_Readout)]['Gain_Expt'] = Read_Qubit_Gain
-# for i in range(4):
-#     if i + 1 == Swept_Qubit or i + 1 == Qubit_Readout:
-#         continue
-#     FF_Qubits[str(i + 1)]['Gain_Readout'] = Bias_Qubit_Gain
-#     FF_Qubits[str(i + 1)]['Gain_Expt'] = Bias_Qubit_Gain
-#
-# print(FF_Qubits)
-
 trans_config = {
-    # "reps": 5000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
-    # "readout_length": 3,  # [us]
     "pulse_gain": cavity_gain,  # [DAC units]
     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
     "res_gains": gains,  # [DAC units]
     "res_freqs": resonator_frequencies,
-    # "TransSpan": 5,  ### MHz, span will be center+/- this parameter
-    # "TransNumPoints": 151,  ### number of points in the transmission frequecny
-    # "cav_relax_delay": 10
 }
 
 trans_config = trans_config | Trans_relevant_params

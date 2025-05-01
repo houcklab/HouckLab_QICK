@@ -25,8 +25,7 @@ def set_nested_item(d, key_list, value):
 
 class SweepExperiment2D(ExperimentClass):
     """
-        Sweeps a config entry for an RAveragerProgram.
-        Plots the config sweep on the y-axis with the RAveragerProgram's sweep on the x-axis.
+        Sweeps a config entry for an AveragerProgram.
     """
     def init_sweep_vars(self):
         raise NotImplementedError("Please implement init_sweep_vars() to define sweep variables.")
@@ -38,6 +37,11 @@ class SweepExperiment2D(ExperimentClass):
         self.z_value = None  # contrast or population
         self.ylabel = None  # for plotting
         self.xlabel = None  # for plotting
+
+    def before_each_program(self):
+        '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
+        pass
+
 
     def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg=None, config_file=None,
                  liveplot_enabled=False, **kwargs):
@@ -51,9 +55,8 @@ class SweepExperiment2D(ExperimentClass):
 
         readout_list = self.cfg['Readout_indices']
 
-
         Y = self.y_points
-        X = self.cfg['start'] + self.cfg['step'] * np.arange(self.cfg['expts'])
+        X = self.x_points
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
 
@@ -65,13 +68,14 @@ class SweepExperiment2D(ExperimentClass):
 
         # Define data dictionary
         y_key_name = self.y_key if not isinstance(self.y_key, (list, tuple)) else self.y_key[-1]
+        x_key_name = self.x_key if not isinstance(self.x_key, (list, tuple)) else self.x_key[-1]
         self.data = {
             'config': self.cfg,
             'data': {self.z_value: Z_mat,
                      'I_array': I_mat,
                      'Q_array': Q_mat,
                      y_key_name: Y,
-                     self.x_key: X,
+                     x_key_name: X,
                      'readout_list': readout_list}
         }
         if angle is not None: self.data['angle'] = angle
@@ -80,59 +84,73 @@ class SweepExperiment2D(ExperimentClass):
         self.save_time = time.time()
 
         for i, y_pt in enumerate(Y):
-            if not isinstance(self.y_key, (list, tuple)):
-                self.cfg[self.y_key] = y_pt
-            else:
-                set_nested_item(self.cfg, self.y_key, y_pt)
+            for j, x_pt in enumerate(X):
+                # Update config entries based on sweep
+                if not isinstance(self.x_key, (list, tuple)):
+                    self.cfg[self.x_key] = x_pt
+                else:
+                    set_nested_item(self.cfg, self.x_key, x_pt)
 
-            Instance = self.Program(self.soccfg, self.cfg)
-            assert (isinstance(Instance, RAveragerProgram))
+                if not isinstance(self.y_key, (list, tuple)):
+                    self.cfg[self.y_key] = y_pt
+                else:
+                    set_nested_item(self.cfg, self.y_key, y_pt)
 
-            if self.z_value == 'contrast':
-                rotated_i, avgi, avgq = Instance.acquire_IQ_contrast(self.soc, load_pulses=True)
+                self.before_each_program()
+                Instance = self.Program(self.soccfg, self.cfg)
+                assert (isinstance(Instance, AveragerProgram))
 
-                for ro_index in range(len(readout_list)):
-                    Z_mat[ro_index][i,:] = rotated_i[ro_index]
-                    I_mat[ro_index][i,:] = avgi[ro_index]
-                    Q_mat[ro_index][i,:] = avgq[ro_index]
+                # AveragerProgram returns avg_di, avg_dq, indexed into by avg_di[ro_ch][0]
 
-                colorbar_label = 'IQ contrast (a.u.)'
+            for ro_index in range(len(readout_list)):
+                if self.z_value == 'contrast':
+                    avgi, avgq = Instance.acquire(self.soc, load_pulses=True)
+                    I_mat[ro_index][i,j] = avgi[ro_index][0]
+                    Q_mat[ro_index][i,j] = avgq[ro_index][0]
 
-            elif self.z_value == 'population':
-                excited_populations = Instance.acquire_populations(soc=self.soc, angle=angle,
+                    theta = IQ_angle(I_mat[ro_index][:i+1,:j+1], Q_mat[ro_index][:i+1,:j+1])
+                    rotated_i, _ = rotate(theta, I_mat[ro_index][:i+1,:j+1], Q_mat[ro_index][:i+1,:j+1])
+                    Z_mat[ro_index][:i+1,:j+1] = rotated_i
+
+                elif self.z_value == 'population':
+                    excited_populations = Instance.acquire_populations(soc=self.soc, angle=angle,
                                                                    threshold=threshold, return_shots=False,
                                                                    load_pulses=True)
-                for ro_index in range(len(readout_list)):
-                    Z_mat[ro_index][i, :] = excited_populations[ro_index]
-                colorbar_label = 'Excited state population'
+                    Z_mat[ro_index][i,j] = excited_populations[ro_index]
 
-            else:
-                raise Exception("I don't know how to do this")
-
-            if plotDisp or plotSave:
-                # Create figure
-                if i == 0:
-                    fig, axs, ax_images, cbars = self.display(self.data, figNum=figNum,
-                                                              plotDisp=plotDisp, block=False,
-                                                              plotSave=False)
-                # Update figure
                 else:
-                    for ro_index, ro_ch in enumerate(readout_list):
-                        ax_images[ro_index].set_data(Z_mat[ro_index])
-                        ax_images[ro_index].autoscale()
-                        cbars[ro_index].remove()
-                        cbars[ro_index] = fig.colorbar(ax_images[ro_index], ax=axs[ro_index], extend='both')
-                        cbars[ro_index].set_label(colorbar_label, rotation=90)
+                    raise ValueError("So far I only support 'contrast' or 'population'.")
+
+                if plotDisp or plotSave:
+                    # Create figure
+                    if i == 0:
+                        fig, axs, ax_images, cbars = self.display(self.data, figNum=figNum,
+                                                                plotDisp=plotDisp, block=False,
+                                                                plotSave=False)
+                        if self.z_value == 'contrast':
+                            colorbar_label = 'IQ contrast (a.u.)'
+                        elif self.z_value == 'population':
+                            colorbar_label = 'Excited state population'
+                        else:
+                            colorbar_label = None
+                    # Update figure
+                    else:
+                        for ro_index, ro_ch in enumerate(readout_list):
+                            ax_images[ro_index].set_data(Z_mat[ro_index])
+                            ax_images[ro_index].autoscale()
+                            cbars[ro_index].remove()
+                            cbars[ro_index] = fig.colorbar(ax_images[ro_index], ax=axs[ro_index], extend='both')
+                            cbars[ro_index].set_label(colorbar_label, rotation=90)
 
 
-                    plt.show(block=False)
-                    plt.pause(0.05)
+                        plt.show(block=False)
+                        plt.pause(0.05)
 
-            if time.time() - self.save_time > 5 * 60:  # Save data every 5 minutes
-                ### print(self.data)
-                self.save_data(data=self.data)
-                if plotSave:
-                    plt.savefig(self.iname[:-4] + '.png')
+                if time.time() - self.save_time > 5 * 60:  # Save data every 5 minutes
+                    ### print(self.data)
+                    self.save_data(data=self.data)
+                    if plotSave:
+                        plt.savefig(self.iname[:-4] + '.png')
 
         fig.clf(True)
         plt.close(fig)
@@ -163,8 +181,9 @@ class SweepExperiment2D(ExperimentClass):
 
         fig.suptitle(str(self.titlename), fontsize=16)
 
+        x_key_name = self.x_key if not isinstance(self.x_key, (list, tuple)) else self.x_key[-1]
         y_key_name = self.y_key if not isinstance(self.y_key, (list, tuple)) else self.y_key[-1]
-        X, Y = data['data'][self.x_key], data['data'][y_key_name]
+        X, Y = data['data'][x_key_name], data['data'][y_key_name]
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
         Z_mat = data['data'][self.z_value]

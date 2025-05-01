@@ -34,10 +34,15 @@ class SweepExperimentR1D(ExperimentClass):
         self.y_key = None
         self.y_points = None
         # For the RAveragerProgram, you should define the cfg entries start, step, and stop too
+        self.x_name
         self.z_value = None  # contrast or population
         self.ylabel = None  # for plotting
         self.xlabel = None  # for plotting
         self.confusion_matrix = None  # for population correction
+
+    def before_each_program(self):
+        '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
+        pass
 
     def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg=None, config_file=None,
                  liveplot_enabled=False, **kwargs):
@@ -64,6 +69,7 @@ class SweepExperimentR1D(ExperimentClass):
 
 
         # Define data dictionary
+        x_key_name = self.x_name
         y_key_name = self.y_key if not isinstance(self.y_key, (list, tuple)) else self.y_key[-1]
         self.data = {
             'config': self.cfg,
@@ -71,7 +77,7 @@ class SweepExperimentR1D(ExperimentClass):
                      'I_array': I_mat,
                      'Q_array': Q_mat,
                      y_key_name: Y,
-                     self.x_key: X,
+                     x_key_name: X,
                      'readout_list': readout_list}
         }
         if angle is not None: self.data['angle'] = angle
@@ -85,6 +91,7 @@ class SweepExperimentR1D(ExperimentClass):
             else:
                 set_nested_item(self.cfg, self.y_key, y_pt)
 
+            self.before_each_program()
             Instance = self.Program(self.soccfg, self.cfg)
             assert (isinstance(Instance, RAveragerProgram))
 
@@ -163,8 +170,9 @@ class SweepExperimentR1D(ExperimentClass):
 
         fig.suptitle(str(self.titlename), fontsize=16)
 
+        x_key_name = self.x_name
         y_key_name = self.y_key if not isinstance(self.y_key, (list, tuple)) else self.y_key[-1]
-        X, Y = data['data'][self.x_key], data['data'][y_key_name]
+        X, Y = data['data'][x_key_name], data['data'][y_key_name]
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
         Z_mat = data['data'][self.z_value]
