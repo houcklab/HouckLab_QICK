@@ -154,6 +154,8 @@ class CavitySpecFFMUX(ExperimentClassT2):
                 p.plot(plot["x"], plot["y"], pen=colors[i], symbol='o', symbolSize=5, symbolBrush='b')
             plot_widget.nextRow()
 
+            plots.append(p)
+
         return
 
     @classmethod
