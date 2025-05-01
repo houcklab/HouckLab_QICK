@@ -297,7 +297,8 @@ class Quarky(QMainWindow):
 
             # Verifying RFSoc connection
             try:
-                qInfo("RFSoC Info: " + str(self.soccfg))
+                msg = str(self.soc)
+                # qInfo(f"RFSoC Info: " + msg)
                 # print("Available Methods:", self.soc._pyroMethods)
             except Exception as e:
                 # Connection invalid despite makeProxy success

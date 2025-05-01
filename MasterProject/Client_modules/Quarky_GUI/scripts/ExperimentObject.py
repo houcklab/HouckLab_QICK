@@ -154,6 +154,11 @@ class ExperimentObject():
 
                     self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
+        # Add sets if missing
+        if ("sets" not in self.experiment_tab.config["Base Config"] and
+                "sets" not in self.experiment_tab.config["Experiment Config"]):
+            self.experiment_tab.config["Base Config"]["sets"] = 1
+
         # Verify experiment_instance
         if self.experiment_class is None:
             qCritical("No valid Class found within the module given. Must adhere to the experiment guidelines.")
