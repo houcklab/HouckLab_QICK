@@ -460,16 +460,16 @@ class Quarky(QMainWindow):
         """
         if self.is_stopping:
             # Update the label with the current number of dots
-            self.stop_experiment_button.setText(f"Stopping{'.' * (self.dot_count + 1)}")
-            self.dot_count = (self.dot_count + 1) % 3  # Cycle through 0, 1, 2
-            QTimer.singleShot(250, self.animate_stopping)  # Repeat every 500 ms
+            self.stop_experiment_button.setText(f"Stopping{'.' * (self.dot_count)}")
+            self.dot_count = (self.dot_count + 1) % 4  # Cycle through 0, 1, 2
+            QTimer.singleShot(400, self.animate_stopping)  # Repeat every 500 ms
 
     def finished_experiment(self):
         """
         Finish an experiment by updating UI, this is called when Stop is complete.
         """
         self.update_progress(0)
-        self.is_stopping = True
+        self.is_stopping = False
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
