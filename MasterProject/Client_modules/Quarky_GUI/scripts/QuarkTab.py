@@ -376,10 +376,13 @@ class QQuarkTab(QWidget):
                 self.plot_widget.removeItem(plot)
                 self.plot_widget.update()
 
-    def plot_data(self):
+    def plot_data(self, exp_instance=None):
         """
         Plots the data of the QQuarkTab experiment/dataset using prepared data that is prepared by
         the specified plotting method of the dropdown menu.
+
+        :param exp_instance: The instance of the experiment.
+        :type exp_instance: object
         """
 
         self.clear_plots()
@@ -388,13 +391,13 @@ class QQuarkTab(QWidget):
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
         try:
             if plotting_method == "None": # No longer using auto preparation
-                if not self.is_experiment:
+                # if not self.is_experiment:
+                if exp_instance is not None:
+                    if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
+                        data_dict = {'data': self.data}
+                        exp_instance.display(data_dict)
+                else:
                     self.auto_plot_prepare()
-                elif self.experiment_obj:
-
-                    # TODO Called the display function (extract it first)
-                    print("call display")
-
             elif plotting_method in QQuarkTab.custom_plot_methods:
                 QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
@@ -673,16 +676,18 @@ class QQuarkTab(QWidget):
             self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
             self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
 
-    def update_data(self, data):
+    def update_data(self, data, exp_instance):
         """
         Is the slot for the emission of data from the experiment thread. Calls the methods to process and plot the data.
 
         :param data: The data to be processed.
         :type data: dict
+        :param exp_instance: The instance of the experiment.
+        :type exp_instance: object
         """
 
         self.process_data(data)
-        self.plot_data()
+        self.plot_data(exp_instance)
         self.save_data()
 
     def replot_data(self):

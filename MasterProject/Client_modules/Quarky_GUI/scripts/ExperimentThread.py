@@ -29,12 +29,14 @@ class ExperimentThread(QObject):
     The Signal to send upon experiment execution completion.
     """
 
-    updateData = pyqtSignal(object)
+    updateData = pyqtSignal(object, object)
     """
     Signal to send when receiving new data, including the new data dictionary
 
     :param data: The data object.
     :type data: object
+    :param exp_instance: The experiment instance object.
+    :type exp_instance: object
     """
 
     updateProgress = pyqtSignal(int)
@@ -94,7 +96,7 @@ class ExperimentThread(QObject):
                 return # Do not want to update data -- no new data was recorded!
 
             # Emit the signal with new data and update the progress bar with additional set complete
-            self.updateData.emit(data)
+            self.updateData.emit(data, self.experiment_instance)
             self.updateProgress.emit(idx_set + 1)
             idx_set += 1
 
