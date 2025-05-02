@@ -396,7 +396,7 @@ class QQuarkTab(QWidget):
                 # if not self.is_experiment:
                 if exp_instance is not None:
                     if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
-                        exp_instance.display(self.data)
+                        exp_instance.display(self.data, plotDisp=True)
                 else:
                     self.auto_plot_prepare()
             elif plotting_method in QQuarkTab.custom_plot_methods:
