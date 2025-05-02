@@ -113,6 +113,7 @@ class ExperimentThread(QObject):
             idx_set += 1
             curr_time = time.perf_counter()
             time_delta = curr_time - prev_time
+            prev_time = curr_time
 
             self.updateRuntime.emit(time_delta, idx_set)
             self.updateProgress.emit(idx_set)

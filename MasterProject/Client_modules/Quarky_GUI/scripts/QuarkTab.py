@@ -702,7 +702,7 @@ class QQuarkTab(QWidget):
         runtime_string = Helpers.format_time_duration_pretty(runtime_estimate)
 
         leftover_runtime_estimate = (time_delta * sets_left)
-        endtime_string =Helpers.format_time_duration_pretty(leftover_runtime_estimate)
+        endtime_string = Helpers.format_date_time_pretty(leftover_runtime_estimate)
 
         self.runtime_label.setText("Estimated Runtime: " + runtime_string)
         self.endtime_label.setText("End: " + endtime_string)
