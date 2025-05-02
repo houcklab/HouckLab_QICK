@@ -24,6 +24,7 @@ from PyQt5.QtCore import (
     QThread,
     pyqtSignal,
     QUrl,
+    QTimer
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -426,7 +427,7 @@ class Quarky(QMainWindow):
             self.stop_experiment_button.setEnabled(True)
             self.start_experiment_button.setText("Running")
             self.stop_experiment_button.setText("◼")
-            self.experiment_progress_bar.setStyleSheet('')
+            self.experiment_progress_bar.setStyleSheet('') # revert to default styling
 
             self.thread.start()
 
@@ -440,8 +441,6 @@ class Quarky(QMainWindow):
         Stop an Experiment if not auto-terminated and update respective UI for during stop.
         """
 
-        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #DC143C;  /* Red */}")
-
         if self.experiment_worker:
             self.experiment_worker.stop()
             qDebug("Stopping the experiment worker...")
@@ -449,15 +448,28 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
         self.stop_experiment_button.setText("Stopping")
+        self.is_stopping = True
+        self.dot_count = 0
+        self.animate_stopping()
+
         self.start_experiment_button.setText("▶")
+
+    def animate_stopping(self):
+        """
+        Small function to animate stopping to let the user know the experiment is actively being stopped
+        """
+        if self.is_animating:
+            # Update the label with the current number of dots
+            self.stop_experiment_button.setText(f"Stopping{'.' * (self.dot_count + 1)}")
+            self.dot_count = (self.dot_count + 1) % 3  # Cycle through 0, 1, 2
+            QTimer.singleShot(250, self.animate_stopping)  # Repeat every 500 ms
 
     def finished_experiment(self):
         """
         Finish an experiment by updating UI, this is called when Stop is complete.
         """
 
-        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #808080;  /* Gray */}")
-
+        self.is_stopping = True
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
