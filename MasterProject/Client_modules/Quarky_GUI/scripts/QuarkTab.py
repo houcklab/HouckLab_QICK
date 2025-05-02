@@ -684,18 +684,18 @@ class QQuarkTab(QWidget):
             self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
             self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
 
-    def update_runtime_estimation(self, set_num, time_delta):
+    def update_runtime_estimation(self, time_delta, set_num):
         """
         Updates the estimated runtime and endtime.
 
-        :param set_num: The set number.
-        :type set_num: int
         :param time_delta: The time delta in seconds of a single set.
         :type time_delta: float
+        :param set_num: The set number.
+        :type set_num: int
         """
-        total_sets = self.config["Base Config"]["sets"]
-        if "sets" not in self.config["Base Config"]:
-            total_sets = 1
+        total_sets = 1
+        if "sets" in self.config["Base Config"]:
+            total_sets = self.config["Base Config"]["sets"]
         sets_left = total_sets - set_num
 
         runtime_estimate = time_delta * total_sets
