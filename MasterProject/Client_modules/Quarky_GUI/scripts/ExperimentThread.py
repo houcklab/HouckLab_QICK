@@ -126,4 +126,4 @@ class ExperimentThread(QObject):
         """
 
         self.running = False
-        qDebug("trying to stop the thread...")
+        qDebug("Stopping the thread at the next set iteration...")

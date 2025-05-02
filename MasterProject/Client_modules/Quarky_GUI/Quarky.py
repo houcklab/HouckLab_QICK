@@ -410,7 +410,7 @@ class Quarky(QMainWindow):
             self.experiment_worker.finished.connect(self.thread.quit) # stop thread
             self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
             self.thread.finished.connect(self.thread.deleteLater) # delete thread
-            self.thread.finished.connect(self.stop_experiment) # update UI
+            self.thread.finished.connect(self.finished_experiment) # update UI
 
             # Connecting data related slots
             self.experiment_worker.updateData.connect(self.current_tab.update_data) # update data & plot
@@ -426,6 +426,9 @@ class Quarky(QMainWindow):
             self.stop_experiment_button.setEnabled(True)
 
             self.thread.start()
+
+            self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #87CEEB;  /* Blue */}")
+
         else:
             qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
             QMessageBox.critical(None, "Error", "RfSoC Disconnected.")
@@ -433,18 +436,31 @@ class Quarky(QMainWindow):
 
     def stop_experiment(self):
         """
-        Stop an Experiment if not auto-terminated and update respective UI.
+        Stop an Experiment if not auto-terminated and update respective UI for during stop.
         """
+
+        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #2196F3;  /* Blue */}")
 
         if self.experiment_worker:
             self.experiment_worker.stop()
             qDebug("Stopping the experiment worker...")
 
         self.stop_experiment_button.setEnabled(False)
+        self.start_experiment_button.setEnabled(False)
+
+
+    def finished_experiment(self):
+        """
+        Finish an experiment by updating UI, this is called when Stop is complete.
+        """
+
+        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #808080;  /* Gray */}")
+
+        self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
-        if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_bane
-            qInfo("Stopped Experiment: " + str(self.current_tab.tab_name))
+        if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
+            qInfo("Stopping Experiment: " + str(self.current_tab.tab_name))
 
     def closeEvent(self, event):
         """
