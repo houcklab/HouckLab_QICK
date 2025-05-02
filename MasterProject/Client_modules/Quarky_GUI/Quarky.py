@@ -470,6 +470,7 @@ class Quarky(QMainWindow):
         """
         self.update_progress(0)
         self.is_stopping = False
+        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #808080;  /* Gray */}")
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
