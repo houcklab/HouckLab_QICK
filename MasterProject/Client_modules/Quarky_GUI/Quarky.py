@@ -13,7 +13,9 @@ import sys, os
 import ast
 import math
 import traceback
+import numpy as np
 from pathlib import Path
+import matplotlib.pyplot as plt
 from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices
 from PyQt5.QtCore import (
     qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
@@ -248,7 +250,8 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.clicked.connect(self.stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
-        self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
+        # self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
+        self.documentation_button.clicked.connect(self.generate_plot)
 
         # Tab Change and Close signals
         self.central_tabs.currentChanged.connect(self.change_tab)
@@ -264,6 +267,10 @@ class Quarky(QMainWindow):
         # Log message handler installation
         qInstallMessageHandler(self.log_panel.message_handler)
         # self.test_logging()
+
+        # Plot Interceptor
+        self._original_show = plt.show
+        plt.show = self._intercept_plt_show_wrapper()
 
     def disconnect_rfsoc(self):
         """
@@ -442,6 +449,10 @@ class Quarky(QMainWindow):
         """
 
         self.stop_experiment()
+
+        # reassign plt.show
+        plt.show = self._original_show
+
         event.accept()
 
     def load_experiment_file(self):
@@ -653,6 +664,31 @@ class Quarky(QMainWindow):
 
         return direct_imports
 
+    def _intercept_plt_show_wrapper(self):
+        """
+        The wrapper function used to intercept any calls plt.show that is run from the GUI. This wrapper intercept
+        method is required for a pyqt thread to catch calls.
+        """
+
+        def wrapper(*args, **kwargs):
+            """
+            The wrapper function that intercepts the call and calls handle_pltplot.
+            """
+            qInfo("Matplotlib plt.plot intercepted.")
+            return self.current_tab.handle_pltplot(*args, **kwargs)
+        return wrapper
+
+    def generate_plot(self):
+        x = np.linspace(-10, 10, 100)
+        y = x
+        plt.plot(x, y, label='y=x')
+        plt.xlabel('x')
+        plt.ylabel('y')
+        plt.title('Plot of y = x')
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
 # Creating the Quarky GUI Main Window
 if __name__ == '__main__':
     try:
@@ -665,6 +701,7 @@ if __name__ == '__main__':
         ex = Quarky()
         ex.show()
         sys.exit(app.exec_())
+
     except Exception as e:
         QMessageBox.critical(None, "Critical Error", f"A GUI error occurred: {e}")
         traceback.print_exc()

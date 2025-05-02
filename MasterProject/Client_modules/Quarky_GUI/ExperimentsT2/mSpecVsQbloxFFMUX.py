@@ -337,6 +337,19 @@ class SpecVsQblox(ExperimentClassT2):
 
         return self.data
 
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        # print(data)
+        if 'data' in data:
+            data = data['data']
+
+        return
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass
+
     def _aquireTransData(self, progress=False):
         fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
                            self.cfg["mixer_freq"] + self.cfg["TransSpan"],

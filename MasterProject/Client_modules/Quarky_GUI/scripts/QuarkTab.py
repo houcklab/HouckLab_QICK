@@ -15,9 +15,10 @@ import traceback
 from pathlib import Path
 import datetime
 import shutil
-
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import numpy as np
-from PyQt5.QtGui import QKeySequence, QCursor
+from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
     pyqtSignal,
@@ -224,7 +225,7 @@ class QQuarkTab(QWidget):
         self.plot_method_combo.blockSignals(True)
 
         self.plot_method_combo.clear()
-        self.plot_method_combo.addItems(["Autoplot"])
+        self.plot_method_combo.addItems(["None"])
 
         # print(QQuarkTab.custom_plot_methods)
 
@@ -264,7 +265,7 @@ class QQuarkTab(QWidget):
                     qInfo("Added " + experiment_name + " plotter.")
                     self.replot_data()
                 else:
-                    self.plot_method_combo.setCurrentText("Autoplot")
+                    self.plot_method_combo.setCurrentText("None")
                     qDebug("No plotter function found within " + experiment_name)
 
             self.plot_method_combo.blockSignals(False) # re_enable plotting
@@ -386,15 +387,109 @@ class QQuarkTab(QWidget):
 
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
         try:
-            if plotting_method == "Autoplot": # Use auto preparation
-                self.auto_plot_prepare()
-            # elif plotting_method == self.tab_name: # Use the experiment's preparation
-            #     self.experiment_obj.experiment_plotter(self.plot_widget, self.plots, self.data)
+            if plotting_method == "None": # No longer using auto preparation
+                if not self.is_experiment:
+                    self.auto_plot_prepare()
+                elif self.experiment_obj:
+
+                    # TODO Called the display function (extract it first)
+                    print("call display")
+
             elif plotting_method in QQuarkTab.custom_plot_methods:
                 QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
             qCritical("Failed to plot using method [" + plotting_method + "]: " + str(e))
             qCritical(traceback.print_exc())
+
+    def handle_pltplot(self, *args, **kwargs):
+        """
+        Handles a matplotlib by extracting its data and plotting it using pyqtgraph.
+        """
+        self.clear_plots()
+        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
+            self.prepare_file_naming()
+        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+
+        figures = list(map(plt.figure, plt.get_fignums()))
+        for i, fig in enumerate(figures):
+            for ax in fig.get_axes():
+                if i % 2 == 0:
+                    self.plot_widget.nextRow()
+                self.extract_and_plot_pyqtgraph(ax)
+        return
+
+    def extract_and_plot_pyqtgraph(self, ax):
+        """
+        Convert a matplotlib Axes to a PyQtGraph plot.
+
+        :param ax: Matplotlib axis containing plot data to convert.
+        :type ax: matplotlib.axes.Axes
+        """
+
+        def mpl_color_to_pg(color):
+            """
+            Convert a matplotlib color to a format accepted by PyQtGraph (e.g., '#RRGGBB').
+
+            :param color: The color to convert.
+            :type color: str
+            """
+            if isinstance(color, str):
+                rgba = mcolors.to_rgba(color)
+            else:
+                rgba = color
+            r, g, b, a = [int(255 * c) for c in rgba]
+            return (r, g, b, a)
+
+        plot = self.plot_widget.addPlot(title=ax.get_title())
+
+        # Axis labels
+        plot.setLabel('left', ax.get_ylabel())
+        plot.setLabel('bottom', ax.get_xlabel())
+
+        # Axis limits
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        plot.setXRange(*xlim)
+        plot.setYRange(*ylim)
+
+        # Line plots
+        for line in ax.get_lines():
+            x = line.get_xdata()
+            y = line.get_ydata()
+            color = mpl_color_to_pg(line.get_color())
+            width = line.get_linewidth()
+            style = {'pen': pg.mkPen(color=color, width=width), 'symbol': 'o', 'symbolSize': 5, 'symbolBrush': 'b'}
+            plot.plot(x, y, **style)
+
+        # Scatter plots
+        for col in ax.collections:
+            offsets = col.get_offsets()
+            if offsets is not None and len(offsets):
+                x, y = offsets[:, 0], offsets[:, 1]
+                size = col.get_sizes()
+                brush = pg.mkBrush(mpl_color_to_pg(col.get_facecolor()[0]))
+                scatter = pg.ScatterPlotItem(x=x, y=y, size=5 if size is None else size[0], brush=brush)
+                plot.addItem(scatter)
+
+        # Images
+        for img in ax.images:
+            data = img.get_array()
+            extent = img.get_extent()  # [xmin, xmax, ymin, ymax]
+            img_item = pg.ImageItem(image=data)
+            plot.addItem(img_item)
+            img_item.setRect(pg.QtCore.QRectF(extent[0], extent[2], extent[1] - extent[0], extent[3] - extent[2]))
+
+        # Legends
+        legend = ax.get_legend()
+        if legend:
+            pg_legend = plot.addLegend()
+            for line in ax.get_lines():
+                label = line.get_label()
+                if label and not label.startswith('_'):
+                    pg_legend.addItem(plot.plot(line.get_xdata(), line.get_ydata(),
+                                                pen=pg.mkPen(color=mpl_color_to_pg(line.get_color()))), label)
+
+        self.plots.append(plot)
 
     def auto_plot_prepare(self):
         """
@@ -556,6 +651,7 @@ class QQuarkTab(QWidget):
     def process_data(self, data):
         """
         Processes the dataset usually in the form of averaging.
+        TODO
 
         :param data: The data to be processed.
         :type data: dict
