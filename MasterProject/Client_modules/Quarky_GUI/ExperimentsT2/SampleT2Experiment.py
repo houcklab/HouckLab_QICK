@@ -43,6 +43,7 @@ class SampleExperiment_Experiment(ExperimentClassT2):
         "VoltageStart": 0,
         "VoltageStop": 0.6,
         "VoltageNumPoints": 3,
+        "delay": 0.5,
     }
 
     ## Define the Voltage Config ### NOT USING VOLTAGE CONFIG ANYMORE
@@ -88,9 +89,9 @@ class SampleExperiment_Experiment(ExperimentClassT2):
             # add data to something
 
             data = {'config': self.cfg,
-                    'data': {'x_pts': [0,0]}}
+                    'data': {'x_pts': [0,0]}} # in reality this should update each loop, like append something
 
-            time.sleep(4)
+            time.sleep(self.cfg["delay"])
 
         self.data = data
         return data
@@ -108,6 +109,10 @@ class SampleExperiment_Experiment(ExperimentClassT2):
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         # Your own display function using matplotlib or other if you'd like
         pass
+
+    def estimate_runtime(self):
+        runtime = (self.cfg["VoltageNumPoints"] * self.cfg["delay"] + (self.cfg["reps"] * 1e-6)) * self.cfg["sets"]
+        return runtime # 2 seconds
 
     def save_data(self, data=None):
         pass
