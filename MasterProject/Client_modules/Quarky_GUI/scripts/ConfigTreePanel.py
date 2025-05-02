@@ -27,7 +27,7 @@ from PyQt5.QtCore import (
     qInfo,
     qWarning,
     qCritical,
-    QTimer
+    QTimer, qDebug
 )
 from PyQt5.QtWidgets import (
     QFileDialog,
@@ -132,38 +132,39 @@ class QConfigTreePanel(QTreeView):
         Populates the `tree` QTreeView widget with the configuration data by iterating through the dictionary and
         creating a QStandardItem for each Key (Parameter) and Value.
         """
-
         self.model.clear()
-        self.model.setHorizontalHeaderLabels(['Parameter', 'Value'])  # Reset headers after clear
+        self.model.setHorizontalHeaderLabels(['Parameter', 'Value'])
 
         for category, params in self.config.items():
             if not params:
                 continue
-            # if category == 'Voltage Config':
-            #     continue
 
-            # Track the current parent (either Experiment or Base Config) to place fields under
             parent = QtGui.QStandardItem(category)
-            parent.setFlags(QtCore.Qt.NoItemFlags)  # Category headers should not be selectable
+            parent.setFlags(QtCore.Qt.NoItemFlags)
 
-            # print(params)
-            for key, value in params.items():
-                if not allow_voltage_editing and str(key)[:7] == "Voltage":
-                    continue
-                if not allow_voltage_editing and str(key) == "DACs":
-                    continue
-
-                child_key = QtGui.QStandardItem(key)
-                child_key.setFlags(QtCore.Qt.ItemIsEnabled)
-
-                child_value = QtGui.QStandardItem(str(value))
-                child_value.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
-
-                parent.appendRow([child_key, child_value])
+            self.add_tree_items_recursive(parent, params, allow_voltage_editing)
 
             self.model.appendRow(parent)
 
         self.tree.expandAll()
+
+    def add_tree_items_recursive(self, parent_item, data, allow_voltage_editing):
+        for key, value in data.items():
+            if not allow_voltage_editing and (str(key).startswith("Voltage") or str(key) == "DACs"):
+                continue
+
+            key_item = QtGui.QStandardItem(str(key))
+            key_item.setFlags(QtCore.Qt.ItemIsEnabled)
+
+            if isinstance(value, dict):
+                value_item = QtGui.QStandardItem("")  # Placeholder, not editable
+                value_item.setFlags(QtCore.Qt.NoItemFlags)
+                parent_item.appendRow([key_item, value_item])
+                self.add_tree_items_recursive(key_item, value, allow_voltage_editing)
+            else:
+                value_item = QtGui.QStandardItem(str(value))
+                value_item.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsEditable)
+                parent_item.appendRow([key_item, value_item])
 
     def set_config(self, config_update=None):
         """
@@ -197,19 +198,33 @@ class QConfigTreePanel(QTreeView):
         :type item: QStandardItem
         """
 
-        if not item.parent():
-            return  # Ignore category headers
-            # (if there is a way to disable editing in the value of a parent field that would work nicer)
+        if not item or not item.parent():
+            return
 
-        category = item.parent().text()
-        key = item.parent().child(item.row(), 0).text()
+        path = []
+        current_item = item
 
-        # Ensure the key exists in the config before modifying
-        if category in self.config and key in self.config[category]:
-            try:
-                self.config[category][key] = type(self.config[category][key])(item.text())
-            except ValueError:
-                pass  # Handle invalid input types gracefully
+        # Climb the tree, collecting keys
+        while current_item.parent():
+            row = current_item.row()
+            key_item = current_item.parent().child(row, 0)
+            path.insert(0, key_item.text())
+            current_item = current_item.parent()
+
+        # Top-level category
+        path.insert(0, current_item.text())
+
+        # Traverse the config dict
+        config_ref = self.config
+        try:
+            for key in path[:-1]:
+                config_ref = config_ref[key]
+            final_key = path[-1]
+            old_value = config_ref[final_key]
+            config_ref[final_key] = type(old_value)(item.text())
+        except (KeyError, ValueError, TypeError):
+            qDebug("Failed updating config field.")
+            pass  # Graceful failure on conversion or path error
 
     def save_config(self):
         """

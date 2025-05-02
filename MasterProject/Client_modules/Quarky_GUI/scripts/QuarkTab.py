@@ -45,6 +45,11 @@ class QQuarkTab(QWidget):
     """
     The class for QQuarkTabs that make up the central tabular module that hold specific experiments or datasets.
 
+    Plotting functionality makes up the bulk of the code. If a "plotter" classmethod is written for the class (recommended)
+    then the GUI will extract it to be used to plot - as well as stored in all the custom plot methods to be used on any dataset
+    or experiment. Otherwise, the GUI will call the display function of a instance if provided, and intercept plt.plot calls.
+    These display instance methods cannot be stored as custom plot methods.
+
     **Important Attributes:**
 
         * experiment_obj (Experiment Module): The experiment module object that was passed.
@@ -249,7 +254,6 @@ class QQuarkTab(QWidget):
         if self.plot_method_combo.currentText() == "Add...":
             self.plot_method_combo.blockSignals(True) # Prevent adding a new combo from calling it again in a loop
 
-            # TODO: open dialog, extract experiment plotter, save it somewhere, set it to be current combo selection
             options = QFileDialog.Options()
             file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
                                                   "Python Files (*.py)", options=options)
