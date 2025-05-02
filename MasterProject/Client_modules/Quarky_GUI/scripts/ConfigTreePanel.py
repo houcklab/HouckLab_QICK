@@ -21,6 +21,7 @@ This is the basic formatting of the Config dictionary:
 
 import os
 import json
+import ast
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import (
     Qt,
@@ -38,6 +39,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QApplication,
     QLabel,
+    QInputDialog
 )
 
 import scripts.Helpers as Helpers
@@ -72,12 +74,12 @@ class QConfigTreePanel(QTreeView):
         # Set up layout
         self.toolbar_layout = QHBoxLayout()
         self.toolbar_layout.setContentsMargins(0, 7, 0, 2)
-        self.toolbar_layout.setSpacing(5)
+        self.toolbar_layout.setSpacing(2)
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(10, 5, 10, 10)
         self.main_layout.setSpacing(0)
         self.setLayout(self.main_layout)
-        self.setMinimumSize(200, 0)
+        self.setMinimumSize(225, 0)
 
         self.title_label = QLabel("Configuration Panel")  # estimated experiment time
         self.title_label.setStyleSheet("font-size: 11px; background-color: #ECECEC; padding: 3px;")
@@ -86,11 +88,15 @@ class QConfigTreePanel(QTreeView):
 
         # toolbar setup
         self.save_config_button = Helpers.create_button("Save", "save_config", True, self)
-        self.copy_config_button = Helpers.create_button("Copy", "copy_config", True, self)
         self.load_config_button = Helpers.create_button("Load", "load_config", True, self)
+        self.copy_config_button = Helpers.create_button("Copy", "copy_config", True, self)
+        self.paste_config_button = Helpers.create_button("Paste", "paste_config", True, self)
+
         self.toolbar_layout.addWidget(self.save_config_button)
-        self.toolbar_layout.addWidget(self.copy_config_button)
         self.toolbar_layout.addWidget(self.load_config_button)
+        self.toolbar_layout.addWidget(self.copy_config_button)
+        self.toolbar_layout.addWidget(self.paste_config_button)
+
         self.main_layout.addLayout(self.toolbar_layout)
 
         # Create and configure the tree view
@@ -126,6 +132,7 @@ class QConfigTreePanel(QTreeView):
         self.save_config_button.clicked.connect(self.save_config)
         self.copy_config_button.clicked.connect(self.copy_config)
         self.load_config_button.clicked.connect(self.load_config)
+        self.paste_config_button.clicked.connect(self.paste_config)
 
     def populate_tree(self, allow_voltage_editing=True):
         """
@@ -150,9 +157,8 @@ class QConfigTreePanel(QTreeView):
 
     def add_tree_items_recursive(self, parent_item, data, allow_voltage_editing):
         for key, value in data.items():
-            if not allow_voltage_editing and (str(key).startswith("Voltage") or str(key) == "DACs"):
-                continue
-
+            # if not allow_voltage_editing and (str(key).startswith("Voltage") or str(key) == "DACs"):
+            #     continue
             key_item = QtGui.QStandardItem(str(key))
             key_item.setFlags(QtCore.Qt.ItemIsEnabled)
 
@@ -216,15 +222,38 @@ class QConfigTreePanel(QTreeView):
 
         # Traverse the config dict
         config_ref = self.config
+
         try:
             for key in path[:-1]:
                 config_ref = config_ref[key]
             final_key = path[-1]
             old_value = config_ref[final_key]
-            config_ref[final_key] = type(old_value)(item.text())
         except (KeyError, ValueError, TypeError):
-            qDebug("Failed updating config field.")
+            qDebug("Failed to traverse config path.")
+            return
+
+        try:
+            new_value = ast.literal_eval(item.text()) # attempt to keep the old type
+            config_ref[final_key] = new_value
+        except (KeyError, ValueError, TypeError):
+            qDebug("Failed updating config field to match type. Resetting.")
+            config_ref[final_key] = old_value
             pass  # Graceful failure on conversion or path error
+        # print(self.config)
+
+    def update_config_dict(self, update_config):
+        """
+        Updates the config dictionary with a new one but keeps all Base Config fields in Base Config.
+        """
+        keys_to_remove = []
+        for key in update_config:
+            if key in self.config["Base Config"]:
+                self.config["Base Config"][key] = update_config[key]
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            update_config.pop(key, None)
+        self.config["Experiment Config"] = update_config
 
     def save_config(self):
         """
@@ -236,8 +265,12 @@ class QConfigTreePanel(QTreeView):
         if folder_path:
             file_path = os.path.join(folder_path, "config.json")
             try:
+                unformatted_config = self.current_tab.config.copy()
+                unformatted_config.update(unformatted_config.pop("Base Config", {}))
+                unformatted_config.update(unformatted_config.pop("Experiment Config", {}))
+
                 with open(file_path, "w") as json_file:
-                    json.dump(self.config, json_file, indent=4)
+                    json.dump(unformatted_config, json_file, indent=4)
                 qInfo(f"Configuration saved to {file_path}")
             except Exception as e:
                 qCritical(f"Failed to save the configuration to {file_path}: {str(e)}")
@@ -249,7 +282,11 @@ class QConfigTreePanel(QTreeView):
         opies the config dictionary as a formatted JSON string to the clipboard.
         """
 
-        json_string = json.dumps(self.config) # can incldue indent=4 if formatting wanted
+        unformatted_config = self.current_tab.config.copy()
+        unformatted_config.update(unformatted_config.pop("Base Config", {}))
+        unformatted_config.update(unformatted_config.pop("Experiment Config", {}))
+
+        json_string = json.dumps(unformatted_config) # can incldue indent=4 if formatting wanted
         clipboard = QApplication.clipboard()
         clipboard.setText(json_string)
         qInfo("Current configuration copied to clipboard!")
@@ -267,10 +304,36 @@ class QConfigTreePanel(QTreeView):
         if file_path:  # If a file is selected
             try:
                 with open(file_path, "r") as json_file:
-                    self.config = json.load(json_file)
+                    update_config = json.load(json_file)
+                    update_config.update(update_config.pop("Base Config", {}))
+                    update_config.update(update_config.pop("Experiment Config", {}))
+                    self.update_config_dict(update_config)
+
                 self.populate_tree()  # Refresh the tree with the new config
                 qInfo(f"Config loaded from {file_path}")
             except Exception as e:
                 qCritical(f"The Config loaded from {file_path} has failed: {str(e)}")
                 QMessageBox.critical(self, "Error", "Failed to load config")
 
+    def paste_config(self):
+        """
+        Creates a text prompt for the user to paste in a dictionary that is then diff'd with the current config.
+        """
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Paste Config",
+            "Paste config in dictionary format to be diff'd with current config. (ex: {'field': 50})"
+        )
+        if not ok or not text.strip():
+            return
+
+        try:
+            update_config = json.loads(text.strip())
+            update_config.update(update_config.pop("Base Config", {}))
+            update_config.update(update_config.pop("Experiment Config", {}))
+            self.update_config_dict(update_config)
+
+            self.populate_tree()
+
+        except Exception as e:
+            QMessageBox.critical(None, "Error", f"Error parsing dictionary: {e}")

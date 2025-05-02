@@ -527,6 +527,11 @@ class Quarky(QMainWindow):
         :type idx: int
         """
 
+        # update old tab
+        if self.current_tab is not None:
+            self.current_tab.config = self.config_tree_panel.config
+
+        # now handle new tab
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
             self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel

@@ -297,6 +297,7 @@ class QQuarkTab(QWidget):
                 self.config = temp_config
             else:
                 self.config["Experiment Config"] = temp_config
+
             self.data.pop("config")
         else:
             qDebug("No config in metadata found")

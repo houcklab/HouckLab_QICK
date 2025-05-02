@@ -131,8 +131,14 @@ class ExperimentObject():
                     qInfo("Found config variable in the class: " + name)
                     new_experiment_config = obj.config_template
                     # Remove overlapping keys from base config
+                    keys_to_remove = []
                     for key in new_experiment_config:
-                        self.experiment_tab.config["Base Config"].pop(key, None)
+                        if key in self.experiment_tab.config["Base Config"]:
+                            self.experiment_tab.config["Base Config"][key] = new_experiment_config[key]
+                            keys_to_remove.append(key)
+
+                    for key in keys_to_remove:
+                        new_experiment_config.pop(key, None)
 
                     self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
@@ -149,9 +155,14 @@ class ExperimentObject():
                     qInfo("Found config variable in the class: " + name)
                     new_experiment_config = obj.config_template
                     # Remove overlapping keys from base config
+                    keys_to_remove = []
                     for key in new_experiment_config:
-                        self.experiment_tab.config["Base Config"].pop(key, None)
+                        if key in self.experiment_tab.config["Base Config"]:
+                            self.experiment_tab.config["Base Config"][key] = new_experiment_config[key]
+                            keys_to_remove.append(key)
 
+                    for key in keys_to_remove:
+                        new_experiment_config.pop(key, None)
                     self.experiment_tab.config["Experiment Config"] = new_experiment_config
 
         # Add sets if missing

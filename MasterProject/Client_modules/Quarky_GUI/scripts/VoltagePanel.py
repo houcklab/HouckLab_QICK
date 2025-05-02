@@ -292,7 +292,7 @@ class QVoltagePanel(QWidget):
                 hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
                 if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
                     self.sweeps_group.setEnabled(True)
-                    self.config_tree_panel.populate_tree(False)
+                    # self.config_tree_panel.populate_tree(False)
 
         self.update_sweeps()
 
@@ -502,7 +502,7 @@ class VoltageSweepBox(QVBoxLayout):
         # self.sweep_form_layout.setWidget(0, QFormLayout.FieldRole, self.channel_dropdown)
 
         self.dacs_label = QLabel()
-        self.dacs_label.setText("DAC(s): ")
+        self.dacs_label.setText("DACs: ")
         self.dacs_label.setObjectName("dacs_label")
         self.sweep_form_layout.setWidget(1, QFormLayout.LabelRole, self.dacs_label)
         self.dacs_edit = QLineEdit()
@@ -612,6 +612,7 @@ class VoltageSweepBox(QVBoxLayout):
                         raise ValueError
 
             self.config_tree_panel.config["Experiment Config"]["DACs"] = dacs_list
+            self.config_tree_panel.populate_tree()
         except ValueError:
             # If there's any issue (e.g., a non-number value), raise an error
             qDebug(f"The input is not in the correct format. Please enter a comma-separated list of integers within the channel range. Resetting.")
@@ -623,6 +624,7 @@ class VoltageSweepBox(QVBoxLayout):
             if value < self.parent.range[0] or value > self.parent.range[1]:
                 raise ValueError
             self.config_tree_panel.config["Experiment Config"]["VoltageStart"] = value
+            self.config_tree_panel.populate_tree()
         except ValueError:
             qDebug(f"Invalid voltage start value (check range). Resetting.")
             self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
@@ -633,6 +635,7 @@ class VoltageSweepBox(QVBoxLayout):
             if value < self.parent.range[0] or value > self.parent.range[1]:
                 raise ValueError
             self.config_tree_panel.config["Experiment Config"]["VoltageStop"] = value
+            self.config_tree_panel.populate_tree()
         except ValueError:
             qDebug(f"Invalid voltage stop value. Resetting.")
             self.stop_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStop"]))
@@ -641,13 +644,17 @@ class VoltageSweepBox(QVBoxLayout):
         try:
             value = int(self.numPoints_edit.text())
             self.config_tree_panel.config["Experiment Config"]["VoltageNumPoints"] = value
+            self.config_tree_panel.populate_tree()
         except ValueError:
             qDebug(f"Invalid voltage stop value. Resetting.")
             self.numPoints_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageNumPoints"]))
 
 
+### CURRENTLY NOT USED
 class VoltageSweepTable(QVBoxLayout):
-    # TODO OUTDATED
+    """
+    Prototype sweep table currently not used.
+    """
     def __init__(self, config_tree_panel, voltage_interface_combo, parent):
         super().__init__()
         self.config_tree_panel = config_tree_panel
