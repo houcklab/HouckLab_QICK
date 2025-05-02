@@ -154,6 +154,12 @@ class ExperimentClassT2:
         # Store the data dictionary
         Helpers.dict_to_h5(data_filename, data)
 
+    # def estimate_runtime(self):
+    #     """
+    #     Some code here to estimate the runtime of the experiment and return it. Return it as a time.time() format.
+    #     """
+    #     pass
+
     def load_config(self, config_file):
         """
         Loads the config from the provided config_file. Can handle h5 or JSON files.

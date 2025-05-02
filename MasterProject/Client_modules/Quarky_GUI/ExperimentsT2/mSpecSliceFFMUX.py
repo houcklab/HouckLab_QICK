@@ -178,49 +178,49 @@ class QubitSpecSliceFFMUX(ExperimentClassT2):
 
         return data
 
-    # @classmethod
-    # def plotter(cls, plot_widget, plots, data):
-    #     # print(data)
-    #     if 'data' in data:
-    #         data = data['data']
-    #
-    #     x_pts = data['x_pts']
-    #     avgi = data['avgi']
-    #     avgq = data['avgq']
-    #
-    #     sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
-    #     print(sig)
-    #     avgsig = np.abs(sig)
-    #     avgphase = np.angle(sig, deg=True)
-    #
-    #     # Create structured data
-    #     prepared_data = {
-    #         "plots": [
-    #             {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
-    #             {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
-    #             {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
-    #              "ylabel": "a.u."},
-    #             {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
-    #              "ylabel": "a.u."}
-    #         ]
-    #     }
-    #
-    #     date_time_now = datetime.datetime.now()
-    #     date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-    #     plot_title = "SpecSlice_" + date_time_string
-    #     plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
-    #     plot_widget.nextRow()
-    #
-    #     for i, plot in enumerate(prepared_data["plots"]):
-    #         p = plot_widget.addPlot(title=plot["label"])
-    #         p.addLegend()
-    #         p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
-    #         p.setLabel('bottom', plot["xlabel"])
-    #         p.setLabel('left', plot["ylabel"])
-    #         plots.append(p)
-    #         plot_widget.nextRow()
-    #
-    #     return
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        # print(data)
+        if 'data' in data:
+            data = data['data']
+
+        x_pts = data['x_pts']
+        avgi = data['avgi']
+        avgq = data['avgq']
+
+        sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
+        print(sig)
+        avgsig = np.abs(sig)
+        avgphase = np.angle(sig, deg=True)
+
+        # Create structured data
+        prepared_data = {
+            "plots": [
+                {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
+                {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
+                {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
+                 "ylabel": "a.u."},
+                {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
+                 "ylabel": "a.u."}
+            ]
+        }
+
+        date_time_now = datetime.datetime.now()
+        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
+        plot_title = "SpecSlice_" + date_time_string
+        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
+        plot_widget.nextRow()
+
+        for i, plot in enumerate(prepared_data["plots"]):
+            p = plot_widget.addPlot(title=plot["label"])
+            p.addLegend()
+            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
+            p.setLabel('bottom', plot["xlabel"])
+            p.setLabel('left', plot["ylabel"])
+            plots.append(p)
+            plot_widget.nextRow()
+
+        return
 
     @classmethod
     def export_data(cls, data_file, data, config):

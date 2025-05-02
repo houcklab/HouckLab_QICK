@@ -409,6 +409,7 @@ class Quarky(QMainWindow):
 
             # Connecting data related slots
             self.experiment_worker.updateData.connect(self.current_tab.update_data) # update data & plot
+            self.experiment_worker.updateRuntime.connect(self.current_tab.update_runtime_estimation) # update runtime
             self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
 

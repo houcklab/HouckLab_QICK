@@ -9,6 +9,7 @@ by defining the experiment instance and configuration.
 It will then communicate with the main program via signals, as intended in Qt, making it thread-safe.
 """
 
+import time
 from PyQt5.QtCore import QObject, pyqtSignal, qWarning, qDebug
 from qick import AveragerProgram, RAveragerProgram
 
@@ -43,6 +44,16 @@ class ExperimentThread(QObject):
     """
     Signal to send when finishing a set to update the setsComplete bar
 
+    :param sets_completed: The number of sets completed
+    :type sets_completed: int
+    """
+
+    updateRuntime = pyqtSignal(float, int)
+    """
+    Signal to send when finishing a set to update the runtime estimations
+    
+    :param runtime_delta: The runtime delta of the experiment
+    :type runtime_delta: float
     :param sets_completed: The number of sets completed
     :type sets_completed: int
     """
@@ -83,6 +94,7 @@ class ExperimentThread(QObject):
 
         self.running = True
         idx_set = 0
+        prev_time = time.perf_counter()
 
         ### loop over all the sets for the data taking
         while self.running and idx_set < self.config["sets"]:
@@ -97,8 +109,13 @@ class ExperimentThread(QObject):
 
             # Emit the signal with new data and update the progress bar with additional set complete
             self.updateData.emit(data, self.experiment_instance)
-            self.updateProgress.emit(idx_set + 1)
+
             idx_set += 1
+            curr_time = time.perf_counter()
+            time_delta = curr_time - prev_time
+
+            self.updateRuntime.emit(time_delta, idx_set)
+            self.updateProgress.emit(idx_set)
 
         self.finished.emit()
 

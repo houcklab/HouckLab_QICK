@@ -8,6 +8,8 @@ Module containing all helper functions for the Quarky GUI.
 import os
 import json
 import ast
+import time
+from datetime import datetime, timedelta
 import numpy as np
 import importlib
 import h5py
@@ -200,7 +202,20 @@ class NpEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NpEncoder, self).default(obj)
 
+def format_time_duration_pretty(seconds: float) -> str:
+    """
+    Formats a number of seconds into a pretty string.
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    milliseconds = int((seconds - int(seconds)) * 1000)
 
+    return f"{hours:02d}h {minutes:02d}m {secs:02d}s {milliseconds:03d}ms"
+
+def format_date_time_pretty(seconds_from_now: float) -> str:
+    future = datetime.now() + timedelta(seconds=seconds_from_now)
+    return future.strftime("%m/%d %I:%M%p").lower()
 
 # def dict_to_h5(data_file, dictionary):
 #     """

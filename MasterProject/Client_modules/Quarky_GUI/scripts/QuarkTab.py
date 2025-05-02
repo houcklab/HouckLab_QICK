@@ -10,6 +10,7 @@ data, and plotting. Arguable is more important for functionality than the main Q
 
 import os
 import json
+import time
 import h5py
 import traceback
 from pathlib import Path
@@ -117,8 +118,10 @@ class QQuarkTab(QWidget):
         self.experiment_infobar.setSpacing(3)
         self.experiment_infobar.setObjectName("experiment_infobar")
 
-        self.runtime_label = QLabel("Estimated Total Runtime: 00h 00m 00s 000ms")  # estimated experiment time
+        self.runtime_label = QLabel("Estimated Runtime: ---")  # estimated experiment time
         self.runtime_label.setStyleSheet("font-size: 11px;")
+        self.endtime_label = QLabel("End: ---")  # estimated experiment time
+        self.endtime_label.setStyleSheet("font-size: 11px;")
         self.hardware_label = QLabel("Hardware Requirement: [Proxy, QickConfig]")
         if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
             hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
@@ -128,6 +131,7 @@ class QQuarkTab(QWidget):
         # TODO: Runtime Functions: calculate estimation, at updateprogress, calc runtime remaining, log actual time used
 
         self.experiment_infobar.addWidget(self.runtime_label)
+        self.experiment_infobar.addWidget(self.endtime_label)
         self.experiment_infobar.addWidget(self.hardware_label)
         self.plot_layout.addWidget(self.experiment_infobar_container)
 
@@ -667,9 +671,7 @@ class QQuarkTab(QWidget):
         """
 
         self.data = data
-
         # check what set number is being run and average the data
-
         if "avgi" in self.data["data"] and "avgq" in self.data["data"]:
             set_num = data['data']['set_num']
             if set_num == 0:
@@ -681,6 +683,29 @@ class QQuarkTab(QWidget):
                 self.data_cur['data']['avgq'][0][0] = avgq
             self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
             self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
+
+    def update_runtime_estimation(self, set_num, time_delta):
+        """
+        Updates the estimated runtime and endtime.
+
+        :param set_num: The set number.
+        :type set_num: int
+        :param time_delta: The time delta in seconds of a single set.
+        :type time_delta: float
+        """
+        total_sets = self.config["Base Config"]["sets"]
+        if "sets" not in self.config.config["Base Config"]:
+            total_sets = 1
+        sets_left = total_sets - set_num
+
+        runtime_estimate = time_delta * total_sets
+        runtime_string = Helpers.format_time_duration_pretty(runtime_estimate)
+
+        leftover_runtime_estimate = (time_delta * sets_left)
+        endtime_string =Helpers.format_time_duration_pretty(leftover_runtime_estimate)
+
+        self.runtime_label.setText("Estimated Runtime: " + runtime_string)
+        self.endtime_label.setText("End:" + endtime_string)
 
     def update_data(self, data, exp_instance):
         """
