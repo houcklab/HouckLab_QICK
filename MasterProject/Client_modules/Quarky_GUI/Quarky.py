@@ -424,10 +424,11 @@ class Quarky(QMainWindow):
             self.experiment_progress_bar.setValue(1)
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
+            self.start_experiment_button.setText("Running")
+            self.stop_experiment_button.setText("◼")
+            self.experiment_progress_bar.setStyleSheet('')
 
             self.thread.start()
-
-            self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #87CEEB;  /* Blue */}")
 
         else:
             qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
@@ -439,7 +440,7 @@ class Quarky(QMainWindow):
         Stop an Experiment if not auto-terminated and update respective UI for during stop.
         """
 
-        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #2196F3;  /* Blue */}")
+        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #DC143C;  /* Red */}")
 
         if self.experiment_worker:
             self.experiment_worker.stop()
@@ -447,7 +448,8 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
-
+        self.stop_experiment_button.setText("Stopping")
+        self.start_experiment_button.setText("▶")
 
     def finished_experiment(self):
         """
@@ -458,6 +460,9 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
+        self.start_experiment_button.setText("▶")
+        self.stop_experiment_button.setText("◼")
+
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
         if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
             qInfo("Stopping Experiment: " + str(self.current_tab.tab_name))
