@@ -317,7 +317,9 @@ class QQuarkTab(QWidget):
 
         if self.experiment_obj is not None:
             self.experiment_obj.extract_experiment_attributes()
-            self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+            if self.experiment_obj.experiment_plotter is not None:
+                self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+
             if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
                 hardware_str = "[" + (
                     ", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
@@ -394,8 +396,7 @@ class QQuarkTab(QWidget):
                 # if not self.is_experiment:
                 if exp_instance is not None:
                     if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
-                        data_dict = {'data': self.data}
-                        exp_instance.display(data_dict)
+                        exp_instance.display(self.data)
                 else:
                     self.auto_plot_prepare()
             elif plotting_method in QQuarkTab.custom_plot_methods:

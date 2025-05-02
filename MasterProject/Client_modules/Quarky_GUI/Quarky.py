@@ -547,6 +547,8 @@ class Quarky(QMainWindow):
         """
 
         tab_to_delete = self.central_tabs.widget(idx)
+        tab_name = tab_to_delete.experiment_name
+        QQuarkTab.custom_plot_methods.pop(tab_name, None)
 
         self.central_tabs.removeTab(idx) # remove tab from widget
 
@@ -556,6 +558,7 @@ class Quarky(QMainWindow):
         else:
             current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
             self.change_tab(current_tab_idx)
+            self.current_tab.setup_plotter_options()
 
         tab_to_delete.deleteLater() # safely delete the tab
 
