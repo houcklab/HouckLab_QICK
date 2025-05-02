@@ -705,7 +705,7 @@ class QQuarkTab(QWidget):
         endtime_string =Helpers.format_time_duration_pretty(leftover_runtime_estimate)
 
         self.runtime_label.setText("Estimated Runtime: " + runtime_string)
-        self.endtime_label.setText("End:" + endtime_string)
+        self.endtime_label.setText("End: " + endtime_string)
 
     def update_data(self, data, exp_instance):
         """
