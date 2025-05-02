@@ -119,22 +119,22 @@ class ExperimentClassT2:
 
         print("All hardware items provided")
 
-    @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        """
-        [QUARKY GUI FUNCTION]
-        Specifies a plotting function to use for display on the Quarky GUI.
-
-        :param plot_widget: A GraphicsLayoutWidget instance that plots are appended to
-        :type plot_widget: GraphicsLayoutWidget
-        :param plots: A reference to a list of all the plots
-        :type plots: list
-        :param data: Data to be plotted
-        :type data: list
-        :param instance: An instance of the class
-        :type instance: class
-        """
-        pass
+    # @classmethod
+    # def plotter(cls, plot_widget, plots, data):
+    #     """
+    #     [QUARKY GUI FUNCTION]
+    #     Specifies a plotting function to use for display on the Quarky GUI.
+    #
+    #     :param plot_widget: A GraphicsLayoutWidget instance that plots are appended to
+    #     :type plot_widget: GraphicsLayoutWidget
+    #     :param plots: A reference to a list of all the plots
+    #     :type plots: list
+    #     :param data: Data to be plotted
+    #     :type data: list
+    #     :param instance: An instance of the class
+    #     :type instance: class
+    #     """
+    #     pass
 
     @classmethod
     def export_data(cls, data_filename, data, config):
