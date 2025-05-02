@@ -694,8 +694,8 @@ class QQuarkTab(QWidget):
         :type set_num: int
         """
         total_sets = 1
-        if "sets" in self.config["Base Config"]:
-            total_sets = self.config["Base Config"]["sets"]
+        if "sets" in self.config["Experiment Config"]:
+            total_sets = self.config["Experiment Config"]["sets"]
         sets_left = total_sets - set_num
 
         runtime_estimate = time_delta * total_sets

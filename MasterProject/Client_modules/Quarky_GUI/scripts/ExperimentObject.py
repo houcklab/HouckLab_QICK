@@ -168,7 +168,7 @@ class ExperimentObject():
         # Add sets if missing
         if ("sets" not in self.experiment_tab.config["Base Config"] and
                 "sets" not in self.experiment_tab.config["Experiment Config"]):
-            self.experiment_tab.config["Base Config"]["sets"] = 1
+            self.experiment_tab.config["Experiment Config"]["sets"] = 1
 
         # Verify experiment_instance
         if self.experiment_class is None:
