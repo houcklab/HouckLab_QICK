@@ -694,7 +694,7 @@ class QQuarkTab(QWidget):
         :type time_delta: float
         """
         total_sets = self.config["Base Config"]["sets"]
-        if "sets" not in self.config.config["Base Config"]:
+        if "sets" not in self.config["Base Config"]:
             total_sets = 1
         sets_left = total_sets - set_num
 
