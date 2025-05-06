@@ -346,7 +346,7 @@ class Quarky(QMainWindow):
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
             self.aux_thread = QThread()
-            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=2.0)
+            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=2)
             self.aux_worker.moveToThread(self.aux_thread)
 
             # Connecting started and finished signals
@@ -581,6 +581,8 @@ class Quarky(QMainWindow):
         """
 
         self.stop_experiment()
+        if self.aux_worker:
+            self.aux_worker.stop()
 
         # reassign plt.show
         plt.show = self._original_show

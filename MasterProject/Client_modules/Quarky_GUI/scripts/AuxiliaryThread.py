@@ -68,7 +68,7 @@ class AuxiliaryThread(QObject):
         :param func_kwargs: The function arguments
         :type func_kwargs: dict
         :param timeout: The timeout
-        :type timeout: float
+        :type timeout: int
         """
         super().__init__(parent)
         self.target_func = target_func
