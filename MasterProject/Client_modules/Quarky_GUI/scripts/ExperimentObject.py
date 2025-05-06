@@ -87,12 +87,13 @@ class ExperimentObject():
         for name, obj, in inspect.getmembers(experiment_module):
 
             # Cannot to issubclass as of now because inheriting from different ExperimentClass files.
-            if ((inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj.__name__ != "ExperimentClass")
+            # if ((inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj.__name__ != "ExperimentClass")
+            if (inspect.isclass(obj) and any(base.__name__ == "ExperimentClass" for base in obj.__mro__[1:])
                     or
-                    (inspect.isclass(obj) and obj.__bases__[0] == ExperimentClassT2 and obj is not ExperimentClassT2)):
+                    (inspect.isclass(obj) and any(base.__name__ == "ExperimentClassT2" for base in obj.__mro__[1:]))):
 
                 ### Extract the class type (either ExperimentClass or ExperimentClassT2)
-                if inspect.isclass(obj) and obj.__bases__[0] == ExperimentClassT2:
+                if inspect.isclass(obj) and any(base.__name__ == "ExperimentClassT2" for base in obj.__mro__[1:]):
                     self.experiment_type = ExperimentClassT2
 
                     ### Store the hardware_requirement if given (only in T2 experiments)
@@ -101,6 +102,7 @@ class ExperimentObject():
                         self.experiment_hardware_req = getattr(obj, "hardware_requirement")
                     else:
                         qDebug("This experiment class does not have a hardware_requirement list.")
+
                 else:
                     self.experiment_type = ExperimentClass
 

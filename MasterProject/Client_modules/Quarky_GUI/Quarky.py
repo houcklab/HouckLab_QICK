@@ -181,7 +181,7 @@ class Quarky(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(620, 0))
+        self.central_tabs.setMinimumSize(QSize(640, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setTabShape(QTabWidget.Rounded)
         self.central_tabs.setUsesScrollButtons(True)
@@ -219,7 +219,7 @@ class Quarky(QMainWindow):
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
         self.accounts_panel = QAccountPanel(parent=self.side_tabs)
-        self.side_tabs.addTab(self.accounts_panel, "RFSoC")
+        self.side_tabs.addTab(self.accounts_panel, "Accounts")
         ### Log Panel
         self.log_panel = QLogPanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
@@ -404,6 +404,9 @@ class Quarky(QMainWindow):
             if (hasattr(self.experiment_instance, "estimate_runtime")
                     and callable(getattr(self.experiment_instance, "estimate_runtime"))):
                 self.current_tab.update_runtime_estimation(self.experiment_instance.estimate_runtime(), 0)
+            else:
+                self.current_tab.runtime_label.setText("Estimated Runtime: ---")
+                self.current_tab.endtime_label.setText("End: ---")
 
             # Connecting started and finished signals
             self.thread.started.connect(self.current_tab.prepare_file_naming)
@@ -470,7 +473,7 @@ class Quarky(QMainWindow):
         """
         self.update_progress(0)
         self.is_stopping = False
-        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #808080;  /* Gray */}")
+        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #F28D8D;  /* light red */}")
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
