@@ -358,7 +358,7 @@ class Quarky(QMainWindow):
 
             # Connecting data related slots
             self.aux_worker.error_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=False))
-            self.aux_worker.result_signal.connect(lambda result: self.save_RFSoC(result, ip_address))
+            self.aux_worker.result_signal.connect(lambda result: self.save_RFSoC(result[0], result[1], ip_address))
             self.aux_worker.timeout_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=True))
 
             self.aux_thread.start()

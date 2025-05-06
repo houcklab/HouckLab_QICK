@@ -9,18 +9,24 @@ Sample Usage:
 
 .. code-block:: python
 
-    thread = AuxiliaryThread(target_func=slow_function, func_kwargs={"x": 3, "y": 4}, timeout=2)
+    self.aux_thread = QThread()
+    self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=2)
+    self.aux_worker.moveToThread(self.aux_thread)
 
-    # Connect signals
-    thread.result_signal.connect(lambda result: print("Result:", result))
-    thread.error_signal.connect(lambda err: print("Error:\n", err))
-    thread.timeout_signal.connect(lambda: print("Function timed out."))
+    # Connecting started and finished signals
+    # self.thread.started.connect(self.current_tab.prepare_file_naming) # animate connecting
+    self.aux_thread.started.connect(self.aux_worker.run)  # run function
+    self.aux_worker.finished.connect(self.aux_thread.quit)  # stop thread
+    self.aux_worker.finished.connect(self.aux_worker.deleteLater)  # delete worker
+    self.aux_thread.finished.connect(self.aux_thread.deleteLater)  # delete thread
 
-    # Clean up after thread finishes
-    thread.finished.connect(thread.deleteLater)
+    # Connecting data related slots
+    self.aux_worker.error_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=False))
+    self.aux_worker.result_signal.connect(lambda result: self.save_RFSoC(result[0], result[1], ip_address))
+    self.aux_worker.timeout_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=True))
 
-    # Start the thread
-    thread.start()
+    self.aux_thread.start()
+    self.accounts_panel.connect_button.setEnabled(False)
 
 """
 import traceback
