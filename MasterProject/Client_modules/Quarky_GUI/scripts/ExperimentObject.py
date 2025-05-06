@@ -20,7 +20,6 @@ from PyQt5.QtWidgets import (
     QMessageBox
 )
 
-from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
 import scripts.Helpers as Helpers
@@ -94,7 +93,7 @@ class ExperimentObject():
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(self.run_import, self.experiment_path)
             try:
-                experiment_module, name = future.result(timeout=2)  # wait max 2 seconds
+                experiment_module, experiment_name = future.result(timeout=2)  # wait max 2 seconds
 
                 # print(inspect.getsourcelines(experiment_module))
 
@@ -196,7 +195,8 @@ class ExperimentObject():
                 qCritical("Timeout: Experiment loading took too long. Likely error is a socProxy import with a failing IP "
                           "address somewhere in import modules")
                 QMessageBox.critical(None, "Timeout Error",
-                                     "Experiment loading took too long (>2s). Possible failing socProxy import.")
+                                     "Experiment loading took too long (>2s). Possible failing socProxy import. Please wait until successful cancel.")
+                future.cancel()
             except Exception as e:
                 if isinstance(e, ImportError):
                     qCritical("Import Error: " + str(e))

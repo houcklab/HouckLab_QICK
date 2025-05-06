@@ -53,6 +53,7 @@ from scripts.VoltagePanel import QVoltagePanel
 from scripts.AccountsPanel import QAccountPanel
 from scripts.LogPanel import QLogPanel
 from scripts.ConfigTreePanel import QConfigTreePanel
+from scripts.AuxiliaryThread import AuxiliaryThread
 import scripts.Helpers as Helpers
 
 ### Importing the PythonDrivers --- not sure if it works currently since they aren't being used
@@ -62,6 +63,10 @@ try:
     os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
+
+def safe_dummy():
+    print("Dummy running...")
+    return "ok"
 
 class Quarky(QMainWindow):
     """
@@ -283,16 +288,52 @@ class Quarky(QMainWindow):
         self.soc_connected = False
         qInfo("Disconnected from RFSoC")
 
-    def connect_makeProxy(self, ip_address):
+    def save_RFSoC(self, soc, soccfg, ip_address):
         """
-        Helper function for calling makeProxy to be used by concurrent threader.
+        Helper function for saving the soc and soccfg returned from a makeProxy call.
 
-        :param ip_address: The ip_address of the RFSoC to connect to
+        :param soc: RFSoC Proxy instance
+        :type soc: Proxy
+        :param soccfg: QickConfig returned from a makeProxy call
+        :type soccfg: QickConfig
+        :param ip_address: IP address of the RFSoC instance
         :type ip_address: str
         """
 
-        return makeProxy(ip_address)
+        self.soc, self.soccfg = soc, soccfg
 
+        # UI updates
+        self.soc_connected = True
+        self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
+        self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
+        self.accounts_panel.connect_button.setEnabled(True)
+
+    def failed_rfsoc_error(self, e, ip_address, timeout=False):
+        """
+        Function to handle a failed RFSoC connection error.
+
+        :param e: Error message
+        :type e: str
+        :param ip_address: IP address of the RFSoC instance
+        :type ip_address: str
+        :param timeout: Whether there was a timeout error
+        :type timeout: bool
+        """
+
+        if timeout:
+            qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
+            QMessageBox.critical(None, "Timeout Error", "Connection to RFSoC took too long. "
+                                                        "Please wait until nameserver connection terminates.")
+        else:
+            self.soc_connected = False
+            self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
+            QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
+            qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
+
+        self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
+        self.soc = None
+        self.soccfg = None
+        self.accounts_panel.connect_button.setEnabled(True)
 
     def connect_rfsoc(self, ip_address):
         """
@@ -304,44 +345,73 @@ class Quarky(QMainWindow):
 
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
-            # Attempt RFSoC connection via makeProxy
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self.connect_makeProxy, ip_address)
-                try:
-                    self.soc, self.soccfg = future.result(timeout=2)  # wait max 2 seconds
+            self.aux_thread = QThread()
+            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=2.0)
+            self.aux_worker.moveToThread(self.aux_thread)
 
-                except concurrent.futures.TimeoutError:
-                    qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
-                    QMessageBox.critical(None, "Timeout Error","Connection to RFSoC took too long.")
-                except Exception as e:
-                    self.soc_connected = False
-                    self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
-                    QMessageBox.critical(None, "Error", "RFSoC connection to failed (see log).")
-                    qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
-                    self.rfsoc_connection_updated.emit(ip_address, 'failure') # emit failure to accounts tab
-                    return
-                else:
-                    self.soc_connected = True
-                    self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
-                    self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
+            # Connecting started and finished signals
+            # self.thread.started.connect(self.current_tab.prepare_file_naming) # animate connecting
+            self.aux_thread.started.connect(self.aux_worker.run)  # run function
+            self.aux_worker.finished.connect(self.aux_thread.quit)  # stop thread
+            self.aux_worker.finished.connect(self.aux_worker.deleteLater)  # delete worker
+            self.aux_thread.finished.connect(self.aux_thread.deleteLater)  # delete thread
 
-            # Verifying RFSoc connection
-            # try:
-            #     msg = str(self.soc)
-            #     # qInfo(f"RFSoC Info: " + msg)
-            #     # print("Available Methods:", self.soc._pyroMethods)
-            # except Exception as e:
-            #     # Connection invalid despite makeProxy success
-            #     self.disconnect_rfsoc()
-            #     self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
-            #     QMessageBox.critical(None, "Error", "RFSoC connection invalid (see log).")
-            #     qCritical("RFSoC connection to " + ip_address + " invalid: " + str(e))
-            #     self.rfsoc_connection_updated.emit(ip_address, 'failure')
-            #     return
+            # Connecting data related slots
+            self.aux_worker.error_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=False))
+            self.aux_worker.result_signal.connect(lambda result: self.save_RFSoC(result, ip_address))
+            self.aux_worker.timeout_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=True))
+
+            self.aux_thread.start()
+            self.accounts_panel.connect_button.setEnabled(False)
 
         else:
             qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
             QMessageBox.critical(None, "Error", "RFSoC IP Address not given.")
+
+
+
+        #
+        # if ip_address is not None:
+        #     # Attempt RFSoC connection via makeProxy
+        #     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        #         future = executor.submit(self.connect_makeProxy, ip_address)
+        #         try:
+        #             self.soc, self.soccfg = future.result(timeout=2)  # wait max 2 seconds
+        #
+        #         except concurrent.futures.TimeoutError:
+        #             qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
+        #             QMessageBox.critical(None, "Timeout Error","Connection to RFSoC took too long. "
+        #                                                        "Please wait until nameserver connection terminates")
+        #             future.cancel()
+        #         except Exception as e:
+        #             self.soc_connected = False
+        #             self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
+        #             QMessageBox.critical(None, "Error", "RFSoC connection to failed (see log).")
+        #             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
+        #             self.rfsoc_connection_updated.emit(ip_address, 'failure') # emit failure to accounts tab
+        #             return
+        #         else:
+        #             self.soc_connected = True
+        #             self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
+        #             self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
+        #
+        #     # Verifying RFSoc connection
+        #     # try:
+        #     #     msg = str(self.soc)
+        #     #     # qInfo(f"RFSoC Info: " + msg)
+        #     #     # print("Available Methods:", self.soc._pyroMethods)
+        #     # except Exception as e:
+        #     #     # Connection invalid despite makeProxy success
+        #     #     self.disconnect_rfsoc()
+        #     #     self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
+        #     #     QMessageBox.critical(None, "Error", "RFSoC connection invalid (see log).")
+        #     #     qCritical("RFSoC connection to " + ip_address + " invalid: " + str(e))
+        #     #     self.rfsoc_connection_updated.emit(ip_address, 'failure')
+        #     #     return
+        #
+        # else:
+        #     qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
+        #     QMessageBox.critical(None, "Error", "RFSoC IP Address not given.")
 
     def run_experiment(self):
         """
@@ -615,7 +685,7 @@ class Quarky(QMainWindow):
         """
 
         tab_to_delete = self.central_tabs.widget(idx)
-        tab_name = tab_to_delete.experiment_name
+        tab_name = tab_to_delete.tab_name
         QQuarkTab.custom_plot_methods.pop(tab_name, None)
 
         self.central_tabs.removeTab(idx) # remove tab from widget
