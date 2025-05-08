@@ -3,36 +3,17 @@
 Created on Tue Aug 15 09:29:45 2023
 
 @author: Jake and Lev
+@author: Parth (some edits)
 """
 
 import pyvisa
 import time
 import numpy as np
-import logging
+
 
 class Lakeshore370:
     ### class for controlling the lakeshore 370 model
-    def __init__(self, connect_address , outerFolder = ''):
-        # initialize the logger
-        if outerFolder == '':
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s [%(levelname)s] %(message)s",
-                handlers=[
-                    logging.StreamHandler()
-                ]
-            )
-        else:
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s [%(levelname)s] %(message)s",
-                handlers=[
-                    logging.FileHandler(outerFolder + time.strftime('%Y.%m.%d_%H.%M.%S_', time.localtime())+ "_logfile.log"),
-                    logging.StreamHandler()
-                ]
-            )
-        self.logger = logging.getLogger(__name__)
-
+    def __init__(self, connect_address):
         ### set the lakeshore object
         self.LS370 = connect_address
 
@@ -49,20 +30,17 @@ class Lakeshore370:
         ### set hearter range to 1mA
         self.set_heater_range(4)
 
-        ### set the PID temperature to 0 to avoid it turning on the heater
-        self.set_setpoint(0)
-
         ### Identity string
         self.id_string = self.identity()
-        self.logger.info("Connected to Lakeshore " + self.id_string)
+        print("Connected to Lakeshore " + self.id_string)
 
         #### print out the current temperatures
-        self.logger.info("current temps: \n" +
-                          str(self.get_temp(1)) + 'K, \n' +
-                          str(self.get_temp(2)) + ' K, \n' +
-                          str(self.get_temp(5)) + ' K, \n' +
-                          str(self.get_temp(7)) + ' K, \n'
-                          )
+        print("current temps: \n" +
+              str(self.get_temp(1)) + 'K, \n' +
+              str(self.get_temp(2)) + ' K, \n' +
+              str(self.get_temp(5)) + ' K, \n' +
+              str(self.get_temp(7)) + ' K, \n'
+              )
 
     def clear_interface(self):
         """ Clears the interface -- does NOT reset the instrument"""
@@ -97,7 +75,7 @@ class Lakeshore370:
         3 is open loop
         4 is off """
         if not int(n) in [1, 2, 3, 4]:
-            self.logger.info('n must be 1, 2, 3, or 4.')
+            print('n must be 1, 2, 3, or 4.')
             return
         self.LS370.write('CMODE ' + str(int(n)))
 
@@ -115,7 +93,7 @@ class Lakeshore370:
             except:
                 time.sleep(1)
 
-    def get_heater_heat(self):
+    def get_heater_range(self):
         """Returns the range of the heater.
         0 is off
         1 is 31.6 uA
@@ -150,7 +128,7 @@ class Lakeshore370:
         7 is 31.6 mA
         8 is 100 mA."""
         if not n in [0, 1, 2, 3, 4, 5, 6, 7, 8]:
-            self.logger.info('n must be 0, 1, 2, 3, 4, 5, 6, 7, or 8.')
+            print('n must be 0, 1, 2, 3, 4, 5, 6, 7, or 8.')
             return
 
         while (True):
@@ -225,10 +203,10 @@ class Lakeshore370:
         r: rate in K per min, from 0.001 to 10."""
 
         if o not in [0, 1]:
-            self.logger.info('o must be 0 or 1.')
+            print('o must be 0 or 1.')
             return
         if float(r) > 10 or float(r) < 0.001:
-            self.logger.info('Need 0.001 < r < 10.')
+            print('Need 0.001 < r < 10.')
             return
         self.LS370.write('RAMP ' + str(o) + ',' + str(r))
 
@@ -250,14 +228,14 @@ class Lakeshore370:
             except:
                 time.sleep(1)
 
-    def get_resistance(self, chan):
+    def get_resist(self, chan):
         """Returns the resistance in Ohms of channel chan."""
         while (True):
             try:
-                resistance = self.LS370.query('RDGR? ' + str(chan)).rstrip()
+                resist = self.LS370.query('RDGR? ' + str(chan)).rstrip()
 
-                if resistance != self.id_string:
-                    return resistance
+                if resist != self.id_string:
+                    return resist
                 else:
                     time.sleep(1)
 
@@ -321,10 +299,10 @@ class Lakeshore370:
     def set_scan(self, n, auto):
         """ sets the channel being scanned and toggles autoscan """
         if not n in [1, 2, 5, 7]:
-            self.logger.info('n must be integer 1, 2, 5, or 7')
+            print('n must be integer 1, 2, 5, or 7')
             return
         if not auto in [0, 1]:
-            self.logger.info('auto must be 0 (autoscan off) or 1 (autoscan on)')
+            print('auto must be 0 (autoscan off) or 1 (autoscan on)')
             return
 
         while (True):
@@ -335,29 +313,22 @@ class Lakeshore370:
                 time.sleep(1)
 
     ### define function to set temperature and wait to stabilize
-    # If heater_range is left at -1, the heater range will be set based on temperature
-    # If the heater_range is set explicitly, the heater will be set to that value
-    def set_temp(self, temperature, heater_range=-1):
+    def set_temp(self, temperature, heater_range=np.nan):
 
-        self.logger.info("setting temperature: " + str(temperature) + " mK")
+        print("setting temperature: " + str(temperature) + " mK")
 
-        # Set the heater range. For an explicit value, use that value; else, depends on temperature.
-        # These values may need to be changed depending on the payload in the fridge.
-        if heater_range != -1:
+        #### set heater setting, if below 10 turn heater off
+        if not np.isnan(heater_range):
             self.set_heater_range(heater_range)
         else:
             if temperature < 10:
-                heater_range = 0 # off
-            elif temperature < 60:
-                heater_range = 4 # 1 mA
+                self.set_heater_range(3)
+            elif temperature < 50:
+                self.set_heater_range(4)
             elif temperature < 100:
-                heater_range = 5 # 3.16 mA
+                self.set_heater_range(5)
             else:
-                heater_range = 6 # 10 mA
-
-            self.set_heater_range(heater_range)
-        # Print the heater range
-        self.logger.info("Heater range: " + str(self.get_heater_heat()))
+                self.set_heater_range(6)
 
         #### set the temperature point
         self.set_setpoint(temperature)
@@ -365,47 +336,32 @@ class Lakeshore370:
         ### wait 15s initially
         time.sleep(15)
 
-        if temperature >= 10:
-            idx = 0
-            while (True):
-                idx += 1
-                self.logger.info('current temp: ' + str(self.get_temp(7)) + ' K')
-                time.sleep(30)
+        idx = 0
+        while (True):
+            idx += 1
+            print('current temp: ' + str(self.get_temp(7)) + ' K')
+            time.sleep(30)
 
-                # The stability of the PID gets worse with higher temperatures
-                if temperature < 80:
-                    acceptable_delta_T = 0.001
-                elif temperature < 250:
-                    acceptable_delta_T = 0.003
-                elif temperature < 500:
-                    acceptable_delta_T = 0.01
+            if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < 0.001:
+
+                print('almost there! \n current temp: ' + str(self.get_temp(7)))
+                time.sleep(60)
+                temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
+                if temp_diff < 0.001:
+                    print('congrats! \n current temp: ' + str(self.get_temp(7)))
+                    break
                 else:
-                    acceptable_delta_T = 0.02
+                    continue
 
-                if np.abs(float(self.get_temp(7)) - temperature * 1e-3) < acceptable_delta_T:
+            #### if 15 minutes have paused turn the temp to 0
+            if idx >= 30:
+                ### set temp to 5 mK and turn off heater
+                self.set_setpoint(5)
 
-                    self.logger.info('almost there! \n'
-                          'current temp: ' + str(self.get_temp(7)))
-                    time.sleep(60)
-                    temp_diff = np.abs(float(self.get_temp(7)) - temperature * 1e-3)
-                    if temp_diff < acceptable_delta_T:
-                        self.logger.info('congrats! \n'
-                              'current temp: ' + str(self.get_temp(7)))
-                        break
-                    else:
-                        continue
-
-                #### if 15 minutes have paused turn the temp to 0
-                if idx >= 30:
-                    ### set temp to 9mK and turn off heater
-                    self.set_setpoint(9)
-
-                    self.set_heater_range(0)
-                    self.logger.info('temp not reached, turning off heater and trying again')
-                    time.sleep(60)
-
-                    # turn the heater back on and try again
-                    self.set_setpoint(temperature)
-                    self.set_heater_range(heater_range)
-                    idx = 0
+                self.set_heater_range(0)
+                print('temp not reached, turnning off heater and trying again')
+                time.sleep(300)
+                ### turn the heater back on
+                self.set_heater_range(heater_range)
+                idx = 0
 
