@@ -81,7 +81,7 @@ class QubitSpecRepeat(ExperimentClass):
 
             x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                              readouts_per_experiment=1, save_experiments=None,
-                                             start_src="internal", progress=False, debug=False)
+                                             start_src="internal", progress=False)#, debug=False)
             Z_avgi[idx, :] = avgi[0][0]
             self.data['data']['avgi_mat'][idx, :] = avgi[0][0]
 
@@ -199,7 +199,7 @@ class QubitSpecRepeat(ExperimentClass):
 
             if plotDisp:
                 plt.show(block=False)
-                plt.pause(0.1)
+                plt.pause(5)
 
             if idx == 0:  ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start  ### time for single full row in seconds
