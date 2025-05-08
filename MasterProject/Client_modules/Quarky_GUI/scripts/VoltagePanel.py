@@ -336,9 +336,10 @@ class QVoltagePanel(QWidget):
         :rtype: bool
         """
 
-        # for testing purposes (bypassing connection
-        self.successful_interface_connection(None)
-        return
+        # TODO: comment out, used for testing purposes (bypassing connection)
+        # self.successful_interface_connection(None)
+        # return
+
 
         self.create_connection_button.setText("Creating...")
 
@@ -562,8 +563,7 @@ class VoltageSweepBox(QVBoxLayout):
     """
     A custom QVBoxLayout layout that contains the form for voltage sweep functionality.
 
-    This part of the GUI is still relatively experimental. It is recommended for now to just create regular ExperimentClass
-    experiments that perform a connection themselves and sweep.
+    This part of the GUI is still relatively experimental.
     """
 
     def __init__(self, config_tree_panel, voltage_interface_combo, parent):

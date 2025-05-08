@@ -229,6 +229,7 @@ class SpecVsVoltage(ExperimentClassPlus):
                     self.voltage_interface.set_voltage(voltage_matrix[m][i], self.cfg['DACs'][m])
             else:
                 self.voltage_interface.set_voltage(voltage_matrix[0][i])
+                self.cfg['DACs'] = [1]
             time.sleep(1)
 
             ### take the transmission data
@@ -309,9 +310,9 @@ class SpecVsVoltage(ExperimentClassPlus):
             #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
             #     cbar1.set_label('a.u.', rotation=90)
 
-            axs.set_ylabel("Qblox (V)")
+            axs.set_ylabel("Voltage (V)")
             axs.set_xlabel("Spec Frequency (GHz)")
-            axs.set_title(f"{self.titlename}, QDAC: {self.cfg['DACs']}, "
+            axs.set_title(f"{self.titlename}, DACs: {self.cfg['DACs']}, "
                              f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
 
             if plotDisp:
