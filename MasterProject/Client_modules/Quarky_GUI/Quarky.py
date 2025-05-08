@@ -64,10 +64,6 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-def safe_dummy():
-    print("Dummy running...")
-    return "ok"
-
 class Quarky(QMainWindow):
     """
     The class for the main Quarky application window.
@@ -322,18 +318,21 @@ class Quarky(QMainWindow):
 
         if timeout:
             qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
-            QMessageBox.critical(None, "Timeout Error", "Connection to RFSoC took too long. "
-                                                        "Please wait until nameserver connection terminates.")
+            QMessageBox.critical(None, "Timeout Error", "Connection to RFSoC took too long. " +
+                                            "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
             self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
             QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
 
+            self.is_connecting = False
+            self.accounts_panel.connect_button.setText("Connect")
+            self.accounts_panel.connect_button.setEnabled(True)
+
         self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
         self.soc = None
         self.soccfg = None
-        self.accounts_panel.connect_button.setEnabled(True)
 
     def connect_rfsoc(self, ip_address):
         """
@@ -346,11 +345,10 @@ class Quarky(QMainWindow):
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
             self.aux_thread = QThread()
-            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=2)
+            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=3)
             self.aux_worker.moveToThread(self.aux_thread)
 
             # Connecting started and finished signals
-            # self.thread.started.connect(self.current_tab.prepare_file_naming) # animate connecting
             self.aux_thread.started.connect(self.aux_worker.run)  # run function
             self.aux_worker.finished.connect(self.aux_thread.quit)  # stop thread
             self.aux_worker.finished.connect(self.aux_worker.deleteLater)  # delete worker
@@ -362,56 +360,25 @@ class Quarky(QMainWindow):
             self.aux_worker.timeout_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=True))
 
             self.aux_thread.start()
+
+            self.is_connecting = True
+            self.connecting_dot_count = 0
+            self.animate_connecting()
             self.accounts_panel.connect_button.setEnabled(False)
 
         else:
             qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
             QMessageBox.critical(None, "Error", "RFSoC IP Address not given.")
 
-
-
-        #
-        # if ip_address is not None:
-        #     # Attempt RFSoC connection via makeProxy
-        #     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        #         future = executor.submit(self.connect_makeProxy, ip_address)
-        #         try:
-        #             self.soc, self.soccfg = future.result(timeout=2)  # wait max 2 seconds
-        #
-        #         except concurrent.futures.TimeoutError:
-        #             qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
-        #             QMessageBox.critical(None, "Timeout Error","Connection to RFSoC took too long. "
-        #                                                        "Please wait until nameserver connection terminates")
-        #             future.cancel()
-        #         except Exception as e:
-        #             self.soc_connected = False
-        #             self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
-        #             QMessageBox.critical(None, "Error", "RFSoC connection to failed (see log).")
-        #             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
-        #             self.rfsoc_connection_updated.emit(ip_address, 'failure') # emit failure to accounts tab
-        #             return
-        #         else:
-        #             self.soc_connected = True
-        #             self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
-        #             self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
-        #
-        #     # Verifying RFSoc connection
-        #     # try:
-        #     #     msg = str(self.soc)
-        #     #     # qInfo(f"RFSoC Info: " + msg)
-        #     #     # print("Available Methods:", self.soc._pyroMethods)
-        #     # except Exception as e:
-        #     #     # Connection invalid despite makeProxy success
-        #     #     self.disconnect_rfsoc()
-        #     #     self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
-        #     #     QMessageBox.critical(None, "Error", "RFSoC connection invalid (see log).")
-        #     #     qCritical("RFSoC connection to " + ip_address + " invalid: " + str(e))
-        #     #     self.rfsoc_connection_updated.emit(ip_address, 'failure')
-        #     #     return
-        #
-        # else:
-        #     qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
-        #     QMessageBox.critical(None, "Error", "RFSoC IP Address not given.")
+    def animate_connecting(self):
+        """
+        Small function to animate connecting to let the user know whatever connection is actively being attempted.
+        """
+        if self.is_connecting:
+            # Update the label with the current number of dots
+            self.accounts_panel.connect_button.setText(f"Connecting{'.' * (self.connecting_dot_count)}")
+            self.connecting_dot_count = (self.connecting_dot_count + 1) % 4  # Cycle through 0, 1, 2
+            QTimer.singleShot(500, self.animate_connecting)  # Repeat every 500 ms
 
     def run_experiment(self):
         """
@@ -541,20 +508,20 @@ class Quarky(QMainWindow):
         self.start_experiment_button.setEnabled(False)
         self.stop_experiment_button.setText("Stopping")
         self.is_stopping = True
-        self.dot_count = 0
+        self.stopping_dot_count = 0
         self.animate_stopping()
 
         self.start_experiment_button.setText("▶")
 
     def animate_stopping(self):
         """
-        Small function to animate stopping to let the user know the experiment is actively being stopped
+        Small function to animate stopping to let the user know the experiment is actively being stopped.
         """
         if self.is_stopping:
             # Update the label with the current number of dots
-            self.stop_experiment_button.setText(f"Stopping{'.' * (self.dot_count)}")
-            self.dot_count = (self.dot_count + 1) % 4  # Cycle through 0, 1, 2
-            QTimer.singleShot(400, self.animate_stopping)  # Repeat every 500 ms
+            self.stop_experiment_button.setText(f"Stopping{'.' * (self.stopping_dot_count)}")
+            self.stopping_dot_count = (self.stopping_dot_count + 1) % 4  # Cycle through 0, 1, 2
+            QTimer.singleShot(500, self.animate_stopping)  # Repeat every 500 ms
 
     def finished_experiment(self):
         """

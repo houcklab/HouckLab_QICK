@@ -14,7 +14,6 @@ Sample Usage:
     self.aux_worker.moveToThread(self.aux_thread)
 
     # Connecting started and finished signals
-    # self.thread.started.connect(self.current_tab.prepare_file_naming) # animate connecting
     self.aux_thread.started.connect(self.aux_worker.run)  # run function
     self.aux_worker.finished.connect(self.aux_thread.quit)  # stop thread
     self.aux_worker.finished.connect(self.aux_worker.deleteLater)  # delete worker
@@ -26,7 +25,6 @@ Sample Usage:
     self.aux_worker.timeout_signal.connect(lambda err: self.failed_rfsoc_error(err, ip_address, timeout=True))
 
     self.aux_thread.start()
-    self.accounts_panel.connect_button.setEnabled(False)
 
 """
 import traceback
@@ -84,7 +82,15 @@ class AuxiliaryThread(QObject):
         self._worker_thread = None
 
     def run(self):
+        """
+        Starts another worker thread that runs the function while the auxiliary thread creates a timer that
+        tracks how long the function has been running for. If a timeout was given, then it alerts a timeout
+        error.
+        Important Note: A timeout does not stop the threads. The threads continue to execute until safe completion
+        in the background - at which point it will auto delete.
+        """
 
+        ### Old code that would be able to know how long the function has been running for
         if self.timeout:
             self._timer = QTimer(self)
             self._timer.setSingleShot(True)
@@ -119,9 +125,12 @@ class AuxiliaryThread(QObject):
 
     def _on_timeout(self):
         self.timeout_signal.emit("")
-        self.finished.emit()
 
 class _FunctionWorker(QObject):
+    """
+    The actual function worker thread that just runs a function and emits any errors and the results.
+    """
+
     finished = pyqtSignal()
     result_signal = pyqtSignal(object)
     error_signal = pyqtSignal(str)

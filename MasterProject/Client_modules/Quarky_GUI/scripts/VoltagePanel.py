@@ -11,9 +11,10 @@ Sweeps functionality and passing a reference of the voltage interface are only s
 import pyvisa as visa
 import json
 import ast
+import time
 import numpy as np
 import traceback
-from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer, qDebug, qWarning
+from PyQt5.QtCore import QSize, QRect, Qt, qCritical, qInfo, QTimer, qDebug, qWarning, QThread
 from PyQt5.QtGui import QTextOption, QDoubleValidator, QColor
 from PyQt5.QtWidgets import (
     QApplication,
@@ -34,6 +35,7 @@ from PyQt5.QtWidgets import (
 )
 
 import scripts.Helpers as Helpers
+from scripts.AuxiliaryThread import AuxiliaryThread
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
@@ -254,18 +256,17 @@ class QVoltagePanel(QWidget):
         current_text = self.create_connection_button.text()
 
         if current_text == "Create Connection":
-            if self.create_connection():
-                self.create_connection_button.setText("Delete Connection")
-                self.voltage_interface_combo.setEnabled(False)
-                self.voltage_interface_settings.setEnabled(False)
-                self.voltage_interface_settings.hide()
-                self.voltage_channels_group.setEnabled(True)
+            # Begin connection animation
+            self.is_connecting = True
+            self.connecting_dot_count = 0
+            self.animate_connecting()
+            self.create_connection_button.setEnabled(False)
 
-                self.changed_tabs()
-            else:
-                self.create_connection_button.setText("Create Connection")
-                QMessageBox.critical(self, "Error", f"Failed to create voltage interface connection.")
+            # Attempt a connection
+            self.create_connection()
+
         else:
+            # Attempt a disconnection
             self.create_connection_button.setText("Create Connection")
             self.voltage_interface_combo.setEnabled(True)
             self.voltage_interface_settings.setEnabled(True)
@@ -274,6 +275,16 @@ class QVoltagePanel(QWidget):
             self.sweeps_group.setEnabled(False)
 
             self.delete_connection()
+
+    def animate_connecting(self):
+        """
+        Small function to animate connecting to let the user know whatever connection is actively being attempted.
+        """
+        if self.is_connecting:
+            # Update the label with the current number of dots
+            self.create_connection_button.setText(f"Connecting{'.' * (self.connecting_dot_count)}")
+            self.connecting_dot_count = (self.connecting_dot_count + 1) % 4  # Cycle through 0, 1, 2
+            QTimer.singleShot(500, self.animate_connecting)  # Repeat every 500 ms
 
     def changed_tabs(self, current_tab=None):
         """
@@ -342,25 +353,99 @@ class QVoltagePanel(QWidget):
             QMessageBox.critical(self, "Error", f"Invalid settings format.")
             return False
 
-        try:
-            if self.voltage_interface_currtype == "Yoko":
-                # Create yoko connection
-                rm = visa.ResourceManager()
-                self.voltage_interface = YOKOGS200(**self.yoko_settings, rm=rm)
-            else:
-                # Create Qblox connection
-                self.voltage_interface = QBLOX(**self.qblox_settings)
+        # Start an auxiliary thread to make the connection
+        self.aux_thread = QThread()
+        if self.voltage_interface_currtype == "Yoko":
+            temp_yoko_settings = self.yoko_settings.copy()
+            temp_yoko_settings["rm"] = visa.ResourceManager()
+            self.aux_worker = AuxiliaryThread(target_func=self.init_yoko, func_kwargs=temp_yoko_settings, timeout=5)
+        else:
+            self.aux_worker = AuxiliaryThread(target_func=self.init_qblox, func_kwargs=self.qblox_settings, timeout=45)
+        self.aux_worker.moveToThread(self.aux_thread)
 
-            qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
-            self.connected = True
-            self.voltage_hardware = self.voltage_interface
-            self.update_voltage_channels()
-            self.sweeps_layout.populate_channel_dropdown()
-            return True
-        except Exception as e:
-            qCritical("Failed to connect to Voltage Controller: " + str(e))
+        # Connecting started and finished signals
+        self.aux_thread.started.connect(self.aux_worker.run)  # run function
+        self.aux_worker.finished.connect(self.aux_thread.quit)  # stop thread
+        self.aux_worker.finished.connect(self.aux_worker.deleteLater)  # delete worker
+        self.aux_thread.finished.connect(self.aux_thread.deleteLater)  # delete thread
+
+        # Connecting data related slots
+        self.aux_worker.error_signal.connect(lambda err: self.failed_connection_error(err, timeout=False))
+        self.aux_worker.result_signal.connect(self.successful_interface_connection)
+        self.aux_worker.timeout_signal.connect(lambda err: self.failed_connection_error(err, timeout=True))
+
+        self.aux_thread.start()
+
+    def failed_connection_error(self, e, timeout=False):
+        """
+        Function to handle a failed connection error (used by aux thread).
+
+        :param e: Error message
+        :type e: str
+        :param timeout: Whether there was a timeout error
+        :type timeout: bool
+        """
+
+        if timeout:
+            qCritical("Timeout: Connecting to the voltage interface took too long - check your connection settings are correct.")
+            QMessageBox.critical(None, "Timeout Error", "Connection took too long. " +
+                                            "Connection attempt will continue in the background until termination.")
+        else:
+            qCritical("Failed to connect to Voltage Controller " + self.voltage_interface_currtype + ": " + str(e))
             qCritical(traceback.print_exc())
-            return False
+            QMessageBox.critical(None, "Error", "Voltage Interface connection failed (see log).")
+
+        self.connected = False
+        # Stop connection animation
+        self.is_connecting = False
+        self.create_connection_button.setEnabled(True)
+        self.create_connection_button.setText("Create Connection")
+
+    def successful_interface_connection(self, voltage_interface):
+        """
+        Function to save a passed voltage interface object (used in aux thread).
+
+        :param voltage_interface: The voltage interface object to save.
+        :type voltage_interface: VoltageInterface
+        """
+        self.voltage_interface = voltage_interface
+        self.voltage_hardware = self.voltage_interface
+        self.update_voltage_channels()
+        self.sweeps_layout.populate_channel_dropdown()
+
+        qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
+        self.connected = True
+
+        # Stop connection animation
+        self.is_connecting = False
+        self.create_connection_button.setEnabled(True)
+
+        # Handle UI
+        self.create_connection_button.setText("Delete Connection")
+        self.voltage_interface_combo.setEnabled(False)
+        self.voltage_interface_settings.setEnabled(False)
+        self.voltage_interface_settings.hide()
+        self.voltage_channels_group.setEnabled(True)
+
+        self.changed_tabs()
+
+    def init_qblox(self, **settings):
+        """
+        Helper function to initialize a qblox instance given the dictionary of parameters (used in aux thread).
+
+        :param settings: Dictionary of parameters to initialize the qblox instance.
+        :type settings: dict
+        """
+        return QBLOX(**settings)
+
+    def init_yoko(self, **settings):
+        """
+        Helper function to initialize a yoko instance given the dictionary of parameters (used in aux thread).
+
+        :param settings: Dictionary of parameters to initialize the yoko instance.
+        :type settings: dict
+        """
+        return YOKOGS200(**settings)
 
     def delete_connection(self):
         """
