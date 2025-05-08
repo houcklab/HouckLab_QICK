@@ -9,24 +9,12 @@ from scipy.optimize import curve_fit
 def gauss(x, a, x0, sigma, c):
     return a*np.exp(-(x-x0)**2/(2*sigma**2)) + c
 
-class LoopbackProgramSpecSlice(RAveragerProgram):
+class LoopbackProgramSpecSliceBuggy(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
         cfg = self.cfg
-
-        #### set the start, step, and other parameters
-        self.cfg["start"] = self.freq2reg(self.cfg["qubit_freq_start"], gen_ch=self.cfg["qubit_ch"])
-        # We are also given freq_stop and SpecNumPoints, use these to compute freq_step
-        self.cfg["step"] = self.freq2reg(
-            (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["SpecNumPoints"] - 1),
-            gen_ch=self.cfg["qubit_ch"])
-        self.cfg["expts"] = self.cfg["SpecNumPoints"]
-        # self.cfg["reps"] = self.cfg["averages"]
-
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_freq = self.sreg(cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
@@ -40,7 +28,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         #     "qubit_ch"])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
 
         # added for stark shift experiment
-        if cfg["ro_mode_periodic"]==True:
+        if cfg["ro_mode_periodic"]:
             self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
                                      gain=cfg["read_pulse_gain"],
                                      length=self.us2cycles(self.cfg["read_length"]), mode="periodic")
@@ -66,7 +54,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         elif cfg["qubit_pulse_style"] == "const":
-            if cfg["mode_periodic"] == True:
+            if cfg["qubit_mode_periodic"]:
                 self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=cfg["start"], phase=0,
                                          gain=cfg["qubit_gain"],
                                          length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
@@ -92,14 +80,14 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switc
+                         width=self.cfg["trig_len"])  # trigger for switch
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -109,7 +97,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
 # ====================================================== #
 
-class SpecSlice(ExperimentClass):
+class SpecSliceBuggy(ExperimentClass):
     """
     Basic spec experiment that takes a single slice of data
     """
@@ -134,7 +122,7 @@ class SpecSlice(ExperimentClass):
         self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
                                        expt_cfg["SpecNumPoints"])
 
-        prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+        prog = LoopbackProgramSpecSliceBuggy(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
@@ -152,10 +140,10 @@ class SpecSlice(ExperimentClass):
         sigma_0 = np.abs(x_pts[np.argmin(np.abs(avgi - a_0 / 2))] - x_0)
         p0 = [a_0, x_0, sigma_0, np.min(avgi)]
         popti = np.nan
-        try:
-            popti, pcovi = curve_fit(gauss, x_pts, avgi, p0=p0, maxfev=10000)
-        except:
-            print("I - Fit not found")
+        # try:
+        #     popti, pcovi = curve_fit(gauss, x_pts, avgi, p0=p0, maxfev=10000)
+        # except:
+        #     print("I - Fit not found")
 
         # intelligently guess the initial parameters
         a_0 = np.max(avgq) - np.min(avgq)
@@ -163,10 +151,10 @@ class SpecSlice(ExperimentClass):
         sigma_0 = np.abs(x_pts[np.argmin(np.abs(avgq - a_0 / 2))] - x_0)
         p0 = [a_0, x_0, sigma_0, np.min(avgq)]
         poptq = np.nan
-        try:
-            poptq, pcovq = curve_fit(gauss, x_pts, avgq, p0=p0, maxfev=10000)
-        except:
-            print("Q-Fit not found")
+        # try:
+        #     poptq, pcovq = curve_fit(gauss, x_pts, avgq, p0=p0, maxfev=10000)
+        # except:
+        #     print("Q-Fit not found")
 
         # intelligently guess the initial parameters
         a_0 = np.max(amp) - np.min(amp)
@@ -174,10 +162,10 @@ class SpecSlice(ExperimentClass):
         sigma_0 = np.abs(x_pts[np.argmin(np.abs(amp - a_0 / 2))] - x_0)
         p0 = [a_0, x_0, sigma_0, np.min(amp)]
         poptamp = np.nan
-        try:
-            poptamp, pcovamp = curve_fit(gauss, x_pts, amp, p0=p0, maxfev=10000)
-        except:
-            print("amp-Fit not found")
+        # try:
+        #     poptamp, pcovamp = curve_fit(gauss, x_pts, amp, p0=p0, maxfev=10000)
+        # except:
+        #     print("amp-Fit not found")
 
         # intelligently guess the initial parameters
         a_0 = np.max(phase) - np.min(phase)
@@ -185,10 +173,10 @@ class SpecSlice(ExperimentClass):
         sigma_0 = np.abs(x_pts[np.argmin(np.abs(phase - a_0 / 2))] - x_0)
         p0 = [a_0, x_0, sigma_0, np.min(phase)]
         poptphase = np.nan
-        try:
-            poptphase, pcovphase = curve_fit(gauss, x_pts, phase, p0=p0, maxfev=10000)
-        except:
-            print("Phase-Fit not found")
+        # try:
+        #     poptphase, pcovphase = curve_fit(gauss, x_pts, phase, p0=p0, maxfev=10000)
+        # except:
+        #     print("Phase-Fit not found")
 
         ### Save Data
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq,
