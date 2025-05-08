@@ -303,6 +303,7 @@ class Quarky(QMainWindow):
 
         # UI updates
         self.soc_connected = True
+        self.is_connecting = False
         self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
         self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
         self.accounts_panel.connect_button.setEnabled(True)
