@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 )
 
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 import scripts.Helpers as Helpers
 
 class ExperimentObject():
@@ -58,7 +58,7 @@ class ExperimentObject():
         self.experiment_class = None
         self.experiment_plotter = None
         self.experiment_exporter = ExperimentClass.export_data
-        self.experiment_type = None # ExperimentClass, or ExperimentClassT2
+        self.experiment_type = None # ExperimentClass, or ExperimentClassPlus
         self.experiment_hardware_req = [Proxy, QickConfig]
 
         self.extract_experiment_attributes()
@@ -104,11 +104,11 @@ class ExperimentObject():
                     # if ((inspect.isclass(obj) and obj.__bases__[0].__name__ == "ExperimentClass" and obj.__name__ != "ExperimentClass")
                     if (inspect.isclass(obj) and any(base.__name__ == "ExperimentClass" for base in obj.__mro__[1:])
                             or
-                            (inspect.isclass(obj) and any(base.__name__ == "ExperimentClassT2" for base in obj.__mro__[1:]))):
+                            (inspect.isclass(obj) and any(base.__name__ == "ExperimentClassPlus" for base in obj.__mro__[1:]))):
 
-                        ### Extract the class type (either ExperimentClass or ExperimentClassT2)
-                        if inspect.isclass(obj) and any(base.__name__ == "ExperimentClassT2" for base in obj.__mro__[1:]):
-                            self.experiment_type = ExperimentClassT2
+                        ### Extract the class type (either ExperimentClass or ExperimentClassPlus)
+                        if inspect.isclass(obj) and any(base.__name__ == "ExperimentClassPlus" for base in obj.__mro__[1:]):
+                            self.experiment_type = ExperimentClassPlus
 
                             ### Store the hardware_requirement if given (only in T2 experiments)
                             if hasattr(obj, "hardware_requirement") and obj.hardware_requirement is not None:
@@ -189,7 +189,7 @@ class ExperimentObject():
                 # Verify experiment_instance
                 if self.experiment_class is None:
                     qCritical("No valid Class found within the module given. Must adhere to the experiment guidelines.")
-                    QMessageBox.critical(None, "Error", "No ExperimentClass or ExperimentClassT2 Found.")
+                    QMessageBox.critical(None, "Error", "No ExperimentClass or ExperimentClassPlus Found.")
 
             except concurrent.futures.TimeoutError:
                 qCritical("Timeout: Experiment loading took too long. Likely error is a socProxy import with a failing IP "

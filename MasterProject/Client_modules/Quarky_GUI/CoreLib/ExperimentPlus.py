@@ -13,7 +13,7 @@ from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import Vol
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
 
-class ExperimentClassT2:
+class ExperimentClassPlus:
     """
     The Base class for all experiments
     """

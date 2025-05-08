@@ -6,7 +6,7 @@ from qick.helpers import gauss
 from Pyro4 import Proxy
 from qick import QickConfig
 
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 import datetime
 from tqdm.notebook import tqdm
 import time
@@ -62,7 +62,7 @@ class CavitySpecFFProg(AveragerProgram):
 
     # ====================================================== #
 
-class CavitySpecFFMUX(ExperimentClassT2):
+class CavitySpecFFMUX(ExperimentClassPlus):
     """
     Transmission Experiment basic
     """

@@ -28,7 +28,7 @@ from PyQt5.QtCore import (
     qInfo,
     qWarning,
     qCritical,
-    QTimer, qDebug
+    QTimer, qDebug, pyqtSignal
 )
 from PyQt5.QtWidgets import (
     QFileDialog,
@@ -52,6 +52,11 @@ class QConfigTreePanel(QTreeView):
 
         * config (dict): The dictionary containing the active configuration
         * tree (QTreeView): The TreeView containing the configuration
+    """
+
+    update_voltage_panel = pyqtSignal()
+    """
+    The Signal to send to update the voltage panel.
     """
 
     def __init__(self, parent=None, config=None):
@@ -235,6 +240,9 @@ class QConfigTreePanel(QTreeView):
         try:
             new_value = ast.literal_eval(item.text()) # attempt to keep the old type
             config_ref[final_key] = new_value
+            if str(final_key).startswith("Voltage") or str(final_key) == "DACs":
+                # update the voltage panel section to reflect changes
+                self.update_voltage_panel.emit()
         except (KeyError, ValueError, TypeError):
             qDebug("Failed updating config field to match type. Resetting.")
             config_ref[final_key] = old_value

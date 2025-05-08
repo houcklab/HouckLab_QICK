@@ -4,7 +4,7 @@
 # both channel 1 AND channel 0 will continue playing their respective tones.
 
 from qick import AveragerProgram
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 import Pyro4.util
@@ -45,7 +45,7 @@ class ConstantTone(AveragerProgram):
 
 # ====================================================== #
 
-class ConstantTone_Experiment(ExperimentClassT2):
+class ConstantTone_Experiment(ExperimentClassPlus):
     """
     This experiment just sets the RFSOC to output a constant tone on a given chanel at a given frequency and gain.
     """

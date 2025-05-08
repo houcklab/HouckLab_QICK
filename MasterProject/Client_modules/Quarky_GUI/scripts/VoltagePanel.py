@@ -5,7 +5,7 @@ VoltagePanel.py
 The home of a voltage controller interface panel [Qbox and Yoko].
 
 Allows for an easy space to manually set voltages by channel and perform basic uniform sweeps.
-Sweeps functionality and passing a reference of the voltage interface are only supported for ExperimentT2 experiments.
+Sweeps functionality and passing a reference of the voltage interface are only supported for ExperimentPlus experiments.
 """
 
 import pyvisa as visa
@@ -40,7 +40,7 @@ from scripts.AuxiliaryThread import AuxiliaryThread
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 
 class QVoltagePanel(QWidget):
     """
@@ -299,7 +299,7 @@ class QVoltagePanel(QWidget):
         self.sweeps_group.setEnabled(False)
 
         if self.connected and self.current_tab.experiment_obj is not None:
-            if self.current_tab.experiment_obj.experiment_type == ExperimentClassT2:
+            if self.current_tab.experiment_obj.experiment_type == ExperimentClassPlus:
                 hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
                 if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
                     self.sweeps_group.setEnabled(True)
@@ -335,6 +335,10 @@ class QVoltagePanel(QWidget):
         :return: Status of connection, True successful, False otherwise.
         :rtype: bool
         """
+
+        # for testing purposes (bypassing connection
+        self.successful_interface_connection(None)
+        return
 
         self.create_connection_button.setText("Creating...")
 
@@ -411,7 +415,7 @@ class QVoltagePanel(QWidget):
         self.voltage_interface = voltage_interface
         self.voltage_hardware = self.voltage_interface
         self.update_voltage_channels()
-        self.sweeps_layout.populate_channel_dropdown()
+        self.sweeps_layout.populate_form()
 
         qInfo("Successfully connected to " + self.voltage_interface_currtype + ".")
         self.connected = True
@@ -645,9 +649,9 @@ class VoltageSweepBox(QVBoxLayout):
     def populate_form(self):
         # self.populate_channel_dropdown()
         if "DACs" in self.config_tree_panel.config["Experiment Config"]:
-            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"])[1:-1])
+            self.dacs_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"]))
         else:
-            self.start_edit.setText("")
+            self.dacs_edit.setText("")
 
         if "VoltageStart" in self.config_tree_panel.config["Experiment Config"]:
             self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
@@ -684,13 +688,12 @@ class VoltageSweepBox(QVBoxLayout):
     def on_dacs_edited(self):
         try:
             # Get the string of numbers from the text edit field
-            dacs = self.dacs_edit.text()
+            dacs = self.dacs_edit.text()[1:-1]
             dacs_list = [int(x.strip()) for x in dacs.split(',')]
 
-            if self.voltage_interface_currtype == "Yoko":
+            if self.parent.voltage_interface_currtype == "Yoko":
                 if dacs in dacs_list:
-                    if not (dacs != 1):
-                        raise ValueError
+                    raise ValueError
             else:
                 for dac in dacs_list:
                     if not (1 <= dac <= 16):
@@ -700,30 +703,48 @@ class VoltageSweepBox(QVBoxLayout):
             self.config_tree_panel.populate_tree()
         except ValueError:
             # If there's any issue (e.g., a non-number value), raise an error
-            qDebug(f"The input is not in the correct format. Please enter a comma-separated list of integers within the channel range. Resetting.")
-            self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"])[1:-1])
+            qDebug(f"The input is invalid. Please enter a comma-separated list of integers within the channel range. If yoko, leave empty. Resetting.")
+            self.dacs_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["DACs"]))
+            QMessageBox.critical(self.parent, "Error", "Invalid, see log.")
 
     def on_start_edited(self):
         try:
-            value = float(self.start_edit.text())
-            if value < self.parent.range[0] or value > self.parent.range[1]:
+            start_values = self.start_edit.text()[1:-1]
+            start_list = [float(x.strip()) for x in start_values.split(',')]
+
+            length = max(len(self.config_tree_panel.config["Experiment Config"]["DACs"]), 1)
+            if len(start_list) != length:
                 raise ValueError
-            self.config_tree_panel.config["Experiment Config"]["VoltageStart"] = value
+            for value in start_list:
+                if value < self.parent.range[0] or value > self.parent.range[1]:
+                    raise ValueError
+
+            self.config_tree_panel.config["Experiment Config"]["VoltageStart"] = start_list
             self.config_tree_panel.populate_tree()
         except ValueError:
-            qDebug(f"Invalid voltage start value (check range). Resetting.")
+            qDebug(f"The input is invalid. Please enter a comma-separated list of integers within valid voltage range and ensure length is same as DACs). Resetting.")
             self.start_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStart"]))
+            QMessageBox.critical(self.parent, "Error", "Invalid, see log.")
 
     def on_stop_edited(self):
         try:
-            value = float(self.stop_edit.text())
-            if value < self.parent.range[0] or value > self.parent.range[1]:
+            stop_values = self.stop_edit.text()[1:-1]
+            stop_list = [float(x.strip()) for x in stop_values.split(',')]
+
+            length = max(len(self.config_tree_panel.config["Experiment Config"]["DACs"]), 1)
+            if len(stop_list) != length:
                 raise ValueError
-            self.config_tree_panel.config["Experiment Config"]["VoltageStop"] = value
+            for value in stop_list:
+                if value < self.parent.range[0] or value > self.parent.range[1]:
+                    raise ValueError
+
+            self.config_tree_panel.config["Experiment Config"]["VoltageStop"] = stop_list
             self.config_tree_panel.populate_tree()
+
         except ValueError:
-            qDebug(f"Invalid voltage stop value. Resetting.")
+            qDebug(f"The input is invalid. Please enter a comma-separated list of integers within valid voltage range and ensure length is same as DACs). Resetting.")
             self.stop_edit.setText(str(self.config_tree_panel.config["Experiment Config"]["VoltageStop"]))
+            QMessageBox.critical(self.parent, "Error", "Invalid, see log.")
 
     def on_num_points_edited(self):
         try:

@@ -44,7 +44,7 @@ from PyQt5.QtWidgets import (
 )
 
 # Use absolute imports maybe
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from scripts.ExperimentThread import ExperimentThread
@@ -271,6 +271,9 @@ class Quarky(QMainWindow):
         qInstallMessageHandler(self.log_panel.message_handler)
         # self.test_logging()
 
+        # Config Tree Panel signal
+        self.config_tree_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
+
         # Plot Interceptor
         self._original_show = plt.show
         plt.show = self._intercept_plt_show_wrapper()
@@ -425,7 +428,7 @@ class Quarky(QMainWindow):
             # print(inspect.getsourcelines(experiment_class))
 
             experiment_type = self.current_tab.experiment_obj.experiment_type
-            if experiment_type == ExperimentClassT2:
+            if experiment_type == ExperimentClassPlus:
                 # Retrieving hardware (ie. if voltage interface required, make sure it is included)
                 collected_hardware = [self.soc, self.soccfg]
                 hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
@@ -548,7 +551,7 @@ class Quarky(QMainWindow):
         """
 
         self.stop_experiment()
-        if self.aux_worker:
+        if hasattr(self, 'aux_worker') and self.aux_worker is not None:
             self.aux_worker.stop()
 
         # reassign plt.show

@@ -8,7 +8,7 @@ from tqdm.notebook import tqdm
 from Pyro4 import Proxy
 from qick import QickConfig
 
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
@@ -116,18 +116,31 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 # ====================================================== #
 
 
-class SpecVsQblox(ExperimentClassT2):
+class SpecVsVoltage(ExperimentClassPlus):
     """
-    Spec experiment that finds the qubit spectrum as a function of flux, specifically it uses a qblox to sweep
+    Spec experiment that finds the qubit spectrum as a function of flux
     Notes;
-        - this is set up such that it plots out the rows of data as it sweeps through qblox
+        - this is set up such that it plots out the rows of data as it sweeps through voltage
         - because the cavity frequency changes as a function of flux, it both finds the cavity peak then uses
             the cavity peak to perform the spec drive
     """
 
     ### define the template config
-    config_template = {
-
+    config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 20, 'nqz': 1, 'qubit_nqz': 2,
+         'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 5500,
+         'adc_trig_offset': 0.5, 'cavity_LO': 6800000000.0, 'cavity_winding_freq': 1.0903695,
+         'cavity_winding_offset': -15.77597, 'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}},
+         'has_mixer': True, 'readout_length': 3, 'pulse_freq': -9.75, 'pulse_gains': [0.171875], 'pulse_freqs': [-9.75],
+         'TransSpan': 1.5, 'TransNumPoints': 61, 'cav_relax_delay': 30, 'qubit_pulse_style': 'const',
+         'qubit_gain': 1500, 'qubit_freq': 4608, 'qubit_length': 100, 'SpecSpan': 200, 'SpecNumPoints': 101,
+         'step': 5.714285714285714, 'start': 4408, 'expts': 71,
+         'FF_Qubits': {'1': {'channel': 2, 'delay_time': 0.005, 'Gain_Readout': 10000, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                       '2': {'channel': 3, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                       '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 10000, 'Gain_Expt': 0,
+                             'Gain_Pulse': 10000},
+                       '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 10000, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
+         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 20, 'VoltageNumPoints': 11, 'sleep_time': 0, 'DACs': [5],
+         'VoltageStart': [-0.5], 'VoltageStop': [0], 'Gauss': False
     }
 
     ### Hardware Requirement
@@ -141,17 +154,17 @@ class SpecVsQblox(ExperimentClassT2):
                          config_file=config_file, progress=progress)
 
         # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg, self.qblox = hardware
+        self.soc, self.soccfg, self.voltage_interface = hardware
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
                 smart_normalize = True):
 
         expt_cfg = {
-            ### define the qblox parameters
-            "qbloxStart": self.cfg["VoltageStart"],
-            "qbloxStop": self.cfg["VoltageStop"],
-            "qbloxNumPoints": self.cfg["VoltageNumPoints"],
+            ### define the voltage parameters
+            "VoltageStart": self.cfg["VoltageStart"],
+            "VoltageStop": self.cfg["VoltageStop"],
+            "VoltageNumPoints": self.cfg["VoltageNumPoints"],
             ### transmission parameters
             # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -163,19 +176,19 @@ class SpecVsQblox(ExperimentClassT2):
         }
         print(self.cfg["step"], self.cfg["start"], self.cfg["expts"])
 
-        qbloxVec = []
-        for n in range(len(expt_cfg["qbloxStart"])):
-            qbloxVec.append(np.linspace(expt_cfg["qbloxStart"][n],expt_cfg["qbloxStop"][n], expt_cfg["qbloxNumPoints"]))
+        voltage_matrix = []
+        # creates an n x VoltageNumPoints matrix where n should be the length of DACs
+        # ie, voltageStart and VoltageStop should be n length arrays
+        for n in range(len(expt_cfg["VoltageStart"])):
+            voltage_matrix.append(np.linspace(expt_cfg["VoltageStart"][n],expt_cfg["VoltageStop"][n], expt_cfg["VoltageNumPoints"]))
 
-        ### create the figure and subplots that data will be plotted on
+        # create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
             figNum += 1
-        # fig, axs = plt.subplots(2,1, figsize = (8,10), num = figNum)
         fig, axs = plt.subplots(1,1, figsize = (8,6), num = figNum)
 
-        # fig.suptitle(str(self.identifier), fontsize=16)
-        ### create the frequency arrays for both transmission and spec
-        ### also create empty array to fill with transmission and spec data
+        # create the frequency arrays for both transmission and spec
+        # also create empty array to fill with transmission and spec data
         # self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         # self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
         self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
@@ -185,55 +198,44 @@ class SpecVsQblox(ExperimentClassT2):
         # X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
         X_spec_step = X_spec[1] - X_spec[0]
-        Y = qbloxVec[0]
+        Y = voltage_matrix[0]
         Y_step = Y[1] - Y[0]
-        # Z_trans = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
-        Z_spec = np.full((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]), np.nan)
+        # Z_trans = np.full((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
+        Z_spec = np.full((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]), np.nan)
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        # self.trans_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        # self.trans_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["TransNumPoints"]))
-        self.spec_Imat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
-        self.spec_Qmat = np.zeros((expt_cfg["qbloxNumPoints"], expt_cfg["expts"]))
+        # self.trans_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
+        # self.trans_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
+        self.spec_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
+        self.spec_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
         self.data= {
             'config': self.cfg,
             'data': {#'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
                         'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
-                        'qbloxVec': qbloxVec
+                        'voltage_matrix': voltage_matrix
                      }
         }
 
-        print(qbloxVec)
+        print(voltage_matrix)
 
-        #### start a timer for estimating the time for the scan
-        startTime = datetime.datetime.now()
-        print('') ### print empty row for spacing
-        print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
-        start = time.time()
-
-
-        QbloxClass = self.qblox
-        #### loop over the qblox vector
-        for i in range(expt_cfg["qbloxNumPoints"]):
+        # loop over the voltageVec
+        for i in range(expt_cfg["VoltageNumPoints"]):
             if i != 0:
                 time.sleep(self.cfg['sleep_time'])
-            if i % 5 == 1:
-                self.save_data(self.data)
-                self.soc.reset_gens()
-            ### set the qblox voltage for the specific run
-            # self.qblox.SetVoltage(qbloxVec[i])
-            voltages_for_qblox = []
-            for m in range(len(self.cfg['DACs'])):
-                voltages_for_qblox.append(qbloxVec[m][i])
-            print(voltages_for_qblox)
-            QbloxClass.set_voltage(voltages_for_qblox, self.cfg['DACs'])
-            # QbloxClass.print_voltages()
+
+            # Setting voltages
+            if 'DACs' in self.cfg:
+                for m in range(len(self.cfg['DACs'])):
+                    self.voltage_interface.set_voltage(voltage_matrix[m][i], self.cfg['DACs'][m])
+            else:
+                self.voltage_interface.set_voltage(voltage_matrix[0][i])
             time.sleep(1)
+
             ### take the transmission data
             # data_I, data_Q = self._aquireTransData()
             # self.data['data']['trans_Imat'][i,:] = data_I
             # self.data['data']['trans_Qmat'][i,:] = data_Q
-            #
+
             # #### plot out the transmission data
             # sig = data_I + 1j * data_Q
             # avgamp0 = np.abs(sig)
@@ -263,7 +265,8 @@ class SpecVsQblox(ExperimentClassT2):
             # if plotDisp:
             #     plt.show(block=False)
             #     plt.pause(0.1)
-            if i != expt_cfg["qbloxNumPoints"]:
+
+            if i != expt_cfg["VoltageNumPoints"]:
                 time.sleep(self.cfg['sleep_time'])
 
             ### take the spec data
@@ -276,7 +279,6 @@ class SpecVsQblox(ExperimentClassT2):
 
             #### plot out the spec data
             sig = data_I + 1j * data_Q
-
 
             avgamp0 = np.abs(sig)
             if smart_normalize:
@@ -316,19 +318,6 @@ class SpecVsQblox(ExperimentClassT2):
                 plt.show(block=False)
                 plt.pause(0.1)
 
-            if i ==0: ### during the first run create a time estimate for the data aqcuisition
-                t_delta = time.time() - start + self.cfg["sleep_time"] * 2### time for single full row in seconds
-                timeEst = (t_delta )*expt_cfg["qbloxNumPoints"]  ### estimate for full scan
-                StopTime = startTime + datetime.timedelta(seconds=timeEst)
-                print('Time for 1 sweep: ' + str(round(t_delta/60, 2)) + ' min')
-                print('estimated total time: ' + str(round(timeEst/60, 2)) + ' min')
-                print('estimated end: ' + StopTime.strftime("%Y/%m/%d %H:%M:%S"))
-
-        print('actual end: '+ datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-
-        if plotSave:
-            plt.savefig(self.iname) #### save the figure
-
         if plotDisp == False:
             fig.clf(True)
             plt.close(fig)
@@ -337,13 +326,13 @@ class SpecVsQblox(ExperimentClassT2):
 
         return self.data
 
-    @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        # print(data)
-        if 'data' in data:
-            data = data['data']
-
-        return
+    # @classmethod
+    # def plotter(cls, plot_widget, plots, data):
+    #     # print(data)
+    #     if 'data' in data:
+    #         data = data['data']
+    #
+    #     return
 
     @classmethod
     def export_data(cls, data_file, data, config):

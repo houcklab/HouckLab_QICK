@@ -6,7 +6,7 @@ from Pyro4 import Proxy
 from qick import QickConfig
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
 
 class SampleProgram(RAveragerProgram):
@@ -31,7 +31,7 @@ class SampleProgram(RAveragerProgram):
 
 # ====================================================== #
 
-class SampleExperiment_Experiment(ExperimentClassT2):
+class SampleExperiment_Experiment(ExperimentClassPlus):
     """
     Basic sample experiment wrapper class
     """

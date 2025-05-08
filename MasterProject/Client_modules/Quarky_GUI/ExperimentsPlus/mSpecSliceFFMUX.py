@@ -4,7 +4,7 @@ import numpy as np
 from qick.helpers import gauss
 from Pyro4 import Proxy
 from qick import QickConfig
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentT2 import ExperimentClassT2
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 import datetime
 from tqdm.notebook import tqdm
 import time
@@ -108,7 +108,7 @@ class QubitSpecSliceFFProg(RAveragerProgram):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 # ====================================================== #
 
-class QubitSpecSliceFFMUX(ExperimentClassT2):
+class QubitSpecSliceFFMUX(ExperimentClassPlus):
     """
     Basic spec experiement that takes a single slice of data
     """
