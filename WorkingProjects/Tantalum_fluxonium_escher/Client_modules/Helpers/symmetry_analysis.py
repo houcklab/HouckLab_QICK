@@ -13,7 +13,8 @@ import scipy.signal
 ########################################################################################################################
 #                                                    Read in data                                                      #
 ########################################################################################################################
-fname = r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\HouckCage_dev\dataTestSpecVsFlux\dataTestSpecVsFlux_2024_08_30\dataTestSpecVsFlux_2024_08_30_22_44_29_data.h5'
+#fname = r'Z:\TantalumFluxonium\Data\2024_07_29_cooldown\HouckCage_dev\dataTestSpecVsFlux\dataTestSpecVsFlux_2024_08_30\dataTestSpecVsFlux_2024_08_30_22_44_29_data.h5'
+fname = r'Z:\TantalumFluxonium\Data\2024_10_14_cooldown\HouckCage_dev\dataTestSpecVsFlux\dataTestSpecVsFlux_2024_11_14\dataTestSpecVsFlux_2024_11_14_18_38_54_data.h5'
 f1 = h5py.File(fname, 'r')
 
 trans_is = f1['trans_Imat'][()]
@@ -58,25 +59,66 @@ symm_value = voltages[np.round(shift_index/2).astype(int)]
 #                                                       Plot data                                                      #
 ########################################################################################################################
 
+PRESENTATION_PLOT = True # Plotting for a talk, rotates 90 deg to match with presentation of other data
+LABELS = False # Put labels on axes or plots, disable for presentations where I'll remake the captions in powerpoint anyway
+
 # Matrix distance plot
 plt.figure()
 plt.plot(norms)
 plt.axvline(x=np.argmin(norms), linewidth = 1.5, color='red', linestyle='--')
 plt.title('Distance between data and reversed data around pivot (does not start at 0)')
 
+# Find voltage -> flux conversion
+# +1/2 : 2.6350
+# -1/2 : -1.359
+half_flux = 2.635
+m_half_flux = -1.359
+one_flux = half_flux - m_half_flux
+zero_flux = (half_flux + m_half_flux) / 2.
+lower_flux = (voltages[0] - zero_flux) / one_flux
+upper_flux = (voltages[-1] - zero_flux) / one_flux
+
 # Original data (magnitude and phase) plot with symmetry line
 plt.figure()
-plt.subplot(1, 2, 1)
-plt.imshow(np.abs(trans), aspect='auto', origin='lower', extent=[trans_fpts[0], trans_fpts[-1], voltages[0], voltages[-1]])
-#plt.plot([[1, trans_fpts[0]], [1, trans_fpts[-1]]], 'r')
-plt.axhline(y=symm_value, linewidth=2, color='red', linestyle='--')
-plt.title('Magnitude')
+if PRESENTATION_PLOT:
+    plt.imshow(np.transpose(np.abs(trans)), aspect='auto', origin='lower', extent=[lower_flux, upper_flux, trans_fpts[0], trans_fpts[-1]])
+    #plt.plot([[1, trans_fpts[0]], [1, trans_fpts[-1]]], 'r')
+    plt.axvline(x=(symm_value - zero_flux) / one_flux, linewidth=2, color='red', linestyle='--')
+    plt.xticks([-0.5, -0.25, 0, 0.25, 0.5])
 
-plt.subplot(1, 2, 2)
-plt.imshow(scipy.signal.detrend(np.unwrap(np.angle(trans), np.pi), axis=0), aspect='auto', origin='lower',
-           extent=[trans_fpts[0], trans_fpts[-1], voltages[0], voltages[-1]])
-plt.axhline(y=symm_value, linewidth=2, color='red', linestyle='--')
-plt.title('Phase')
+    plt.figure()
+    ax1 = plt.subplot(2, 1, 1)
+    plt.imshow(np.transpose(np.abs(trans)), aspect='auto', origin='lower', extent=[lower_flux, upper_flux, trans_fpts[0], trans_fpts[-1]])
+    plt.xticks([-0.5, -0.25, 0, 0.25, 0.5])
+    plt.colorbar()
+
+    plt.subplot(2, 1, 2, sharex = ax1, sharey = ax1)
+    nans = np.zeros([np.abs(shift_index.astype(int) - len(voltages)), len(trans_fpts)])
+    nans[:] = np.nan  # Because python
+    if shift_index > len(voltages):  # The reversed data is above the original
+        trans_rev_cut = np.concatenate((nans, trans_rev[:len(voltages) - shift_index.astype(int)][:]))
+    else:  # We HAVE shifted the reversed data below the original
+        trans_rev_cut = np.concatenate(trans_rev[shift_index.astype(int) - len(voltages):], nans)
+    plt.imshow(np.transpose(np.abs(trans_rev_cut)), aspect='auto', origin='lower',
+               extent=[lower_flux, upper_flux, trans_fpts[0], trans_fpts[-1]])
+    plt.xticks([-0.5, -0.25, 0, 0.25, 0.5])
+    plt.colorbar()
+else:
+    plt.subplot(1, 2, 1)
+    plt.imshow(np.abs(trans), aspect='auto', origin='lower', extent=[trans_fpts[0], trans_fpts[-1], voltages[0], voltages[-1]])
+    #plt.plot([[1, trans_fpts[0]], [1, trans_fpts[-1]]], 'r')
+    plt.axhline(y=symm_value, linewidth=2, color='red', linestyle='--')
+if LABELS:
+    plt.title('Magnitude')
+
+if not PRESENTATION_PLOT:
+    plt.subplot(1, 2, 2)
+    plt.imshow(scipy.signal.detrend(np.unwrap(np.angle(trans), np.pi), axis=0), aspect='auto', origin='lower',
+               extent=[trans_fpts[0], trans_fpts[-1], voltages[0], voltages[-1]])
+    plt.axhline(y=symm_value, linewidth=2, color='red', linestyle='--')
+    plt.title('Phase')
+
+
 
 # Original data, reversed data, and difference plot
 plt.figure()
