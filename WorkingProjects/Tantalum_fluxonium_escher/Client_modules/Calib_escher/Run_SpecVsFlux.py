@@ -24,34 +24,33 @@ SwitchConfig = {
 
 BaseConfig = BaseConfig | SwitchConfig
 
-
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": 0.1275, #1.06, #-1,
-    "yokoVoltageStop": 0.1285, #1,
-    "yokoVoltageNumPoints": 11, #5001,
+    "yokoVoltageStart": -0.12,  # 1.06, #-1,
+    "yokoVoltageStop": -0.11,  # 1,
+    "yokoVoltageNumPoints": 5,  # 5001,
 
     # Readout parameters
-    "trans_reps": 500,
+    "trans_reps": 1000,
     "read_pulse_style": "const",
-    "read_length": 30,
-    "read_pulse_gain": 2000,
-    "trans_freq_start": 6664,
-    "trans_freq_stop": 6665.5,
-    "TransNumPoints": 151,
+    "read_length": 2,
+    "read_pulse_gain": 8000,
+    "trans_freq_start": 7390,
+    "trans_freq_stop": 7394,
+    "TransNumPoints": 201,
 
     # qubit spec parameters
-    "spec_reps": 2,
-    "qubit_pulse_style": "const", #"flat_top",
-    "qubit_gain": 0,#10000, #2500,
-    "qubit_length": .30,
-    "flat_top_length": .30,
-    "qubit_freq_start": 1120,
-    "qubit_freq_stop": 1150,
-    "SpecNumPoints": 2, #401, #301,
-    "sigma": 0.5,
-    "relax_delay": 10, #150,
-    "use_switch": True,
+    "spec_reps": 2000,  # 10000,#22000,
+    "qubit_pulse_style": "arb",  # "flat_top", "const", "arb"
+    "qubit_gain": 25000,  # 3000,
+    "qubit_length": 0.01,
+    "flat_top_length": 2,
+    "qubit_freq_start": 1000,
+    "qubit_freq_stop": 2000,
+    "SpecNumPoints": 501,  # 101,#101
+    "sigma": 0.1,
+    "relax_delay": 10,  # 150,
+    "use_switch": False,
 
     # Changing qubit channel ( not the standard way !!! )
     "qubit_ch": 1,
@@ -59,8 +58,12 @@ UpdateConfig = {
 
     # Do we subtract the average of each voltage slice from the spectroscopy data?
     "subtract_avg": True,
-    "mode_periodic": True, # Is the const qubit tone mode periodic or not
+    "qubit_mode_periodic": False,  # Is the const qubit tone mode periodic or not
     "ro_mode_periodic": False,
+
+    # Do we draw the point picked out for spectroscopy?
+    "draw_read_freq": True,
+
 }
 config = BaseConfig | UpdateConfig
 

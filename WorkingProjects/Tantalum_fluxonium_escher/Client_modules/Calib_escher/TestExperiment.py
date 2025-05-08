@@ -284,64 +284,66 @@ if config["save_data"]:
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 1000, #, 20000,
+    "reps": 300, #, 20000,
     # cavity
     "read_pulse_style": "const",  # --Fixed
 
-    "read_length": 20, #30,  # us
-    "read_pulse_gain": 2000, #1000,  # [DAC units]
+    "read_length": 2, #30,  # us
+    "read_pulse_gain": 8000, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
 
-    "read_pulse_freq": 6664.932., #6665.367, #6664.2,
+    "read_pulse_freq": 7392.23, #6665.367, #6664.2,
 
 
     # Transmission Experiment
     "TransSpan": 1.5, #3, #4, # MHz
-    "TransNumPoints": 201, #651, #601,
+
+    "TransNumPoints": 101, #651, #601,
 
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": 0.015,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
+    "yokoVoltage": -0.115,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "const",
-    "qubit_freq": 1500,
-    "qubit_gain": 5000,
+    "qubit_pulse_style": "arb",
+    "qubit_freq": 1080,
+    "qubit_gain": 25000,
 
 
     # Constant Pulse Tone
-    "qubit_length": 5,
+    "qubit_length": 30,
 
     # Flat top or gaussian pulse tone
-    "sigma": 0.5,#0.3,
-    "flat_top_length": 60,
+    "sigma": 0.3,#0.3,
+    "flat_top_length": 20,
 
     # define spec slice experiment parameters
     "qubit_ch": 1,
-    "qubit_freq_start": 1134, #2105,
-    "qubit_freq_stop": 1140,#2120,
-    "SpecNumPoints": 401,
-    'spec_reps': 5000, #20000,
+    "qubit_nqz": 1,
+    "qubit_freq_start": 1000, #2105,
+    "qubit_freq_stop": 2000,#2120,
+    "SpecNumPoints": 201,
+    'spec_reps': 500,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
     "qubit_gain_step": 5000,
     "qubit_gain_expts": 3,
-    "AmpRabi_reps": 100000,
+    "AmpRabi_reps": 15000,
 
 
     # Experiment parameters
-    "relax_delay": 10, #2000,
+    "relax_delay": 5000, #2000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
-    "use_switch": True,
-    "mode_periodic": False,
+    "use_switch": False,
+    "qubit_mode_periodic": False,
 }
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig
 #print("TestExperiment is not changing yoko voltage!")
-yoko1.SetVoltage(config["yokoVoltage"])
+yoko2.SetVoltage(config["yokoVoltage"])
 
 #%%
 # TITLE: Performing the Cavity Transmission Experiment

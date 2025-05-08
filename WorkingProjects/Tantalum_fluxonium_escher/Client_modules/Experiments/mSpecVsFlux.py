@@ -9,7 +9,7 @@ import datetime
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.YOKOGS200 import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSlice
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko1
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko1, yoko2
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 
 class SpecVsFlux(ExperimentClass):
@@ -45,7 +45,7 @@ class SpecVsFlux(ExperimentClass):
         #yoko1 = YOKOGS200(VISAaddress='GPIB0::7::INSTR', rm=visa.ResourceManager())
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
-        yoko1.SetVoltage(expt_cfg["yokoVoltageStart"])
+        yoko2.SetVoltage(expt_cfg["yokoVoltageStart"])
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
