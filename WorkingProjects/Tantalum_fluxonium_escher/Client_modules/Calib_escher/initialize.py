@@ -8,6 +8,7 @@ file to create basic initialization of things used for RFSOC This will include:
 ### import relevant libraries
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.socProxy import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.YOKOGS200 import *
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.control_atten import *
 import os
 import pyvisa as visa
 from pathlib import Path
@@ -37,19 +38,22 @@ class attenuator:
         setatten(attenu = attenuation, serial = self.serialNum, printv = printOut)
 
 # ##### define the attenuators
-# cavityAtten = attenuator(27787)
+cavityAtten = attenuator(27784)
+
 # qubitAtten = attenuator(27797)
 
 # define yoko 1
+# Houck cage external magnet
 yoko1 = YOKOGS200(VISAaddress = 'GPIB0::4::INSTR', rm = visa.ResourceManager())
 yoko1.SetMode('voltage')
 #yoko1 = None
 #print("Warning: not connecting to Yoko in initialize.py")
 
 # define yoko 2
-yoko2 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
-yoko1.SetMode('voltage')
 
+# Houck cage FLB
+yoko2 = YOKOGS200(VISAaddress = 'GPIB0::2::INSTR', rm = visa.ResourceManager())
+yoko2.SetMode('voltage')
 
 ###### define default configuration
 BaseConfig={
