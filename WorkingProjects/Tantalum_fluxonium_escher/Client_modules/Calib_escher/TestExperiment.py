@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 
+
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTwoToneTransmission import \
     TwoToneTransmission
@@ -43,6 +44,8 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTimeR
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mStarkShift import StarkShift
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mQubitTwoToneResonatorCool import \
     QubitTwoToneResonatorCoolExperiment
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecSlice import FFSpecSlice_Experiment
+
 
 import sys
 sys.path.insert(0, 'Z:\TantalumFluxonium\Data\HouckLabMeasurementCode\ADMV8818')
@@ -56,7 +59,7 @@ import Pyro4.util
 import json
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import MakeFile
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_04_07_cooldown\HouckCage_dev\\" # end in \\
+outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\HouckCage_dev\\" # end in \\
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -81,12 +84,12 @@ yoko = yoko2
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 30000,  # [DAC units]
+    "gain": 1,  # [DAC units]
 
-    "freq": 7392,#3713,  # [MHz]
+    "freq": 1000,#3713,  # [MHz]
 
-    "channel": 0, #0,  # TODO default value # 0 is resonator, 1 is qubit
-    "nqz": 2, #2,#1,  # TODO default value
+    "channel": 1, #0,  # TODO default value # 0 is resonator, 1 is qubit
+    "nqz": 1, #2,#1,  # TODO default value
 }
 
 config = BaseConfig | UpdateConfig
@@ -344,17 +347,17 @@ UpdateConfig_transmission = {
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "arb",
+    "qubit_pulse_style": "flat_top",
     "qubit_freq": 1080,
     "qubit_gain": 25000,
 
 
     # Constant Pulse Tone
-    "qubit_length": 30,
+    "qubit_length": 0.2,
 
     # Flat top or gaussian pulse tone
     "sigma": 0.05,#0.3,
-    "flat_top_length": 20,
+    "flat_top_length": 0.1,
 
     # define spec slice experiment parameters
     "qubit_ch": 1,
@@ -362,7 +365,7 @@ UpdateConfig_qubit = {
     "qubit_freq_start": 1000, #2105,
     "qubit_freq_stop": 2000,#2120,
     "SpecNumPoints": 101,
-    'spec_reps': 500,#10000, #20000,
+    'spec_reps': 10000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
@@ -372,7 +375,7 @@ UpdateConfig_qubit = {
 
 
     # Experiment parameters
-    "relax_delay": 5000, #2000,
+    "relax_delay": 50, #2000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": False,
@@ -486,11 +489,11 @@ UpdateConfig = {
     "yokoVoltage": -0.105, #0.09473, #3.1
     ##### change gain instead option
     "trans_gain_start": 1000,
-    "trans_gain_stop": 15000,
-    "trans_gain_num": 15,
+    "trans_gain_stop": 30000,
+    "trans_gain_num": 31,
     ###### cavity
     "reps": 1000,
-    "trans_reps": 1000,  # this will used for all experiments below unless otherwise changed in between trials
+    "trans_reps": 500,  # this will used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     #"readout_length": 35,  # [us] 1/7/2025 JL
     "read_length": 30,  # [us] 1/7/2025 JL
@@ -1384,3 +1387,55 @@ inst_q2trc.display()
 
 plt.show()
 
+#%%
+#TITLE: Fast Flux DC voltage Spec Slice
+
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",     # --Fixed
+    "read_length": 5,                # [us]
+    "read_pulse_gain": 8000,         # [DAC units]
+    "read_pulse_freq": 7392.25,      # [MHz]
+    "ro_mode_periodic": False,  # currently unused
+
+    # Qubit spec parameters
+    "qubit_freq_start": 1001,        # [MHz]
+    "qubit_freq_stop": 2000,         # [MHz]
+    "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+    "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
+    "qubit_length": 1,               # [us], used with "const"
+    "flat_top_length": 0.300,        # [us], used with "flat_top"
+    "qubit_gain": 25000,             # [DAC units]
+    "qubit_ch": 1,                   # RFSOC output channel of qubit drive
+    "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
+    "qubit_mode_periodic": False,  # Currently unused, applies to "const" drive
+
+    # Fast flux pulse parameters
+    "ff_gain": 700,                    # [DAC units] Gain for fast flux pulse
+    "ff_length": 3,                 # [us] Total length of positive fast flux pulse
+    "post_ff_delay": 1,             # [us] Delay after fast flux pulse (before qubit pulse)
+    "ff_pulse_style": "const",
+    "ff_ch": 6,                      # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+
+    "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 10,               # [us]
+    "qubit_freq_expts": 501,         # number of points
+    "reps": 1000,
+    "use_switch": False,
+}
+
+config = BaseConfig | UpdateConfig
+yoko.SetVoltage(config["yokoVoltage"])
+
+
+# Estimate Time
+time = config["reps"] * config["qubit_freq_expts"] * (config["relax_delay"] + config["ff_length"]) * 1e-6
+print("Time for ff spec experiment is about ", time, " s")
+
+Instance_FFSpecSlice = FFSpecSlice_Experiment(path="dataFFSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_FFSpecSlice= FFSpecSlice_Experiment.acquire(Instance_FFSpecSlice)
+FFSpecSlice_Experiment.display(Instance_FFSpecSlice, data_FFSpecSlice, plotDisp=True)
+FFSpecSlice_Experiment.save_data(Instance_FFSpecSlice, data_FFSpecSlice)
+# print(Instance_specSlice.qubitFreq)
+plt.show()

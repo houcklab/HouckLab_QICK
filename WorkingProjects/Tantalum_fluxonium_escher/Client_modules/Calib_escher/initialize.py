@@ -64,6 +64,8 @@ BaseConfig={
         "reps":1000, # --Fixed
         "nqz": 2, #### refers to cavity
         "qubit_nqz": 1,
+        "ff_ch": 6, # Fast flux line channel
+        "ff_nqz": 1, # Fast flux line nqz
         "relax_delay":10, # us
         "res_phase":0, # --Fixed
         "pulse_style": "const", # --Fixed
