@@ -128,7 +128,7 @@ class SpecVsVoltage(ExperimentClassPlus):
     ### define the template config
     config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 20, 'nqz': 1, 'qubit_nqz': 2,
          'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 5500,
-         'adc_trig_offset': 0.5, 'cavity_LO': 6800000000.0, 'cavity_winding_freq': 1.0903695,
+         'adc_trig_offset': 0.5, 'cavity_LO': 6700000000.0, 'cavity_winding_freq': 1.0903695,
          'cavity_winding_offset': -15.77597, 'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}},
          'has_mixer': True, 'readout_length': 3, 'pulse_freq': -9.75, 'pulse_gains': [0.171875], 'pulse_freqs': [-9.75],
          'TransSpan': 1.5, 'TransNumPoints': 61, 'cav_relax_delay': 30, 'qubit_pulse_style': 'const',
@@ -139,7 +139,7 @@ class SpecVsVoltage(ExperimentClassPlus):
                        '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 10000, 'Gain_Expt': 0,
                              'Gain_Pulse': 10000},
                        '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 10000, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
-         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 20, 'VoltageNumPoints': 2, 'sleep_time': 0, 'DACs': [5],
+         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 5, 'VoltageNumPoints': 2, 'sleep_time': 0, 'DACs': [5],
          'VoltageStart': [-0.5], 'VoltageStop': [0], 'Gauss': False
     }
 
@@ -217,7 +217,6 @@ class SpecVsVoltage(ExperimentClassPlus):
         }
 
         print(voltage_matrix)
-
         # loop over the voltageVec
         for i in range(expt_cfg["VoltageNumPoints"]):
             if i != 0:
@@ -226,7 +225,8 @@ class SpecVsVoltage(ExperimentClassPlus):
             # Setting voltages
             if 'DACs' in self.cfg:
                 for m in range(len(self.cfg['DACs'])):
-                    self.voltage_interface.set_voltage(voltage_matrix[m][i], self.cfg['DACs'][m])
+                    print("Setting channel " + str(self.cfg['DACs'][m]) + " to " + str(voltage_matrix[m][i]))
+                    self.voltage_interface.set_voltage(voltage_matrix[m][i], [self.cfg['DACs'][m]])
             else:
                 self.voltage_interface.set_voltage(voltage_matrix[0][i])
                 self.cfg['DACs'] = [1]
@@ -278,52 +278,55 @@ class SpecVsVoltage(ExperimentClassPlus):
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
+            print(f'iteration: {i}')
+            print(self.data['data'])
+
             #### plot out the spec data
-            sig = data_I + 1j * data_Q
-
-            avgamp0 = np.abs(sig)
-            if smart_normalize:
-                avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
-            Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
-            if i == 0:
-
-                ax_plot_1 = axs.imshow(
-                    Z_spec,
-                    aspect='auto',
-                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
-                    origin='lower',
-                    interpolation = 'none',
-                )
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
-            else:
-                ax_plot_1.set_data(Z_spec)
-                ax_plot_1.autoscale()
-                cbar1.remove()
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
-            # if i ==0: #### if first sweep add a colorbar
-            #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-            #     cbar1.set_label('a.u.', rotation=90)
-            # else:
-            #     cbar1.remove()
-            #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-            #     cbar1.set_label('a.u.', rotation=90)
-
-            axs.set_ylabel("Voltage (V)")
-            axs.set_xlabel("Spec Frequency (GHz)")
-            axs.set_title(f"{self.titlename}, DACs: {self.cfg['DACs']}, "
-                             f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
-
-            if plotDisp:
-                plt.show(block=False)
-                plt.pause(0.1)
-
-        if plotDisp == False:
-            fig.clf(True)
-            plt.close(fig)
-        else:
-            plt.show(block=True)
+        #     sig = data_I + 1j * data_Q
+        #
+        #     avgamp0 = np.abs(sig)
+        #     if smart_normalize:
+        #         avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
+        #     Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
+        #     if i == 0:
+        #
+        #         ax_plot_1 = axs.imshow(
+        #             Z_spec,
+        #             aspect='auto',
+        #             extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
+        #             origin='lower',
+        #             interpolation = 'none',
+        #         )
+        #         cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+        #         cbar1.set_label('a.u.', rotation=90)
+        #     else:
+        #         ax_plot_1.set_data(Z_spec)
+        #         ax_plot_1.autoscale()
+        #         cbar1.remove()
+        #         cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+        #         cbar1.set_label('a.u.', rotation=90)
+        #     # if i ==0: #### if first sweep add a colorbar
+        #     #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
+        #     #     cbar1.set_label('a.u.', rotation=90)
+        #     # else:
+        #     #     cbar1.remove()
+        #     #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
+        #     #     cbar1.set_label('a.u.', rotation=90)
+        #
+        #     axs.set_ylabel("Voltage (V)")
+        #     axs.set_xlabel("Spec Frequency (GHz)")
+        #     # axs.set_title(f"{self.titlename}, DACs: {self.cfg['DACs']}, "
+        #     #                  f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
+        #
+        #     if plotDisp:
+        #         plt.show(block=False)
+        #         plt.pause(0.1)
+        #
+        # if plotDisp == False:
+        #     fig.clf(True)
+        #     plt.close(fig)
+        # else:
+        #     plt.show(block=True)
 
         return self.data
 

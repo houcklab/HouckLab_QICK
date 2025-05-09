@@ -46,7 +46,7 @@ class QBLOXchannel(VoltageInterface):
         D5a = D5a_module(spi_rack, module=self.module, reset_voltages=self.reset_voltages, num_dacs=self.num_dacs)
 
         DAC = self.DAC
-        time.sleep(1)
+        time.sleep(0.1)
         if type(range_number) == int:
             if not D5a.get_settings(DAC)[1] == range_number:
                 current_settings = D5a.get_settings(DAC)
@@ -58,7 +58,7 @@ class QBLOXchannel(VoltageInterface):
                 current_settings = D5a.get_settings(DAC)
                 D5a.change_span(DAC, span)
                 D5a.set_voltage(DAC, current_settings[0])
-        time.sleep(1)
+        time.sleep(0.1)
 
         spi_rack.close()
 

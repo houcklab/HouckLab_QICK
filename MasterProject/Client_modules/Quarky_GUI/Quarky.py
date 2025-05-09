@@ -455,6 +455,8 @@ class Quarky(QMainWindow):
                 self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
 
 
+            print(experiment_format_config)
+
             ### Creating the experiment worker from ExperimentThread and Connecting Signals
             self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
                                                       exp=self.experiment_instance, soc=self.soc)

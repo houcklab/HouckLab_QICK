@@ -403,11 +403,12 @@ class QQuarkTab(QWidget):
         try:
             if plotting_method == "None": # No longer using auto preparation
                 # if not self.is_experiment:
-                if exp_instance is not None:
-                    if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
-                        exp_instance.display(self.data, plotDisp=True)
-                else:
-                    self.auto_plot_prepare()
+                # if exp_instance is not None:
+                #     if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
+                #         exp_instance.display(self.data, plotDisp=True)
+                # else:
+                #     self.auto_plot_prepare()
+                self.auto_plot_prepare()
             elif plotting_method in QQuarkTab.custom_plot_methods:
                 QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
@@ -475,14 +476,14 @@ class QQuarkTab(QWidget):
             plot.plot(x, y, **style)
 
         # Scatter plots
-        for col in ax.collections:
-            offsets = col.get_offsets()
-            if offsets is not None and len(offsets):
-                x, y = offsets[:, 0], offsets[:, 1]
-                size = col.get_sizes()
-                brush = pg.mkBrush(mpl_color_to_pg(col.get_facecolor()[0]))
-                scatter = pg.ScatterPlotItem(x=x, y=y, size=5 if size is None else size[0], brush=brush)
-                plot.addItem(scatter)
+        # for col in ax.collections:
+        #     offsets = col.get_offsets()
+        #     if offsets is not None and len(offsets):
+        #         x, y = offsets[:, 0], offsets[:, 1]
+        #         size = col.get_sizes()
+        #         brush = pg.mkBrush(mpl_color_to_pg(col.get_facecolor()[0]))
+        #         scatter = pg.ScatterPlotItem(x=x, y=y, size=5 if size is None else size[0], brush=brush)
+        #         plot.addItem(scatter)
 
         # Images
         for img in ax.images:
