@@ -139,7 +139,7 @@ class SpecVsVoltage(ExperimentClassPlus):
                        '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 10000, 'Gain_Expt': 0,
                              'Gain_Pulse': 10000},
                        '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 10000, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
-         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 20, 'VoltageNumPoints': 11, 'sleep_time': 0, 'DACs': [5],
+         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 20, 'VoltageNumPoints': 2, 'sleep_time': 0, 'DACs': [5],
          'VoltageStart': [-0.5], 'VoltageStop': [0], 'Gauss': False
     }
 
