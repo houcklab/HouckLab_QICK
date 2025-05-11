@@ -11,74 +11,79 @@ class FFSpecSlice(RAveragerProgram):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        #### set the start, step, and other parameters
+        # Convention: all named parameters are in real units, parameters in cycles have suffix _cycles and
+        # parameters in register units have suffix _reg
+
+        # Required parameters for the RAveragerProgram, used internally
         self.cfg["x_pts_label"] = "qubit freq (MHz)"
         self.cfg["y_pts_label"] = None
-
-        ### define the start and step for the dictionary
         self.cfg["start"] = self.cfg["qubit_freq_start"]
         self.cfg["step"] = (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["qubit_freq_expts"] - 1)
         self.cfg["expts"] = self.cfg["qubit_freq_expts"]
 
-        ### define the start and step in dac values
-        self.f_start = self.freq2reg(self.cfg["start"], gen_ch=self.cfg["qubit_ch"])
-        self.f_step = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
-
+        # Get register page and frequency register for qubit channel
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         self.q_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
 
+        # Declare channels
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
         self.declare_gen(ch = self.cfg["ff_ch"], nqz = self.cfg["ff_nqz"]) # Fast flux
-
-        self.post_ff_delay = self.us2cycles(self.cfg["post_ff_delay"], gen_ch = self.cfg["ff_ch"])
 
         for ch in self.cfg["ro_chs"]:
             self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
                                  freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
 
-        ### convert the readout frequency to proper units
-        read_freq = self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
-                                  ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
+        # Define some register variables for convenience
+        self.qubit_freq_start_reg = self.freq2reg(self.cfg["start"], gen_ch=self.cfg["qubit_ch"])
+        self.qubit_freq_step_reg = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
+        self.post_ff_delay_cycles = self.us2cycles(self.cfg["post_ff_delay"], gen_ch = self.cfg["ff_ch"])
 
+        # Readout pulse
+        mode_setting = "periodic" if self.cfg["ro_mode_periodic"] else "oneshot"
+        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"],
+                                 freq=self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
+                                ro_ch=self.cfg["ro_chs"][0]), phase=0, gain=self.cfg["read_pulse_gain"],
+                                 length=self.us2cycles(self.cfg["read_length"]), mode = mode_setting)
 
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]))
-
-        #### define the qubit pulse depending on the pulse type
+        # Qubit pulse
         if self.cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq_start_reg,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
                                      waveform="qubit")
+            self.qubit_pulse_length = self.cfg["sigma"] * 4 # [us]
 
         elif self.cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
                            sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
                            length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq_start_reg,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
                                      waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulse_length = self.cfg["sigma"] * 4 + self.cfg["flat_top_length"] # [us]
 
         elif self.cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
+            mode_setting = "periodic" if self.cfg["qubit_mode_periodic"] else "oneshot"
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq_start_reg, phase=0,
                                      gain=self.cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]), )
-            # mode="periodic")
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]),
+                                     mode=mode_setting)
+            self.qubit_pulse_length = self.cfg["qubit_length"] # [u]s
         else:
             print("define arb, const, or flat top pulse")
 
+        self.qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
 
         # Define the fast flux pulse #TODO just constant for now
         if self.cfg["ff_pulse_style"] == "const":
             self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0,
                                      gain = self.cfg["ff_gain"], length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"]))
-            self.qubit_pulse_length = self.us2cycles(self.cfg["qubit_length"], gen_ch = self.cfg["qubit_ch"])
+            self.flux_pulse_length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"])
 
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
+        self.sync_all(self.us2cycles(0.1))
 
 
 
@@ -89,81 +94,55 @@ class FFSpecSlice(RAveragerProgram):
         # * Play the readout pulse
         # * Eventually: Play an inverted version of the qubit pulse -- not clear why this is necessary, Jero claims that it helps with flux stability
         self.pulse(ch = self.cfg["ff_ch"])   # play fast flux pulse
-        self.pulse(ch = self.cfg["qubit_ch"], t = self.post_ff_delay)  # play probe pulse
+        self.pulse(ch = self.cfg["qubit_ch"], t = self.post_ff_delay_cycles)  # play probe pulse
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
-                     t = self.post_ff_delay + self.qubit_pulse_length, wait = True,
+                     t = self.post_ff_delay_cycles + self.qubit_pulse_length, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.f_step)  # update freq of the qubit spec pulse
+        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.qubit_freq_step_reg)  # update freq of the qubit spec pulse
 
     ### define the template config
     ################################## code for running qubit spec on repeat
     config_template = {
-        ##### define attenuators
-        "yokoVoltage": 0.25,
-        ###### cavity
-        "read_pulse_style": "const",  # --Fixed
-        "read_length": 5,  # us
-        "read_pulse_gain": 10000,  # [DAC units]
-        "read_pulse_freq": 6425.3,
-        ##### spec parameters for finding the qubit frequency
-        "qubit_freq_start": 2869 - 20,
-        "qubit_freq_stop": 2869 + 20,
-        "qubit_freq_expts": 81,  ### number of points
-        "qubit_pulse_style": "flat_top",
-        "sigma": 0.050,  ### units us
-        "qubit_length": 1,  ### units us, gets used for constant pulse
-        "flat_top_length": 0.300,  ### in us
-        "relax_delay": 500,  ### turned into us inside the run function
-        "qubit_gain": 20000,  # Constant gain to use
-        # "qubit_gain_start": 18500, # shouldn't need this...
-        "ff_gain": 1, # Gain for fast flux pulse
-        "ff_length": 10, # us
-        "ff_ch": 6,
-        "ff_nqz": 1,
-        "qubit_ch": 1,
-        "qubit_nqz": 1,
-        "post_ff_delay": 10, # us -- delay after fast flux pulse before qubit pulse
-        "reps": 100,
+        # Readout section
+        "read_pulse_style": "const",     # --Fixed
+        "read_length": 5,                # [us]
+        "read_pulse_gain": 8000,         # [DAC units]
+        "read_pulse_freq": 7392.25,      # [MHz]
+        "ro_mode_periodic": False,       # Bool: if True, keeps readout tone on always
+
+        # Qubit spec parameters
+        "qubit_freq_start": 1001,        # [MHz]
+        "qubit_freq_stop": 2000,         # [MHz]
+        "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+        "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
+        "qubit_length": 1,               # [us], used with "const"
+        "flat_top_length": 0.300,        # [us], used with "flat_top"
+        "qubit_gain": 25000,             # [DAC units]
+        "qubit_ch": 1,                   # RFSOC output channel of qubit drive
+        "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
+        "qubit_mode_periodic": False,    # Bool: Applies only to "const" pulse style; if True, keeps qubit tone on always
+
+        # Fast flux pulse parameters
+        "ff_gain": 1,                    # [DAC units] Gain for fast flux pulse
+        "ff_length": 50,                 # [us] Total length of positive fast flux pulse
+        "post_ff_delay": 10,             # [us] Delay after fast flux pulse (before qubit pulse)
+        "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
+        "ff_ch": 6,                      # RFSOC output channel of fast flux drive
+        "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+
+        "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
+        "relax_delay": 10,               # [us]
+        "qubit_freq_expts": 2000,         # number of points
+        "reps": 1000,
         "sets": 5,
+        "use_switch": False,
     }
-    # # Readout section
-    # "read_pulse_style": "const",     # --Fixed
-    # "read_length": 5,                # [us]
-    # "read_pulse_gain": 8000,         # [DAC units]
-    # "read_pulse_freq": 7392.25,      # [MHz]
-    # "ro_mode_periodic": False,  # currently unused
-    #
-    # # Qubit spec parameters
-    # "qubit_freq_start": 1001,        # [MHz]
-    # "qubit_freq_stop": 2000,         # [MHz]
-    # "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
-    # "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
-    # "qubit_length": 1,               # [us], used with "const"
-    # "flat_top_length": 0.300,        # [us], used with "flat_top"
-    # "qubit_gain": 25000,             # [DAC units]
-    # "qubit_ch": 1,                   # RFSOC output channel of qubit drive
-    # "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
-    # "qubit_mode_periodic": False,  # Currently unused, applies to "const" drive
-    #
-    # # Fast flux pulse parameters
-    # "ff_gain": 1,                    # [DAC units] Gain for fast flux pulse
-    # "ff_length": 50,                 # [us] Total length of positive fast flux pulse
-    # "post_ff_delay": 10,             # [us] Delay after fast flux pulse (before qubit pulse)
-    # "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
-    # "ff_ch": 6,                      # RFSOC output channel of fast flux drive
-    # "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
-    #
-    # "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
-    # "relax_delay": 10,               # [us]
-    # "qubit_freq_expts": 2000,         # number of points
-    # "reps": 1000,
-    # "use_switch": False,
 
 # ====================================================== #
 
@@ -193,6 +172,12 @@ class FFSpecSlice_Experiment(ExperimentClass):
                                        expt_cfg["qubit_freq_expts"])
 
         prog = FFSpecSlice(self.soccfg, self.cfg)
+
+        # Check that the arguments make sense. We need the program first, to know the correct qubit pulse length
+        if self.cfg["post_ff_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
+            print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
+        print("Qubit pulse length: ", prog.qubit_pulse_length)
+
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
