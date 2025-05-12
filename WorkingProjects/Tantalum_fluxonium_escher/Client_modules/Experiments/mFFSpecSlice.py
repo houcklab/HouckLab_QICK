@@ -6,6 +6,9 @@ from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
 
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
+
+
 class FFSpecSlice(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -47,34 +50,7 @@ class FFSpecSlice(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]), mode = mode_setting)
 
         # Qubit pulse
-        if self.cfg["qubit_pulse_style"] == "arb":
-            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq_start_reg,
-                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                     waveform="qubit")
-            self.qubit_pulse_length = self.cfg["sigma"] * 4 # [us]
-
-        elif self.cfg["qubit_pulse_style"] == "flat_top":
-            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq_start_reg,
-                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-            self.qubit_pulse_length = self.cfg["sigma"] * 4 + self.cfg["flat_top_length"] # [us]
-
-        elif self.cfg["qubit_pulse_style"] == "const":
-            mode_setting = "periodic" if self.cfg["qubit_mode_periodic"] else "oneshot"
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq_start_reg, phase=0,
-                                     gain=self.cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]),
-                                     mode=mode_setting)
-            self.qubit_pulse_length = self.cfg["qubit_length"] # [u]s
-        else:
-            print("define arb, const, or flat top pulse")
-
+        self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["start"])
         self.qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
 
         # Define the fast flux pulse #TODO just constant for now
@@ -106,8 +82,7 @@ class FFSpecSlice(RAveragerProgram):
     def update(self):
         self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.qubit_freq_step_reg)  # update freq of the qubit spec pulse
 
-    ### define the template config
-    ################################## code for running qubit spec on repeat
+    # Template config dictionary, used in GUI for initial values
     config_template = {
         # Readout section
         "read_pulse_style": "const",     # --Fixed
