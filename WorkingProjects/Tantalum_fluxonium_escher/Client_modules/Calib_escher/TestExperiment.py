@@ -1412,7 +1412,7 @@ UpdateConfig = {
 
     # Fast flux pulse parameters
     "ff_gain": 700,                 # [DAC units] Gain for fast flux pulse
-    "ff_length": 5,                 # [us] Total length of positive fast flux pulse
+    "ff_length": 7,                 # [us] Total length of positive fast flux pulse
     "post_ff_delay": 1,             # [us] Delay after fast flux pulse (before qubit pulse)
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
@@ -1428,14 +1428,14 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 yoko.SetVoltage(config["yokoVoltage"])
 
+Instance_FFSpecSlice = FFSpecSlice_Experiment(path="dataFFSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 
 # Estimate Time
-time = config["reps"] * config["qubit_freq_expts"] * (config["relax_delay"] + config["ff_length"]) * 1e-6
+time = Instance_FFSpecSlice.estimate_runtime()
 print("Time for ff spec experiment is about ", time, " s")
 
-Instance_FFSpecSlice = FFSpecSlice_Experiment(path="dataFFSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_FFSpecSlice= FFSpecSlice_Experiment.acquire(Instance_FFSpecSlice)
-FFSpecSlice_Experiment.display(Instance_FFSpecSlice, data_FFSpecSlice, plotDisp=True)
+FFSpecSlice_Experiment.display(Instance_FFSpecSlice, data_FFSpecSlice, plot_disp=True)
 FFSpecSlice_Experiment.save_data(Instance_FFSpecSlice, data_FFSpecSlice)
 FFSpecSlice_Experiment.save_config(Instance_FFSpecSlice)
 # print(Instance_specSlice.qubitFreq)

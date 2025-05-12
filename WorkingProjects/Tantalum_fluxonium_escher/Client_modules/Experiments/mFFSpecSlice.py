@@ -3,10 +3,8 @@ from qick.averager_program import QickSweep
 
 #import MasterProject.Client_modules.CoreLib.Experiment
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
-
 import numpy as np
 import matplotlib.pyplot as plt
-
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
 
 
@@ -113,29 +111,13 @@ class FFSpecSlice(NDAveragerProgram):
 
 class FFSpecSlice_Experiment(ExperimentClass):
     """
-    Basic spec experiment that takes a single slice of data
+    Perform qubit spectroscopy during a fast flux pulse.
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        ##### code to aquire just the qubit spec data
-        expt_cfg = {
-            ### spec parameters
-            "qubit_freq_start": self.cfg["qubit_freq_start"],
-            "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-            "qubit_freq_expts": self.cfg["qubit_freq_expts"],  ### number of points
-        }
-        # self.cfg["reps"] = self.cfg["spec_reps"]
-        self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["qubit_freq_expts"]
-        self.cfg["expts"] = expt_cfg["qubit_freq_expts"]
-
-        ### define qubit frequency array
-        self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
-                                       expt_cfg["qubit_freq_expts"])
-
         prog = FFSpecSlice(self.soccfg, self.cfg)
 
         # Check that the arguments make sense. We need the program first, to know the correct qubit pulse length
@@ -143,26 +125,19 @@ class FFSpecSlice_Experiment(ExperimentClass):
             print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
         print("Qubit pulse length: ", prog.qubit_pulse_length)
 
-
+        # Collect the data
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)#, debug=False)
+                                         start_src="internal", progress=False)
 
+        self.qubit_freqs = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"],
+                                       self.cfg["qubit_freq_expts"])
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
-        #### find the frequency corresponding to the qubit dip
-        sig = np.array(data['data']['avgi']) + 1j * np.array(data['data']['avgq'])
-        avgamp0 = np.abs(sig)
-
-        # peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
-        # print(np.max(np.abs(data['data']['avgq'])))
-        self.qubitFreq = data['data']['x_pts'][peak_loc]
-
         return data
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plot_disp = False, fig_num = 1, **kwargs):
 
         if data is None:
             data = self.data
@@ -173,27 +148,27 @@ class FFSpecSlice_Experiment(ExperimentClass):
         sig  = avgi[0][0] + 1j * avgq[0][0]
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
-        while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
-            figNum += 1
-        fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
+        while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+            fig_num += 1
+        fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
 
         ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
-        axs[0].set_ylabel("degree.")
+        axs[0].set_ylabel("deg")
         axs[0].set_xlabel("Qubit Frequency (GHz)")
         axs[0].legend()
 
         ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
-        axs[1].set_ylabel("a.u.")
+        axs[1].set_ylabel("ADC units")
         axs[1].set_xlabel("Qubit Frequency (GHz)")
         axs[1].legend()
 
         ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].set_ylabel("a.u.")
+        axs[2].set_ylabel("ADC units")
         axs[2].set_xlabel("Qubit Frequency (GHz)")
         axs[2].legend()
 
         ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
-        axs[3].set_ylabel("a.u.")
+        axs[3].set_ylabel("ADC units")
         axs[3].set_xlabel("Qubit Frequency (GHz)")
         axs[3].legend()
 
@@ -201,7 +176,7 @@ class FFSpecSlice_Experiment(ExperimentClass):
 
         plt.savefig(self.iname)
 
-        if plotDisp:
+        if plot_disp:
             plt.show(block=False)
             plt.pause(2)
 
@@ -210,6 +185,12 @@ class FFSpecSlice_Experiment(ExperimentClass):
             plt.close(fig)
 
 
+
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+    # Used in the GUI, returns estimated runtime in seconds
+    def estimate_runtime(self):
+        return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
