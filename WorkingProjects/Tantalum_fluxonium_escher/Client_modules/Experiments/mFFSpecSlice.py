@@ -1,4 +1,5 @@
-from qick import RAveragerProgram
+from qick import NDAveragerProgram
+from qick.averager_program import QickSweep
 
 #import MasterProject.Client_modules.CoreLib.Experiment
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
@@ -9,38 +10,26 @@ import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
 
 
-class FFSpecSlice(RAveragerProgram):
+class FFSpecSlice(NDAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        # Convention: all named parameters are in real units, parameters in cycles have suffix _cycles and
-        # parameters in register units have suffix _reg
-
-        # Required parameters for the RAveragerProgram, used internally
-        self.cfg["x_pts_label"] = "qubit freq (MHz)"
-        self.cfg["y_pts_label"] = None
-        self.cfg["start"] = self.cfg["qubit_freq_start"]
-        self.cfg["step"] = (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["qubit_freq_expts"] - 1)
-        self.cfg["expts"] = self.cfg["qubit_freq_expts"]
-
-        # Get register page and frequency register for qubit channel
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
 
         # Declare channels
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
         self.declare_gen(ch = self.cfg["ff_ch"], nqz = self.cfg["ff_nqz"]) # Fast flux
 
+        # Declare readout
         for ch in self.cfg["ro_chs"]:
             self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
                                  freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
 
-        # Define some register variables for convenience
-        self.qubit_freq_start_reg = self.freq2reg(self.cfg["start"], gen_ch=self.cfg["qubit_ch"])
-        self.qubit_freq_step_reg = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
-        self.post_ff_delay_cycles = self.us2cycles(self.cfg["post_ff_delay"], gen_ch = self.cfg["ff_ch"])
+        # Create the sweep over qubit frequency
+        qubit_freq_reg = self.get_gen_reg(self.cfg["qubit_ch"], "freq")
+        self.add_sweep(QickSweep(self, qubit_freq_reg, self.cfg["qubit_freq_start"],
+                                 self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"]))
 
         # Readout pulse
         mode_setting = "periodic" if self.cfg["ro_mode_periodic"] else "oneshot"
@@ -50,8 +39,7 @@ class FFSpecSlice(RAveragerProgram):
                                  length=self.us2cycles(self.cfg["read_length"]), mode = mode_setting)
 
         # Qubit pulse
-        self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["start"])
-        self.qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
+        self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq_start"])
 
         # Define the fast flux pulse #TODO just constant for now
         if self.cfg["ff_pulse_style"] == "const":
@@ -69,18 +57,20 @@ class FFSpecSlice(RAveragerProgram):
         # * After a delay time, start the qubit probe pulse
         # * Play the readout pulse
         # * Eventually: Play an inverted version of the qubit pulse -- not clear why this is necessary, Jero claims that it helps with flux stability
+
+        # For convenience
+        post_ff_delay_cycles = self.us2cycles(self.cfg["post_ff_delay"], gen_ch=self.cfg["ff_ch"])
+        qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
+        adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0])
+
         self.pulse(ch = self.cfg["ff_ch"])   # play fast flux pulse
-        self.pulse(ch = self.cfg["qubit_ch"], t = self.post_ff_delay_cycles)  # play probe pulse
+        self.pulse(ch = self.cfg["qubit_ch"], t = post_ff_delay_cycles)  # play probe pulse
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
-                     t = self.post_ff_delay_cycles + self.qubit_pulse_length, wait = True,
+        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
+                     t = post_ff_delay_cycles + qubit_pulse_length_cycles, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
-    def update(self):
-        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.qubit_freq_step_reg)  # update freq of the qubit spec pulse
 
     # Template config dictionary, used in GUI for initial values
     config_template = {

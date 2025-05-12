@@ -10,9 +10,9 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
     This function takes a program prog with a defined configuration dictionary prog.cfg, and sets up pulse registers
     for the qubit pulse, which can be "arb", "flat_top", or "const".
 
-    @param prog: AcquireProgram: the program object
-    @param freq: float:          the frequency of the desired qubit drive [MHz]
-    @return pulse_length: float: the length of the generated qubit pulse [us]
+    :param prog: AcquireProgram: the program object
+    :param freq: float:          the frequency of the desired qubit drive [MHz]
+    :return pulse_length: float: the length of the generated qubit pulse [us]
 
     The envelopes are defined by prog.cfg["qubit_pulse_style"] as follows:
         "arb" is a Gaussian with standard deviation prog.cfg["sigma"] and total length 4*sigma
@@ -23,7 +23,6 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
 
     Note that this function has no side effects on prog.cfg: you must update the pulse_length manually.
     Also note that it uses the given freq argument and does not assume it to be prog.cfg["start"].
-    :rtype: float
     """
 
     # Variables for convenience
