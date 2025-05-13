@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 
-
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FFSpecVsDelay import FFSpecVsDelay_Experiment
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTwoToneTransmission import \
     TwoToneTransmission
@@ -1435,9 +1435,68 @@ Instance_FFSpecSlice = FFSpecSlice_Experiment(path="FFSpecSlice", cfg=config,soc
 time = Instance_FFSpecSlice.estimate_runtime()
 print("Time for ff spec experiment is about ", time, " s")
 
-data_FFSpecSlice= FFSpecSlice_Experiment.acquire(Instance_FFSpecSlice)
+data_FFSpecSlice = FFSpecSlice_Experiment.acquire(Instance_FFSpecSlice, progress = True)
 FFSpecSlice_Experiment.display(Instance_FFSpecSlice, data_FFSpecSlice, plot_disp=True)
 FFSpecSlice_Experiment.save_data(Instance_FFSpecSlice, data_FFSpecSlice)
 FFSpecSlice_Experiment.save_config(Instance_FFSpecSlice)
+# print(Instance_specSlice.qubitFreq)
+plt.show()
+
+#%%
+#TITLE: Fast Flux DC voltage Spec vs Delay
+
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",     # --Fixed
+    "read_length": 5,                # [us]
+    "read_pulse_gain": 8000,         # [DAC units]
+    "read_pulse_freq": 7392.25,      # [MHz]
+    "ro_mode_periodic": False,  # currently unused
+
+    # Qubit spec parameters
+    "qubit_freq_start": 1001,        # [MHz]
+    "qubit_freq_stop": 2000,         # [MHz]
+    "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+    "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
+    "qubit_length": 1,               # [us], used with "const"
+    "flat_top_length": 0.300,        # [us], used with "flat_top"
+    "qubit_gain": 25000,             # [DAC units]
+    "qubit_ch": 1,                   # RFSOC output channel of qubit drive
+    "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
+    "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
+
+    # Fast flux pulse parameters
+    "ff_gain": 700,                 # [DAC units] Gain for fast flux pulse
+    "ff_length": 7,                 # [us] Total length of positive fast flux pulse
+    "ff_pulse_style": "const",
+    "ff_ch": 6,                      # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+
+    "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 10,               # [us]
+    "qubit_freq_expts": 501,         # number of points
+    "reps": 1000,
+    "use_switch": False,
+
+    # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
+    "post_ff_delay_start": 1,        # [us] Initial value
+    "post_ff_delay_stop": 10,        # [us] Final value
+    "post_ff_delay_steps": 3,       # number of post_ff_delay points to take
+}
+
+config = BaseConfig | UpdateConfig
+yoko.SetVoltage(config["yokoVoltage"])
+
+Instance_FFSpecVsDelay = FFSpecVsDelay_Experiment(path="FFSpecSlice", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFSpecVsDelay.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+data_FFSpecVsDelay = FFSpecVsDelay_Experiment.acquire(Instance_FFSpecVsDelay, progress = True)
+FFSpecVsDelay_Experiment.display(Instance_FFSpecVsDelay, data_FFSpecVsDelay, plot_disp=True)
+FFSpecVsDelay_Experiment.save_data(Instance_FFSpecVsDelay, data_FFSpecVsDelay)
+FFSpecVsDelay_Experiment.save_config(Instance_FFSpecVsDelay)
 # print(Instance_specSlice.qubitFreq)
 plt.show()
