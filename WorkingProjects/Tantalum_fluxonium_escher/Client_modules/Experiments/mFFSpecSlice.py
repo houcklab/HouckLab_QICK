@@ -114,8 +114,10 @@ class FFSpecSlice_Experiment(ExperimentClass):
     Perform qubit spectroscopy during a fast flux pulse.
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
+                 progress=None, short_directory_names = False):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
+                         config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False):
         prog = FFSpecSlice(self.soccfg, self.cfg)
@@ -173,6 +175,8 @@ class FFSpecSlice_Experiment(ExperimentClass):
         axs[3].legend()
 
         plt.tight_layout()
+        fig.subplots_adjust(top=0.96)
+        plt.suptitle(self.fname)
 
         plt.savefig(self.iname)
 

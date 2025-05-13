@@ -1428,7 +1428,8 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 yoko.SetVoltage(config["yokoVoltage"])
 
-Instance_FFSpecSlice = FFSpecSlice_Experiment(path="dataFFSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+Instance_FFSpecSlice = FFSpecSlice_Experiment(path="FFSpecSlice", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
 
 # Estimate Time
 time = Instance_FFSpecSlice.estimate_runtime()
