@@ -600,6 +600,16 @@ class QQuarkTab(QWidget):
 
         # print(self.data)
         # print(prepared_data)
+        self.auto_plot_prepare(prepared_data)
+
+    def auto_plot_plot(self, prepared_data):
+        """
+        Auto plots the data using pyqtgraph using a format specified in the auto_plot_prepare() function via the passed
+        dictionary.
+
+        :param prepared_data: The prepared data to plot
+        :type prepared_data: dict
+        """
 
         # Create the plots
         if "plots" in prepared_data:
@@ -629,7 +639,7 @@ class QQuarkTab(QWidget):
                 p.showGrid(x=True, y=True)
 
                 # Create ImageItem
-                image_item = pg.ImageItem(img["data"].T)
+                image_item = pg.ImageItem(img["data"])
                 p.addItem(image_item)
                 color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
                 image_item.setLookupTable(color_map.getLookupTable())
