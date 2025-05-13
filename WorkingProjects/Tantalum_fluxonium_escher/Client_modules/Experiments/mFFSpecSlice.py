@@ -1,3 +1,8 @@
+###
+# This file contains an NDAveragerProgram and ExperimentClass for doing qubit spectroscopy with a fast flux pulse.
+# Lev, May 2025: create file.
+###
+
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
 
@@ -130,7 +135,7 @@ class FFSpecSlice_Experiment(ExperimentClass):
         # Collect the data
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
+                                         start_src="internal", progress=progress)
 
         self.qubit_freqs = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"],
                                        self.cfg["qubit_freq_expts"])
@@ -175,8 +180,8 @@ class FFSpecSlice_Experiment(ExperimentClass):
         axs[3].legend()
 
         plt.tight_layout()
-        fig.subplots_adjust(top=0.96)
-        plt.suptitle(self.fname)
+        fig.subplots_adjust(top=0.95)
+        plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
 
         plt.savefig(self.iname)
 
