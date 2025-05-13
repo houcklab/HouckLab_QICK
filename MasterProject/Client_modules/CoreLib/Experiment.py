@@ -86,8 +86,8 @@ class ExperimentClass:
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
             os.mkdir(self.outerFolder + self.path)
-        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir() if short_directory_names \
-                            else Path(os.path.join(self.outerFolder + self.path, datestring)).is_dir()
+        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, datestring)).is_dir() if short_directory_names \
+                            else Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
             if short_directory_names:
                 os.mkdir(os.path.join(self.outerFolder + self.path, datestring))
