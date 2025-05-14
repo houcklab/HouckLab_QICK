@@ -121,7 +121,10 @@ class CavitySpecFFMUX(ExperimentClassPlus):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-        # print(data)
+        # clear plot widget and array
+        plot_widget.ci.clear()
+        plots = []
+
         if 'data' in data:
             data = data['data']
 

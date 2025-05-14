@@ -96,12 +96,12 @@ class SampleExperiment_Experiment(ExperimentClassPlus):
         self.data = data
         return data
 
-    @classmethod
+    @staticmethod
     def plotter(cls, plot_widget, plots, data):
         # Implement here using pyqtgraph
         pass
 
-    @classmethod
+    @staticmethod
     def export_data(cls, data_file, data, config):
         return
         super().export_data(data_file, data, config)

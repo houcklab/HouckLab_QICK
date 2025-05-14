@@ -395,20 +395,35 @@ class QQuarkTab(QWidget):
         :param exp_instance: The instance of the experiment.
         :type exp_instance: object
         """
-
-        self.clear_plots()
-        self.plots = []
+        if len(self.plots) == 0:
+            self.clear_plots()
 
         plotting_method = self.plot_method_combo.currentText() # Get the Plotting Method
         try:
             if plotting_method == "None": # No longer using auto preparation
-                # if not self.is_experiment:
-                # if exp_instance is not None:
-                #     if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
-                #         exp_instance.display(self.data, plotDisp=True)
-                # else:
-                #     self.auto_plot_prepare()
-                self.auto_plot_prepare()
+                if not self.is_experiment:
+                    self.clear_plots()
+                    self.auto_plot_prepare()
+                else:
+                    if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
+                        # Get the method bound to the instance
+                        instance_method = exp_instance.display
+
+                        # Walk through the MRO and find where 'display' was first defined
+                        for cls in type(exp_instance).__mro__[1:]:  # Skip the subclass itself
+                            if "display" in cls.__dict__:
+                                parent_method = cls.__dict__["display"]
+                                break
+                        else:
+                            parent_method = None
+
+                        # Check if it's actually overridden
+                        if parent_method is not None and instance_method.__func__ is not parent_method:
+                            exp_instance.display(self.data, plotDisp=True)
+                        else:
+                            self.auto_plot_prepare()
+                    else:
+                        self.auto_plot_prepare()
             elif plotting_method in QQuarkTab.custom_plot_methods:
                 QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
         except Exception as e:
@@ -419,27 +434,30 @@ class QQuarkTab(QWidget):
         """
         Handles a matplotlib by extracting its data and plotting it using pyqtgraph.
         """
-        self.clear_plots()
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
-        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+
+        if len(self.plots) == 0:
+            self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
 
         figures = list(map(plt.figure, plt.get_fignums()))
+        self.curr_plot = 0
         for i, fig in enumerate(figures):
             for ax in fig.get_axes():
                 if i % 2 == 0:
                     self.plot_widget.nextRow()
-                self.extract_and_plot_pyqtgraph(ax)
+                self.extract_and_plot_pyqtgraph(i, ax)
         return
 
-    def extract_and_plot_pyqtgraph(self, ax):
+    def extract_and_plot_pyqtgraph(self, i, ax):
         """
         Convert a matplotlib Axes to a PyQtGraph plot.
 
+        :param i: The index of the figure.
+        :type i: int
         :param ax: Matplotlib axis containing plot data to convert.
         :type ax: matplotlib.axes.Axes
         """
-
         def mpl_color_to_pg(color):
             """
             Convert a matplotlib color to a format accepted by PyQtGraph (e.g., '#RRGGBB').
@@ -454,56 +472,79 @@ class QQuarkTab(QWidget):
             r, g, b, a = [int(255 * c) for c in rgba]
             return (r, g, b, a)
 
-        plot = self.plot_widget.addPlot(title=ax.get_title())
+        if len(ax.get_lines()) == 0 and len(ax.get_images()) == 0: # Skip plotting if no data in axes
+            return
 
-        # Axis labels
-        plot.setLabel('left', ax.get_ylabel())
-        plot.setLabel('bottom', ax.get_xlabel())
+        new_plot = True
+        plot_item_num = 0
+        if len(self.plots) > self.curr_plot: # If plots already exist, then don't create new plots, simply update the existing
+            plot = self.plots[self.curr_plot]
+            plot_data_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
+            new_plot = False
+        else:
+            plot = self.plot_widget.addPlot(title=ax.get_title()) # Otherwise, create new plots
+            self.plots.append(plot)
+        self.curr_plot += 1
 
-        # Axis limits
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
-        plot.setXRange(*xlim)
-        plot.setYRange(*ylim)
+        # Lines
+        for i, line in enumerate(ax.get_lines()):
+            # Axis labels
+            plot.setLabel('left', ax.get_ylabel())
+            plot.setLabel('bottom', ax.get_xlabel())
 
-        # Line plots
-        for line in ax.get_lines():
+            # Axis limits
+            xlim = ax.get_xlim()
+            ylim = ax.get_ylim()
+            plot.setXRange(*xlim)
+            plot.setYRange(*ylim)
+
             x = line.get_xdata()
             y = line.get_ydata()
+            if x is None or y is None or len(x) == 0 or len(y) == 0:
+                continue
+
             color = mpl_color_to_pg(line.get_color())
             width = line.get_linewidth()
-            style = {'pen': pg.mkPen(color=color, width=width), 'symbol': 'o', 'symbolSize': 5, 'symbolBrush': 'b'}
-            plot.plot(x, y, **style)
 
-        # Scatter plots
-        # for col in ax.collections:
-        #     offsets = col.get_offsets()
-        #     if offsets is not None and len(offsets):
-        #         x, y = offsets[:, 0], offsets[:, 1]
-        #         size = col.get_sizes()
-        #         brush = pg.mkBrush(mpl_color_to_pg(col.get_facecolor()[0]))
-        #         scatter = pg.ScatterPlotItem(x=x, y=y, size=5 if size is None else size[0], brush=brush)
-        #         plot.addItem(scatter)
+            style = {'pen': pg.mkPen(color=color, width=width), 'symbol': 'o', 'symbolSize': 5, 'symbolBrush': 'b'}
+            if not new_plot:
+                plot_data_items[plot_item_num].setData(x, y)
+                plot_item_num += 1
+            else:
+                plot.plot(x, y, **style)
 
         # Images
-        for img in ax.images:
+        for i, img in enumerate(ax.get_images()):
             data = img.get_array()
             extent = img.get_extent()  # [xmin, xmax, ymin, ymax]
-            img_item = pg.ImageItem(image=data)
-            plot.addItem(img_item)
-            img_item.setRect(pg.QtCore.QRectF(extent[0], extent[2], extent[1] - extent[0], extent[3] - extent[2]))
 
-        # Legends
-        legend = ax.get_legend()
-        if legend:
-            pg_legend = plot.addLegend()
-            for line in ax.get_lines():
-                label = line.get_label()
-                if label and not label.startswith('_'):
-                    pg_legend.addItem(plot.plot(line.get_xdata(), line.get_ydata(),
-                                                pen=pg.mkPen(color=mpl_color_to_pg(line.get_color()))), label)
+            if data.size == 0:
+                continue
 
-        self.plots.append(plot)
+            if not new_plot:
+                plot_data_items[plot_item_num].setImage(data.T)
+                plot_item_num += 1
+            else:
+                img_item = pg.ImageItem(image=data.T)
+                plot.addItem(img_item)
+                color_map = pg.colormap.get("inferno")  # e.g., 'viridis'
+                img_item.setLookupTable(color_map.getLookupTable())
+                img_item.setRect(pg.QtCore.QRectF(extent[0], extent[2], extent[1] - extent[0], extent[3] - extent[2]))
+
+                # Create ColorBarItem
+                color_bar = pg.ColorBarItem(values=(img_item.image.min(), img_item.image.max()), colorMap=color_map)
+                color_bar.setImageItem(img_item, insert_in=plot)  # Add color bar to the plot
+
+        if new_plot: # only add legends if your plotting for the first time
+            # Legends
+            legend = ax.get_legend()
+            if legend:
+                pg_legend = plot.addLegend()
+                data_items = plot.listDataItems()
+                for line, item in zip(ax.get_lines(), data_items):
+                    label = line.get_label()
+                    if label and not label.startswith('_'):
+                        pg_legend.addItem(item, label)
 
     def auto_plot_prepare(self):
         """
@@ -548,6 +589,7 @@ class QQuarkTab(QWidget):
         prepared_data = {"plots": [], "images": [], "columns": []}
 
         f = self.data
+        # print(self.data)
         if 'data' in self.data:
             f = self.data['data']
 
@@ -599,9 +641,8 @@ class QQuarkTab(QWidget):
                     "colormap": "inferno"
                 })
 
-        # print(self.data)
         # print(prepared_data)
-        self.auto_plot_prepare(prepared_data)
+        self.auto_plot_plot(prepared_data)
 
     def auto_plot_plot(self, prepared_data):
         """
@@ -611,6 +652,8 @@ class QQuarkTab(QWidget):
         :param prepared_data: The prepared data to plot
         :type prepared_data: dict
         """
+
+        # print(prepared_data)
 
         # Create the plots
         if "plots" in prepared_data:
@@ -640,7 +683,7 @@ class QQuarkTab(QWidget):
                 p.showGrid(x=True, y=True)
 
                 # Create ImageItem
-                image_item = pg.ImageItem(img["data"])
+                image_item = pg.ImageItem(img["data"].T)
                 p.addItem(image_item)
                 color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
                 image_item.setLookupTable(color_map.getLookupTable())
@@ -671,6 +714,19 @@ class QQuarkTab(QWidget):
                 if len(self.plots) % 2 == 0:  # Move to next row every 2 plots
                     self.plot_widget.nextRow()
         return
+
+    def intermediate_data(self, data, exp_instance):
+        """
+        Handles intermediate data - meaning data passed from within a set, not at the end. The difference being it
+        does not save this intermediate data.
+        :param data: The intermediate data.
+        :type data: dict
+        :param exp_instance: The instance of the experiment.
+        :type exp_instance: object
+        """
+
+        self.process_data(data)
+        self.plot_data(exp_instance)
 
     def process_data(self, data):
         """
@@ -736,6 +792,7 @@ class QQuarkTab(QWidget):
         """
         Function called when RePlot button pressed. As of now, it simply calls the plot_data() function.
         """
+        self.clear_plots()
         self.plot_data()
 
     def export_data(self):

@@ -180,6 +180,10 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
+        # clear plot widget and array
+        plot_widget.ci.clear()
+        plots = []
+
         # print(data)
         if 'data' in data:
             data = data['data']

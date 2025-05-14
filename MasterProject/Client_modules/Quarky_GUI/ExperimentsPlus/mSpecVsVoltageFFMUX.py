@@ -7,6 +7,7 @@ from qick.helpers import gauss
 from tqdm.notebook import tqdm
 from Pyro4 import Proxy
 from qick import QickConfig
+from PyQt5.QtCore import pyqtSignal
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
@@ -125,6 +126,9 @@ class SpecVsVoltage(ExperimentClassPlus):
             the cavity peak to perform the spec drive
     """
 
+    ### The signal sent to the experiment thread if any intermediate data is sent
+    intermediateData = pyqtSignal(object)  # argument is ip_address
+
     ### define the template config
     config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 20, 'nqz': 1, 'qubit_nqz': 2,
          'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 5500,
@@ -165,10 +169,6 @@ class SpecVsVoltage(ExperimentClassPlus):
             "VoltageStart": self.cfg["VoltageStart"],
             "VoltageStop": self.cfg["VoltageStop"],
             "VoltageNumPoints": self.cfg["VoltageNumPoints"],
-            ### transmission parameters
-            # "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
-            # "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
-            # "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequency
             ### spec parameters
             "step": self.cfg["step"],
             "start": self.cfg["start"],
@@ -182,41 +182,18 @@ class SpecVsVoltage(ExperimentClassPlus):
         for n in range(len(expt_cfg["VoltageStart"])):
             voltage_matrix.append(np.linspace(expt_cfg["VoltageStart"][n],expt_cfg["VoltageStop"][n], expt_cfg["VoltageNumPoints"]))
 
-        # create the figure and subplots that data will be plotted on
-        while plt.fignum_exists(num = figNum):
-            figNum += 1
-        fig, axs = plt.subplots(1,1, figsize = (8,6), num = figNum)
-
-        # create the frequency arrays for both transmission and spec
-        # also create empty array to fill with transmission and spec data
-        # self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
-        # self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
-        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
-        print(self.spec_fpts)
-
-        # X_trans = (self.trans_fpts + self.cfg["cavity_LO"]/1e6) /1e3
-        # X_trans_step = X_trans[1] - X_trans[0]
-        X_spec = self.spec_fpts/1e3
-        X_spec_step = X_spec[1] - X_spec[0]
-        Y = voltage_matrix[0]
-        Y_step = Y[1] - Y[0]
-        # Z_trans = np.full((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
-        Z_spec = np.full((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]), np.nan)
-
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        # self.trans_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
-        # self.trans_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
+        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
         self.spec_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
         self.spec_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
         self.data= {
             'config': self.cfg,
-            'data': {#'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
+            'data': {
                         'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
                         'voltage_matrix': voltage_matrix
                      }
         }
 
-        print(voltage_matrix)
         # loop over the voltageVec
         for i in range(expt_cfg["VoltageNumPoints"]):
             if i != 0:
@@ -232,41 +209,6 @@ class SpecVsVoltage(ExperimentClassPlus):
                 self.cfg['DACs'] = [1]
             time.sleep(1)
 
-            ### take the transmission data
-            # data_I, data_Q = self._aquireTransData()
-            # self.data['data']['trans_Imat'][i,:] = data_I
-            # self.data['data']['trans_Qmat'][i,:] = data_Q
-
-            # #### plot out the transmission data
-            # sig = data_I + 1j * data_Q
-            # avgamp0 = np.abs(sig)
-            # Z_trans[i, :] = avgamp0
-            # # axs[0].plot(x_pts, avgamp0, label="Amplitude; ADC 0")
-            # if i == 1:
-            #     ax_plot_0 = axs[0].imshow(
-            #         Z_trans,
-            #         aspect='auto',
-            #         extent=[np.min(X_trans)-X_trans_step/2,np.max(X_trans)+X_trans_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
-            #         origin= 'lower',
-            #         interpolation= 'none',
-            #     )
-            #     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
-            #     cbar0.set_label('a.u.', rotation=90)
-            # else:
-            #     ax_plot_0.set_data(Z_trans)
-            #     ax_plot_0.autoscale()
-            #     cbar0.remove()
-            #     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
-            #     cbar0.set_label('a.u.', rotation=90)
-            #
-            # axs[0].set_ylabel("Yoko Voltage (V)")
-            # axs[0].set_xlabel("Cavity Frequency (GHz)")
-            # axs[0].set_title("Cavity Transmission")
-            #
-            # if plotDisp:
-            #     plt.show(block=False)
-            #     plt.pause(0.1)
-
             if i != expt_cfg["VoltageNumPoints"]:
                 time.sleep(self.cfg['sleep_time'])
 
@@ -278,55 +220,8 @@ class SpecVsVoltage(ExperimentClassPlus):
             self.data['data']['spec_Imat'][i,:] = data_I
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
-            print(f'iteration: {i}')
-            print(self.data['data'])
-
-            #### plot out the spec data
-        #     sig = data_I + 1j * data_Q
-        #
-        #     avgamp0 = np.abs(sig)
-        #     if smart_normalize:
-        #         avgamp0 = Normalize_Qubit_Data(data_I[0], data_Q[0])
-        #     Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
-        #     if i == 0:
-        #
-        #         ax_plot_1 = axs.imshow(
-        #             Z_spec,
-        #             aspect='auto',
-        #             extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
-        #             origin='lower',
-        #             interpolation = 'none',
-        #         )
-        #         cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-        #         cbar1.set_label('a.u.', rotation=90)
-        #     else:
-        #         ax_plot_1.set_data(Z_spec)
-        #         ax_plot_1.autoscale()
-        #         cbar1.remove()
-        #         cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-        #         cbar1.set_label('a.u.', rotation=90)
-        #     # if i ==0: #### if first sweep add a colorbar
-        #     #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-        #     #     cbar1.set_label('a.u.', rotation=90)
-        #     # else:
-        #     #     cbar1.remove()
-        #     #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-        #     #     cbar1.set_label('a.u.', rotation=90)
-        #
-        #     axs.set_ylabel("Voltage (V)")
-        #     axs.set_xlabel("Spec Frequency (GHz)")
-        #     # axs.set_title(f"{self.titlename}, DACs: {self.cfg['DACs']}, "
-        #     #                  f"Cav Freq: {np.round(self.cfg['pulse_freqs'][0] + self.cfg['mixer_freq'] + self.cfg['cavity_LO'] / 1e6, 3)}")
-        #
-        #     if plotDisp:
-        #         plt.show(block=False)
-        #         plt.pause(0.1)
-        #
-        # if plotDisp == False:
-        #     fig.clf(True)
-        #     plt.close(fig)
-        # else:
-        #     plt.show(block=True)
+            # send out signal for updated data
+            self.intermediateData.emit(self.data)
 
         return self.data
 
@@ -343,64 +238,55 @@ class SpecVsVoltage(ExperimentClassPlus):
         super().export_data(data_file, data, config)
         pass
 
-    def _aquireTransData(self, progress=False):
-        fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
-                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
-                           self.cfg["TransNumPoints"])
-        results = []
-        start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
-            self.cfg["mixer_freq"] = f
-            prog = CavitySpecFFProg(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
-        print(f'Time: {time.time() - start}')
-        results = np.transpose(results)
-        print(results)
-        # data={'config': self.cfg, 'data': {'results': results, 'fpts':fpts}}
-        # self.data=data
-        #
-        # #### find the frequency corresponding to the peak
-        # sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
-        # avgamp0 = np.abs(sig)
-        # peak_loc = np.argmin(avgamp0)
-        # self.peakFreq_min = data['data']['fpts'][peak_loc]
-        # peak_loc = np.argmax(avgamp0)
-        # self.peakFreq_max = data['data']['fpts'][peak_loc]
+    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+        if data is None:
+            data = self.data
 
-        # return data
-        return results[0][0][0], results['results'][0][0][1]
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig, axs = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
 
-    # def _aquireTransData(self):
-    #     ##### code to aquire just the cavity transmission data
-    #     expt_cfg = {
-    #         ### transmission parameters
-    #         "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
-    #         "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
-    #         "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequecny
-    #     }
-    #     ### take the transmission data
-    #     self.cfg["reps"] = self.cfg["trans_reps"]
-    #     fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
-    #     results = []
-    #     start = time.time()
-    #     for f in tqdm(fpts, position=0, disable=True):
-    #         self.cfg["pulse_freq"] = f
-    #         prog = LoopbackProgramTrans(self.soccfg, self.cfg)
-    #         results.append(prog.acquire(self.soc, load_pulses=True))
-    #     results = np.transpose(results)
-    #     #### pull out I and Q data
-    #     data_I = results[0][0][0]
-    #     data_Q = results[0][0][1]
-    #
-    #     #### find the frequency corresponding to the cavity peak and set as cavity transmission number
-    #     sig = data_I + 1j * data_Q
-    #     avgamp0 = np.abs(sig)
-    #     filtered_amp = savgol_filter(avgamp0, 5, 2)
-    #     peak_loc = np.argmin(filtered_amp)
-    #     self.cfg["pulse_freq"] = self.trans_fpts[peak_loc]
-    #     self.cfg['minADC'] = avgamp0[peak_loc]
-    #
-    #     return data_I, data_Q
+        voltage_matrix = data['data']['voltage_matrix']
+        X_spec = self.spec_fpts / 1e3
+        X_spec_step = X_spec[1] - X_spec[0]
+        Y = voltage_matrix[0]
+        Y_step = Y[1] - Y[0]
+        Z_spec = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)
+
+        for i in range(self.cfg["VoltageNumPoints"]):
+
+            data_I = data['data']['spec_Imat'][i, :]
+            data_Q = data['data']['spec_Qmat'][i, :]
+            sig = data_I + 1j * data_Q
+
+            avgamp0 = np.abs(sig)
+
+            Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
+            if i == 0:
+                ax_plot_1 = axs.imshow(
+                    Z_spec,
+                    aspect='auto',
+                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
+                    origin='lower',
+                    interpolation = 'none',
+                )
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('a.u.', rotation=90)
+            else:
+                ax_plot_1.set_data(Z_spec)
+                ax_plot_1.autoscale()
+                cbar1.remove()
+                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
+                cbar1.set_label('a.u.', rotation=90)
+
+        axs.set_ylabel("Voltage (V)")
+        axs.set_xlabel("Spec Frequency (GHz)")
+        axs.set_title(f"{self.titlename}")
+
+        if plotDisp:
+            plt.show(block=False)
+            plt.pause(0.1)
+        plt.close(figNum)
 
     def _aquireSpecData(self, progress=False):
 
@@ -409,60 +295,12 @@ class SpecVsVoltage(ExperimentClassPlus):
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False)
 
-        # data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
-        # self.data = data
-        #
-        # x_pts = data['data']['x_pts']
-        # avgi = data['data']['avgi']
-        # avgq = data['data']['avgq']
-        #
-        # #### find the frequency corresponding to the qubit dip
-        # sig = avgi + 1j * avgq
-        # avgamp0 = np.abs(sig)
-        # peak_loc = np.argmax(avgamp0)
-        # self.qubitFreq = x_pts[peak_loc]
-
         return avgi, avgq
-
-    # def _aquireSpecData(self):
-    #     ##### code to aquire just the cavity transmission data
-    #     expt_cfg = {
-    #         ### spec parameters
-    #         "qubit_freq_start": self.cfg["qubit_freq_start"],
-    #         "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-    #         "SpecNumPoints": self.cfg["SpecNumPoints"],  ### number of points
-    #     }
-    #     ### take the transmission data
-    #     self.cfg["reps"] = self.cfg["spec_reps"]
-    #     fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
-    #     results = []
-    #     start = time.time()
-    #     for f in tqdm(fpts, position=0, disable=True):
-    #         self.cfg["qubit_freq"] = f
-    #         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
-    #         results.append(prog.acquire(self.soc, load_pulses=True))
-    #     results = np.transpose(results)
-    #     #### pull out I and Q data
-    #     data_I = results[0][0][0]
-    #     data_Q = results[0][0][1]
-    #
-    #     return data_I, data_Q
-
 
     def save_data(self, data=None):
         ##### save the data to a .h5 file
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
-
-
-# def Normalize_Qubit_Data(idata, qdata):
-#     idata_rotated = Amplitude_IQ_angle(idata, qdata)
-#     idata_rotated -= np.median(idata_rotated) #subtract the offset
-#     range_ = max(idata_rotated) - min(idata_rotated)
-#     idata_rotated *= 1 / range_   #normalize data to have amplitude of 1
-#     if np.abs(max(idata_rotated)) < np.abs(min(idata_rotated)):
-#         idata_rotated *= -1 #ensures that the spec has a peak rather than a dip
-#     return(idata_rotated)
 
 def Normalize_Qubit_Data(idata, qdata):
     idata_rotated = Amplitude_IQ_angle(idata, qdata)

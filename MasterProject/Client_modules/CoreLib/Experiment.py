@@ -177,7 +177,7 @@ class ExperimentClass:
         pass
 
     @classmethod
-    def export_data(cls, data_filename, data, config):
+    def export_data(cls, data_file, data, config):
         """
         Exports a dictionary with nested data into an HDF5 file.
         Supports hierarchical storage for nested dictionaries and direct key-value pairs.

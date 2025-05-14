@@ -40,6 +40,16 @@ class ExperimentThread(QObject):
     :type exp_instance: object
     """
 
+    intermediateData = pyqtSignal(object, object)
+    """
+    Signal to send when receiving intermediate data, meaning from within a set, rather than at the end of a set.
+
+    :param data: The data object.
+    :type data: object
+    :param exp_instance: The experiment instance object.
+    :type exp_instance: object
+    """
+
     updateProgress = pyqtSignal(int)
     """
     Signal to send when finishing a set to update the setsComplete bar
@@ -83,6 +93,10 @@ class ExperimentThread(QObject):
         if not exp:
             qDebug('Warning: None experiment. Going to crash in 3, 2, 1...')
 
+        # Connecting intermediate data signal if experiment uses it
+        if hasattr(self.experiment_instance, 'intermediateData'):
+            self.experiment_instance.intermediateData.connect(self.intermediate_data_handler)
+
     def run(self):
         """
         Run the RFSOC experiment. Each set execution is done with a simple while loop for now. Future implementations
@@ -108,6 +122,7 @@ class ExperimentThread(QObject):
                 return # Do not want to update data -- no new data was recorded!
 
             # Emit the signal with new data and update the progress bar with additional set complete
+            # Each set clears and recreates the plot (inefficient)
             self.updateData.emit(data, self.experiment_instance)
 
             idx_set += 1
@@ -119,6 +134,16 @@ class ExperimentThread(QObject):
             self.updateProgress.emit(idx_set)
 
         self.finished.emit()
+
+    def intermediate_data_handler(self, data):
+        """
+        The function that handles an intermediate_data signal from the experiment instance. 
+
+        :param data: The data dictionary.
+        :type data: dict
+        """
+
+        self.intermediateData.emit(data, self.experiment_instance)
 
     def stop(self):
         """

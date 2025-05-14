@@ -7,13 +7,14 @@ from pathlib import Path
 
 from Pyro4 import Proxy
 from qick import QickConfig
+from PyQt5.QtCore import QObject
 
 import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.QBLOX import QBLOX
 
-class ExperimentClassPlus:
+class ExperimentClassPlus(QObject):
     """
     The Base class for all experiments
     """
@@ -24,7 +25,7 @@ class ExperimentClassPlus:
     """
 
     def __init__(self, path='', outerFolder='', prefix='data',
-                 hardware=None, hardware_requirement=None, cfg = None, config_file=None, **kwargs):
+                 hardware=None, hardware_requirement=None, cfg = None, config_file=None, is_tester=False, **kwargs):
         """
         Initializes experiment class.
 
@@ -45,12 +46,14 @@ class ExperimentClassPlus:
         :param kwargs: Keyword arguments updated to class dict
         :type kwargs: dict
         """
+        super().__init__()
         self.__dict__.update(kwargs)
 
         # Loading all parameters
         self.path = path
         self.outerFolder = outerFolder
         self.prefix = prefix
+        self.testing = is_tester
 
         # Handling Config
         if cfg is None and config_file is None:
@@ -80,7 +83,7 @@ class ExperimentClassPlus:
         DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
             os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
-
+        self.titlename = self.path + "_" + datetimestring + "_" + self.prefix
         self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
                                   self.path + "_" + datetimestring + "_" + self.prefix + '.h5')
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
@@ -112,6 +115,8 @@ class ExperimentClassPlus:
         """
         Verify that the given hardware list match the classes of required hardware.
         """
+        if self.testing:
+            return
 
         for i, (have, require) in enumerate(zip(self.hardware, self.hardware_requirement)):
             if not isinstance(have, require):
@@ -137,7 +142,7 @@ class ExperimentClassPlus:
     #     pass
 
     @classmethod
-    def export_data(cls, data_filename, data, config):
+    def export_data(cls, data_file, data, config):
         """
         [QUARKY GUI FUNCTION]
         Exports a dictionary with nested data into an HDF5 file.
@@ -152,7 +157,7 @@ class ExperimentClassPlus:
         """
 
         # Store the data dictionary
-        Helpers.dict_to_h5(data_filename, data)
+        Helpers.dict_to_h5(data_file, data)
 
     # def estimate_runtime(self):
     #     """

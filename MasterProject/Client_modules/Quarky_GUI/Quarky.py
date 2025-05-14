@@ -12,6 +12,7 @@ import inspect
 import sys, os
 import ast
 import math
+import time
 import traceback
 import numpy as np
 import concurrent.futures
@@ -63,6 +64,14 @@ try:
     os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
+
+
+# TODO: Averaging general function
+# TODO: Stopping also stops sweeps
+# TODO: estimate time happens upon config change
+
+### Testing Variable - if true, then no need to connect to RFSoC to run experiment
+TESTING = True
 
 class Quarky(QMainWindow):
     """
@@ -119,10 +128,10 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.resize(1075, 600)
+        self.resize(1100, 600)
         self.setWindowIcon(QIcon('QuarkyLogo.png'))
         self.central_widget = QWidget() # Defining the central widget that holds everything
-        self.central_widget.setMinimumSize(1000, 600)
+        self.central_widget.setMinimumSize(1100, 600)
         self.central_widget.setObjectName("central_widget")
         self.central_layout = QVBoxLayout(self.central_widget)
         self.wrapper = QWidget()
@@ -183,7 +192,7 @@ class Quarky(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(640, 0))
+        self.central_tabs.setMinimumSize(QSize(650, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setTabShape(QTabWidget.Rounded)
         self.central_tabs.setUsesScrollButtons(True)
@@ -275,6 +284,8 @@ class Quarky(QMainWindow):
         self.config_tree_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
 
         # Plot Interceptor
+        self.last_intercept_time = 0
+        self.intercept_delay = 0.15  # 0.15 seconds delay between intercept times, too fast causes problems
         self._original_show = plt.show
         plt.show = self._intercept_plt_show_wrapper()
 
@@ -404,7 +415,7 @@ class Quarky(QMainWindow):
             }
         """
 
-        if self.soc_connected: # ensure RFSoC connection
+        if TESTING or self.soc_connected: # ensure RFSoC connection
             if self.current_tab.experiment_obj is None: # ensure tab is not a data tab
                 qCritical("Attempted execution of a data tab (" + self.current_tab.tab_name +
                           ")rather than an experiment tab")
@@ -435,13 +446,17 @@ class Quarky(QMainWindow):
                 hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
 
                 if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
-                    if not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
+                    if TESTING:
+                        pass
+                    elif not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
                         QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
                         qCritical("Voltage Controller needed but not connected.")
                         return
 
                     voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
-                    if not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
+                    if TESTING:
+                        collected_hardware.append(voltage_hardware)
+                    elif not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
                         QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
                         qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
                         return
@@ -472,6 +487,7 @@ class Quarky(QMainWindow):
 
             # Connecting started and finished signals
             self.thread.started.connect(self.current_tab.prepare_file_naming)
+            self.thread.started.connect(self.current_tab.clear_plots)
             self.thread.started.connect(self.experiment_worker.run) # run experiment
             self.experiment_worker.finished.connect(self.thread.quit) # stop thread
             self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
@@ -480,10 +496,10 @@ class Quarky(QMainWindow):
 
             # Connecting data related slots
             self.experiment_worker.updateData.connect(self.current_tab.update_data) # update data & plot
+            self.experiment_worker.intermediateData.connect(self.current_tab.intermediate_data) # intermediate data & plot
             self.experiment_worker.updateRuntime.connect(self.current_tab.update_runtime_estimation) # update runtime
             self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
-
 
             ### button and GUI updates
             self.update_progress(0)
@@ -533,9 +549,7 @@ class Quarky(QMainWindow):
         """
         Finish an experiment by updating UI, this is called when Stop is complete.
         """
-        self.update_progress(0)
         self.is_stopping = False
-        self.experiment_progress_bar.setStyleSheet("QProgressBar::chunk {background-color: #F28D8D;  /* light red */}")
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
@@ -790,7 +804,16 @@ class Quarky(QMainWindow):
             """
             The wrapper function that intercepts the call and calls handle_pltplot.
             """
+            current_time = time.time()
+            # Check if enough time has passed since the last interception
+            if current_time - self.last_intercept_time < self.intercept_delay:
+                # qDebug("Interception is temporarily disabled.")
+                return
+            self.last_intercept_time = current_time
+
             qInfo("Matplotlib plt.plot intercepted.")
+            # traceback.print_stack()
+
             return self.current_tab.handle_pltplot(*args, **kwargs)
         return wrapper
 
