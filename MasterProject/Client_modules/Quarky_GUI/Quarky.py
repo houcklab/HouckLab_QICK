@@ -57,7 +57,6 @@ from scripts.ConfigTreePanel import QConfigTreePanel
 from scripts.AuxiliaryThread import AuxiliaryThread
 import scripts.Helpers as Helpers
 
-### Importing the PythonDrivers --- not sure if it works currently since they aren't being used
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
 try:
@@ -69,6 +68,7 @@ except AttributeError:
 # TODO: Averaging general function
 # TODO: Stopping also stops sweeps
 # TODO: estimate time happens upon config change
+# TODO: Accounts can specify BaseConfig
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 TESTING = True
@@ -509,6 +509,8 @@ class Quarky(QMainWindow):
             self.start_experiment_button.setText("Running")
             self.stop_experiment_button.setText("◼")
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
+            self.central_tabs.setTabsClosable(False)  # Disable closing tabs
+            self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
 
             self.thread.start()
 
@@ -554,6 +556,8 @@ class Quarky(QMainWindow):
         self.start_experiment_button.setEnabled(True)
         self.start_experiment_button.setText("▶")
         self.stop_experiment_button.setText("◼")
+        self.central_tabs.setTabsClosable(True)  # Enable closing tabs
+        self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
 
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
         if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
