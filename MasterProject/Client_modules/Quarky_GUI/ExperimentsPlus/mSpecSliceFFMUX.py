@@ -221,7 +221,6 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
-        plt.title(self.titlename)
         plt.legend()
 
         if plotDisp:

@@ -73,24 +73,6 @@ class ExperimentClassPlus(QObject):
         self.hardware_requirement = hardware_requirement
         self.handle_hardware()
 
-        # File Naming Conventions
-        datetimenow = datetime.datetime.now()
-        datetimestring = datetimenow.strftime("%Y_%m_%d_%H_%M_%S")
-        datestring = datetimenow.strftime("%Y_%m_%d")
-        DataFolderBool = Path(self.outerFolder + self.path).is_dir()
-        if DataFolderBool == False:
-            os.mkdir(self.outerFolder + self.path)
-        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
-        if DataSubFolderBool == False:
-            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
-        self.titlename = self.path + "_" + datetimestring + "_" + self.prefix
-        self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
-                                  self.path + "_" + datetimestring + "_" + self.prefix + '.h5')
-        self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
-                                  self.path + "_" + datetimestring + "_" + self.prefix + '.png')
-        self.cname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
-                                  self.path + "_" + datetimestring + "_" + self.prefix + '.json')
-
     def go(self, save=False, analyze=False, display=False, progress=False):
         # get data
 

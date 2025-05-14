@@ -191,7 +191,6 @@ class CavitySpecFFMUX(ExperimentClassPlus):
             plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
             plt.ylabel("a.u.")
             plt.xlabel("Cavity Frequency (GHz)")
-            plt.title(self.titlename)
             plt.legend()
 
             if plotDisp:

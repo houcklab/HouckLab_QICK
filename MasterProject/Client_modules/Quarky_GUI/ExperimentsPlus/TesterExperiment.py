@@ -212,7 +212,6 @@ class TesterExperiment(ExperimentClassPlus):
 
         axs.set_ylabel("Voltage (V)")
         axs.set_xlabel("Spec Frequency (GHz)")
-        # axs.set_title(f"{self.titlename}")
 
         if plotDisp:
             plt.show(block=False)
