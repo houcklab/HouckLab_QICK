@@ -26,7 +26,7 @@ class FFSpecSlice(NDAveragerProgram):
 
         # Declare readout
         for ch in self.cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], ro_ch = self.cfg["res_ch"]),
                                  freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
 
         # Create the sweep over qubit frequency

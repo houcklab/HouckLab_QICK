@@ -35,12 +35,9 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
             fig_num = 1
             while plt.fignum_exists(num = fig_num):
                 fig_num += 1
-        fig, axs = plt.subplot_mosaic([['a','a'],['b','c']], figsize = (8,10), num = fig_num)
+        fig, axs = plt.subplot_mosaic([['a']], figsize = (14, 10), num = fig_num)
 
-        # Create the array of delays to loop over
-        delays = np.linspace(self.cfg["post_ff_delay_start"], self.cfg["post_ff_delay_stop"], self.cfg["post_ff_delay_steps"])
-
-        self.__predeclare_arrays(delays)
+        self.__predeclare_arrays()
 
         # Time the experiments
         start_time = datetime.now()
@@ -49,7 +46,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         start = time()
 
         # Loop over different delay lengths
-        for i, delay in enumerate(delays):
+        for i, delay in enumerate(self.delays):
             if i == 1:
                 step = time()
 
@@ -63,60 +60,55 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                                              start_src="internal", progress=self.progress)
             data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
 
-            self.data['data']['spec_Imat'][i, :] = data['data']['avgi'][0][0]
-            self.data['data']['spec_Qmat'][i, :] = data['data']['avgq'][0][0]
+            # Store the data in the data dictionary (see note on references in __predeclare_arrays()
+            self.Is[i, :] = data['data']['avgi'][0][0]
+            self.Qs[i, :] = data['data']['avgq'][0][0]
+            self.amps[i, :] = np.sqrt(np.square(self.Is[i, :]) + np.square(self.Qs[i, :]))  # - self.cfg["minADC"]
 
-            data_I = self.data['data']['spec_Imat'][i, :]
-            data_Q =  self.data['data']['spec_Qmat'][i, :]
 
-            # plot out the spec data
-            sig = data_I + 1j * data_Q
-            # avgamp0 = np.abs(sig)
-            # Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
+            # Create new plot the first time, change data in the future; matplotlib is too slow.
             if i == 0:
-                rangeQ = np.max(data_Q) - np.min(data_Q)
-                rangeI = np.max(data_I) - np.min(data_I)
-                if rangeQ > rangeI:
-                    q_data = True
-                    i_data = False
-                    # Z_spec[i, :] = (data_I - np.max(data_I)) / (np.max(data_I) - np.min(data_I))#- self.cfg["minADC"]
-                else:
-                    q_data = False
-                    i_data = True
-                    # Z_spec[i, :] = (data_Q - np.max(data_Q)) / (np.max(data_Q) - np.min(data_Q))#- self.cfg["minADC"]
+                plot1 = axs['a'].imshow(np.transpose(self.amps), aspect = 'auto', origin = 'lower', interpolation = 'none',
+                                        extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
+                                                  self.spec_fpts[0], self.spec_fpts[-1]])
+                cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
+                cbar0.set_label('ADC units', rotation=90)
+            else:
+                plot1.set_data(np.transpose(self.amps))
+                plot1.set_clim(vmin=np.nanmin(self.amps))
+                plot1.set_clim(vmax=np.nanmax(self.amps))
+                cbar0.remove()
+                cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
+                cbar0.set_label('ADC units', rotation=90)
 
-            # I_spec[i, :] = data_I
-            #
-            # Q_spec[i, :] = data_Q
-            #
+            axs['a'].set_ylabel("Spec frequency (MHz)")
+            axs['a'].set_xlabel("post FF pulse delay (ns)")
+
+            if plot_disp:
+                plt.show(block=False)
+                plt.pause(0.2)
+
             # Z_spec[:i + 1, :] = spec_normalize(I_spec[:i + 1, :], Q_spec[:i + 1, :])
             # # Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
 
         return self.data
 
-    def __predeclare_arrays(self, delays):
-        ### create the frequency arrays for both transmission and spec
-        ### also create empty array to fill with transmission and spec data
+    def __predeclare_arrays(self):
+        # Create the array of delays to loop over
+        self.delays = np.linspace(self.cfg["post_ff_delay_start"], self.cfg["post_ff_delay_stop"], self.cfg["post_ff_delay_steps"])
+        # Create array of spectroscopy frequency points
         self.spec_fpts = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"])
-        #X_trans = (self.trans_fpts + self.cfg["cavity_LO"] / 1e6) / 1e3
-        #X_trans_step = X_trans[1] - X_trans[0]
-        #X_spec = self.spec_fpts / 1e3
-        #X_spec_step = X_spec[1] - X_spec[0]
-        # Y = voltVec
-        # Y_step = Y[1] - Y[0]
-        # Z_trans = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
-        # Z_specamp = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
-        # Z_specphase = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
-        # Z_specI = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
-        # Z_specQ = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
-        #
-        # ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        self.spec_Imat = np.zeros((self.cfg["post_ff_delay_steps"], self.cfg["qubit_freq_expts"]))
-        self.spec_Qmat = np.zeros((self.cfg["post_ff_delay_steps"], self.cfg["qubit_freq_expts"]))
+
+        # Declare and instantitate some arrays and the data dictionary, to be filled with data
+        # We've created two references to the same arrays: for example, self.Is and self.data['data']['spec_Imat'] are
+        # pointers to the same location, and changing either will change both.
+        self.Is = np.zeros((self.cfg["post_ff_delay_steps"], self.cfg["qubit_freq_expts"]))
+        self.Qs = np.zeros((self.cfg["post_ff_delay_steps"], self.cfg["qubit_freq_expts"]))
+        self.amps = np.full((self.cfg["post_ff_delay_steps"], self.cfg["qubit_freq_expts"]), np.nan)
         self.data = {
             'config': self.cfg,
-            'data': {'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
-                     'delays_vec': delays
+            'data': {'spec_Imat': self.Is, 'spec_Qmat': self.Qs, 'spec_fpts': self.spec_fpts,
+                     'delays_vec': self.delays
                      }
         }
 
