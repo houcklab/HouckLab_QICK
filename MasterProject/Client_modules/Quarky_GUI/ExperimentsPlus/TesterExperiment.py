@@ -1,7 +1,19 @@
+"""
+===================
+TesterExperiment.py
+===================
+A Tester experiment for testing the GUI without needing any soc connection.
+Has examples for generating random data in the format of a SpecSlice or SpecVsVoltage to be plotted via a matplotlib
+display function that the GUI intercepts (their respective pyqtgraph plotter functions can be found in their actual
+experiment files).
+
+"""
+
 import time
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import pyqtgraph as pg
 from qick.helpers import gauss
 from tqdm.notebook import tqdm
 from Pyro4 import Proxy
@@ -130,14 +142,6 @@ class TesterExperiment(ExperimentClassPlus):
 
         return self.data
 
-    # @classmethod
-    # def plotter(cls, plot_widget, plots, data):
-    #     # print(data)
-    #     if 'data' in data:
-    #         data = data['data']
-    #
-    #     return
-
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
         if data is None:
@@ -208,7 +212,7 @@ class TesterExperiment(ExperimentClassPlus):
 
         axs.set_ylabel("Voltage (V)")
         axs.set_xlabel("Spec Frequency (GHz)")
-        axs.set_title(f"{self.titlename}")
+        # axs.set_title(f"{self.titlename}")
 
         if plotDisp:
             plt.show(block=False)

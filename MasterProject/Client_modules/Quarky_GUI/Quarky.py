@@ -477,13 +477,13 @@ class Quarky(QMainWindow):
                                                       exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
 
-            # Get runtime estimation
-            if (hasattr(self.experiment_instance, "estimate_runtime")
-                    and callable(getattr(self.experiment_instance, "estimate_runtime"))):
-                self.current_tab.update_runtime_estimation(self.experiment_instance.estimate_runtime(), 0)
-            else:
-                self.current_tab.runtime_label.setText("Estimated Runtime: ---")
-                self.current_tab.endtime_label.setText("End: ---")
+            # Get runtime estimation [NO LONGER USED AS RUNTIME IS A STATICMETHOD]
+            # if (hasattr(self.experiment_instance, "estimate_runtime")
+            #         and callable(getattr(self.experiment_instance, "estimate_runtime"))):
+            #     self.current_tab.update_runtime_estimation(self.experiment_instance.estimate_runtime(), 0)
+            # else:
+            #     self.current_tab.runtime_label.setText("Estimated Runtime: ---")
+            #     self.current_tab.endtime_label.setText("End: ---")
 
             # Connecting started and finished signals
             self.thread.started.connect(self.current_tab.prepare_file_naming)

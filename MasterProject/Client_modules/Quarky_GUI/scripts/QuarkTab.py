@@ -402,7 +402,6 @@ class QQuarkTab(QWidget):
         try:
             if plotting_method == "None": # No longer using auto preparation
                 if not self.is_experiment:
-                    self.clear_plots()
                     self.auto_plot_prepare()
                 else:
                     if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
@@ -482,7 +481,7 @@ class QQuarkTab(QWidget):
             plot_data_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
             new_plot = False
         else:
-            plot = self.plot_widget.addPlot(title=ax.get_title()) # Otherwise, create new plots
+            plot = self.plot_widget.addPlot() # Otherwise, create new plots
             self.plots.append(plot)
         self.curr_plot += 1
 
@@ -522,10 +521,13 @@ class QQuarkTab(QWidget):
                 continue
 
             if not new_plot:
-                plot_data_items[plot_item_num].setImage(data.T)
+                plot_data_items[plot_item_num].setImage(data.T) # Transpose assumes data was plotted with 'origin="lower"'
                 plot_item_num += 1
             else:
-                img_item = pg.ImageItem(image=data.T)
+                plot.setLabel('left', ax.get_ylabel())
+                plot.setLabel('bottom', ax.get_xlabel())
+
+                img_item = pg.ImageItem(image=data.T) # Transpose assumes data was plotted with 'origin="lower"'
                 plot.addItem(img_item)
                 color_map = pg.colormap.get("inferno")  # e.g., 'viridis'
                 img_item.setLookupTable(color_map.getLookupTable())
@@ -550,7 +552,8 @@ class QQuarkTab(QWidget):
         """
         Automatically prepares the data based on its shape. This is not always correct but attempts to infer. This
         method can be helpful when writing a custom plotter function. Works for both loading data as well as experiment
-        data.
+        data. Autoplotting will clear all plots before plotting, meaning it is inefficient - providing a display matplotlib
+        function or even better, a plotter pyqtgraph function is recommended.
 
         The prepared data will be in the format:
 
@@ -580,6 +583,8 @@ class QQuarkTab(QWidget):
             }
 
         """
+
+        self.clear_plots()
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
@@ -683,7 +688,7 @@ class QQuarkTab(QWidget):
                 p.showGrid(x=True, y=True)
 
                 # Create ImageItem
-                image_item = pg.ImageItem(img["data"].T)
+                image_item = pg.ImageItem(np.flipud(img["data"].T)) # Plots the same as a matplotlib 'origin="lower"'
                 p.addItem(image_item)
                 color_map = pg.colormap.get(img["colormap"])  # e.g., 'viridis'
                 image_item.setLookupTable(color_map.getLookupTable())

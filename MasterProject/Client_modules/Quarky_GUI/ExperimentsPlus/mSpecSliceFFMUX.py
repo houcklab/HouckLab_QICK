@@ -1,3 +1,12 @@
+"""
+==================
+mSpecSliceFFMUX.py
+==================
+A general Spectroscopy slice experiment.
+Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
+
+"""
+
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,16 +36,6 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
                                  length=self.us2cycles(cfg["length"]))
-
-        # self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
-        # self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
-        #                  mixer_freq=cfg["mixer_freq"],
-        #                  mux_freqs=cfg["pulse_freqs"],
-        #                  mux_gains= cfg["pulse_gains"],
-        #                  ro_ch=cfg["ro_chs"][0])  # Readout
-        # for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-        #     self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
-        #                          freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
         self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
@@ -70,20 +69,6 @@ class QubitSpecSliceFFProg(RAveragerProgram):
 
     def body(self):
 
-        # self.sync_all(gen_t0=self.gen_t0)
-        # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
-        #
-        # self.FFPulses(self.FFReadouts, self.cfg["length"])
-        # self.measure(pulse_ch=self.cfg["res_ch"],
-        #              adcs=self.cfg["ro_chs"], pins=[0],
-        #              adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-        #              wait=True,
-        #              syncdelay=self.us2cycles(10))
-        # # self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        # self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
-
-        # print(self.qubit_length_us, self.us2cycles(self.cfg["adc_trig_offset"]), self.us2cycles(self.cfg["relax_delay"]),
-        #       self.us2cycles(self.cfg["length"]))
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
         self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
@@ -127,20 +112,6 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
                                       '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
                                       '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
                         'Read_Indeces': [1], 'cavity_min': True, 'rounds': 20, 'Gauss': False}
-
-
-    # config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0, 1], 'reps': 12, 'nqz': 1, 'qubit_nqz': 2,
-    #                  'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 15000,
-    #                  'adc_trig_offset': 0.5, 'cavity_LO': 6800000000.0, 'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}},
-    #                  'pulse_freq': -321.5, 'res_gains': [0.9375, 0.375], 'res_freqs': [-321.5, 224.10000000000036], 'TransSpan': 1.5,
-    #                  'TransNumPoints': 61, 'readout_length': 3, 'cav_relax_delay': 10, 'qubit_pulse_style': 'const', 'qubit_gain': 2000,
-    #                  'qubit_freq': 4425, 'qubit_length': 100, 'SpecSpan': 30, 'SpecNumPoints': 71, 'step': 0.8571428571428571,
-    #                  'start': 4395, 'expts': 71,
-    #                  'FF_Qubits': {'1': {'channel': 3, 'delay_time': 0.005, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': -30000},
-    #                                '2': {'channel': 2, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
-    #                                '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': -2000, 'Gain_Expt': 0, 'Gain_Pulse': 0},
-    #                                '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
-    #                  'Readout_indices': [1, 3], 'cavity_min': True, 'rounds': 12, 'Gauss': False}
 
     ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]
@@ -245,36 +216,18 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
 
-        # plt.plot(x_pts, results[0][0][0],label="I value; ADC 0")
-        # plt.plot(x_pts, results[0][0][1],label="Q value; ADC 0")
-
         plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
-        # plt.title(self.titlename)
+        plt.title(self.titlename)
         plt.legend()
 
-        plt.savefig(self.iname[:-4] + '_IQ.png')
         if plotDisp:
             plt.show(block=True)
             plt.pause(0.1)
         plt.close(figNum)
-
-        # plt.figure(figNum)
-        # plt.plot(x_pts, avgamp0, label="Amplitude; ADC 0")
-        # plt.ylabel("a.u.")
-        # plt.xlabel("Qubit Frequency (GHz)")
-        # plt.title(self.titlename)
-        #
-        # plt.savefig(self.iname[:-4] + '_Amplitude.png')
-        #
-        # if plotDisp:
-        #     plt.show(block=True)
-        #     plt.pause(0.1)
-        # plt.close(figNum)
-
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

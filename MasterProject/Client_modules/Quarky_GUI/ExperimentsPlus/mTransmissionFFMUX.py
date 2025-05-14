@@ -1,3 +1,12 @@
+"""
+=====================
+mTransmissionFFMUX.py
+=====================
+A general Cavity Transmission slice experiment.
+Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
+
+"""
+
 from qick import *
 # from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy
 import matplotlib.pyplot as plt
@@ -11,9 +20,6 @@ import datetime
 from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
-
-# import qick
-# print("Test", qick.__file__)
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
@@ -187,8 +193,6 @@ class CavitySpecFFMUX(ExperimentClassPlus):
             plt.xlabel("Cavity Frequency (GHz)")
             plt.title(self.titlename)
             plt.legend()
-
-            plt.savefig(self.iname)
 
             if plotDisp:
                 plt.show(block=True)
