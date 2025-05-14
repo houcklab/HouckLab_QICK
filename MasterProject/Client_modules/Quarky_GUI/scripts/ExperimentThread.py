@@ -151,4 +151,7 @@ class ExperimentThread(QObject):
         """
 
         self.running = False
+        if hasattr(self.experiment_instance, 'stop_flag'): # if a stop_flag exists
+            self.experiment_instance.stop_flag = True
+
         qDebug("Stopping the thread at the next set iteration...")

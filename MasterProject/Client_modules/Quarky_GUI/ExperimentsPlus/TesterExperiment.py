@@ -65,6 +65,7 @@ class TesterExperiment(ExperimentClassPlus):
 
         # retrieve the hardware that corresponds to what was required
         self.soc, self.soccfg, self.voltage_interface = hardware
+        self.stop_flag = False
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
@@ -116,6 +117,8 @@ class TesterExperiment(ExperimentClassPlus):
         }
 
         for i in range(expt_cfg["VoltageNumPoints"]):
+            if self.stop_flag:
+                break
             if i != 0:
                 time.sleep(self.cfg['sleep_time'])
 

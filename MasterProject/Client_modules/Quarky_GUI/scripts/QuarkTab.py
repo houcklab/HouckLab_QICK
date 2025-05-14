@@ -529,7 +529,7 @@ class QQuarkTab(QWidget):
 
                 img_item = pg.ImageItem(image=data.T) # Transpose assumes data was plotted with 'origin="lower"'
                 plot.addItem(img_item)
-                color_map = pg.colormap.get("inferno")  # e.g., 'viridis'
+                color_map = pg.colormap.get("viridis")  # e.g., 'viridis', 'inferno'
                 img_item.setLookupTable(color_map.getLookupTable())
                 img_item.setRect(pg.QtCore.QRectF(extent[0], extent[2], extent[1] - extent[0], extent[3] - extent[2]))
 
@@ -572,7 +572,7 @@ class QQuarkTab(QWidget):
                     "label": name,
                     "xlabel": "X-axis",
                     "ylabel": "Y-axis",
-                    "colormap": "inferno"},
+                    "colormap": "viridis"},
                 ],
                 "columns": [
                     {"data": data,
@@ -643,7 +643,7 @@ class QQuarkTab(QWidget):
                     "label": name,
                     "xlabel": "X-axis",
                     "ylabel": "Y-axis",
-                    "colormap": "inferno"
+                    "colormap": "viridis"
                 })
 
         # print(prepared_data)

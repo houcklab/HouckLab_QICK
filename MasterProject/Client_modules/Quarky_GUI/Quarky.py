@@ -64,11 +64,11 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-
-# TODO: Averaging general function
-# TODO: Stopping also stops sweeps
 # TODO: estimate time happens upon config change
+# TODO: Averaging general function (averages any data, not just avgi, avgq)
 # TODO: Accounts can specify BaseConfig
+# TODO: Config universal panel
+# TODO: Appearance settings (font size and darkmode)
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 TESTING = True

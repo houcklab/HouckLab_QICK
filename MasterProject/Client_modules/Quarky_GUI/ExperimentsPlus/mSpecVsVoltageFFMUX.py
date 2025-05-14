@@ -13,6 +13,7 @@ import time
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+import pyqtgraph as pg
 from qick.helpers import gauss
 from tqdm.notebook import tqdm
 from Pyro4 import Proxy
@@ -169,6 +170,7 @@ class SpecVsVoltage(ExperimentClassPlus):
 
         # retrieve the hardware that corresponds to what was required
         self.soc, self.soccfg, self.voltage_interface = hardware
+        self.stop_flag = False
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1,
@@ -206,6 +208,8 @@ class SpecVsVoltage(ExperimentClassPlus):
 
         # loop over the voltageVec
         for i in range(expt_cfg["VoltageNumPoints"]):
+            if self.stop_flag:
+                break
             if i != 0:
                 time.sleep(self.cfg['sleep_time'])
 
@@ -273,7 +277,7 @@ class SpecVsVoltage(ExperimentClassPlus):
             )
 
             # Create ColorBarItem
-            color_map = pg.colormap.get("inferno")  # e.g., 'viridis'
+            color_map = pg.colormap.get("viridis")
             image_item.setLookupTable(color_map.getLookupTable())
             color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()), colorMap=color_map)
             color_bar.setImageItem(image_item, insert_in=plot)  # Add color bar to the plot
