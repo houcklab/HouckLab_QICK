@@ -123,12 +123,12 @@ class QQuarkTab(QWidget):
         self.endtime_label = QLabel("End: ---")  # estimated experiment time
         self.endtime_label.setStyleSheet("font-size: 11px;")
         self.hardware_label = QLabel("Hardware Requirement: [Proxy, QickConfig]")
+
         if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
             hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
             self.hardware_label.setText("Hardware Requirement: " + hardware_str)
         self.hardware_label.setAlignment(Qt.AlignRight)
         self.hardware_label.setStyleSheet("font-size: 11px;")
-        # TODO: Runtime Functions: calculate estimation, at updateprogress, calc runtime remaining, log actual time used
 
         self.experiment_infobar.addWidget(self.runtime_label)
         self.experiment_infobar.addWidget(self.endtime_label)
@@ -220,6 +220,9 @@ class QQuarkTab(QWidget):
             if self.is_experiment and self.experiment_obj is not None:
                 if self.experiment_obj.experiment_plotter is not None:
                     QQuarkTab.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+
+            # predict runtime
+            self.predict_runtime(self.config)
 
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
@@ -756,6 +759,19 @@ class QQuarkTab(QWidget):
             self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
             self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
 
+    def predict_runtime(self, config):
+        """
+        Predicts the runtime upon a config change or load if a classmethod estimate_runtime is given for the experiment.
+        """
+        # Get runtime prediction if method is implemented
+        if self.experiment_obj.experiment_runtime_estimator is not None:
+            flattened_config = config.copy()
+            flattened_config.update(flattened_config.pop("Base Config", {}))
+            flattened_config.update(flattened_config.pop("Experiment Config", {}))
+
+            time_delta = self.experiment_obj.experiment_runtime_estimator(flattened_config)
+            self.update_runtime_estimation(time_delta, 0)
+
     def update_runtime_estimation(self, time_delta, set_num):
         """
         Updates the estimated runtime and endtime.
@@ -775,6 +791,8 @@ class QQuarkTab(QWidget):
 
         leftover_runtime_estimate = (time_delta * sets_left)
         endtime_string = Helpers.format_date_time_pretty(leftover_runtime_estimate)
+        # Note: this endtime is calculated from the time this function was called, meaning after a minute, its no longer
+        # correct. Not sure if it is worth it to have it update constantly. It will update the next time this func called.
 
         self.runtime_label.setText("Estimated Runtime: " + runtime_string)
         self.endtime_label.setText("End: " + endtime_string)

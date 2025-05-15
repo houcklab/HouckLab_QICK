@@ -202,6 +202,10 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
         super().export_data(data_file, data, config)
         pass
 
+    @classmethod
+    def estimate_runtime(self, cfg):
+        return cfg["reps"] * cfg["SpecNumPoints"] * (cfg["relax_delay"] + cfg["length"]) * 1e-6  # [s]
+
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         if data is None:
             data = self.data

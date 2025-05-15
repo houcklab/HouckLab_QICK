@@ -143,7 +143,7 @@ class ExperimentClassPlus(QObject):
 
     # def estimate_runtime(self):
     #     """
-    #     Some code here to estimate the runtime of the experiment and return it. Return it as a time.time() format.
+    #     Some code here to estimate the runtime of a sigle set of an experiment and return it. Return it in seconds.
     #     """
     #     pass
 

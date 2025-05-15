@@ -59,6 +59,14 @@ class QConfigTreePanel(QTreeView):
     The Signal to send to update the voltage panel.
     """
 
+    update_runtime_prediction = pyqtSignal(dict)
+    """
+    The Signal to send to update the runtime prediction.
+    
+    :param dict config: The dictionary containing the active configuration
+    :type config: dict
+    """
+
     def __init__(self, parent=None, config=None):
         """
         Initialize the custom QTreeView class.
@@ -249,6 +257,9 @@ class QConfigTreePanel(QTreeView):
             pass  # Graceful failure on conversion or path error
         # print(self.config)
 
+        # emit runtime prediction when config values changed
+        self.update_runtime_prediction.emit(self.config)
+
     def update_config_dict(self, update_config):
         """
         Updates the config dictionary with a new one but keeps all Base Config fields in Base Config.
@@ -318,6 +329,9 @@ class QConfigTreePanel(QTreeView):
                     self.update_config_dict(update_config)
 
                 self.populate_tree()  # Refresh the tree with the new config
+                # emit runtime prediction when config values changed
+                self.update_runtime_prediction.emit(self.config)
+
                 qInfo(f"Config loaded from {file_path}")
             except Exception as e:
                 qCritical(f"The Config loaded from {file_path} has failed: {str(e)}")
@@ -342,6 +356,9 @@ class QConfigTreePanel(QTreeView):
             self.update_config_dict(update_config)
 
             self.populate_tree()
+
+            # emit runtime prediction when config values changed
+            self.update_runtime_prediction.emit(self.config)
 
         except Exception as e:
             QMessageBox.critical(None, "Error", f"Error parsing dictionary: {e}")

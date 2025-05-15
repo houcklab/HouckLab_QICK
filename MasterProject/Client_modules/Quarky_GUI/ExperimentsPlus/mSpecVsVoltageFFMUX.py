@@ -154,7 +154,7 @@ class SpecVsVoltage(ExperimentClassPlus):
                        '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 10000, 'Gain_Expt': 0,
                              'Gain_Pulse': 10000},
                        '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 10000, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
-         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 5, 'VoltageNumPoints': 2, 'sleep_time': 0, 'DACs': [5],
+         'Read_Indeces': [2], 'cavity_min': True, 'rounds': 5, 'VoltageNumPoints': 2, 'sleep_time': 0.1, 'DACs': [5],
          'VoltageStart': [-0.5], 'VoltageStop': [0], 'Gauss': False
     }
 
@@ -294,6 +294,17 @@ class SpecVsVoltage(ExperimentClassPlus):
     def export_data(cls, data_file, data, config):
         super().export_data(data_file, data, config)
         pass
+
+    @classmethod
+    def estimate_runtime(self, cfg):
+        # using YOKO ramp step and interval since slower than qblox
+        # total sleep + total voltage ramp time + total spec time
+        ramp_step = 0.001
+        ramp_interval = 0.01
+
+        return (((cfg["VoltageNumPoints"] - 1) * 2 * cfg["sleep_time"]) +
+                len(cfg["DACs"]) * (abs(cfg["VoltageStop"][0] - cfg["VoltageStart"][0])/ramp_step) * ramp_interval +
+                cfg["VoltageNumPoints"] * (cfg["reps"] * cfg["SpecNumPoints"] * (cfg["relax_delay"] + cfg["length"]) * 1e-6))  # [s]
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         if data is None:

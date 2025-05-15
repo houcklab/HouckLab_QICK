@@ -57,6 +57,7 @@ class ExperimentObject():
         self.experiment_tab = experiment_tab
         self.experiment_class = None
         self.experiment_plotter = None
+        self.experiment_runtime_estimator = None
         self.experiment_exporter = ExperimentClass.export_data
         self.experiment_type = None # ExperimentClass, or ExperimentClassPlus
         self.experiment_hardware_req = [Proxy, QickConfig]
@@ -137,6 +138,13 @@ class ExperimentObject():
                         if hasattr(obj, "plotter") and callable(getattr(obj, "plotter")):
                             qInfo("Found experiment plotter.")
                             self.experiment_plotter = getattr(obj, "plotter")
+                        else:
+                            qDebug("This experiment class does not have a plotter function.")
+
+                        ### Store the class's runtime estimator/predictor function
+                        if hasattr(obj, "estimate_runtime") and callable(getattr(obj, "estimate_runtime")):
+                            qInfo("Found experiment runtime estimator.")
+                            self.experiment_runtime_estimator = getattr(obj, "estimate_runtime")
                         else:
                             qDebug("This experiment class does not have a plotter function.")
 

@@ -64,9 +64,9 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: estimate time happens upon config change
-# TODO: Averaging general function (averages any data, not just avgi, avgq)
+# TODO: Averaging general function (averages any data, not just avgi, avgq)?
 # TODO: Accounts can specify BaseConfig
+
 # TODO: Config universal panel
 # TODO: Appearance settings (font size and darkmode)
 
@@ -262,8 +262,7 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.clicked.connect(self.stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
-        # self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
-        self.documentation_button.clicked.connect(self.generate_plot)
+        self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
 
         # Tab Change and Close signals
         self.central_tabs.currentChanged.connect(self.change_tab)
@@ -282,12 +281,17 @@ class Quarky(QMainWindow):
 
         # Config Tree Panel signal
         self.config_tree_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
+        self.config_tree_panel.update_runtime_prediction.connect(self.call_tab_runtime_prediction)
 
         # Plot Interceptor
         self.last_intercept_time = 0
         self.intercept_delay = 0.15  # 0.15 seconds delay between intercept times, too fast causes problems
         self._original_show = plt.show
         plt.show = self._intercept_plt_show_wrapper()
+
+        if TESTING:
+            qWarning("The TESTING global variable is set to True, removing important checks usually present.")
+
 
     def disconnect_rfsoc(self):
         """
@@ -476,14 +480,6 @@ class Quarky(QMainWindow):
             self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
                                                       exp=self.experiment_instance, soc=self.soc)
             self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
-
-            # Get runtime estimation [NO LONGER USED AS RUNTIME IS A STATICMETHOD]
-            # if (hasattr(self.experiment_instance, "estimate_runtime")
-            #         and callable(getattr(self.experiment_instance, "estimate_runtime"))):
-            #     self.current_tab.update_runtime_estimation(self.experiment_instance.estimate_runtime(), 0)
-            # else:
-            #     self.current_tab.runtime_label.setText("Estimated Runtime: ---")
-            #     self.current_tab.endtime_label.setText("End: ---")
 
             # Connecting started and finished signals
             self.thread.started.connect(self.current_tab.prepare_file_naming)
@@ -709,6 +705,13 @@ class Quarky(QMainWindow):
             self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
             self.experiment_progress_bar.setFormat(str(sets_complete * reps) + "/" + str(sets * reps)) # update text
 
+    def call_tab_runtime_prediction(self, config):
+        """
+        A function that calls the current tab's runtime prediction upon a config changed signal. This is needed since
+        the current tab changes, so the signal cannot be directly connected to any fixed tab.
+        """
+        self.current_tab.predict_runtime(config)
+
     def RFSOC_error(self, e):
         """
         The function called when RFSoC returns an error to display in the Log.
@@ -820,17 +823,6 @@ class Quarky(QMainWindow):
 
             return self.current_tab.handle_pltplot(*args, **kwargs)
         return wrapper
-
-    def generate_plot(self):
-        x = np.linspace(-10, 10, 100)
-        y = x
-        plt.plot(x, y, label='y=x')
-        plt.xlabel('x')
-        plt.ylabel('y')
-        plt.title('Plot of y = x')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 # Creating the Quarky GUI Main Window
 if __name__ == '__main__':

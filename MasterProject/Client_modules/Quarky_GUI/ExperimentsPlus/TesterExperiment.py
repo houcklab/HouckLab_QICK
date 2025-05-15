@@ -227,3 +227,7 @@ class TesterExperiment(ExperimentClassPlus):
     def export_data(cls, data_file, data, config):
         super().export_data(data_file, data, config)
         pass
+
+    @classmethod
+    def estimate_runtime(self, cfg):
+        return 5 # some arbitrarily random value in seconds
