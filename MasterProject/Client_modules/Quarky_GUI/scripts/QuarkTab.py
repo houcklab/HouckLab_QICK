@@ -22,7 +22,7 @@ import numpy as np
 from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
-    pyqtSignal,
+    pyqtSignal, qWarning,
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -390,14 +390,18 @@ class QQuarkTab(QWidget):
                 self.plot_widget.removeItem(plot)
                 self.plot_widget.update()
 
-    def plot_data(self, exp_instance=None):
+    def plot_data(self, exp_instance=None, data_to_plot=None):
         """
         Plots the data of the QQuarkTab experiment/dataset using prepared data that is prepared by
         the specified plotting method of the dropdown menu.
 
         :param exp_instance: The instance of the experiment.
         :type exp_instance: object
+        :param data_to_plot: The data to be plotted.
+        :type data_to_plot: dict
         """
+        if data_to_plot is None:
+            data_to_plot = self.data
         if len(self.plots) == 0:
             self.clear_plots()
 
@@ -421,13 +425,13 @@ class QQuarkTab(QWidget):
 
                         # Check if it's actually overridden
                         if parent_method is not None and instance_method.__func__ is not parent_method:
-                            exp_instance.display(self.data, plotDisp=True)
+                            exp_instance.display(data_to_plot, plotDisp=True)
                         else:
                             self.auto_plot_prepare()
                     else:
                         self.auto_plot_prepare()
             elif plotting_method in QQuarkTab.custom_plot_methods:
-                QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, self.data)
+                QQuarkTab.custom_plot_methods[plotting_method](self.plot_widget, self.plots, data_to_plot)
         except Exception as e:
             qCritical("Failed to plot using method [" + plotting_method + "]: " + str(e))
             qCritical(traceback.print_exc())
@@ -551,7 +555,7 @@ class QQuarkTab(QWidget):
                     if label and not label.startswith('_'):
                         pg_legend.addItem(item, label)
 
-    def auto_plot_prepare(self):
+    def auto_plot_prepare(self, data_to_plot):
         """
         Automatically prepares the data based on its shape. This is not always correct but attempts to infer. This
         method can be helpful when writing a custom plotter function. Works for both loading data as well as experiment
@@ -585,6 +589,9 @@ class QQuarkTab(QWidget):
                 ]
             }
 
+        :param data_to_plot: The data to prepare to be plotted.
+        :type data_to_plot: dict
+
         """
 
         self.clear_plots()
@@ -596,10 +603,11 @@ class QQuarkTab(QWidget):
 
         prepared_data = {"plots": [], "images": [], "columns": []}
 
-        f = self.data
-        # print(self.data)
-        if 'data' in self.data:
-            f = self.data['data']
+        if data_to_plot is None:
+            data_to_plot = self.data
+        f = data_to_plot.data
+        if 'data' in data_to_plot:
+            f = data_to_plot['data']
 
         for name, data in f.items():
             if isinstance(data, int):
@@ -726,15 +734,15 @@ class QQuarkTab(QWidget):
     def intermediate_data(self, data, exp_instance):
         """
         Handles intermediate data - meaning data passed from within a set, not at the end. The difference being it
-        does not save this intermediate data.
+        does not save this intermediate data nor process it. The saving and averaging is done when the set is complete.
         :param data: The intermediate data.
         :type data: dict
         :param exp_instance: The instance of the experiment.
         :type exp_instance: object
         """
 
-        self.process_data(data)
-        self.plot_data(exp_instance)
+        # self.process_data(data)
+        self.plot_data(exp_instance, data)
 
     def process_data(self, data):
         """
@@ -745,19 +753,61 @@ class QQuarkTab(QWidget):
         :type data: dict
         """
 
-        self.data = data
-        # check what set number is being run and average the data
-        if "avgi" in self.data["data"] and "avgq" in self.data["data"]:
-            set_num = data['data']['set_num']
-            if set_num == 0:
-                self.data_cur = data
-            elif set_num > 0:
-                avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
-                avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
-                self.data_cur['data']['avgi'][0][0] = avgi
-                self.data_cur['data']['avgq'][0][0] = avgq
-            self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
-            self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
+        # Outdated averaging code that only averages avgi and avgq. Migrated to a general recursive averager
+        # self.data = data
+        # # check what set number is being run and average the data
+        # if "avgi" in self.data["data"] and "avgq" in self.data["data"]:
+        #     set_num = data['data']['set_num']
+        #     if set_num == 0:
+        #         self.data_cur = data
+        #     elif set_num > 0:
+        #         avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
+        #         avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
+        #         self.data_cur['data']['avgi'][0][0] = avgi
+        #         self.data_cur['data']['avgq'][0][0] = avgq
+        #     self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
+        #     self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
+
+        if "data" not in data or "set_num" not in data["data"]:
+            raise qWarning("Input data must have 'data' key with 'set_num'.")
+            self.data = data
+
+        else:
+            set_num = data["data"]["set_num"]
+
+            if self.data is None or set_num == 0:
+                self.data = data
+            else:
+                self.data["data"] = self.recursive_average(self.data["data"], data["data"], set_num)
+
+    def recursive_average(self, current, new, set_num):
+        """
+        Recursively averages dictionary 'new' data into 'current' using the provided set_num.
+
+        :param current: The current dictionary.
+        :type current: dict
+        :param new: The newest set's data dictionary.
+        :type new: dict
+        :param set_num: The set number.
+        :type set_num: int
+        """
+
+        if isinstance(new, (int, float, np.number)):
+            return (current * (set_num - 1) + new) / set_num
+        elif isinstance(new, list):
+            return [
+                self.recursive_average(c if current else 0, n, set_num)
+                for c, n in zip(current if current else [0] * len(new), new)
+            ]
+        elif isinstance(new, np.ndarray):
+            return (current * (set_num - 1) + new) / set_num
+        elif isinstance(new, dict):
+            return {
+                k: (v if k == "set_num" else self.recursive_average(current.get(k, None), v, set_num))
+                for k, v in new.items() # do not average set_num
+            }
+        else:
+            raise TypeError(f"Unsupported data type: {type(new)}")
 
     def predict_runtime(self, config):
         """

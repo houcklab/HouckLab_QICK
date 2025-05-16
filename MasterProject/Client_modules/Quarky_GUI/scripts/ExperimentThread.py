@@ -107,15 +107,15 @@ class ExperimentThread(QObject):
         #yoko1.SetVoltage(self.config["yokoVoltage"]) # this needs to go somewhere else
 
         self.running = True
-        idx_set = 0
+        self.idx_set = 0
         prev_time = time.perf_counter()
 
         ### loop over all the sets for the data taking
-        while self.running and idx_set < self.config["sets"]:
+        while self.running and self.idx_set < self.config["sets"]:
 
             try:
                 data = self.experiment_instance.acquire()
-                data['data']['set_num'] = idx_set
+                data['data']['set_num'] = self.idx_set
             except Exception as e:
                 self.RFSOC_error.emit(e)
                 self.finished.emit()
@@ -125,13 +125,13 @@ class ExperimentThread(QObject):
             # Each set clears and recreates the plot (inefficient)
             self.updateData.emit(data, self.experiment_instance)
 
-            idx_set += 1
+            self.idx_set += 1
             curr_time = time.perf_counter()
             time_delta = curr_time - prev_time
             prev_time = curr_time
 
-            self.updateRuntime.emit(time_delta, idx_set)
-            self.updateProgress.emit(idx_set)
+            self.updateRuntime.emit(time_delta, self.idx_set)
+            self.updateProgress.emit(self.idx_set)
 
         self.finished.emit()
 
@@ -142,7 +142,8 @@ class ExperimentThread(QObject):
         :param data: The data dictionary.
         :type data: dict
         """
-
+        
+        data['data']['set_num'] = self.idx_set
         self.intermediateData.emit(data, self.experiment_instance)
 
     def stop(self):

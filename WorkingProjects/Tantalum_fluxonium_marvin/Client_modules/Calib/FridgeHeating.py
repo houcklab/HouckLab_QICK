@@ -197,7 +197,7 @@ for i in range(ramp_up_vec.size):
         qcage_tempr, conf_lower, conf_upper = lk8calib.poly8_with_confidence(qcage_resist)
         qcage_tempr_list.append(qcage_tempr)
 
-        # Increase iteration count
+        # Increase iteration set_num
         itr += 1
 
         # Check if the temperature is greater than tempr_max
@@ -276,7 +276,7 @@ for i in range(ramp_down_vec.size):
         qcage_tempr, conf_lower, conf_upper = lk8calib.poly8_with_confidence(qcage_resist)
         qcage_tempr_list.append(qcage_tempr)
 
-        # Increase iteration count
+        # Increase iteration set_num
         itr += 1
 
         # Check if the temperature is greater than tempr_max

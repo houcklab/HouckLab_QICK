@@ -773,7 +773,7 @@ class PS_Analysis:
         #### return the population estimates
         return estimates_full
 
-    ### create function to count final state populations for kmeans and none
+    ### create function to set_num final state populations for kmeans and none
     def popCount(self, 
                 wait_num = 0,
                 ):

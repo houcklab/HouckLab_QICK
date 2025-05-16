@@ -290,8 +290,7 @@ class Quarky(QMainWindow):
         plt.show = self._intercept_plt_show_wrapper()
 
         if TESTING:
-            qWarning("The TESTING global variable is set to True, removing important checks usually present.")
-
+            qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
 
     def disconnect_rfsoc(self):
         """
