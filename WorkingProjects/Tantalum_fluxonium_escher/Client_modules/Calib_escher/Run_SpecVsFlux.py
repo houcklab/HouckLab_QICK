@@ -41,14 +41,14 @@ UpdateConfig = {
 
     # qubit spec parameters
     "spec_reps": 2000,  # 10000,#22000,
-    "qubit_pulse_style": "arb",  # "flat_top", "const", "arb"
+    "qubit_pulse_style": "flat_top",  # "flat_top", "const", "arb"
     "qubit_gain": 25000,  # 3000,
     "qubit_length": 0.01,
-    "flat_top_length": 2,
+    "flat_top_length": 0.01,
     "qubit_freq_start": 1000,
     "qubit_freq_stop": 2000,
     "SpecNumPoints": 501,  # 101,#101
-    "sigma": 0.025,
+    "sigma": 0.01,
     "relax_delay": 10,  # 150,
     "use_switch": False,
 

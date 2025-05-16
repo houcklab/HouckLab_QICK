@@ -56,22 +56,24 @@ class FFSpecSlice(NDAveragerProgram):
 
     def body(self):
         # The pulse sequence is (for now) as follows:
-        # * DC fast flux pulse (from zero) to some value
         # * After a delay time, start the qubit probe pulse
+        # * DC fast flux pulse (from zero) to some value (order of first two depends on parameters)
         # * Play the readout pulse
         # * Eventually: Play an inverted version of the qubit pulse -- not clear why this is necessary, Jero claims that it helps with flux stability
 
         # For convenience
-        post_ff_delay_cycles = self.us2cycles(self.cfg["post_ff_delay"], gen_ch=self.cfg["ff_ch"])
+        qubit_spec_delay_cycles = self.us2cycles(self.cfg["qubit_spec_delay"], gen_ch=self.cfg["ff_ch"])
         qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0])
 
-        self.pulse(ch = self.cfg["ff_ch"])   # play fast flux pulse
-        self.pulse(ch = self.cfg["qubit_ch"], t = post_ff_delay_cycles)  # play probe pulse
+        self.pulse(ch = self.cfg["qubit_ch"], t = qubit_spec_delay_cycles)  # play probe pulse
+        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"], gen_ch=self.cfg["ff_ch"]))   # play fast flux pulse
+
+        self.sync_all(self.us2cycles(0.03)) # In case the channels are somewhat misaligned, wait a few tens of ns
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     t = post_ff_delay_cycles + qubit_pulse_length_cycles, wait = True,
+                     t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
 
@@ -95,11 +97,12 @@ class FFSpecSlice(NDAveragerProgram):
         "qubit_ch": 1,                   # RFSOC output channel of qubit drive
         "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
         "qubit_mode_periodic": False,    # Bool: Applies only to "const" pulse style; if True, keeps qubit tone on always
+        "qubit_spec_delay": 10,          # [us] Delay before qubit pulse
 
         # Fast flux pulse parameters
         "ff_gain": 1,                    # [DAC units] Gain for fast flux pulse
         "ff_length": 50,                 # [us] Total length of positive fast flux pulse
-        "post_ff_delay": 10,             # [us] Delay after fast flux pulse (before qubit pulse)
+        "pre_ff_delay": 1,               # [us] Delay before the fast flux pulse
         "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
@@ -128,7 +131,7 @@ class FFSpecSlice_Experiment(ExperimentClass):
         prog = FFSpecSlice(self.soccfg, self.cfg)
 
         # Check that the arguments make sense. We need the program first, to know the correct qubit pulse length
-        if self.cfg["post_ff_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
+        if self.cfg["qubit_spec_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
             print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
         print("Qubit pulse length: ", prog.qubit_pulse_length)
 
@@ -202,4 +205,5 @@ class FFSpecSlice_Experiment(ExperimentClass):
 
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
+        #TODO broken by change of experiment
         return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
