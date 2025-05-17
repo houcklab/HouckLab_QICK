@@ -7,7 +7,7 @@ The custom QQuarkTab class for the central tabs module of the main application.
 Each QQuarkTab is either an experiment tab or a data tab that stores its own object attributes, configuration,
 data, and plotting. Arguable is more important for functionality than the main Quarky.py file.
 """
-
+import copy
 import os
 import json
 import time
@@ -36,6 +36,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
     QShortcut,
+    QCheckBox
 )
 import pyqtgraph as pg
 from MasterProject.Client_modules.Init.initialize import BaseConfig
@@ -137,7 +138,7 @@ class QQuarkTab(QWidget):
 
         ### Plot Utilities Bar
         self.plot_utilities_container = QWidget()
-        self.plot_utilities_container.setMaximumHeight(35)
+        self.plot_utilities_container.setMaximumHeight(30)
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
         self.plot_utilities.setContentsMargins(0, 0, 0, 0)
         self.plot_utilities.setSpacing(3)
@@ -148,12 +149,9 @@ class QQuarkTab(QWidget):
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
         self.output_dir_button = Helpers.create_button("Save To...", "output_dir_button", False, self.plot_utilities_container)
-        self.plot_method_combo = QComboBox(self.plot_utilities_container)
-        self.plot_method_combo.setFixedWidth(130)
-        self.plot_method_combo.setObjectName("plot_method_combo")
-        self.coord_label = QLabel("X: _____ Y: _____ \n hover + \'d\' to delete")  # coordinate of the mouse over the current plot
+        self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
         self.coord_label.setAlignment(Qt.AlignRight)
-        self.coord_label.setStyleSheet("font-size: 10px;")
+        self.coord_label.setStyleSheet("font-size: 12px;")
         self.coord_label.setObjectName("coord_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
@@ -162,10 +160,37 @@ class QQuarkTab(QWidget):
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
         self.plot_utilities.addWidget(self.output_dir_button)
-        self.plot_utilities.addWidget(self.plot_method_combo)
         self.plot_utilities.addItem(spacerItem)
         self.plot_utilities.addWidget(self.coord_label)
         self.plot_layout.addWidget(self.plot_utilities_container)
+
+        ### Plot Settings Bar
+        self.plot_settings_container = QWidget()
+        self.plot_settings_container.setMaximumHeight(30)
+        self.plot_settings = QHBoxLayout(self.plot_settings_container)
+        self.plot_settings.setContentsMargins(8, 0, 0, 5)
+        self.plot_settings.setSpacing(3)
+        self.plot_settings.setObjectName("plot_settings")
+
+        self.plot_method_label = QLabel("Plotter:")
+        self.plot_method_label.setObjectName("plot_method_label")
+        self.plot_method_combo = QComboBox(self.plot_settings_container)
+        self.plot_method_combo.setFixedWidth(130)
+        self.plot_method_combo.setObjectName("plot_method_combo")
+        self.average_simult_checkbox = QCheckBox("Average Simultaneously", self.plot_settings_container)
+        self.average_simult_checkbox.setToolTip("Average intermediate data simultaneously versus at end of set.")
+        self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot
+        self.delete_label.setAlignment(Qt.AlignRight)
+        self.delete_label.setStyleSheet("font-size: 10px;")
+        self.delete_label.setObjectName("delete_label")
+
+        spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
+        self.plot_settings.addWidget(self.plot_method_label)
+        self.plot_settings.addWidget(self.plot_method_combo)
+        self.plot_settings.addWidget(self.average_simult_checkbox)
+        self.plot_settings.addItem(spacerItem)
+        self.plot_settings.addWidget(self.delete_label)
+        self.plot_layout.addWidget(self.plot_settings_container)
 
         # The actual plot itself (lots of styling attributes
         self.plot_widget = pg.GraphicsLayoutWidget(self)
@@ -357,7 +382,7 @@ class QQuarkTab(QWidget):
                 self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
                 mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
                 x, y = mouse_point.x(), mouse_point.y()
-                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} \n hover + d to delete")
+                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
                 break
 
     def capture_plot_to_clipboard(self):
@@ -528,7 +553,8 @@ class QQuarkTab(QWidget):
                 continue
 
             if not new_plot:
-                plot_data_items[plot_item_num].setImage(data.T) # Transpose assumes data was plotted with 'origin="lower"'
+                img_image = plot_data_items[plot_item_num]
+                img_image.setImage(data.T, levels=img_image.levels) # Transpose assumes data was plotted with 'origin="lower"'
                 plot_item_num += 1
             else:
                 plot.setLabel('left', ax.get_ylabel())
@@ -541,7 +567,7 @@ class QQuarkTab(QWidget):
                 img_item.setRect(pg.QtCore.QRectF(extent[0], extent[2], extent[1] - extent[0], extent[3] - extent[2]))
 
                 # Create ColorBarItem
-                color_bar = pg.ColorBarItem(values=(img_item.image.min(), img_item.image.max()), colorMap=color_map)
+                color_bar = pg.ColorBarItem(values=(np.nanmin(img_item.image), np.nanmax(img_item.image)), colorMap=color_map)
                 color_bar.setImageItem(img_item, insert_in=plot)  # Add color bar to the plot
 
         if new_plot: # only add legends if your plotting for the first time
@@ -555,7 +581,7 @@ class QQuarkTab(QWidget):
                     if label and not label.startswith('_'):
                         pg_legend.addItem(item, label)
 
-    def auto_plot_prepare(self, data_to_plot):
+    def auto_plot_prepare(self, data_to_plot=None):
         """
         Automatically prepares the data based on its shape. This is not always correct but attempts to infer. This
         method can be helpful when writing a custom plotter function. Works for both loading data as well as experiment
@@ -605,7 +631,7 @@ class QQuarkTab(QWidget):
 
         if data_to_plot is None:
             data_to_plot = self.data
-        f = data_to_plot.data
+        f = data_to_plot
         if 'data' in data_to_plot:
             f = data_to_plot['data']
 
@@ -740,14 +766,22 @@ class QQuarkTab(QWidget):
         :param exp_instance: The instance of the experiment.
         :type exp_instance: object
         """
+        set_num = data["data"]["set_num"]
+        inter_data = copy.deepcopy(data)
 
-        # self.process_data(data)
-        self.plot_data(exp_instance, data)
+        if set_num == 0:
+            self.data = inter_data
+
+        if self.average_simult_checkbox.isChecked() and self.data is not None and set_num > 0:
+            # The code that averages simultaneously. Quite complex since we need to identify which data from the new
+            # intermediate data has been seen before, and which is new, and average accordingly.
+            inter_data["data"] = self.recursive_average(self.data["data"], inter_data["data"], set_num) # average without changing self.data
+
+        self.plot_data(exp_instance, inter_data)
 
     def process_data(self, data):
         """
-        Processes the dataset usually in the form of averaging.
-        TODO
+        Processes the dataset in the form of averaging.
 
         :param data: The data to be processed.
         :type data: dict
@@ -782,7 +816,8 @@ class QQuarkTab(QWidget):
 
     def recursive_average(self, current, new, set_num):
         """
-        Recursively averages dictionary 'new' data into 'current' using the provided set_num.
+        Recursively averages dictionary 'new' data into 'current' using the provided set_num,
+        ignoring NaN values during averaging.
 
         :param current: The current dictionary.
         :type current: dict
@@ -792,22 +827,48 @@ class QQuarkTab(QWidget):
         :type set_num: int
         """
 
+        # Handle scalars (int, float, np.number)
         if isinstance(new, (int, float, np.number)):
-            return (current * (set_num - 1) + new) / set_num
+            if np.isnan(new):
+                return current
+            elif current is None or np.isnan(current):
+                return new
+            else:
+                return (current * (set_num) + new) / (set_num+1)
+
+        # Handle lists
         elif isinstance(new, list):
+            if not isinstance(current, list):
+                current = [np.nan] * len(new)
             return [
-                self.recursive_average(c if current else 0, n, set_num)
-                for c, n in zip(current if current else [0] * len(new), new)
+                self.recursive_average(c, n, set_num)
+                for c, n in zip(current, new)
             ]
+
+        # Handle NumPy arrays
         elif isinstance(new, np.ndarray):
-            return (current * (set_num - 1) + new) / set_num
+            if not isinstance(current, np.ndarray):
+                current = np.full_like(new, np.nan)
+            return np.where(
+                np.isnan(new), # if the new entry is nan
+                current, # then just use the current value
+                np.where( # otherwise, then if new entry is not nan
+                    np.isnan(current), # and the current value is nan
+                    new, # them use the new value
+                    (current * (set_num) + new) / (set_num + 1) # otherwise, both are not nan, and average
+                )
+            )
+
+        # Handle dictionaries (recurse through keys)
         elif isinstance(new, dict):
             return {
                 k: (v if k == "set_num" else self.recursive_average(current.get(k, None), v, set_num))
-                for k, v in new.items() # do not average set_num
+                for k, v in new.items()
             }
+
+        # Unsupported type
         else:
-            raise TypeError(f"Unsupported data type: {type(new)}")
+            qWarning(f"Unsupported data type: {type(new)}")
 
     def predict_runtime(self, config):
         """
@@ -857,6 +918,8 @@ class QQuarkTab(QWidget):
         :type exp_instance: object
         """
 
+        self.exp_instance = exp_instance
+
         self.process_data(data)
         self.plot_data(exp_instance)
         self.save_data()
@@ -866,7 +929,10 @@ class QQuarkTab(QWidget):
         Function called when RePlot button pressed. As of now, it simply calls the plot_data() function.
         """
         self.clear_plots()
-        self.plot_data()
+        if hasattr(self, "exp_instance"):
+            self.plot_data(self.exp_instance)
+        else:
+            self.plot_data()
 
     def export_data(self):
         """

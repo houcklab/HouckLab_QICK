@@ -196,8 +196,8 @@ class SpecVsVoltage(ExperimentClassPlus):
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
         self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
-        self.spec_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
-        self.spec_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["expts"]))
+        self.spec_Imat = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)  # make nan
+        self.spec_Qmat = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)
         self.data= {
             'config': self.cfg,
             'data': {
@@ -235,7 +235,8 @@ class SpecVsVoltage(ExperimentClassPlus):
             self.data['data']['spec_Qmat'][i,:] = data_Q
 
             # send out signal for updated data
-            self.intermediateData.emit(self.data)
+            if i != expt_cfg["VoltageNumPoints"] - 1:
+                self.intermediateData.emit(self.data)
 
         return self.data
 
@@ -279,14 +280,14 @@ class SpecVsVoltage(ExperimentClassPlus):
             # Create ColorBarItem
             color_map = pg.colormap.get("viridis")
             image_item.setLookupTable(color_map.getLookupTable())
-            color_bar = pg.ColorBarItem(values=(image_item.image.min(), image_item.image.max()), colorMap=color_map)
+            color_bar = pg.ColorBarItem(values=(np.nanmin(image_item.image), np.nanmax(image_item.image)), colorMap=color_map)
             color_bar.setImageItem(image_item, insert_in=plot)  # Add color bar to the plot
             plots.append(plot)
 
         else:  # Only need to update plot if already created
             plot = plots[0]
             image_item = plot.items[0]
-            image_item.setImage(np.flipud(Z_spec.T))
+            image_item.setImage(np.flipud(Z_spec.T), levels=image_item.levels)
 
         return
 

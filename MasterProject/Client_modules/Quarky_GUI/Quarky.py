@@ -64,7 +64,6 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: Averaging general function (averages any data, not just avgi, avgq)?
 # TODO: Accounts can specify BaseConfig
 
 # TODO: Config universal panel
