@@ -91,7 +91,7 @@ class QAccountPanel(QWidget):
 
         # This generates the direct path to the "accounts" folder (even if it doesn't exist)
         self.root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        self.account_dir = os.path.join(self.root_dir, 'accounts')
+        self.account_dir = os.path.join(self.root_dir, 'LocalStorage/accounts')
 
         # UI stuff that allows for responsive resizing
         sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Preferred)
@@ -132,6 +132,7 @@ class QAccountPanel(QWidget):
         ### Accounts List
         self.accounts_list = QListWidget()
         self.accounts_list.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.accounts_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.accounts_list.setAlternatingRowColors(False)
         self.accounts_list.setSortingEnabled(True)
         self.accounts_list.setObjectName("accounts_list")

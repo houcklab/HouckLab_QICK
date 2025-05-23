@@ -24,6 +24,8 @@ import json
 import ast
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import (
+    QEvent,
+    QObject,
     Qt,
     qInfo,
     qWarning,
@@ -31,6 +33,7 @@ from PyQt5.QtCore import (
     QTimer, qDebug, pyqtSignal
 )
 from PyQt5.QtWidgets import (
+    QWidget,
     QFileDialog,
     QTreeView,
     QHBoxLayout,
@@ -89,7 +92,7 @@ class QConfigTreePanel(QTreeView):
         self.toolbar_layout.setContentsMargins(0, 7, 0, 2)
         self.toolbar_layout.setSpacing(2)
         self.main_layout = QVBoxLayout()
-        self.main_layout.setContentsMargins(10, 5, 10, 10)
+        self.main_layout.setContentsMargins(10, 5, 10, 5)
         self.main_layout.setSpacing(0)
         self.setLayout(self.main_layout)
         self.setMinimumSize(225, 0)
@@ -130,7 +133,11 @@ class QConfigTreePanel(QTreeView):
         self.tree.setColumnWidth(1, 50)
         self.tree.setIndentation(6)
 
-        # Connect item change signal
+        instructions_label = QLabel("Drag and Drop .json Files")
+        instructions_label.setStyleSheet("font-size: 10px;")
+        self.main_layout.addWidget(instructions_label)
+
+        # Connect item change signal (this needs to happen before populate_tree (I think))
         self.model.itemChanged.connect(self.handleItemChanged)
 
         # Load initial config
@@ -144,8 +151,65 @@ class QConfigTreePanel(QTreeView):
 
         self.save_config_button.clicked.connect(self.save_config)
         self.copy_config_button.clicked.connect(self.copy_config)
-        self.load_config_button.clicked.connect(self.load_config)
+        self.load_config_button.clicked.connect(lambda : self.load_config())
         self.paste_config_button.clicked.connect(self.paste_config)
+
+        # File dropping
+        self.tree.setAcceptDrops(True)
+        self.tree.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """
+        The event filter installed on the config tree to link its drag and drop to the drag and drop functions below.
+
+        :param obj: The QObject to be dragged and dropped
+        :type obj: QObject
+        :param event: The event being filtered
+        :type event: QEvent
+        """
+        if event.type() in (QEvent.DragEnter, QEvent.Drop):
+            self.dragEnterEvent(event) if event.type() == QEvent.DragEnter else self.dropEvent(event)
+            return True
+        return super().eventFilter(obj, event)
+
+    def dragEnterEvent(self, event):
+        """
+        The Function called when a file has entered the drop area. Accepts if it is a .json file (allows the drop),
+        otherwise ignores.
+
+        :param event: The event that triggered the drag event.
+        :type event: QDragEnterEvent
+        """
+        print("has entered")
+        if event.mimeData().hasUrls():
+            # Check if any URL ends with .json
+            for url in event.mimeData().urls():
+                if url.toLocalFile().endswith('.json'):
+                    print("valid")
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """
+        The Function called when a file has been dropped into the drop area. This is only possible if the file is of
+        type .json. Simply mimics the load_config function.
+
+        :param event: The event that triggered the drop event.
+        :type event: QDropEvent
+        """
+        print("has dropped")
+
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                if file_path.endswith('.json'):
+                    qInfo("Config file dropped into config panel to be loaded.")
+                    self.load_config(file_path)
+                    break  # Accept only one .json file at a time
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def populate_tree(self, allow_voltage_editing=True):
         """
@@ -284,7 +348,7 @@ class QConfigTreePanel(QTreeView):
         if folder_path:
             file_path = os.path.join(folder_path, "config.json")
             try:
-                unformatted_config = self.current_tab.config.copy()
+                unformatted_config = self.config.copy()
                 unformatted_config.update(unformatted_config.pop("Base Config", {}))
                 unformatted_config.update(unformatted_config.pop("Experiment Config", {}))
 
@@ -298,10 +362,10 @@ class QConfigTreePanel(QTreeView):
 
     def copy_config(self):
         """
-        opies the config dictionary as a formatted JSON string to the clipboard.
+        copies the config dictionary as a formatted JSON string to the clipboard.
         """
 
-        unformatted_config = self.current_tab.config.copy()
+        unformatted_config = self.config.copy()
         unformatted_config.update(unformatted_config.pop("Base Config", {}))
         unformatted_config.update(unformatted_config.pop("Experiment Config", {}))
 
@@ -313,12 +377,13 @@ class QConfigTreePanel(QTreeView):
         self.copy_config_button.setText('Done!')
         QTimer.singleShot(3000, lambda: self.copy_config_button.setText('Copy'))
 
-    def load_config(self):
+    def load_config(self, file_path=None):
         """
         Prompts the user for a JSON file and loads it into the `config` variable, then updates the tree.
         """
 
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select Config File", "", "JSON Files (*.json)")
+        if file_path is None:
+            file_path, _ = QFileDialog.getOpenFileName(self, "Select Config File", "", "JSON Files (*.json)")
 
         if file_path:  # If a file is selected
             try:

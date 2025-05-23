@@ -39,7 +39,6 @@ from PyQt5.QtWidgets import (
     QCheckBox
 )
 import pyqtgraph as pg
-from MasterProject.Client_modules.Init.initialize import BaseConfig
 from scripts.ExperimentObject import ExperimentObject
 import scripts.Helpers as Helpers
 
@@ -72,7 +71,7 @@ class QQuarkTab(QWidget):
     The Signal sent to the main application (Quarky.py) that tells the program the current tab was updated.
     """
 
-    def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None):
+    def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None, app=None):
         """
         Initializes an instance of a QQuarkTab widget that will either be of type experiment based on the parameters
         passed.
@@ -87,12 +86,15 @@ class QQuarkTab(QWidget):
         :type is_experiment: bool
         :param dataset_file: The path to the dataset file.
         :type dataset_file: str
+        :param app: The main application (Quarky.py).
+        :type app: QApplication
         """
 
         super().__init__()
+        self.app = app
 
         ### Experiment Variables
-        self.config = {"Experiment Config": {}, "Base Config": BaseConfig} # default config found in initialize.py
+        self.config = {"Experiment Config": {}, "Base Config": self.app.base_config} # default config found in initialize.py
         self.tab_name = str(tab_name)
         self.experiment_obj = None if experiment_path is None \
             else ExperimentObject(self, self.tab_name, experiment_path)
@@ -353,7 +355,9 @@ class QQuarkTab(QWidget):
         """
 
         if self.experiment_obj is not None:
+            self.config = {"Experiment Config": {}, "Base Config": self.app.base_config}
             self.experiment_obj.extract_experiment_attributes()
+
             if self.experiment_obj.experiment_plotter is not None:
                 self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
 

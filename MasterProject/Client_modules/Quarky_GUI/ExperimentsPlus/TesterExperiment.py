@@ -225,57 +225,6 @@ class TesterExperiment(ExperimentClassPlus):
         ############################################################
 
     @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        cfg = data['config']
-        if 'data' in data:
-            data = data['data']
-
-        voltage_matrix = data['voltage_matrix']
-        spec_fpts = cfg["start"] + np.arange(cfg["expts"]) * cfg["step"]
-        X_spec = spec_fpts / 1e3
-        X_spec_step = X_spec[1] - X_spec[0]
-        Y = voltage_matrix[0]
-        Y_step = Y[1] - Y[0]
-        spec_I = data['spec_Imat']  # shape: [VoltageNumPoints, expts]
-        spec_Q = data['spec_Qmat']  # same shape
-        Z_spec = np.abs(spec_I + 1j * spec_Q)
-
-        # Plotting
-        if len(plots) == 0:  # If creating the plot for the very first time
-            # Create the plot
-            date_time_now = datetime.datetime.now()
-            date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-            plot_title = "SpecVsVoltage_" + date_time_string
-            plot = plot_widget.addPlot(title=
-                                       plot_title + ", Voltage Range: " + str(Y[0]) + " to" + str(
-                                           Y[-1]) + ", NumPoints: " + str(len(Y)))
-            plot.setLabel('left', "Voltage (V)")
-            plot.setLabel('bottom', "Spec Frequency (GHz)")
-
-            # create the image
-            image_item = pg.ImageItem()
-            plot.addItem(image_item)
-            image_item.setImage(np.flipud(Z_spec.T))
-            image_item.setRect(
-                pg.QtCore.QRectF(X_spec[0] - X_spec_step / 2, X_spec[-1] + X_spec_step / 2, Y[0] - Y_step / 2,
-                                 Y[-1] + Y_step / 2)
-            )
-
-            # Create ColorBarItem
-            color_map = pg.colormap.get("viridis")
-            image_item.setLookupTable(color_map.getLookupTable())
-            color_bar = pg.ColorBarItem(values=(np.nanmin(image_item.image), np.nanmax(image_item.image)), colorMap=color_map)
-            color_bar.setImageItem(image_item, insert_in=plot)  # Add color bar to the plot
-            plots.append(plot)
-
-        else:  # Only need to update plot if already created
-            plot = plots[0]
-            image_item = plot.items[0]
-            image_item.setImage(np.flipud(Z_spec.T), levels=image_item.levels)
-
-        return
-
-    @classmethod
     def export_data(cls, data_file, data, config):
         super().export_data(data_file, data, config)
         pass

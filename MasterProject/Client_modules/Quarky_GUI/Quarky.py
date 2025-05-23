@@ -47,6 +47,7 @@ from PyQt5.QtWidgets import (
 # Use absolute imports maybe
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
+from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from scripts.ExperimentThread import ExperimentThread
 from scripts.QuarkTab import QQuarkTab
@@ -68,6 +69,7 @@ except AttributeError:
 
 # TODO: Config universal panel
 # TODO: Appearance settings (font size and darkmode)
+# TODO: Extracting experiment uses separate thread
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 TESTING = True
@@ -109,6 +111,9 @@ class Quarky(QMainWindow):
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
+
+        # The BaseConfig of the currently selected account (default is the one in MasterClient)
+        self.base_config = BaseConfig
 
         # Tracks the central tab module by the currently selected tab
         self.current_tab = None
@@ -202,7 +207,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setObjectName("central_tabs")
 
         #Template Experiment Tab
-        template_experiment_tab = QQuarkTab()
+        template_experiment_tab = QQuarkTab(app=self)
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")
         self.central_tabs.setCurrentIndex(0)
 
@@ -233,6 +238,7 @@ class Quarky(QMainWindow):
         ### Log Panel
         self.log_panel = QLogPanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
+
         self.side_tabs.setCurrentIndex(1) # select accounts panel by default
 
         # Defining the default sizes for the splitter
@@ -347,7 +353,10 @@ class Quarky(QMainWindow):
             self.accounts_panel.connect_button.setText("Connect")
             self.accounts_panel.connect_button.setEnabled(True)
 
-        self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
+        if TESTING:
+            self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit failure to accounts tab
+        else:
+            self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
         self.soc = None
         self.soccfg = None
 
@@ -611,16 +620,17 @@ class Quarky(QMainWindow):
         experiment_name = os.path.splitext(os.path.basename(path))[0]
 
         # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
-        new_experiment_tab = QQuarkTab(path, experiment_name, True)
-        if new_experiment_tab.experiment_obj.experiment_class is None: # not valid experiment file
-            qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
-            return
+        new_experiment_tab = QQuarkTab(path, experiment_name, True, app=self)
+
+        # time.sleep(2)
+        # if new_experiment_tab.experiment_obj.experiment_class is None: # not valid experiment file
+        #     qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
+        #     return
 
         # Handling UI updates: Update current tab, enable experiment running, update ConfigPanel
         tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(True)
-        self.config_tree_panel.set_config(new_experiment_tab.config) # important, update config panel
         self.current_tab = new_experiment_tab
 
         # Signals from QuarkTabs
@@ -708,7 +718,8 @@ class Quarky(QMainWindow):
         A function that calls the current tab's runtime prediction upon a config changed signal. This is needed since
         the current tab changes, so the signal cannot be directly connected to any fixed tab.
         """
-        self.current_tab.predict_runtime(config)
+        if self.current_tab is not None:
+            self.current_tab.predict_runtime(config)
 
     def RFSOC_error(self, e):
         """
@@ -747,7 +758,7 @@ class Quarky(QMainWindow):
         tab_count = self.central_tabs.count()
         file_name = os.path.basename(file)
         # Creates the new QQuarkTab instance specifying not an experiment tab
-        new_data_tab = QQuarkTab(None, file_name, False, file)
+        new_data_tab = QQuarkTab(None, file_name, False, file, app=self)
 
         # Handle UI updates
         tab_idx = self.central_tabs.addTab(new_data_tab, (file_name))

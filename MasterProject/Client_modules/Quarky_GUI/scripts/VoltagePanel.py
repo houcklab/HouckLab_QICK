@@ -615,7 +615,7 @@ class VoltageSweepBox(QVBoxLayout):
         self.sweep_form_layout.setWidget(3, QFormLayout.FieldRole, self.stop_edit)
 
         self.numPoints_label = QLabel()
-        self.numPoints_label.setText("#Points: ")
+        self.numPoints_label.setText("#Pts: ")
         self.numPoints_label.setObjectName("numPoints_label")
         self.sweep_form_layout.setWidget(4, QFormLayout.LabelRole, self.numPoints_label)
         self.numPoints_edit = QLineEdit()
