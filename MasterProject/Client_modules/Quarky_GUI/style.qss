@@ -1,0 +1,120 @@
+QWidget {
+    font-size: $GLOBAL_FONT_SIZEpx;
+}
+
+QMainWindow {
+    background-color:#ececec;
+}
+
+QPushButton {
+    background-color: rgb(255,255,255);
+    color: black;
+    padding: 3px 12px;
+    border: none;
+    border-radius: 5px;
+}
+
+QPushButton:hover {
+    border: 1px solid rgb(182,182,182);
+}
+
+QPushButton:pressed {
+    background-color: rgb(240,240,240);
+    color: white;
+}
+
+QPushButton:disabled {
+    background-color: rgb(242,242,242);
+    color: rgb(182,182,182);
+    border: none;
+}
+
+QTreeView#ConfigTreePanel QPushButton {
+    border-radius: 0px;
+    margin: 0px;
+    padding: 3px 6px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#save_config {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#paste_config {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+QPushButton#documentation_button {
+    border: 1px solid gray;
+    font-size: 10px;
+    color: gray;
+    background: #ececec;
+    width: 12px;
+    border-radius: 6px;
+    padding: 2px;
+}
+
+QPushButton#settings_button {
+    border: none;
+    background: none;
+    color: rgb(64, 64, 64);
+    font-size: 24px;
+    height: 18px;
+    padding: 0px;
+}
+
+QWidget#channel_list QPushButton {
+    padding: 2px 8px;
+}
+
+QTabBar::tab {
+    background: rgb(246,246,246);
+    color: color;
+    padding: 2px 18px 2px 8px;
+    border: 1px solid #C4C4C3;
+    font-size: $TAB_FONT_SIZEpx;
+}
+
+QTabBar::tab:selected {
+    border-color: #C4C4C3;
+    border-bottom: 4px solid rgb(137, 207, 240);
+}
+
+QTabWidget#side_tabs QTabBar::tab {
+    padding: 2px 5px 2px 5px;
+}
+
+QLabel#runtime_label {
+    font-size: $SMALL_FONT_SIZEpx;
+}
+
+QLabel#endtime_label {
+    font-size: $SMALL_FONT_SIZEpx;
+}
+
+QLabel#hardware_label {
+    font-size: $SMALL_FONT_SIZEpx;
+}
+
+QSplitter::handle {
+    background-color: rgb(180,180,180);       /* handle color */
+}
+
+QSplitter::handle:horizontal {
+    margin-top: 200px;
+    margin-bottom: 200px;
+    border-radius: 2px;
+}
+
+QSplitter::handle:vertical {
+    margin-left: 1px;
+    margin-right: 1px;
+    border-radius: 2px;
+}
+
+QLineEdit {
+    border: 1px solid #C4C4C3;
+    border-radius: 5px;
+    padding: 0 8px;
+}

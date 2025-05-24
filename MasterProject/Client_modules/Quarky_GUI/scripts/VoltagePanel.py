@@ -105,12 +105,12 @@ class QVoltagePanel(QWidget):
         # The main layout that will hold all components
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
+        self.main_layout.setSpacing(2)
 
         # Buttons layout
         self.interface_connect_layout = QVBoxLayout()
         self.interface_connect_layout.setContentsMargins(5, 5, 5, 0)
-        self.interface_connect_layout.setSpacing(0)
+        self.interface_connect_layout.setSpacing(5)
         self.interface_connect_layout.setObjectName("interface_button_layout")
 
         # Voltage source combo box and connection button
@@ -147,11 +147,11 @@ class QVoltagePanel(QWidget):
         # Contains all channel components
         self.voltage_channels_layout = QVBoxLayout(self.voltage_channels_group)
         self.voltage_channels_layout.setContentsMargins(0, 5, 0, 0)
-        self.voltage_channels_layout.setSpacing(3)
+        self.voltage_channels_layout.setSpacing(4)
         self.voltage_channels_layout.setObjectName("voltage_channels_layout")
 
         self.voltage_range_label = QLabel("  Voltage Range: [0,0]")
-        self.voltage_range_label.setStyleSheet("font-size: 10pt;")
+        self.voltage_range_label.setStyleSheet("font-size: 11pt;")
         self.voltage_channels_layout.addWidget(self.voltage_range_label)
 
         # Scroll area to contain list of channels
@@ -162,23 +162,24 @@ class QVoltagePanel(QWidget):
         self.channel_scroll_area.setWidgetResizable(True)
         # Widget + layout to put into the scroll area (one for qblox, one for yoko)
         self.channel_list = QWidget()
+        self.channel_list.setObjectName("channel_list")
         self.channel_list_layout = QVBoxLayout()
         self.channel_list_layout.setContentsMargins(0, 0, 0, 0)
-        self.channel_list_layout.setSpacing(0)
+        self.channel_list_layout.setSpacing(2)
         self.channel_list.setLayout(self.channel_list_layout)
 
         # The one for QBLOX
         self.qblox_channel_list = QWidget()
         self.qblox_channel_list_layout = QVBoxLayout()
         self.qblox_channel_list_layout.setContentsMargins(5, 0, 10, 0)
-        self.qblox_channel_list_layout.setSpacing(0)
+        self.qblox_channel_list_layout.setSpacing(5)
         self.qblox_channel_list_layout.setObjectName("qblox_channel_list_layout")
         self.qblox_channel_list.setLayout(self.qblox_channel_list_layout)
         # The one for YOKO
         self.yoko_channel_list = QWidget()
         self.yoko_channel_list_layout = QVBoxLayout()
         self.yoko_channel_list_layout.setContentsMargins(5, 0, 10, 0)
-        self.yoko_channel_list_layout.setSpacing(0)
+        self.yoko_channel_list_layout.setSpacing(5)
         self.yoko_channel_list_layout.setObjectName("yoko_channel_list_layout")
         self.yoko_channel_list.setLayout(self.yoko_channel_list_layout)
         self.yoko_channel_list.hide()
@@ -470,7 +471,7 @@ class QVoltagePanel(QWidget):
 
         for i in range(1,17):
             single_channel_group = QHBoxLayout()
-            single_channel_group.setSpacing(1)
+            single_channel_group.setSpacing(3)
             single_channel_group.setObjectName("single_channel_group")
             channel_label = QLabel(str(i).zfill(2) + " : ")
             channel_label.setStyleSheet("color: #4A90E2;")
@@ -491,7 +492,7 @@ class QVoltagePanel(QWidget):
             self.qblox_channel_list_layout.addLayout(single_channel_group)
 
         single_channel_group = QHBoxLayout()
-        single_channel_group.setSpacing(1)
+        single_channel_group.setSpacing(3)
         single_channel_group.setObjectName("single_channel_group")
         channel_label = QLabel(str(1).zfill(2) + " : ")
         channel_label.setStyleSheet("color: #4A90E2;")

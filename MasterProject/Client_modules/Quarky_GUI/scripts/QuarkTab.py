@@ -122,16 +122,16 @@ class QQuarkTab(QWidget):
         self.experiment_infobar.setObjectName("experiment_infobar")
 
         self.runtime_label = QLabel("Estimated Runtime: ---")  # estimated experiment time
-        self.runtime_label.setStyleSheet("font-size: 11px;")
+        self.runtime_label.setObjectName("runtime_label")
         self.endtime_label = QLabel("End: ---")  # estimated experiment time
-        self.endtime_label.setStyleSheet("font-size: 11px;")
+        self.endtime_label.setObjectName("endtime_label")
         self.hardware_label = QLabel("Hardware Requirement: [Proxy, QickConfig]")
 
         if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
             hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
             self.hardware_label.setText("Hardware Requirement: " + hardware_str)
         self.hardware_label.setAlignment(Qt.AlignRight)
-        self.hardware_label.setStyleSheet("font-size: 11px;")
+        self.hardware_label.setObjectName("hardware_label")
 
         self.experiment_infobar.addWidget(self.runtime_label)
         self.experiment_infobar.addWidget(self.endtime_label)
@@ -142,8 +142,8 @@ class QQuarkTab(QWidget):
         self.plot_utilities_container = QWidget()
         self.plot_utilities_container.setMaximumHeight(30)
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
-        self.plot_utilities.setContentsMargins(0, 0, 0, 0)
-        self.plot_utilities.setSpacing(3)
+        self.plot_utilities.setContentsMargins(2, 0, 2, 0)
+        self.plot_utilities.setSpacing(5)
         self.plot_utilities.setObjectName("plot_utilities")
 
         self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)

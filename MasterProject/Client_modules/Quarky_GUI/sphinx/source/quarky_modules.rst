@@ -24,5 +24,6 @@ Documentation Navigation
    quarky_modules/AccountsPanel
    quarky_modules/VoltagePanel
    quarky_modules/LogPanel
+   quarky_modules/SettingsWindow
    quarky_modules/AuxiliaryThread
    quarky_modules/Helpers

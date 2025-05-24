@@ -6,7 +6,6 @@ file to create basic initialization of things used for RFSOC This will include:
 """
 
 ### import relevent libraries
-from WorkingProjects.Inductive_Coupler.Client_modules.socProxy import makeProxy, soc, soccfg
 import h5py
 import os
 import platform

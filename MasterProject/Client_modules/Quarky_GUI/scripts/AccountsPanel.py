@@ -23,6 +23,7 @@ account. Format:
 
 import os
 import json
+import importlib
 
 from PyQt5.QtCore import (
     QSize,
@@ -59,13 +60,15 @@ class QAccountPanel(QWidget):
     """
 
     ### Defining Signals
-    rfsoc_attempt_connection = pyqtSignal(str) # argument is ip_address
+    rfsoc_attempt_connection = pyqtSignal(str, str) # argument is ip_address
     """
     The Signal sent to the main application (Quarky.py) that tells the program to attempt a connection to a RFSoC via
     the given IP address.
     
     :param ip_address: The IP address to attempt a connection to.
     :type ip_address: str
+    :param config: The path to the module that contains the BaseConfig.
+    :type config: str
     """
 
     rfsoc_disconnect = pyqtSignal()
@@ -126,7 +129,7 @@ class QAccountPanel(QWidget):
         self.accounts_group.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
         self.accounts_group.setObjectName("accounts_group")
         self.accounts_layout = QVBoxLayout(self.accounts_group)
-        self.accounts_layout.setContentsMargins(0, 0, 0, 0)
+        self.accounts_layout.setContentsMargins(0, 10, 0, 0)
         self.accounts_layout.setObjectName("accounts_layout")
 
         ### Accounts List
@@ -141,7 +144,7 @@ class QAccountPanel(QWidget):
         ### Account Editing Form
         self.form_layout = QFormLayout()
         self.form_layout.setContentsMargins(5, 0, 5, 0)
-        self.form_layout.setVerticalSpacing(2)
+        self.form_layout.setVerticalSpacing(0)
         self.form_layout.setObjectName("form_layout")
         self.name_label = QLabel()
         self.name_label.setText("Name")
@@ -157,11 +160,19 @@ class QAccountPanel(QWidget):
         self.ip_edit = QLineEdit()
         self.ip_edit.setObjectName("ip_edit")
         self.form_layout.setWidget(1, QFormLayout.FieldRole, self.ip_edit)
+        self.config_label = QLabel()
+        self.config_label.setText("Config")
+        self.config_label.setObjectName("config_label")
+        self.form_layout.setWidget(2, QFormLayout.LabelRole, self.config_label)
+        self.config_edit = QLineEdit()
+        self.config_edit.setObjectName("config_edit")
+        self.form_layout.setWidget(2, QFormLayout.FieldRole, self.config_edit)
+
         self.accounts_layout.addLayout(self.form_layout)
 
         ### Account Action Buttons Layout
         self.form_button_layout = QVBoxLayout()
-        self.form_button_layout.setSpacing(0)
+        self.form_button_layout.setSpacing(2)
         self.form_button_layout.setObjectName("form_button_layout")
 
         self.save_button = QPushButton("Up to Date")
@@ -214,6 +225,7 @@ class QAccountPanel(QWidget):
 
         self.ip_edit.textChanged.connect(self.unsaved_indicate)
         self.name_edit.textChanged.connect(self.unsaved_indicate)
+        self.config_edit.textChanged.connect(self.unsaved_indicate)
         self.accounts_list.currentItemChanged.connect(self.select_item)
 
     def load_accounts(self):
@@ -236,7 +248,8 @@ class QAccountPanel(QWidget):
             with open(default_file, "w") as f:
                 json.dump({"default_account_name": "template"}, f, indent=4)
             with open(template_file, "w") as f:
-                json.dump({"ip_address": "111.111.1.111", "account_name": "template"}, f, indent=4)
+                json.dump({"ip_address": "111.111.1.111", "account_name": "template",
+                                "config": "MasterProject.Client_modules.Init.initialize"}, f, indent=4)
 
         ### Handles the default.json file to retrieve the default account name
         with open(default_file, "r") as f:
@@ -250,6 +263,7 @@ class QAccountPanel(QWidget):
                     data = json.load(f)
                     name = data["account_name"]
                     ip = data["ip_address"]
+                    config = data["config"]
 
                     # handling the default account case
                     if name == self.default_account_name:
@@ -274,12 +288,12 @@ class QAccountPanel(QWidget):
 
         if self.connected_account_name is None:
             ip_address = self.ip_edit.text().strip()
-            if ip_address and all(char.isdigit() or char == '.' for char in ip_address):
-                self.rfsoc_attempt_connection.emit(ip_address)
-            else:
-                QMessageBox.critical(None, "Error", "IP address " + ip_address + " invalid.")
+            config = self.config_edit.text().strip()
+
+            self.rfsoc_attempt_connection.emit(ip_address, config)
         else:
             self.rfsoc_disconnect.emit()
+
             # Not very efficient but this is what resets all the UI and the variables for the disconnected status
             self.connect_button.setText("Connect")
             self.connected_account_name = None
@@ -287,6 +301,7 @@ class QAccountPanel(QWidget):
 
             self.ip_edit.setDisabled(False)
             self.name_edit.setDisabled(False)
+            self.cofig_edit.setDisabled(False)
             self.saved_indicate()
 
 
@@ -301,6 +316,7 @@ class QAccountPanel(QWidget):
         self.save_button.setEnabled(True)
         self.create_new_button.setEnabled(True)
         self.set_default_button.setEnabled(False)
+        self.connect_button.setEnabled(False)
 
     def saved_indicate(self):
         """
@@ -313,6 +329,7 @@ class QAccountPanel(QWidget):
         self.save_button.setEnabled(False)
         self.create_new_button.setEnabled(False)
         self.set_default_button.setEnabled(True)
+        self.connect_button.setEnabled(True)
 
     def disable_since_connected(self):
         """
@@ -327,6 +344,7 @@ class QAccountPanel(QWidget):
         self.set_default_button.setEnabled(False)
         self.ip_edit.setDisabled(True)
         self.name_edit.setDisabled(True)
+        self.config_edit.setDisabled(True)
 
     def update_account(self):
         """
@@ -337,8 +355,10 @@ class QAccountPanel(QWidget):
         if self.current_account_name:
             # Validating form entries
             new_ip_address = self.ip_edit.text().strip()
-            new_account_name = self.name_edit.text()
-            if not self.validate_account_input(new_ip_address, new_account_name, 'update'): return
+            new_account_name = self.name_edit.text().strip()
+            new_config = self.config_edit.text().strip()
+
+            if not self.validate_account_input(new_ip_address, new_account_name, new_config,'update'): return
 
             # Load the existing JSON file
             file = os.path.join(self.account_dir, self.current_account_name + '.json')
@@ -348,6 +368,7 @@ class QAccountPanel(QWidget):
                     data = json.load(f)
                     data["ip_address"] = new_ip_address
                     data["account_name"] = new_account_name
+                    data["config"] = new_config
                 with open(file, "w") as f:
                     # dump to json
                     json.dump(data, f, indent=4)
@@ -370,7 +391,7 @@ class QAccountPanel(QWidget):
                 QMessageBox.critical(None, "Error", "Error updating Json file.")
                 return
 
-    def validate_account_input(self, new_ip_address, new_account_name, purpose):
+    def validate_account_input(self, new_ip_address, new_account_name, new_config, purpose):
         """
         Validating the input to create accounts via an account name and an ip_address. Moreover, based on the purpose
         of the validation (either 'create' or 'update'), it will check for account name duplicates.
@@ -395,6 +416,15 @@ class QAccountPanel(QWidget):
             return False
         if not all(part.isdigit() and 0 <= int(part) <= 255 for part in new_ip_address.split('.') if part):
             QMessageBox.critical(None, "Error", "IP address invalid.")
+            return False
+
+        # config import path validation
+        try:
+            module = importlib.import_module(new_config)
+            config = getattr(module, "BaseConfig")
+        except Exception as e:
+            QMessageBox.critical(None, "Error", "Config import path is invalid. "
+                                                "Verify BaseConfig exists and no socProxy imports are present.")
             return False
 
         # duplication validation
@@ -441,14 +471,17 @@ class QAccountPanel(QWidget):
         """
 
         new_ip_address = self.ip_edit.text().strip()
-        new_account_name = self.name_edit.text()
-        if not self.validate_account_input(new_ip_address, new_account_name, 'create'): return
+        new_account_name = self.name_edit.text().strip()
+        new_config = self.config_edit.text().strip()
+
+        if not self.validate_account_input(new_ip_address, new_account_name, new_config, 'create'): return
 
         new_filename = (new_account_name.strip() + ".json")
         new_account_file = os.path.join(self.account_dir,new_filename)
 
         with open(new_account_file, "w") as f:
-            json.dump({"ip_address": str(new_ip_address), "account_name": str(new_account_name)}, f, indent=4)
+            json.dump({"ip_address": str(new_ip_address), "account_name": str(new_account_name),
+                            "config": str(new_config)}, f, indent=4)
 
         item = QListWidgetItem(str(new_account_name))
         self.accounts_list.addItem(item)
@@ -477,8 +510,11 @@ class QAccountPanel(QWidget):
                 data = json.load(f)
                 name = data["account_name"]
                 ip = data["ip_address"]
+                config = data["config"]
+
                 self.name_edit.setText(name)
                 self.ip_edit.setText(ip)
+                self.config_edit.setText(config)
 
             if self.connected_account_name is not None:
                 self.disable_since_connected()

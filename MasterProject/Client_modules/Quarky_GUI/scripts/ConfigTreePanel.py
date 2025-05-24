@@ -42,7 +42,8 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QApplication,
     QLabel,
-    QInputDialog
+    QInputDialog,
+    QButtonGroup
 )
 
 import scripts.Helpers as Helpers
@@ -87,18 +88,20 @@ class QConfigTreePanel(QTreeView):
         super().__init__(parent)
         self.config = config if config else {}
 
+        self.setObjectName("ConfigTreePanel")
+
         # Set up layout
         self.toolbar_layout = QHBoxLayout()
-        self.toolbar_layout.setContentsMargins(0, 7, 0, 2)
-        self.toolbar_layout.setSpacing(2)
+        self.toolbar_layout.setContentsMargins(0, 7, 0, 7)
+        self.toolbar_layout.setSpacing(0)
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(10, 5, 10, 5)
-        self.main_layout.setSpacing(0)
+        self.main_layout.setSpacing(3)
         self.setLayout(self.main_layout)
         self.setMinimumSize(225, 0)
 
         self.title_label = QLabel("Configuration Panel")  # estimated experiment time
-        self.title_label.setStyleSheet("font-size: 11px; background-color: #ECECEC; padding: 3px;")
+        self.title_label.setStyleSheet("font-size: 11px; background-color: #ECECEC; padding: 3px; border-radius: 5px;")
         self.title_label.setAlignment(Qt.AlignCenter)
         self.main_layout.addWidget(self.title_label)
 

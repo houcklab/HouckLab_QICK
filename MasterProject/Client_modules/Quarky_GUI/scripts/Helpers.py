@@ -14,8 +14,9 @@ import numpy as np
 import importlib
 import h5py
 from PyQt5.QtWidgets import (
-    QPushButton,
+    QPushButton, QGraphicsDropShadowEffect
 )
+from PyQt5.QtGui import QColor
 
 def import_file(full_path_to_module):
     """
@@ -73,6 +74,17 @@ def create_button(text, name, enabled=True, parent=None):
     btn = QPushButton(text, parent)
     btn.setObjectName(name)
     btn.setEnabled(enabled)
+
+    # Create and configure shadow effect
+    shadow = QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(10)  # How blurry the shadow is
+    shadow.setXOffset(0)  # Horizontal offset
+    shadow.setYOffset(0)  # Vertical offset
+    shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
+
+    # Apply shadow to the widget
+    btn.setGraphicsEffect(shadow)
+
     return btn
 
 # h5 functionality inspired by h5ify

@@ -10,6 +10,7 @@ different components.
 
 import inspect
 import sys, os
+import importlib
 import ast
 import math
 import time
@@ -18,7 +19,7 @@ import numpy as np
 import concurrent.futures
 from pathlib import Path
 import matplotlib.pyplot as plt
-from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices
+from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices, QFont
 from PyQt5.QtCore import (
     qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
     Qt,
@@ -56,6 +57,7 @@ from scripts.AccountsPanel import QAccountPanel
 from scripts.LogPanel import QLogPanel
 from scripts.ConfigTreePanel import QConfigTreePanel
 from scripts.AuxiliaryThread import AuxiliaryThread
+from scripts.SettingsWindow import SettingsWindow
 import scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -65,14 +67,11 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: Accounts can specify BaseConfig
-
 # TODO: Config universal panel
 # TODO: Appearance settings (font size and darkmode)
-# TODO: Extracting experiment uses separate thread
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-TESTING = True
+TESTING = False
 
 class Quarky(QMainWindow):
     """
@@ -119,6 +118,9 @@ class Quarky(QMainWindow):
         self.current_tab = None
         self.tabs_added = False
 
+        # The settings window
+        self.settings_window = SettingsWindow()
+
         self.setup_ui() # Setup up the PyQt UI
 
     def setup_ui(self):
@@ -126,7 +128,6 @@ class Quarky(QMainWindow):
         Initializes all the UI elements. The main sections include the central widgets tab, config panel, and the side
         panel (voltage, accounts, log).
         """
-
         ### Central Widget, Layout, and Wrapper
         ### To support responsive resizing of content within a widget, the content must be within a layout & widget
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
@@ -149,26 +150,32 @@ class Quarky(QMainWindow):
 
         ### Top Control Bar (contains loading and experiment run buttons + progress bar)
         self.top_bar = QHBoxLayout()
-        self.top_bar.setContentsMargins(-1, 10, -1, 10)
+        self.top_bar.setContentsMargins(2, 10, 2, 10)
         self.top_bar.setObjectName("top_bar")
 
         # Creating top bar items
         # self.quarky_icon = QLabel()
         # self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        self.documentation_button = Helpers.create_button("?", "documentation", True, self.wrapper)
-        self.documentation_button.setToolTip("Documentation")
-        self.documentation_button.setStyleSheet("border: 1px solid gray; font-size: 10px; border-radius:6px; color: gray; width: 12px;")
 
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
         self.start_experiment_button.setToolTip("Run")
+        self.start_experiment_button.setFixedWidth(50)
         self.stop_experiment_button = Helpers.create_button("◼️","stop_experiment",False,self.wrapper)
         self.stop_experiment_button.setToolTip("Stop")
+        self.stop_experiment_button.setFixedWidth(50)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)
         self.experiment_progress_bar.setObjectName("experiment_progress_bar")
         self.load_data_button = Helpers.create_button("Load Data","load_data_button",True,self.wrapper)
         self.load_experiment_button = Helpers.create_button("Extract Experiment","load_experiment_button",True,self.wrapper)
+
+        self.documentation_button = Helpers.create_button("?", "documentation", True, self.wrapper)
+        self.documentation_button.setToolTip("Documentation")
+        self.documentation_button.setObjectName("documentation_button")
+
+        self.settings_button = Helpers.create_button("⚙", "settings_button", True, self.wrapper)
+        self.settings_button.setObjectName("settings_button")
 
         # Adding items to top bar, top bar to main layout
         # self.top_bar.addWidget(self.quarky_icon)
@@ -179,13 +186,14 @@ class Quarky(QMainWindow):
         self.top_bar.addWidget(self.load_data_button)
         self.top_bar.addWidget(self.load_experiment_button)
         self.top_bar.addWidget(self.documentation_button)
+        self.top_bar.addWidget(self.settings_button)
         self.main_layout.addLayout(self.top_bar)
 
         ### Main Splitter with Tabs, Voltage Panel, Config Tree
         self.main_splitter = QSplitter(self.wrapper)
         self.main_splitter.setLineWidth(2)
         self.main_splitter.setOpaqueResize(True) # Setting to False allows faster resizing (doesn't look as good)
-        self.main_splitter.setHandleWidth(7)
+        self.main_splitter.setHandleWidth(1)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
 
@@ -216,6 +224,7 @@ class Quarky(QMainWindow):
 
         ### Side Tabs Panel (Contains voltage, accounts, and log panels)
         self.side_tabs = QTabWidget(self.main_splitter)
+        self.side_tabs.setObjectName("side_tabs")
         side_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         side_tab_sizepolicy.setHorizontalStretch(0)
         side_tab_sizepolicy.setVerticalStretch(0)
@@ -227,6 +236,8 @@ class Quarky(QMainWindow):
         self.side_tabs.setDocumentMode(True)
         self.side_tabs.setTabsClosable(False)
         self.side_tabs.setMovable(False)
+        side_tab_bar = self.side_tabs.tabBar()
+        side_tab_bar.setExpanding(True)
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
@@ -268,6 +279,7 @@ class Quarky(QMainWindow):
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
         self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
+        self.settings_button.clicked.connect(self.show_settings)
 
         # Tab Change and Close signals
         self.central_tabs.currentChanged.connect(self.change_tab)
@@ -294,16 +306,21 @@ class Quarky(QMainWindow):
         self._original_show = plt.show
         plt.show = self._intercept_plt_show_wrapper()
 
+        # Settings Window
+        self.settings_window.update_settings.connect(self.apply_settings)
+        self.settings_window.apply_settings() # Apply the saved settings
+
         if TESTING:
             qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
 
     def disconnect_rfsoc(self):
         """
-        Disconnects the RFSoC instance by setting RFSoC attributes to None.
+        Disconnects the RFSoC instance by setting RFSoC attributes to None. Also resets the base config.
         """
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
+        self.base_config = BaseConfig
         qInfo("Disconnected from RFSoC")
 
     def save_RFSoC(self, soc, soccfg, ip_address):
@@ -354,22 +371,32 @@ class Quarky(QMainWindow):
             self.accounts_panel.connect_button.setEnabled(True)
 
         if TESTING:
-            self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit failure to accounts tab
+            self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit succeess to accounts tab if TESTING
         else:
             self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
         self.soc = None
         self.soccfg = None
 
-    def connect_rfsoc(self, ip_address):
+    def connect_rfsoc(self, ip_address, config):
         """
-        Connects the RFSoC instance to the specified IP address by calling makeProxy.
+        Connects the RFSoC instance to the specified IP address by calling makeProxy. Also extracts the BaseConfig
+        of the connected account to use.
 
         :param ip_address: The IP address of the RFSoC instance.
         :type ip_address: str
+        :param config: The path to the module that contains the BaseConfig.
+    :   type config: str
         """
 
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
+
+            if config is not None:
+                module = importlib.import_module(config)
+                self.base_config = getattr(module, "BaseConfig")
+                if not self.tabs_added:
+                    self.config_tree_panel.set_config({"Experiment Config": {}, "Base Config": self.base_config})
+
             self.aux_thread = QThread()
             self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=3)
             self.aux_worker.moveToThread(self.aux_thread)
@@ -390,7 +417,6 @@ class Quarky(QMainWindow):
             self.is_connecting = True
             self.connecting_dot_count = 0
             self.animate_connecting()
-            self.accounts_panel.connect_button.setEnabled(False)
 
         else:
             qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
@@ -402,6 +428,7 @@ class Quarky(QMainWindow):
         """
         if self.is_connecting:
             # Update the label with the current number of dots
+            self.accounts_panel.connect_button.setEnabled(False)
             self.accounts_panel.connect_button.setText(f"Connecting{'.' * (self.connecting_dot_count)}")
             self.connecting_dot_count = (self.connecting_dot_count + 1) % 4  # Cycle through 0, 1, 2
             QTimer.singleShot(500, self.animate_connecting)  # Repeat every 500 ms
@@ -577,6 +604,8 @@ class Quarky(QMainWindow):
         self.stop_experiment()
         if hasattr(self, 'aux_worker') and self.aux_worker is not None:
             self.aux_worker.stop()
+
+        self.settings_window.close()
 
         # reassign plt.show
         plt.show = self._original_show
@@ -782,6 +811,32 @@ class Quarky(QMainWindow):
             self.side_tabs.setTabText(log_index, "Log")
             self.log_panel.logger.setFocus()
 
+    def show_settings(self):
+        """
+        Creates a SettingsWindow, displays it, and connects the appropriate signals.
+        """
+        self.settings_window.show()
+        self.settings_window.raise_()
+
+    def apply_settings(self, theme, font_size):
+        """
+        Applies the settings given in the parameter to the current window.
+
+        :param theme: Theme of the settings window.
+        :type theme: str
+        :param font_size: Font size of the settings window.
+        :type font_size: int
+        """
+
+        print("applying settings")
+        with open("style.qss", "r") as file:
+            existing_style = file.read()
+        style = existing_style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
+        style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")
+        style = style.replace('$SMALL_FONT_SIZE', f"{(font_size-2)}")
+
+        app.setStyleSheet(style)
+
     def extract_direct_imports(self, file_path):
         """
         Extracts and returns the most direct module name from each import statement in a Python file.
@@ -837,12 +892,8 @@ class Quarky(QMainWindow):
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
-
-        # with open("style.qss", "r") as file:
-        #     style = file.read()
-        # app.setStyleSheet(style)
-
         ex = Quarky()
+
         ex.show()
         sys.exit(app.exec_())
 
