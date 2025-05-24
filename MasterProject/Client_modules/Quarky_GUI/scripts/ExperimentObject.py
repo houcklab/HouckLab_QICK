@@ -76,7 +76,7 @@ class ExperimentObject():
         :param path: The absolute path to the experiment file.
         :type path: str
         """
-        mod, name = Helpers.import_file(str(path))
+        mod, name = Helpers.import_file(str(path), banned_imports=["socProxy"]) # block socProxy imports
         return mod, name
 
     def find_attribute(self, obj, attribute_name):

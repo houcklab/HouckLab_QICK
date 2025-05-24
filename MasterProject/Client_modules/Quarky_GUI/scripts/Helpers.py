@@ -16,29 +16,150 @@ import h5py
 from PyQt5.QtWidgets import (
     QPushButton, QGraphicsDropShadowEffect
 )
+from PyQt5.QtCore import qWarning
 from PyQt5.QtGui import QColor
 
-def import_file(full_path_to_module):
-    """
-    Imports a python file to load it as a module (meaning an iterable list of classes and callables).
+import importlib.machinery
+import sys
+from types import ModuleType, SimpleNamespace
 
-    :param full_path_to_module: Full path to the python file
+
+def import_file(full_path_to_module, banned_imports=None):
+    """
+    Securely imports a Python file with static and runtime protection against banned modules.
+
+    :param full_path_to_module: Full path to the Python file
     :type full_path_to_module: str
-    :returns: A tuple containing the imported module object and its name.
+    :param banned_imports: List of modules to ban from importing (ie skip)
+    :type banned_imports: list
+    :returns: A tuple containing the imported module object and its name
     :rtype: tuple[ModuleType, str]
     """
 
-    # attempts a module loading via the full path given
+    # banned_imports = {"socProxy"} # Usually speaking, its always socProxy
+    if banned_imports is None:
+        banned_imports = []
+    
+    class BlockImportHook:
+        """
+        A custom import hook that intercepts Python imports to skip loading
+        banned modules. This is inserted into sys.meta_path to check each import
+        before Python attempts to load it normally.
+
+        If the import name matches a module in the banned list, it returns a
+        DummyLoader to simulate an empty module, effectively skipping the import
+        without raising an error.
+        """
+
+        def find_spec(self_inner, fullname, path, target=None):
+            """
+            Called by the import machinery to determine if this hook wants to handle
+            the import of the module named 'fullname'.
+
+            If the top-level module name is in the banned list, returns a DummyLoader
+            to fake an empty import and skip execution. Otherwise, returns None to
+            let Python continue with its normal import process.
+
+            :param self_inner: self inner module
+            :type self_inner: ModuleType
+            :param fullname: The full name of the module
+            :type fullname: str
+            :param path: The full path to the module
+            :type path: str
+            :param target: The target module
+            :type target: ModuleType
+            """
+            if fullname is not None and fullname.split('.')[-1] in banned_imports:
+                qWarning(f"[Import Skipped] '{fullname}' is in the banned list.")
+                print(f"[Import Skipped] '{fullname}' is in the banned list.")
+                return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
+            return None  # allow other imports normally
+
+    class DummyLoader:
+        """
+        The DummyLoader class is used to simulate an empty import and skip execution.
+        """
+
+        def __init__(self, name):
+            self.name = name
+
+        def create_module(self, spec):
+            # Create a dummy module with the expected attributes as None or dummy functions
+            dummy_module = SimpleNamespace()
+            if self.name.endswith('socProxy'):
+                dummy_module.makeProxy = None  # or a dummy function if needed
+            return dummy_module
+
+        def exec_module(self, module):
+            pass  # do nothing
+
+    import_hook = None
     try:
+        # AST Check for direct level imports only
+        with open(full_path_to_module, "r") as f:
+            source_code = f.read()
+        tree = ast.parse(source_code, filename=full_path_to_module)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.split('.')[-1] in banned_imports:
+                        qWarning(f"[Import Skipped] '{alias.name}' is in the banned list.")
+                        print(f"[Import Skipped] '{alias.name}' is in the banned list.")
+                        continue
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.module.split('.')[-1] in banned_imports:
+                    qWarning(f"[Import Skipped] '{node.module}' is in the banned list.")
+                    print(f"[Import Skipped] '{node.module}' is in the banned list.")
+                    continue
+
+        # Insert import hook to catch all level imports dynamically
+        import_hook = BlockImportHook()
+        sys.meta_path.insert(0, import_hook)
+
+        # Load the module dynamically
         module_dir, module_file = os.path.split(full_path_to_module)
-        module_name, module_ext = os.path.splitext(module_file)
+        module_name, _ = os.path.splitext(module_file)
         loader = importlib.machinery.SourceFileLoader(module_name, full_path_to_module)
         module_obj = loader.load_module()
         module_obj.__file__ = full_path_to_module
         globals()[module_name] = module_obj
+
+        return module_obj, module_name
+
     except Exception as e:
-        raise ImportError(e)
-    return module_obj, module_name
+        raise ImportError(f"Failed to import '{full_path_to_module}': {e}")
+
+    finally:
+        # Remove the import hook afterwards
+        try:
+            if import_hook is not None:
+                sys.meta_path.remove(import_hook)
+        except ValueError:
+            pass
+        
+
+# def import_file(full_path_to_module):
+#     """
+#     Imports a python file to load it as a module (meaning an iterable list of classes and callables).
+#
+#     :param full_path_to_module: Full path to the python file
+#     :type full_path_to_module: str
+#     :returns: A tuple containing the imported module object and its name.
+#     :rtype: tuple[ModuleType, str]
+#     """
+#
+#     # attempts a module loading via the full path given
+#     try:
+#         module_dir, module_file = os.path.split(full_path_to_module)
+#         module_name, module_ext = os.path.splitext(module_file)
+#         loader = importlib.machinery.SourceFileLoader(module_name, full_path_to_module)
+#         module_obj = loader.load_module()
+#         module_obj.__file__ = full_path_to_module
+#         globals()[module_name] = module_obj
+#     except Exception as e:
+#         raise ImportError(e)
+#     return module_obj, module_name
 
 def simple_h5_to_dict(h5file):
     """
