@@ -68,10 +68,10 @@ except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
 # TODO: Config universal panel
-# TODO: Appearance settings (font size and darkmode)
+# TODO: Dark Mode
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-TESTING = False
+TESTING = True
 
 class Quarky(QMainWindow):
     """
@@ -159,10 +159,10 @@ class Quarky(QMainWindow):
 
         self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
         self.start_experiment_button.setToolTip("Run")
-        self.start_experiment_button.setFixedWidth(50)
+        self.start_experiment_button.setFixedWidth(80)
         self.stop_experiment_button = Helpers.create_button("◼️","stop_experiment",False,self.wrapper)
         self.stop_experiment_button.setToolTip("Stop")
-        self.stop_experiment_button.setFixedWidth(50)
+        self.stop_experiment_button.setFixedWidth(80)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)
@@ -174,7 +174,7 @@ class Quarky(QMainWindow):
         self.documentation_button.setToolTip("Documentation")
         self.documentation_button.setObjectName("documentation_button")
 
-        self.settings_button = Helpers.create_button("⚙", "settings_button", True, self.wrapper)
+        self.settings_button = Helpers.create_button("Settings", "settings_button", True, self.wrapper)
         self.settings_button.setObjectName("settings_button")
 
         # Adding items to top bar, top bar to main layout
@@ -199,6 +199,12 @@ class Quarky(QMainWindow):
 
         ### The Central Tabs (contains experiment tabs and data tab)
         self.central_tabs = QTabWidget(self.main_splitter)
+
+        tab_bar = self.central_tabs.tabBar()
+        tab_bar.setUsesScrollButtons(True)  # enable left/right scroll buttons
+        tab_bar.setExpanding(False)
+        tab_bar.setElideMode(Qt.ElideMiddle)
+
         central_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         central_tab_sizepolicy.setHorizontalStretch(0)
         central_tab_sizepolicy.setVerticalStretch(0)
@@ -541,6 +547,8 @@ class Quarky(QMainWindow):
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
             self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
+            self.load_experiment_button.setEnabled(False)
+            self.load_data_button.setEnabled(False)
 
             self.thread.start()
 
@@ -588,6 +596,8 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.setText("◼")
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
+        self.load_experiment_button.setEnabled(True)
+        self.load_data_button.setEnabled(True)
 
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
         if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
@@ -661,6 +671,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(True)
         self.current_tab = new_experiment_tab
+        self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
 
         # Signals from QuarkTabs
         self.current_tab.updated_tab.connect(self.update_tab)
@@ -829,9 +840,10 @@ class Quarky(QMainWindow):
         """
 
         print("applying settings")
-        with open("style.qss", "r") as file:
+        with open("assets/style.qss", "r") as file:
             existing_style = file.read()
         style = existing_style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
+        style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size-1)}")
         style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")
         style = style.replace('$SMALL_FONT_SIZE', f"{(font_size-2)}")
 

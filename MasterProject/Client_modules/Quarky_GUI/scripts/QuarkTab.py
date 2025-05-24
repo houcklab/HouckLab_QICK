@@ -153,7 +153,6 @@ class QQuarkTab(QWidget):
         self.output_dir_button = Helpers.create_button("Save To...", "output_dir_button", False, self.plot_utilities_container)
         self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
         self.coord_label.setAlignment(Qt.AlignRight)
-        self.coord_label.setStyleSheet("font-size: 12px;")
         self.coord_label.setObjectName("coord_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
@@ -183,7 +182,6 @@ class QQuarkTab(QWidget):
         self.average_simult_checkbox.setToolTip("Average intermediate data simultaneously versus at end of set.")
         self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot
         self.delete_label.setAlignment(Qt.AlignRight)
-        self.delete_label.setStyleSheet("font-size: 10px;")
         self.delete_label.setObjectName("delete_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer

@@ -123,7 +123,7 @@ class QVoltagePanel(QWidget):
         self.voltage_interface_settings.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.voltage_interface_settings.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.voltage_interface_settings.setMaximumHeight(60)
-        self.voltage_interface_settings.setStyleSheet("font-size: 10pt;")
+        self.voltage_interface_settings.setObjectName("voltage_interface_settings")
         self.setup_voltage_interface_settings()
 
         self.create_connection_button = Helpers.create_button("Create Connection","create_connection_button",True,self)
@@ -136,7 +136,7 @@ class QVoltagePanel(QWidget):
         self.controller_content = QWidget(self)
         self.controller_layout = QVBoxLayout(self.controller_content)
         self.controller_layout.setContentsMargins(0, 0, 0, 0)
-        self.controller_layout.setSpacing(0)
+        self.controller_layout.setSpacing(10)
 
         # Voltage Channels Section
         self.voltage_channels_group = QGroupBox("Channels")
@@ -147,11 +147,11 @@ class QVoltagePanel(QWidget):
         # Contains all channel components
         self.voltage_channels_layout = QVBoxLayout(self.voltage_channels_group)
         self.voltage_channels_layout.setContentsMargins(0, 5, 0, 0)
-        self.voltage_channels_layout.setSpacing(4)
+        self.voltage_channels_layout.setSpacing(5)
         self.voltage_channels_layout.setObjectName("voltage_channels_layout")
 
         self.voltage_range_label = QLabel("  Voltage Range: [0,0]")
-        self.voltage_range_label.setStyleSheet("font-size: 11pt;")
+        self.voltage_range_label.setObjectName("voltage_range_label")
         self.voltage_channels_layout.addWidget(self.voltage_range_label)
 
         # Scroll area to contain list of channels
@@ -478,7 +478,7 @@ class QVoltagePanel(QWidget):
             channel_voltage_input = QLineEdit()
             channel_voltage_input.setPlaceholderText("0.0")
             channel_voltage_input.setAlignment(Qt.AlignRight)
-            channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True)
+            channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True, shadow=False)
             single_channel_group.addWidget(channel_label)
             single_channel_group.addWidget(channel_voltage_input)
             single_channel_group.addWidget(channel_voltage_setbutton)
@@ -499,7 +499,7 @@ class QVoltagePanel(QWidget):
         channel_voltage_input = QLineEdit()
         channel_voltage_input.setPlaceholderText("0.0V")
         channel_voltage_input.setAlignment(Qt.AlignRight)
-        channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True)
+        channel_voltage_setbutton = Helpers.create_button("Set", "set_voltage_button", True, shadow=False)
         single_channel_group.addWidget(channel_label)
         single_channel_group.addWidget(channel_voltage_input)
         single_channel_group.addWidget(channel_voltage_setbutton)

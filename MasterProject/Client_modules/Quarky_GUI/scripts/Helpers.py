@@ -55,7 +55,7 @@ def simple_h5_to_dict(h5file):
             data_dict[key] = f[key][()]  # Load dataset into memory
         return data_dict
 
-def create_button(text, name, enabled=True, parent=None):
+def create_button(text, name, enabled=True, parent=None, shadow=True):
     """
     Creates a QPushButton.
 
@@ -75,15 +75,16 @@ def create_button(text, name, enabled=True, parent=None):
     btn.setObjectName(name)
     btn.setEnabled(enabled)
 
-    # Create and configure shadow effect
-    shadow = QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(10)  # How blurry the shadow is
-    shadow.setXOffset(0)  # Horizontal offset
-    shadow.setYOffset(0)  # Vertical offset
-    shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
+    if shadow:
+        # Create and configure shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10)  # How blurry the shadow is
+        shadow.setXOffset(0)  # Horizontal offset
+        shadow.setYOffset(0)  # Vertical offset
+        shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
 
-    # Apply shadow to the widget
-    btn.setGraphicsEffect(shadow)
+        # Apply shadow to the widget
+        btn.setGraphicsEffect(shadow)
 
     return btn
 

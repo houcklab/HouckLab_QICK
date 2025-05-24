@@ -97,13 +97,17 @@ QLabel#hardware_label {
     font-size: $SMALL_FONT_SIZEpx;
 }
 
+QTextEdit#voltage_interface_settings {
+    font-size: $SMALL_FONT_SIZEpx;
+}
+
 QSplitter::handle {
     background-color: rgb(180,180,180);       /* handle color */
 }
 
 QSplitter::handle:horizontal {
-    margin-top: 200px;
-    margin-bottom: 200px;
+    margin-top: 230px;
+    margin-bottom: 230px;
     border-radius: 2px;
 }
 
@@ -117,4 +121,19 @@ QLineEdit {
     border: 1px solid #C4C4C3;
     border-radius: 5px;
     padding: 0 8px;
+}
+
+QGroupBox {
+    border: 1px solid #C4C4C3;
+    border-radius: 5px;
+    margin-top: $GLOBAL_FONT_SIZEpx; /* leave space at the top for the title */
+    font-size: $SMALL_FONT_SIZEpx;
+    padding: 3px;
+}
+
+QGroupBox::title {
+    margin-top: 3px;
+    subcontrol-origin: margin;
+    subcontrol-position: top left; /* position at the top center */
+    padding: 0 3px;
 }

@@ -1,0 +1,174 @@
+QWidget {
+    font-size: $GLOBAL_FONT_SIZEpx;
+}
+
+QMainWindow {
+    background-color:#ececec;
+}
+
+QPushButton {
+    background-color: rgb(255,255,255);
+    color: black;
+    padding: 3px 12px;
+    border: none;
+    border-radius: 5px;
+}
+
+QPushButton:hover {
+    border: 1px solid rgb(182,182,182);
+}
+
+QPushButton:pressed {
+    background-color: rgb(240,240,240);
+    color: white;
+}
+
+QPushButton:disabled {
+    background-color: rgb(242,242,242);
+    color: rgb(182,182,182);
+    border: none;
+}
+
+QTreeView#ConfigTreePanel QPushButton {
+    border-radius: 0px;
+    margin: 0px;
+    padding: 3px 6px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#save_config {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#paste_config {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+QPushButton#documentation_button {
+    border: 1px solid gray;
+    font-size: 10px;
+    color: gray;
+    background: #ececec;
+    width: 12px;
+    border-radius: 6px;
+    padding: 2px;
+}
+
+QPushButton#settings_button {
+    border: 1px solid gray;
+    font-size: 10px;
+    color: gray;
+    background: #ececec;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+QWidget#channel_list QPushButton {
+    padding: 2px 8px;
+}
+
+QTabBar::tab {
+    background: rgb(246,246,246);
+    color: color;
+    padding: 2px 10px 2px 0px;
+    border: 1px solid #C4C4C3;
+    font-size: $TAB_FONT_SIZEpx;
+    min-width: 120px;
+}
+
+QTabBar::tab:selected {
+    border-color: #C4C4C3;
+    border-bottom: 4px solid rgb(137, 207, 240);
+}
+
+QTabWidget#side_tabs QTabBar::tab {
+    padding: 2px 5px 2px 5px;
+    min-width: 20px;
+}
+
+QLabel#runtime_label, QLabel#endtime_label, QLabel#voltage_range_label, QLabel#hardware_label,
+    QTextEdit#voltage_interface_settings, QLabel#coord_label, QLabel#delete_label {
+    font-size: $SMALL_FONT_SIZEpx;
+}
+
+QSplitter::handle {
+    background-color: rgb(180,180,180);       /* handle color */
+}
+
+QSplitter::handle:horizontal {
+    margin-top: 230px;
+    margin-bottom: 230px;
+    border-radius: 2px;
+}
+
+QSplitter::handle:vertical {
+    margin-left: 1px;
+    margin-right: 1px;
+    border-radius: 2px;
+}
+
+QLineEdit {
+    border: 1px solid #C4C4C3;
+    border-radius: 5px;
+    padding: 0px 3px;
+}
+
+QGroupBox {
+    border: 1px solid #C4C4C3;
+    border-radius: 5px;
+    margin-top: $GLOBAL_FONT_SIZEpx; /* leave space at the top for the title */
+    font-size: $SMALL_FONT_SIZEpx;
+    padding: 3px;
+}
+
+QGroupBox::title {
+    margin-top: 3px;
+    subcontrol-origin: margin;
+    subcontrol-position: top left; /* position at the top center */
+    padding: 0 3px;
+}
+
+QPushButton#connect_button{
+    background-color: rgb(100, 149, 237);
+    color: white;
+}
+
+QPushButton#create_connection_button{
+    background-color: rgb(100, 149, 237);
+    color: white;
+}
+
+QPushButton#start_experiment{
+    background-color: rgb(60, 179, 113);
+    color: white;
+}
+
+QPushButton#stop_experiment{
+    background-color: rgb(205, 92, 92);
+    color: white;
+}
+
+QPushButton#connect_button:disabled {
+    background-color: rgb(170, 190, 220);
+    color: #dddddd;
+}
+
+QPushButton#create_connection_button:disabled {
+    background-color: rgb(170, 190, 220);
+    color: #dddddd;
+}
+
+QPushButton#start_experiment:disabled {
+    background-color: rgb(255,255,255);
+    color: rgb(230, 230, 230);
+}
+
+QPushButton#stop_experiment:disabled {
+    background-color: rgb(255,255,255);
+    color: rgb(230, 230, 230);
+}
+
+QListWidget#accounts_list {
+    font-size: $MEDIUM_FONT_SIZEpx;
+}

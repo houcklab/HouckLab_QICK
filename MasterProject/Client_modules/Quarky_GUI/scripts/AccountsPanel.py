@@ -48,6 +48,8 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
+import scripts.Helpers as Helpers
+
 class QAccountPanel(QWidget):
     """
     A custom QWidget class for the entire accounts panel.
@@ -129,7 +131,7 @@ class QAccountPanel(QWidget):
         self.accounts_group.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
         self.accounts_group.setObjectName("accounts_group")
         self.accounts_layout = QVBoxLayout(self.accounts_group)
-        self.accounts_layout.setContentsMargins(0, 10, 0, 0)
+        self.accounts_layout.setContentsMargins(0, 5, 0, 0)
         self.accounts_layout.setObjectName("accounts_layout")
 
         ### Accounts List
@@ -172,24 +174,15 @@ class QAccountPanel(QWidget):
 
         ### Account Action Buttons Layout
         self.form_button_layout = QVBoxLayout()
-        self.form_button_layout.setSpacing(2)
+        self.form_button_layout.setSpacing(4)
         self.form_button_layout.setObjectName("form_button_layout")
 
-        self.save_button = QPushButton("Up to Date")
-        self.save_button.setObjectName("save_button")
-        self.save_button.setEnabled(False)
-        self.delete_button = QPushButton("Delete")
-        self.delete_button.setObjectName("delete_button")
-        self.delete_button.setEnabled(True)
-        self.create_new_button = QPushButton("Create as New")
-        self.create_new_button.setObjectName("create_new_button")
-        self.create_new_button.setEnabled(False)
-        self.set_default_button = QPushButton("Set as Default")
-        self.set_default_button.setObjectName("set_default_button")
-        self.set_default_button.setEnabled(False)
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.setObjectName("connect_button")
-        self.connect_button.setEnabled(True)
+
+        self.save_button = Helpers.create_button("Up to Date","save_button",False)
+        self.delete_button = Helpers.create_button("Delete","delete_button",True)
+        self.create_new_button = Helpers.create_button("Create as New","create_new_button",False)
+        self.set_default_button = Helpers.create_button("Set as Default","set_default_button",False)
+        self.connect_button = Helpers.create_button("Connect","connect_button",True)
 
         self.form_button_layout.addWidget(self.save_button)
         self.form_button_layout.addWidget(self.delete_button)
