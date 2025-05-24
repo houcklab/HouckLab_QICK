@@ -22,7 +22,7 @@ import numpy as np
 from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap, QColor
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
-    pyqtSignal, qWarning,
+    pyqtSignal, qWarning, QSettings
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -246,7 +246,10 @@ class QQuarkTab(QWidget):
         if self.is_experiment:
             self.reExtract_experiment_button.setEnabled(True)
             self.output_dir_button.setEnabled(True)
-            self.output_dir = os.path.join(os.path.abspath(""), "data")
+
+            settings = QSettings("HouckLab", "Quarky")
+            self.output_dir = settings.value("output_dir", os.path.join(os.path.abspath(""), "data"))
+
             qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
             if not Path(self.output_dir).is_dir():
                 os.mkdir(self.output_dir)
@@ -296,9 +299,9 @@ class QQuarkTab(QWidget):
         if self.plot_method_combo.currentText() == "Add...":
             self.plot_method_combo.blockSignals(True) # Prevent adding a new combo from calling it again in a loop
 
-            options = QFileDialog.Options()
-            file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
-                                                  "Python Files (*.py)", options=options)
+            file = Helpers.open_file_dialog("Open Python File", "Python Files (*.py)",
+                                            "add_plotter_method", self, file=True)
+
             if file:
                 path = str(Path(file))
                 qInfo("Retrieving experiment plotter from: " + path)
@@ -964,7 +967,9 @@ class QQuarkTab(QWidget):
         Changes the output directory that data is autosaved to via a file dialog.
         """
 
-        self.output_dir = QFileDialog.getExistingDirectory(self, "Select Folder for Autosave", self.output_dir)
+        self.output_dir = Helpers.open_file_dialog("Select Folder for Autosave", "",
+                                        "output_dir", self, file=False)
+
         qInfo("Output directory for experiment data changed to: " + self.output_dir)
 
         self.output_dir_button.setText('Changed!')
@@ -1001,22 +1006,25 @@ class QQuarkTab(QWidget):
 
         # Saving datasets
         if not self.is_experiment:
-            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save Dataset")
-            folder_path = Path(os.path.join(folder_path, self.folder_name))
-            if not folder_path.is_dir():
-                folder_path.mkdir(parents=True, exist_ok=True)
+            folder_path = Helpers.open_file_dialog("Select Folder to Save Dataset", "",
+                                        "save_dataset", self, file=False)
 
             if folder_path:
-                try:
-                    shutil.copy2(self.dataset_file, folder_path)
-                    pixmap = self.plot_widget.grab()
-                    file_path = os.path.join(folder_path, self.file_name + ".png")
-                    pixmap.save(file_path)
-                    qInfo("Saved dataset to " + str(folder_path))
-                except Exception as e:
-                    qCritical(f"Failed to save the dataset to {file_path}: {str(e)}")
-                    qCritical(traceback.print_exc())
-                    QMessageBox.critical(self, "Error", f"Failed to save dataset.")
+                folder_path = Path(os.path.join(folder_path, self.folder_name))
+                if not folder_path.is_dir():
+                    folder_path.mkdir(parents=True, exist_ok=True)
+
+                if folder_path:
+                    try:
+                        shutil.copy2(self.dataset_file, folder_path)
+                        pixmap = self.plot_widget.grab()
+                        file_path = os.path.join(folder_path, self.file_name + ".png")
+                        pixmap.save(file_path)
+                        qInfo("Saved dataset to " + str(folder_path))
+                    except Exception as e:
+                        qCritical(f"Failed to save the dataset to {file_path}: {str(e)}")
+                        qCritical(traceback.print_exc())
+                        QMessageBox.critical(self, "Error", f"Failed to save dataset.")
 
         # Saving experiments
         elif self.is_experiment:

@@ -50,19 +50,18 @@ QTreeView#ConfigTreePanel QPushButton#paste_config {
 }
 
 QPushButton#documentation_button {
-    border: 1px solid gray;
-    font-size: 10px;
-    color: gray;
+    border: 1px solid rgb(145, 145, 145);
+    font-size: $SMALL_FONT_SIZEpx;
+    color: rgb(135, 135, 135);
     background: #ececec;
-    width: 12px;
     border-radius: 6px;
-    padding: 2px;
+    padding: 2px 8px;
 }
 
 QPushButton#settings_button {
-    border: 1px solid gray;
-    font-size: 10px;
-    color: gray;
+    border: 1px solid rgb(145, 145, 145);
+    font-size: $SMALL_FONT_SIZEpx;
+    color: rgb(135, 135, 135);
     background: #ececec;
     border-radius: 6px;
     padding: 3px 8px;

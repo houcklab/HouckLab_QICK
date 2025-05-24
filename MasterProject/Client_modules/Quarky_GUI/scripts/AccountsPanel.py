@@ -131,7 +131,7 @@ class QAccountPanel(QWidget):
         self.accounts_group.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
         self.accounts_group.setObjectName("accounts_group")
         self.accounts_layout = QVBoxLayout(self.accounts_group)
-        self.accounts_layout.setContentsMargins(0, 5, 0, 0)
+        self.accounts_layout.setContentsMargins(4, 5, 4, 5)
         self.accounts_layout.setObjectName("accounts_layout")
 
         ### Accounts List
@@ -174,9 +174,8 @@ class QAccountPanel(QWidget):
 
         ### Account Action Buttons Layout
         self.form_button_layout = QVBoxLayout()
-        self.form_button_layout.setSpacing(4)
+        self.form_button_layout.setSpacing(5)
         self.form_button_layout.setObjectName("form_button_layout")
-
 
         self.save_button = Helpers.create_button("Up to Date","save_button",False)
         self.delete_button = Helpers.create_button("Delete","delete_button",True)

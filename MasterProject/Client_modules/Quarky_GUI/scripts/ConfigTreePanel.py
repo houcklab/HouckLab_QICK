@@ -346,7 +346,8 @@ class QConfigTreePanel(QTreeView):
         Prompts the user for a folder and saves the config dictionary as a JSON file.
         """
 
-        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to Save Config")
+        folder_path = Helpers.open_file_dialog("Select Folder to Save Config", "",
+                                        "config_save_folder", self, file=False)
 
         if folder_path:
             file_path = os.path.join(folder_path, "config.json")
@@ -386,7 +387,8 @@ class QConfigTreePanel(QTreeView):
         """
 
         if file_path is None:
-            file_path, _ = QFileDialog.getOpenFileName(self, "Select Config File", "", "JSON Files (*.json)")
+            file_path = Helpers.open_file_dialog("Select Config File", "JSON Files (*.json)",
+                                            "load_config", self, file=True)
 
         if file_path:  # If a file is selected
             try:

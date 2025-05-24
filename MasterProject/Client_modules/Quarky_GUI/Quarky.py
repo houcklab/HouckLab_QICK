@@ -67,6 +67,8 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
+# TODO: Saves file opening paths
+# TODO: better name saving for configs
 # TODO: Config universal panel
 # TODO: Dark Mode
 
@@ -627,9 +629,9 @@ class Quarky(QMainWindow):
         Gets an .py experiment file per user input and calls the create_experiment_tab() function.
         """
 
-        options = QFileDialog.Options()
-        file, _ = QFileDialog.getOpenFileName(self, "Open Python File", "..\\",
-                                              "Python Files (*.py)", options=options)
+        file = Helpers.open_file_dialog("Open Python Experiment File", "Python Files (*.py)",
+                                        "load_experiment", self, file=True)
+
         if not file:
             return
         else:
@@ -775,10 +777,9 @@ class Quarky(QMainWindow):
         Gets an .h5 experiment file per user input. Then calls the create_data_tab() function with the file's path.
         """
 
-        # Load an data file
-        options = QFileDialog.Options()
-        file, _ = QFileDialog.getOpenFileName(self, "Open Data h5 File", "..\\",
-                                              "h5 Files (*.h5)", options=options)
+        # load data file
+        file = Helpers.open_file_dialog("Open Data h5 File", "h5 Files (*.h5)",
+                                        "load_data_file", self, file=True)
         if not file:
             return
         else:

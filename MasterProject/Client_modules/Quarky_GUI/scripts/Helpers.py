@@ -14,15 +14,14 @@ import numpy as np
 import importlib
 import h5py
 from PyQt5.QtWidgets import (
-    QPushButton, QGraphicsDropShadowEffect
+    QPushButton, QGraphicsDropShadowEffect, QFileDialog
 )
-from PyQt5.QtCore import qWarning
+from PyQt5.QtCore import qWarning, QSettings
 from PyQt5.QtGui import QColor
 
 import importlib.machinery
 import sys
 from types import ModuleType, SimpleNamespace
-
 
 def import_file(full_path_to_module, banned_imports=None):
     """
@@ -138,7 +137,7 @@ def import_file(full_path_to_module, banned_imports=None):
         except ValueError:
             pass
         
-
+# The old basic import file without import blocking functionality
 # def import_file(full_path_to_module):
 #     """
 #     Imports a python file to load it as a module (meaning an iterable list of classes and callables).
@@ -209,7 +208,43 @@ def create_button(text, name, enabled=True, parent=None, shadow=True):
 
     return btn
 
-# h5 functionality inspired by h5ify
+def open_file_dialog(prompt, file_args, settings_id, parent=None, file=True):
+    """
+    Opens a file dialog to open a file/directory based on the specified parameters and retrieves the last opened
+    folder location in QSettings via the identifier to open to.
+
+    :param prompt: The prompt text.
+    :type prompt: str
+    :param file_args: The file arguments.
+    :type file_args: str
+    :param settings_id: The settings identifier.
+    :type settings_id: str
+    :param parent: The parent widget.
+    :type parent: QWidget
+    :param file: Whether a file should be opened. (Alternative is directory)
+    :type file: bool
+    """
+
+    settings = QSettings("HouckLab", "Quarky") # The identifiers of the application
+    last_dir = settings.value(str(settings_id), "..\\")  # Default to "..\\" if not set
+
+    options = QFileDialog.Options()
+    if file:
+        file_path, _ = QFileDialog.getOpenFileName(parent, str(prompt), last_dir, file_args, options=options)
+
+        if file_path:
+            # Save the directory for next time
+            settings.setValue(str(settings_id), os.path.dirname(file_path))
+            return file_path
+    else:
+        folder_path = QFileDialog.getExistingDirectory(parent, str(prompt), last_dir, options=options)
+
+        if folder_path:
+            # Save the directory for next time
+            settings.setValue(str(settings_id), folder_path)
+            return folder_path
+
+    return None
 
 def dict_to_h5(data_filename, dictionary):
     """
@@ -225,7 +260,12 @@ def dict_to_h5(data_filename, dictionary):
 
 def _recursive_save(h, d):
     """
-    TODO
+    Recursively saves a dictionary to a h5 file.
+
+    :param h: The h5 file.
+    :type h: h5py.File
+    :param d: The dictionary to store.
+    :type d: dict
     """
     for key, val in d.items():
         if key == 'config':
