@@ -19,7 +19,7 @@ import shutil
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
-from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap
+from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap, QColor
 from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
     pyqtSignal, qWarning,
@@ -36,7 +36,8 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
     QShortcut,
-    QCheckBox
+    QCheckBox,
+    QGraphicsDropShadowEffect,
 )
 import pyqtgraph as pg
 from scripts.ExperimentObject import ExperimentObject
@@ -169,13 +170,22 @@ class QQuarkTab(QWidget):
         self.plot_settings_container = QWidget()
         self.plot_settings_container.setMaximumHeight(30)
         self.plot_settings = QHBoxLayout(self.plot_settings_container)
-        self.plot_settings.setContentsMargins(8, 0, 0, 5)
-        self.plot_settings.setSpacing(3)
+        self.plot_settings.setContentsMargins(10, 0, 0, 5)
+        self.plot_settings.setSpacing(5)
         self.plot_settings.setObjectName("plot_settings")
 
         self.plot_method_label = QLabel("Plotter:")
         self.plot_method_label.setObjectName("plot_method_label")
         self.plot_method_combo = QComboBox(self.plot_settings_container)
+
+        # Create and configure shadow effect
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10)  # How blurry the shadow is
+        shadow.setXOffset(0)  # Horizontal offset
+        shadow.setYOffset(0)  # Vertical offset
+        shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
+        self.plot_method_combo.setGraphicsEffect(shadow)
+
         self.plot_method_combo.setFixedWidth(130)
         self.plot_method_combo.setObjectName("plot_method_combo")
         self.average_simult_checkbox = QCheckBox("Average Simultaneously", self.plot_settings_container)
@@ -303,6 +313,8 @@ class QQuarkTab(QWidget):
                 else:
                     self.plot_method_combo.setCurrentText("None")
                     qDebug("No plotter function found within " + experiment_name)
+            else:
+                self.plot_method_combo.setCurrentText("None")
 
             self.plot_method_combo.blockSignals(False) # re_enable plotting
         else:

@@ -12,6 +12,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
+import scripts.Helpers as Helpers
+
 
 class SettingsWindow(QWidget):
     """
@@ -63,9 +65,10 @@ class SettingsWindow(QWidget):
 
         # Button layout
         button_layout = QHBoxLayout()
-        self.reset_button = QPushButton("Reset")
-        self.save_button = QPushButton("Save")
-        self.apply_button = QPushButton("Apply")
+
+        self.reset_button = Helpers.create_button("Reset", "reset_button", True)
+        self.save_button = Helpers.create_button("Save", "save_button", True)
+        self.apply_button = Helpers.create_button("Apply", "apply_button", True)
 
         button_layout.addWidget(self.reset_button)
         button_layout.addWidget(self.save_button)
