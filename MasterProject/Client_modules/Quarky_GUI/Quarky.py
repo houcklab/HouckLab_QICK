@@ -67,8 +67,6 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: Saves file opening paths
-# TODO: better name saving for configs
 # TODO: Config universal panel
 # TODO: Dark Mode
 
@@ -228,7 +226,7 @@ class Quarky(QMainWindow):
         self.central_tabs.setCurrentIndex(0)
 
         ### Config Tree Panel
-        self.config_tree_panel = QConfigTreePanel(self.main_splitter, template_experiment_tab.config)
+        self.config_tree_panel = QConfigTreePanel(self, self.main_splitter, template_experiment_tab.config)
 
         ### Side Tabs Panel (Contains voltage, accounts, and log panels)
         self.side_tabs = QTabWidget(self.main_splitter)

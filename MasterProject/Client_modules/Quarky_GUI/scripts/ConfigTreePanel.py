@@ -22,6 +22,7 @@ This is the basic formatting of the Config dictionary:
 import os
 import json
 import ast
+import datetime
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import (
     QEvent,
@@ -71,7 +72,7 @@ class QConfigTreePanel(QTreeView):
     :type config: dict
     """
 
-    def __init__(self, parent=None, config=None):
+    def __init__(self, app, parent=None, config=None):
         """
         Initialize the custom QTreeView class.
 
@@ -79,6 +80,8 @@ class QConfigTreePanel(QTreeView):
         but not the Tree that consists of the configurations. Instead, the instance `tree` of type QTreeView that
         resides within the parent tree is the one that has the configurations.
 
+        :param app: The main application instance
+        :type app: QWidget
         :param parent: The parent of the QTreeView
         :type parent: QWidget
         :param config: The dictionary containing the configuration to set (can be None)
@@ -86,6 +89,7 @@ class QConfigTreePanel(QTreeView):
         """
 
         super().__init__(parent)
+        self.app = app
         self.config = config if config else {}
 
         self.setObjectName("ConfigTreePanel")
@@ -349,8 +353,15 @@ class QConfigTreePanel(QTreeView):
         folder_path = Helpers.open_file_dialog("Select Folder to Save Config", "",
                                         "config_save_folder", self, file=False)
 
+        date_time_now = datetime.datetime.now()
+        date_string = date_time_now.strftime("%Y_%m_%d")
+        if self.app.current_tab:
+            file_name = "config_" + self.app.current_tab.tab_name + "_" + date_string + ".json"
+        else:
+            file_name = "config_" + date_string + ".json"
+
         if folder_path:
-            file_path = os.path.join(folder_path, "config.json")
+            file_path = os.path.join(folder_path, file_name)
             try:
                 unformatted_config = self.config.copy()
                 unformatted_config.update(unformatted_config.pop("Base Config", {}))
