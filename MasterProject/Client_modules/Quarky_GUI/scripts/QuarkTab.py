@@ -107,10 +107,11 @@ class QQuarkTab(QWidget):
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setObjectName("QQuarkTab")
 
         ### Plotter within Tab
         self.plot_layout = QVBoxLayout(self)
-        self.plot_layout.setContentsMargins(5, 5, 5, 0)
+        self.plot_layout.setContentsMargins(0, 5, 0, 0)
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
@@ -148,8 +149,11 @@ class QQuarkTab(QWidget):
         self.plot_utilities.setObjectName("plot_utilities")
 
         self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)
+        self.reExtract_experiment_button.setToolTip("Re-extracts the experiment file to reflect changes to code file")
         self.replot_button = Helpers.create_button("RePlot", "replot_button", False, self.plot_utilities_container)
+        self.replot_button.setToolTip("Replots the current data using plot method")
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
+        self.snip_plot_button.setToolTip("Snip Plot to Clipboard")
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
         self.output_dir_button = Helpers.create_button("Save To...", "output_dir_button", False, self.plot_utilities_container)
         self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
@@ -188,6 +192,7 @@ class QQuarkTab(QWidget):
 
         self.plot_method_combo.setFixedWidth(130)
         self.plot_method_combo.setObjectName("plot_method_combo")
+        # TODO: add autosave checkbox
         self.average_simult_checkbox = QCheckBox("Average Simultaneously", self.plot_settings_container)
         self.average_simult_checkbox.setToolTip("Average intermediate data simultaneously versus at end of set.")
         self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot

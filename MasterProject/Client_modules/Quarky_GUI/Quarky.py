@@ -42,7 +42,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QTabWidget,
-    QSizePolicy
+    QSizePolicy, QTextEdit
 )
 
 # Use absolute imports maybe
@@ -57,6 +57,7 @@ from scripts.AccountsPanel import QAccountPanel
 from scripts.LogPanel import QLogPanel
 from scripts.ConfigTreePanel import QConfigTreePanel
 from scripts.AuxiliaryThread import AuxiliaryThread
+from scripts.ConfigCodeEditor import ConfigCodeEditor
 from scripts.SettingsWindow import SettingsWindow
 import scripts.Helpers as Helpers
 
@@ -67,6 +68,7 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
+# TODO: Coord label in plot can do 3D data
 # TODO: Config universal panel
 # TODO: Dark Mode
 
@@ -133,10 +135,10 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.resize(1100, 600)
+        self.resize(1130, 700)
         self.setWindowIcon(QIcon('QuarkyLogo.png'))
-        self.central_widget = QWidget() # Defining the central widget that holds everything
-        self.central_widget.setMinimumSize(1100, 600)
+        self.central_widget = QWidget()
+        self.central_widget.setMinimumSize(1130, 700)
         self.central_widget.setObjectName("central_widget")
         self.central_layout = QVBoxLayout(self.central_widget)
         self.wrapper = QWidget()
@@ -157,10 +159,10 @@ class Quarky(QMainWindow):
         # self.quarky_icon = QLabel()
         # self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
-        self.start_experiment_button = Helpers.create_button("▶","start_experiment",False,self.wrapper)
+        self.start_experiment_button = Helpers.create_button("","start_experiment",False,self.wrapper)
         self.start_experiment_button.setToolTip("Run")
         self.start_experiment_button.setFixedWidth(80)
-        self.stop_experiment_button = Helpers.create_button("◼️","stop_experiment",False,self.wrapper)
+        self.stop_experiment_button = Helpers.create_button("️","stop_experiment",False,self.wrapper)
         self.stop_experiment_button.setToolTip("Stop")
         self.stop_experiment_button.setFixedWidth(80)
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
@@ -174,7 +176,10 @@ class Quarky(QMainWindow):
         self.documentation_button.setToolTip("Documentation")
         self.documentation_button.setObjectName("documentation_button")
 
-        self.settings_button = Helpers.create_button("Settings", "settings_button", True, self.wrapper)
+        # self.settings_button = Helpers.create_button("Settings", "settings_button", True, self.wrapper)
+        # self.settings_button.setObjectName("settings_button")
+
+        self.settings_button = Helpers.create_button("", "settings_button", True, self.wrapper, False)
         self.settings_button.setObjectName("settings_button")
 
         # Adding items to top bar, top bar to main layout
@@ -189,22 +194,27 @@ class Quarky(QMainWindow):
         self.top_bar.addWidget(self.settings_button)
         self.main_layout.addLayout(self.top_bar)
 
+        ### Vertical Splitter with Tabs, Voltage Panel, Config Tree
+        self.vert_splitter = QSplitter(self.wrapper)
+        self.vert_splitter.setOpaqueResize(True)
+        self.vert_splitter.setHandleWidth(6)
+        self.vert_splitter.setChildrenCollapsible(True)
+        self.vert_splitter.setObjectName("vert_splitter")
+        self.vert_splitter.setOrientation(Qt.Vertical)
+
         ### Main Splitter with Tabs, Voltage Panel, Config Tree
-        self.main_splitter = QSplitter(self.wrapper)
-        self.main_splitter.setLineWidth(2)
+        self.main_splitter = QSplitter(self.vert_splitter)
         self.main_splitter.setOpaqueResize(True) # Setting to False allows faster resizing (doesn't look as good)
-        self.main_splitter.setHandleWidth(1)
+        self.main_splitter.setHandleWidth(6)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
 
         ### The Central Tabs (contains experiment tabs and data tab)
         self.central_tabs = QTabWidget(self.main_splitter)
-
         tab_bar = self.central_tabs.tabBar()
         tab_bar.setUsesScrollButtons(True)  # enable left/right scroll buttons
         tab_bar.setExpanding(False)
         tab_bar.setElideMode(Qt.ElideMiddle)
-
         central_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         central_tab_sizepolicy.setHorizontalStretch(0)
         central_tab_sizepolicy.setVerticalStretch(0)
@@ -258,11 +268,18 @@ class Quarky(QMainWindow):
 
         self.side_tabs.setCurrentIndex(1) # select accounts panel by default
 
+        # Defint he Universal Config Loader section
+        self.config_code_editor = ConfigCodeEditor(self.vert_splitter)
+
         # Defining the default sizes for the splitter
         self.main_splitter.setStretchFactor(0, 8)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setStretchFactor(2,1)
-        self.main_layout.addWidget(self.main_splitter)
+
+        self.vert_splitter.setStretchFactor(0, 6)
+        self.vert_splitter.setStretchFactor(1, 4)
+
+        self.main_layout.addWidget(self.vert_splitter)
         self.main_layout.setStretch(0, 1) # make top bar small
         self.main_layout.setStretch(1, 10) # make main body large
 
@@ -315,6 +332,9 @@ class Quarky(QMainWindow):
         # Settings Window
         self.settings_window.update_settings.connect(self.apply_settings)
         self.settings_window.apply_settings() # Apply the saved settings
+
+        # Config editor
+        self.config_code_editor.extracted_config.connect(self.extracted_config)
 
         if TESTING:
             qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
@@ -531,9 +551,13 @@ class Quarky(QMainWindow):
             self.thread.finished.connect(self.finished_experiment) # update UI
 
             # Connecting data related slots
+            # TODO assign a self.currently_running_tab = self.current_tab
+            # TODO change from current tab to currently running an experiment tab
+            # TODO if an experiment is running change its tab name temporarily to have a stopwatch or something
             self.experiment_worker.updateData.connect(self.current_tab.update_data) # update data & plot
             self.experiment_worker.intermediateData.connect(self.current_tab.intermediate_data) # intermediate data & plot
             self.experiment_worker.updateRuntime.connect(self.current_tab.update_runtime_estimation) # update runtime
+
             self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
 
@@ -543,7 +567,9 @@ class Quarky(QMainWindow):
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
             self.start_experiment_button.setText("Running")
-            self.stop_experiment_button.setText("◼")
+            self.start_experiment_button.setStyleSheet("image:none;")
+            self.stop_experiment_button.setText("")
+            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
             self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
@@ -569,11 +595,14 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
         self.stop_experiment_button.setText("Stopping")
+        self.stop_experiment_button.setStyleSheet("image: none;")
+
         self.is_stopping = True
         self.stopping_dot_count = 0
         self.animate_stopping()
 
-        self.start_experiment_button.setText("▶")
+        self.start_experiment_button.setText("")
+        self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
 
     def animate_stopping(self):
         """
@@ -592,8 +621,12 @@ class Quarky(QMainWindow):
         self.is_stopping = False
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(True)
-        self.start_experiment_button.setText("▶")
-        self.stop_experiment_button.setText("◼")
+
+        self.start_experiment_button.setText("")
+        self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+        self.stop_experiment_button.setText("")
+        self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
         self.load_experiment_button.setEnabled(True)
@@ -670,6 +703,9 @@ class Quarky(QMainWindow):
         tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(True)
+        self.start_experiment_button.setText("")
+        self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+
         self.current_tab = new_experiment_tab
         self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
 
@@ -710,8 +746,12 @@ class Quarky(QMainWindow):
 
             if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                 self.start_experiment_button.setEnabled(False)
+                self.start_experiment_button.setText("")
+                self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
             else:
                 self.start_experiment_button.setEnabled(True)
+                self.start_experiment_button.setText("")
+                self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
 
     def close_tab(self, idx):
         """
@@ -767,7 +807,7 @@ class Quarky(QMainWindow):
         """
 
         qCritical("RFSoC thew the error: " + str(e))
-        qCritical(traceback.print_exc())
+        qCritical(traceback.format_exc())
         QMessageBox.critical(None, "RFSOC error", "RfSoc has thrown an error (see log).")
 
     def load_data_file(self):
@@ -842,11 +882,20 @@ class Quarky(QMainWindow):
         with open("assets/style.qss", "r") as file:
             existing_style = file.read()
         style = existing_style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
+        style = style.replace('$LARGER_FONT_SIZE', f"{(font_size+2)}")
         style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size-1)}")
         style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")
         style = style.replace('$SMALL_FONT_SIZE', f"{(font_size-2)}")
 
         app.setStyleSheet(style)
+
+    def extracted_config(self, config):
+        """
+        Function called when a config is extracted. Calls the update config button of the config tree.
+        """
+        print(config)
+        self.config_tree_panel.update_config_dict(config)
+        self.config_tree_panel.populate_tree()
 
     def extract_direct_imports(self, file_path):
         """

@@ -44,7 +44,8 @@ from PyQt5.QtWidgets import (
     QApplication,
     QLabel,
     QInputDialog,
-    QButtonGroup
+    QButtonGroup,
+    QSizePolicy
 )
 
 import scripts.Helpers as Helpers
@@ -95,25 +96,30 @@ class QConfigTreePanel(QTreeView):
         self.setObjectName("ConfigTreePanel")
 
         # Set up layout
-        self.toolbar_layout = QHBoxLayout()
-        self.toolbar_layout.setContentsMargins(0, 7, 0, 7)
-        self.toolbar_layout.setSpacing(0)
         self.main_layout = QVBoxLayout()
-        self.main_layout.setContentsMargins(10, 5, 10, 5)
+        self.main_layout.setContentsMargins(10, 5, 10, 0)
         self.main_layout.setSpacing(3)
         self.setLayout(self.main_layout)
         self.setMinimumSize(225, 0)
 
-        self.title_label = QLabel("Configuration Panel")  # estimated experiment time
-        self.title_label.setStyleSheet("font-size: 11px; background-color: #ECECEC; padding: 3px; border-radius: 5px;")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.main_layout.addWidget(self.title_label)
+        self.config_title_label = QLabel("Configuration Panel")  # estimated experiment time
+        self.config_title_label.setObjectName("config_title_label")
+        self.config_title_label.setAlignment(Qt.AlignCenter)
+        self.main_layout.addWidget(self.config_title_label)
 
         # toolbar setup
-        self.save_config_button = Helpers.create_button("Save", "save_config", True, self)
-        self.load_config_button = Helpers.create_button("Load", "load_config", True, self)
-        self.copy_config_button = Helpers.create_button("Copy", "copy_config", True, self)
-        self.paste_config_button = Helpers.create_button("Paste", "paste_config", True, self)
+        self.toolbar_layout = QHBoxLayout()
+        self.toolbar_layout.setContentsMargins(0, 7, 0, 5)
+        self.toolbar_layout.setSpacing(0)
+
+        self.save_config_button = Helpers.create_button("", "save_config", True, self)
+        self.save_config_button.setToolTip("Save")
+        self.load_config_button = Helpers.create_button("", "load_config", True, self)
+        self.load_config_button.setToolTip("Load Json")
+        self.copy_config_button = Helpers.create_button("", "copy_config", True, self)
+        self.copy_config_button.setToolTip("Copy")
+        self.paste_config_button = Helpers.create_button("", "paste_config", True, self)
+        self.paste_config_button.setToolTip("Paste")
 
         self.toolbar_layout.addWidget(self.save_config_button)
         self.toolbar_layout.addWidget(self.load_config_button)
@@ -136,13 +142,28 @@ class QConfigTreePanel(QTreeView):
         self.tree.setSortingEnabled(True)
         self.tree.setHeaderHidden(False)
         self.tree.setSelectionBehavior(QAbstractItemView.SelectItems)
-        self.tree.setColumnWidth(0, 100)
-        self.tree.setColumnWidth(1, 50)
+
         self.tree.setIndentation(6)
 
-        instructions_label = QLabel("Drag and Drop .json Files")
-        instructions_label.setStyleSheet("font-size: 10px;")
-        self.main_layout.addWidget(instructions_label)
+        # utilities setup
+        self.utilities_layout = QHBoxLayout()
+        self.utilities_layout.setContentsMargins(0, 1, 0, 5)
+        self.utilities_layout.setSpacing(0)
+
+        self.instructions_label = QLabel("Drag and Drop .json Files")
+        self.instructions_label.setObjectName("instructions_label")
+
+        # Not in use
+        # self.view_config_toggle = Helpers.create_button("", "view_config_toggle", True, self, False)
+        # self.view_config_toggle.setStyleSheet("image: url('assets/code-xml.svg');")
+        # self.view_config_toggle.setCursor(Qt.PointingHandCursor)
+        # self.current_view = "tree"
+
+        self.utilities_layout.addWidget(self.instructions_label)
+        # self.utilities_layout.addWidget(self.view_config_toggle)
+
+        self.main_layout.addLayout(self.utilities_layout)
+
 
         # Connect item change signal (this needs to happen before populate_tree (I think))
         self.model.itemChanged.connect(self.handleItemChanged)
@@ -160,6 +181,7 @@ class QConfigTreePanel(QTreeView):
         self.copy_config_button.clicked.connect(self.copy_config)
         self.load_config_button.clicked.connect(lambda : self.load_config())
         self.paste_config_button.clicked.connect(self.paste_config)
+        # self.view_config_toggle.clicked.connect(self.toggle_config_view)
 
         # File dropping
         self.tree.setAcceptDrops(True)
@@ -443,3 +465,12 @@ class QConfigTreePanel(QTreeView):
 
         except Exception as e:
             QMessageBox.critical(None, "Error", f"Error parsing dictionary: {e}")
+
+    # Not In Use
+    # def toggle_config_view(self):
+    #     if self.current_view == "tree":
+    #         self.current_view = "code"
+    #         self.view_config_toggle.setStyleSheet("image: url('assets/list-tree.svg');")
+    #     else:
+    #         self.current_view = "tree"
+    #         self.view_config_toggle.setStyleSheet("image: url('assets/code-xml.svg');")

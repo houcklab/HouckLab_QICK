@@ -87,6 +87,8 @@ def import_file(full_path_to_module, banned_imports=None):
             dummy_module = SimpleNamespace()
             if self.name.endswith('socProxy'):
                 dummy_module.makeProxy = None  # or a dummy function if needed
+                dummy_module.soc = None
+                dummy_module.soccfg = None
             return dummy_module
 
         def exec_module(self, module):

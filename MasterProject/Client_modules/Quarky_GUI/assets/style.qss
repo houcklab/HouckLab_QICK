@@ -37,16 +37,27 @@ QTreeView#ConfigTreePanel QPushButton {
     border-radius: 0px;
     margin: 0px;
     padding: 3px 6px;
+    font-size: $MEDIUM_FONT_SIZEpx;
 }
 
 QTreeView#ConfigTreePanel QPushButton#save_config {
     border-top-left-radius: 6px;
     border-bottom-left-radius: 6px;
+    image: url('assets/save.svg');
+}
+
+QTreeView#ConfigTreePanel QPushButton#load_config {
+    image: url('assets/folder.svg');
+}
+
+QTreeView#ConfigTreePanel QPushButton#copy_config {
+    image: url('assets/copy.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton#paste_config {
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
+    image: url('assets/clipboard-paste.svg');
 }
 
 QPushButton#documentation_button {
@@ -59,12 +70,24 @@ QPushButton#documentation_button {
 }
 
 QPushButton#settings_button {
-    border: 1px solid rgb(145, 145, 145);
-    font-size: $SMALL_FONT_SIZEpx;
+    image: url('assets/settings.svg');
+    border: none;
+    border-radius: 5px;
+    font-size: $LARGER_FONT_SIZEpx;
     color: rgb(135, 135, 135);
     background: #ececec;
+    padding: 0px -7px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#view_config_toggle {
+    background: none;
     border-radius: 6px;
-    padding: 3px 8px;
+    padding: 0px 0px;
+    max-width: 20px;
+}
+
+QTreeView#ConfigTreePanel QPushButton#view_config_toggle:hover {
+    border: none;
 }
 
 QWidget#channel_list QPushButton {
@@ -91,24 +114,39 @@ QTabWidget#side_tabs QTabBar::tab {
 }
 
 QLabel#runtime_label, QLabel#endtime_label, QLabel#voltage_range_label, QLabel#hardware_label,
-    QTextEdit#voltage_interface_settings, QLabel#coord_label, QLabel#delete_label {
+    QTextEdit#voltage_interface_settings, QLabel#coord_label, QLabel#delete_label, QLabel#instructions_label {
     font-size: $SMALL_FONT_SIZEpx;
 }
 
-QSplitter::handle {
-    background-color: rgb(180,180,180);       /* handle color */
+QLabel#config_title_label {
+    font-size: $MEDIUM_FONT_SIZEpx;
+    background-color: #ECECEC;
+    padding: 3px;
+    border-radius: 5px;
 }
 
-QSplitter::handle:horizontal {
-    margin-top: 230px;
-    margin-bottom: 230px;
-    border-radius: 2px;
+QLabel#editor_title_label {
+    font-size: $MEDIUM_FONT_SIZEpx;
+    background-color: rgb(255,255,255);
+    padding: 1px 10px;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+    margin-right: 10px;
 }
 
-QSplitter::handle:vertical {
-    margin-left: 1px;
-    margin-right: 1px;
-    border-radius: 2px;
+QLabel#code_file_label {
+    font-size: $MEDIUM_FONT_SIZEpx;
+    color: gray;
+}
+
+QSplitter#main_splitter::handle {
+    image: url('assets/ellipsis-vertical.svg');
+}
+
+QSplitter#vert_splitter::handle {
+    image: url('assets/ellipsis.svg');
 }
 
 QLineEdit {
@@ -132,24 +170,29 @@ QGroupBox::title {
     padding: 0 3px;
 }
 
-QPushButton#connect_button{
-    background-color: rgb(100, 149, 237);
-    color: white;
-}
-
-QPushButton#create_connection_button{
+QPushButton#connect_button, QPushButton#create_connection_button{
     background-color: rgb(100, 149, 237);
     color: white;
 }
 
 QPushButton#start_experiment{
     background-color: rgb(60, 179, 113);
-    color: white;
+    font-size: $MEDIUM_FONT_SIZEpx;
+    image: url('assets/play.svg');
+}
+
+QPushButton#start_experiment:hover{
+    background-color: rgb(100, 219, 153);
 }
 
 QPushButton#stop_experiment{
     background-color: rgb(205, 92, 92);
-    color: white;
+    font-size: $MEDIUM_FONT_SIZEpx;
+    image: url('assets/octagon-x.svg');
+}
+
+QPushButton#stop_experiment:hover{
+    background-color: rgb(245, 132, 132);
 }
 
 QPushButton#connect_button:disabled {
@@ -209,4 +252,59 @@ QComboBox::down-arrow {
 QComboBox::down-arrow:on {
     top: 1px;  /* adjust position on click */
     left: 1px;
+}
+
+QWidget#editor_execution_container {
+    border: 1px solid #C4C4C3;
+}
+
+QWidget#editor_execution_container QPushButton {
+    border: none;
+    border-radius: 3px;
+    background: none;
+    padding: 3px 5px;
+}
+
+QWidget#editor_execution_container QPushButton:hover {
+    background: rgb(220,220,220);
+}
+
+QPushButton#run_editor_button {
+    image: url('assets/play-green.svg');
+}
+
+QWidget#editor_execution_container QPushButton#run_editor_button:hover {
+    image: url('assets/play-white.svg');
+    background: rgb(100, 219, 153);
+    color: white;
+}
+
+QPushButton#open_codefile_button {
+    image: url('assets/folder.svg');
+}
+
+QPushButton#save_codefile_button {
+    image: url('assets/save.svg');
+}
+
+QPushButton#search_codefile_button {
+    image: url('assets/search.svg');
+}
+
+QFrame#FindBar {
+    background: rgb(220 ,220, 220);
+    border-radius: 5px;
+    padding: 2px 10px;
+}
+
+QPushButton#close_findbar_button {
+    image: url('assets/x.svg');
+    border: none;
+    border-radius: 3px;
+    background: none;
+    padding: 3px 0px;
+}
+
+QTextEdit#code_text_editor {
+    font-size: $SMALL_FONT_SIZEpx;
 }
