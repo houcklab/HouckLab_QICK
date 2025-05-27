@@ -278,6 +278,7 @@ class Quarky(QMainWindow):
 
         self.vert_splitter.setStretchFactor(0, 6)
         self.vert_splitter.setStretchFactor(1, 4)
+        self.vert_splitter.setSizes([1, 0]) # collapse the config extractor
 
         self.main_layout.addWidget(self.vert_splitter)
         self.main_layout.setStretch(0, 1) # make top bar small
