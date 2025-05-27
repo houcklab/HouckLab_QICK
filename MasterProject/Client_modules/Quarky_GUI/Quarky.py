@@ -550,13 +550,15 @@ class Quarky(QMainWindow):
             self.thread.finished.connect(self.thread.deleteLater) # delete thread
             self.thread.finished.connect(self.finished_experiment) # update UI
 
+            # UI updates for tab
+            self.currently_running_tab = self.current_tab
+            idx = self.central_tabs.indexOf(self.currently_running_tab)
+            self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
+
             # Connecting data related slots
-            # TODO assign a self.currently_running_tab = self.current_tab
-            # TODO change from current tab to currently running an experiment tab
-            # TODO if an experiment is running change its tab name temporarily to have a stopwatch or something
-            self.experiment_worker.updateData.connect(self.current_tab.update_data) # update data & plot
-            self.experiment_worker.intermediateData.connect(self.current_tab.intermediate_data) # intermediate data & plot
-            self.experiment_worker.updateRuntime.connect(self.current_tab.update_runtime_estimation) # update runtime
+            self.experiment_worker.updateData.connect(self.currently_running_tab.update_data) # update data & plot
+            self.experiment_worker.intermediateData.connect(self.currently_running_tab.intermediate_data) # intermediate data & plot
+            self.experiment_worker.updateRuntime.connect(self.currently_running_tab.update_runtime_estimation) # update runtime
 
             self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
             self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
@@ -632,9 +634,13 @@ class Quarky(QMainWindow):
         self.load_experiment_button.setEnabled(True)
         self.load_data_button.setEnabled(True)
 
+        # UI updates for tab
+        idx = self.central_tabs.indexOf(self.currently_running_tab)
+        self.central_tabs.setTabText(idx, self.currently_running_tab.tab_name + ".py")
+
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
-        if hasattr(self.current_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
-            qInfo("Stopping Experiment: " + str(self.current_tab.tab_name))
+        if hasattr(self.currently_running_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
+            qInfo("Stopping Experiment: " + str(self.currently_running_tab.tab_name))
 
     def closeEvent(self, event):
         """
@@ -694,28 +700,30 @@ class Quarky(QMainWindow):
         # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
         new_experiment_tab = QQuarkTab(path, experiment_name, True, app=self)
 
-        # time.sleep(2)
-        # if new_experiment_tab.experiment_obj.experiment_class is None: # not valid experiment file
-        #     qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
-        #     return
+        if new_experiment_tab.experiment_obj.experiment_module is not None:
 
-        # Handling UI updates: Update current tab, enable experiment running, update ConfigPanel
-        tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
-        self.central_tabs.setCurrentIndex(tab_idx)
-        self.start_experiment_button.setEnabled(True)
-        self.start_experiment_button.setText("")
-        self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+            # Handling UI updates: Update current tab, enable experiment running, update ConfigPanel
+            tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
+            self.central_tabs.setCurrentIndex(tab_idx)
+            self.start_experiment_button.setEnabled(True)
+            self.start_experiment_button.setText("")
+            self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
 
-        self.current_tab = new_experiment_tab
-        self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
+            self.current_tab = new_experiment_tab
+            self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
 
-        # Signals from QuarkTabs
-        self.current_tab.updated_tab.connect(self.update_tab)
+            # Signals from QuarkTabs
+            self.current_tab.updated_tab.connect(self.update_tab)
 
-        # Remove the template tab created on GUI initialization
-        if not self.tabs_added and tab_count == 1:
-                self.central_tabs.removeTab(0)
-        self.tabs_added = True
+            # Remove the template tab created on GUI initialization
+            if not self.tabs_added and tab_count == 1:
+                    self.central_tabs.removeTab(0)
+            self.tabs_added = True
+
+        else:
+            qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
+            # QMessageBox.critical(None, "Extraction error", "GUI failed to extract experiment (see log).")
+            return
 
     def update_tab(self):
         """
