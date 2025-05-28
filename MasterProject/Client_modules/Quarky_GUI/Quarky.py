@@ -576,7 +576,7 @@ class Quarky(QMainWindow):
             self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
-            # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
+            # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
             # self.load_experiment_button.setEnabled(False)
             # self.load_data_button.setEnabled(False)
 
