@@ -118,6 +118,7 @@ class Quarky(QMainWindow):
 
         # Tracks the central tab module by the currently selected tab
         self.current_tab = None
+        self.currently_running_tab = None
         self.tabs_added = False
 
         # The settings window
@@ -575,9 +576,9 @@ class Quarky(QMainWindow):
             self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
-            self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
-            self.load_experiment_button.setEnabled(False)
-            self.load_data_button.setEnabled(False)
+            # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction
+            # self.load_experiment_button.setEnabled(False)
+            # self.load_data_button.setEnabled(False)
 
             self.thread.start()
 
@@ -631,9 +632,9 @@ class Quarky(QMainWindow):
         self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
 
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
-        self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
-        self.load_experiment_button.setEnabled(True)
-        self.load_data_button.setEnabled(True)
+        # self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
+        # self.load_experiment_button.setEnabled(True)
+        # self.load_data_button.setEnabled(True)
 
         # UI updates for tab
         idx = self.central_tabs.indexOf(self.currently_running_tab)
@@ -642,6 +643,8 @@ class Quarky(QMainWindow):
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
         if hasattr(self.currently_running_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
             qInfo("Stopping Experiment: " + str(self.currently_running_tab.tab_name))
+
+        self.currently_running_tab = None
 
     def closeEvent(self, event):
         """
@@ -706,9 +709,11 @@ class Quarky(QMainWindow):
             # Handling UI updates: Update current tab, enable experiment running, update ConfigPanel
             tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
             self.central_tabs.setCurrentIndex(tab_idx)
-            self.start_experiment_button.setEnabled(True)
-            self.start_experiment_button.setText("")
-            self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+
+            if self.currently_running_tab is None:
+                self.start_experiment_button.setEnabled(True)
+                self.start_experiment_button.setText("")
+                self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
 
             self.current_tab = new_experiment_tab
             self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
@@ -753,14 +758,15 @@ class Quarky(QMainWindow):
             self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
             self.current_tab.setup_plotter_options() # setup plotter options
 
-            if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
-                self.start_experiment_button.setEnabled(False)
-                self.start_experiment_button.setText("")
-                self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
-            else:
-                self.start_experiment_button.setEnabled(True)
-                self.start_experiment_button.setText("")
-                self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+            if self.currently_running_tab is None:
+                if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
+                    self.start_experiment_button.setEnabled(False)
+                    self.start_experiment_button.setText("")
+                    self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
+                else:
+                    self.start_experiment_button.setEnabled(True)
+                    self.start_experiment_button.setText("")
+                    self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
 
     def close_tab(self, idx):
         """
@@ -795,7 +801,7 @@ class Quarky(QMainWindow):
         :type sets_complete: int
         """
 
-        unformatted_config = self.current_tab.config["Base Config"] | self.current_tab.config["Experiment Config"]
+        unformatted_config = self.currently_running_tab.config["Base Config"] | self.currently_running_tab.config["Experiment Config"]
         # Getting the total reps and sets to be run from the experiment configs
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
@@ -954,7 +960,7 @@ class Quarky(QMainWindow):
             qInfo("Matplotlib plt.plot intercepted.")
             # traceback.print_stack()
 
-            return self.current_tab.handle_pltplot(*args, **kwargs)
+            return self.currently_running_tab.handle_pltplot(*args, **kwargs)
         return wrapper
 
 # Creating the Quarky GUI Main Window
