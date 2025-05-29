@@ -391,7 +391,8 @@ class QQuarkTab(QWidget):
 
     def update_coordinates(self, pos):
         """
-        Updates the coordinates label to reflect the cursor's location on a plot's axis.
+        Updates the coordinates label to reflect the cursor's location on a plot's axis. Also gets the value of the
+        plot at the coordinates if the plot is a color plot.
 
         :param pos: The coordinates of the cursor
         :type pos: tuple
@@ -399,13 +400,32 @@ class QQuarkTab(QWidget):
 
         # find the active plot
         for plot in self.plots:
-            vb = plot.vb  # ViewBox of each plot
+            vb = plot.vb # ViewBox of each plot
             if plot.sceneBoundingRect().contains(pos):
                 self.plot_widget.setCursor(Qt.CrossCursor) # make cursor cross-hairs
-                mouse_point = vb.mapSceneToView(pos) # translate location to axis coordinates
+                mouse_point = vb.mapSceneToView(pos) #  translate location to axis coordinates
                 x, y = mouse_point.x(), mouse_point.y()
+
+                # Try to find an ImageItem in the plot (for color data)
+                image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
+                if image_items:
+                    img_item = image_items[0]
+                    image = img_item.image.T  # The underlying numpy array, assuming plotting origins
+                    if image is not None:
+                        # Map view coordinates to array indices
+                        transform = img_item.transform()
+                        inv_transform = transform.inverted()[0]
+                        mapped = inv_transform.map(mouse_point)
+
+                        ix, iy = int(mapped.x()), int(mapped.y())
+                        if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
+                            value = image[iy, ix]  # Note: row = y, col = x
+                            self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} Val: {value:.4f}")
+                            return
+
+                # If no image or outside bounds
                 self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
-                break
+                return
 
     def capture_plot_to_clipboard(self):
         """

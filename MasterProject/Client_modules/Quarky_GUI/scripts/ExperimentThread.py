@@ -10,6 +10,8 @@ It will then communicate with the main program via signals, as intended in Qt, m
 """
 
 import time
+import traceback
+
 from PyQt5.QtCore import QObject, pyqtSignal, qWarning, qDebug
 from qick import AveragerProgram, RAveragerProgram
 
@@ -68,12 +70,14 @@ class ExperimentThread(QObject):
     :type sets_completed: int
     """
 
-    RFSOC_error = pyqtSignal(Exception)
+    RFSOC_error = pyqtSignal(Exception, str)
     """
     Signal to send when the RFSoC encounters an error
 
     :param error: The exception raised by the RFSoC
     :type error: Exception
+    :param traceback: The traceback of the exception
+    :type traceback: str
     """
 
     def __init__(self, config, soccfg, exp, soc, parent = None):
@@ -117,7 +121,8 @@ class ExperimentThread(QObject):
                 data = self.experiment_instance.acquire()
                 data['data']['set_num'] = self.idx_set
             except Exception as e:
-                self.RFSOC_error.emit(e)
+                format_exc = traceback.format_exc()
+                self.RFSOC_error.emit(e, format_exc)
                 self.finished.emit()
                 return # Do not want to update data -- no new data was recorded!
 

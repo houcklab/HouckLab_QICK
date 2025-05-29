@@ -68,12 +68,11 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: Coord label in plot can do 3D data
 # TODO: Config universal panel
 # TODO: Dark Mode
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-TESTING = True
+TESTING = False
 
 class Quarky(QMainWindow):
     """
@@ -173,7 +172,7 @@ class Quarky(QMainWindow):
         self.load_data_button = Helpers.create_button("Load Data","load_data_button",True,self.wrapper)
         self.load_experiment_button = Helpers.create_button("Extract Experiment","load_experiment_button",True,self.wrapper)
 
-        self.documentation_button = Helpers.create_button("?", "documentation", True, self.wrapper)
+        self.documentation_button = Helpers.create_button("", "documentation", True, self.wrapper)
         self.documentation_button.setToolTip("Documentation")
         self.documentation_button.setObjectName("documentation_button")
 
@@ -816,13 +815,18 @@ class Quarky(QMainWindow):
         if self.current_tab is not None:
             self.current_tab.predict_runtime(config)
 
-    def RFSOC_error(self, e):
+    def RFSOC_error(self, e, traceback):
         """
         The function called when RFSoC returns an error to display in the Log.
+
+        :param e: The error
+        :type e: Exception
+        :param traceback: The traceback
+        :type traceback: str
         """
 
         qCritical("RFSoC thew the error: " + str(e))
-        qCritical(traceback.format_exc())
+        qCritical(traceback)
         QMessageBox.critical(None, "RFSOC error", "RfSoc has thrown an error (see log).")
 
     def load_data_file(self):
