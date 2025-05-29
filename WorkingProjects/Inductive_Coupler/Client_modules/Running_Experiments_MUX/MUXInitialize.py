@@ -94,9 +94,9 @@ FF_channel3 = 0
 FF_channel4 = 1
 
 FF_Qubits = {
-    str(1): {'channel': FF_channel1, 'delay_time': 0.005},
+    str(1): {'channel': FF_channel1, 'delay_time': 0.00},
     str(2): {'channel': FF_channel2, 'delay_time': 0.00},
-    str(3): {'channel': FF_channel3, 'delay_time': 0.002},
+    str(3): {'channel': FF_channel3, 'delay_time': 0.00},
     str(4): {'channel': FF_channel4, 'delay_time': 0.00},
 }
 

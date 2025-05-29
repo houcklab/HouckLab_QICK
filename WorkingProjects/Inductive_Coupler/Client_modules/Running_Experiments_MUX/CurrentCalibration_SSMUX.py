@@ -10,23 +10,39 @@ from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.m
 
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
+# Qubit_Parameters = {
+#     '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
+#                       "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4425, 'Gain': 6200},
+#           'Pulse_FF': [0, 0, 0, 0]},  #second index' for currents
+#     '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
+#                       "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+#           'Qubit': {'Frequency': 4618, 'Gain': 3160},
+#           'Pulse_FF':[0, 0, -2000, 0]}, #Third index
+#     '3': {'Readout': {'Frequency': 7524.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
+#                       "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,},
+#           'Qubit': {'Frequency': 4488, 'Gain': 10900},
+#           'Pulse_FF': [0, 0, 0, 0]},
+#     '5': {'Readout': {'Frequency': 7305.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5130,
+#                       "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
+#           'Qubit': {'Frequency': 4625.1, 'Gain': 28000},
+#           'Pulse_FF': [0, 0, 0, 0]}
+#     }
+
+
 Qubit_Parameters = {
     '1': {'Readout': {'Frequency': 6978.5 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
-                      "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4425, 'Gain': 6200},
-          'Pulse_FF': [0, 0, 0, 0]},  #second index' for currents
-    '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5000,
-                      "FF_Gains": [0, 0, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4618, 'Gain': 3160},
-          'Pulse_FF':[0, 0, -2000, 0]}, #Third index
-    '3': {'Readout': {'Frequency': 7524.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 6000,
-                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,},
-          'Qubit': {'Frequency': 4488, 'Gain': 10900},
+                      "FF_Gains": [0, 0, 8000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4392.0, 'sigma': 0.05, 'Gain': 14350},
+          'Pulse_FF': [0, -10000, 8000, 0]},  # second index
+    '2': {'Readout': {'Frequency': 7095.9 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5400,
+                      "FF_Gains": [0, -20000, -2000, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4439.0, 'sigma': 0.05, 'Gain': 3160},
+          'Pulse_FF':[0, -20000, 0, 0]}, # third index
+    '4': {'Readout': {'Frequency': 7269.8 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 18000,
+                      "FF_Gains": [0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4035.7, 'sigma': 0.05, 'Gain': 9250},
           'Pulse_FF': [0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7305.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 5130,
-                      "FF_Gains": [0, 0, 0, 0], 'cavmin': True},
-          'Qubit': {'Frequency': 4625.1, 'Gain': 28000},
-          'Pulse_FF': [0, 0, 0, 0]}
     }
 
 
@@ -42,17 +58,29 @@ qubit_to_FF_dict = {5: 0, 1: 1, 2: 2, 4: 3}
 Qubit_BS_indices = [qubit_to_FF_dict[qubit] for qubit in Qubit_BS]
 print(Qubit_BS_indices)
 
+# FF_gain1_expt = 0
+# FF_gain2_expt = 0
+# FF_gain3_expt = 1156
+# FF_gain4_expt = 0
+#
+#
+# FF_gain1_BS = 0
+# FF_gain2_BS = -3000
+# FF_gain2_BS = -20000
+# FF_gain3_BS = 2170
+# FF_gain3_BS = 5160
+# FF_gain4_BS = 0
+
+
 FF_gain1_expt = 0
-FF_gain2_expt = 0
-FF_gain3_expt = 1156
+FF_gain2_expt = 15000
+FF_gain3_expt = -4237
 FF_gain4_expt = 0
 
 
 FF_gain1_BS = 0
-FF_gain2_BS = -3000
-FF_gain2_BS = -20000
-FF_gain3_BS = 2170
-FF_gain3_BS = 5160
+FF_gain2_BS = -15000
+FF_gain3_BS = 1670
 FF_gain4_BS = 0
 
 swept_qubit_index = 3 #1 indexed
@@ -89,6 +117,10 @@ current_calibration_offset_dict = {'reps': 1000, 't_evolve': 280*2//4, 'relax_de
 current_calibration_offset_dict = {'reps': 1000, 't_evolve': 280//2, 'relax_delay': 150, "plotDisp": True,
                                    'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,
                                    'offsetStart': -50, 'offsetStop': 50, 'offsetNumPoints': 201}
+
+current_calibration_offset_dict = {'reps': 200, 't_evolve': 280//4, 'relax_delay': 200, "plotDisp": True,
+                                   'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 51,
+                                   'offsetStart': -50, 'offsetStop': 50, 'offsetNumPoints': 101}
 
 SS_params_2States = {"ground": 0, 'excited': 1, "Shots": 4000, "Readout_Time": 2.5, "ADC_Offset": 0.3}
 
@@ -198,6 +230,8 @@ config["FF_Qubits"]['1']['Gain_Pulse'] = FF_gain1_pulse
 config["FF_Qubits"]['2']['Gain_Pulse'] = FF_gain2_pulse
 config["FF_Qubits"]['3']['Gain_Pulse'] = FF_gain3_pulse
 config["FF_Qubits"]['4']['Gain_Pulse'] = FF_gain4_pulse
+
+print(config)
 
 if Oscillation_Gain:
     config["reps"] = oscillation_gain_dict['reps']

@@ -1,31 +1,18 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-from WorkingProjects.Inductive_Coupler.Client_modules.Running_Experiments_MUX.MUXInitialize import *
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabticRampCalibration import AdiabticRampCalibration
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mSpecVsAdiabaticRamp import SpecVsAdiabaticRamp
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabaticRampOscillations import AdiabaticRampOscillations
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabaticRampSingleShot import AdiabaticRampSingleShot
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFFSweepARampSS import FFSweepAdiabaticRampSingleShot
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mFFSweepRampOsc import FFSweepRampOscillations
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mAdiabaticT1 import AdiabaticRampT1SS
-from WorkingProjects.Inductive_Coupler.Client_modules.Experimental_Scripts_MUX.mRampDelayVsPopulation import SweepDelayVsPopulation
+from WorkingProjects.Triangle_Lattice_tProcV1.MUXInitialize import *
+from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mAdiabticRampCalibration import AdiabticRampCalibration
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSpecVsAdiabaticRamp import SpecVsAdiabaticRamp
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mAdiabaticRampOscillations import AdiabaticRampOscillations
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mAdiabaticRampSingleShot import AdiabaticRampSingleShot
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFSweepARampSS import FFSweepAdiabaticRampSingleShot
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFSweepRampOsc import FFSweepRampOscillations
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mAdiabaticT1 import AdiabaticRampT1SS
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mRampDelayVsPopulation import SweepDelayVsPopulation
 
 import numpy as np
-# yoko69.rampstep = 0.0005
-# yoko70.rampstep = 0.0005
-# yoko71.rampstep = 0.0005
-# yoko72.rampstep = 0.0005
-#
-# # yoko69.SetVoltage(-0.0479)
-# # yoko70.SetVoltage(0.0904)
-# # yoko71.SetVoltage(-0.1262)
-# # yoko72.SetVoltage(0.0051)
-#
-# yoko69.SetVoltage(-0.1368)
-# yoko70.SetVoltage(-0.1542)
-# yoko71.SetVoltage(-0.2343)
-# yoko72.SetVoltage(0.1055)
+
 
 mixer_freq = 500
 BaseConfig["mixer_freq"] = mixer_freq
@@ -57,8 +44,8 @@ FF_gain3_expt = 1670
 FF_gain4_expt = 0
 
 
-Qubit_Readout = [2]
-Qubit_Pulse = [2]
+Qubit_Readout = [1]
+Qubit_Pulse = [1]
 
 
 
@@ -78,13 +65,13 @@ adiabatic_ramp_calibration_dict = {'reps': 1000, 'duration_start': int(1), 'dura
 runAdiabaticRampSingleShot = True
 # this experiment will adiabatically prepare an initial state the same way as the AdiabaticRampOcillations experiment,
 # then do single shot readout
-adiabatic_ramp_single_shot_dict = {"Shots": 2000, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_Pulse,
+adiabatic_ramp_single_shot_dict = {"Shots": 1200, "Readout_Time": 2.5, "ADC_Offset": 0.3, "Qubit_Pulse": Qubit_Pulse,
                                    'ramp_duration': int(16 * 500), 'ramp_shape': 'cubic'}
 FFSweepAdiabaticRampSS = False
 # this experiment runs the above experiment multiple times, sweeping the FF gain of a particular index
 # (uses the confusion matrix)
 ff_sweep_adiabatic_ss_dict = {'swept_index': 3,
-                              'gain_start': -1500, 'gain_end': -500, 'num_points': 11, "fit_point": 0.5}  # 1-indexed
+                              'gain_start': -100, 'gain_end': 200, 'num_points': 11, "fit_point": 0.5}  # 1-indexed
 # ff_sweep_adiabatic_ss_dict = {'swept_index': 1,
 #                               'gain_start': -1330, 'gain_end': -1230, 'num_points': 8, "fit_point": 0.5}  # 1-indexed
 
@@ -98,9 +85,9 @@ oscillation_single_dict = {'reps': 1000, 'start': int(0), 'step': int(10), 'expt
                            'ramp_duration': int(20000), 'ramp_shape': 'cubic'}
 
 runAdiabaticT1 = False
-AdiabaticT1Params = {'wait_times': np.linspace(0, 150, 21),
-                'meas_shots': 200, 'repeated_nums': 10, 'ramp_duration': int(16 * 500), 'ramp_shape': 'cubic',
-                'qubitIndex': 3, 'relax_delay': 200}
+# AdiabaticT1Params = {'wait_times': np.linspace(0, 150, 21),
+#                 'meas_shots': 200, 'repeated_nums': 10, 'ramp_duration': int(16 * 500), 'ramp_shape': 'cubic',
+#                 'qubitIndex': int(Qubit_Pulse[0]), 'relax_delay': 200}
 
 
 runFFSweepRampOscillations = False
@@ -158,12 +145,12 @@ UpdateConfig_FF = {
 
 UpdateConfig_transmission = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
-    "pulse_style": "const",  # --Fixed
+    "res_pulse_style": "const",  # --Fixed
     "readout_length": 3,  # [Clock ticks]
-    "pulse_gain": int(cavity_gain),  # [DAC units]
-    # "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "pulse_gains": gains,  # [DAC units]
-    "pulse_freqs": resonator_frequencies,
+    "res_gain": int(cavity_gain),  # [DAC units]
+    # "res_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
+    "res_gains": gains,  # [DAC units]
+    "res_freqs": resonator_frequencies,
     ##### define tranmission experiment parameters
     "TransSpan": 1.5,  ### MHz, span will be center+/- this parameter
     "TransNumPoints": 60,  ### number of points in the transmission frequecny
@@ -172,7 +159,7 @@ UpdateConfig_transmission = {
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit | UpdateConfig_FF
 config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
 config["FF_Qubits"] = FF_Qubits
-config['Read_Indeces'] = Qubit_Readout
+config["Qubit_Readout_List"] = Qubit_Readout
 
 
 #### update the qubit and cavity attenuation
@@ -192,7 +179,7 @@ config["FF_Qubits"]['4']['Gain_Pulse'] = FF_gain4_pulse
 
 config["readout_length"] = SS_params_2States["Readout_Time"]  # us (length of the pulse applied)
 config["adc_trig_offset"] = SS_params_2States["ADC_Offset"]
-print(config["pulse_freqs"])
+print(config["res_freqs"])
 
 angle = []
 threshold = []
@@ -227,7 +214,7 @@ config['confusion_matrix'] = confusion_matrix
 
 
 
-config['Read_Indeces'] = Qubit_Readout
+config["Qubit_Readout_List"] = Qubit_Readout
 config['qubit_gains'] = [int(Qubit_Parameters[str(Q)]['Qubit']['Gain']) for Q in Qubit_Pulse]
 config['f_ges'] = [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse]
 FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
