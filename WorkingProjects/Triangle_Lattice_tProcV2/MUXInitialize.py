@@ -1,0 +1,58 @@
+"""
+file to create basic initialization of things used for RFSOC This will include: 
+- defining names for the attenuators
+- defining yoko name
+- defining spirack and D5aModule
+- defining the basic config dict that will state the channels used for all subsequent code
+"""
+
+from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy, soc, soccfg
+import os
+import platform
+
+if 'macOS' in platform.platform():
+    if "LD_LIBRARY_PATH" in os.environ.keys():
+        os.environ["LD_LIBRARY_PATH"] += ":.\..\\PythonDrivers"
+    else:
+        os.environ["LD_LIBRARY_PATH"] = ".\..\\PythonDrivers"
+else:
+    os.add_dll_directory(os.getcwd() + '\\..\\PythonDrivers')
+
+
+#Define Save folder
+outerFolder = "Z:\QSimMeasurements\Measurements\\4Q_Test_Scalinq\\"
+
+
+###### define default configuration
+BaseConfig = {
+    "res_ch": 8,  # --Fixed
+    "qubit_ch": 9,  # --Fixed
+    "ro_chs": [0, 1, 2, 3],  # --Fixed
+    "fast_flux_chs": [0,1,2,3,4,5,6,7],
+    "res_nqz": 1,
+    "qubit_nqz": 2,
+    "res_mixer_freq": 500, # 7200  # MHz
+    "qubit_mixer_freq": 500,
+
+    "relax_delay": 200,  # --Fixed
+    "res_phase": 0,  # --Fixed
+    "res_length": 20,  # length of cavity pulse for readout in us
+    "adc_trig_time": 0.3,  # Between 0.3 and 0.5 usually [us]
+    "res_LO": 6800,  #in MHz
+}
+
+
+
+### Lets do this within the waveform from now on instead, since it gives better resolution
+FF_Qubits = {
+    str(1): {'channel': FF_channel1, 'delay_time': 0.000},
+    str(2): {'channel': FF_channel2, 'delay_time': 0.000},
+    str(3): {'channel': FF_channel3, 'delay_time': 0.000},
+    str(4): {'channel': FF_channel4, 'delay_time': 0.000},
+}
+
+Additional_Delays = {
+    str(1): {'channel': 4, 'delay_time': 0}
+}
+
+BaseConfig["Additional_Delays"] = Additional_Delays
