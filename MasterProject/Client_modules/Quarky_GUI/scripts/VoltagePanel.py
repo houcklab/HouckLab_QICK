@@ -104,7 +104,7 @@ class QVoltagePanel(QWidget):
 
         # The main layout that will hold all components
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setContentsMargins(0, 5, 0, 0)
         self.main_layout.setSpacing(2)
 
         # Buttons layout
@@ -135,7 +135,7 @@ class QVoltagePanel(QWidget):
         # Controller Content Widget
         self.controller_content = QWidget(self)
         self.controller_layout = QVBoxLayout(self.controller_content)
-        self.controller_layout.setContentsMargins(0, 0, 0, 0)
+        self.controller_layout.setContentsMargins(0, 5, 0, 0)
         self.controller_layout.setSpacing(10)
 
         # Voltage Channels Section

@@ -47,15 +47,7 @@ class QLogPanel(QWidget):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
 
         self.logger = QTextEdit()
-        self.logger.setStyleSheet("""
-            QTextEdit {
-                background-color: #1E1E1E;  /* Dark background */
-                color: #CCCCCC;  /* Light gray text */
-                font-size: 12px;
-                border: 1px solid #333333;  /* Subtle border */
-                padding: 5px;
-            }
-        """)
+        self.logger.setObjectName("log_panel")
         read_only_message = f'<span style="color:#CCCCCC">(Read Only)</span>'
         # self.logger.append(read_only_message)
         # self.logger.setReadOnly(True)

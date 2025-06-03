@@ -111,7 +111,7 @@ class QQuarkTab(QWidget):
 
         ### Plotter within Tab
         self.plot_layout = QVBoxLayout(self)
-        self.plot_layout.setContentsMargins(0, 5, 0, 0)
+        self.plot_layout.setContentsMargins(10, 2, 10, 7)
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
@@ -119,7 +119,7 @@ class QQuarkTab(QWidget):
         self.experiment_infobar_container = QWidget()
         self.experiment_infobar_container.setMaximumHeight(15)
         self.experiment_infobar = QHBoxLayout(self.experiment_infobar_container)
-        self.experiment_infobar.setContentsMargins(0, 0, 0, 0)
+        self.experiment_infobar.setContentsMargins(0, 0, 0, 2)
         self.experiment_infobar.setSpacing(3)
         self.experiment_infobar.setObjectName("experiment_infobar")
 
@@ -143,6 +143,7 @@ class QQuarkTab(QWidget):
         ### Plot Utilities Bar
         self.plot_utilities_container = QWidget()
         self.plot_utilities_container.setMaximumHeight(30)
+        self.plot_utilities_container.setObjectName("plot_utilities_container")
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
         self.plot_utilities.setContentsMargins(2, 0, 2, 0)
         self.plot_utilities.setSpacing(5)

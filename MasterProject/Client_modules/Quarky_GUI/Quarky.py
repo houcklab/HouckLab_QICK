@@ -50,6 +50,7 @@ from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import Exper
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+from scripts.CustomMenuBar import CustomMenuBar
 from scripts.ExperimentThread import ExperimentThread
 from scripts.QuarkTab import QQuarkTab
 from scripts.VoltagePanel import QVoltagePanel
@@ -68,11 +69,10 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
-# TODO: Config universal panel
 # TODO: Dark Mode
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-TESTING = False
+TESTING = True
 
 class Quarky(QMainWindow):
     """
@@ -135,64 +135,41 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.resize(1130, 700)
+        self.setWindowFlags(Qt.FramelessWindowHint) # remove default menu bar
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+        self.resize(1130, 720)
         self.setWindowIcon(QIcon('QuarkyLogo.png'))
         self.central_widget = QWidget()
-        self.central_widget.setMinimumSize(1130, 700)
+        self.central_widget.setMinimumSize(1130, 720)
         self.central_widget.setObjectName("central_widget")
         self.central_layout = QVBoxLayout(self.central_widget)
+        self.central_layout.setContentsMargins(0, 0, 0, 0)
         self.wrapper = QWidget()
         self.wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.wrapper.setObjectName("wrapper")
 
         ### Main layout (vertical) <-- (top bar) + (main splitter that has all panels)
         self.main_layout = QVBoxLayout(self.wrapper)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setContentsMargins(0, 0, 0, 5)
         self.main_layout.setObjectName("main_layout")
+        self.main_layout.setSpacing(10)
 
-        ### Top Control Bar (contains loading and experiment run buttons + progress bar)
-        self.top_bar = QHBoxLayout()
-        self.top_bar.setContentsMargins(2, 10, 2, 10)
-        self.top_bar.setObjectName("top_bar")
+        # Custom Menu Bar
+        self.custom_menu_bar = CustomMenuBar(self)
+        self.custom_menu_bar.setObjectName("custom_menu_bar")
+        self.main_layout.addWidget(self.custom_menu_bar)
 
-        # Creating top bar items
-        # self.quarky_icon = QLabel()
-        # self.quarky_icon.setPixmap(QPixmap("QuarkyLogo.png").scaled(16, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-
-        self.start_experiment_button = Helpers.create_button("","start_experiment",False,self.wrapper)
-        self.start_experiment_button.setToolTip("Run")
-        self.start_experiment_button.setFixedWidth(80)
-        self.stop_experiment_button = Helpers.create_button("️","stop_experiment",False,self.wrapper)
-        self.stop_experiment_button.setToolTip("Stop")
-        self.stop_experiment_button.setFixedWidth(80)
-        self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self.wrapper)
-        self.soc_status_label.setObjectName("soc_status_label")
-        self.experiment_progress_bar = QProgressBar(self.wrapper, value=0)
-        self.experiment_progress_bar.setObjectName("experiment_progress_bar")
-        self.load_data_button = Helpers.create_button("Load Data","load_data_button",True,self.wrapper)
-        self.load_experiment_button = Helpers.create_button("Extract Experiment","load_experiment_button",True,self.wrapper)
-
-        self.documentation_button = Helpers.create_button("", "documentation", True, self.wrapper)
-        self.documentation_button.setToolTip("Documentation")
-        self.documentation_button.setObjectName("documentation_button")
-
-        # self.settings_button = Helpers.create_button("Settings", "settings_button", True, self.wrapper)
-        # self.settings_button.setObjectName("settings_button")
-
-        self.settings_button = Helpers.create_button("", "settings_button", True, self.wrapper, False)
-        self.settings_button.setObjectName("settings_button")
-
-        # Adding items to top bar, top bar to main layout
-        # self.top_bar.addWidget(self.quarky_icon)
-        self.top_bar.addWidget(self.start_experiment_button)
-        self.top_bar.addWidget(self.stop_experiment_button)
-        self.top_bar.addWidget(self.soc_status_label)
-        self.top_bar.addWidget(self.experiment_progress_bar)
-        self.top_bar.addWidget(self.load_data_button)
-        self.top_bar.addWidget(self.load_experiment_button)
-        self.top_bar.addWidget(self.documentation_button)
-        self.top_bar.addWidget(self.settings_button)
-        self.main_layout.addLayout(self.top_bar)
+        # Extracting the buttons in the top bar to connect
+        # TODO: Fix some of the signals to just be handled in the custom Menu Bar Class
+        self.start_experiment_button = self.custom_menu_bar.start_experiment_button
+        self.stop_experiment_button = self.custom_menu_bar.stop_experiment_button
+        self.soc_status_label = self.custom_menu_bar.soc_status_label
+        self.experiment_progress_bar = self.custom_menu_bar.experiment_progress_bar
+        self.load_data_button = self.custom_menu_bar.load_data_button
+        self.load_experiment_button = self.custom_menu_bar.load_experiment_button
+        self.documentation_button = self.custom_menu_bar.documentation_button
+        self.settings_button = self.custom_menu_bar.settings_button
 
         ### Vertical Splitter with Tabs, Voltage Panel, Config Tree
         self.vert_splitter = QSplitter(self.wrapper)
@@ -208,13 +185,19 @@ class Quarky(QMainWindow):
         self.main_splitter.setHandleWidth(6)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
+        self.main_splitter.setContentsMargins(10,0,10,0)
+
+        self.central_tabs_container = QWidget(self.main_splitter)
+        self.central_tabs_container.setObjectName("central_tabs_container")
+        self.central_tabs_layout = QVBoxLayout(self.central_tabs_container)
+        self.central_tabs_layout.setContentsMargins(0, 0, 0, 0)
 
         ### The Central Tabs (contains experiment tabs and data tab)
         self.central_tabs = QTabWidget(self.main_splitter)
         tab_bar = self.central_tabs.tabBar()
         tab_bar.setUsesScrollButtons(True)  # enable left/right scroll buttons
         tab_bar.setExpanding(False)
-        tab_bar.setElideMode(Qt.ElideMiddle)
+        tab_bar.setElideMode(Qt.ElideNone)
         central_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         central_tab_sizepolicy.setHorizontalStretch(0)
         central_tab_sizepolicy.setVerticalStretch(0)
@@ -222,13 +205,15 @@ class Quarky(QMainWindow):
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
         self.central_tabs.setMinimumSize(QSize(650, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
-        self.central_tabs.setTabShape(QTabWidget.Rounded)
         self.central_tabs.setUsesScrollButtons(True)
-        self.central_tabs.setDocumentMode(True)
+        self.central_tabs.setDocumentMode(False)
         self.central_tabs.setTabsClosable(True)
         self.central_tabs.setMovable(True)
         self.central_tabs.setTabBarAutoHide(False)
         self.central_tabs.setObjectName("central_tabs")
+
+        self.central_tabs_layout.addWidget(self.central_tabs)
+        self.central_tabs_container.setLayout(self.central_tabs_layout)
 
         #Template Experiment Tab
         template_experiment_tab = QQuarkTab(app=self)
@@ -246,7 +231,7 @@ class Quarky(QMainWindow):
         side_tab_sizepolicy.setVerticalStretch(0)
         side_tab_sizepolicy.setHeightForWidth(self.side_tabs.sizePolicy().hasHeightForWidth())
         self.side_tabs.setSizePolicy(side_tab_sizepolicy)
-        self.side_tabs.setMinimumSize(QSize(175, 0))
+        self.side_tabs.setMinimumSize(QSize(200, 0))
         self.side_tabs.setTabPosition(QTabWidget.North)
         self.side_tabs.setTabShape(QTabWidget.Rounded)
         self.side_tabs.setDocumentMode(True)
@@ -254,6 +239,7 @@ class Quarky(QMainWindow):
         self.side_tabs.setMovable(False)
         side_tab_bar = self.side_tabs.tabBar()
         side_tab_bar.setExpanding(True)
+        side_tab_bar.setObjectName("side_tab_bar")
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
@@ -281,8 +267,6 @@ class Quarky(QMainWindow):
         self.vert_splitter.setSizes([1, 0]) # collapse the config extractor
 
         self.main_layout.addWidget(self.vert_splitter)
-        self.main_layout.setStretch(0, 1) # make top bar small
-        self.main_layout.setStretch(1, 10) # make main body large
 
         # Completing the hierarchy mentioned at the top
         self.wrapper.setLayout(self.main_layout)
@@ -567,18 +551,19 @@ class Quarky(QMainWindow):
             ### button and GUI updates
             self.update_progress(0)
             self.experiment_progress_bar.setValue(1)
+
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
-            self.start_experiment_button.setText("Running")
-            self.start_experiment_button.setStyleSheet("image:none;")
-            self.stop_experiment_button.setText("")
+            self.start_experiment_button.setStyleSheet("image: url('assets/radio-tower.svg');")
             self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
+
             self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
             # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
             # self.load_experiment_button.setEnabled(False)
             # self.load_data_button.setEnabled(False)
 
+            qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
             self.thread.start()
 
         else:
@@ -597,15 +582,11 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
-        self.stop_experiment_button.setText("Stopping")
-        self.stop_experiment_button.setStyleSheet("image: none;")
-
-        self.is_stopping = True
-        self.stopping_dot_count = 0
-        self.animate_stopping()
-
-        self.start_experiment_button.setText("")
         self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
+        self.stop_experiment_button.setStyleSheet("image: url('assets/timer-off.svg');;")
+        # self.is_stopping = True
+        # self.stopping_dot_count = 0
+        # self.animate_stopping()
 
     def animate_stopping(self):
         """
@@ -622,13 +603,17 @@ class Quarky(QMainWindow):
         Finish an experiment by updating UI, this is called when Stop is complete.
         """
         self.is_stopping = False
-        self.stop_experiment_button.setEnabled(False)
-        self.start_experiment_button.setEnabled(True)
 
-        self.start_experiment_button.setText("")
-        self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
-        self.stop_experiment_button.setText("")
-        self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+        if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
+            self.start_experiment_button.setEnabled(False)
+            self.stop_experiment_button.setEnabled(False)
+            self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+        else:
+            self.start_experiment_button.setEnabled(True)
+            self.stop_experiment_button.setEnabled(False)
+            self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
 
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         # self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
@@ -710,9 +695,10 @@ class Quarky(QMainWindow):
             self.central_tabs.setCurrentIndex(tab_idx)
 
             if self.currently_running_tab is None:
+                self.stop_experiment_button.setEnabled(False)
                 self.start_experiment_button.setEnabled(True)
-                self.start_experiment_button.setText("")
                 self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+                self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
 
             self.current_tab = new_experiment_tab
             self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
@@ -760,12 +746,14 @@ class Quarky(QMainWindow):
             if self.currently_running_tab is None:
                 if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                     self.start_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setText("")
+                    self.stop_experiment_button.setEnabled(False)
                     self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
+                    self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
                 else:
                     self.start_experiment_button.setEnabled(True)
-                    self.start_experiment_button.setText("")
+                    self.stop_experiment_button.setEnabled(False)
                     self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
+                    self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
 
     def close_tab(self, idx):
         """
@@ -783,6 +771,9 @@ class Quarky(QMainWindow):
 
         if self.central_tabs.count() == 0: # if no tabs remaining
             self.start_experiment_button.setEnabled(False)
+            self.stop_experiment_button.setEnabled(False)
+            self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
             self.current_tab = None
         else:
             current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
@@ -887,7 +878,7 @@ class Quarky(QMainWindow):
         self.settings_window.show()
         self.settings_window.raise_()
 
-    def apply_settings(self, theme, font_size):
+    def apply_settings(self, theme=None, font_size=None):
         """
         Applies the settings given in the parameter to the current window.
 
@@ -897,10 +888,93 @@ class Quarky(QMainWindow):
         :type font_size: int
         """
 
+        if theme is None:
+            theme = self.settings_window.curr_theme
+        if font_size is None:
+            font_size = int(self.settings_window.curr_font_size)
+
         print("applying settings")
-        with open("assets/style.qss", "r") as file:
-            existing_style = file.read()
-        style = existing_style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
+        if theme == "Dark Mode":
+            with open("assets/style.qss", "r") as file:
+                style = file.read()
+
+            # Backgrounds
+            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#181818")
+            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#A8A8A8")
+            style = style.replace('$GENERAL_FONT_COLOR', f"#FFFFFF")
+            style = style.replace('$GENERAL_BORDER_COLOR', f"#2B2B2B")
+            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#1F1F1F")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#393A45")
+            # Button
+            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
+            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#F0F0F0")
+            style = style.replace('$BUTTON_PRESSED_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#F2F2F2")
+            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_CONNECT_COLOR', f"#6495ED")
+            style = style.replace('$BUTTON_CONNECT_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_COLOR', f"#AABEDC")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_TEXT_COLOR', f"#DDDDDD")
+            style = style.replace('$BUTTON_RUN_COLOR', f"#3CB371")
+            style = style.replace('$BUTTON_RUN_HOVER_COLOR', f"#64DB99")
+            style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
+            style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
+            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#4F4F56")
+
+            # Tabs
+            style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
+            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#1F1F1F")
+            style = style.replace('$TAB_TEXT_COLOR', f"#000000")
+            style = style.replace('$TAB_BORDER_COLOR', f"#C4C4C3")
+            style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
+            # Misc
+            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
+            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+        else:
+            with open("assets/style.qss", "r") as file:
+                style = file.read()
+
+            # Backgrounds
+            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#F6F7F9")
+            style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
+            style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
+            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2F")
+            # Button
+            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
+            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#F0F0F0")
+            style = style.replace('$BUTTON_PRESSED_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#ECEEF1")
+            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_CONNECT_COLOR', f"#6495ED")
+            style = style.replace('$BUTTON_CONNECT_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_COLOR', f"#AABEDC")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_TEXT_COLOR', f"#DDDDDD")
+            style = style.replace('$BUTTON_RUN_COLOR', f"#3CB371")
+            style = style.replace('$BUTTON_RUN_HOVER_COLOR', f"#64DB99")
+            style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
+            style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
+            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#4F4F56")
+            # Tabs
+            style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
+            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#F7F8FA")
+            style = style.replace('$TAB_TEXT_COLOR', f"#000000")
+            style = style.replace('$TAB_BORDER_COLOR', f"#C4C4C3")
+            style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
+            # Misc
+            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
+            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+
+
+        ### Fonts
+        style = style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
         style = style.replace('$LARGER_FONT_SIZE', f"{(font_size+2)}")
         style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size-1)}")
         style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")

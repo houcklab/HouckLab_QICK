@@ -97,7 +97,7 @@ class QConfigTreePanel(QTreeView):
 
         # Set up layout
         self.main_layout = QVBoxLayout()
-        self.main_layout.setContentsMargins(10, 5, 10, 0)
+        self.main_layout.setContentsMargins(10, 8, 10, 3)
         self.main_layout.setSpacing(3)
         self.setLayout(self.main_layout)
         self.setMinimumSize(225, 0)
@@ -411,8 +411,8 @@ class QConfigTreePanel(QTreeView):
         clipboard.setText(json_string)
         qInfo("Current configuration copied to clipboard!")
 
-        self.copy_config_button.setText('Done!')
-        QTimer.singleShot(3000, lambda: self.copy_config_button.setText('Copy'))
+        self.copy_config_button.setStyleSheet("image: url('assets/check.svg');")
+        QTimer.singleShot(2000, lambda: self.copy_config_button.setStyleSheet("image: url('assets/save.svg');"))
 
     def load_config(self, file_path=None):
         """

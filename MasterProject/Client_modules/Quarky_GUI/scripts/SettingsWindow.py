@@ -54,7 +54,7 @@ class SettingsWindow(QWidget):
         # Theme mode selection dropdown
         self.theme_selector = QComboBox()
         self.theme_selector.addItems(["Light Mode", "Dark Mode"])
-        # self.form_layout.addRow("Theme Mode", self.theme_selector)
+        self.form_layout.addRow("Theme Mode", self.theme_selector)
 
         # Font size input
         self.font_size_input = QLineEdit()
@@ -98,6 +98,8 @@ class SettingsWindow(QWidget):
                 "theme": self.default_theme,
                 "font_size": self.default_font_size,
             }
+            self.curr_theme = self.default_theme
+            self.curr_font_size = self.default_font_size
             with open(self.settings_path, 'w') as f:
                 json.dump(default_settings, f, indent=4)
 
@@ -169,6 +171,8 @@ class SettingsWindow(QWidget):
         if not font_size.isdigit() or int(font_size) < 8 or int(font_size) > 32:
             QMessageBox.critical(self, "Error", "Font size must be a number between 8 and 32.")
             return
+        self.curr_theme = theme
+        self.curr_font_size = font_size
 
         self.update_settings.emit(theme, int(font_size))
 

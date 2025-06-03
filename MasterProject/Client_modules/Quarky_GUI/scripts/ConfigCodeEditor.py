@@ -77,10 +77,16 @@ class ConfigCodeEditor(QWidget):
         self.setContentsMargins(0,0,0,0)
         self.setObjectName("config_code_editor")
 
+        # Main Layout
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
         # Main editor Layout
+        self.editor_container = QWidget(self)
+        self.editor_container.setObjectName("editor_container")
         self.editor_layout = QVBoxLayout()
-        self.editor_layout.setContentsMargins(0, 0, 0, 0)
-        self.editor_layout.setSpacing(0)
+        self.editor_layout.setContentsMargins(10, 10, 10, 10)
+        self.editor_layout.setSpacing(5)
         self.editor_layout.setObjectName("editor_layout")
 
         # Title
@@ -153,7 +159,9 @@ class ConfigCodeEditor(QWidget):
         # Adding it all together
         self.editor_layout.addWidget(self.editor_utilities_container)
         self.editor_layout.addWidget(self.editor_horizontal_container)
-        self.setLayout(self.editor_layout)
+        self.editor_container.setLayout(self.editor_layout)
+        self.main_layout.addWidget(self.editor_container)
+        self.setLayout(self.main_layout)
 
         self.setup_signals()
 

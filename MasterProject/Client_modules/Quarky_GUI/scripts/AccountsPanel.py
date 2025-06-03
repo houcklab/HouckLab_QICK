@@ -112,7 +112,6 @@ class QAccountPanel(QWidget):
         ### Scrollable area that will hold the list of all accounts
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        # self.scroll_area.setGeometry(QRect(0, 0, 175, 500))
         self.scroll_area.setFrameShape(QFrame.NoFrame)
         self.scroll_area.setFrameShadow(QFrame.Plain)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -124,7 +123,7 @@ class QAccountPanel(QWidget):
         self.scroll_area_content = QWidget()
         self.scroll_area_content.setObjectName("scroll_area_content")
         self.scroll_area_layout = QVBoxLayout(self.scroll_area_content)
-        self.scroll_area_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_area_layout.setContentsMargins(0, 5, 0, 0)
 
         ### Accounts Group
         self.accounts_group = QGroupBox("Accounts")
@@ -293,7 +292,7 @@ class QAccountPanel(QWidget):
 
             self.ip_edit.setDisabled(False)
             self.name_edit.setDisabled(False)
-            self.cofig_edit.setDisabled(False)
+            self.config_edit.setDisabled(False)
             self.saved_indicate()
 
 

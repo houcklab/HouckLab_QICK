@@ -197,16 +197,16 @@ def create_button(text, name, enabled=True, parent=None, shadow=True):
     btn.setObjectName(name)
     btn.setEnabled(enabled)
 
-    if shadow:
-        # Create and configure shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(10)  # How blurry the shadow is
-        shadow.setXOffset(0)  # Horizontal offset
-        shadow.setYOffset(0)  # Vertical offset
-        shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
-
-        # Apply shadow to the widget
-        btn.setGraphicsEffect(shadow)
+    # if shadow:
+    #     # Create and configure shadow effect
+    #     shadow = QGraphicsDropShadowEffect()
+    #     shadow.setBlurRadius(10)  # How blurry the shadow is
+    #     shadow.setXOffset(0)  # Horizontal offset
+    #     shadow.setYOffset(0)  # Vertical offset
+    #     shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
+    #
+    #     # Apply shadow to the widget
+    #     btn.setGraphicsEffect(shadow)
 
     return btn
 
