@@ -20,6 +20,7 @@ Documentation Navigation
    quarky_modules/QuarkTab
    quarky_modules/ExperimentThread
    quarky_modules/ExperimentObject
+   quarky_modules/CustomMenuBar
    quarky_modules/ConfigTreePanel
    quarky_modules/AccountsPanel
    quarky_modules/VoltagePanel

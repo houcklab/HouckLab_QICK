@@ -1,3 +1,12 @@
+"""
+================
+CustomMenuBar.py
+================
+The custom menu bar for the GUI.
+
+Contains the basic traffic light controls (close, minimize, expand), as well as run, stop, load, progress bar.
+"""
+
 from PyQt5.QtWidgets import (
     QWidget,
     QHBoxLayout,
