@@ -924,7 +924,7 @@ class Quarky(QMainWindow):
             style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
             style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
             style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
-            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#171724")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2D")
             style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#E9E8E9")
             style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#FFFFFF")
             # Button
@@ -944,7 +944,8 @@ class Quarky(QMainWindow):
             style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
             style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
             style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#4F4F56")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#3E3E3E")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#4A4A4A")
             # Tabs
             style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
             style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#F7F8FA")
@@ -954,6 +955,7 @@ class Quarky(QMainWindow):
             # Misc
             style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
             style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+            style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
         else:
             with open("assets/style.qss", "r") as file:
                 style = file.read()

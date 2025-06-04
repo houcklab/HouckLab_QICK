@@ -2,9 +2,8 @@
 ==================
 mSpecSliceFFMUX.py
 ==================
-A general Spectroscopy slice experiment.
+A Fast Flux Multiplex Spec slice experiment.
 Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
-
 """
 
 from qick import *
@@ -13,12 +12,12 @@ import numpy as np
 from qick.helpers import gauss
 from Pyro4 import Proxy
 from qick import QickConfig
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
 
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
+import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FF.FF_utils as FF
 
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):

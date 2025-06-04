@@ -2,7 +2,7 @@
 ======================
 mSpecVsVoltageFFMUX.py
 ======================
-A general Spectroscopy vs Voltage experiment. Takes any voltageInterface of type Qblox or Yoko to perform voltage sweep.
+A Fast Flux Spec Multiplex vs Voltage experiment. Takes any voltageInterface of type Qblox or Yoko to perform voltage sweep.
 Plots using matplotlib that the GUI intercepts.
 Also a good example of using intermediate_data signal to emit data from within a set for more frequent data updates.
 
@@ -22,8 +22,7 @@ from PyQt5.QtCore import pyqtSignal
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
-
-import WorkingProjects.Inductive_Coupler.Client_modules.Helpers.FF_utils as FF
+import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FF.FF_utils as FF
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
