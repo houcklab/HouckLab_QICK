@@ -19,7 +19,7 @@ import numpy as np
 import concurrent.futures
 from pathlib import Path
 import matplotlib.pyplot as plt
-from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices, QFont
+from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices, QFont, QCursor
 from PyQt5.QtCore import (
     qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
     Qt,
@@ -42,7 +42,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QTabWidget,
-    QSizePolicy, QTextEdit
+    QSizePolicy, QTextEdit, QSizeGrip, QMenu
 )
 
 # Use absolute imports maybe
@@ -68,8 +68,6 @@ try:
     os.add_dll_directory(os.path.join(script_parent_directory, 'PythonDrivers'))
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
-
-# TODO: Dark Mode
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 TESTING = True
@@ -135,8 +133,8 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.setWindowFlags(Qt.FramelessWindowHint) # remove default menu bar
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.resize(1130, 720)
         self.setWindowIcon(QIcon('QuarkyLogo.png'))
@@ -159,6 +157,7 @@ class Quarky(QMainWindow):
         self.custom_menu_bar = CustomMenuBar(self)
         self.custom_menu_bar.setObjectName("custom_menu_bar")
         self.main_layout.addWidget(self.custom_menu_bar)
+        self.grip = QSizeGrip(self)
 
         # Extracting the buttons in the top bar to connect
         # TODO: Fix some of the signals to just be handled in the custom Menu Bar Class
@@ -166,6 +165,7 @@ class Quarky(QMainWindow):
         self.stop_experiment_button = self.custom_menu_bar.stop_experiment_button
         self.soc_status_label = self.custom_menu_bar.soc_status_label
         self.experiment_progress_bar = self.custom_menu_bar.experiment_progress_bar
+        self.experiment_progress_bar_label = self.custom_menu_bar.experiment_progress_bar_label
         self.load_data_button = self.custom_menu_bar.load_data_button
         self.load_experiment_button = self.custom_menu_bar.load_experiment_button
         self.documentation_button = self.custom_menu_bar.documentation_button
@@ -273,7 +273,21 @@ class Quarky(QMainWindow):
         self.central_layout.addWidget(self.wrapper)
         self.setCentralWidget(self.central_widget)
 
+        # Size Grip
+        self.grip = QSizeGrip(self)
+        self.grip.setCursor(Qt.SizeVerCursor)
+
         self.setup_signals()
+
+    def resizeEvent(self, event):
+        """
+        Called upon render to move the sizegrip (self.grip) to the bottom right corner).
+        """
+        self.grip.move(
+            self.width() - 10,
+            self.height() - 10
+        )
+        super().resizeEvent(event)
 
     def setup_signals(self):
         """
@@ -321,8 +335,10 @@ class Quarky(QMainWindow):
         # Config editor
         self.config_code_editor.extracted_config.connect(self.extracted_config)
 
+        self.update_progress(0)
         if TESTING:
             qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
+
 
     def disconnect_rfsoc(self):
         """
@@ -550,14 +566,13 @@ class Quarky(QMainWindow):
 
             ### button and GUI updates
             self.update_progress(0)
-            self.experiment_progress_bar.setValue(1)
+            self.experiment_progress_bar.setValue(5)
 
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
             self.start_experiment_button.setStyleSheet("image: url('assets/radio-tower.svg');")
             self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
 
-            self.experiment_progress_bar.setStyleSheet('') # revert to default styling
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
             # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
             # self.load_experiment_button.setEnabled(False)
@@ -791,12 +806,17 @@ class Quarky(QMainWindow):
         :type sets_complete: int
         """
 
+        if self.currently_running_tab is None:
+            self.experiment_progress_bar.setValue(0)
+            self.experiment_progress_bar_label.setText("--/--")
+            return
+
         unformatted_config = self.currently_running_tab.config["Base Config"] | self.currently_running_tab.config["Experiment Config"]
         # Getting the total reps and sets to be run from the experiment configs
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
             self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
-            self.experiment_progress_bar.setFormat(str(sets_complete * reps) + "/" + str(sets * reps)) # update text
+            self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
 
     def call_tab_runtime_prediction(self, config):
         """
@@ -899,51 +919,14 @@ class Quarky(QMainWindow):
                 style = file.read()
 
             # Backgrounds
-            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#181818")
-            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#A8A8A8")
-            style = style.replace('$GENERAL_FONT_COLOR', f"#FFFFFF")
-            style = style.replace('$GENERAL_BORDER_COLOR', f"#2B2B2B")
-            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#1F1F1F")
-            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#393A45")
-            # Button
-            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
-            style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
-            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#B6B6B6")
-            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#F0F0F0")
-            style = style.replace('$BUTTON_PRESSED_TEXT_COLOR', f"#FFFFFF")
-            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#F2F2F2")
-            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#B6B6B6")
-            style = style.replace('$BUTTON_CONNECT_COLOR', f"#6495ED")
-            style = style.replace('$BUTTON_CONNECT_TEXT_COLOR', f"#FFFFFF")
-            style = style.replace('$BUTTON_CONNECT_DISABLED_COLOR', f"#AABEDC")
-            style = style.replace('$BUTTON_CONNECT_DISABLED_TEXT_COLOR', f"#DDDDDD")
-            style = style.replace('$BUTTON_RUN_COLOR', f"#3CB371")
-            style = style.replace('$BUTTON_RUN_HOVER_COLOR', f"#64DB99")
-            style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
-            style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
-            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#4F4F56")
-
-            # Tabs
-            style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
-            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#1F1F1F")
-            style = style.replace('$TAB_TEXT_COLOR', f"#000000")
-            style = style.replace('$TAB_BORDER_COLOR', f"#C4C4C3")
-            style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
-            # Misc
-            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
-            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
-        else:
-            with open("assets/style.qss", "r") as file:
-                style = file.read()
-
-            # Backgrounds
             style = style.replace('$MAIN_BACKGROUND_COLOR', f"#FFFFFF")
-            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#F6F7F9")
+            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#F0F1F2")
             style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
             style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
             style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
-            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2F")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#171724")
+            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#E9E8E9")
+            style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#FFFFFF")
             # Button
             style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
             style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
@@ -971,6 +954,48 @@ class Quarky(QMainWindow):
             # Misc
             style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
             style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+        else:
+            with open("assets/style.qss", "r") as file:
+                style = file.read()
+
+            # Backgrounds
+            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#F0F1F2")
+            style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
+            style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
+            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2D")
+            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#E9E8E9")
+            style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#FFFFFF")
+            # Button
+            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
+            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#F0F0F0")
+            style = style.replace('$BUTTON_PRESSED_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#ECEEF1")
+            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_CONNECT_COLOR', f"#6495ED")
+            style = style.replace('$BUTTON_CONNECT_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_COLOR', f"#AABEDC")
+            style = style.replace('$BUTTON_CONNECT_DISABLED_TEXT_COLOR', f"#DDDDDD")
+            style = style.replace('$BUTTON_RUN_COLOR', f"#3CB371")
+            style = style.replace('$BUTTON_RUN_HOVER_COLOR', f"#64DB99")
+            style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
+            style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
+            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#3E3E3E")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#4A4A4A")
+            # Tabs
+            style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
+            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#F7F8FA")
+            style = style.replace('$TAB_TEXT_COLOR', f"#000000")
+            style = style.replace('$TAB_BORDER_COLOR', f"#C4C4C3")
+            style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
+            # Misc
+            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
+            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+            style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
 
 
         ### Fonts

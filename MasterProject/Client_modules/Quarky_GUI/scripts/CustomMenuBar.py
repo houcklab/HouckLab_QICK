@@ -53,10 +53,13 @@ class CustomMenuBar(QWidget):
         self.soc_status_label = QLabel('<html><b>✖ Soc Disconnected</b></html>', self)
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self, value=0)
+        self.experiment_progress_bar.setFixedHeight(15)
         self.experiment_progress_bar.setObjectName("experiment_progress_bar")
+        self.experiment_progress_bar.setTextVisible(False)
+        self.experiment_progress_bar_label = QLabel(self)
+        self.experiment_progress_bar_label.setObjectName("experiment_progress_bar_label")
         self.load_data_button = Helpers.create_button("Load Data", "load_data_button", True, self)
-        self.load_experiment_button = Helpers.create_button("Extract Experiment", "load_experiment_button", True,
-                                                            self)
+        self.load_experiment_button = Helpers.create_button("Extract Experiment", "load_experiment_button", True, self)
 
         self.documentation_button = Helpers.create_button("", "documentation", True, self)
         self.documentation_button.setToolTip("Documentation")
@@ -74,6 +77,7 @@ class CustomMenuBar(QWidget):
         menu_layout.addWidget(self.stop_experiment_button)
         menu_layout.addWidget(self.soc_status_label)
         menu_layout.addWidget(self.experiment_progress_bar)
+        menu_layout.addWidget(self.experiment_progress_bar_label)
         menu_layout.addWidget(self.load_data_button)
         menu_layout.addWidget(self.load_experiment_button)
         menu_layout.addWidget(self.documentation_button)
@@ -89,7 +93,7 @@ class CustomMenuBar(QWidget):
 
     def toggle_fullscreen(self):
         if self.parent.isFullScreen():
-            self.parent.showNormal()
+            self.parent.showMinimized()
             self.setStyleSheet("QWidget#custom_menu_bar{border-top-left-radius: 10px; border-top-right-radius: 10px;}")
             self.parent.setAttribute(Qt.WA_TranslucentBackground)
             self.parent.setStyleSheet("QMainWindow{background: transparent; border-radius: 10px}")
@@ -116,11 +120,4 @@ class CustomMenuBar(QWidget):
 
         # Draw top corners rounded
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#2D2D2D"))
-        painter.drawRoundedRect(self.rect(), 6, 6)
-
-        # Draw separator line at bottom
-        line = self.rect().bottomLeft()
-        line.setY(line.y() - 1)
-        painter.setPen(QPen(QColor("#1E1E1E"), 1))
-        painter.drawLine(self.rect().bottomLeft(), self.rect().bottomRight())
+        painter.drawRoundedRect(self.rect(), 10, 10)

@@ -130,6 +130,7 @@ class QConfigTreePanel(QTreeView):
 
         # Create and configure the tree view
         self.tree = QTreeView(self)
+        self.tree.setObjectName("config_tree")
         self.main_layout.addWidget(self.tree)
 
         # Create the model
@@ -143,7 +144,7 @@ class QConfigTreePanel(QTreeView):
         self.tree.setHeaderHidden(False)
         self.tree.setSelectionBehavior(QAbstractItemView.SelectItems)
 
-        self.tree.setIndentation(6)
+        self.tree.setIndentation(8)
 
         # utilities setup
         self.utilities_layout = QHBoxLayout()

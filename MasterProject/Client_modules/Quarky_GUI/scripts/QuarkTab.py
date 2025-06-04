@@ -145,7 +145,7 @@ class QQuarkTab(QWidget):
         self.plot_utilities_container.setMaximumHeight(30)
         self.plot_utilities_container.setObjectName("plot_utilities_container")
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
-        self.plot_utilities.setContentsMargins(2, 0, 2, 0)
+        self.plot_utilities.setContentsMargins(2, 5, 2, 0)
         self.plot_utilities.setSpacing(5)
         self.plot_utilities.setObjectName("plot_utilities")
 

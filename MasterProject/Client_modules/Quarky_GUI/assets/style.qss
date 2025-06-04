@@ -26,7 +26,7 @@
 /* $BUTTON_STOP_COLOR */
 /* $BUTTON_STOP_HOVER_COLOR */
 /* $BUTTON_EDITOR_HOVER_COLOR */
-/* $BUTTON_MENU_BACKGROUND_HOVER_COLOR */
+/* $BUTTON_MENU_BACKGROUND_COLOR */
 
 /* $TAB_BACKGROUND_COLOR */
 /* $TAB_TEXT_COLOR */
@@ -35,6 +35,7 @@
 
 /* $CODE_FILE_LABEL_TEXT_COLOR */
 /* $FIND_BAR_COLOR */
+/* $PROGRESS_BAR_BACKGROUND_COLOR */
 
 QMainWindow {
     background: transparent;
@@ -61,6 +62,17 @@ QTabWidget#central_tabs::pane {
     border-bottom-right-radius: 5px;
     padding-top: 10px;
     border: 1px solid $GENERAL_BORDER_COLOR;
+}
+
+QWidget#central_tabs_container {
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+
+QTreeView#config_tree {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+    alternate-background-color: $CONFIG_TREE_ALT_BACKGROUND_COLOR;
+    border: 1px solid $GENERAL_BORDER_DARKER_COLOR;
 }
 
 QTreeView#ConfigTreePanel {
@@ -182,6 +194,12 @@ QTreeView#ConfigTreePanel QPushButton#paste_config {
     border-bottom-right-radius: 6px;
     image: url('assets/clipboard-paste.svg');
 }
+
+QTreeView#ConfigTreePanel QPushButton:hover {
+    background: $GENERAL_BORDER_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
+}
+
 
 QPushButton#documentation_button {
     image: url('assets/book-text.svg');
@@ -421,6 +439,10 @@ GraphicsLayoutWidget {
     border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
+CustomMenuBar {
+    background: $MENU_BAR_BACKGROUND_COLOR;
+}
+
 QWidget#custom_menu_bar {
     background: $MENU_BAR_BACKGROUND_COLOR;
     border-bottom-left-radius: 0px;
@@ -458,6 +480,28 @@ QPushButton#load_data_button, QPushButton#load_experiment_button {
 }
 
 QPushButton#load_data_button:hover, QPushButton#load_experiment_button:hover {
-    background: #5F5F66;
+    background: $BUTTON_MENU_BACKGROUND_HOVER_COLOR;
     border: none;
+}
+
+QProgressBar {
+    border: none;
+    background-color: $PROGRESS_BAR_BACKGROUND_COLOR;
+    border-radius: 6px;
+}
+
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #3a7bd5, stop:1 #00d2ff);
+    border-radius: 6px;
+}
+
+QLabel#experiment_progress_bar_label {
+    font-size: $GLOBAL_FONT_SIZE;
+    color: #FFFFFF;
+}
+
+QSizeGrip {
+    width: 10px;
+    height: 10px;
+    background: transparent;
 }

@@ -31,7 +31,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QFrame,
     QFormLayout,
-    QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog
+    QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog,
 )
 
 import scripts.Helpers as Helpers
@@ -474,7 +474,7 @@ class QVoltagePanel(QWidget):
             single_channel_group.setSpacing(3)
             single_channel_group.setObjectName("single_channel_group")
             channel_label = QLabel(str(i).zfill(2) + " : ")
-            channel_label.setStyleSheet("color: #4A90E2;")
+            channel_label.setStyleSheet("color: #4A90E2;") # TODO: CHANGE TO QSS
             channel_voltage_input = QLineEdit()
             channel_voltage_input.setPlaceholderText("0.0")
             channel_voltage_input.setAlignment(Qt.AlignRight)

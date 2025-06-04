@@ -79,7 +79,7 @@ class ConfigCodeEditor(QWidget):
 
         # Main Layout
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setContentsMargins(10, 0, 10, 5)
 
         # Main editor Layout
         self.editor_container = QWidget(self)
