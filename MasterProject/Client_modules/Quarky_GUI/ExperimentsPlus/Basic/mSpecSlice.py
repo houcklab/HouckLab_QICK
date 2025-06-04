@@ -99,8 +99,14 @@ class SpecSlice(RAveragerProgram):
     def update(self):
         self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.f_step)  # update freq of the Gaussian pi pulse
 
+# ====================================================== #
+
+class SpecSlice_Experiment(ExperimentClassPlus):
+    """
+    Basic spec experiment that takes a single slice of data
+    """
+
     ### define the template config
-    ################################## code for running qubit spec on repeat
     config_template = {
         ###### cavity
         "read_pulse_style": "const",  # --Fixed
@@ -121,13 +127,6 @@ class SpecSlice(RAveragerProgram):
         "reps": 100,
         "sets": 5,
     }
-
-# ====================================================== #
-
-class SpecSlice_Experiment(ExperimentClassPlus):
-    """
-    Basic spec experiment that takes a single slice of data
-    """
 
     ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]

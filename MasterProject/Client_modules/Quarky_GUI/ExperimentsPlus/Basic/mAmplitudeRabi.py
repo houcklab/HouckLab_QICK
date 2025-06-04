@@ -111,7 +111,14 @@ class RabiAmp_ND(NDAveragerProgram):
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
-    ### define the template config
+
+# ====================================================== #
+
+class RabiAmp_ND_Experiment(ExperimentClassPlus):
+    """
+    Basic amplitude rabi experiment that can sweep both amplitude and frequecny
+    """
+
     config_template = {
         ###### cavity
         "read_pulse_style": "const",  # --Fixed
@@ -131,16 +138,8 @@ class RabiAmp_ND(NDAveragerProgram):
         "qubit_gain_stop": 30000,  ### stepping amount of the qubit gain
         "qubit_gain_expts": 3,  ### number of steps
         "reps": 50,  # number of averages for the experiment
-        "sets": 1, # number of interations to loop over experiment
+        "sets": 1,  # number of interations to loop over experiment
     }
-
-
-# ====================================================== #
-
-class RabiAmp_ND_Experiment(ExperimentClassPlus):
-    """
-    Basic amplitude rabi experiment that can sweep both amplitude and frequecny
-    """
 
     ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]
