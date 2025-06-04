@@ -147,7 +147,7 @@ class ExperimentObject():
                 "Timeout: Experiment loading took too long. Likely error is a socProxy import with a failing IP "
                 "address somewhere in import modules")
             QMessageBox.critical(None, "Timeout Error",
-                                 "Experiment loading took too long (>2s). Possible failing socProxy import. "
+                                 "Experiment loading took too long (>4s). Possible failing socProxy import. "
                                  "Extracting will continue to execute in the background until error.")
         else:
             if isinstance(e, ImportError):
@@ -186,7 +186,7 @@ class ExperimentObject():
         # Using a separate thread to import module in case of import errors that may freeze the GUI
 
         self.aux_thread = QThread()
-        self.aux_worker = AuxiliaryThread(target_func=self.run_import, func_kwargs={"path": self.experiment_path}, timeout=2)
+        self.aux_worker = AuxiliaryThread(target_func=self.run_import, func_kwargs={"path": self.experiment_path}, timeout=4)
         self.aux_worker.moveToThread(self.aux_thread)
 
         # Connecting started and finished signals
