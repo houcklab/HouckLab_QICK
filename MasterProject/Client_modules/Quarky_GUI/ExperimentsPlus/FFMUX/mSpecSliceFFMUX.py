@@ -114,6 +114,7 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
         'expts': 51,
 
         'readout_length': 3,
+        'length': 20,
         'Gauss': False,
         'sets': 2,
         'reps': 20,
