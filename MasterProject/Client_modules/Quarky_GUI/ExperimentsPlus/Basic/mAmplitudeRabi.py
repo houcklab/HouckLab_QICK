@@ -321,7 +321,7 @@ class RabiAmp_ND_Experiment(ExperimentClassPlus):
                                              shading="Auto")
 
         plt.tight_layout()
-        plt.savefig(self.iname)
+        # plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)

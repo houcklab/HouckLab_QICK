@@ -84,6 +84,28 @@ class T2Experiment(ExperimentClass):
     Basic T2 Ramsey experiment
     """
 
+    config_template = {
+        "read_pulse_style": "const",
+        "read_length": 10,  ### in us
+        "read_pulse_gain": 12000,  # 12000,           ### [DAC units]
+        "read_pulse_freq": 891.5,  ### [MHz] actual frequency is this number + "cavity_LO"
+
+        ##### spec parameters for finding the qubit frequency
+        "qubit_freq": 265.56  ,
+        "pi_qubit_gain": 856,
+        "pi2_qubit_gain": 428,
+        "sigma": 0.2,                   ### units us, define a 20ns sigma
+        "qubit_pulse_style": "arb",     ### arb means gaussain here
+        "relax_delay": 2000,            ### turned into us inside the run function
+
+        ##### T2 ramsey parameters
+        "start": 0.010,                 ### us
+        "step": 15,                      ### us
+        "expts": 51,                    ### number of experiemnts
+        "reps": 2500,                   ### number of averages on each experiment
+
+    }
+
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
@@ -101,30 +123,6 @@ class T2Experiment(ExperimentClass):
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
         data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'phase': phase}}
-
-        ## perform fit for T1 estimate
-        mag = avgi[0][0]
-
-        # ### define T2 function
-        # def _expCosFit(x, offset, amp, T2, freq, phaseOffset):
-        #     return offset + (amp * np.exp(-1 * x / T2) * np.cos(2*np.pi*freq*x + phaseOffset) )
-        #
-        # offset_guess = (np.max(mag) + np.min(mag))/2
-        # amp_guess = (np.max(mag) - np.min(mag))/2
-        # T2_guess = np.max(x_pts)/3
-        # freq_guess = np.abs(x_pts[np.argmax(mag)] - x_pts[np.argmin(mag)])*2
-        # phaseOffset_guess = np.pi
-        #
-        # guess = [offset_guess, amp_guess, T2_guess, freq_guess, phaseOffset_guess]
-        #
-        # self.pOpt, self.pCov = curve_fit(_expCosFit, x_pts, mag, p0=guess)
-        #
-        # self.T2_fit = _expCosFit(x_pts, *self.pOpt)
-        #
-        # self.T2_est = self.pOpt[2]
-        # self.freq_est = self.pOpt[3]
-        # self.data = data
-        print("--- %s seconds ---" % (time.time() - start_time))
 
         return data
 

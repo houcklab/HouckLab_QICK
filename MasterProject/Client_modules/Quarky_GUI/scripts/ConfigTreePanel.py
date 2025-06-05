@@ -23,6 +23,8 @@ import os
 import json
 import ast
 import datetime
+import traceback
+
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import (
     QEvent,
@@ -454,7 +456,8 @@ class QConfigTreePanel(QTreeView):
             return
 
         try:
-            update_config = json.loads(text.strip())
+            str_dict = text.strip().replace("\'", '\"')
+            update_config = json.loads(str_dict) # json.loads only allows double quotes
             update_config.update(update_config.pop("Base Config", {}))
             update_config.update(update_config.pop("Experiment Config", {}))
             self.update_config_dict(update_config)
@@ -466,6 +469,8 @@ class QConfigTreePanel(QTreeView):
 
         except Exception as e:
             QMessageBox.critical(None, "Error", f"Error parsing dictionary: {e}")
+            qCritical(f"The Config loaded from {text} has failed: {str(e)}")
+            traceback.print_exc()
 
     # Not In Use
     # def toggle_config_view(self):

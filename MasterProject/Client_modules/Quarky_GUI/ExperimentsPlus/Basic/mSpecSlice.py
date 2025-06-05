@@ -268,7 +268,7 @@ class SpecSlice_Experiment(ExperimentClassPlus):
 
         plt.tight_layout()
 
-        plt.savefig(self.iname)
+        # plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)
