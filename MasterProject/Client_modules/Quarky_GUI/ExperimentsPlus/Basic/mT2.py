@@ -3,6 +3,9 @@
 mT2.py
 ======
 A Basic T2 Ramsey experiment.
+
+plotter (pyqtgraph): not provided
+display (matplotlib): provided
 """
 
 from qick import *

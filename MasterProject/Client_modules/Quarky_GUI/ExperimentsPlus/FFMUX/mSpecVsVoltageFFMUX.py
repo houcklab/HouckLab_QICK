@@ -6,6 +6,8 @@ A Fast Flux Spec Multiplex vs Voltage experiment. Takes any voltageInterface of 
 Plots using matplotlib that the GUI intercepts.
 Also a good example of using intermediate_data signal to emit data from within a set for more frequent data updates.
 
+plotter (pyqtgraph): provided
+display (matplotlib): provided
 """
 
 from qick import *
@@ -22,7 +24,7 @@ from PyQt5.QtCore import pyqtSignal
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
-import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FF.FF_utils as FF
+import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FFMUX.FF_utils as FF
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):

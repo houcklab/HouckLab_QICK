@@ -5,6 +5,8 @@ mTransmissionFFMUX.py
 A Fast Flux Multiplex Cavity Transmission slice experiment.
 Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
 
+plotter (pyqtgraph): provided
+display (matplotlib): provided
 """
 
 from qick import *
@@ -19,7 +21,7 @@ from tqdm.notebook import tqdm
 import time
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
-import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FF.FF_utils as FF
+import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FFMUX.FF_utils as FF
 
 class CavitySpecFFProg(AveragerProgram):
     def initialize(self):

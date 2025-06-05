@@ -4,6 +4,9 @@ mSpecSlice.py
 =============
 A Basic Spec slice experiment.
 Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
+
+plotter (pyqtgraph): provided
+display (matplotlib): provided
 """
 
 from qick import RAveragerProgram

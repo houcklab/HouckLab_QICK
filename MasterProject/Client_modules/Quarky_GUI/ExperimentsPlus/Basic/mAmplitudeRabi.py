@@ -3,7 +3,10 @@
 mAmplitudeRabi.py
 =================
 A Basic Amplitude Rabi experiment.
-Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
+plotter (pyqtgraph): provided
+display (matplotlib): provided
+
+# TODO: Update to use RAverager
 """
 
 import datetime

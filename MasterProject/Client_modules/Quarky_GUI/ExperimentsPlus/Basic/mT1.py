@@ -3,6 +3,9 @@
 mT1.py
 ======
 A Basic T1 Experiment.
+
+plotter (pyqtgraph): not provided
+display (matplotlib): provided
 """
 
 from qick import *

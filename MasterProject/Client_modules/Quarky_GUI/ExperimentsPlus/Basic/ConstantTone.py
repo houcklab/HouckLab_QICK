@@ -10,6 +10,9 @@ is told to play something else, e.g. if we play a tone on channel 1, then run th
 both channel 1 AND channel 0 will continue playing their respective tones.
 
 Provides only a plotter pyqtgraph function for plotting what an oscilloscope should see.
+
+plotter (pyqtgraph): provided
+display (matplotlib): not provided
 """
 from qick import AveragerProgram
 from MasterProject.Client_modules.Init.initialize import BaseConfig
