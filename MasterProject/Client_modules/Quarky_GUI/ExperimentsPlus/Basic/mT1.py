@@ -136,7 +136,7 @@ class T1Experiment(ExperimentClassPlus):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'times': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
