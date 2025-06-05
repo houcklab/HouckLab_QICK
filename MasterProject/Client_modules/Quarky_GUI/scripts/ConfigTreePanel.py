@@ -415,7 +415,7 @@ class QConfigTreePanel(QTreeView):
         qInfo("Current configuration copied to clipboard!")
 
         self.copy_config_button.setStyleSheet("image: url('assets/check.svg');")
-        QTimer.singleShot(2000, lambda: self.copy_config_button.setStyleSheet("image: url('assets/save.svg');"))
+        QTimer.singleShot(2000, lambda: self.copy_config_button.setStyleSheet("image: url('assets/copy.svg');"))
 
     def load_config(self, file_path=None):
         """
