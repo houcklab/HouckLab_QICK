@@ -57,13 +57,14 @@ class ConstantTone_Experiment(ExperimentClassPlus):
     This experiment just sets the RFSOC to output a constant tone on a given chanel at a given frequency and gain.
     """
 
-    ### Specify the hardware requirement for this experiment
+    ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]
 
     def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
                  cfg=None, config_file=None, progress=None):
 
-        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware, cfg=cfg,
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
+                         hardware_requirement=self.hardware_requirement, cfg=cfg,
                          config_file=config_file, progress=progress)
 
         # retrieve the hardware that corresponds to what was required
@@ -165,8 +166,6 @@ class ConstantTone_Experiment(ExperimentClassPlus):
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display
 
-    def save_data(self, data=None):
-        pass # No data collected
 
 
 

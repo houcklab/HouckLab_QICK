@@ -70,7 +70,7 @@ except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-TESTING = True
+TESTING = False
 
 class Quarky(QMainWindow):
     """
