@@ -152,6 +152,7 @@ class T1Experiment(ExperimentClassPlus):
         sig  = avgi[0][0] + 1j * avgq[0][0]
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
+
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
@@ -181,7 +182,6 @@ class T1Experiment(ExperimentClassPlus):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            # plt.close()
         else:
             fig.clf(True)
             plt.close(fig)

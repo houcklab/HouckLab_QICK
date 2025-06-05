@@ -75,14 +75,14 @@ class TesterExperiment(ExperimentClassPlus):
         ################## FAKE DATA FOR A SPECSLICE ###############
         ############################################################
 
-        # x_pts = np.arange(0, reps)
-        # avgi = [[np.random.randint(0, 10, reps),np.random.randint(0, 10, reps)]]
-        # avgq = [[np.random.randint(0, 10, reps),np.random.randint(0, 10, reps)]]
-        #
-        # self.data = {'config': self.cfg,
-        #         'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}
-        # }
-        # time.sleep(1)
+        x_pts = np.arange(0, reps)
+        avgi = [[np.random.randint(0, 10, reps),np.random.randint(0, 10, reps)]]
+        avgq = [[np.random.randint(0, 10, reps),np.random.randint(0, 10, reps)]]
+
+        self.data = {'config': self.cfg,
+                'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}
+        }
+        time.sleep(1)
 
         ############################################################
         ################ FAKE DATA FOR A SPECvsVOLT ################

@@ -508,7 +508,6 @@ class QQuarkTab(QWidget):
         """
         Handles a matplotlib by extracting its data and plotting it using pyqtgraph.
         """
-        self.clear_plots()
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
@@ -523,6 +522,9 @@ class QQuarkTab(QWidget):
                 if i % 2 == 0:
                     self.plot_widget.nextRow()
                 self.extract_and_plot_pyqtgraph(i, ax)
+
+        plt.close() # close all figs
+
         return
 
     def extract_and_plot_pyqtgraph(self, i, ax):
@@ -553,6 +555,7 @@ class QQuarkTab(QWidget):
 
         new_plot = True
         plot_item_num = 0
+
         if len(self.plots) > self.curr_plot: # If plots already exist, then don't create new plots, simply update the existing
             plot = self.plots[self.curr_plot]
             plot_data_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]

@@ -914,7 +914,7 @@ class Quarky(QMainWindow):
         if font_size is None:
             font_size = int(self.settings_window.curr_font_size)
 
-        print("applying settings")
+        # print("applying settings")
         if theme == "Dark Mode":
             with open("assets/style.qss", "r") as file:
                 style = file.read()
