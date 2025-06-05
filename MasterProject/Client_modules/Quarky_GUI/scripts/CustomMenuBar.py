@@ -94,12 +94,14 @@ class CustomMenuBar(QWidget):
     def toggle_fullscreen(self):
         if self.parent.isFullScreen():
             self.parent.showMinimized()
+            self.btn_minimize.setEnabled(True)
             self.setStyleSheet("QWidget#custom_menu_bar{border-top-left-radius: 10px; border-top-right-radius: 10px;}")
             self.parent.setAttribute(Qt.WA_TranslucentBackground)
             self.parent.setStyleSheet("QMainWindow{background: transparent; border-radius: 10px}")
 
         else:
             self.parent.showFullScreen()
+            self.btn_minimize.setEnabled(False)
             self.setStyleSheet("QWidget#custom_menu_bar{border-top-left-radius: 0px; border-top-right-radius: 0px;}")
 
         self.parent.apply_settings()

@@ -71,7 +71,7 @@ except AttributeError:
 
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 # to be used with TesterExperiment.py
-TESTING = False
+TESTING = True
 
 class Quarky(QMainWindow):
     """

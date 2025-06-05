@@ -101,24 +101,45 @@ class QubitSpecSliceFFMUX(ExperimentClassPlus):
     """
 
     ### Config template
-    config_template =  {
-        'qubit_pulse_style': 'const',
-        'qubit_gain': 100,
-        'qubit_length': 100,
-        'pulse_gains': [0.9375],
-        'pulse_freqs':  [-321.5],
+    # TODO: trim the current config template. The below trim is not tested yet and may be missing some things
+    # config_template =  {
+    #     'FF_Qubits': {'1': {'channel': 3, 'delay_time': 0.005, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': -30000},
+    #                   '2': {'channel': 2, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+    #                   '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+    #                   '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
+    #
+    #     'qubit_pulse_style': 'const',
+    #     'qubit_gain': 100,
+    #     'qubit_length': 100,
+    #     'pulse_gains': [0.9375],
+    #     'pulse_freqs':  [-321.5],
+    #
+    #     'SpecNumPoints': 71,
+    #     'step': 0.8571428571428571,
+    #     'start': 4395,
+    #     'expts': 51,
+    #
+    #     'readout_length': 3,
+    #     'length': 20,
+    #     'Gauss': False,
+    #     'sets': 2,
+    #     'reps': 20,
+    # }
 
-        'SpecNumPoints': 71,
-        'step': 0.8571428571428571,
-        'start': 4395,
-        'expts': 51,
-
-        'readout_length': 3,
-        'length': 20,
-        'Gauss': False,
-        'sets': 2,
-        'reps': 20,
-    }
+    ### Config template
+    config_template =  {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 20, 'nqz': 1, 'qubit_nqz': 2,
+                        'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 15000,
+                        'adc_trig_offset': 0.5, 'cavity_LO': 6800000000.0, 'cavity_winding_freq': 1.0903695,
+                        'cavity_winding_offset': -15.77597, 'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}},
+                        'readout_length': 3, 'pulse_freq': -321.5, 'pulse_gains': [0.9375], 'pulse_freqs':  [-321.5],
+                        'TransSpan': 1.5, 'TransNumPoints': 61, 'cav_relax_delay': 10, 'qubit_pulse_style': 'const',
+                        'qubit_gain': 100, 'qubit_freq': 4425, 'qubit_length': 100, 'SpecSpan': 30, 'SpecNumPoints': 71,
+                        'step': 0.8571428571428571, 'start': 4395, 'expts': 51,
+                        'FF_Qubits': {'1': {'channel': 3, 'delay_time': 0.005, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': -30000},
+                                      '2': {'channel': 2, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                                      '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                                      '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
+                        'Read_Indeces': [1], 'cavity_min': True, 'rounds': 20, 'Gauss': False}
 
     ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]

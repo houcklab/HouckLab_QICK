@@ -75,6 +75,7 @@ class CavitySpecFFMUX(ExperimentClassPlus):
     Transmission Experiment basic
     """
 
+    # TODO: trim the current config template. The below trim is not tested yet and may be missing some things
     # Config Template
     config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 20, 'nqz': 1, 'qubit_nqz': 2,
                        'relax_delay': 200, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 11000,
