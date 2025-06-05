@@ -9,10 +9,14 @@ Perform a T2 Ramsey experiment
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
+from Pyro4 import Proxy
+from qick import QickConfig
+
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
+
 
 
 class LoopbackProgramT2Experiment(RAveragerProgram):
@@ -79,7 +83,7 @@ class LoopbackProgramT2Experiment(RAveragerProgram):
         # self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+', self.cfg["phase_step"])  # advance the phase of t
 # ====================================================== #
 
-class T2Experiment(ExperimentClass):
+class T2Experiment(ExperimentClassPlus):
     """
     Basic T2 Ramsey experiment
     """
@@ -102,12 +106,22 @@ class T2Experiment(ExperimentClass):
         "start": 0.010,                 ### us
         "step": 15,                      ### us
         "expts": 51,                    ### number of experiemnts
-        "reps": 250,                   ### number of averages on each experiment
+        "reps": 20,                   ### number of averages on each experiment
 
     }
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+    ### Hardware Requirement
+    hardware_requirement = [Proxy, QickConfig]
+
+    def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
+                 cfg=None, config_file=None, progress=None):
+
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
+                         hardware_requirement=self.hardware_requirement, cfg=cfg,
+                         config_file=config_file, progress=progress)
+
+        # retrieve the hardware that corresponds to what was required
+        self.soc, self.soccfg = hardware
 
     def acquire(self, progress=False, debug=False):
 
