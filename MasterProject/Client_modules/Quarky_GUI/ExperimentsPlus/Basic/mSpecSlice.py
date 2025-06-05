@@ -7,7 +7,6 @@ Plots using pyqtgraph (recommended) but also provides a matplotlib display funct
 """
 
 from qick import RAveragerProgram
-from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 from Pyro4 import Proxy
 from qick import QickConfig
 import datetime
@@ -182,7 +181,10 @@ class SpecSlice_Experiment(ExperimentClassPlus):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-        # print(data)
+        # clear plot widget and array
+        plot_widget.ci.clear()
+        plots = []
+
         if 'data' in data:
             data = data['data']
 

@@ -186,7 +186,10 @@ class RabiAmp_ND_Experiment(ExperimentClassPlus):
 
     @classmethod
     def plotter(cls, plot_widget, plots, data):
-        print(data)
+        # clear plot widget and array
+        plot_widget.ci.clear()
+        plots = []
+
         if 'data' in data:
             data = data['data']
 
@@ -223,7 +226,7 @@ class RabiAmp_ND_Experiment(ExperimentClassPlus):
                     "label": label,
                     "xlabel": xlabel,
                     "ylabel": ylabel,
-                    "colormap": "inferno"
+                    "colormap": "viridis"
                 })
 
         # print(prepared_data)

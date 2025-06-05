@@ -137,7 +137,7 @@ class Quarky(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.resize(1130, 720)
-        self.setWindowIcon(QIcon('QuarkyLogo.png'))
+        # self.setWindowIcon(QIcon('QuarkyLogo.png'))
         self.central_widget = QWidget()
         self.central_widget.setMinimumSize(1130, 720)
         self.central_widget.setObjectName("central_widget")

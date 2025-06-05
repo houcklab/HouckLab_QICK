@@ -7,15 +7,14 @@ Has examples for generating random data in the format of a SpecSlice or SpecVsVo
 display function that the GUI intercepts (their respective pyqtgraph plotter functions can be found in their actual
 experiment files).
 
+Important: Set the TESTING variable in Quarky.py to True.
+
 """
 
 import time
 import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-import pyqtgraph as pg
-from qick.helpers import gauss
-from tqdm.notebook import tqdm
 from Pyro4 import Proxy
 from qick import QickConfig
 

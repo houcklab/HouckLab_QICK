@@ -12,13 +12,13 @@ both channel 1 AND channel 0 will continue playing their respective tones.
 Provides only a plotter pyqtgraph function for plotting what an oscilloscope should see.
 """
 from qick import AveragerProgram
-from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
-from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 import Pyro4.util
 import numpy as np
 from Pyro4 import Proxy
 from qick import QickConfig
+
+from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 
 class ConstantTone(AveragerProgram):
     def __init__(self, soccfg, cfg):
