@@ -655,7 +655,10 @@ class Quarky(QMainWindow):
 
         self.stop_experiment()
         if hasattr(self, 'aux_worker') and self.aux_worker is not None:
-            self.aux_worker.stop()
+            try:
+                self.aux_worker.stop()
+            except:
+                pass
 
         self.settings_window.close()
 

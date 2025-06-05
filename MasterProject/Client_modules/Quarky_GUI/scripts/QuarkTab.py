@@ -622,7 +622,7 @@ class QQuarkTab(QWidget):
             # Legends
             legend = ax.get_legend()
             if legend:
-                pg_legend = plot.addLegend(offset=(10, 10))
+                pg_legend = plot.addLegend(offset=(1, 1)) #1px, 1px from top left
                 data_items = plot.listDataItems()
                 for line, item in zip(ax.get_lines(), data_items):
                     label = line.get_label()

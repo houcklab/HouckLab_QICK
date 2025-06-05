@@ -2,6 +2,7 @@
 ======
 mT1.py
 ======
+A Basic T1 Experiment.
 """
 
 from qick import *

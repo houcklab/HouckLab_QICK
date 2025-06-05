@@ -2,8 +2,7 @@
 ======
 mT2.py
 ======
-
-Perform a T2 Ramsey experiment
+A Basic T2 Ramsey experiment.
 """
 
 from qick import *
@@ -107,7 +106,6 @@ class T2Experiment(ExperimentClassPlus):
         "step": 15,                      ### us
         "expts": 51,                    ### number of experiemnts
         "reps": 20,                   ### number of averages on each experiment
-
     }
 
     ### Hardware Requirement
@@ -177,7 +175,6 @@ class T2Experiment(ExperimentClassPlus):
         axs[3].legend()
 
         fig.suptitle('T2 Experiment')
-        plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)

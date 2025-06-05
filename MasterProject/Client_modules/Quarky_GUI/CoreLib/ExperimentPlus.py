@@ -73,6 +73,19 @@ class ExperimentClassPlus(QObject):
         self.hardware_requirement = hardware_requirement
         self.handle_hardware()
 
+
+        # Naming
+        datetimenow = datetime.datetime.now()
+        datetimestring = datetimenow.strftime("%Y_%m_%d_%H_%M_%S")
+        datestring = datetimenow.strftime("%Y_%m_%d")
+        self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.h5')
+        self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.png')
+        ### define name for the config file
+        self.cname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring,
+                                  self.path + "_" + datetimestring + "_" + self.prefix + '.json')
+
     def go(self, save=False, analyze=False, display=False, progress=False):
         # get data
 
