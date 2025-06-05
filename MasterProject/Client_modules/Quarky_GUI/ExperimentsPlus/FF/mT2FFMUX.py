@@ -195,5 +195,7 @@ class T2RFF(ExperimentClassPlus):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
-# from scipy import curve_fit
-# def fit_T2
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass

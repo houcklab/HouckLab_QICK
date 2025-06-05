@@ -151,8 +151,12 @@ class T1MUX(ExperimentClassPlus):
             fig.clf(True)
             plt.close(fig)
 
-
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass
 
