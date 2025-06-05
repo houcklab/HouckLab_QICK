@@ -111,7 +111,7 @@ class T1Experiment(ExperimentClassPlus):
         "start": 0,
         "ntime_steps": 31,  ### stepping amount of the qubit gain
         "total_time": 3000,  ### number of steps
-        "reps": 100,  ### number of averages for the experiment
+        "reps": 10,  ### number of averages for the experiment
         "relax_delay": 7000,
     }
 
@@ -176,8 +176,6 @@ class T1Experiment(ExperimentClassPlus):
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
-
-        plt.savefig(self.iname)
 
         if plotDisp:
             plt.show(block=False)
