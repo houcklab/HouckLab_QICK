@@ -102,7 +102,7 @@ class T2Experiment(ExperimentClass):
         "start": 0.010,                 ### us
         "step": 15,                      ### us
         "expts": 51,                    ### number of experiemnts
-        "reps": 2500,                   ### number of averages on each experiment
+        "reps": 250,                   ### number of averages on each experiment
 
     }
 
@@ -175,3 +175,8 @@ class T2Experiment(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass

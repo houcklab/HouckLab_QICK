@@ -133,7 +133,7 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.setWindowFlags(Qt.CustomizeWindowHint)
+        self.setWindowFlags(self.windowFlags() | Qt.CustomizeWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.resize(1130, 720)
@@ -838,6 +838,7 @@ class Quarky(QMainWindow):
 
         qCritical("RFSoC thew the error: " + str(e))
         qCritical(traceback)
+        print(traceback)
         QMessageBox.critical(None, "RFSOC error", "RfSoc has thrown an error (see log).")
 
     def load_data_file(self):

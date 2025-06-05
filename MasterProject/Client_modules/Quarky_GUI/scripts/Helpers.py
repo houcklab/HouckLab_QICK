@@ -248,16 +248,16 @@ def open_file_dialog(prompt, file_args, settings_id, parent=None, file=True):
 
     return None
 
-def dict_to_h5(data_filename, dictionary):
+def dict_to_h5(data_file, dictionary):
     """
     Stores a dictionary to a h5 file using h5ify.
 
-    :param data_filename: The path and name of the h5 file.
-    :type data_filename: str
+    :param data_file: The path and name of the h5 file.
+    :type data_file: str
     :param dictionary: The dictionary to store.
     :type dictionary: dict
     """
-    with h5py.File(data_filename, 'w') as f:
+    with h5py.File(data_file, 'w') as f:
         _recursive_save(f, dictionary)
 
 def _recursive_save(h, d):

@@ -508,6 +508,8 @@ class QQuarkTab(QWidget):
         """
         Handles a matplotlib by extracting its data and plotting it using pyqtgraph.
         """
+        self.clear_plots()
+
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
 
@@ -617,12 +619,13 @@ class QQuarkTab(QWidget):
             # Legends
             legend = ax.get_legend()
             if legend:
-                pg_legend = plot.addLegend()
+                pg_legend = plot.addLegend(offset=(10, 10))
                 data_items = plot.listDataItems()
                 for line, item in zip(ax.get_lines(), data_items):
                     label = line.get_label()
                     if label and not label.startswith('_'):
                         pg_legend.addItem(item, label)
+            # set legend location
 
     def auto_plot_prepare(self, data_to_plot=None):
         """

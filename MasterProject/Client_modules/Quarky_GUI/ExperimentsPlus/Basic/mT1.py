@@ -26,7 +26,7 @@ class LoopbackProgramT1Experiment(RAveragerProgram):
         #### To Change
         self.cfg["step"] = int(self.cfg["total_time"] / (self.cfg["ntime_steps"]-1))
         self.cfg["expts"] = self.cfg["ntime_steps"]
-        self.cfg["reps"] = self.cfg["T1_reps"]
+        self.cfg["reps"] = self.cfg["reps"]
 
         ### Declaration of channels - readouts and pulses
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
@@ -98,7 +98,6 @@ class T1Experiment(ExperimentClassPlus):
     """
 
     config_template = {
-        "reps": 300,  ### This will used for all experiements below unless otherwise changed in between trials
         "read_pulse_style": "const",
         "read_length": 20,  ### in us
         "read_pulse_gain": 6000,  ### [DAC units]
@@ -112,7 +111,7 @@ class T1Experiment(ExperimentClassPlus):
         "start": 0,
         "ntime_steps": 31,  ### stepping amount of the qubit gain
         "total_time": 3000,  ### number of steps
-        "T1_reps": 10000,  ### number of averages for the experiment
+        "reps": 100,  ### number of averages for the experiment
         "relax_delay": 7000,
     }
 
@@ -190,3 +189,8 @@ class T1Experiment(ExperimentClassPlus):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        super().export_data(data_file, data, config)
+        pass
