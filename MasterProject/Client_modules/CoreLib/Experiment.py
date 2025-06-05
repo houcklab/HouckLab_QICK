@@ -191,7 +191,7 @@ class ExperimentClass:
         """
 
         # Store the data dictionary
-        Helpers.dict_to_h5(data_filename, data)
+        Helpers.dict_to_h5(data_file, data)
 
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:

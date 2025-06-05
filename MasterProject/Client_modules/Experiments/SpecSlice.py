@@ -1,7 +1,6 @@
 from qick import RAveragerProgram
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 
-import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -121,9 +120,6 @@ class SpecSlice_Experiment(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-        print(type(soc))
-        print(type(soccfg))
-
     def acquire(self, progress=False, debug=False):
         ##### code to aquire just the qubit spec data
         expt_cfg = {
@@ -145,72 +141,21 @@ class SpecSlice_Experiment(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
+                                         start_src="internal", progress=False, debug=False)
 
-        data = {'config': self.cfg,
-                'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
+        data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
-        sig = np.array(data['data']['avgi']) + 1j * np.array(data['data']['avgq']) #modified to fix complex type error
+        sig = data['data']['avgi'] + 1j * data['data']['avgq']
         avgamp0 = np.abs(sig)
 
-        peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
+        # peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
         peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
-
-        print(np.max(np.abs(data['data']['avgq'])))
+        # print(np.max(np.abs(data['data']['avgq'])))
         self.qubitFreq = data['data']['x_pts'][peak_loc]
 
         return data
-
-    @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        # print(data)
-        if 'data' in data:
-            data = data['data']
-
-        x_pts = data['x_pts']
-        avgi = data['avgi']
-        avgq = data['avgq']
-
-        sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
-        print(sig)
-        avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
-
-        # Create structured data
-        prepared_data = {
-            "plots": [
-                {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
-                {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
-                 "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
-                 "ylabel": "a.u."}
-            ]
-        }
-
-        date_time_now = datetime.datetime.now()
-        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-        plot_title = "SpecSlice_" + date_time_string
-        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
-        plot_widget.nextRow()
-
-        for i, plot in enumerate(prepared_data["plots"]):
-            p = plot_widget.addPlot(title=plot["label"])
-            p.addLegend()
-            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
-            p.setLabel('bottom', plot["xlabel"])
-            p.setLabel('left', plot["ylabel"])
-            plots.append(p)
-            plot_widget.nextRow()
-
-        return
-
-    @classmethod
-    def export_data(cls, data_file, data, config):
-        super().export_data(data_file, data, config)
-        pass
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
 
@@ -258,6 +203,7 @@ class SpecSlice_Experiment(ExperimentClass):
         else:
             fig.clf(True)
             plt.close(fig)
+
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
