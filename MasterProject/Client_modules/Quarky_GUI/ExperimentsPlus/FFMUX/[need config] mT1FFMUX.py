@@ -92,21 +92,6 @@ class T1MUX(ExperimentClassPlus):
         "relax_delay": 7000,
     }
 
-    config_template = {
-        'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'reps': 50, 'nqz': 1, 'qubit_nqz': 2,
-        'relax_delay': 150, 'res_phase': 0, 'pulse_style': 'const', 'length': 20, 'pulse_gain': 11000,
-        'adc_trig_offset': 0.5, 'cavity_LO': 6800000000.0, 'cavity_winding_freq': 1.0903695,
-        'cavity_winding_offset': -15.77597, 'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}},
-        'readout_length': 3, 'pulse_freq': -321.5, 'pulse_gains': [0.34375], 'pulse_freqs': [-321.5], 'TransSpan': 1.5,
-        'TransNumPoints': 61, 'cav_relax_delay': 30, 'qubit_pulse_style': 'const', 'qubit_gain': 100,
-        'qubit_freq': 4401.7, 'qubit_length': 100, 'SpecSpan': 20, 'SpecNumPoints': 51, 'step': 1, 'start': 0,
-        'expts': 150,
-        'FF_Qubits': {'1': {'channel': 2, 'delay_time': 0.005, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
-                      '2': {'channel': 3, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
-                      '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
-                      '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
-        'Read_Indeces': [1], 'cavity_min': True, 'rounds': 50, 'sigma': 0.05, 'f_ge': 4401.7, 'pi_gain': 10000
-    }
 
     ### Hardware Requirement
     hardware_requirement = [Proxy, QickConfig]

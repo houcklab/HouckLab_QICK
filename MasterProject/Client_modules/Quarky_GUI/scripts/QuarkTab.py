@@ -183,14 +183,6 @@ class QQuarkTab(QWidget):
         self.plot_method_label.setObjectName("plot_method_label")
         self.plot_method_combo = QComboBox(self.plot_settings_container)
 
-        # Create and configure shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(10)  # How blurry the shadow is
-        shadow.setXOffset(0)  # Horizontal offset
-        shadow.setYOffset(0)  # Vertical offset
-        shadow.setColor(QColor(182, 182, 182, 200))  # Shadow color (semi-transparent black)
-        self.plot_method_combo.setGraphicsEffect(shadow)
-
         self.plot_method_combo.setFixedWidth(130)
         self.plot_method_combo.setObjectName("plot_method_combo")
         # TODO: add autosave checkbox

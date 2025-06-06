@@ -170,6 +170,7 @@ class QVoltagePanel(QWidget):
 
         # The one for QBLOX
         self.qblox_channel_list = QWidget()
+        self.qblox_channel_list.setObjectName("qblox_channel_list")
         self.qblox_channel_list_layout = QVBoxLayout()
         self.qblox_channel_list_layout.setContentsMargins(5, 0, 10, 0)
         self.qblox_channel_list_layout.setSpacing(5)
@@ -177,6 +178,7 @@ class QVoltagePanel(QWidget):
         self.qblox_channel_list.setLayout(self.qblox_channel_list_layout)
         # The one for YOKO
         self.yoko_channel_list = QWidget()
+        self.yoko_channel_list.setObjectName("yoko_channel_list")
         self.yoko_channel_list_layout = QVBoxLayout()
         self.yoko_channel_list_layout.setContentsMargins(5, 0, 10, 0)
         self.yoko_channel_list_layout.setSpacing(5)

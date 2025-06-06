@@ -42,6 +42,7 @@ class SettingsWindow(QWidget):
         self.setWindowTitle("Settings")
         self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint)
         self.setFixedSize(300, 175)
+        self.setObjectName("SettingsWindow")
 
         # Main vertical layout
         main_layout = QVBoxLayout(self)
@@ -53,7 +54,7 @@ class SettingsWindow(QWidget):
 
         # Theme mode selection dropdown
         self.theme_selector = QComboBox()
-        self.theme_selector.addItems(["Light Mode", "Dark Mode (coming soon)"])
+        self.theme_selector.addItems(["Light Mode", "Dark Mode"])
         self.form_layout.addRow("Theme Mode", self.theme_selector)
 
         # Font size input

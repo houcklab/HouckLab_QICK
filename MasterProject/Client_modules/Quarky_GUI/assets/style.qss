@@ -9,6 +9,9 @@
 /* $GENERAL_BORDER_COLOR */
 /* $GENERAL_BORDER_DARKER_COLOR */
 /* $MENU_BAR_BACKGROUND_COLOR */
+/* $CONFIG_TREE_BASE_BACKGROUND_COLOR */
+/* $CONFIG_TREE_ALT_BACKGROUND_COLOR */
+/* $CONFIG_TREE_HEADER_BACKGROUND_COLOR */
 
 /* $BUTTON_BACKGROUND_COLOR */
 /* $BUTTON_TEXT_COLOR */
@@ -56,6 +59,10 @@ QWidget#wrapper {
     border-radius: 10px; /* Bug with full screen and minimize, so set to 0 */
 }
 
+QWidget#SettingsWindow {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+}
+
 QTabWidget#central_tabs::pane {
     background: $MAIN_ACCENT_BACKGROUND_COLOR;
     border-bottom-left-radius: 5px;
@@ -70,15 +77,25 @@ QWidget#central_tabs_container {
 }
 
 QTreeView#config_tree {
-    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+    background: $CONFIG_TREE_BASE_BACKGROUND_COLOR;
     alternate-background-color: $CONFIG_TREE_ALT_BACKGROUND_COLOR;
     border: 1px solid $GENERAL_BORDER_DARKER_COLOR;
+
+}
+
+QHeaderView::section {
+    background-color: $CONFIG_TREE_HEADER_BACKGROUND_COLOR;
+    border: none;
+    padding-left: 5px;
+    border-bottom: 1px solid $GENERAL_BORDER_COLOR;
+    border-left: 1px solid $GENERAL_BORDER_COLOR;
+    border-right: 1px solid $GENERAL_BORDER_COLOR;
 }
 
 QTreeView#ConfigTreePanel {
-    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+    background: $MAIN_BACKGROUND_COLOR;
     border-radius: 5px;
-    border: 1px solid $GENERAL_BORDER_COLOR;
+    border: 1px solid $GENERAL_BORDER_DARKER_COLOR;
 }
 
 QWidget#scroll_area_content {
@@ -90,6 +107,10 @@ QScrollArea {
     border-bottom-left-radius: 5px;
     border-bottom-right-radius: 5px;
     background: $MAIN_BACKGROUND_COLOR;
+}
+
+QWidget#channel_list {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
 }
 
 QWidget#editor_container {
@@ -171,6 +192,7 @@ QTreeView#ConfigTreePanel QPushButton {
     margin: 0px;
     padding: 3px 6px;
     font-size: $MEDIUM_FONT_SIZEpx;
+    background: $MAIN_BACKGROUND_COLOR;
 }
 
 QTreeView#ConfigTreePanel QPushButton#save_config {
@@ -275,7 +297,8 @@ QLabel#runtime_label, QLabel#endtime_label, QLabel#voltage_range_label, QLabel#h
 
 QLabel#config_title_label {
     font-size: $MEDIUM_FONT_SIZEpx;
-    background: $BUTTON_BACKGROUND_COLOR;
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+    border: 1px solid $MAIN_ACCENT_BACKGROUND_COLOR;
     padding: 3px;
     border-radius: 5px;
 }
@@ -309,6 +332,7 @@ QSplitter#vert_splitter::handle {
 }
 
 QLineEdit {
+    background-color: $MAIN_BACKGROUND_COLOR;
     border: 1px solid $GENERAL_BORDER_COLOR;
     border-radius: 5px;
     padding: 0px 3px;
@@ -333,14 +357,20 @@ QGroupBox::title {
 
 QListWidget#accounts_list {
     font-size: $MEDIUM_FONT_SIZEpx;
-    border: 1px solid $GENERAL_BORDER_COLOR;
+    border: 1px solid $GENERAL_BORDER_DARKER_COLOR;
+    background: $MAIN_BACKGROUND_COLOR;
+}
+
+QListWidget::item:selected {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+    color: $GENERAL_FONT_COLOR;
 }
 
 QComboBox {
     background: $BUTTON_BACKGROUND_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
     color: $BUTTON_TEXT_COLOR;
     padding: 2px 12px;
-    border: none;
     border-radius: 5px;
 }
 
@@ -368,6 +398,14 @@ QComboBox::down-arrow {
 QComboBox::down-arrow:on {
     top: 1px;  /* adjust position on click */
     left: 1px;
+}
+
+QComboBox QAbstractItemView {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
+}
+
+QComboBox::editable {
+    background: red;
 }
 
 QWidget#editor_execution_container {
@@ -423,13 +461,20 @@ QPushButton#close_findbar_button {
 QTextEdit#code_text_editor {
     font-size: $SMALL_FONT_SIZEpx;
     border: 1px solid $GENERAL_BORDER_COLOR;
+    background: $MAIN_BACKGROUND_COLOR;
+}
+
+QTextEdit#voltage_interface_settings {
+    background: $MAIN_BACKGROUND_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
 QTextEdit#log_panel {
-    background: #1E1E1E;  /* fixed background */
-    color: #CCCCCC;  /* light gray text */
+    background: #090716;  /* fixed background */
     font-size: 12px;
-    border: 1px solid #333333;  /* fixed border */
+    border-bottom: 1px solid $GENERAL_BORDER_COLOR;
+    border-left: 1px solid $GENERAL_BORDER_COLOR;  /* fixed border */
+    border-right: 1px solid $GENERAL_BORDER_COLOR;  /* fixed border */
     padding: 5px;
     border-bottom-left-radius: 5px;
     border-bottom-right-radius: 5px;
@@ -447,14 +492,15 @@ QWidget#custom_menu_bar {
     background: $MENU_BAR_BACKGROUND_COLOR;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
-    border-top-left-radius: 10px;  /* Bug with full screen and minimize, so set to 0 */
-    border-top-right-radius: 10px;  /* Bug with full screen and minimize, so set to 0 */
+    /* border-top-left-radius: 10px; */
+    /* border-top-right-radius: 10px; */
 }
 
 CustomTitleBar QPushButton {
     border-radius: 6px;
 }
 
+/*
 QPushButton#btn_close, QPushButton#btn_minimize, QPushButton#btn_fullscreen {
     background: #AAAAAA;
 }
@@ -473,6 +519,7 @@ QPushButton#btn_fullscreen:hover {
     background: #27C93F;
     border: none;
 }
+*/
 
 QPushButton#load_data_button, QPushButton#load_experiment_button {
     background: $BUTTON_MENU_BACKGROUND_COLOR;
@@ -504,4 +551,31 @@ QSizeGrip {
     width: 10px;
     height: 10px;
     background: transparent;
+}
+
+QCheckBox {
+    margin-left: 10px;
+}
+
+QCheckBox::indicator {
+    margin: 2px;
+    border-radius: 4px;
+    background: $MAIN_BACKGROUND_COLOR;
+}
+
+QCheckBox::indicator:hover {
+    border: 1px solid $BUTTON_HOVER_BORDER_COLOR;
+}
+
+QCheckBox::indicator:checked:hover {
+    border: 1px solid $BUTTON_HOVER_BORDER_COLOR;
+}
+
+QCheckBox::indicator:checked {
+    image: url('assets/check.svg');
+    border: none;
+}
+
+QMessageBox {
+    background: $MAIN_ACCENT_BACKGROUND_COLOR;
 }

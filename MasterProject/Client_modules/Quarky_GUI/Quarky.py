@@ -134,7 +134,7 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+        # self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint) # removes native title bar but a bit finicky
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.resize(1130, 720)
@@ -918,28 +918,32 @@ class Quarky(QMainWindow):
         if font_size is None:
             font_size = int(self.settings_window.curr_font_size)
 
+        self.theme = theme
+        self.font_size = font_size
+
         # print("applying settings")
         if theme == "Dark Mode":
             with open("assets/style.qss", "r") as file:
                 style = file.read()
 
             # Backgrounds
-            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#FFFFFF")
-            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#F0F1F2")
-            style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
-            style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
-            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
-            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2D")
-            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#E9E8E9")
-            style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$MAIN_BACKGROUND_COLOR', f"#090716")
+            style = style.replace('$MAIN_ACCENT_BACKGROUND_COLOR', f"#2B2B2F")
+            style = style.replace('$GENERAL_FONT_COLOR', f"#FFFFFF")
+            style = style.replace('$GENERAL_BORDER_COLOR', f"#3D3D3D")
+            style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#4F4F4F")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2B2B2F")
+            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#222226")
+            style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#313135")
+            style = style.replace('$CONFIG_TREE_HEADER_BACKGROUND_COLOR', f"#12121C")
             # Button
-            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
-            style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
-            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#B6B6B6")
-            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#F0F0F0")
+            style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#404044")
+            style = style.replace('$BUTTON_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$BUTTON_HOVER_BORDER_COLOR', f"#57575A")
+            style = style.replace('$BUTTON_PRESSED_BACKGROUND_COLOR', f"#090716")
             style = style.replace('$BUTTON_PRESSED_TEXT_COLOR', f"#FFFFFF")
-            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#ECEEF1")
-            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#B6B6B6")
+            style = style.replace('$BUTTON_DISABLED_BACKGROUND_COLOR', f"#1A1A1E")
+            style = style.replace('$BUTTON_DISABLED_TEXT_COLOR', f"#424242")
             style = style.replace('$BUTTON_CONNECT_COLOR', f"#6495ED")
             style = style.replace('$BUTTON_CONNECT_TEXT_COLOR', f"#FFFFFF")
             style = style.replace('$BUTTON_CONNECT_DISABLED_COLOR', f"#AABEDC")
@@ -948,18 +952,18 @@ class Quarky(QMainWindow):
             style = style.replace('$BUTTON_RUN_HOVER_COLOR', f"#64DB99")
             style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
             style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
-            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#3E3E3E")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#4A4A4A")
+            style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#4A4A4A")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#404044")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#57575A")
             # Tabs
-            style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
-            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#F7F8FA")
-            style = style.replace('$TAB_TEXT_COLOR', f"#000000")
-            style = style.replace('$TAB_BORDER_COLOR', f"#C4C4C3")
+            style = style.replace('$TAB_BACKGROUND_COLOR', f"#2D2D31")
+            style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#111116")
+            style = style.replace('$TAB_TEXT_COLOR', f"#FFFFFF")
+            style = style.replace('$TAB_BORDER_COLOR', f"#454545")
             style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
             # Misc
-            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
-            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+            style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#979797")
+            style = style.replace('$FIND_BAR_COLOR', f"#12121C")
             style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
         else:
             with open("assets/style.qss", "r") as file:
@@ -971,9 +975,10 @@ class Quarky(QMainWindow):
             style = style.replace('$GENERAL_FONT_COLOR', f"#000000")
             style = style.replace('$GENERAL_BORDER_COLOR', f"#EAEBE9")
             style = style.replace('$GENERAL_BORDER_DARKER_COLOR', f"#C4C4C3")
-            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2D2D2D")
-            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#E9E8E9")
+            style = style.replace('$MENU_BAR_BACKGROUND_COLOR', f"#2B2B2F")
+            style = style.replace('$CONFIG_TREE_BASE_BACKGROUND_COLOR', f"#F0F1F2")
             style = style.replace('$CONFIG_TREE_ALT_BACKGROUND_COLOR', f"#FFFFFF")
+            style = style.replace('$CONFIG_TREE_HEADER_BACKGROUND_COLOR', f"#E0E1E2")
             # Button
             style = style.replace('$BUTTON_BACKGROUND_COLOR', f"#FFFFFF")
             style = style.replace('$BUTTON_TEXT_COLOR', f"#000000")
@@ -991,8 +996,8 @@ class Quarky(QMainWindow):
             style = style.replace('$BUTTON_STOP_COLOR', f"#CD5C5C")
             style = style.replace('$BUTTON_STOP_HOVER_COLOR', f"#F58484")
             style = style.replace('$BUTTON_EDITOR_HOVER_COLOR', f"#DCDCDC")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#3E3E3E")
-            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#4A4A4A")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_COLOR', f"#404044")
+            style = style.replace('$BUTTON_MENU_BACKGROUND_HOVER_COLOR', f"#57575A")
             # Tabs
             style = style.replace('$TAB_BACKGROUND_COLOR', f"#F6F6F6")
             style = style.replace('$TAB_BAR_BACKGROUND_COLOR', f"#F7F8FA")
@@ -1001,7 +1006,7 @@ class Quarky(QMainWindow):
             style = style.replace('$TAB_SELECTED_ACCENT_COLOR', f"#8AC6F2")
             # Misc
             style = style.replace('$CODE_FILE_LABEL_TEXT_COLOR', f"#878787")
-            style = style.replace('$FIND_BAR_COLOR', f"#DCDCDC")
+            style = style.replace('$FIND_BAR_COLOR', f"#E0E1E2")
             style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
 
 
