@@ -26,12 +26,9 @@ from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import Exper
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 import MasterProject.Client_modules.Quarky_GUI.ExperimentsPlus.FFMUX.FF_utils as FF
 
-class QubitSpecSliceFFProg(RAveragerProgram):
+class CavitySpecFFProg(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
-
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["pulse_freqs"],
@@ -41,62 +38,28 @@ class QubitSpecSliceFFProg(RAveragerProgram):
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+                                 length=self.us2cycles(cfg["length"], gen_ch = self.cfg["res_ch"]))
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
-
-        ### Start fast flux
         FF.FFDefinitions(self)
-        # f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=0)  # conver f_res to dac register value
-
-        self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])  # get start/step frequencies
-        self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
-
-
-        # add qubit and readout pulses to respective channels
-        if cfg['Gauss']:
-            self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-            self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=self.f_start,
-                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
-                                     waveform="qubit")
-            self.qubit_length_us = cfg["sigma"] * 4
-        else:
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
-            self.qubit_length_us = cfg["qubit_length"]
+        self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
-        # trigger measurement, play measurement pulse, wait for qubit to relax
+        cfg = self.cfg
         self.sync_all(gen_t0=self.gen_t0)
         self.FFPulses(self.FFReadouts, self.cfg["length"])
-        # self.FFPulses(self.FFPulse, self.cfg["length"])
-        # self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
+        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
     def FFPulses(self, list_of_gains, length_us, t_start='auto'):
         FF.FFPulses(self, list_of_gains, length_us, t_start)
-
-    def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
-
-
 # ====================================================== #
 
-
-class SpecVsVoltage(ExperimentClassPlus):
+class TransVsVoltage(ExperimentClassPlus):
     """
     Spec experiment that finds the qubit spectrum as a function of flux
     Notes;
@@ -150,6 +113,10 @@ class SpecVsVoltage(ExperimentClassPlus):
             "VoltageStart": self.cfg["VoltageStart"],
             "VoltageStop": self.cfg["VoltageStop"],
             "VoltageNumPoints": self.cfg["VoltageNumPoints"],
+            ### transmission parameters
+            "trans_freq_start": self.cfg["trans_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
+            "trans_freq_stop": self.cfg["trans_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
+            "TransNumPoints": self.cfg["TransNumPoints"],  ### number of points in the transmission frequency
             ### spec parameters
             "step": self.cfg["step"],
             "start": self.cfg["start"],
@@ -164,13 +131,15 @@ class SpecVsVoltage(ExperimentClassPlus):
             voltage_matrix.append(np.linspace(expt_cfg["VoltageStart"][n],expt_cfg["VoltageStop"][n], expt_cfg["VoltageNumPoints"]))
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
-        self.spec_fpts = expt_cfg["start"] + np.arange(expt_cfg["expts"]) * expt_cfg["step"]
-        self.spec_Imat = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)  # make nan
-        self.spec_Qmat = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)
+        self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
+        self.trans_Imat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
+        self.trans_Qmat = np.zeros((expt_cfg["VoltageNumPoints"], expt_cfg["TransNumPoints"]))
+
+
         self.data= {
             'config': self.cfg,
             'data': {
-                        'spec_Imat': self.spec_Imat, 'spec_Qmat': self.spec_Qmat, 'spec_fpts': self.spec_fpts,
+                        'trans_Imat': self.trans_Imat, 'trans_Qmat': self.trans_Qmat, 'trans_fpts':self.trans_fpts,
                         'voltage_matrix': voltage_matrix
                      }
         }
@@ -195,13 +164,10 @@ class SpecVsVoltage(ExperimentClassPlus):
             if i != expt_cfg["VoltageNumPoints"]:
                 time.sleep(self.cfg['sleep_time'])
 
-            ### take the spec data
-            data_I, data_Q = self._aquireSpecData()
-            data_I = data_I[0]
-            data_Q = data_Q[0]
-
-            self.data['data']['spec_Imat'][i,:] = data_I
-            self.data['data']['spec_Qmat'][i,:] = data_Q
+            ### take the transmission data
+            data_I, data_Q = self._aquireTransData()
+            self.data['data']['trans_Imat'][i,:] = data_I
+            self.data['data']['trans_Qmat'][i,:] = data_Q
 
             # send out signal for updated data
             if i != expt_cfg["VoltageNumPoints"] - 1:
@@ -216,33 +182,34 @@ class SpecVsVoltage(ExperimentClassPlus):
             data = data['data']
 
         voltage_matrix = data['voltage_matrix']
-        spec_fpts = cfg["start"] + np.arange(cfg["expts"]) * cfg["step"]
-        X_spec = spec_fpts / 1e3
-        X_spec_step = X_spec[1] - X_spec[0]
+        trans_fpts = np.linspace(cfg["trans_freq_start"], cfg["trans_freq_stop"], cfg["TransNumPoints"])
+
+        X_trans = (trans_fpts + cfg["cavity_LO"]/1e6) /1e3
+        X_trans_step = X_trans[1] - X_trans[0]
         Y = voltage_matrix[0]
         Y_step = Y[1] - Y[0]
-        spec_I = data['spec_Imat']  # shape: [VoltageNumPoints, expts]
-        spec_Q = data['spec_Qmat']  # same shape
-        Z_spec = np.abs(spec_I + 1j * spec_Q)
+        trans_Imat = data['trans_Imat']
+        trans_Qmat = data['trans_Qmat']
+        Z_trans = np.abs(trans_Imat + 1j * trans_Qmat)
 
         # Plotting
         if len(plots) == 0:  # If creating the plot for the very first time
             # Create the plot
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-            plot_title = "SpecVsVoltage_" + date_time_string
+            plot_title = "TransVsVoltage_" + date_time_string
             plot = plot_widget.addPlot(title=
                                        plot_title + ", Voltage Range: " + str(Y[0]) + " to" + str(
                                            Y[-1]) + ", NumPoints: " + str(len(Y)))
             plot.setLabel('left', "Voltage (V)")
-            plot.setLabel('bottom', "Spec Frequency (GHz)")
+            plot.setLabel('bottom', "Cavity Frequency (GHz)")
 
             # create the image
             image_item = pg.ImageItem()
             plot.addItem(image_item)
-            image_item.setImage(np.flipud(Z_spec.T))
+            image_item.setImage(np.flipud(Z_trans.T))
             image_item.setRect(
-                pg.QtCore.QRectF(X_spec[0] - X_spec_step / 2, X_spec[-1] + X_spec_step / 2, Y[0] - Y_step / 2,
+                pg.QtCore.QRectF(X_trans[0] - X_trans_step / 2, X_trans[-1] + X_trans_step / 2, Y[0] - Y_step / 2,
                                  Y[-1] + Y_step / 2)
             )
 
@@ -256,7 +223,7 @@ class SpecVsVoltage(ExperimentClassPlus):
         else:  # Only need to update plot if already created
             plot = plots[0]
             image_item = plot.items[0]
-            image_item.setImage(np.flipud(Z_spec.T), levels=image_item.levels)
+            image_item.setImage(np.flipud(Z_trans.T), levels=image_item.levels)
 
         return
 
@@ -268,13 +235,13 @@ class SpecVsVoltage(ExperimentClassPlus):
     @classmethod
     def estimate_runtime(self, cfg):
         # using YOKO ramp step and interval since slower than qblox
-        # total sleep + total voltage ramp time + total spec time
+        # total sleep + total voltage ramp time + total trans time
         ramp_step = 0.001
         ramp_interval = 0.01
 
         return (((cfg["VoltageNumPoints"] - 1) * 2 * cfg["sleep_time"]) +
                 len(cfg["DACs"]) * (abs(cfg["VoltageStop"][0] - cfg["VoltageStart"][0])/ramp_step) * ramp_interval +
-                cfg["VoltageNumPoints"] * (cfg["reps"] * cfg["SpecNumPoints"] * (cfg["relax_delay"] + cfg["length"]) * 1e-6))  # [s]
+                cfg["VoltageNumPoints"] * (cfg["reps"] * cfg["TransNumPoints"] * (cfg["relax_delay"] + cfg["length"]) * 1e-6))  # [s]
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         if data is None:
@@ -285,54 +252,58 @@ class SpecVsVoltage(ExperimentClassPlus):
         fig, axs = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
 
         voltage_matrix = data['data']['voltage_matrix']
-        X_spec = self.spec_fpts / 1e3
-        X_spec_step = X_spec[1] - X_spec[0]
+        X_trans = (self.trans_fpts + self.cfg["cavity_LO"] / 1e6) / 1e3
+        X_trans_step = X_trans[1] - X_trans[0]
         Y = voltage_matrix[0]
         Y_step = Y[1] - Y[0]
-        Z_spec = np.full((self.cfg["VoltageNumPoints"], self.cfg["expts"]), np.nan)
+        Z_trans = np.full((self.cfg["VoltageNumPoints"], self.cfg["TransNumPoints"]), np.nan)
 
         for i in range(self.cfg["VoltageNumPoints"]):
 
-            data_I = data['data']['spec_Imat'][i, :]
-            data_Q = data['data']['spec_Qmat'][i, :]
+            data_I = data['data']['trans_Imat'][i, :]
+            data_Q = data['data']['trans_Qmat'][i, :]
+
             sig = data_I + 1j * data_Q
-
             avgamp0 = np.abs(sig)
-
-            Z_spec[i, :] = avgamp0  #- self.cfg["minADC"]
-            if i == 0:
-                ax_plot_1 = axs.imshow(
-                    Z_spec,
+            Z_trans[i, :] = avgamp0
+            if i == 1:
+                ax_plot_0 = axs[0].imshow(
+                    Z_trans,
                     aspect='auto',
-                    extent=[X_spec[0]-X_spec_step/2,X_spec[-1]+X_spec_step/2,Y[0]-Y_step/2,Y[-1]+Y_step/2],
-                    origin='lower',
-                    interpolation = 'none',
+                    extent=[np.min(X_trans)-X_trans_step/2,np.max(X_trans)+X_trans_step/2,np.min(Y)-Y_step/2,np.max(Y)+Y_step/2],
+                    origin= 'lower',
+                    interpolation= 'none',
                 )
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
+                cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
+                cbar0.set_label('a.u.', rotation=90)
             else:
-                ax_plot_1.set_data(Z_spec)
-                ax_plot_1.autoscale()
-                cbar1.remove()
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs, extend='both')
-                cbar1.set_label('a.u.', rotation=90)
+                ax_plot_0.set_data(Z_trans)
+                ax_plot_0.autoscale()
+                cbar0.remove()
+                cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
+                cbar0.set_label('a.u.', rotation=90)
 
-        axs.set_ylabel("Voltage (V)")
-        axs.set_xlabel("Spec Frequency (GHz)")
+        axs[0].set_ylabel("Voltage (V)")
+        axs[0].set_xlabel("Cavity Frequency (GHz)")
+        axs[0].set_title("Cavity Transmission")
 
         if plotDisp:
             plt.show(block=False)
             plt.pause(0.1)
         plt.close(figNum)
 
-    def _aquireSpecData(self, progress=False):
+    def _aquireTransData(self, progress=False):
+        fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
+                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
+                           self.cfg["TransNumPoints"])
+        results = []
+        for f in tqdm(fpts, position=0, disable=True):
+            self.cfg["mixer_freq"] = f
+            prog = CavitySpecFFProg(self.soccfg, self.cfg)
+            results.append(prog.acquire(self.soc, load_pulses=True))
+        results = np.transpose(results)
 
-        prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
-
-        return avgi, avgq
+        return results[0][0][0], results['results'][0][0][1]
 
     def save_data(self, data=None):
         ##### save the data to a .h5 file
