@@ -1,5 +1,5 @@
 import numpy as np
-
+from random import random
 
 def LoadWaveforms(instance, prev_value=0):
     if type(prev_value) in [int, float]:
@@ -41,6 +41,7 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
 
     for i, (gain, IQPulse) in enumerate(zip(list_of_gains, IQPulseArray)):
         gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
+        print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
         if IQPulse is None:
             IQPulse = np.ones(length_dt) * gain
         else:
@@ -68,66 +69,18 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
         # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
         # print("IQPulse[:48]:", i, IQPulse[:48], IQPulse[-48:])
         # print(len(IQPulse)/16)
-        instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
+        instance.add_envelope(ch=instance.FFChannels[i], name=waveform_label,
                            idata=IQPulse, qdata=np.zeros_like(IQPulse))
-        instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
-                                     phase=0, gain=gencfg['maxv'],
-                                     waveform=waveform_label, outsel="input")
-
-    # for channel in instance.FFChannels:
-    #     if t_start != 'auto':
-    #         t_start += instance.dac_t0[channel]
-    #     instance.pulse(ch=channel, t=t_start)
-    for channel in instance.FFChannels:
-        if t_start != 'auto':
-            t_start_ = t_start + instance.dac_t0[channel]
-        else:
-            t_start_ = 'auto'
-        instance.pulse(ch=channel, t=t_start_)
-
-def FFPulses_hires(instance, list_of_gains, length_dt, t_start='auto', IQPulseArray=None, padval=0, waveform_label = 'FF'):
-    """
-    Same as FFPulses, but all in units of 1/16 clock cycle
-    :param instance: Instance of program (e.g. AveragerProgram or RAveragerProgram)
-    :param list_of_gains: gains for all FF channels
-    :param length_dt: length in units of 1/16 clock cycle, often corresponds to variable wait
-    :param waveform_label: string to label waveform
-    :param t_start: time offset to start pulse
-    :param IQPulseArray: Assumed to be sampled in units of 1/16 clock cycle
-    :param padval: value to pad beginning of IQPulse for commensurability with clock cycles
-    :return:
-    """
-    IQPulseArray = [None] * len(list_of_gains) if IQPulseArray is None else IQPulseArray
-
-    for i, (gain, IQPulse) in enumerate(zip(list_of_gains, IQPulseArray)):
-        gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
-        if IQPulse is None:
-            # print("[IQPulse] Using array of ones")
-            IQPulse = np.ones(length_dt)
-        # else:
-            # print("[IQPulse] Using custom array, assuming sampling per 1/16 clock cycle")
-
-        IQPulse = IQPulse[:length_dt]  # truncate pulse to desired length
-        if len(IQPulse) % 16 != 0:  # need to pad beginning
-            extralen = 16 - (len(IQPulse) % 16)
-            # print("  Padding pulse beginning: length {}, value {}".format(extralen, padval))
-            IQPulse = np.concatenate([padval * np.ones(extralen), IQPulse])
-        if len(IQPulse) // 16 < 3:
-            extralen = 48 - len(IQPulse)
-            IQPulse = np.concatenate([padval * np.ones(extralen), IQPulse])
-
-        # convert to idata and qdata
-        maxval = max(np.max(np.abs(IQPulse)), 1)
-        idata = (IQPulse * gencfg['maxv'] * gencfg['maxv_scale']) / maxval
-        # IQPulse[IQPulse > gencfg['maxv'] * gencfg['maxv_scale']] = gencfg['maxv'] * gencfg['maxv_scale']
-        qdata = np.zeros_like(IQPulse) * gencfg['maxv']
-
-        # figure out name and add pulse
         instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
-                           idata=idata, qdata=qdata)
-        instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
-                                     phase=0, gain=int(gain * maxval),
-                                     waveform=waveform_label, outsel="input")
+                       style="arb",
+                       envelope=waveform_label,
+                       freq=0,
+                       phase=0,
+                       gain=1.0)
+
+        # instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
+        #                              phase=0, gain=gencfg['maxv'],
+        #                              waveform=waveform_label, outsel="input")
 
     # for channel in instance.FFChannels:
     #     if t_start != 'auto':
@@ -140,47 +93,38 @@ def FFPulses_hires(instance, list_of_gains, length_dt, t_start='auto', IQPulseAr
             t_start_ = 'auto'
         instance.pulse(ch=channel, t=t_start_)
 
-def FFPulses(instance, list_of_gains, length_us, t_start='auto', IQPulseArray=None, waveform_label="FF"):
+# For constant FF pulses
+def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=None):
+    if waveform_label is None:
+        waveform_label = str(random())
+
+    IQPulseArray = [None] * len(list_of_gains)
     for i, gain in enumerate(list_of_gains):
-        length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
-        gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
-        IQPulseArray = [None] * len(list_of_gains) if IQPulseArray is None else IQPulseArray
+        channel = instance.FFChannels[i]
+
+        waveform_name = f"{waveform_label}_{i}"
+        # print(waveform_name)
+        # length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
+        # gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
 
         if IQPulseArray[i] is None:
-            instance.set_pulse_registers(ch=instance.FFChannels[i], style='const', freq=0, phase=0,
-                                         gain=gain,
-                                         length=length)
-        else:
-            print('Using IQPulseArray')
-            if length > len(IQPulseArray[i]):  # pulse array only has 1 clock cycle (2.4 ns) resolution
-                additional_array = np.ones(length - len(IQPulseArray[i]))
-            else:
-                additional_array = np.array([])
-            # print(np.array(IQPulseArray[i][:length]), additional_array)
-            idata = np.concatenate([np.array(IQPulseArray[i][:length]), additional_array])  # ensures
-            # print(idata)
-            maximum_value = np.max(np.abs(idata))
-            if maximum_value < 1:
-                maximum_value = 1
-            idata = idata.repeat(16)  # if you want more resolution, remove this and add it in your definition
-            idata = (idata * gencfg['maxv'] * gencfg['maxv_scale']) / maximum_value
-            idata[idata > gencfg['maxv'] * gencfg['maxv_scale']] = gencfg['maxv'] * gencfg['maxv_scale']
-            qdata = np.zeros(length * 16) * gencfg['maxv']
-            instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
-                           idata=idata, qdata=qdata)
-            instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
-                                     phase=0, gain=int(gain * maximum_value),
-                                     waveform=waveform_label, outsel="input")
+            # print(instance.FFChannels[i])
+            instance.add_pulse(ch=instance.FFChannels[i], name=waveform_name,
+                           style="const",
+                           length=length_us,
+                           freq=0,
+                           phase=0,
+                           gain=gain / 32766,
+                           )
 
-    for channel in instance.FFChannels:
         if t_start != 'auto':
             t_start_ = t_start + instance.gen_t0[channel]
             # t_start_ += instance.dac_t0[channel]
         else:
             t_start_ = 'auto'
-            # t_start_ = int(instance._dac_ts[channel]) + instance.dac_t0[channel]
-        # print(t_start_)
-        instance.pulse(ch=channel, t=t_start_)
+
+        instance.pulse(ch=channel, name=waveform_name, t=t_start_)
+
 
 
 def FFDefinitions(instance):

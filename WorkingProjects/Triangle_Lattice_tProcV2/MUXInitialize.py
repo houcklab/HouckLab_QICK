@@ -32,12 +32,15 @@ BaseConfig = {
     "res_nqz": 1,
     "qubit_nqz": 2,
     "res_mixer_freq": 500, # 7200  # MHz
-    "qubit_mixer_freq": 500,
+    "qubit_mixer_freq": 4000, # MHz
+    # range=1720.320 MHz, so allowed qubit freqs will be qubit_mixer_freq +- 860 MHz
+    # e.g. 3140 MHz to 4860 MHz if mixer at 4000 MHz
+    # Should write something to make this dependent on the target qubit frequency
 
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
     "res_length": 20,  # length of cavity pulse for readout in us
-    "adc_trig_time": 0.3,  # Between 0.3 and 0.5 usually [us]
+    "adc_trig_delay": 0.3,  # Between 0.3 and 0.5 usually [us]
     "res_LO": 6800,  #in MHz
 }
 
@@ -45,10 +48,14 @@ BaseConfig = {
 
 ### Lets do this within the waveform from now on instead, since it gives better resolution
 FF_Qubits = {
-    str(1): {'channel': FF_channel1, 'delay_time': 0.000},
-    str(2): {'channel': FF_channel2, 'delay_time': 0.000},
-    str(3): {'channel': FF_channel3, 'delay_time': 0.000},
-    str(4): {'channel': FF_channel4, 'delay_time': 0.000},
+    str(1): {'channel': 0, 'delay_time': 0.000},
+    str(2): {'channel': 1, 'delay_time': 0.000},
+    str(3): {'channel': 2, 'delay_time': 0.000},
+    str(4): {'channel': 3, 'delay_time': 0.000},
+    str(5): {'channel': 4, 'delay_time': 0.000},
+    str(6): {'channel': 5, 'delay_time': 0.000},
+    str(7): {'channel': 6, 'delay_time': 0.000},
+    str(8): {'channel': 7, 'delay_time': 0.000},
 }
 
 Additional_Delays = {

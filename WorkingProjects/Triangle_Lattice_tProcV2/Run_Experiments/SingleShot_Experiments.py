@@ -1,25 +1,26 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mGainSweepQubitOscillations import GainSweepOscillations
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSingleQubitOscillations import QubitOscillations
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mGainSweepQubitOscillationsR import GainSweepOscillationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSpecVsQblox import SpecVsQblox
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mT2R_FF import T2RFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mTime_domain_spectroscopy import TimeDomainSpec
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+    QubitSpecSliceFFMUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillations import GainSweepOscillations
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillationsR import GainSweepOscillationsR
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSpecVsQblox import SpecVsQblox
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT2R_FF import T2RFF
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mTime_domain_spectroscopy import TimeDomainSpec
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mChiShiftMUX import ChiShift
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mOptimizeReadoutAndPulse import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mT1MUX import T1MUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mT2RMUX import T2RMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mFFvsSpec import FFvsSpec
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSpecSliceFFMUX import QubitSpecSliceFFMUX
+# # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+# # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mChiShiftMUX import ChiShift
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSingleShotProgramFFMUX import SingleShotFFMUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mOptimizeReadoutAndPulse import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1MUX import T1MUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT2RMUX import T2RMUX
+# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mFFvsSpec import FFvsSpec
+# # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
 import numpy as np
 
 
@@ -29,41 +30,40 @@ BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["readout_length"] = 2.5
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6978.79 , 'Gain': 10900,
+    '1': {'Readout': {'Frequency': 6978.79 , 'Gain': 10900, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
           'Qubit': {'Frequency': 4636.55, 'sigma': 0.05, 'Gain': 7950},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7096.2, 'Gain': 4000,
+    '2': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                   "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
           'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7096.2, 'Gain': 4000,
+    '3': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
               'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
               'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7096.2, 'Gain': 4000,
+    '4': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
               'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
               'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7096.2, 'Gain': 4000,
+    '5': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
               'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
               'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7096.2, 'Gain': 4000,
+    '6': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
               'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
               'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '7': {'Readout': {'Frequency': 7269.7, 'Gain': 15000,
+    '7': {'Readout': {'Frequency': 7269.7, 'Gain': 15000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
           'Qubit': {'Frequency': 4038, 'sigma': 0.05, 'Gain': 9450},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '8': {'Readout': {'Frequency': 7269.7, 'Gain': 15000,
+    '8': {'Readout': {'Frequency': 7269.7, 'Gain': 15000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
           'Qubit': {'Frequency': 4038, 'sigma': 0.05, 'Gain': 9450},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
 
     }
-
 
 FF_gain1_expt = 0
 FF_gain2_expt = 0
@@ -79,16 +79,16 @@ Qubit_Pulse = [1]
 
 
 RunTransmissionSweep = False # determine cavity frequency
-Trans_relevant_params = {"reps": 720, "TransSpan": 1.5, "TransNumPoints": 71,
+Trans_relevant_params = {"reps": 20, "TransSpan": 1.5, "TransNumPoints": 10,
                         "readout_length": 2.5, 'cav_relax_delay': 10}
-Run2ToneSpec = False
+Run2ToneSpec = True
 Spec_relevant_params = {
                       # "qubit_gain": 10000, "SpecSpan":420, "SpecNumPoints": 71,
                         # "qubit_gain": 800, "SpecSpan":100, "SpecNumPoints": 71,
                         # "qubit_gain": 120, "SpecSpan":50, "SpecNumPoints": 71,
                         "qubit_gain": 30, "SpecSpan":5, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.05, "Gauss_gain": 6300,
-                        'reps': 225, 'rounds': 1}
+                        'reps': 20, 'rounds': 2}
 
 Run_Spec_v_FFgain = False
 ### Inherits spec parameters from above
@@ -103,7 +103,7 @@ Amplitude_Rabi_params = {"sigma": 0.05, "max_gain":32000, 'relax_delay':200}
 
 
 RunT1 = False
-RunT2 = True
+RunT2 = False
 
 T1_params = {"step": 5, "expts": 40, "reps": 15, "rounds": 15}
 
@@ -161,18 +161,16 @@ CalibrationFF_params = {'FFQubitIndex': 3, 'FFQubitExpGain': 3000,
 # Translation of Qubit_Parameters dict to resonator and qubit parameters.
 # Nothing defined here should be changed in an Experiment unless it is one of the swept variables.
 # Update FF_Qubits dict
-FF_gain1_ro, FF_gain2_ro, FF_gain3_ro, FF_gain4_ro = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
-FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
+FFReadouts = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
+FFPulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
+FFExpt = [FF_gain1_expt, FF_gain2_expt, FF_gain3_expt, FF_gain4_expt, FF_gain5_expt, FF_gain6_expt, FF_gain7_expt, FF_gain8_expt]
 
-FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1_ro, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse}
-FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2_ro, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse}
-FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3_ro, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse}
-FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4_ro, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse}
+for Qubit, FFR, FFE, FFP in zip(('1','2','3','4','5','6','7','8'), FFReadouts, FFExpt, FFPulse):
+    FF_Qubits[Qubit] |= {'Gain_Readout': FFR, 'Gain_Expt': FFE, 'Gain_Pulse': FFP}
 
 trans_config = {
     "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
     "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
-    # "res_gain": Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Gain'],  # [DAC units]
     "readout_length":Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time']
 }
 qubit_config = {
@@ -203,8 +201,8 @@ if RunTransmissionSweep:
     #     config["mixer_freq"] = Instance_trans.peakFreq_max
     # print("Cavity frequency found at: ", config["res_freqs"][0] + mixer_freq + BaseConfig["cavity_LO"] / 1e6)
 else:
-    print("Cavity frequency set to: ", config["res_freqs"][0] + mixer_freq + BaseConfig["cavity_LO"] / 1e6)
-
+    # print("Cavity frequency set to: ", config["res_freqs"][0] + mixer_freq + BaseConfig["cavity_LO"] / 1e6)
+    pass
 
 if Run2ToneSpec:
     QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Spec_relevant_params,

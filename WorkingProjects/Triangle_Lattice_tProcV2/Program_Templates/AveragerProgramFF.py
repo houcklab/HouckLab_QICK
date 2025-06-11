@@ -32,7 +32,7 @@ class FFAveragerProgramV2(AveragerProgramV2):
 
     ##########
     def acquire(self, *args, **kwargs):
-        super().acquire(*args, **kwargs)
+        return super().acquire(*args, **kwargs)
 
     def acquire_shots(self, *args, **kwargs):
         self.acquire(*args, **kwargs)
