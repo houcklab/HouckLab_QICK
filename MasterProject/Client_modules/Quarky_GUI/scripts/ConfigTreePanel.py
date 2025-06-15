@@ -121,7 +121,7 @@ class QConfigTreePanel(QTreeView):
         self.copy_config_button = Helpers.create_button("", "copy_config", True, self)
         self.copy_config_button.setToolTip("Copy")
         self.paste_config_button = Helpers.create_button("", "paste_config", True, self)
-        self.paste_config_button.setToolTip("Paste")
+        self.paste_config_button.setToolTip("Paste In")
 
         self.toolbar_layout.addWidget(self.save_config_button)
         self.toolbar_layout.addWidget(self.load_config_button)
