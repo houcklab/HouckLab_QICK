@@ -24,7 +24,7 @@ class CustomMenuBar(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
-        self.setFixedHeight(40)
+        self.setFixedHeight(45)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setAttribute(Qt.WA_StyledBackground, True)
 

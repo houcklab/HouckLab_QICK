@@ -158,7 +158,6 @@ class Quarky(QMainWindow):
         self.custom_menu_bar = CustomMenuBar(self)
         self.custom_menu_bar.setObjectName("custom_menu_bar")
         self.main_layout.addWidget(self.custom_menu_bar)
-        self.grip = QSizeGrip(self)
 
         # Extracting the buttons in the top bar to connect
         # TODO: Fix some of the signals to just be handled in the custom Menu Bar Class
@@ -275,20 +274,20 @@ class Quarky(QMainWindow):
         self.setCentralWidget(self.central_widget)
 
         # Size Grip
-        self.grip = QSizeGrip(self)
-        self.grip.setCursor(Qt.SizeVerCursor)
+        # self.grip = QSizeGrip(self)
+        # self.grip.setCursor(Qt.SizeVerCursor)
 
         self.setup_signals()
 
-    def resizeEvent(self, event):
-        """
-        Called upon render to move the sizegrip (self.grip) to the bottom right corner).
-        """
-        self.grip.move(
-            self.width() - 10,
-            self.height() - 10
-        )
-        super().resizeEvent(event)
+    # def resizeEvent(self, event):
+    #     """
+    #     Called upon render to move the sizegrip (self.grip) to the bottom right corner).
+    #     """
+    #     self.grip.move(
+    #         self.width() - 10,
+    #         self.height() - 10
+    #     )
+    #     super().resizeEvent(event)
 
     def setup_signals(self):
         """
