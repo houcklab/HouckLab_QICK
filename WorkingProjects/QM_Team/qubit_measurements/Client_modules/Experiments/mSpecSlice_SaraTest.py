@@ -136,12 +136,12 @@ class SpecSlice(ExperimentClass):
         axs[1].set_xlabel("Qubit Frequency (GHz)")
         axs[1].legend()
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        ax2 = axs[2].plot(x_pts, avgi[0][0], 'o-', label="I - Data")
         axs[2].set_ylabel("a.u.")
         axs[2].set_xlabel("Qubit Frequency (GHz)")
         axs[2].legend()
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        ax3 = axs[3].plot(x_pts, avgq[0][0], 'o-', label="Q - Data")
         axs[3].set_ylabel("a.u.")
         axs[3].set_xlabel("Qubit Frequency (GHz)")
         axs[3].legend()

@@ -10,10 +10,116 @@ import numpy as np
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 # from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission import LoopbackProgramTrans
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSlice
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSliceBuggy
 from tqdm.notebook import tqdm
 import time
 import datetime
+
+class LoopbackProgramStarkSlice(RAveragerProgram):
+    def __init__(self, soccfg, cfg):
+        super().__init__(soccfg, cfg)
+
+    def initialize(self):
+
+        cfg = self.cfg
+
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+        for ch in cfg["ro_chs"]:
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
+                                 freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
+
+        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
+        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")  # get frequency register for qubit_ch
+
+        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0]) # conver f_res to dac register value
+        self.f_res = f_res
+        self.f_start = self.freq2reg(self.cfg["start"], gen_ch=cfg["qubit_ch"])  # get start/step frequencies
+        self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
+
+        # add qubit and readout pulses to respective channels
+
+        #### define the qubit pulse depending on the pulse type
+        if self.cfg["qubit_pulse_style"] == "arb":
+            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
+                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
+                                     waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
+        elif self.cfg["qubit_pulse_style"] == "const":
+            if self.cfg["mode_periodic"] == True:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]), mode="periodic")
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"]))
+                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=cfg["qubit_ch"])
+
+        elif self.cfg["qubit_pulse_style"] == "flat_top":
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=self.f_start,
+                                     phase=0, gain=cfg["qubit_gain"],
+                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = (self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4
+                                      + self.us2cycles(self.cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
+
+        # Adding the resonator pulse
+        if self.cfg['ro_mode_periodic']:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
+                                     gain=cfg["cavity_pulse_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+        elif not self.cfg['ro_mode_periodic']:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
+                                     gain=cfg["cavity_pulse_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["res_ch"]))
+
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+
+        self.sync_all(self.us2cycles(1))
+
+    def body(self):
+
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+
+        # Configure the cavity pulse for populating the cavity
+        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
+                                 gain=self.cfg["cavity_pulse_gain"],
+                                 length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["res_ch"]))
+
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
+
+        self.pulse(ch=self.cfg["res_ch"])   # Play a cavity populating tone
+        self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone simultaneously
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+
+        # Configure the cavity pulse for readout
+        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
+                                 gain=self.cfg["read_pulse_gain"],
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
+
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+
+        # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.measure(pulse_ch=self.cfg["res_ch"],
+                     adcs=self.cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     wait=True,
+                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+
+    def update(self):
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
+
 
 class StarkShift(ExperimentClass):
     """
@@ -85,8 +191,15 @@ class StarkShift(ExperimentClass):
             print(Y[-1]**2/Y[-2])
             extents = [X_spec[0] - X_spec_step / 2, X_spec[-1] + X_spec_step / 2, 10*np.log10(Y[0]**2/Y[1]), 10*np.log10(Y[-1]**2/Y[-2])]
 
+        # Creating an entry in the dictionary for cavity pulse gain
+        self.cfg["cavity_pulse_gain"] = 0
+
+        # Starting the loop
         for i in range(expt_cfg["trans_gain_num"]):
-            self.cfg["read_pulse_gain"] = gainVec[i]
+            self.cfg["cavity_pulse_gain"] = gainVec[i]
+
+            if self.cfg["change_ro_gain"]:
+                self.cfg["read_pulse_gain"] = gainVec[i]
 
             data_I, data_Q = self._acquireSpecData()
 
@@ -257,7 +370,7 @@ class StarkShift(ExperimentClass):
         self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
                                        expt_cfg["SpecNumPoints"])
 
-        prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+        prog = LoopbackProgramStarkSlice(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,

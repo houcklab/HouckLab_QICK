@@ -95,14 +95,15 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
     def body(self):
         #### wait 10ns
-        self.sync_all(self.us2cycles(0.01))
+        #self.sync_all(self.us2cycles(0.01))
 
         if self.cfg["qubit_gain"] != 0:
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
+            self.sync_all(self.us2cycles(0.010))  # wait 10ns after pulse ends
+
 
         # self.sync_all(self.us2cycles(100))  # wait 10ns after pulse ends
 
