@@ -1,4 +1,5 @@
 from qick import *
+from qick.asm_v2 import AveragerProgramV2
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
@@ -92,13 +93,17 @@ class SweepExperimentR1D(ExperimentClass):
 
             self.set_up_instance()
             # self.soc.reset_gens()
-            Instance = self.Program(self.soccfg, self.cfg)
+            Instance = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                                    final_delay=self.cfg["relax_delay"])
             # print(Instance)
-            assert (isinstance(Instance, RAveragerProgram))
+            assert (isinstance(Instance, AveragerProgramV2))
+            # self.soc.reset_gens()
 
-            self.soc.reset_gens()
             if self.z_value == 'contrast':
-                _, avgi, avgq = Instance.acquire(self.soc, load_pulses=True)
+                iq_list = Instance.acquire(self.soc, load_pulses=True)
+                iq_list = np.array(iq_list)
+                # shape is [num_ros, 1, SpecNumPoints, 2]
+                avgi, avgq = iq_list[:, 0, :, 0], iq_list[:, 0, :, 1]
                 for ro_index in range(len(readout_list)):
                     I_mat[ro_index][i, :] = avgi[ro_index]
                     Q_mat[ro_index][i, :] = avgq[ro_index]

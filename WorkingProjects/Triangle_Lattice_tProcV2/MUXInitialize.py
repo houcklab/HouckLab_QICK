@@ -20,7 +20,7 @@ else:
 
 
 #Define Save folder
-outerFolder = "Z:\QSimMeasurements\Measurements\\4Q_Test_Scalinq\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\\8QV1_Triangle_Lattice\\"
 
 
 ###### define default configuration

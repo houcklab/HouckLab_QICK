@@ -106,10 +106,9 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
         # print(waveform_name)
         # length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
         # gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
-
         if IQPulseArray[i] is None:
             # print(instance.FFChannels[i])
-            instance.add_pulse(ch=instance.FFChannels[i], name=waveform_name,
+            instance.add_pulse(ch=channel, name=waveform_name,
                            style="const",
                            length=length_us,
                            freq=0,

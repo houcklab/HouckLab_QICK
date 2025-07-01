@@ -5,8 +5,9 @@ import numpy as np
 from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 import datetime
-from tqdm.notebook import tqdm
+# from tqdm.notebook import tqdm
 import time
+from tqdm import tqdm
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
@@ -33,7 +34,7 @@ class CavitySpecFFProg(FFAveragerProgramV2):
     def _body(self, cfg):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
-        self.delay(0.5)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
+        self.delay(0.1)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
         self.trigger(ros=cfg["ro_chs"], pins=[0],
                      t=cfg["adc_trig_delay"])
         self.pulse(self.cfg["res_ch"], name='res_pulse')
@@ -60,7 +61,7 @@ class CavitySpecFFMUX(ExperimentClass):
                            cfg["TransNumPoints"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
+        for f in tqdm(fpts, position=0, disable=False):
             cfg["res_freqs"][0] = f
             prog = CavitySpecFFProg(self.soccfg, reps=self.cfg['reps'],cfg=self.cfg, final_delay=self.cfg['cav_relax_delay'])
             results.append(prog.acquire(self.soc, soft_avgs=self.cfg.get('rounds',1), load_pulses=True, progress=progress))
@@ -88,8 +89,8 @@ class CavitySpecFFMUX(ExperimentClass):
         for i in range(len(data['data']['results'][0])):
             avgi = data['data']['results'][:,0,0,0]
             avgq = data['data']['results'][:,0,0,1]
-            x_pts = (data['data']['fpts'] + self.cfg["res_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
-            x_pts += self.cfg["res_freqs"][i] / 1e3
+            x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
+
             sig = avgi + 1j * avgq
 
             avgamp0 = np.abs(sig)

@@ -14,8 +14,7 @@ class SingleShotProgram(AveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
-    def initialize(self):
-        cfg = self.cfg
+    def _initialize(self, cfg):
 
         # Qubit configuration
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
@@ -34,10 +33,12 @@ class SingleShotProgram(AveragerProgram):
 
         FF.FFDefinitions(self)
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
+                       freq=cfg["qubit_freqs"][0],
+                       phase=90, gain=cfg["qubit_gains"][0])
+        self.qubit_length_us = cfg["sigma"] * 4
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_lenth)
 
         self.sync_all(200)  # give processor some time to configure pulses
 

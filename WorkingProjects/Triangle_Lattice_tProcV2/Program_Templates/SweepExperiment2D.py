@@ -111,7 +111,7 @@ class SweepExperiment2D(ExperimentClass):
                 # AveragerProgram returns avg_di, avg_dq, indexed into by avg_di[ro_ch][0]
                 if isinstance(Instance, ExperimentClass):
                     '''!!! Exceptional case intended only for OptimizeReadoutAndPulse !!!.
-                    Otherwise, make sure data['data'][z_value][ro_ind] is one number'''
+                    If using, make sure data['data'][z_value][ro_ind] is one number'''
                     data = Instance.acquire(self)
                     for ro_index in range(len(readout_list)):
                         Z_mat[ro_index][i, j] = data['data'][self.z_value][ro_index]

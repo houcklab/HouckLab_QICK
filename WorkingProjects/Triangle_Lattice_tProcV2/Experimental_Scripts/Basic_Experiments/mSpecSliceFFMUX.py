@@ -1,6 +1,6 @@
 from qick import *
 
-from qick.asm_v2 import QickSweep1D
+from qick.asm_v2 import QickSpan, QickSweep1D
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
@@ -35,27 +35,31 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         FF.FFDefinitions(self)
 
         self.add_loop("qubit_freq_loop", self.cfg["SpecNumPoints"])
+        qubit_freq_sweep = QickSweep1D("qubit_freq_loop",
+                                    start=cfg["qubit_freqs"][0] - cfg["SpecSpan"],
+                                    end=cfg["qubit_freqs"][0] + cfg["SpecSpan"])
         # add qubit pulse
+        # print(cfg["qubit_gain"])
         if cfg['Gauss']:
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-            self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", freq=cfg["qubit_freq_sweep"],
-                           phase=90, gain=cfg["qubit_gain"], waveform="qubit")
+            self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
+                           freq=qubit_freq_sweep,
+                           phase=90, gain=cfg["Gauss_gain"] / 32766.)
             self.qubit_length_us = cfg["sigma"] * 4
         else:
-            self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="const", freq=4500,#cfg["qubit_freq_sweep"],
-                           phase=0, gain=cfg["qubit_gain"], length=cfg["qubit_length"])
+            self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="const", freq=qubit_freq_sweep,
+                           phase=0, gain=cfg["qubit_gain"] / 32766., length=cfg["qubit_length"])
             self.qubit_length_us = cfg["qubit_length"]
 
 
     def _body(self, cfg):
-
-        self.FFPulses(self.FFPulse, self.qubit_length_us + 1)
+        # print(self.FFPulse)
+        self.FFPulses(self.FFPulse, self.qubit_length_us + 1.05)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.delay_auto()
 
         self.FFPulses(self.FFReadouts, cfg["res_length"])
-        self.delay(0.5)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
         self.trigger(ros=cfg["ro_chs"], pins=[0],
                      t=cfg["adc_trig_delay"])
         self.pulse(cfg["res_ch"], name='res_drive')
@@ -63,7 +67,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1.05)
 
 # ====================================================== #
 
@@ -77,9 +81,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
     def acquire(self, progress=False):
         cfg = self.cfg
-        self.cfg["qubit_freq_sweep"] = QickSweep1D("qubit_freq_loop",
-                                    start=cfg["qubit_freqs"][0] - cfg["SpecSpan"],
-                                    end=cfg["qubit_freqs"][0] + cfg["SpecSpan"]),
+
         self.cfg.setdefault("qubit_length", 100) ### length of CW drive in us
 
         prog = QubitSpecSliceFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
@@ -87,15 +89,16 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         iq_list = prog.acquire(self.soc, load_pulses=True,
                                soft_avgs=self.cfg.get('rounds', 1),
                                progress=progress)
-        print(np.array(iq_list).shape)
+        # print(np.array(iq_list).shape)
+
+        # shape of results: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
+        #              e.g. [1, 1, 71, 2]
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         x_pts = prog.get_pulse_param("qubit_drive", "freq", as_array=True)
+
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
-        x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0]
-        avgq = data['data']['avgq'][0]
 
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq
@@ -109,8 +112,8 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         if data is None:
             data = self.data
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0][0]
-        avgq = data['data']['avgq'][0][0]
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
 
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq

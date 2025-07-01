@@ -1,7 +1,7 @@
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperimentR1D import SweepExperimentR1D
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
 
 
 class FFvsSpec(SweepExperimentR1D):

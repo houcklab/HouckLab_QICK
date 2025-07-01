@@ -18,40 +18,39 @@ for i in range(D5a._num_dacs):
         D5a.set_voltage(i, current_settings[0])
 
 ################
-# [Q1, Q2, Q3, Q4, C12, C13, C23, C24, C34]
 
-# DACs = [9, 8, 5, 1, 3, 12, 10, 14]
-# DACs = [9, 8, 5, 1, 3, 12, 10, 14]
-# 9: left, Q1
-# 10: top, Q2
-# DACs = [9, 10]
-# [Q1, Q2]
+DACs = [8, 2, 4, 6]
+#0, 2 and right
+#4, 6 are left
+#4(number 3) is right coupler
+#6(number 4) is right qubit
+
+# % bottom left qubit
+# qubit_2 = int8(0);
+
+# % left coupler
+# coupler_1 = int8(2);
+
+# % right coupler
+# coupler_2 = int8(4);
+#
+# % bottom right qubit
+# qubit_4 = int8(6);
+#
+
+#
+
+
+
+# after switching lines in fridge: [right qubit, left coupler, right coupler, left qubit]
+# 4Q device: [right qubit, top qubit, bottom qubit, left qubit]
+# no clue which is which for triangle lattice
+voltages = [0.428, 0.9, 0.63, 0]
 
 set_unused_to_zero = True
 
-voltages = [-1.174, 0, 0, 0, 0, 0.65, 0]
-voltages = [-1.14, 0, 0, 0, 0, 0.65, 0]
-# voltages = [-0.35, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, 0, 0.7, 0]  # 4.4 fpr qubit 2
-
-# flux stability scans
-voltages = [-0.6, 0, 0, 0, 0, 0, 0]  #4.4 for qubit 1
-# voltages = [-0.52, 0, 0, 0, 0, 0, 0]
-
-# currents
-# Qubits at + - state
-voltages = [-0.6, 0, 0, 0, 0, 0.64, 0]
-
-# 9: left, Q1
-DACs = [9]
-voltages= [0]
-# voltages= [-0.625]
-
-# 10: top, Q2
-# 3: bottom, Q3
-
-
-
+################
+#
 for DA, vol in zip(DACs, voltages):
     D5a.set_voltage_ramp(DA, vol)
 
@@ -71,4 +70,6 @@ spi_rack.close()
 # 0 to 4 Volt: range_4V_uni (span 0)
 # -4 to 4 Volt: range_4V_bi (span 2)
 # -2 to 2 Volt: range_2V_bi (span 4)
+
+
 

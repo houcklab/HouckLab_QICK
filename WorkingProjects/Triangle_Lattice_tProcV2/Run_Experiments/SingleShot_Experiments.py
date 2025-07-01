@@ -19,7 +19,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mOptimizeReadoutAndPulse import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1MUX import T1MUX
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT2RMUX import T2RMUX
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mFFvsSpec import FFvsSpec
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsSpec import FFvsSpec
 # # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
 import numpy as np
 
@@ -30,39 +30,38 @@ BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["readout_length"] = 2.5
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6978.79 , 'Gain': 10900, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-          'Qubit': {'Frequency': 4636.55, 'sigma': 0.05, 'Gain': 7950},
+    '1': {'Readout': {'Frequency': 7122.0 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 3950, 'sigma': 0.05, 'Gain': 2550},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-          'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
+    '2': {'Readout': {'Frequency': 7077. - BaseConfig["res_LO"] , 'Gain': 4000,
+                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 3792, 'sigma': 0.05, 'Gain': 2260},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-              'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
-              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-              'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
-              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-              'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
-              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7096.2, 'Gain': 4000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-              'Qubit': {'Frequency': 4921.66, 'sigma': 0.05, 'Gain': 3500},
-              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '7': {'Readout': {'Frequency': 7269.7, 'Gain': 15000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-          'Qubit': {'Frequency': 4038, 'sigma': 0.05, 'Gain': 9450},
+    '3': {'Readout': {'Frequency': 7510.5 - BaseConfig["res_LO"] , 'Gain': 4000,
+                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 3780, 'sigma': 0.05, 'Gain': 3500},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '8': {'Readout': {'Frequency': 7269.7, 'Gain': 15000, 'Readout_Time': 2.5, 'ADC_Offset': 0.3,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0]},
-          'Qubit': {'Frequency': 4038, 'sigma': 0.05, 'Gain': 9450},
+    '4': {'Readout': {'Frequency': 7568.1 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4000, 'sigma': 0.05, 'Gain': 3350},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-
+    '5': {'Readout': {'Frequency': 7362.8 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+              'Qubit': {'Frequency': 4000, 'sigma': 0.05, 'Gain': 3500},
+              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
+    '6': {'Readout': {'Frequency': 7441.5 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4000, 'sigma': 0.05, 'Gain': 2166},
+          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
+    '7': {'Readout': {'Frequency': 7254.9 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+              'Qubit': {'Frequency': 4000, 'sigma': 0.05, 'Gain': 2500},
+              'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
+    '8': {'Readout': {'Frequency': 7309.85 - BaseConfig["res_LO"] , 'Gain': 4000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
+          'Qubit': {'Frequency': 4100, 'sigma': 0.05, 'Gain': 5600},
+          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
     }
 
 FF_gain1_expt = 0
@@ -74,26 +73,26 @@ FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = [1]
+Qubit_Readout = [5]
+Qubit_Pulse = [5]
 
 
 RunTransmissionSweep = False # determine cavity frequency
-Trans_relevant_params = {"reps": 20, "TransSpan": 1.5, "TransNumPoints": 10,
+Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
                         "readout_length": 2.5, 'cav_relax_delay': 10}
 Run2ToneSpec = True
 Spec_relevant_params = {
                       # "qubit_gain": 10000, "SpecSpan":420, "SpecNumPoints": 71,
-                        # "qubit_gain": 800, "SpecSpan":100, "SpecNumPoints": 71,
-                        # "qubit_gain": 120, "SpecSpan":50, "SpecNumPoints": 71,
-                        "qubit_gain": 30, "SpecSpan":5, "SpecNumPoints": 71,
-                        'Gauss': False, "sigma": 0.05, "Gauss_gain": 6300,
-                        'reps': 20, 'rounds': 2}
+                      #   "qubit_gain": 5000, "SpecSpan":100, "SpecNumPoints": 201,
+                        "qubit_gain": 1000, "SpecSpan":30, "SpecNumPoints": 71,
+                        # "qubit_gain": 500, "SpecSpan":20, "SpecNumPoints": 71,
+                        'Gauss': False, "sigma": 0.05, "Gauss_gain": 4000,
+                        'reps': 15, 'rounds': 15}
 
 Run_Spec_v_FFgain = False
 ### Inherits spec parameters from above
-FF_sweep_spec_relevant_params = {"qubit_FF_index": 3,
-                            "FF_gain_start": 0, "FF_gain_stop":20000, "FF_gain_steps":7}
+FF_sweep_spec_relevant_params = {"qubit_FF_index": 2,
+                            "FF_gain_start": -30000, "FF_gain_stop":30000, "FF_gain_steps":6}
 
 Run_Spec_v_Qblox = False
 Spec_v_Qblox_params = {"Qblox_start":-0.3, "Qblox_stop":-0.2, "Qblox_steps":3, "DAC":9}
@@ -107,13 +106,13 @@ RunT2 = False
 
 T1_params = {"step": 5, "expts": 40, "reps": 15, "rounds": 15}
 
-T2FF = True # Runs one or the other
+T2FF = False # Runs one or the other
 T2R_params = {"step": 10 * 2.32515e-3, "expts": 125, "reps": 400,
               "freq_shift": 0.0, "phase_step_deg": 26, "relax_delay":200}
 
 
 
-SingleShot = True
+SingleShot = False
 SS_params = {"Shots":2000, "readout_length": 2.5, "adc_trig_offset": 0.3,
              'number_of_pulses': 1, 'relax_delay': 200}
 
@@ -169,13 +168,13 @@ for Qubit, FFR, FFE, FFP in zip(('1','2','3','4','5','6','7','8'), FFReadouts, F
     FF_Qubits[Qubit] |= {'Gain_Readout': FFR, 'Gain_Expt': FFE, 'Gain_Pulse': FFP}
 
 trans_config = {
-    "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
+    "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32766. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
     "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
     "readout_length":Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time']
 }
 qubit_config = {
     "qubit_freqs": [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse],
-    "qubit_gains": [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Pulse],
+    "qubit_gains": [Qubit_Parameters[str(Q)]['Qubit']['Gain'] / 32766. for Q in Qubit_Pulse],
     "sigma" : Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['sigma']
 }
 config = BaseConfig | trans_config | qubit_config
@@ -192,16 +191,15 @@ if RunTransmissionSweep:
                                      soc=soc, soccfg=soccfg, outerFolder=outerFolder)
     Instance_trans.acquire_display_save(plotDisp=True)
 
-    # update the transmission frequency to be the peak
-    # if Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['cavmin']:
-    #     config["res_freqs"][0] += Instance_trans.peakFreq_min - mixer_freq
-    #     config["mixer_freq"] = Instance_trans.peakFreq_min
-    # else:
-    #     config["res_freqs"][0] += Instance_trans.peakFreq_max - mixer_freq
-    #     config["mixer_freq"] = Instance_trans.peakFreq_max
-    # print("Cavity frequency found at: ", config["res_freqs"][0] + mixer_freq + BaseConfig["cavity_LO"] / 1e6)
+    #update the transmission frequency to be the peak
+    if Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['cavmin']:
+        config["res_freqs"][0] = Instance_trans.peakFreq_min
+    else:
+        config["res_freqs"][0] = Instance_trans.peakFreq_max
+
+    print("Cavity frequency found at: ", config["res_freqs"][0] + BaseConfig["res_LO"])
 else:
-    # print("Cavity frequency set to: ", config["res_freqs"][0] + mixer_freq + BaseConfig["cavity_LO"] / 1e6)
+    print("Cavity frequency set to: ", config["res_freqs"][0] + BaseConfig["res_LO"])
     pass
 
 if Run2ToneSpec:
