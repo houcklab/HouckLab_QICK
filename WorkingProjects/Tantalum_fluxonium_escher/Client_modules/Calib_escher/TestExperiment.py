@@ -59,7 +59,7 @@ import Pyro4.util
 import json
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import MakeFile
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\HouckCage_dev\\" # end in \\
+outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\QCage_dev\WFQ_1\\" # end in \\
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -76,17 +76,18 @@ SwitchConfig = {
 
 BaseConfig = BaseConfig | SwitchConfig
 
-mlbf_filter = MLBFDriver("192.168.1.10")
-yoko = yoko2
+#mlbf_filter = MLBFDriver("192.168.1.10")
+mlbf_filter = MLBFDriver("192.168.1.11")
+yoko = yoko
 
 #%%
 # TITLE: Constant Tone Experiment
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 25000,  # [DAC units]
+    "gain": 0,  # [DAC units]
 
-    "freq": 1500,#3713,  # [MHz]
+    "freq": 1000, #3713,  # [MHz]
 
     "channel": 1, #0,  # TODO default value # 0 is resonator, 1 is qubit
     "nqz": 1, #2,#1,  # TODO default value
@@ -325,35 +326,34 @@ if config["save_data"]:
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 300, #, 20000,
+    "reps": 1000, #, 20000,
     # cavity
     "read_pulse_style": "const",  # --Fixed
 
-    "read_length": 2, #30,  # us
-    "read_pulse_gain": 8000, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
+    "read_length": 1, #30,  # us
+    "read_pulse_gain": 500, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
 
-    "read_pulse_freq": 7392.23, #6665.367, #6664.2,
+    "read_pulse_freq": 6723.5, #6665.367, #6664.2,
 
 
     # Transmission Experiment
-    "TransSpan": 1.5, #3, #4, # MHz
+    "TransSpan": 10, #3, #4, # MHz
 
-    "TransNumPoints": 101, #651, #601,
+    "TransNumPoints": 501, #651, #601,
 
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -0.115,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
+    "yokoVoltage": 3.12,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "flat_top",
-    "qubit_freq": 1080,
-    "qubit_gain": 25000,
-
+    "qubit_pulse_style": "const",
+    "qubit_freq": 108,
+    "qubit_gain": 32000,
 
     # Constant Pulse Tone
-    "qubit_length": 0.2,
+    "qubit_length": 0.5,
 
     # Flat top or gaussian pulse tone
     "sigma": 0.05,#0.3,
@@ -362,20 +362,20 @@ UpdateConfig_qubit = {
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 1000, #2105,
+    "qubit_freq_start": 1200, #2105,
     "qubit_freq_stop": 2000,#2120,
-    "SpecNumPoints": 101,
-    'spec_reps': 10000,#10000, #20000,
+    "SpecNumPoints": 301,
+    'spec_reps': 3000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
-    "qubit_gain_step": 5000,
-    "qubit_gain_expts": 3,
-    "AmpRabi_reps": 15000,
+    "qubit_gain_step": 10000,
+    "qubit_gain_expts": 5,
+    "AmpRabi_reps": 1000,
 
 
     # Experiment parameters
-    "relax_delay": 50, #2000,
+    "relax_delay": 15, #2000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": False,
@@ -392,7 +392,7 @@ config = BaseConfig | UpdateConfig
 
 #Updating the mlbf filter
 filter_freq = (config["read_pulse_freq"])
-mlbf_filter.set_frequency(filter_freq)
+mlbf_filter.set_frequency(int(filter_freq))
 
 Instance_trans = Transmission(path="dataTestTransmission", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
 data_trans= Transmission.acquire(Instance_trans)
@@ -415,7 +415,7 @@ TwoToneTransmission.save_data(Instance_trans, data_trans)
 Instance_trans.save_config()
 
 #%%
-# TITLE: Performing regular ole' spec slice
+# TITLE: Performing regular ole' `spec slice`
 
 # Estimate Time
 time = config["spec_reps"]*config["SpecNumPoints"]*(config["relax_delay"] + config["qubit_length"] + config["read_length"])*1e-6
@@ -486,22 +486,22 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 ##TITLE: Transmission vs Power
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": -0.105, #0.09473, #3.1
+    "yokoVoltage": -1.9099, #0.09473, #3.1
     ##### change gain instead option
-    "trans_gain_start": 1000,
-    "trans_gain_stop": 15000,
-    "trans_gain_num": 5,
+    "trans_gain_start": 100,
+    "trans_gain_stop": 2100,
+    "trans_gain_num": 21,
     ###### cavity
-    "reps": 1000,
-    "trans_reps": 1000,  # this will used for all experiments below unless otherwise changed in between trials
+    "reps": 300,
+    "trans_reps": 100,  # this will used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     #"readout_length": 35,  # [us] 1/7/2025 JL
     "read_length": 2,  # [us] 1/7/2025 JL
     # "read_pulse_gain": 10000,  # [DAC units]
     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_start": 7390,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 7394,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_start": 6722.5,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6724.5,  # [MHz] actual frequency is this number + "cavity_LO"
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
     "relax_delay": 20, # us
     "units": "DAC",         # in dB or DAC
@@ -510,7 +510,7 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 #
 # #### update the qubit and cavity attenuation
-yoko2.SetVoltage(config["yokoVoltage"])
+yoko.SetVoltage(config["yokoVoltage"])
 # #
 
 import matplotlib
@@ -527,8 +527,8 @@ UpdateConfig = {
 
     # Experiment Parameter
     "trans_gain_start": 300,
-    "trans_gain_stop": 5300,
-    "trans_gain_num": 7,
+    "trans_gain_stop": 2300,
+    "trans_gain_num": 21,
     "change_ro_gain": True, # If true even the gain of the readout pulse will change.
 
     # cavity
@@ -570,19 +570,19 @@ StarkShift.save_config(Instance_StarkShift)
 ##TITLE: Transmission vs Read length
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": -0.111, #0.09473, #3.1
+    "yokoVoltage": -0.76, #0.09473, #3.1
     ##### change gain instead option
     "read_length_start": 1,
     "read_length_stop": 10,
     "read_length_num": 11,
     ###### cavity
     "reps": 1000,
-    "trans_reps": 1000,  # this will used for all experiments below unless otherwise changed in between trials
+    "trans_reps": 300,  # this will used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    "readout_length": 45,  # [us]
-    "read_pulse_gain": 15000,
-    "trans_freq_start": 6664,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 6665.5,  # [MHz] actual frequency is this number + "cavity_LO"
+    #"readout_length": 45,  # [us]
+    "read_pulse_gain": 9000,
+    "trans_freq_start": 6722.8,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6724.7,  # [MHz] actual frequency is this number + "cavity_LO"
     "TransNumPoints": 151,  ### number of points in the transmission frequecny
     "relax_delay": 10, # us
     "units": "DAC",         # in dB or DAC
@@ -591,7 +591,7 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 #
 # #### update the qubit and cavity attenuation
-yoko1.SetVoltage(config["yokoVoltage"])
+yoko.SetVoltage(config["yokoVoltage"])
 # #
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -605,32 +605,32 @@ TransVsRelaxDelay.save_config(Instance_TransVsRelaxDelay)
 
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": 0.1235,
+    "yokoVoltage": -1.55,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 35,  # us
-    "read_pulse_gain": 3500,  # [DAC units]
-    "read_pulse_freq": 6664.863, #6664.53,  # MHz
+    "read_length": 20,  # us
+    "read_pulse_gain": 60,  # [DAC units]
+    "read_pulse_freq": 6723.51, #6664.53,  # MHz
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 460, #2106.7,
-    "qubit_freq_stop": 510, #2106.9,
-    "RabiNumPoints": 101,  ### number of points
+    "qubit_freq_start": 50, #2106.7,
+    "qubit_freq_stop": 400, #2106.9,
+    "RabiNumPoints": 141,  ### number of points
     "qubit_pulse_style": "const",
-    "sigma": 0.5,  ### units us, define a 20ns sigma
+    "sigma": 0.15,  ### units us, define a 20ns sigm
     "flat_top_length": 30.0, ### in us
-    "qubit_length": 5,
+    "qubit_length": 10,
     "relax_delay": 10,  ### turned into us inside the run function
     ##### amplitude rabi parameters
-    "qubit_gain_start": 8000,
-    "qubit_gain_step": 2000,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 6,  ### number of steps
-    "AmpRabi_reps": 10000,  # number of averages for the experiment
+    "qubit_gain_start": 0,
+    "qubit_gain_step": 3000,  ### stepping amount of the qubit gain
+    "qubit_gain_expts": 11,  ### number of steps
+    "AmpRabi_reps": 2000,  # number of averages for the experiment
     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
-    'use_switch': True,
+    'use_switch': False,
 }
 config = BaseConfig | UpdateConfig
 #
-yoko1.SetVoltage(config["yokoVoltage"])
+yoko.SetVoltage(config["yokoVoltage"])
 
 Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
@@ -972,32 +972,32 @@ AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 # region Spec on repeat Config
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": 0.22,
+    "yokoVoltage": -0.76,
     ###### cavity
     "read_pulse_style": "const", # --Fixed
-    "read_length": 35, # us
-    "read_pulse_gain": 10000, # [DAC units]
-    "read_pulse_freq": 6423.085,
+    "read_length": 2, # us
+    "read_pulse_gain": 9000, # [DAC units]
+    "read_pulse_freq": 6723.6,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 900, #1167-10
-    "qubit_freq_stop": 1000,
-    "SpecNumPoints": 301,  ### number of points
+    "qubit_freq_start": 1250, #1167-10
+    "qubit_freq_stop": 1350,
+    "SpecNumPoints": 101,  ### number of points
     "qubit_pulse_style": "const",
-    "qubit_length": 20, # us, changes experiment time but is necessary for "const" style
+    "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
     "sigma": 0.05,  ### units us, define a 20ns sigma
     # "qubit_length": 1, ### units us, doesnt really get used though
     # "flat_top_length": 0.025, ### in us
     "relax_delay": 10,  ### turned into us inside the run function
-    "qubit_gain": 15000, # Constant gain to use
+    "qubit_gain": 25000, # Constant gain to use
     # "qubit_gain_start": 18500, # shouldn't need this...
-    "reps": 3000, # number of averages of every experiment
+    "reps": 1000, # number of averages of every experiment
     ##### time parameters
-    "delay":  60, # s
-    "repetitions": 230,  ### number of steps
+    "delay":  30, # s
+    "repetitions": 30,  ### number of steps
 }
 config = BaseConfig | UpdateConfig
 
-yoko1.SetVoltage(config["yokoVoltage"])
+yoko.SetVoltage(config["yokoVoltage"])
 # #
 Instance_QubitSpecRepeat = QubitSpecRepeat(path="dataQubitSpecRepeat", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 data_QubitSpecRepeat = QubitSpecRepeat.acquire(Instance_QubitSpecRepeat)
@@ -1393,15 +1393,15 @@ plt.show()
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 5,                # [us]
-    "read_pulse_gain": 8000,         # [DAC units]
-    "read_pulse_freq": 7392.25,      # [MHz]
+    "read_length": 2,                # [us]
+    "read_pulse_gain": 9000,         # [DAC units]
+    "read_pulse_freq": 6723.6,      # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
     "qubit_freq_start": 1001,        # [MHz]
     "qubit_freq_stop": 2000,         # [MHz]
-    "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+    "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 1,               # [us], used with "const"
     "flat_top_length": 0.300,        # [us], used with "flat_top"
@@ -1419,7 +1419,7 @@ UpdateConfig = {
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
-    "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -0.76,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,               # [us]
     "qubit_freq_expts": 501,         # number of points
     "reps": 1000,
@@ -1449,41 +1449,41 @@ plt.show()
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 2,                # [us]
-    "read_pulse_gain": 8000,         # [DAC units]
-    "read_pulse_freq": 7392.25,      # [MHz]
+    "read_length": 5,                # [us]
+    "read_pulse_gain": 300,         # [DAC units]
+    "read_pulse_freq": 6723.5,      # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 1001,        # [MHz]
-    "qubit_freq_stop": 2000,         # [MHz]
+    "qubit_freq_start": 1200,        # [MHz]
+    "qubit_freq_stop": 1700,         # [MHz]
     "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.025,                  # [us], used with "arb" and "flat_top"
-    "qubit_length": 0.05,               # [us], used with "const"
+    "qubit_length": 0.1,               # [us], used with "const"
     "flat_top_length": 0.050,        # [us], used with "flat_top"
-    "qubit_gain": 25000,             # [DAC units]
+    "qubit_gain": 32000,             # [DAC units]
     "qubit_ch": 1,                   # RFSOC output channel of qubit drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": 400,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 1,                  # [us] Total length of positive fast flux pulse
-    "pre_ff_delay": 0.2,               # [us] Delay before the fast flux pulse
+    "ff_gain": 5000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 0.5,                  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 0.5,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
-    "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 30,               # [us]
-    "qubit_freq_expts": 501,         # number of points
-    "reps": 1000,
+    "yokoVoltage": 3.12,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 15,               # [us]
+    "qubit_freq_expts": 101,         # number of points
+    "reps": 5000,
     "use_switch": False,
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
     "qubit_spec_delay_start": 0.0,  # [us] Initial value
-    "qubit_spec_delay_stop": 1.15,      # [us] Final value
-    "qubit_spec_delay_steps": 21,    # number of post_ff_delay points to take
+    "qubit_spec_delay_stop": 1.5,      # [us] Final value
+    "qubit_spec_delay_steps": 15,    # number of post_ff_delay points to take
 }
 
 config = BaseConfig | UpdateConfig
@@ -1502,3 +1502,42 @@ FFSpecVsDelay_Experiment.save_data(Instance_FFSpecVsDelay, data_FFSpecVsDelay)
 FFSpecVsDelay_Experiment.save_config(Instance_FFSpecVsDelay)
 # print(Instance_specSlice.qubitFreq)
 plt.show()
+
+
+#%%
+# Fast flux ramp test experiment
+
+cfg = {
+        # Readout section
+        "read_pulse_style": "const",  # --Fixed
+        "read_length": 5,  # [us]
+        "read_pulse_gain": 8000,  # [DAC units]
+        "read_pulse_freq": 7392.25,  # [MHz]
+        # Fast flux pulse parameters
+        "ff_ramp_style": "linear",  # one of ["linear"]
+        "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 100, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 10, # [us] Delay between fast flux ramps
+        "ff_ch": 6,  # RFSOC output channel of fast flux drive
+        "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+        # Sweep parameters
+        "ff_ramp_length_start": 1,  # [us] Total length of positive fast flux pulse, start of sweep
+        "ff_ramp_length_stop": 5,  # [us] Total length of positive fast flux pulse, end of sweep
+        "ff_ramp_expts": 10, # [int] Number of points in the ff ramp length sweep
+        "yokoVoltage": 3.391,  # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 10,  # [us] Relax delay after first readout
+        "relax_delay_2": 10, # [us] Relax delay after second readout
+        "reps": 10000,
+        "sets": 5,
+    }
+
+#yoko.SetVoltage(config["yokoVoltage"])
+
+cfg = BaseConfig | cfg
+length = 0.1
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest
+prog = FFRampTest(soccfg, cfg | {"ff_ramp_length": length})
+i_arr, q_arr = prog.acquire(soc, threshold=None, angle=None, load_pulses=True,
+                                 save_experiments=None,  # readouts_per_experiment=2,
+                                 start_src="internal", progress=True)
+
