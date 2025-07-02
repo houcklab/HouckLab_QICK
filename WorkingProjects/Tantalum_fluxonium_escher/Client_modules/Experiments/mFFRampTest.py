@@ -34,7 +34,7 @@ class FFRampTest(NDAveragerProgram):
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"],
                                  freq=self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
                                                     ro_ch=self.cfg["ro_chs"][0]), phase=0,
-                                 gain=self.cfg["read_pulse_gain"], mode="oneshot",
+                                 gain=self.cfg["read_pulse_gain"], #mode="oneshot",
                                  length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["ro_chs"][0]))
 
         # Define the fast flux ramp. For now, just linear ramp is supported
@@ -49,15 +49,21 @@ class FFRampTest(NDAveragerProgram):
     def body(self):
         """
         Measures at original flux spot, plays ff ramp to second flux spot, waits, plays reversed ff ramp, measures.
+        NOTE: each measurement actually takes read_length + adc_trig_offset time, since the reading starts after the
+        pulse and we are waiting for the measurement to finish before starting the next pulse. For now, let's just
+        account for this by subtracting adc_trig_offset from the desired delay. If we end up wanting a delay less than
+        the trigger offset, we can set wait to False and stop synching all channels, but this likely won't be necessary,
+        as we probably want to wait for the cavity to ring down before starting the ramp.
         :return:
         """
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
-        adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0])
+        adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     t = 0, wait = True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"]))
+                     wait = True, #t = 0,
+                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"], gen_ch=self.cfg["res_ch"]))
+
 
         self.sync_all(self.us2cycles(0.01)) # Wait for a few ns to align channels
 

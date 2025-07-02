@@ -1510,14 +1510,14 @@ plt.show()
 cfg = {
         # Readout section
         "read_pulse_style": "const",  # --Fixed
-        "read_length": 5,  # [us]
+        "read_length": 7,  # [us]
         "read_pulse_gain": 8000,  # [DAC units]
-        "read_pulse_freq": 7392.25,  # [MHz]
+        "read_pulse_freq": 6500.,  # [MHz]
         # Fast flux pulse parameters
         "ff_ramp_style": "linear",  # one of ["linear"]
         "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 100, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 10, # [us] Delay between fast flux ramps
+        "ff_ramp_stop": 30000, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 3, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
         # Sweep parameters
@@ -1525,19 +1525,24 @@ cfg = {
         "ff_ramp_length_stop": 5,  # [us] Total length of positive fast flux pulse, end of sweep
         "ff_ramp_expts": 10, # [int] Number of points in the ff ramp length sweep
         "yokoVoltage": 3.391,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 10,  # [us] Relax delay after first readout
-        "relax_delay_2": 10, # [us] Relax delay after second readout
-        "reps": 10000,
+        "relax_delay_1": 13 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+        "relax_delay_2": 5 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "reps": 10000000,
         "sets": 5,
     }
 
+# We have 65536 samples (9.524 us) wave memory on the FF channel (and all other channels)
+
 #yoko.SetVoltage(config["yokoVoltage"])
 
+mlbf_filter = MLBFDriver("192.168.1.11")
+filter_freq = (cfg["read_pulse_freq"])
+mlbf_filter.set_frequency(int(filter_freq))
+
 cfg = BaseConfig | cfg
-length = 0.1
+length = 1.5
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest
 prog = FFRampTest(soccfg, cfg | {"ff_ramp_length": length})
 i_arr, q_arr = prog.acquire(soc, threshold=None, angle=None, load_pulses=True,
                                  save_experiments=None,  # readouts_per_experiment=2,
                                  start_src="internal", progress=True)
-
