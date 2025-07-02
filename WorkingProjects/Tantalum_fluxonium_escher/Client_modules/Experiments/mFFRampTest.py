@@ -34,8 +34,8 @@ class FFRampTest(NDAveragerProgram):
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"],
                                  freq=self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
                                                     ro_ch=self.cfg["ro_chs"][0]), phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]), mode="oneshot")
+                                 gain=self.cfg["read_pulse_gain"], mode="oneshot",
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["ro_chs"][0]))
 
         # Define the fast flux ramp. For now, just linear ramp is supported
         if self.cfg["ff_ramp_style"] == "linear":
@@ -54,19 +54,23 @@ class FFRampTest(NDAveragerProgram):
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0])
 
-        # play fast flux ramp
-        self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
-                                 gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-        self.pulse(ch = self.cfg["ff_ch"])
-
-        self.sync_all(self.us2cycles(0.01)) # Wait for a few ns to align channels
-
         # trigger measurement, play measurement pulse, wait for relax_delay_1
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_1"]))
 
-        self.sync_all(self.us2cycles(self.cfg["ff_delay"])) # Wait for some time at the new flux spot
+        self.sync_all(self.us2cycles(0.01)) # Wait for a few ns to align channels
+
+        # play fast flux ramp
+        self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
+                                 gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
+        self.pulse(ch = self.cfg["ff_ch"])
+
+        # play constant pulse to keep FF at ramped value if a delay here is desired
+        if self.cfg["ff_delay"] > 0:
+            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
+                                     length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
+            self.pulse(ch = self.cfg["ff_ch"])
 
         # play reversed fast flux ramp, return to original spot
         self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
@@ -104,7 +108,7 @@ class FFRampTest(NDAveragerProgram):
         "ff_ramp_style": "const",  # one of ["linear"]
         "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
         "ff_ramp_stop": 100, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 10, # [us] Delay between fast flux ramps
+        "ff_delay": 1, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
@@ -146,7 +150,7 @@ class FFRampTest_Experiment(ExperimentClass):
                                              save_experiments=None, #readouts_per_experiment=2,
                                              start_src="internal", progress=progress)
 
-        data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
+        data = {'config': self.cfg, 'data': {'ramp_lengths': ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
 
         return data
@@ -156,49 +160,49 @@ class FFRampTest_Experiment(ExperimentClass):
         if data is None:
             data = self.data
 
-        x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
-        sig  = avgi[0][0] + 1j * avgq[0][0]
-        avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
-        while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
-            fig_num += 1
-        fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
-
-        ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
-        axs[0].set_ylabel("deg")
-        axs[0].set_xlabel("Qubit Frequency (GHz)")
-        axs[0].legend()
-
-        ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
-        axs[1].set_ylabel("ADC units")
-        axs[1].set_xlabel("Qubit Frequency (GHz)")
-        axs[1].legend()
-
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].set_ylabel("ADC units")
-        axs[2].set_xlabel("Qubit Frequency (GHz)")
-        axs[2].legend()
-
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
-        axs[3].set_ylabel("ADC units")
-        axs[3].set_xlabel("Qubit Frequency (GHz)")
-        axs[3].legend()
-
-        plt.tight_layout()
-        fig.subplots_adjust(top=0.95)
-        plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
-
-        plt.savefig(self.iname)
-
-        if plot_disp:
-            plt.show(block=False)
-            plt.pause(2)
-
-        else:
-            fig.clf(True)
-            plt.close(fig)
+        # x_pts = data['data']['x_pts']
+        # avgi = data['data']['avgi']
+        # avgq = data['data']['avgq']
+        # sig  = avgi[0][0] + 1j * avgq[0][0]
+        # avgsig = np.abs(sig)
+        # avgphase = np.angle(sig, deg=True)
+        # while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+        #     fig_num += 1
+        # fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
+        #
+        # ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
+        # axs[0].set_ylabel("deg")
+        # axs[0].set_xlabel("Qubit Frequency (GHz)")
+        # axs[0].legend()
+        #
+        # ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
+        # axs[1].set_ylabel("ADC units")
+        # axs[1].set_xlabel("Qubit Frequency (GHz)")
+        # axs[1].legend()
+        #
+        # ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        # axs[2].set_ylabel("ADC units")
+        # axs[2].set_xlabel("Qubit Frequency (GHz)")
+        # axs[2].legend()
+        #
+        # ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        # axs[3].set_ylabel("ADC units")
+        # axs[3].set_xlabel("Qubit Frequency (GHz)")
+        # axs[3].legend()
+        #
+        # plt.tight_layout()
+        # fig.subplots_adjust(top=0.95)
+        # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
+        #
+        # plt.savefig(self.iname)
+        #
+        # if plot_disp:
+        #     plt.show(block=False)
+        #     plt.pause(2)
+        #
+        # else:
+        #     fig.clf(True)
+        #     plt.close(fig)
 
 
 
@@ -209,4 +213,5 @@ class FFRampTest_Experiment(ExperimentClass):
 
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
-        return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
+        return 0xBADC0FFEE
+        # return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
