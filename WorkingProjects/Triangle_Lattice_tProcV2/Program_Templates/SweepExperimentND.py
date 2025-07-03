@@ -1,0 +1,242 @@
+from qick import *
+
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import *
+from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+
+# import matplotlib; matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+
+import numpy as np
+from qick.helpers import gauss
+from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+import datetime
+from tqdm.notebook import tqdm
+import time
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+import scipy
+import functools
+import operator
+import itertools
+import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
+from qick.asm_v2 import AveragerProgramV2
+
+
+'''
+In 2025, during the transition to tProcV2, I wrote SweepExperiment1D, 2D, and R1D to make it easier to define new
+sweeps of QICK programs. Which one you used depended on how many variables you swept and whether you swept something
+within QICK on the RFSoC too. Since the three classes repeated a lot of code, I created a single
+base class to sweep over an arbitrary number of config keys an AveragerProgramV2 with an arbitrary number of QICK loops.
+- Joshua 07/03/2025
+'''
+
+class SweepExperimentND(ExperimentClass):
+    """
+        Sweeps a config entry for an AveragerProgram.
+    """
+    def init_sweep_vars(self):
+        self.Program =  None   #  FFAveragerProgramV2
+        self.keys =    tuple()   #  key, or a list of keys for nested dicts
+        self.sweep_arrays = tuple()   # list of arrays, each containing the sweep values for each key
+
+        self.z_value =  None   #  'contrast' or 'population'
+
+        raise NotImplementedError("Please implement init_sweep_vars() to define sweep variables.")
+
+    def set_up_instance(self):
+        '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
+        pass
+
+
+    def _display_plot(self, data, fig_axs):
+        pass
+    
+    def _update_fig(self, data, fig_axs):
+        pass
+
+
+    def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg=None, config_file=None,
+                 liveplot_enabled=False, **kwargs):
+        super().__init__(path=path, prefix=prefix, soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file,
+                         liveplot_enabled=liveplot_enabled, **kwargs)
+
+        self.init_sweep_vars()
+
+        # Compile the program once to look at the defined QICK loops
+        for key, sweep in self.keys, self.sweep_arrays:
+            SweepHelpers.set_nested_item(self.cfg, key, sweep[0])
+        Instance = self.Program(self.soccfg, self.cfg)
+        
+        '''
+        sweep_shape: shape of the outer python sweep, e.g. (50,) for a FF gain sweep with 50 points
+        acquire_shape: shape of the sweeps from QICK-defined loops. e.g (71,) for a SpecSlice with 71 points.
+        '''
+        self.sweep_shape = (len(sweep) for sweep in self.sweep_arrays)
+        # AveragerProgramV2.loops = [("reps", self.reps, self.before_reps, self.after_reps), ("myloop1", num_steps, ...), ...]
+        self.acquire_shape = tuple(loop[1] for loop in Instance.loops[1:]) if len(Instance.loops) > 1 else tuple()
+        
+
+        self.data_shape = self.sweep_shape + self.acquire_shape
+        
+        
+
+    def acquire(self, progress=False, plotDisp=True, plotSave=True, figNum=1):
+        while plt.fignum_exists(num=figNum):  # if figure with number already exists
+            figNum += 1
+
+        readout_list = self.cfg["Qubit_Readout_List"]
+
+        '''Index by Z_mat[ro_index][*sweep_shape, *data_shape].
+            e.g., 4 MUXed readouts on a FF gain vs SpecSlice. sweep_shape = (50,), acquire_shape = (71,).
+            Z_mat will have shape (4)(50, 71).'''
+        Z_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
+
+        # raw i and q data
+        I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
+        Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
+
+
+        # Define data dictionary
+        key_names = [SweepHelpers.key_savename(key) for key in self.keys]
+
+        self.data = {
+            'config': self.cfg,
+            'data': {self.z_value: Z_mat,
+                     "I": I_mat,
+                     "Q": Q_mat,
+                     'readout_list': readout_list,
+                     **{key_name: value_array for key_name,value_array in zip(key_names, self.sweep_arrays)},
+                     **{key : self.cfg[key] for key in ('angle', 'threshold', 'confusion_matrix')}
+                     }
+        }
+
+        self.last_saved_time = time.time()
+
+        '''iterating through itertools.product is equivalent to a nested for loop such as
+        for i, y_pt in enumerate(self.y_points):
+            for j, x_pt in enumerate(self.x_points):'''
+        
+        # e.g. index_iterator yields (0,0), (0,1), (0,2), ... (1,0), (1,1), ... (M-1, N-1)
+        index_iterator = itertools.product(*(range(len(arr)) for arr in self.sweep_arrays))
+        value_iterator = itertools.product(*self.sweep_arrays)
+        
+        for sweep_indices, sweep_values in zip(index_iterator, value_iterator): 
+            # Update config entries based on sweep
+            for key, pt in zip(self.keys, sweep_values):
+                SweepHelpers.set_nested_item(self.cfg, self.key, pt)
+
+            # set up the AveragerProgram instance
+            self.set_up_instance()
+
+            if issubclass(self.Program, AveragerProgramV2):
+                Instance = self.Program(self.soccfg, self.cfg)
+            elif issubclass(self.Program, ExperimentClass):
+                Instance = self.Program(path=self.path, prefix=self.prefix, soc=self.soc, soccfg=self.soccfg,
+                                        cfg=self.cfg, config_file=None, outerFolder = self.outerFolder)
+            else:
+                raise TypeError("Please assign an AveragerProgramV2 object in self.Program.")
+
+            # Acquire data and assign into Z_mat
+            if isinstance(Instance, ExperimentClass):
+                '''!!! Exceptional case intended only for OptimizeReadoutAndPulse !!!.
+                If using, make sure data['data'][z_value][ro_ind] is one number'''
+                data = Instance.acquire(self)
+                for ro_index in range(len(self.readout_list)):
+                    Z_mat[ro_index][*sweep_indices, ...] = data['data'][self.z_value][ro_index]
+
+            # shape of iq_list: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
+            #              e.g. [1, 1, 71, 2] for SpecSlice
+            elif self.z_value == 'contrast':
+                iq_list = Instance.acquire(self.soc, load_pulses=True)
+                avgi, avgq = iq_list[0][-1, ..., 0], iq_list[0][-1, ..., 1]
+                for ro_index in range(len(readout_list)):
+                    I_mat[ro_index][*sweep_indices, ...] = avgi[ro_index][0]
+                    Q_mat[ro_index][*sweep_indices, ...] = avgq[ro_index][0]
+                    slices = (slice(j+1) for j in sweep_indices)
+                    rotated_i = IQ_contrast(I_mat[ro_index][*slices], Q_mat[ro_index][*slices])
+
+                    Z_mat[ro_index][*sweep_indices, ...] = rotated_i
+            elif self.z_value == 'population':
+                excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
+                                                            load_pulses=True)
+                for ro_index in range(len(readout_list)):
+                    Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
+
+            else:
+                raise ValueError("So far I only support 'contrast' or 'population'.")
+
+            if (plotDisp or plotSave) and sweep_indices[-1] == len(self.sweep_arrays[-1])-1:
+                # Create figure
+                if sweep_indices[0] == 0:# and j == 0:
+                    fig, axs = self.display(self.data, figNum=figNum,
+                                                            plotDisp=plotDisp, block=False,
+                                                            plotSave=False)
+                # Update figure
+                else:
+                    self._update_fig(Z_mat, fig, axs)
+
+                    # fig.canvas.draw()
+                    # fig.canvas.flush_events()
+                    fig.show()
+                    plt.pause(0.1)
+
+            if time.time() - self.last_saved_time > 5 * 60:  # Save data every 5 minutes
+                ### print(self.data)
+                self.last_saved_time = time.time()
+                self.save_data(data=self.data)
+                if plotSave:
+                    plt.savefig(self.iname[:-4] + '.png')
+
+
+        if (plotDisp or plotSave):
+            fig.clf(True)
+            plt.close(fig)
+
+        self.save_data(data=self.data)
+        return self.data
+    
+    def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):
+        readout_list = data["data"]["Qubit_Readout_List"]
+
+        # Create a new figure if you did not pass in your own fig and axs.
+        if fig_axs is None:
+            fig, axs = self._make_subplots(figNum, len(readout_list))
+        else:
+            fig, axs = fig_axs
+        
+        # Run the corresponding display code
+        if plotDisp or plotSave:
+            self._display_plot(data, fig_axs = fig_axs)
+
+        if plotSave:
+            plt.savefig(self.iname[:-4] + '.png')
+        if plotDisp:
+            plt.show(block=block)
+            plt.pause(0.1)
+
+        return fig, axs
+
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])
+
+    def _make_subplots(self, figNum, count):
+        if plt.fignum_exists(num=figNum):  # if figure with number already exists
+            figNum = None
+        if count == 1:
+            fig, ax = plt.subplots(1, 1, figsize=(10, 8), num=figNum)
+            axs = [ax]
+        elif count == 2:
+            fig, axs = plt.subplots(1, 2, figsize=(14, 8), num=figNum, tight_layout=True)
+        elif count in [3, 4]:
+            fig, axs = plt.subplots(2, 2, figsize=(14, 8), num=figNum, tight_layout=True)
+            axs = (axs[0][0], axs[0][1], axs[1][0], axs[1][1])
+            if count == 3:
+                axs[3].set_axis_off()
+        else:
+            raise Exception("I don't think we support MUX with N > 4 yet???")
+        
+        return fig, axs
+
