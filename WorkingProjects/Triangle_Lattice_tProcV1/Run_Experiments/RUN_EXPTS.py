@@ -8,9 +8,9 @@ from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleQu
 
 
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFMUX
-# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts.mSpecSliceFFMUX_CW import QubitSpecSliceFFMUXCW
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
-# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mChiShiftMUX import ChiShift
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts.mChiShiftMUX import ChiShift
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mOptimizeReadoutAndPulse import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mT1MUX import T1MUX
@@ -18,7 +18,7 @@ from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mT2RMUX i
 from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFvsSpec import FFvsSpec
 from WorkingProjects.Triangle_Lattice_tProcV1.Run_Experiments.Ramp_Experiments import run_ramp_population_over_time
 
-# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mT1_TLS_SSMUX import T1_TLS_SS
+# from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
 #----------------------------------------
 
 # Translation of Qubit_Parameters dict to resonator and qubit parameters.

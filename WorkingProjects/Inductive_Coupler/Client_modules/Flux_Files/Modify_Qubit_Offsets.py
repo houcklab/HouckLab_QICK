@@ -1,4 +1,4 @@
-from Helper_Functions.Import_Functions_Transmon import *
+from Import_Functions_Transmon import *
 from Initialize_Qubit_Information import *
 
 found_qubit = ['Q1', 4300, 4200]  #found Freq, expected freq
@@ -8,7 +8,6 @@ crosstalk_offset_modified = modify_crosstalk_offset(found_qubit, crosstalk_offse
 dictionary_everything['crosstalk_offset'] = crosstalk_offset_modified
 
 print(crosstalk_offset - crosstalk_offset_modified)
-
 # print(crosstalk_offset_modified)
 # #
 # print('Previous version!!!!')

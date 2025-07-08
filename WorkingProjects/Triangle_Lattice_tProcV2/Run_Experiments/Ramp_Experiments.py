@@ -91,7 +91,7 @@ T1TLS_params = {'gainStart': 0, 'gainStop': 0, 'gainNumPoints': 1, 'wait_times':
                 'qubitIndex': 2}#, Qubit_Pulse[0]}
 
 SingleShot = False
-SS_params = {"Shots":500, "readout_length": 2.5, "adc_trig_offset": 0.3,
+SS_params = {"Shots":500, "readout_length": 2.5, "adc_trig_delay": 0.3,
              'number_of_pulses': 1, 'relax_delay': 200}
 
 

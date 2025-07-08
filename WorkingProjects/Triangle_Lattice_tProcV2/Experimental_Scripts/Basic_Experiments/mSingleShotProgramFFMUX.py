@@ -8,16 +8,16 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+
 
 # ====================================================== #
-class SingleShotProgram(AveragerProgram):
-    def __init__(self, soccfg, cfg):
-        super().__init__(soccfg, cfg)
-
+class SingleShotProgram(FFAveragerProgramV2):
     def _initialize(self, cfg):
 
         # Qubit configuration
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"],
+                         mixer_freq=cfg["qubit_mixer_freq"])
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
@@ -25,62 +25,49 @@ class SingleShotProgram(AveragerProgram):
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=cfg["readout_length"],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],
-                                 length=self.us2cycles(cfg["readout_length"] + cfg["adc_trig_offset"] + 1, gen_ch=self.cfg["res_ch"]))
+        self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const", mask=cfg["ro_chs"],
+                                 length=cfg["res_length"])
 
         FF.FFDefinitions(self)
 
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-        self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
-                       freq=cfg["qubit_freqs"][0],
-                       phase=90, gain=cfg["qubit_gains"][0])
+
+        for i in range(len(self.cfg["qubit_gains"])):
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+                       freq=cfg["qubit_freqs"][i],
+                       phase=90, gain=cfg["qubit_gains"][i])
         self.qubit_length_us = cfg["sigma"] * 4
 
 
-        self.sync_all(200)  # give processor some time to configure pulses
-
-    def body(self):
-        self.sync_all(gen_t0=self.gen_t0)
+    def _body(self, cfg):
         FF_Delay_time = 10
         self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
         if self.cfg["Pulse"]:
             for i in range(len(self.cfg["qubit_gains"])):
-                gain_ = self.cfg["qubit_gains"][i]
-                freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
-
                 for pulse_num in range(self.cfg["number_of_pulses"]):
                     if i == 0 and pulse_num == 0:
-                        time = self.us2cycles(FF_Delay_time)
+                        time = FF_Delay_time
                     else:
                         time = 'auto'
-                    self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
-                                     gain=gain_,
-                                     waveform="qubit", t=time)
+                    self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time)
 
-        self.sync_all(gen_t0=self.gen_t0)
+        self.delay_auto()
 
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(10))
+        self.trigger(ros=cfg["ro_chs"], pins=[0],
+                     t=cfg["adc_trig_delay"])
+        self.pulse(cfg["res_ch"], name='res_drive')
+        self.wait_auto()
+        self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1)
 
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
+        self.delay_auto()
 
-    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
-        FF.FFPulses(self, list_of_gains, length_us, t_start)
-
-    def FFPulses_direct(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None,
-                        waveform_label = "FF"):
-        FF.FFPulses_direct(self, list_of_gains, length_dt, previous_gains= previous_gains, t_start = t_start,
-                           IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False):
@@ -94,9 +81,10 @@ class SingleShotProgram(AveragerProgram):
         all_i = []
         all_q = []
 
-        for i in range(len(self.di_buf)):
-            shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
-            shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+        d_buf = self.get_raw() # [(*self.loop_dims, nreads, 2) for ro in ros]
+        for i in range(len(d_buf)):
+            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
+            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i,all_q
@@ -115,8 +103,6 @@ class SingleShotFFMUX(ExperimentClass):
         self.ng_contrast = []
 
     def acquire(self, progress=False):
-        self.cfg["reps"] = self.cfg["Shots"]
-        self.cfg["rounds"] = 1
         if "number_of_pulses" not in self.cfg.keys():
             self.cfg["number_of_pulses"] = 1
 
@@ -128,11 +114,11 @@ class SingleShotFFMUX(ExperimentClass):
         self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Pulse'], 0, 4)
 
         self.cfg["Pulse"] = False
-        prog = SingleShotProgram(self.soccfg, self.cfg)
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
         shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
 
         self.cfg["Pulse"] = True
-        prog = SingleShotProgram(self.soccfg, self.cfg)
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
         shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
 
         data = {'config': self.cfg, 'data': {}}
@@ -140,10 +126,10 @@ class SingleShotFFMUX(ExperimentClass):
         self.data = data
         self.fid = []
         for i, read_index in enumerate(self.cfg["Qubit_Readout_List"]):
-            i_g = shots_ig[i][0]
-            q_g = shots_qg[i][0]
-            i_e = shots_ie[i][0]
-            q_e = shots_qe[i][0]
+            i_g = shots_ig[i]
+            q_g = shots_qg[i]
+            i_e = shots_ie[i]
+            q_e = shots_qe[i]
             self.data['data']['i_g' + str(read_index)] = i_g
             self.data['data']['q_g' + str(read_index)] = q_g
             self.data['data']['i_e' + str(read_index)] = i_e

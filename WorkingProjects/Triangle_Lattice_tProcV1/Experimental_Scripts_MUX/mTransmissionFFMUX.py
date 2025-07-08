@@ -53,6 +53,22 @@ class CavitySpecFFMUX(ExperimentClass):
     Transmission Experiment basic
     """
 
+    config_template = {'res_ch': 6, 'qubit_ch': 4, 'mixer_freq': 500, 'ro_chs': [0], 'res_nqz': 1, 'qubit_nqz': 2,
+                       'relax_delay': 200,
+                       'res_phase': 0, 'res_pulse_style': 'const', 'res_length': 20, 'adc_trig_offset': 0.5,
+                       'cavity_LO': 6800000000.0,
+                       'Additional_Delays': {'1': {'channel': 4, 'delay_time': 0}}, 'res_gains': [0.09375],
+                       'res_freqs': [-178.60000000000036], 'readout_length': 2.5, 'qubit_freqs': [3893.5],
+                       'qubit_gains': [1940],
+                       'sigma': 0.05,
+                       'FF_Qubits': {
+                           '1': {'channel': 3, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                           '2': {'channel': 2, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                           '3': {'channel': 0, 'delay_time': 0.002, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0},
+                           '4': {'channel': 1, 'delay_time': 0.0, 'Gain_Readout': 0, 'Gain_Expt': 0, 'Gain_Pulse': 0}},
+                       'Qubit_Readout_List': [1], 'reps': 400, 'TransSpan': 1.5, 'TransNumPoints': 71,
+                       'cav_relax_delay': 10}
+
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 

@@ -91,12 +91,12 @@ class ThreePartRProgram(RAveragerProgramFF):
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]), t=0,
+                     adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]), t=0,
                      wait=False,
                      syncdelay=None)
 
         # Don't use sync_all from this point forward in order to avoid pulse timing weirdness
-        measure_time_us = max(self.cfg["res_length"], self.cfg["adc_trig_offset"]+self.cfg["readout_length"])
+        measure_time_us = max(self.cfg["res_length"], self.cfg["adc_trig_delay"]+self.cfg["readout_length"])
         self.waiti(0, self.us2cycles(measure_time_us, gen_ch=self.cfg["res_ch"]))
         self.synci(self.us2cycles(measure_time_us + 10, gen_ch=self.cfg["res_ch"]))
 

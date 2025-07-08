@@ -59,7 +59,7 @@ def Compensated_Pulse(final_gain, initial_gain, Qubit):
     # print(final_gain, initial_gain)
     waveform = np.full(65536, final_gain - initial_gain)
 
-    return Compensate(waveform, initial_gain, Qubit)
+    return Compensate(waveform, initial_gain, Qubit)[::2]
 
 def load_ab_file(ab_file):
     ab = IIR_DICT.get(ab_file)

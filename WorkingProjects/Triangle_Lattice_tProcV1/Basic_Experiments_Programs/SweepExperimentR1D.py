@@ -84,7 +84,10 @@ class SweepExperimentR1D(ExperimentClass):
         }
         if 'angle'     in self.cfg: self.data['data']['angle']     = self.cfg['angle']
         if 'threshold' in self.cfg: self.data['data']['threshold'] = self.cfg['threshold']
-
+        if 'confusion_matrix' in self.cfg:
+            self.data['data']['confusion_matrix'] = self.cfg['confusion_matrix']
+            if self.z_value == 'population':
+                self.data['data']['corrected_population'] = [np.full((len(Y), len(X)), np.nan) for _ in readout_list]
         self.last_saved_time = time.time()
 
         for i, y_pt in enumerate(Y):
@@ -126,6 +129,10 @@ class SweepExperimentR1D(ExperimentClass):
                                                                    load_pulses=True)
                 for ro_index in range(len(readout_list)):
                     Z_mat[ro_index][i, :] = excited_populations[ro_index]
+                    if self.cfg.get('confusion_matrix') is not None:
+                        corrected_pop = correct_occ(excited_populations[ro_index],
+                                                    self.cfg['confusion_matrix'][ro_index])
+                        self.data['data']['corrected_population'][ro_index][i, :] = corrected_pop
                 colorbar_label = 'Excited state population'
 
             else:

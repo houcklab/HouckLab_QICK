@@ -20,12 +20,13 @@ import functools
 import operator
 import itertools
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates import SweepExperimentND
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperimentND import SweepExperimentND
 from qick.asm_v2 import AveragerProgramV2
 
 
 class SweepExperiment1D_plots(SweepExperimentND):
     def _display_plot(self, data=None, fig_axs=None):
+        print("displaying")
         if data is None:
             data = self.data
         fig, axs = fig_axs
@@ -39,8 +40,8 @@ class SweepExperiment1D_plots(SweepExperimentND):
         else:
             ylabel = None
 
-        x_key_name = SweepHelpers.key_savename(self.x_key)
-        X = data['data'][x_key_name]
+
+        X = data['data'][self.loop_names[-1]]
         self.X = X
 
         Z_mat = data['data'][self.z_value]

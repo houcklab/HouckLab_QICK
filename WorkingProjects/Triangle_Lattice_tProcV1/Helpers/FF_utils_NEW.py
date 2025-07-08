@@ -79,6 +79,7 @@ def FFPulses_directPULSE(instance,t_start='auto'):
             t_start_ = t_start + instance.gen_t0[channel]
         else:
             t_start_ = 'auto'
+        print(f't_start: {t_start_}')
         instance.pulse(ch=channel, t=t_start_)
 
 def FFPulses_directSET_REGS(instance, list_of_gains, length_dt,  previous_gains, IQPulseArray=None, waveform_label = "FF", invert=False, ):

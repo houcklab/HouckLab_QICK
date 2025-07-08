@@ -10,51 +10,72 @@ span = D5a.range_4V_bi
 # span = D5a.range_8V_uni
 
 # span = D5a.range_2V_bi
-
 for i in range(D5a._num_dacs):
     if not D5a.get_settings(i)[1] == span:
         current_settings = D5a.get_settings(i)
         D5a.change_span(i, span)
         D5a.set_voltage(i, current_settings[0])
-
 ################
-# [Q1, Q2, Q3, Q4, C12, C13, C23, C24, C34]
-
-# DACs = [9, 8, 5, 1, 3, 12, 10, 14]
-# DACs = [9, 8, 5, 1, 3, 12, 10, 14]
-# 9: left, Q1
-# 10: top, Q2
-# DACs = [9, 10]
-# [Q1, Q2]
-
 set_unused_to_zero = True
 
-DACs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-voltages = [-0.65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-voltages = [0, -0.65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, -0.8, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, 0, -0.65, 0, 0, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, 0, 0, -0.6, 0, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, 0, -0.55, 0, 0, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5]
+DAC_Definitions = {
+    'Q1': 1,
+    'Q2': 2,
+    'Q3': 3,
+    'Q4': 4,
+    'Q5': 5,
+    'Q6': 6,
+    'Q7': 7,
+    'Q8': 8,
+    'C1': 9,
+    'C2': 10,
+    'C3': 11,
+    'C4': 12,
+    'C5': 13,
+    'C6': 14,
+}
 
+Voltage_Dictionary = {
+    'Q1': 0,
+    'Q2': 0,
+    'Q3': 0,
+    'Q4': 0,
+    'Q5': 0,
+    'Q6': 0,
+    'Q7': 0,
+    'Q8': 0,
+    'C1': 0,
+    'C2': 0,
+    'C3': 0,
+    'C4': 0,
+    'C5': 0,
+    'C6': 0
+}
 
-voltages = [-1.1,0, -1.1, -1.1, -1.1, -1.1, -1.1, -1.1,
-            0., 0., 0., 0., 0., 0.]
+# Voltage_Dictionary = {
+#     'Q1': -0.4482,  # 4000.0
+#     'Q2': -0.565,  # 4000.05
+#     'Q3': -0.5334,  # 4000.05
+#     'Q4': -0.6035,  # 4000.0
+#     'Q5': -0.5944,  # 4000.02
+#     'Q6': -0.5298,  # 4000.05
+#     'Q7': -0.6236,  # 4000.01
+#     'Q8': -0.6079,  # 4000.0
+#     'C1': -1.6202,  # 1697.37
+#     'C2': -1.4812,  # 1697.37
+#     'C3': -1.53,    # 1697.37
+#     'C4': -1.6267,  # 1697.37
+#     'C5': -1.5108,  # 1697.37
+#     'C6': 0.0041,   # 5800.0
+# }
 
 # voltages = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-
-print(len(DACs))
-print(len(voltages))
-
-
-
-
-for DA, vol in zip(DACs, voltages):
-    D5a.set_voltage_ramp(DA, vol)
+for qubit_labels in DAC_Definitions.keys():
+    D5a.set_voltage_ramp(DAC_Definitions[qubit_labels], Voltage_Dictionary[qubit_labels])
 
 if set_unused_to_zero:
     for i in range(D5a._num_dacs):
-        if i not in DACs:
+        if i not in DAC_Definitions.values():
             D5a.set_voltage(i, 0)
 
 for i in range(D5a._num_dacs):

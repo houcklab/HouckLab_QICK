@@ -11,7 +11,7 @@ def rotate_data(data, theta):
     return (i_new, q_new)
 
 def count_percentage(data, threshold):
-    i = data[0][0]
+    i = data[0]
 
     excited_population = sum(val > threshold for val in i)
     return excited_population / len(i)

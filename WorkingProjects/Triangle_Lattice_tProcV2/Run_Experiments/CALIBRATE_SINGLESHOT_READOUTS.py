@@ -12,14 +12,11 @@ def characterize_readout(config, Qubit_Readout):
     for ro_ind, Qubit in enumerate(Qubit_Readout):
         '''Pulse each at a time, using the QubitParameters Pulse parameters'''
         new_config["qubit_freqs"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Frequency']]
-        new_config["qubit_gains"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Gain']]
+        new_config["qubit_gains"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Gain'] / 32766.]
         new_config['sigma']       =  Qubit_Parameters[str(Qubit)]['Qubit']['sigma']
 
-        FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit)]['Pulse_FF']
-        new_config["FF_Qubits"]['1']['Gain_Pulse'] = FF_gain1_pulse
-        new_config["FF_Qubits"]['2']['Gain_Pulse'] = FF_gain2_pulse
-        new_config["FF_Qubits"]['3']['Gain_Pulse'] = FF_gain3_pulse
-        new_config["FF_Qubits"]['4']['Gain_Pulse'] = FF_gain4_pulse
+        for Q, Gain in enumerate(Qubit_Parameters[str(Qubit)]['Pulse_FF']):
+            new_config["FF_Qubits"][str(Q+1)]['Gain_Pulse'] = Gain
 
         SSExp = SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=new_config, soc=soc, soccfg=soccfg)
         data = SSExp.acquire_display_save(plotDisp=True, block=False, display_indices=[Qubit])

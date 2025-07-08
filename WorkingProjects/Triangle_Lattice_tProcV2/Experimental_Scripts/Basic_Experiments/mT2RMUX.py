@@ -59,7 +59,7 @@ class T2RProgram(RAveragerProgram):
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+                     adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))

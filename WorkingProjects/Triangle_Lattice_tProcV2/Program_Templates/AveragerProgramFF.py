@@ -27,6 +27,10 @@ class FFAveragerProgramV2(AveragerProgramV2):
         FF.FFPulses_direct(self, list_of_gains, length_dt, previous_gains= previous_gains, t_start = t_start,
                            IQPulseArray=IQPulseArray, waveform_label = waveform_label)
 
+    def loop_pts(self):
+        '''This is purely for easy plotting purposes'''
+        return []
+
     ##########
     def acquire(self, *args, **kwargs):
         return super().acquire(*args, **kwargs)
@@ -37,22 +41,23 @@ class FFAveragerProgramV2(AveragerProgramV2):
         all_i = []
         all_q = []
 
-        for i in range(len(self.di_buf)):
-            shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = i)
-            shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = i)
+        d_buf = self.get_raw()  # [(*self.loop_dims, nreads, 2) for ro in ros]
+        for i in range(len(d_buf)):
+            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
+            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
             all_i.append(shots_i0)
             all_q.append(shots_q0)
-        return all_i,all_q
+        return all_i, all_q
 
     def acquire_populations(self, angle=None, threshold=None, return_shots = False, *args, **kwargs):
         shots_i0, shots_q0 = self.acquire_shots(*args, **kwargs)
 
-        rotated_iq_array = [[] for ro_ind in range(len(self.di_buf))]
-        excited_percentages = [[] for ro_ind in range(len(self.di_buf))]
+        rotated_iq_array = [[] for ro_ind in range(len(shots_i0))]
+        excited_percentages = [[] for ro_ind in range(len(shots_i0))]
 
         if angle is None: angle = self.cfg['angle']
         if threshold is None: threshold = self.cfg['threshold']
-        for ro_ind in range(len(self.di_buf)):
+        for ro_ind in range(len(shots_i0)):
             rotated_iq = rotate_data((shots_i0[ro_ind], shots_q0[ro_ind]), theta=angle[ro_ind])
             excited_percentage = count_percentage(rotated_iq, threshold=threshold[ro_ind])
 

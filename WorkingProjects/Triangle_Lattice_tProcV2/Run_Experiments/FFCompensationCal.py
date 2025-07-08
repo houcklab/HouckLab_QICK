@@ -27,14 +27,16 @@ BaseConfig["readout_length"] = 2.5
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6979.1 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 12500,
-                      "FF_Gains": [0, 0, 2000, -30000],},
-          'Qubit': {'Frequency': 4475, 'sigma': 0.10, 'Gain': 1237},
-          'Pulse_FF': [0, 0, 20000, 0]},  # FOURTH index
-    '2': {'Readout': {'Frequency': 7095.687 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4000,
-                      "FF_Gains": [0, 0, 2000, -30000],},
-          'Qubit': {'Frequency': 4500.6, 'sigma': 0.05, 'Gain': 3360},
-          'Pulse_FF': [0, 0, 0, -30000]}, # third index
+    '1': {'Readout': {'Frequency': 7121.75 - BaseConfig["res_LO"], 'Gain': 13900,
+                      "FF_Gains": [0, -15000, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,
+                      'cavmin': True},
+          'Qubit': {'Frequency': 4077, 'sigma': 0.05, 'Gain': 1120},
+          'Pulse_FF': [-5000, 0, 0, 0, 0, 0, 0, 0]},
+    '2': {'Readout': {'Frequency': 7077.659 - BaseConfig["res_LO"], 'Gain': 4000,
+                      "FF_Gains": [0, -15000, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3,
+                      'cavmin': True},
+          'Qubit': {'Frequency': 4200, 'sigma': 0.05, 'Gain': 2260},
+          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
     }
 
 
@@ -50,6 +52,10 @@ FF_gain1_expt = 0
 FF_gain2_expt = 0
 FF_gain3_expt = 20000
 FF_gain4_expt = 0
+FF_gain5_expt = 0
+FF_gain6_expt = 0
+FF_gain7_expt = 0
+FF_gain8_expt = 0
 exec(open("UPDATE_CONFIG.py").read())
 
 FFCal_params = {"SpecStart":4360, "SpecEnd":4530, "SpecNumPoints": 171,
@@ -76,6 +82,10 @@ FF_gain1_expt = 0  # 8000
 FF_gain2_expt = 0
 FF_gain3_expt = 0
 FF_gain4_expt = 30000
+FF_gain5_expt = 0
+FF_gain6_expt = 0
+FF_gain7_expt = 0
+FF_gain8_expt = 0
 exec(open("UPDATE_CONFIG.py").read())
 
 FFCal_params = {"SpecStart":4550, "SpecEnd":4720, "SpecNumPoints": 171,

@@ -4,7 +4,7 @@ COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds
 port = 'COM3'
 spi_rack = SPIRack(port, COM_speed, timeout)
-D5a = D5aModule(spi_rack, module=2, reset_voltages=False)
+D5a = D5aModule(spi_rack, module=2, reset_voltages=False, ramp_step=0.003, ramp_interval=0.01)
 
 span = D5a.range_4V_bi
 # span = D5a.range_8V_uni
@@ -29,22 +29,22 @@ for i in range(D5a._num_dacs):
 
 set_unused_to_zero = True
 
-voltages = [-1.174, 0, 0, 0, 0, 0.65, 0]
-voltages = [-1.14, 0, 0, 0, 0, 0.65, 0]
-# voltages = [-0.35, 0, 0, 0, 0, 0, 0]
-voltages = [0, 0, 0, 0, 0, 0.7, 0]  # 4.4 fpr qubit 2
+DACs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+voltages = [-0.65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+voltages = [0, -0.65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+voltages = [0, 0, 0, 0, -0.8, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+voltages = [0, 0, 0, 0, 0, -0.65, 0, 0, 0, 0, 0, 0, 0, 0]
+voltages = [0, 0, 0, 0, 0, 0, -0.6, 0, 0, 0, 0, 0, 0, 0]
+voltages = [0, 0, 0, 0, 0, -0.55, 0, 0, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5]
 
-# flux stability scans
-voltages = [-0.6, 0, 0, 0, 0, 0, 0]  #4.4 for qubit 1
-# voltages = [-0.52, 0, 0, 0, 0, 0, 0]
 
-# currents
-# Qubits at + - state
-voltages = [-0.6, 0, 0, 0, 0, 0.64, 0]
+voltages = [-1.1,0, -1.1, -1.1, -1.1, -1.1, -1.1, -1.1,
+            0., 0., 0., 0., 0., 0.]
 
-# 9: left, Q1
-DACs = [1]
-voltages= [-0.7]
+# voltages = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+print(len(DACs))
+print(len(voltages))
 
 
 

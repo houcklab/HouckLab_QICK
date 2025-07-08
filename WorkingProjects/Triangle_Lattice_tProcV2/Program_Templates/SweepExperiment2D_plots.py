@@ -20,7 +20,7 @@ import functools
 import operator
 import itertools
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates import SweepExperimentND
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperimentND import SweepExperimentND
 from qick.asm_v2 import AveragerProgramV2
 
 
@@ -32,8 +32,11 @@ class SweepExperiment2D_plots(SweepExperimentND):
 
         fig.suptitle(str(self.titlename), fontsize=16)
 
-        y_key_name = SweepHelpers.key_savename(self.keys[0])
-        x_key_name = SweepHelpers.key_savename(self.keys[1])
+        y_key_name = SweepHelpers.key_savename(self.y_key)
+        try:
+            x_key_name = self.x_key
+        except:
+            x_key_name = self.x_name
         X, Y = data['data'][x_key_name], data['data'][y_key_name]
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
@@ -62,10 +65,14 @@ class SweepExperiment2D_plots(SweepExperimentND):
             cbar = fig.colorbar(ax_im, ax=axs[ro_index], extend='both')
             cbar.set_label(colorbar_label, rotation=90)
 
+        fig.show()
+
     def _update_fig(self, Z_mat, fig, axs):
         for ro_index in range(len(Z_mat)):
-            im = axs[ro_index].images[-1],
-            cbar = im[-1].colorbar   
+            # print(axs[ro_index].images[-1][-1])
+            im = axs[ro_index].get_images()[-1],
+            im = im[-1]
+            cbar = im.colorbar
             im.set_data(Z_mat[ro_index])
             im.autoscale()
             cbar.update_normal()

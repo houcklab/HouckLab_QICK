@@ -41,7 +41,7 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
 
     for i, (gain, IQPulse) in enumerate(zip(list_of_gains, IQPulseArray)):
         gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
-        print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
+        # print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
         if IQPulse is None:
             IQPulse = np.ones(length_dt) * gain
         else:
@@ -62,36 +62,24 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             extralen = 48 - len(IQPulse)
             IQPulse = np.concatenate([previous_gains[i] * np.ones(extralen), IQPulse])
             # print(IQPulse[:48])
-        # print(IQPulse)
-        # print(len(IQPulse))
-
         # figure out name and add pulse
         # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
         # print("IQPulse[:48]:", i, IQPulse[:48], IQPulse[-48:])
         # print(len(IQPulse)/16)
-        instance.add_envelope(ch=instance.FFChannels[i], name=waveform_label,
+        instance.add_envelope(ch=instance.FFChannels[i], name=f"{waveform_label}{i}",
                            idata=IQPulse, qdata=np.zeros_like(IQPulse))
-        instance.add_pulse(ch=instance.FFChannels[i], name=waveform_label,
+        instance.add_pulse(ch=instance.FFChannels[i], name=f"{waveform_label}{i}",
                        style="arb",
-                       envelope=waveform_label,
+                       envelope=f"{waveform_label}{i}",
                        freq=0,
                        phase=0,
-                       gain=1.0)
+                       gain=1.0, outsel="input")
 
-        # instance.set_pulse_registers(ch=instance.FFChannels[i], freq=0, style='arb',
-        #                              phase=0, gain=gencfg['maxv'],
-        #                              waveform=waveform_label, outsel="input")
-
-    # for channel in instance.FFChannels:
-    #     if t_start != 'auto':
-    #         t_start += instance.dac_t0[channel]
-    #     instance.pulse(ch=channel, t=t_start)
-    for channel in instance.FFChannels:
+        channel = instance.FFChannels[i]
         if t_start != 'auto':
-            t_start_ = t_start + instance.dac_t0[channel]
-        else:
-            t_start_ = 'auto'
-        instance.pulse(ch=channel, t=t_start_)
+            t_start = t_start + instance.dac_t0[channel]
+        instance.pulse(ch=channel, name=f"{waveform_label}{i}", t=t_start)
+
 
 # For constant FF pulses
 def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=None):

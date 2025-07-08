@@ -69,6 +69,8 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1.05)
 
+    def loop_pts(self):
+        return (self.get_pulse_param("qubit_drive", "freq", as_array=True),)
 # ====================================================== #
 
 class QubitSpecSliceFFMUX(ExperimentClass):

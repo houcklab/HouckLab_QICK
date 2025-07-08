@@ -1,23 +1,23 @@
 # Translation of Qubit_Parameters dict to resonator and qubit parameters.
 # Nothing defined here should be changed in an Experiment unless it is one of the swept variables.
 # Update FF_Qubits dict
-FF_gain1_ro, FF_gain2_ro, FF_gain3_ro, FF_gain4_ro = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains'] / 32766
-FF_gain1_pulse, FF_gain2_pulse, FF_gain3_pulse, FF_gain4_pulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
+FFReadouts = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
+FFPulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
+FFExpt = [FF_gain1_expt, FF_gain2_expt, FF_gain3_expt, FF_gain4_expt, FF_gain5_expt, FF_gain6_expt, FF_gain7_expt, FF_gain8_expt]
+FF_BS = [FF_gain1_BS, FF_gain2_BS, FF_gain3_BS, FF_gain4_BS, FF_gain5_BS, FF_gain6_BS, FF_gain7_BS, FF_gain8_BS]
 
-FF_Qubits[str(1)] |= {'Gain_Readout': FF_gain1_ro, 'Gain_Expt': FF_gain1_expt, 'Gain_Pulse': FF_gain1_pulse, 'Gain_Init':FF_gain1_init}
-FF_Qubits[str(2)] |= {'Gain_Readout': FF_gain2_ro, 'Gain_Expt': FF_gain2_expt, 'Gain_Pulse': FF_gain2_pulse, 'Gain_Init':FF_gain2_init}
-FF_Qubits[str(3)] |= {'Gain_Readout': FF_gain3_ro, 'Gain_Expt': FF_gain3_expt, 'Gain_Pulse': FF_gain3_pulse, 'Gain_Init':FF_gain3_init}
-FF_Qubits[str(4)] |= {'Gain_Readout': FF_gain4_ro, 'Gain_Expt': FF_gain4_expt, 'Gain_Pulse': FF_gain4_pulse, 'Gain_Init':FF_gain4_init}
+
+for Qubit, FFR, FFE, FFP, FFBS in zip(('1','2','3','4','5','6','7','8'), FFReadouts, FFExpt, FFPulse, FF_BS):
+    FF_Qubits[Qubit] |= {'Gain_Readout': FFR, 'Gain_Expt': FFE, 'Gain_Pulse': FFP, 'Gain_BS': FFBS}
 
 trans_config = {
-    "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32000. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
-    "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] - BaseConfig["res_LO"] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
-    # "res_gain": Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Gain'],  # [DAC units]
+    "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32766. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
+    "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
     "readout_length":Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time']
 }
 qubit_config = {
     "qubit_freqs": [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse],
-    "qubit_gains": [Qubit_Parameters[str(Q)]['Qubit']['Gain'] for Q in Qubit_Pulse],
+    "qubit_gains": [Qubit_Parameters[str(Q)]['Qubit']['Gain'] / 32766. for Q in Qubit_Pulse],
     "sigma" : Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['sigma']
 }
 config = BaseConfig | trans_config | qubit_config

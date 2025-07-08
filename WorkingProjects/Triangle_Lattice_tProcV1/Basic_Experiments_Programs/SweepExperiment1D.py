@@ -74,6 +74,11 @@ class SweepExperiment1D(ExperimentClass):
         }
         if 'angle'     in self.cfg: self.data['data']['angle']     = self.cfg['angle']
         if 'threshold' in self.cfg: self.data['data']['threshold'] = self.cfg['threshold']
+        if 'confusion_matrix' in self.cfg:
+            self.data['data']['confusion_matrix'] = self.cfg['confusion_matrix']
+            if self.z_value == 'population':
+                self.data['data']['corrected_population'] = [np.full(len(X), np.nan) for _ in readout_list]
+
         if self.z_value == 'contrast' or self.z_value == 'IQ':
             self.data['data']['I_array'] = I_array
             self.data['data']['Q_array'] = Q_array
@@ -103,6 +108,12 @@ class SweepExperiment1D(ExperimentClass):
                     excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
                                                                    load_pulses=True)
                     Z_array[ro_index][j] = excited_populations[ro_index]
+
+                    if self.cfg.get('confusion_matrix') is not None:
+                        corrected_pop = correct_occ(excited_populations[ro_index],
+                                                    self.cfg['confusion_matrix'][ro_index])
+                        self.data['data']['corrected_population'][ro_index][j] = corrected_pop
+
             elif self.z_value == 'shots':
                 "Intended for debugging, no built-in plotting available"
                 for ro_index in range(len(readout_list)):

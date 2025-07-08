@@ -4,7 +4,7 @@ COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds
 port = 'COM3'
 spi_rack = SPIRack(port, COM_speed, timeout)
-D5a = D5aModule(spi_rack, module=2, reset_voltages=False)
+D5a = D5aModule(spi_rack, module=2, reset_voltages=False, ramp_step=0.004, ramp_interval=0.01)
 
 span = D5a.range_4V_bi
 # span = D5a.range_8V_uni
@@ -26,6 +26,9 @@ set_unused_to_zero = True
 
 voltages= [0, 0, 0, 0, 0, 0, 0,
              0, 0, 0, 0, 0, 0, 0]
+
+voltages= [0, -1.1, -1.1, -1.1, -1.1, -1.1, -1.1,
+             -1.1, 0, 0, 0, 0, 0, 0]
 
 
 for DA, vol in zip(DACs, voltages):

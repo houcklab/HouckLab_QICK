@@ -26,7 +26,7 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=cfg["readout_length"],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
+        self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const", mask=cfg["ro_chs"],
                                  length=cfg["res_length"])
 
 
@@ -49,7 +49,7 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
     def _body(self, cfg):
 
         self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t=1)  # play probe pulse
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
         self.delay_auto()
 
         self.FFPulses(self.FFReadouts, cfg["res_length"])
@@ -84,7 +84,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
                                soft_avgs=self.cfg.get('rounds', 1),
                                progress=progress)
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
-        x_pts = prog.get_pulse_param("qubit_drive", "gain", as_array=True)
+        x_pts = prog.get_pulse_param("qubit_drive", "gain", as_array=True) * 32766
 
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
@@ -97,8 +97,8 @@ class AmplitudeRabiFFMUX(ExperimentClass):
             data = self.data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0][0]
-        avgq = data['data']['avgq'][0][0]
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1

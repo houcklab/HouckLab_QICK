@@ -60,24 +60,38 @@ class SweepExperimentND(ExperimentClass):
                  liveplot_enabled=False, **kwargs):
         super().__init__(path=path, prefix=prefix, soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file,
                          liveplot_enabled=liveplot_enabled, **kwargs)
+        self.keys = tuple()
+        self.sweep_arrays = tuple()
 
         self.init_sweep_vars()
+        if "x_key" in self.__dict__:
+            self.keys = (self.x_key,) + self.keys
+            self.sweep_arrays = (self.x_points,) + self.sweep_arrays
+        if "y_key" in self.__dict__:
+            self.keys = (self.y_key,) + self.keys
+            self.sweep_arrays = (self.y_points,) + self.sweep_arrays
 
         # Compile the program once to look at the defined QICK loops
-        for key, sweep in self.keys, self.sweep_arrays:
+        for key, sweep in zip(self.keys, self.sweep_arrays):
             SweepHelpers.set_nested_item(self.cfg, key, sweep[0])
-        Instance = self.Program(self.soccfg, self.cfg)
+
+        self.set_up_instance()
+        prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
         
         '''
         sweep_shape: shape of the outer python sweep, e.g. (50,) for a FF gain sweep with 50 points
         acquire_shape: shape of the sweeps from QICK-defined loops. e.g (71,) for a SpecSlice with 71 points.
         '''
-        self.sweep_shape = (len(sweep) for sweep in self.sweep_arrays)
+        self.sweep_shape = tuple(len(sweep) for sweep in self.sweep_arrays)
         # AveragerProgramV2.loops = [("reps", self.reps, self.before_reps, self.after_reps), ("myloop1", num_steps, ...), ...]
-        self.acquire_shape = tuple(loop[1] for loop in Instance.loops[1:]) if len(Instance.loops) > 1 else tuple()
-        
+        qick_loops = prog.loops[1:] if len(prog.loops) > 1 else tuple()
+        self.loop_names =    tuple(loop[0] for loop in qick_loops)
+        self.loop_shape = tuple(loop[1] for loop in qick_loops)
+        '''I defined loop_pts in each program I wrote because i couldn't think of a better way to automatically
+        get the looped values for plotting'''
+        self.loop_values = prog.loop_pts()
 
-        self.data_shape = self.sweep_shape + self.acquire_shape
+        self.data_shape = self.sweep_shape + self.loop_shape
         
         
 
@@ -107,8 +121,10 @@ class SweepExperimentND(ExperimentClass):
                      "Q": Q_mat,
                      'readout_list': readout_list,
                      **{key_name: value_array for key_name,value_array in zip(key_names, self.sweep_arrays)},
-                     **{key : self.cfg[key] for key in ('angle', 'threshold', 'confusion_matrix')}
-                     }
+                     **{key_name: value_array for key_name, value_array in zip(self.loop_names, self.loop_values)},
+                     **{key : self.cfg[key] for key in ('angle', 'threshold', 'confusion_matrix') if key in self.cfg},
+                     'Qubit_Readout_List': self.cfg["Qubit_Readout_List"]},
+
         }
 
         self.last_saved_time = time.time()
@@ -124,13 +140,13 @@ class SweepExperimentND(ExperimentClass):
         for sweep_indices, sweep_values in zip(index_iterator, value_iterator): 
             # Update config entries based on sweep
             for key, pt in zip(self.keys, sweep_values):
-                SweepHelpers.set_nested_item(self.cfg, self.key, pt)
+                SweepHelpers.set_nested_item(self.cfg, key, pt)
 
             # set up the AveragerProgram instance
             self.set_up_instance()
 
             if issubclass(self.Program, AveragerProgramV2):
-                Instance = self.Program(self.soccfg, self.cfg)
+                Instance = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
             elif issubclass(self.Program, ExperimentClass):
                 Instance = self.Program(path=self.path, prefix=self.prefix, soc=self.soc, soccfg=self.soccfg,
                                         cfg=self.cfg, config_file=None, outerFolder = self.outerFolder)
@@ -148,30 +164,30 @@ class SweepExperimentND(ExperimentClass):
             # shape of iq_list: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
             #              e.g. [1, 1, 71, 2] for SpecSlice
             elif self.z_value == 'contrast':
-                iq_list = Instance.acquire(self.soc, load_pulses=True)
-                avgi, avgq = iq_list[0][-1, ..., 0], iq_list[0][-1, ..., 1]
+                iq_list = Instance.acquire(self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
+                avgi, avgq = [iq[-1, ..., 0] for iq in iq_list], [iq[-1, ..., 1] for iq in iq_list]
                 for ro_index in range(len(readout_list)):
-                    I_mat[ro_index][*sweep_indices, ...] = avgi[ro_index][0]
-                    Q_mat[ro_index][*sweep_indices, ...] = avgq[ro_index][0]
-                    slices = (slice(j+1) for j in sweep_indices)
+                    I_mat[ro_index][*sweep_indices, ...] = avgi[ro_index]
+                    Q_mat[ro_index][*sweep_indices, ...] = avgq[ro_index]
+                    slices = tuple(slice(j+1) for j in sweep_indices)
+
                     rotated_i = IQ_contrast(I_mat[ro_index][*slices], Q_mat[ro_index][*slices])
 
-                    Z_mat[ro_index][*sweep_indices, ...] = rotated_i
+                    Z_mat[ro_index][*slices] = rotated_i
             elif self.z_value == 'population':
                 excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
-                                                            load_pulses=True)
+                                                            load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
                 for ro_index in range(len(readout_list)):
                     Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
 
             else:
                 raise ValueError("So far I only support 'contrast' or 'population'.")
 
-            if (plotDisp or plotSave) and sweep_indices[-1] == len(self.sweep_arrays[-1])-1:
+            if (plotDisp or plotSave) and sweep_indices[-1] == self.sweep_shape[-1] - 1:
                 # Create figure
-                if sweep_indices[0] == 0:# and j == 0:
+                if sweep_indices[0] == 0:
                     fig, axs = self.display(self.data, figNum=figNum,
-                                                            plotDisp=plotDisp, block=False,
-                                                            plotSave=False)
+                                            plotDisp=plotDisp, block=False,plotSave=False)
                 # Update figure
                 else:
                     self._update_fig(Z_mat, fig, axs)
@@ -179,7 +195,7 @@ class SweepExperimentND(ExperimentClass):
                     # fig.canvas.draw()
                     # fig.canvas.flush_events()
                     fig.show()
-                    plt.pause(0.1)
+                    plt.pause(0.01)
 
             if time.time() - self.last_saved_time > 5 * 60:  # Save data every 5 minutes
                 ### print(self.data)
@@ -207,7 +223,7 @@ class SweepExperimentND(ExperimentClass):
         
         # Run the corresponding display code
         if plotDisp or plotSave:
-            self._display_plot(data, fig_axs = fig_axs)
+            self._display_plot(data, fig_axs = (fig, axs))
 
         if plotSave:
             plt.savefig(self.iname[:-4] + '.png')
