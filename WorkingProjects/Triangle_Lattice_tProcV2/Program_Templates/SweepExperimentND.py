@@ -130,7 +130,7 @@ class SweepExperimentND(ExperimentClass):
         if self.z_value == "population" and "confusion_matrix" in self.cfg:
             self.data['data']['population_corrected'] = Z_corrected
             self.z_value = "population_corrected"
-            
+
         self.last_saved_time = time.time()
 
         '''iterating through itertools.product is equivalent to a nested for loop such as
@@ -209,7 +209,10 @@ class SweepExperimentND(ExperimentClass):
                     first_iteration = False
                 # Update figure
                 else:
-                    self._update_fig(Z_mat, fig, axs)
+                    if self.z_value == "population_corrected":
+                        self._update_fig(Z_corrected, fig, axs)
+                    else:
+                        self._update_fig(Z_mat, fig, axs)
 
                     # fig.canvas.draw()
                     # fig.canvas.flush_events()
