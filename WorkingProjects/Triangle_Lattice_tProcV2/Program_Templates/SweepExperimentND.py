@@ -129,7 +129,8 @@ class SweepExperimentND(ExperimentClass):
         }
         if self.z_value == "population" and "confusion_matrix" in self.cfg:
             self.data['data']['population_corrected'] = Z_corrected
-
+            self.z_value = "population_corrected"
+            
         self.last_saved_time = time.time()
 
         '''iterating through itertools.product is equivalent to a nested for loop such as
@@ -178,7 +179,7 @@ class SweepExperimentND(ExperimentClass):
                     rotated_i = IQ_contrast(I_mat[ro_index][*slices], Q_mat[ro_index][*slices])
 
                     Z_mat[ro_index][*slices] = rotated_i
-            elif self.z_value == 'population':
+            elif self.z_value == 'population' or self.z_value == 'population_corrected':
                 excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
                                                             load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
 
