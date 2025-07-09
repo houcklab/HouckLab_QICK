@@ -7,7 +7,7 @@ def characterize_readout(config, Qubit_Readout):
 
     new_config = config.copy()
     new_config["FF_Qubits"] = copy.deepcopy(new_config["FF_Qubits"])
-    new_config["Shots"] = 3000
+    new_config["Shots"] = 5000
 
     for ro_ind, Qubit in enumerate(Qubit_Readout):
         '''Pulse each at a time, using the QubitParameters Pulse parameters'''

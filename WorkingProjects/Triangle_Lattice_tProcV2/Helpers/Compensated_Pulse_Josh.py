@@ -30,7 +30,7 @@ def apply_IIR(ab, waveform):
 def Compensate(waveform, offset, Qubit):
     '''Compensate a waveform'''
     if Qubit not in [1,2]:
-        print(f"No compensation found for Qubit {Qubit}.")
+        # print(f"No compensation found for Qubit {Qubit}.")
         return waveform + offset
 
     if Qubit == 1:

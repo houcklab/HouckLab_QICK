@@ -1,11 +1,12 @@
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperiment1D import SweepExperiment1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
 
 
-class QubitOscillations(SweepExperiment1D):
+class QubitOscillations(SweepExperiment1D_plots):
     # {'reps': 1000, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 1000,
     #                      'gainStop': 1300, 'gainNumPoints': 11, 'relax_delay': 150}
 

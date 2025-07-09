@@ -20,7 +20,7 @@ import functools
 import operator
 import itertools
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates import SweepExperimentND
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperimentND import SweepExperimentND
 from qick.asm_v2 import AveragerProgramV2
 
 
@@ -59,6 +59,7 @@ class SweepExperiment1D_lines(SweepExperimentND):
 
         Z_mat = data['data'][self.z_value]
 
+        fig.suptitle(str(self.titlename), fontsize=16)
         readout_list = data['data']['readout_list']
         for ro_index, ro_ch in enumerate(readout_list):
             ax.plot(X, Z_mat[ro_index], marker='o', label=f"Read: {ro_ch}")

@@ -40,8 +40,8 @@ class SweepExperiment1D_plots(SweepExperimentND):
         else:
             ylabel = None
 
-
-        X = data['data'][self.loop_names[-1]]
+        x_key_name = SweepHelpers.key_savename(self.x_key)
+        X = data['data'][x_key_name]
         self.X = X
 
         Z_mat = data['data'][self.z_value]

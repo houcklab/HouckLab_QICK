@@ -2,7 +2,7 @@ import numpy as np
 
 def set_nested_item(d, key_list, value):
     """Sets into nested dicts,
-    e.g. set nested_item(d, ['a', 'b', 'c'], value) executes -----> d['a']['b']['c'] = value"""
+    e.g. set_nested_item(d, ['a', 'b', 'c'], value) executes -----> d['a']['b']['c'] = value"""
     # functools.reduce(operator.getitem, [d, *key_list[:-1]])[key_list[-1]] = value
     if not isinstance(key_list, (list, tuple)):
         d[key_list] = value

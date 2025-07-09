@@ -27,7 +27,7 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
     #                                    'offsetStart': 300, 'offsetStop': 400, 'offsetNumPoints': 2}
     def init_sweep_vars(self):
         self.Program = ThreePartProgramTwoFF
-        self.y_key = "t_offset"
+        self.y_key = ("t_offset", self.cfg["swept_index"])
         self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'], dtype=int)
         self.x_key = 'expt_cycles2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
@@ -55,21 +55,27 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
             self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_BS'],
                                                            self.cfg["IDataArray1"][Q][self.cfg['expt_cycles1']], Q+1)
 
-        # offset one channel from the other by t_offset (units of 1/16 clock cycles
-        channel_1 = self.cfg['qubit_BS_indices'][0]
-        channel_2 = self.cfg['qubit_BS_indices'][1]
-        # these are 0-indexed
-        # print(self.cfg['qubit_BS_indices'])
-        # second channel is offset later by t_offset relative to channel 1
-        if self.cfg['t_offset'] > 0:
-            later_channel = channel_2
-        else:
-            later_channel = channel_1
+        # offset all channels from the one with the least offset defined by t_offset (units of 1/16 clock cycles
+        # t_offset can be passed as a list to define each channel's relative offset
 
-        # pad at beginning to delay this channel
-        self.cfg["IDataArray2"][later_channel] = np.concatenate([
-            self.cfg["IDataArray1"][later_channel][self.cfg['expt_cycles1']:self.cfg['expt_cycles1']+np.abs(self.cfg['t_offset'])],
-            self.cfg["IDataArray2"][later_channel]])
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
+
+        if isinstance(t_offset, (list, np.ndarray, tuple)):
+            pass
+        elif isinstance(t_offset, int):
+            # this won't do anything because we are offsetting every channel relative to the channel with the least offset
+            t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
+        else:
+            raise TypeError('t_offset must be an int or array like of ints')
+
+        t_offset -= np.min(self.cfg['t_offset'])
+
+        for i in range(len(self.cfg["IDataArray2"])):
+            # pad at beginning to delay this channel
+
+            self.cfg["IDataArray2"][i] = np.concatenate([
+                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray2"][i]])
 
 
         # plt.show()
@@ -92,8 +98,8 @@ class CurrentCalibrationGain(CurrentCalibrationOffset):
 
         startTime = datetime.datetime.now()
         print('\nstarting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
-        self.cfg["IDataArray1"] = [None] * 4
-        self.cfg["IDataArray2"] = [None] * 4
+        self.cfg["IDataArray1"] = [None] * len(self.cfg['fast_flux_chs'])
+        self.cfg["IDataArray2"] = [None] * len(self.cfg['fast_flux_chs'])
         for Q in range(8):
             self.cfg["IDataArray1"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q + 1)]['Gain_Expt'],
                                                            self.cfg['FF_Qubits'][str(Q + 1)]['Gain_Pulse'], Q + 1)
@@ -122,22 +128,31 @@ class CurrentCalibrationSingle(SweepExperiment1D_lines):
             self.cfg["IDataArray1"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_Expt'],
                                                            self.cfg['FF_Qubits'][str(Q+1)]['Gain_Pulse'], Q+1)
 
+
         for Q in range(8):
-            self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_BS'],
-                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_cycles1']], Q+1)
+            self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q + 1)]['Gain_BS'],
+                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_cycles1']], Q + 1)
 
-        # offset one channel from the other by t_offset (units of 1/16 clock cycles
-        channel_1 = self.cfg['qubit_BS_indices'][0]
-        channel_2 = self.cfg['qubit_BS_indices'][1]
-        # these are 0-indexed
-        # print(self.cfg['qubit_BS_indices'])
-        # second channel is offset later by t_offset relative to channel 1
-        if self.cfg['t_offset'] > 0:
-            later_channel = channel_2
+        # offset all channels from the one with the least offset defined by t_offset (units of 1/16 clock cycles
+        # t_offset can be passed as a list to define each channel's relative offset
+
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
+
+        if isinstance(t_offset, (list, np.ndarray, tuple)):
+            pass
+        elif isinstance(t_offset, int):
+            # this won't do anything because we are offsetting every channel relative to the channel with the least offset
+            t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
         else:
-            later_channel = channel_1
+            raise TypeError('t_offset must be an int or array like of ints')
 
-        # pad at beginning to delay this channel
-        self.cfg["IDataArray2"][later_channel] = np.concatenate([
-            self.cfg["IDataArray1"][later_channel][self.cfg['expt_cycles1']:self.cfg['expt_cycles1']+np.abs(self.cfg['t_offset'])],
-            self.cfg["IDataArray2"][later_channel]])
+        t_offset -= np.min(self.cfg['t_offset'])
+
+        for i in range(len(self.cfg["IDataArray2"])):
+            # pad at beginning to delay this channel
+
+            self.cfg["IDataArray2"][i] = np.concatenate([
+                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray2"][i]])
+
+        # plt.show()

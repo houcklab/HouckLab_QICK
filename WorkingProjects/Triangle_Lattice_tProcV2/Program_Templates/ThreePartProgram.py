@@ -90,7 +90,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         assert 'expt_cycles' not in self.cfg, "Use expt_cycles1 and expt_cycles2 instead."
         assert 'IDataArray'  not in self.cfg, "Use IDataArray1 and IDataArray2 instead."
 
-        print(self.cfg["IDataArray1"], self.cfg["IDataArray2"])
+        # print(self.cfg["IDataArray1"], self.cfg["IDataArray2"])
         concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_cycles1"]], arr2])
                                     for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
         self.FFPulses_direct(self.FFExpts, self.cfg["expt_cycles1"]+self.cfg["expt_cycles2"],

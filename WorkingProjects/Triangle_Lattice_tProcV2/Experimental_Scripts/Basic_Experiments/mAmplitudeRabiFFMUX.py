@@ -92,7 +92,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True, **kwargs):
         if data is None:
             data = self.data
 
@@ -111,7 +111,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         plt.title(self.titlename)
 
         if plotDisp:
-            plt.show(block=True)
+            plt.show(block=block)
             plt.pause(0.1)
         else:
             fig.clf(True)

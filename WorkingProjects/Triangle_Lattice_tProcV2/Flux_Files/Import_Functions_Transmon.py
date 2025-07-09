@@ -32,10 +32,10 @@ def read_info(file_name):
         Dictionary = pickle.load(f)
     return (Dictionary)
 #
-def modify_crosstalk_offset(found_qubit_info, crosstalk_offset, model_mapping, crosstalk_matrix, order_of_items):
+def modify_crosstalk_offset(found_qubit_info, crosstalk_offset, model_mapping, crosstalk_matrix, order_of_items, flux_sign):
     if found_qubit_info[1] > 10:
-        expected_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[2] / 1e3)
-        found_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[1] / 1e3)
+        expected_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[2] / 1e3) * flux_sign[found_qubit_info[0]]
+        found_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[1] / 1e3) * flux_sign[found_qubit_info[0]]
     else:
         expected_flux = found_qubit_info[2]
         found_flux = found_qubit_info[1]

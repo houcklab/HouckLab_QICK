@@ -110,7 +110,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True, **kwargs):
         if data is None:
             data = self.data
         x_pts = data['data']['x_pts']
@@ -132,7 +132,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
         plt.savefig(self.iname[:-4] + '_IQ.png')
         if plotDisp:
-            plt.show(block=True)
+            plt.show(block=block)
             plt.pause(0.1)
         plt.close(figNum)
 

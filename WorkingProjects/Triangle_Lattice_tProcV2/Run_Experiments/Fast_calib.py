@@ -25,21 +25,21 @@ BaseConfig["mixer_freq"] = mixer_freq
 BaseConfig["readout_length"] = 2.5
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.0 - BaseConfig["res_LO"] , 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 3518.3, 'sigma': 0.05, 'Gain': 1200},
+    '1': {'Readout': {'Frequency': 7121.3 - BaseConfig["res_LO"] , 'Gain': 10000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3518.5, 'sigma': 0.07, 'Gain': 820},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.3 - BaseConfig["res_LO"] , 'Gain': 4000,
-                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 3700, 'sigma': 0.05, 'Gain': 2260},
+    '2': {'Readout': {'Frequency': 7077.25 - BaseConfig["res_LO"] , 'Gain': 10000,
+                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3768, 'sigma': 0.07, 'Gain': 1221},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.0 - BaseConfig["res_LO"] , 'Gain': 4000,
-                  "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 3900, 'sigma': 0.05, 'Gain': 3500},
+    '3': {'Readout': {'Frequency': 7510.75 - BaseConfig["res_LO"], 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3900, 'sigma': 0.07, 'Gain': 2385},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.6 - BaseConfig["res_LO"] , 'Gain': 4000,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4100, 'sigma': 0.05, 'Gain': 3350},
+    '4': {'Readout': {'Frequency': 7569.0 - BaseConfig["res_LO"] , 'Gain': 8000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 4100, 'sigma': 0.07, 'Gain': 1000},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
     }
 
@@ -52,8 +52,8 @@ FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = [1]
+Qubit_Readout = [2]
+Qubit_Pulse = [2]
 
 
 RunTransmissionSweep = True # determine cavity frequency
@@ -68,7 +68,7 @@ SingleShot = True
 Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
                         "readout_length": 2.5, 'cav_relax_delay': 10}
 
-First_Spec_params = {   "qubit_gain": 500, "SpecSpan":100, "SpecNumPoints": 71,
+First_Spec_params = {   "qubit_gain": 500, "SpecSpan": 100, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
                         'reps': 144, 'rounds': 1}
 
@@ -77,7 +77,7 @@ Second_Spec_params = {"qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
                         'reps': 144, 'rounds': 1}
 
-Amplitude_Rabi_params = {"sigma": 0.05, "max_gain": 10000, 'relax_delay':200}
+Amplitude_Rabi_params = {"sigma": 0.07, "max_gain": 8000, 'relax_delay':200}
 
 SS_R_params = {"Shots":400,
                "gain_start": 2000, "gain_stop": 20000, "gain_pts": 10, "span": 1, "trans_pts": 6, 'number_of_pulses': 1}
@@ -108,7 +108,7 @@ exec(open("UPDATE_CONFIG.py").read())
 if RunTransmissionSweep:
     Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
                                      soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-    data = Instance_trans.acquire_display_save(plotDisp=True)
+    data = Instance_trans.acquire_display_save(plotDisp=True, block=True)
 
     #update the transmission frequency to be the peak
     config["res_freqs"][0] = Instance_trans.peakFreq_min
@@ -117,52 +117,52 @@ if RunTransmissionSweep:
 if RunFirst2ToneSpec:
     Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | First_Spec_params,
                         soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-    data = Instance_spec.acquire_display_save(plotDisp=True)
+    data = Instance_spec.acquire_display_save(plotDisp=True, block=True)
     config["qubit_freqs"][0] = Instance_spec.qubitFreq
     print("Qubit frequency found at: ", config["qubit_freqs"][0])
     
 if RunSecond2ToneSpec:
     Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Second_Spec_params,
                         soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-    data = Instance_spec.acquire_display_save(plotDisp=True)
+    data = Instance_spec.acquire_display_save(plotDisp=True, block=True)
     config["qubit_freqs"][0] = Instance_spec.qubitFreq
     print("Qubit frequency found at: ", config["qubit_freqs"][0])
 
 if RunAmplitudeRabi:
     data = AmplitudeRabiFFMUX(path="AmplitudeRabi", cfg=config | Amplitude_Rabi_params,
-                        soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True)
+                        soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=True)
     
-    avgi, avgq, gains = data['data']['avgi'], data['data']['avgq'], data[]
+    avgi, avgq, gains = data['data']['avgi'], data['data']['avgq'], data['data']['x_pts']
     contrast = IQ_contrast(avgi, avgq)
     def fit_func(gain, ampl, pi_gain):
-        return ampl*np.cos(gain / (2*pi_gain))
-    popt = curve_fit(fit_func, gains, contrast)
-    config["qubit_gains"][0] = popt[1]
+        return ampl*np.cos(gain * np.pi/pi_gain)
+    popt, _ = curve_fit(fit_func, gains, contrast, p0=[30, 1000])
+    config["qubit_gains"][0] = np.abs(popt[1]) / 32766.
 
-    print("Qubit gain found at: ", config["qubit_gains"][0])
+    print("Qubit gain found at: ", config["qubit_gains"][0] * 32766)
 
 if SingleShot_ReadoutOptimize:
     data = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
-                             cfg=config | SS_params | SS_R_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True)
+                             cfg=config | SS_params | SS_R_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     fid_mat, trans_fpts, gain_pts = (data['data'][key] for key in ('fid_mat', 'trans_fpts', 'gain_pts'))
     ind = np.unravel_index(np.argmax(fid_mat, axis=None), fid_mat.shape)
     
-    config["res_gains"][0] = gain_pts[ind[0]]
+    config["res_gains"][0] = gain_pts[ind[0]] / 32766.
     config["res_freqs"][0] = trans_fpts[ind[1]]
 
-    print("Cavity gain found at: ", config["res_gains"][0])
+    print("Cavity gain found at: ", config["res_gains"][0] * 32766)
     print("Cavity frequency found at: ", config["res_freqs"][0] + BaseConfig["res_LO"])
 
 if SingleShot_QubitOptimize:
     data = QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", outerFolder=outerFolder,
-                                   cfg=config | SS_params | SS_Q_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True)
+                                   cfg=config | SS_params | SS_Q_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     fid_mat, trans_fpts, gain_pts = (data['data'][key] for key in ('fid_mat', 'qubit_fpts', 'gain_pts'))
     ind = np.unravel_index(np.argmax(fid_mat, axis=None), fid_mat.shape)
     
-    config["qubit_gains"][0] = gain_pts[ind[0]]
+    config["qubit_gains"][0] = gain_pts[ind[0]] / 32766.
     config["qubit_freqs"][0] = trans_fpts[ind[1]]
 
-    print("Qubit gain found at: ", config["res_gains"][0])
+    print("Qubit gain found at: ", config["res_gains"][0] * 32766)
     print("Qubit frequency found at: ", config["res_freqs"][0] + BaseConfig["res_LO"])
 
 if SingleShot:

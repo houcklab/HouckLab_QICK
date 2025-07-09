@@ -46,10 +46,11 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             IQPulse = np.ones(length_dt) * gain
         else:
             if np.max(IQPulse) > gencfg['maxv'] or np.min(IQPulse) < -gencfg['maxv']:
-                print(IQPulse)
-                raise Exception("IQPulseArray[{}] goes out of range: [{}, {}]".format(i,
-                                                                                      -gencfg['maxv'],
-                                                                                      gencfg['maxv']))
+                # print(IQPulse)
+                # print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'],
+                #                                                                       gencfg['maxv']))
+                IQPulse[IQPulse < -gencfg['maxv']] = -gencfg['maxv']
+                IQPulse[IQPulse > gencfg['maxv']] =  gencfg['maxv']
 
         IQPulse = IQPulse[:length_dt]  # truncate pulse to desired length
         # print(f'truncated IQPulse: {IQPulse}')

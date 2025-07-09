@@ -17,7 +17,9 @@ import scipy
 import functools
 # import operator
 import matplotlib
-matplotlib.use('Qt5Agg')
+
+# had to comment this out
+# matplotlib.use('Qt5Agg')
 
 def set_nested_item(d, key_list, value):
     """Sets into nested dicts,

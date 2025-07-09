@@ -61,8 +61,6 @@ class FFAveragerProgramV2(AveragerProgramV2):
             rotated_iq = rotate_data((shots_i0[ro_ind], shots_q0[ro_ind]), theta=angle[ro_ind])
             excited_percentage = count_percentage(rotated_iq, threshold=threshold[ro_ind])
 
-            if self.cfg.get('confusion_matrix') is not None:
-                excited_percentage = correct_occ(excited_percentage, self.cfg['confusion_matrix'][ro_ind])
 
             rotated_iq_array[ro_ind] = rotated_iq
             excited_percentages[ro_ind] = excited_percentage

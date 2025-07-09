@@ -110,7 +110,8 @@ class SweepExperimentND(ExperimentClass):
         I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
         Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
 
-
+        if self.z_value == "population" and "confusion_matrix" in self.cfg:
+            Z_corrected = [np.full(self.data_shape, np.nan) for _ in readout_list]
         # Define data dictionary
         key_names = [SweepHelpers.key_savename(key) for key in self.keys]
 
@@ -126,6 +127,8 @@ class SweepExperimentND(ExperimentClass):
                      'Qubit_Readout_List': self.cfg["Qubit_Readout_List"]},
 
         }
+        if self.z_value == "population" and "confusion_matrix" in self.cfg:
+            self.data['data']['population_corrected'] = Z_corrected
 
         self.last_saved_time = time.time()
 
@@ -136,7 +139,8 @@ class SweepExperimentND(ExperimentClass):
         # e.g. index_iterator yields (0,0), (0,1), (0,2), ... (1,0), (1,1), ... (M-1, N-1)
         index_iterator = itertools.product(*(range(len(arr)) for arr in self.sweep_arrays))
         value_iterator = itertools.product(*self.sweep_arrays)
-        
+
+        first_iteration = True
         for sweep_indices, sweep_values in zip(index_iterator, value_iterator): 
             # Update config entries based on sweep
             for key, pt in zip(self.keys, sweep_values):
@@ -177,17 +181,31 @@ class SweepExperimentND(ExperimentClass):
             elif self.z_value == 'population':
                 excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
                                                             load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
+
                 for ro_index in range(len(readout_list)):
                     Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
+                    if self.cfg.get('confusion_matrix') is not None:
+                        corrected_population = correct_occ(excited_populations[ro_index],
+                                                           self.cfg['confusion_matrix'][ro_index])
+                        Z_corrected[ro_index][*sweep_indices, ...] = corrected_population
 
             else:
                 raise ValueError("So far I only support 'contrast' or 'population'.")
 
             if (plotDisp or plotSave) and sweep_indices[-1] == self.sweep_shape[-1] - 1:
                 # Create figure
-                if sweep_indices[0] == 0:
+                # fig, ax = plt.subplots(figsize=(4,8))
+                # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_cycles1"]], arr2])
+                #                   for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
+                # for i in range(4):
+                #     ax.plot(concat_IQarray[i])
+                #     ax.set_xlim(0,500)
+                # plt.show(block=True)
+
+                if first_iteration:
                     fig, axs = self.display(self.data, figNum=figNum,
                                             plotDisp=plotDisp, block=False,plotSave=False)
+                    first_iteration = False
                 # Update figure
                 else:
                     self._update_fig(Z_mat, fig, axs)
