@@ -37,6 +37,8 @@ class SweepExperiment1D_plots(SweepExperimentND):
             ylabel = 'Excited state population'
         elif self.z_value == 'contrast':
             ylabel = 'IQ contrast (a.u.)'
+        elif self.z_value == 'population_corrected':
+            ylabel = 'Excited state population (corrected)'
         else:
             ylabel = None
 

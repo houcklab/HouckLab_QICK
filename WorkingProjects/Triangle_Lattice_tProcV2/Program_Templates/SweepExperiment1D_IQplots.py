@@ -34,6 +34,8 @@ class SweepExperiment1D_IQplots(SweepExperimentND):
             ylabel = 'Transmission (a.u.)'
         elif self.z_value == 'population':
             ylabel = 'Excited state population'
+        elif self.z_value == 'population_corrected':
+            ylabel = 'Excited state population (corrected)'
         elif self.z_value == 'contrast':
             ylabel = 'IQ contrast (a.u.)'
         else:
