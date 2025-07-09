@@ -12,7 +12,7 @@ import datetime
 from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
 
 class QubitSpecSliceFFProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -103,7 +103,8 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
 
         #### find the frequency corresponding to the qubit dip
-        sig = avgi + 1j * avgq
+        # sig = avgi + 1j * avgq
+        sig = IQ_contrast(avgi, avgq)
         avgamp0 = np.abs(sig)
         peak_loc = np.argmax(avgamp0)
         self.qubitFreq = x_pts[peak_loc]
