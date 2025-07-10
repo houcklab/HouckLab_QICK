@@ -57,7 +57,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3) # Overshoot to freeze dynamics
+        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.trigger(ros=cfg["ro_chs"], pins=[0],
@@ -68,7 +68,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3)
+        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform
         ###         but invert the gain on the generator channel.
@@ -99,7 +99,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3) # Overshoot to freeze dynamics
+        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.trigger(ros=cfg["ro_chs"], pins=[0],
@@ -110,7 +110,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3)
+        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform
         ###         but invert the gain on the generator channel.
@@ -163,7 +163,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 #
 #         # End: invert FF pulses to ensure pulses integrate to 0
 #         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-#         # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3)
+#         # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 #
 #         ###     If waveform memory becomes a problem, change this code to use the same waveform
 #         ###         but invert the gain on the generator channel.

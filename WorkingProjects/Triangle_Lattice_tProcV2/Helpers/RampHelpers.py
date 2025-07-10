@@ -11,8 +11,8 @@ def generate_linear_ramp(initial_gain, final_gain, ramp_duration, ramp_start_tim
     + ramp_duration
     :param initial_gain: gain of ramp for t <= ramp_start_time
     :param final_gain: gain of ramp for t >= ramp_start_time + ramp_duration
-    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (2.32/16 ns)
-    :param ramp_start_time: start time for ramp in clock cycles (2.32/16 ns)
+    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (4.65/16 ns)
+    :param ramp_start_time: start time for ramp in clock cycles (4.65/16 ns)
     :param reverse: does nothing.
     :param flip: Flip the ramp so that it ramps from final_gain to initial_gain
     '''
@@ -35,8 +35,8 @@ def generate_cubic_ramp(initial_gain, final_gain, ramp_duration, ramp_start_time
     + ramp_duration
     :param initial_gain: gain of ramp for t <= ramp_start_time
     :param final_gain: gain of ramp for t >= ramp_start_time + ramp_duration
-    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (2.32/16 ns)
-    :param ramp_start_time: start time for ramp in clock cycles (2.32/16 ns)
+    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (4.65/16 ns)
+    :param ramp_start_time: start time for ramp in clock cycles (4.65/16 ns)
     :param reverse: if False (default), the ramp becomes flatter closer to final_gain at t =  ramp_start_time + ramp_duration
                     if True, the ramp is flat at the beginning and becomes steeper at the end
     '''
@@ -76,8 +76,8 @@ def generate_exp_ramp(initial_gain, final_gain, ramp_duration, ramp_start_time=0
     + ramp_duration
     :param initial_gain: gain of ramp for t <= ramp_start_time
     :param final_gain: gain of ramp for t >= ramp_start_time + ramp_duration
-    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (2.32/16 ns)
-    :param ramp_start_time: start time for ramp in clock cycles (2.32/16 ns)
+    :param ramp_duration: total time to ramp between initial_gain and final_gain in clock cycles (4.65/16 ns)
+    :param ramp_start_time: start time for ramp in clock cycles (4.65/16 ns)
     :param reverse: if False (default), the ramp becomes flatter closer to final_gain at t =  ramp_start_time + ramp_duration
                     if True, the ramp is flat at the beginning and becomes steeper at the end
     '''

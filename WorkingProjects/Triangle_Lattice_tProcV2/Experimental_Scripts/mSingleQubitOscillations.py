@@ -3,7 +3,7 @@ import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 
 
 class QubitOscillations(SweepExperiment1D_plots):
@@ -17,7 +17,7 @@ class QubitOscillations(SweepExperiment1D_plots):
         self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.z_value = 'population' # contrast or population
         self.ylabel = f'FF gain index {self.cfg["qubit_FF_index"]} (DAC units)'  # for plotting
-        self.xlabel = 'Time (2.32 ns)'  # for plotting
+        self.xlabel = 'Time (4.65 ns)'  # for plotting
 
         # if np.array(self.cfg["IDataArray"]).any() != None:
         self.cfg["IDataArray"] = [None]*4

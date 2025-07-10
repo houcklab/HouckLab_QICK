@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp

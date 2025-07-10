@@ -1,9 +1,11 @@
-from qick import *
+
 from qick import helpers
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Qt5agg")
 import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import Compensated_Pulse
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
@@ -107,11 +109,9 @@ class SingleShotFFMUX(ExperimentClass):
             self.cfg["number_of_pulses"] = 1
 
         #### pull the data from the single shots
-        self.cfg["IDataArray"] = [None, None, None, None]
-        self.cfg["IDataArray"][0] = Compensated_Pulse(self.cfg['FF_Qubits']['1']['Gain_Pulse'], 0, 1)
-        self.cfg["IDataArray"][1] = Compensated_Pulse(self.cfg['FF_Qubits']['2']['Gain_Pulse'], 0, 2)
-        self.cfg["IDataArray"][2] = Compensated_Pulse(self.cfg['FF_Qubits']['3']['Gain_Pulse'], 0, 3)
-        self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Pulse'], 0, 4)
+        self.cfg["IDataArray"] = [None, None, None, None, None, None, None, None]
+        for Q in range(len(self.cfg["IDataArray"])):
+            self.cfg["IDataArray"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_Pulse'], 0, Q)
 
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])

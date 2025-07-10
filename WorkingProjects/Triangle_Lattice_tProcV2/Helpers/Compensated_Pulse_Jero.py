@@ -1,6 +1,7 @@
 import pickle
 import numpy as np
 
+raise Exception("Don't use these compensations for now - Joshua 7/10/25")
 
 def QuadExponentialFit(t, A1, T1, A2, T2, A3, T3, A4, T4):
     return(A1 * np.exp(-t / T1) + A2 * np.exp(-t / T2) + A3 * np.exp(-t / T3) + A4 * np.exp(-t / T4))

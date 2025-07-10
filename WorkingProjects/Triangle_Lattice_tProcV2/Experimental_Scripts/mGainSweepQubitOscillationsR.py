@@ -3,7 +3,7 @@ import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartRProgram import ThreePartRProgram
 from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 
 
 class GainSweepOscillationsR(SweepExperimentR1D):
@@ -18,7 +18,7 @@ class GainSweepOscillationsR(SweepExperimentR1D):
         # self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.z_value = 'population' # contrast or population
         self.ylabel = f'FF gain index {self.cfg["qubit_FF_index"]} (DAC units)'  # for plotting
-        self.xlabel = 'Time (2.32 ns)'  # for plotting
+        self.xlabel = 'Time (4.65 ns)'  # for plotting
 
         # if np.array(self.cfg["IDataArray"]).any() != None:
 

@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import Compensated_Pulse
@@ -102,7 +102,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
                                  gain=gain_, waveform="qubit", t=time_)
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3) # Overshoot to freeze dynamics
+        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         FF.FFPulses(self, self.FFReadouts, self.cfg["res_length"], t_start=0)
 
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -113,7 +113,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3)
+        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
         inverted_IDataArray = [-1 * np.flip(arr) for arr in padded_IDataArray]
         FF.FFPulses_directSET_REGS(self, self.FFExpts,

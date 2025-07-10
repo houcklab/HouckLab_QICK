@@ -64,7 +64,7 @@ class TwoPartProgram(AveragerProgramFF):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 2.32515/1e3*3)
+        self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 4.65515/1e3*3)
 
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))

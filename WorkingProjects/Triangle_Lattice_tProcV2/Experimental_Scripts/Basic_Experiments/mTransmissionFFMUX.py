@@ -1,4 +1,4 @@
-from qick import *
+
 # from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np

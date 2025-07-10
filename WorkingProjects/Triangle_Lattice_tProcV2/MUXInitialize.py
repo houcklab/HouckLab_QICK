@@ -40,7 +40,7 @@ BaseConfig = {
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
     "res_length": 20,  # length of cavity pulse for readout in us
-    "adc_trig_delay": 0.3,  # Between 0.3 and 0.5 usually [us]
+    # "adc_trig_delay": 0.3,  # Between 0.3 and 0.5 usually [us]
     "res_LO": 6800,  #in MHz
 }
 

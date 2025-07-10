@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF, \
     AveragerProgramFF

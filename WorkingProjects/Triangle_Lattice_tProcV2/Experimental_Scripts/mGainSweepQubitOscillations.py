@@ -18,7 +18,7 @@ class GainSweepOscillations(SweepExperiment2D_plots):
         self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.z_value = 'population' # contrast or population
         self.ylabel = f'FF gain index {self.cfg["qubit_FF_index"]} (DAC units)'  # for plotting
-        self.xlabel = 'Time (2.32/16 ns)'  # for plotting
+        self.xlabel = 'Time (4.65/16 ns)'  # for plotting
 
         # if np.array(self.cfg["IDataArray"]).any() != None:
 

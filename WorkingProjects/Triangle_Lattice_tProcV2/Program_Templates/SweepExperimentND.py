@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
@@ -71,10 +71,9 @@ class SweepExperimentND(ExperimentClass):
             self.keys = (self.y_key,) + self.keys
             self.sweep_arrays = (self.y_points,) + self.sweep_arrays
 
-        # Compile the program once to look at the defined QICK loops
+        '''Compile the program once to inspect the defined QICK loops'''
         for key, sweep in zip(self.keys, self.sweep_arrays):
             SweepHelpers.set_nested_item(self.cfg, key, sweep[0])
-
         self.set_up_instance()
         prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
         
@@ -137,7 +136,7 @@ class SweepExperimentND(ExperimentClass):
         for i, y_pt in enumerate(self.y_points):
             for j, x_pt in enumerate(self.x_points):'''
         
-        # e.g. index_iterator yields (0,0), (0,1), (0,2), ... (1,0), (1,1), ... (M-1, N-1)
+        '''e.g. index_iterator yields (0,0), (0,1), (0,2), ... (1,0), (1,1), ... (M-1, N-1)'''
         index_iterator = itertools.product(*(range(len(arr)) for arr in self.sweep_arrays))
         value_iterator = itertools.product(*self.sweep_arrays)
 
@@ -151,26 +150,27 @@ class SweepExperimentND(ExperimentClass):
             self.set_up_instance()
 
             if issubclass(self.Program, AveragerProgramV2):
-                Instance = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
+                prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
             elif issubclass(self.Program, ExperimentClass):
-                Instance = self.Program(path=self.path, prefix=self.prefix, soc=self.soc, soccfg=self.soccfg,
+                prog = self.Program(path=self.path, prefix=self.prefix, soc=self.soc, soccfg=self.soccfg,
                                         cfg=self.cfg, config_file=None, outerFolder = self.outerFolder)
             else:
                 raise TypeError("Please assign an AveragerProgramV2 object in self.Program.")
 
             # Acquire data and assign into Z_mat
-            if isinstance(Instance, ExperimentClass):
+            if isinstance(prog, ExperimentClass):
                 '''!!! Exceptional case intended only for OptimizeReadoutAndPulse !!!.
                 If using, make sure data['data'][z_value][ro_ind] is one number'''
-                data = Instance.acquire(self)
+                data = prog.acquire(self)
                 for ro_index in range(len(self.readout_list)):
                     Z_mat[ro_index][*sweep_indices, ...] = data['data'][self.z_value][ro_index]
 
             # shape of iq_list: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
             #              e.g. [1, 1, 71, 2] for SpecSlice
             elif self.z_value == 'contrast':
-                iq_list = Instance.acquire(self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
+                iq_list = prog.acquire(self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
                 avgi, avgq = [iq[-1, ..., 0] for iq in iq_list], [iq[-1, ..., 1] for iq in iq_list]
+                
                 for ro_index in range(len(readout_list)):
                     I_mat[ro_index][*sweep_indices, ...] = avgi[ro_index]
                     Q_mat[ro_index][*sweep_indices, ...] = avgq[ro_index]
@@ -180,7 +180,7 @@ class SweepExperimentND(ExperimentClass):
 
                     Z_mat[ro_index][*slices] = rotated_i
             elif self.z_value == 'population' or self.z_value == 'population_corrected':
-                excited_populations = Instance.acquire_populations(soc=self.soc, return_shots=False,
+                excited_populations = prog.acquire_populations(soc=self.soc, return_shots=False,
                                                             load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
 
                 for ro_index in range(len(readout_list)):
@@ -193,7 +193,7 @@ class SweepExperimentND(ExperimentClass):
             else:
                 raise ValueError("So far I only support 'contrast' or 'population'.")
 
-            if (plotDisp or plotSave) and sweep_indices[-1] == self.sweep_shape[-1] - 1:
+            if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (self.sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 # Create figure
                 # fig, ax = plt.subplots(figsize=(4,8))
                 # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_cycles1"]], arr2])
@@ -214,10 +214,10 @@ class SweepExperimentND(ExperimentClass):
                     else:
                         self._update_fig(Z_mat, fig, axs)
 
-                    # fig.canvas.draw()
-                    # fig.canvas.flush_events()
-                    fig.show()
-                    plt.pause(0.01)
+                    fig.canvas.draw()
+                    fig.canvas.flush_events()
+                    # fig.show()
+                    # plt.pause(0.01)
 
             if time.time() - self.last_saved_time > 5 * 60:  # Save data every 5 minutes
                 ### print(self.data)

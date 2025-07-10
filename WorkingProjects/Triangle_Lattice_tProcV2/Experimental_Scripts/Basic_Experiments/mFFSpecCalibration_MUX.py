@@ -1,5 +1,5 @@
 from jupyterlab.labextensions import list_flags
-from qick import *
+
 import matplotlib.pyplot as plt
 from qick.asm_v2 import QickSweep1D
 
@@ -85,7 +85,7 @@ class FFSpecCalibrationMUX(SweepExperimentR1D):
         # For the RAveragerProgram, you should define the cfg entries start, step, and stop too
         self.x_name = 'specfreqs'
         self.z_value = 'contrast'  # contrast or population
-        self.ylabel = 'Delay time (2.32 ns)'  # for plotting
+        self.ylabel = 'Delay time (4.65 ns)'  # for plotting
         self.xlabel = 'Spec frequency (MHz)'  # for plotting
 
         self.cfg |= {

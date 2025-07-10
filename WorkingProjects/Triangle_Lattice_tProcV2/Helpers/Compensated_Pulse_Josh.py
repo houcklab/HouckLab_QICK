@@ -6,7 +6,7 @@ def sinusoid(ampl, period, length=256):
     gains = ampl*np.sin(2 * np.pi / (period) * np.arange(0, length, 1/16))
     plt.scatter(np.arange(0, length, 1), gains[::16], marker='o', color='red', s=10,zorder=1)
     plt.plot(np.arange(0, length, 1/16), gains, marker='o',zorder=-1, color='black',markersize=1)
-    plt.xlabel("Cycles (2.32 ns)")
+    plt.xlabel("Cycles (4.65 ns)")
     plt.ylabel("Gain")
     plt.show(block=False)
     return gains

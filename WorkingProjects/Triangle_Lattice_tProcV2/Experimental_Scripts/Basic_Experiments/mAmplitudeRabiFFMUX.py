@@ -1,4 +1,4 @@
-from qick import *
+
 from qick.asm_v2 import QickSweep1D
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2

@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
@@ -74,5 +74,5 @@ class SweepExperiment1D_lines(SweepExperimentND):
         lines = axs[-1].lines
         for ro_index in range(len(Z_mat)):
             lines[ro_index].set_data(self.X, Z_mat[ro_index])
-            axs[ro_index].relim()
-            axs[ro_index].autoscale()
+        axs[-1].relim()
+        axs[-1].autoscale()

@@ -86,7 +86,7 @@ class ThreePartRProgram(RAveragerProgramFF):
         self.sync(self.ff_rps[0], self.r_length)
 
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3) # Overshoot to freeze dynamics
+        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         FF.FFPulses(self, self.FFReadouts, self.cfg["res_length"], t_start=0)
 
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -103,7 +103,7 @@ class ThreePartRProgram(RAveragerProgramFF):
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.synci(self.us2cycles(self.cfg["res_length"], gen_ch=self.cfg["res_ch"]))
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 2.32515/1e3*3)
+        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
         inverted_IDataArray = [-1 * np.flip(arr) for arr in padded_IDataArray]
         FF.FFPulses_directSET_REGS(self, self.FFExpts,
                                    16 * (THREE + self.cfg["start"] + self.cfg["step"] * self.cfg["expts"]),

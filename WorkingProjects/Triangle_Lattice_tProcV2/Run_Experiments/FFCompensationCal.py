@@ -16,7 +16,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mT1MUX im
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mT2RMUX import T2RMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mFFvsSpec import FFvsSpec
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 import numpy as np
 
 

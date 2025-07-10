@@ -1,4 +1,4 @@
-from qick import *
+
 
 from qick.asm_v2 import QickSpan, QickSweep1D
 

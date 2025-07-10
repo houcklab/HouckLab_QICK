@@ -1,4 +1,4 @@
-from qick import *
+
 
 from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
@@ -15,13 +15,13 @@ import pickle
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpers
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperiment1D import SweepExperiment1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 
 
-class BaseRampExperiment(SweepExperiment1D):
+class BaseRampExperiment(SweepExperiment1D_lines):
     def init_sweep_vars(self):
         self.Program = ThreePartProgramOneFF
         self.x_key = None
@@ -48,7 +48,7 @@ class RampDurationVsPopulation(BaseRampExperiment):
         super().init_sweep_vars()
         self.x_key = 'ramp_duration'
         self.x_points = np.linspace(self.cfg['duration_start'], self.cfg['duration_end'], self.cfg['duration_num_points'])
-        self.xlabel = 'Ramp Duration (2.32 ns/16)'
+        self.xlabel = 'Ramp Duration (4.65 ns/16)'
 
     def set_up_instance(self):
         '''Create the Ramp '''
@@ -78,7 +78,7 @@ class TimeVsPopulation(BaseRampExperiment):
         super().init_sweep_vars()
         self.x_key = 'expt_cycles'
         self.x_points = np.linspace(self.cfg['time_start'], self.cfg['time_end'], self.cfg['time_num_points'], dtype=int)
-        self.xlabel = 'Time (2.32 ns/16)'
+        self.xlabel = 'Time (4.65 ns/16)'
 
         # Ramp + constant gain after the ramp
         for i, Q in zip([0, 1, 2, 3], ['1', '2', '3', '4']):
