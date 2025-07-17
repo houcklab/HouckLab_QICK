@@ -57,6 +57,7 @@ class FFRampTest(NDAveragerProgram):
         :return:
         """
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
+        #TODO optional qubit pi/2 pulse before experiment?
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1
@@ -100,7 +101,9 @@ class FFRampTest(NDAveragerProgram):
         # self.get_raw() has data in format (#channels, #reps, #measurements/expt, 2)
         # self.di/q_buf[0] have (rep1_meas1, rep1_meas2, ... rep1_measN, rep1_meas1, ...)
         # reshape to have [[rep1_meas1, rep1_meas2], [rep2_meas1, rep2_meas2], ...]
-        return self.di_buf[0].reshape(-1, 2), self.dq_buf[0].reshape(-1, 2)
+        # di_buf and dq_buf are total integration, divide out readout time
+        return (self.di_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]),
+                self.dq_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]))
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -128,13 +131,18 @@ class FFRampTest(NDAveragerProgram):
         "relax_delay_2": 10, # [us] Relax delay after second readout
         "reps": 1000,
         "sets": 5,
+
+        "angle": 0, # [radians] Angle of rotation for readout
+        "threshold": 0, # [DAC units] Threshold between g and e
     }
 
 
 
 class FFRampTest_Experiment(ExperimentClass):
     """
-
+    Requires a readout calibration (angle + threshold) to be calculated before.
+    We will not use thresholded readout, however, and store the full i/q data, in case we want to analyse it in a
+    different way later.
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
@@ -144,17 +152,18 @@ class FFRampTest_Experiment(ExperimentClass):
 
     def acquire(self, progress=False, debug=False):
         ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
-                                  num = self.cfg["ff_ramp_expts"])
+                                   num = self.cfg["ff_ramp_expts"])
         i_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
         q_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
 
+        # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
         for idx, length in enumerate(ramp_lengths):
             prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
 
             # Collect the data
             i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                             save_experiments=None, #readouts_per_experiment=2,
-                                             start_src="internal", progress=progress)
+                                                  save_experiments=None, #readouts_per_experiment=2,
+                                                  start_src="internal", progress=progress)
 
         data = {'config': self.cfg, 'data': {'ramp_lengths': ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
@@ -166,38 +175,81 @@ class FFRampTest_Experiment(ExperimentClass):
         if data is None:
             data = self.data
 
-        # x_pts = data['data']['x_pts']
-        # avgi = data['data']['avgi']
-        # avgq = data['data']['avgq']
-        # sig  = avgi[0][0] + 1j * avgq[0][0]
-        # avgsig = np.abs(sig)
-        # avgphase = np.angle(sig, deg=True)
-        # while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
-        #     fig_num += 1
-        # fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
+        # Dimensions: (# delay points, # reps, # measurement[before/after ramp])
+        i_arr = data['data']['i_arr']
+        q_arr = data['data']['q_arr']
+        ramp_lengths = data['data']['ramp_lengths']
+
+        # Histogram of original data for one of the delay points
+        while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+            fig_num += 1
+        fig = plt.figure(figsize=(12, 12), num=fig_num)
+        ax1 = plt.subplot(2, 2, 1)
+        plt.scatter(i_arr[0, :, 0], q_arr[0, :, 0])
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title('Raw I/Q data, smallest delay, before ramp')
+        ax1.set_aspect('equal')
+
+        # Rotate the data. Positive angle rotates ccw
+        theta = self.cfg["angle"]
+        i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
+        q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
+
+        # Threshold; the data has been rotated such that the signal is in e
+        data_thresh = i_arr_rot > self.cfg["threshold"]
+
+        # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
+        ax2 = plt.subplot(2, 2, 2)
+        plt.scatter(i_arr_rot[0, :, 0][data_thresh[0, :, 0]], q_arr_rot[0, :, 0][data_thresh[0, :, 0]],
+                    color = 'r', marker = 'o', alpha = 0.5)
+        plt.scatter(i_arr_rot[0, :, 0][~data_thresh[0, :, 0]], q_arr_rot[0, :, 0][~data_thresh[0, :, 0]],
+                    color = 'b', marker = 'o', alpha = 0.5)
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title('Rotated I/Q data, smallest delay, before ramp')
+        ax2.set_aspect('equal')
+
+        # Scatter plot of rotated post-ramp points for start in below/above threshold. For now, plot only last delay value
+        ax3 = plt.subplot(2, 2, 3)
+        plt.scatter(i_arr_rot[0, :, 1][data_thresh[0, :, 0]], q_arr_rot[0, :, 1][data_thresh[0, :, 0]],
+                    color = 'r', marker = 'o', alpha = 0.5)
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title('Rotated I/Q data, smallest length,\nafter ramp, start right of threshold')
+        ax3.set_aspect('equal')
+
+        ax4 = plt.subplot(2, 2, 4)
+        plt.scatter(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]], q_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
+                    color = 'b', marker = 'o', alpha = 0.5)
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title('Rotated I/Q data, smallest length,\nafter ramp, start left of threshold')
+        ax4.set_aspect('equal')
+
+        plt.tight_layout()
+        fig.subplots_adjust(top=0.95)
+        # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         #
-        # ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
-        # axs[0].set_ylabel("deg")
-        # axs[0].set_xlabel("Qubit Frequency (GHz)")
-        # axs[0].legend()
+        # plt.savefig(self.iname)
         #
-        # ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
-        # axs[1].set_ylabel("ADC units")
-        # axs[1].set_xlabel("Qubit Frequency (GHz)")
-        # axs[1].legend()
+        # if plot_disp:
+        #     plt.show(block=False)
+        #     plt.pause(2)
         #
-        # ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        # axs[2].set_ylabel("ADC units")
-        # axs[2].set_xlabel("Qubit Frequency (GHz)")
-        # axs[2].legend()
-        #
-        # ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
-        # axs[3].set_ylabel("ADC units")
-        # axs[3].set_xlabel("Qubit Frequency (GHz)")
-        # axs[3].legend()
-        #
-        # plt.tight_layout()
-        # fig.subplots_adjust(top=0.95)
+        # else:
+        #     fig.clf(True)
+        #     plt.close(fig)
+
+        # Calculate & plot probability of staying in same state vs. ramp time
+        p_no_transition = (data_thresh[:, :, 0] == data_thresh[:, :, 1]).sum(axis = 1) / i_arr.shape[1]
+        plt.figure()
+        plt.plot(ramp_lengths, p_no_transition)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(no transition after ramp)')
+
+        plt.tight_layout()
+        fig.subplots_adjust(top=0.95)
         # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         #
         # plt.savefig(self.iname)
@@ -221,3 +273,30 @@ class FFRampTest_Experiment(ExperimentClass):
     def estimate_runtime(self):
         return 0xBADC0FFEE
         # return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
+
+
+
+### Testing:
+# a = np.random.multivariate_normal([1, 0.5], [[1, 0], [0, 1]], 10000)
+# b = np.random.multivariate_normal([4, 1.5], [[1, 0], [0, 1]], 10000)
+# c = np.random.random(10000)
+# c = c > 0.3
+# d = np.zeros((10000, 2))
+# d[c, :] = a[c, :]
+# d[~c, :] = b[~c, :]
+# plt.figure(); plt.scatter(d[:, 0], d[:, 1])
+#
+# a2 = np.random.multivariate_normal([1, 0.5], [[1, 0], [0, 1]], 10000)
+# b2 = np.random.multivariate_normal([4, 1.5], [[1, 0], [0, 1]], 10000)
+# c2 = np.random.random(10000)
+# c2 = c2 > 0.15 # Probability of switching states during ramp
+# c3 = c == c2 # c is initial state, c2 is whether you switch states => c3 is final distribution after ramp
+# d2 = np.zeros((10000, 2))
+# d2[c3, :] = a2[c3, :]
+# d2[~c3, :] = b2[~c3, :]
+#
+# i_arr_backup = i_arr.copy()
+# q_arr_backup = q_arr.copy()
+#
+# i_arr = np.column_stack((d[:, 0], d2[:, 0])).reshape((1, 10000, 2))
+# q_arr = np.column_stack((d[:, 1], d2[:, 1])).reshape((1, 10000, 2))

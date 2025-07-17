@@ -5,8 +5,9 @@ import time
 
 import numpy as np
 
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FFSpecVsDelay import FFSpecVsDelay_Experiment
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecVsDelay import FFSpecVsDelay_Experiment
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest_Experiment
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram, Loopback
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTwoToneTransmission import \
     TwoToneTransmission
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf_driver import MLBFDriver
@@ -85,9 +86,9 @@ yoko = yoko
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 0,  # [DAC units]
+    "gain": 30000,  # [DAC units]
 
-    "freq": 1000, #3713,  # [MHz]
+    "freq": 1500, #3713,  # [MHz]
 
     "channel": 1, #0,  # TODO default value # 0 is resonator, 1 is qubit
     "nqz": 1, #2,#1,  # TODO default value
@@ -109,6 +110,41 @@ cavityAtten.SetAttenuation(20,printOut=True)
 # f_center = 10e9 #Hz
 # settings = set_filter(f_center)
 # print(settings)
+
+
+#%%
+# TITLE: Loopback experiment
+#
+
+# Perform an actual loopback experiment, i.e. send a signal and just measure it. The point is to see how much
+# adc trigger delay you need due to the delay in the lines and electronics, such that you're not just averaging noise
+# in the beginning, and then losing the end of the actual signal.
+
+UpdateConfig = {
+    ###### cavity
+    "pulse_style": "const",  # --Fixed
+    "pulse_gain": 10000,  # [DAC units]
+    "pulse_freq": 6725, #3713,  # [MHz]
+    "length": 100, # [generator clock ticks] Length of the pulse
+    "readout_length": 500, # [readout clock ticks!] Length of the readout
+    "mode_periodic": False, # This should always be false for this experiment
+
+    "res_ch": 0, # 0 is resonator, 1 is qubit
+    "nqz": 2,
+
+    "adc_trig_offset": 0, # [main clock cycles] The trigger offset to vary, convert to us via soc.cycles2us()
+    "reps": 1,
+    "soft_avgs": 100,
+    "relax_delay": 0.01, # [us]
+}
+
+config = BaseConfig | UpdateConfig
+
+Instance_loopback = Loopback(path="Loopback", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
+data_trans= Loopback.acquire(Instance_loopback)
+Loopback.display(Instance_loopback, data_trans, plotDisp=True)
+Loopback.save_data(Instance_loopback, data_trans)
+Instance_loopback.save_config()
 
 #%%
 # TITLE: "Loopback" experiment DDR4
@@ -330,42 +366,43 @@ UpdateConfig_transmission = {
     # cavity
     "read_pulse_style": "const",  # --Fixed
 
-    "read_length": 1, #30,  # us
-    "read_pulse_gain": 500, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
+    "read_length": 2, #30,  # us
+    "read_pulse_gain": 8000, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
 
     "read_pulse_freq": 6723.5, #6665.367, #6664.2,
 
 
     # Transmission Experiment
-    "TransSpan": 10, #3, #4, # MHz
+    "TransSpan": 2, #3, #4, # MHz
 
-    "TransNumPoints": 501, #651, #601,
+    "TransNumPoints": 51, #651, #601,
 
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": 3.12,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
+    "yokoVoltage": 3.1,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
+
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "const",
-    "qubit_freq": 108,
-    "qubit_gain": 32000,
+    "qubit_pulse_style": "flat_top",
+    "qubit_freq": 1930,
+    "qubit_gain": 20000,
 
     # Constant Pulse Tone
-    "qubit_length": 0.5,
+    "qubit_length": 2,
 
     # Flat top or gaussian pulse tone
-    "sigma": 0.05,#0.3,
-    "flat_top_length": 0.1,
+    "sigma": 0.25,#0.3,
+    "flat_top_length": 3,
 
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 1200, #2105,
+    "qubit_freq_start": 100, #2105,
     "qubit_freq_stop": 2000,#2120,
-    "SpecNumPoints": 301,
-    'spec_reps': 3000,#10000, #20000,
+    "SpecNumPoints": 1901,
+    'spec_reps': 1000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
@@ -375,7 +412,7 @@ UpdateConfig_qubit = {
 
 
     # Experiment parameters
-    "relax_delay": 15, #2000,
+    "relax_delay": 10, #2000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": False,
@@ -448,7 +485,11 @@ plt.show()
 plt.close("all")
 
 Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder, progress = True)
-data_specSlice= Instance_specSlice.acquire()
+try:
+    data_specSlice= Instance_specSlice.acquire()
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
 Instance_specSlice.display(data_specSlice, plotDisp=True)
 Instance_specSlice.save_config()
 Instance_specSlice.save_data(data_specSlice)
@@ -486,22 +527,22 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 ##TITLE: Transmission vs Power
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": -1.9099, #0.09473, #3.1
+    "yokoVoltage": 3.1, #0.09473, #3.1
     ##### change gain instead option
-    "trans_gain_start": 100,
-    "trans_gain_stop": 2100,
-    "trans_gain_num": 21,
+    "trans_gain_start": 10,
+    "trans_gain_stop": 20000,
+    "trans_gain_num": 51,
     ###### cavity
     "reps": 300,
-    "trans_reps": 100,  # this will used for all experiments below unless otherwise changed in between trials
+    "trans_reps": 200,  # this will used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     #"readout_length": 35,  # [us] 1/7/2025 JL
     "read_length": 2,  # [us] 1/7/2025 JL
     # "read_pulse_gain": 10000,  # [DAC units]
     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_start": 6722.5,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 6724.5,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_start": 6722.9,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6724.1,  # [MHz] actual frequency is this number + "cavity_LO"
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
     "relax_delay": 20, # us
     "units": "DAC",         # in dB or DAC
@@ -1507,28 +1548,30 @@ plt.show()
 #%%
 # Fast flux ramp test experiment
 
-cfg = {
+config = {
         # Readout section
         "read_pulse_style": "const",  # --Fixed
-        "read_length": 7,  # [us]
-        "read_pulse_gain": 8000,  # [DAC units]
-        "read_pulse_freq": 6500.,  # [MHz]
+        "read_length": 2,  # [us]
+        "read_pulse_gain": 300,  # [DAC units]
+        "read_pulse_freq": 6723.5,  # [MHz]
         # Fast flux pulse parameters
         "ff_ramp_style": "linear",  # one of ["linear"]
         "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 30000, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 3, # [us] Delay between fast flux ramps
+        "ff_ramp_stop": 5000, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 0, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
         # Sweep parameters
-        "ff_ramp_length_start": 1,  # [us] Total length of positive fast flux pulse, start of sweep
-        "ff_ramp_length_stop": 5,  # [us] Total length of positive fast flux pulse, end of sweep
-        "ff_ramp_expts": 10, # [int] Number of points in the ff ramp length sweep
-        "yokoVoltage": 3.391,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 13 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
-        "relax_delay_2": 5 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
-        "reps": 10000000,
+        "ff_ramp_length_start": 0.01,  # [us] Total length of positive fast flux pulse, start of sweep
+        "ff_ramp_length_stop": 1,  # [us] Total length of positive fast flux pulse, end of sweep
+        "ff_ramp_expts": 15, # [int] Number of points in the ff ramp length sweep
+        "yokoVoltage": 3.12,  # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 10 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+        "relax_delay_2": 10 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "reps": 10000,
         "sets": 5,
+        "angle": 0.2, # [radians] Angle of rotation for readout
+        "threshold": 0, # [DAC units] Threshold between g and e
     }
 
 # We have 65536 samples (9.524 us) wave memory on the FF channel (and all other channels)
@@ -1536,13 +1579,24 @@ cfg = {
 #yoko.SetVoltage(config["yokoVoltage"])
 
 mlbf_filter = MLBFDriver("192.168.1.11")
-filter_freq = (cfg["read_pulse_freq"])
+filter_freq = (config["read_pulse_freq"])
 mlbf_filter.set_frequency(int(filter_freq))
 
-cfg = BaseConfig | cfg
-length = 1.5
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest
-prog = FFRampTest(soccfg, cfg | {"ff_ramp_length": length})
-i_arr, q_arr = prog.acquire(soc, threshold=None, angle=None, load_pulses=True,
-                                 save_experiments=None,  # readouts_per_experiment=2,
-                                 start_src="internal", progress=True)
+config = BaseConfig | config
+# length = 1.5
+#from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest
+#prog = FFRampTest(soccfg, cfg | {"ff_ramp_length": length})
+
+Instance_FFRampTest = FFRampTest_Experiment(path="FFRampTest", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFRampTest.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+data_FFRampTest = FFRampTest_Experiment.acquire(Instance_FFRampTest, progress = True)
+FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=True)
+FFRampTest_Experiment.save_data(Instance_FFRampTest, data_FFRampTest)
+FFRampTest_Experiment.save_config(Instance_FFRampTest)
+# print(Instance_specSlice.qubitFreq)
+plt.show()
