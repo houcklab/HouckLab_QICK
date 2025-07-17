@@ -117,7 +117,7 @@ class AmplitudeRabi(ExperimentClass):
         start = time.time()
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)#, debug=False)
         print(f'Time: {time.time() - start}')
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
@@ -165,7 +165,7 @@ class AmplitudeRabi(ExperimentClass):
         if plotDisp:
             plt.show(block=False)
             plt.pause(2)
-            plt.close()
+            #plt.close()
         else:
             fig.clf(True)
             plt.close(fig)
