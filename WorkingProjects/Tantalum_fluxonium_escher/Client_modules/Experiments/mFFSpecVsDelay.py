@@ -35,7 +35,13 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
             fig_num = 1
             while plt.fignum_exists(num = fig_num):
                 fig_num += 1
-        fig, axs = plt.subplot_mosaic([['a']], figsize = (14, 10), num = fig_num)
+
+        mosaic = [['amp', 'phase'],
+                  ['i', 'q']]
+        fig, axs = plt.subplot_mosaic(mosaic, figsize=(14, 10), num=fig_num)
+
+        # convenience handles we’ll re-use
+        im_handles, cbar_handles = {}, {}
 
         self.__predeclare_arrays()
 
@@ -64,29 +70,66 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
             self.Is[i, :] = data['data']['avgi'][0][0]
             self.Qs[i, :] = data['data']['avgq'][0][0]
             self.amps[i, :] = np.sqrt(np.square(self.Is[i, :]) + np.square(self.Qs[i, :]))  # - self.cfg["minADC"]
+            self.phases[i,:] = np.angle(self.Is[i,:] + 1j*self.Qs[i,:])
 
+            # --------   draw / update each panel   -----------------------------------
+            def _imshow(key, mat, extent, cmap='viridis'):
+                """Initialise or update a single imshow + colorbar."""
+                if key not in im_handles:
+                    im_handles[key] = axs[key].imshow(
+                        np.transpose(mat), aspect='auto', origin='lower',
+                        interpolation='none', extent=extent, cmap=cmap
+                    )
+                    cbar_handles[key] = fig.colorbar(im_handles[key], ax=axs[key], extend='both')
+                else:
+                    im_handles[key].set_data(np.transpose(mat))
+                    im_handles[key].set_clim(vmin=np.nanmin(mat), vmax=np.nanmax(mat))
+                    cbar_handles[key].remove()
+                    cbar_handles[key] = fig.colorbar(im_handles[key], ax=axs[key], extend='both')
 
-            # Create new plot the first time, change data in the future; matplotlib is too slow.
+            extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
+                      self.spec_fpts[0], self.spec_fpts[-1]]
+
+            _imshow('amp', self.amps, extent)
+            _imshow('phase', self.phases, extent,)
+            _imshow('i', self.Is, extent)
+            _imshow('q', self.Qs, extent)
+
+            # labels (set once)
             if i == 0:
-                plot1 = axs['a'].imshow(np.transpose(self.amps), aspect = 'auto', origin = 'lower', interpolation = 'none',
-                                        extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
-                                                  self.spec_fpts[0], self.spec_fpts[-1]])
-                cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
-                cbar0.set_label('ADC units', rotation=90)
-            else:
-                plot1.set_data(np.transpose(self.amps))
-                plot1.set_clim(vmin=np.nanmin(self.amps))
-                plot1.set_clim(vmax=np.nanmax(self.amps))
-                cbar0.remove()
-                cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
-                cbar0.set_label('ADC units', rotation=90)
-
-            axs['a'].set_ylabel("Spec frequency (MHz)")
-            axs['a'].set_xlabel("post FF pulse delay (ns)")
+                axs['amp'].set_title('Amplitude')
+                axs['phase'].set_title('Phase (rad)')
+                axs['i'].set_title('I')
+                axs['q'].set_title('Q')
+                for ax in axs.values():
+                    ax.set_ylabel('Spec freq (MHz)')
+                    ax.set_xlabel('post-FF delay (ns)')
 
             if plot_disp:
                 plt.show(block=False)
                 plt.pause(0.2)
+
+            # # Create new plot the first time, change data in the future; matplotlib is too slow.
+            # if i == 0:
+            #     plot1 = axs['a'].imshow(np.transpose(self.amps), aspect = 'auto', origin = 'lower', interpolation = 'none',
+            #                             extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
+            #                                       self.spec_fpts[0], self.spec_fpts[-1]])
+            #     cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
+            #     cbar0.set_label('ADC units', rotation=90)
+            # else:
+            #     plot1.set_data(np.transpose(self.amps))
+            #     plot1.set_clim(vmin=np.nanmin(self.amps))
+            #     plot1.set_clim(vmax=np.nanmax(self.amps))
+            #     cbar0.remove()
+            #     cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
+            #     cbar0.set_label('ADC units', rotation=90)
+            #
+            # axs['a'].set_ylabel("Spec frequency (MHz)")
+            # axs['a'].set_xlabel("post FF pulse delay (ns)")
+            #
+            # if plot_disp:
+            #     plt.show(block=False)
+            #     plt.pause(0.2)
 
             # Z_spec[:i + 1, :] = spec_normalize(I_spec[:i + 1, :], Q_spec[:i + 1, :])
             # # Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
@@ -108,6 +151,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         self.Is = np.zeros((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]))
         self.Qs = np.zeros((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]))
         self.amps = np.full((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]), np.nan)
+        self.phases = np.full((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]), np.nan)
         self.data = {
             'config': self.cfg,
             'data': {'spec_Imat': self.Is, 'spec_Qmat': self.Qs, 'spec_fpts': self.spec_fpts,
@@ -121,7 +165,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
-        #TODO roken by change of experiment
+        #TODO broken by change of experiment
         return (self.cfg["reps"] * self.cfg["qubit_spec_delay_steps"] * self.cfg["qubit_freq_expts"] *
                 (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6)  # [s]
 
