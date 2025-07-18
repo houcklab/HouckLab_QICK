@@ -10,17 +10,19 @@ from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy, soc, so
 import os
 import platform
 
-if 'macOS' in platform.platform():
-    if "LD_LIBRARY_PATH" in os.environ.keys():
-        os.environ["LD_LIBRARY_PATH"] += ":.\..\\PythonDrivers"
+try:
+    if 'macOS' in platform.platform():
+        if "LD_LIBRARY_PATH" in os.environ.keys():
+            os.environ["LD_LIBRARY_PATH"] += ":.\\..\\PythonDrivers"
+        else:
+            os.environ["LD_LIBRARY_PATH"] = ".\\..\\PythonDrivers"
     else:
-        os.environ["LD_LIBRARY_PATH"] = ".\..\\PythonDrivers"
-else:
-    os.add_dll_directory(os.getcwd() + '\\..\\PythonDrivers')
-
+        os.add_dll_directory(os.getcwd() + '\\..\\PythonDrivers')
+except:
+    pass
 
 #Define Save folder
-outerFolder = "Z:\QSimMeasurements\Measurements\\8QV1_Triangle_Lattice\\"
+outerFolder = "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
 
 
 ###### define default configuration
@@ -31,7 +33,7 @@ BaseConfig = {
     "fast_flux_chs": [0,1,2,3,4,5,6,7],
     "res_nqz": 1,
     "qubit_nqz": 2,
-    "res_mixer_freq": 500, # 7200  # MHz
+    "mixer_freq": -1750, # 7200  # MHz
     "qubit_mixer_freq": 4000, # MHz
     # range=1720.320 MHz, so allowed qubit freqs will be qubit_mixer_freq +- 860 MHz
     # e.g. 3140 MHz to 4860 MHz if mixer at 4000 MHz
@@ -41,7 +43,7 @@ BaseConfig = {
     "res_phase": 0,  # --Fixed
     "res_length": 20,  # length of cavity pulse for readout in us
     # "adc_trig_delay": 0.3,  # Between 0.3 and 0.5 usually [us]
-    "res_LO": 6800,  #in MHz
+    "res_LO": 9000,  #in MHz
 }
 
 

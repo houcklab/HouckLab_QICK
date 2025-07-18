@@ -83,7 +83,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         for idf_cavgain in range(len(self.gain_pts)):
             # start_2 = time.time()
             ### set the cavity attenuation
-            self.cfg["res_gains"][0] = self.gain_pts[idf_cavgain] / 32766.
+            self.cfg["res_gains"][0] = self.gain_pts[idf_cavgain] / 32766. * len(self.cfg["Qubit_Readout_List"])
             ### start the loop over transmission points
             for idx_trans in range(len(self.trans_fpts)):
                 self.cfg["res_freqs"][0] = self.trans_fpts[idx_trans]
@@ -96,9 +96,6 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
 
                 fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10, print_fidelities=False)
 
-                # plt.show(block=False)
-                # plt.pause(1)
-                # plt.close(10)
 
                 Z_fid[idf_cavgain, idx_trans] = fid
                 self.data['data']['fid_mat'][idf_cavgain, idx_trans] = fid
@@ -128,28 +125,6 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
                 axs[0].set_xlabel("Cavity Frequency (GHz)")
                 axs[0].set_title("fidelity")
 
-
-                #### plotting
-                # if idf_cavgain == 0 and idx_trans ==0:
-                #     ax_plot_1 = axs[1].imshow(
-                #         Z_overlap,
-                #         aspect='auto',
-                #         extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
-                #                 Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
-                #         origin='lower',
-                #         interpolation='none',
-                #     )
-                #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-                #     cbar1.set_label('overlap err (a.u.)', rotation=90)
-                # else:
-                #     ax_plot_1.set_data(Z_overlap)
-                #     ax_plot_1.autoscale()
-                #     cbar1.remove()
-                #     cbar1 = fig.colorbar(ax_plot_1, ax=axs[1], extend='both')
-                #     cbar1.set_label('overlap err (a.u.)', rotation=90)
-                # axs[1].set_ylabel("Cavity Atten (dB")
-                # axs[1].set_xlabel("Cavity Frequency (GHz)")
-                # axs[1].set_title("overlap err")
 
                 if plotDisp:
                     plt.show(block=False)
@@ -262,6 +237,9 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
         shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        # print(prog.__dict__['gen_chs'])
+        # gencfg = self.soccfg['gens'][9]
+        # print('mixmux gencfg["maxv"]:', gencfg['maxv'])
 
         i_g = shots_ig[0]
         q_g = shots_qg[0]
@@ -269,11 +247,11 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         q_e = shots_qe[0]
 
         ### use the helper histogram to find the fidelity and such
-        fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, print_fidelities=False)
-
-        self.fid = fid
-        self.threshold = threshold
-        self.angle = angle
+        # fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, print_fidelities=False)
+        #
+        # self.fid = fid
+        # self.threshold = threshold
+        # self.angle = angle
 
         return i_g, q_g, i_e, q_e
 
@@ -303,16 +281,19 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False,
-                cavityAtten=None, figNum = 1, Qubit_Sweep_Index = 0):
+                cavityAtten=None, figNum = 1):
+
+        Qubit_Sweep_Index = self.cfg.get('qubit_sweep_index', 0)
+
         #### function used to actually find the cavity parameters
         expt_cfg = {
             ### define the attenuator parameters
-            "qubit_gain_Start": self.cfg["qubit_gains"][0]*32766 - self.cfg["q_gain_span"]/2,
-            "qubit_gain_Stop": self.cfg["qubit_gains"][0]*32766 + self.cfg["q_gain_span"]/2,
+            "qubit_gain_Start": self.cfg["qubit_gains"][Qubit_Sweep_Index]*32766 - self.cfg["q_gain_span"]/2,
+            "qubit_gain_Stop": self.cfg["qubit_gains"][Qubit_Sweep_Index]*32766 + self.cfg["q_gain_span"]/2,
             "qubit_gain_Points": self.cfg["q_gain_pts"],
             ### transmission parameters
-            "qubit_freq_start": self.cfg["qubit_freqs"][0] - self.cfg["q_freq_span"]/2,
-            "qubit_freq_stop": self.cfg["qubit_freqs"][0] + self.cfg["q_freq_span"]/2,
+            "qubit_freq_start": self.cfg["qubit_freqs"][Qubit_Sweep_Index] - self.cfg["q_freq_span"]/2,
+            "qubit_freq_stop": self.cfg["qubit_freqs"][Qubit_Sweep_Index] + self.cfg["q_freq_span"]/2,
             "QubitNumPoints": self.cfg["q_freq_pts"],  ### number of points in the transmission frequecny
         }
         self.gain_pts = np.linspace(expt_cfg["qubit_gain_Start"], expt_cfg["qubit_gain_Stop"], expt_cfg["qubit_gain_Points"])

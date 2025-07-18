@@ -10,6 +10,7 @@ import Pyro4.util
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q_2QGates import *
 import time
 import numpy as np
+from qick.asm_v2 import AveragerProgramV2
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
@@ -20,46 +21,39 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import soc, soccfg
 
 #TODO UPDATE FOR TPROC_V2
 
-class ConstantTone(AveragerProgram):
-    def __init__(self, soccfg, cfg):
-        super().__init__(soccfg, cfg)
+class ConstantTone(AveragerProgramV2):
 
-    def initialize(self):
-        cfg = self.cfg
+    def _initialize(self, cfg):
+        # cfg = self.cfg
         # for ch in cfg["ro_chs"]:
         #     self.declare_readout(ch=ch, length=self.us2cycles(1),
         #                          freq=cfg["freq"], gen_ch=cfg["channel"])
 
-        freq = self.freq2reg(self.cfg["freq"], gen_ch=self.cfg["channel"])#, ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
+        # freq = self.freq2reg(self.cfg["freq"], gen_ch=self.cfg["channel"])#, ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
         # self.declare_gen(ch=self.cfg["channel"], nqz=self.cfg["nqz"])
         self.declare_gen(ch=cfg["channel"], nqz=cfg["nqz"],
                          mixer_freq=cfg["mixer_freq"],
-                         mux_freqs=[cfg["freq"]],
-                         mux_gains=[cfg["gain"] /32766 ],
+                         mux_freqs=cfg["freqs"],
+                         mux_gains=[gain/32766 for gain in cfg["gains"]],
                          ro_ch=0)
-        self.set_pulse_registers(ch=cfg["channel"], style="const", mask=[0],
-                                 length=self.us2cycles(600000))#, mode="periodic")
+
+        self.add_pulse(ch=cfg['channel'], name="res_pulse",
+                       style="const",
+                       length=600000,
+                       mask=range(len(cfg["freqs"])),)
+        # self.set_pulse_registers(ch=cfg["channel"], style="const", mask=[0],
+        #                          length=self.us2cycles(600000))#, mode="periodic")
         # self.set_pulse_registers(ch=self.cfg["channel"], style="const", freq=freq, phase=0, gain=self.cfg["gain"],
         #                          length=self.us2cycles(1), mode="periodic")
         #self.sync_all(self.us2cycles(0.5)) # TODO unnecessary, probably
-        self.synci(200)
-    def body(self):
-        self.pulse(ch=self.cfg["channel"])  # play probe pulse
+
+    def _body(self, cfg):
+        self.pulse(self.cfg["channel"], name='res_pulse')  # play probe pulse
         # self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 
-    def update(self):
-        pass # Nothing to update
 
     ## define the template config
     ################################# code for outputting a single cw tone
-    config_template = {
-        ###### cavity
-        "read_pulse_style": "const",  # --Fixed
-        "gain": 30000, # [DAC units]
-        "freq": 7392, # [MHz]
-        "channel": 0, # TODO default value
-        "nqz": 2,     # TODO default value
-    }
 
 # ====================================================== #
 
@@ -72,7 +66,7 @@ class ConstantTone_Experiment(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        prog = ConstantTone(self.soccfg, self.cfg)
+        prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=0)
 
         # a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
@@ -85,22 +79,31 @@ class ConstantTone_Experiment(ExperimentClass):
     def save_data(self, data=None):
         pass # No data collected
 
+    # config_template = {
+    #     ###### cavity
+    #     "read_pulse_style": "const",  # --Fixed
+    #     "gain": 30000, # [DAC units]
+    #     "freq": 7392, # [MHz]
+    #     "channel": 0, # TODO default value
+    #     "nqz": 1,     # TODO default value
+    #     "ro_chs": [0]
+    # }
 
-LO_FREQ = 6800
-MIXER_FREQ = 500
+LO_FREQ = 9000
+MIXER_FREQ = -1750
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 0,  # [DAC units]
-    "reps": 1,
+    "gains": [16000, 16000, 16000, 16000],  # [DAC units]
+    "reps": 1000000,
     "rounds":1,
     "mixer_freq": MIXER_FREQ,
-    "freq": 7555.8 - MIXER_FREQ - LO_FREQ,#3713,  # [MHz]
+    "freqs": [freq-LO_FREQ for freq in [7122, 7078, 7511, 7568]], # [MHz]
 
-    "channel": 6, #0,  # TODO default value # 0 is resonator, 1 is qubit
+    "channel": 8, #0,  # TODO default value # 8 is resonator, 9 is qubit
     "nqz": 1, #2,#1,  # TODO default value
 }
-print("Freq:", UpdateConfig["freq"])
+print("Freq:", UpdateConfig["freqs"])
 
 config = UpdateConfig
 outerFolder = ''

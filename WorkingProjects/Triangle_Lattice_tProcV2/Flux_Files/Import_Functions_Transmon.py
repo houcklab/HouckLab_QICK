@@ -34,14 +34,15 @@ def read_info(file_name):
 #
 def modify_crosstalk_offset(found_qubit_info, crosstalk_offset, model_mapping, crosstalk_matrix, order_of_items, flux_sign):
     if found_qubit_info[1] > 10:
-        expected_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[2] / 1e3) * flux_sign[found_qubit_info[0]]
-        found_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[1] / 1e3) * flux_sign[found_qubit_info[0]]
+        found_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[2] / 1e3) * flux_sign[found_qubit_info[0]]
+        expected_flux = model_mapping[found_qubit_info[0]].flux(found_qubit_info[1] / 1e3) * flux_sign[found_qubit_info[0]]
     else:
-        expected_flux = found_qubit_info[2]
-        found_flux = found_qubit_info[1]
+        found_flux = found_qubit_info[2]
+        expected_flux = found_qubit_info[1]
     index_crosstalk = order_of_items.index(found_qubit_info[0])
     crosstalk_offset_modified = np.copy(crosstalk_offset)
-    crosstalk_offset_modified[index_crosstalk] += (found_flux - expected_flux) / crosstalk_matrix[index_crosstalk][index_crosstalk]
+    # Subtraction is because of the minus sign of crosstalk_offset in voltage_to_flux
+    crosstalk_offset_modified[index_crosstalk] -= (found_flux - expected_flux) / crosstalk_matrix[index_crosstalk][index_crosstalk]
     return(crosstalk_offset_modified)
 
 

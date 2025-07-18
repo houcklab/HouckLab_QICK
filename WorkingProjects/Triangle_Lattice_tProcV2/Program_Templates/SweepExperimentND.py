@@ -105,6 +105,10 @@ class SweepExperimentND(ExperimentClass):
             Z_mat will have shape (4)(50, 71).'''
         Z_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
 
+        if self.z_value == 'population_shots':
+            print('population shots true')
+            Z_mat = [np.full(self.data_shape + (self.cfg['reps'] * self.cfg.get('rounds', 1),), np.nan) for _ in readout_list]
+
         # raw i and q data
         I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
         Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
@@ -190,10 +194,20 @@ class SweepExperimentND(ExperimentClass):
                                                            self.cfg['confusion_matrix'][ro_index])
                         Z_corrected[ro_index][*sweep_indices, ...] = corrected_population
 
-            else:
-                raise ValueError("So far I only support 'contrast' or 'population'.")
+            elif self.z_value == 'population_shots':
 
-            if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (self.sweep_indices[-1] == self.sweep_shape[-1] - 1):
+
+                excited_populations = prog.acquire_population_shots(soc=self.soc, return_shots=False,
+                                                               load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+                                                               progress=progress)
+
+
+                for ro_index in range(len(readout_list)):
+                    Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
+            else:
+                raise ValueError("So far I only support 'contrast' or 'population' or 'population_shots'.")
+
+            if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 # Create figure
                 # fig, ax = plt.subplots(figsize=(4,8))
                 # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_cycles1"]], arr2])

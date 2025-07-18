@@ -25,7 +25,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=cfg["readout_length"],
+            self.declare_readout(ch=ch, length=cfg["readout_lengths"][iCh],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const", mask=cfg["ro_chs"],
                                  length=cfg["res_length"])
@@ -51,6 +51,8 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
                            phase=0, gain=cfg["qubit_gain"] / 32766., length=cfg["qubit_length"])
             self.qubit_length_us = cfg["qubit_length"]
 
+        print(self.FFPulse)
+
 
     def _body(self, cfg):
         # print(self.FFPulse)
@@ -60,8 +62,8 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         self.delay_auto()
 
         self.FFPulses(self.FFReadouts, cfg["res_length"])
-        self.trigger(ros=cfg["ro_chs"], pins=[0],
-                     t=cfg["adc_trig_delay"])
+        for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us

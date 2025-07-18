@@ -1,4 +1,5 @@
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
+from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,9 +8,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils_NEW as FF
+import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
 import scipy
 
 # get waveforms of less than 3 clock cycles by padding the first 3 cycles of the arbitrary pulse
@@ -17,7 +17,7 @@ import scipy
 THREE = 3
 # I declare this as a variable so that someone reading the code knows the purpose of the 3.
 
-class ThreePartRProgram(RAveragerProgramFF):
+class ThreePartRProgram(FFAveragerProgramV2):
     def initialize(self):
 
         cfg = self.cfg

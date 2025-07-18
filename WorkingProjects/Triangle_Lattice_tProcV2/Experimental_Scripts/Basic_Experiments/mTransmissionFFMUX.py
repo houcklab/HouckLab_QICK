@@ -35,8 +35,8 @@ class CavitySpecFFProg(FFAveragerProgramV2):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.delay(0.1)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
-        self.trigger(ros=cfg["ro_chs"], pins=[0],
-                     t=cfg["adc_trig_delay"])
+        for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(self.cfg["res_ch"], name='res_pulse')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -86,30 +86,30 @@ class CavitySpecFFMUX(ExperimentClass):
     def display(self, data=None, plotDisp = True, figNum = 1, block=True, **kwargs):
         if data is None:
             data = self.data
-        for i in range(len(data['data']['results'][0])):
-            avgi = data['data']['results'][:,0,0,0]
-            avgq = data['data']['results'][:,0,0,1]
-            x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
+        # for i in range(len(data['data']['results'][0])):
+        avgi = data['data']['results'][:,0,0,0]
+        avgq = data['data']['results'][:,0,0,1]
+        x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
 
-            sig = avgi + 1j * avgq
+        sig = avgi + 1j * avgq
 
-            avgamp0 = np.abs(sig)
+        avgamp0 = np.abs(sig)
 
-            plt.figure(figNum)
-            plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
-            plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-            plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
-            plt.ylabel("a.u.")
-            plt.xlabel("Cavity Frequency (GHz)")
-            plt.title(self.titlename)
-            plt.legend()
+        plt.figure(figNum)
+        plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
+        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+        plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+        plt.ylabel("a.u.")
+        plt.xlabel("Cavity Frequency (GHz)")
+        plt.title(self.titlename)
+        plt.legend()
 
-            plt.savefig(self.iname)
+        plt.savefig(self.iname)
 
-            if plotDisp:
-                plt.show(block=block)
-                plt.pause(0.1)
-            plt.close(figNum)
+        if plotDisp:
+            plt.show(block=block)
+            plt.pause(0.1)
+        plt.close(figNum)
 
 
     def save_data(self, data=None):

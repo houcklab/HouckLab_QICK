@@ -13,8 +13,8 @@ for Qubit, FFR, FFE, FFP, FFBS in zip(('1','2','3','4','5','6','7','8'), FFReado
 trans_config = {
     "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32766. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
     "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
-    "readout_length":Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['Readout_Time'],
-    "adc_trig_delay": Qubit_Parameters[str(Qubit_Readout[0])]['Readout']["ADC_Offset"]
+    "readout_lengths":[Qubit_Parameters[str(Q_R)]['Readout']['Readout_Time'] for Q_R in Qubit_Readout],
+    "adc_trig_delays": [Qubit_Parameters[str(Q_R)]['Readout']['ADC_Offset'] for Q_R in Qubit_Readout],
 }
 qubit_config = {
     "qubit_freqs": [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse],

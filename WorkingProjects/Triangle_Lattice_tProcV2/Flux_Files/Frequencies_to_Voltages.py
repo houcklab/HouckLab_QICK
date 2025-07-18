@@ -1,19 +1,54 @@
 from Import_Functions_Transmon import *
 from Initialize_Qubit_Information import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Voltages_to_Frequencies import all_qubits_and_couplers
 
 print_single_vector = True
 
 frequencies = {
-    'Q1': 0.5,
-    'Q2': 3700,
-    'Q3': 3900,
-    'Q4': 4100,
+    'Q1': 4200,
+    'Q2': 4000,
+    'Q3': 3600,
+    'Q4': 3800,
     'Q5': 0,
     'Q6': 0,
     'Q7': 0,
     'Q8': 0,
     'C1': 0.5,
     'C2': 0.5,
+    'C3': 0,
+    'C4': 0,
+    'C5': 0,
+    'C6': 0,
+}
+
+# frequencies = {
+#     'Q1': -0.,
+#     'Q2': -0.,
+#     'Q3': -0.,
+#     'Q4': -0.,
+#     'Q5': -0.,
+#     'Q6': -0.,
+#     'Q7': -0.,
+#     'Q8': -0.,
+#     'C1': 0,
+#     'C2': 0,
+#     'C3': 0,
+#     'C4': 0,
+#     'C5': 0,
+#     'C6': 0,
+# }
+#
+frequencies = {
+    'Q1': -0.25,
+    'Q2': -0.25,
+    'Q3': -0.25,
+    'Q4': -0.25,
+    'Q5': -0.25,
+    'Q6': -0.25,
+    'Q7': -0.25,
+    'Q8': -0.25,
+    'C1': 0,
+    'C2': 0,
     'C3': 0,
     'C4': 0,
     'C5': 0,
@@ -46,3 +81,13 @@ for i in range(len(voltages)):
 
 if print_single_vector:
     print(list(np.round(voltages, 4)))
+
+print(crosstalk_matrix)
+
+import matplotlib.pyplot as plt
+plt.imshow(crosstalk_matrix, interpolation='none')
+plt.show()
+all_qubits_and_couplers = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
+plt.xticks(range(14), all_qubits_and_couplers)
+plt.xlabel('Qubit or Coupler')
+plt.ylabel('Fluxline')

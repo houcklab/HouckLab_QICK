@@ -1,5 +1,5 @@
-from Compensated_Pulse_Josh import *
-from RampHelpers import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import *
 
 '''
 Quickly generates IQDataArrays for each fast flux channel.

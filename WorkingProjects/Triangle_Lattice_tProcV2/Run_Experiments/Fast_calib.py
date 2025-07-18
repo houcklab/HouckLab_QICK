@@ -20,10 +20,6 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-mixer_freq = 500
-BaseConfig["mixer_freq"] = mixer_freq
-BaseConfig["readout_length"] = 2.5
-
 Qubit_Parameters = {
     '1': {'Readout': {'Frequency': 7121.0 - BaseConfig["res_LO"], 'Gain': 4000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
@@ -33,9 +29,9 @@ Qubit_Parameters = {
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 3759.7, 'sigma': 0.07, 'Gain': 1250},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7510.9 - BaseConfig["res_LO"], 'Gain': 10000,
+    '3': {'Readout': {'Frequency': 7510.45 - BaseConfig["res_LO"], 'Gain': 10000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3845.7, 'sigma': 0.07, 'Gain': 2700},
+          'Qubit': {'Frequency': 3468.8, 'sigma': 0.07, 'Gain': 4600},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
     '4': {'Readout': {'Frequency': 7568.5 - BaseConfig["res_LO"], 'Gain': 10000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
@@ -52,13 +48,13 @@ FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-Qubit_Readout = [1]
-Qubit_Pulse = [1]
+Qubit_Readout = [3]
+Qubit_Pulse = [3]
 
 
-RunTransmissionSweep = False # determine cavity frequency
-RunFirst2ToneSpec = False
-RunSecond2ToneSpec = False
+RunTransmissionSweep = True # determine cavity frequency
+RunFirst2ToneSpec = True
+RunSecond2ToneSpec = True
 RunAmplitudeRabi = False
 SingleShot_ReadoutOptimize = True
 SingleShot_QubitOptimize = True
@@ -77,7 +73,7 @@ Second_Spec_params = {"qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
                         'reps': 144, 'rounds': 1}
 
-Amplitude_Rabi_params = {"sigma": 0.07, "max_gain": 8000, 'relax_delay':200}
+Amplitude_Rabi_params = {"sigma": 0.07, "max_gain": 20000, 'relax_delay':200}
 
 SS_R_params = {"Shots":400,
                "gain_start": 2000, "gain_stop": 12000, "gain_pts": 10, "span": 1, "trans_pts": 6, 'number_of_pulses': 1}

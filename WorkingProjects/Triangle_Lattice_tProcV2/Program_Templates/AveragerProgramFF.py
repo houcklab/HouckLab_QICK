@@ -43,8 +43,8 @@ class FFAveragerProgramV2(AveragerProgramV2):
 
         d_buf = self.get_raw()  # [(*self.loop_dims, nreads, 2) for ro in ros]
         for i in range(len(d_buf)):
-            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
-            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_length'], ro_ch=self.cfg['ro_chs'][i])
+            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
+            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i, all_q
@@ -63,6 +63,28 @@ class FFAveragerProgramV2(AveragerProgramV2):
 
 
             rotated_iq_array[ro_ind] = rotated_iq
+            excited_percentages[ro_ind] = excited_percentage
+
+        if return_shots:
+            return excited_percentages, (shots_i0, shots_q0)  ###, rotated_iq_array
+        else:
+            return excited_percentages
+
+    def acquire_population_shots(self, angle=None, threshold=None, return_shots = False, *args, **kwargs):
+        '''
+        Acquires single shot population data without averaging over all shots
+        '''
+
+        shots_i0, shots_q0 = self.acquire_shots(*args, **kwargs)
+
+        excited_percentages = [[] for ro_ind in range(len(shots_i0))]
+
+        if angle is None: angle = self.cfg['angle']
+        if threshold is None: threshold = self.cfg['threshold']
+        for ro_ind in range(len(shots_i0)):
+            rotated_iq = rotate_data((shots_i0[ro_ind], shots_q0[ro_ind]), theta=angle[ro_ind])
+            excited_percentage = rotated_iq[0] > threshold[ro_ind]
+
             excited_percentages[ro_ind] = excited_percentage
 
         if return_shots:

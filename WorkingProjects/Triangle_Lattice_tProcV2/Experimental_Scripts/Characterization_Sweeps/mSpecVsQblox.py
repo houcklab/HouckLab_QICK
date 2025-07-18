@@ -16,7 +16,7 @@ class SpecVsQblox(SweepExperiment2D_plots):
         self.y_points = np.linspace(self.cfg["Qblox_start"], self.cfg["Qblox_stop"], self.cfg["Qblox_steps"])
 
         # If using an RAveragerProgram, here you should define the cfg entries start, step, and stop
-        self.x_name = "Spec frequency (MHz)"
+        self.x_name = "qubit_freq_loop"
         self.cfg |= {
             "step": 2 * self.cfg["SpecSpan"] / (self.cfg["SpecNumPoints"] - 1),
             "start": self.cfg["qubit_freqs"][0] - self.cfg["SpecSpan"],
