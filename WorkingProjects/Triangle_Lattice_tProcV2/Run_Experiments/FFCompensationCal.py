@@ -61,7 +61,7 @@ exec(open("UPDATE_CONFIG.py").read())
 FFCal_params = {"SpecStart":4360, "SpecEnd":4530, "SpecNumPoints": 171,
                 "Gauss_gain": 32000, "sigma": 0.005,
                 # Delays are in units of clock cycles! delay step must be an integer # one clock cycle is 2.3 ns
-                'delay_start': 0, 'delay_step': 1, 'delay_points': 150,
+                'delay_start': 0, 'delay_step': 1, 'delay_points': 75,
                 'reps': 20, 'rounds': 20,
                 'IDataArray': [None,
                                None, #Compensated_Pulse(FF_gain2_expt, FF_gain2_init, 2),

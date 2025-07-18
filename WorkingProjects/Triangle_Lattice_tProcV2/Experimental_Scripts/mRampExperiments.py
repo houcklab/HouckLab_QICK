@@ -40,7 +40,7 @@ class BaseRampExperiment(SweepExperiment1D_lines):
                 final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
                 ramp_duration=self.cfg['ramp_duration'])
 
-        self.cfg['expt_cycles'] = self.cfg['ramp_duration']
+        self.cfg['expt_samples'] = self.cfg['ramp_duration']
 
 
 class RampDurationVsPopulation(BaseRampExperiment):
@@ -64,7 +64,7 @@ class RampDurationVsPopulation(BaseRampExperiment):
             self.cfg["IDataArray"][i] = np.concatenate([ramp_on, ramp_delay, ramp_off])
 
 
-        self.cfg['expt_cycles'] = len(self.cfg["IDataArray"][0])
+        self.cfg['expt_samples'] = len(self.cfg["IDataArray"][0])
 
 class FFExptVsPopulation(BaseRampExperiment):
     def init_sweep_vars(self):
@@ -76,7 +76,7 @@ class FFExptVsPopulation(BaseRampExperiment):
 class TimeVsPopulation(BaseRampExperiment):
     def init_sweep_vars(self):
         super().init_sweep_vars()
-        self.x_key = 'expt_cycles'
+        self.x_key = 'expt_samples'
         self.x_points = np.linspace(self.cfg['time_start'], self.cfg['time_end'], self.cfg['time_num_points'], dtype=int)
         self.xlabel = 'Time (4.65 ns/16)'
 

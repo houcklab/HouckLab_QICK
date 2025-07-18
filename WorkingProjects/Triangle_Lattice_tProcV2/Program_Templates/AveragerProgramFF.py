@@ -42,9 +42,13 @@ class FFAveragerProgramV2(AveragerProgramV2):
         all_q = []
 
         d_buf = self.get_raw()  # [(*self.loop_dims, nreads, 2) for ro in ros]
+        # Note: MUXed readouts have a default (-0.5, -0.5) IQ offset that I subtract out
+
+        print(np.array(d_buf).shape)
+
         for i in range(len(d_buf)):
-            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
-            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
+            shots_i0 = +0.5 + d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
+            shots_q0 = +0.5 + d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i, all_q

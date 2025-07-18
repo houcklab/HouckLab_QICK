@@ -75,7 +75,7 @@ class SweepExperimentND(ExperimentClass):
         for key, sweep in zip(self.keys, self.sweep_arrays):
             SweepHelpers.set_nested_item(self.cfg, key, sweep[0])
         self.set_up_instance()
-        prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
+        prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         
         '''
         sweep_shape: shape of the outer python sweep, e.g. (50,) for a FF gain sweep with 50 points
@@ -89,7 +89,6 @@ class SweepExperimentND(ExperimentClass):
         '''I defined loop_pts in each program I wrote because i couldn't think of a better way to automatically
         get the looped values for plotting'''
         self.loop_values = prog.loop_pts()
-
         self.data_shape = self.sweep_shape + self.loop_shape
         
         
@@ -154,24 +153,14 @@ class SweepExperimentND(ExperimentClass):
             self.set_up_instance()
 
             if issubclass(self.Program, AveragerProgramV2):
-                prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=self.cfg['relax_delay'])
-            elif issubclass(self.Program, ExperimentClass):
-                prog = self.Program(path=self.path, prefix=self.prefix, soc=self.soc, soccfg=self.soccfg,
-                                        cfg=self.cfg, config_file=None, outerFolder = self.outerFolder)
+                prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                                    final_delay=self.cfg["relax_delay"], initial_delay=10.0)
             else:
                 raise TypeError("Please assign an AveragerProgramV2 object in self.Program.")
 
-            # Acquire data and assign into Z_mat
-            if isinstance(prog, ExperimentClass):
-                '''!!! Exceptional case intended only for OptimizeReadoutAndPulse !!!.
-                If using, make sure data['data'][z_value][ro_ind] is one number'''
-                data = prog.acquire(self)
-                for ro_index in range(len(self.readout_list)):
-                    Z_mat[ro_index][*sweep_indices, ...] = data['data'][self.z_value][ro_index]
-
             # shape of iq_list: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
             #              e.g. [1, 1, 71, 2] for SpecSlice
-            elif self.z_value == 'contrast':
+            if self.z_value == 'contrast':
                 iq_list = prog.acquire(self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
                 avgi, avgq = [iq[-1, ..., 0] for iq in iq_list], [iq[-1, ..., 1] for iq in iq_list]
                 
@@ -207,10 +196,13 @@ class SweepExperimentND(ExperimentClass):
             else:
                 raise ValueError("So far I only support 'contrast' or 'population' or 'population_shots'.")
 
+            print(prog)
+            self.debug()
+
             if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 # Create figure
                 # fig, ax = plt.subplots(figsize=(4,8))
-                # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_cycles1"]], arr2])
+                # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])
                 #                   for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
                 # for i in range(4):
                 #     ax.plot(concat_IQarray[i])
@@ -247,7 +239,10 @@ class SweepExperimentND(ExperimentClass):
 
         self.save_data(data=self.data)
         return self.data
-    
+
+    def debug(self):
+        pass
+
     def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):
         readout_list = data["data"]["Qubit_Readout_List"]
 

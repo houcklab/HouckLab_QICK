@@ -29,13 +29,13 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
         self.Program = ThreePartProgramTwoFF
         self.y_key = ("t_offset", self.cfg["swept_index"])
         self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'], dtype=int)
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
         self.z_value = 'population'  # contrast or population
         self.ylabel = f'Offset time (4.64/16 ns)'  # for plotting
         self.xlabel = 'Wait time (4.64/16 ns)'  # for plotting
 
-        self.cfg['expt_cycles1'] = self.cfg['t_evolve']
+        self.cfg['expt_samples1'] = self.cfg['t_evolve']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -53,7 +53,7 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
 
         for Q in range(8):
             self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_BS'],
-                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_cycles1']], Q+1)
+                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_samples1']], Q+1)
 
         # offset all channels from the one with the least offset defined by t_offset (units of 1/16 clock cycles
         # t_offset can be passed as a list to define each channel's relative offset
@@ -74,7 +74,7 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
             # pad at beginning to delay this channel
 
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.cfg["IDataArray2"][i]])
 
 
@@ -87,14 +87,14 @@ class CurrentCalibrationGain(CurrentCalibrationOffset):
         self.y_key = ('FF_Qubits', str(self.cfg['swept_index']+1), 'Gain_BS')
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'],
                                     dtype=int)
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'],
                                     dtype=int)
         self.z_value = 'population'  # contrast or population
         self.ylabel = f'FF gain (Index {self.cfg["swept_index"]})'  # for plotting
         self.xlabel = 'Wait time (4.64/16 ns)'  # for plotting
 
-        self.cfg['expt_cycles1'] = self.cfg['t_evolve']
+        self.cfg['expt_samples1'] = self.cfg['t_evolve']
 
         startTime = datetime.datetime.now()
         print('\nstarting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
@@ -110,13 +110,13 @@ class CurrentCalibrationSingle(SweepExperiment1D_lines):
     #                                    'offsetStart': 300, 'offsetStop': 400, 'offsetNumPoints': 2}
     def init_sweep_vars(self):
         self.Program = ThreePartProgramTwoFF
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
         self.z_value = 'population'  # contrast or population
         # self.ylabel = f'Offset time (4.64/16 ns)'  # for plotting
         self.xlabel = 'Wait time (4.64/16 ns)'  # for plotting
 
-        self.cfg['expt_cycles1'] = self.cfg['t_evolve']
+        self.cfg['expt_samples1'] = self.cfg['t_evolve']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -131,7 +131,7 @@ class CurrentCalibrationSingle(SweepExperiment1D_lines):
 
         for Q in range(8):
             self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q + 1)]['Gain_BS'],
-                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_cycles1']], Q + 1)
+                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_samples1']], Q + 1)
 
         # offset all channels from the one with the least offset defined by t_offset (units of 1/16 clock cycles
         # t_offset can be passed as a list to define each channel's relative offset
@@ -152,7 +152,7 @@ class CurrentCalibrationSingle(SweepExperiment1D_lines):
             # pad at beginning to delay this channel
 
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.cfg["IDataArray2"][i]])
 
         # plt.show()

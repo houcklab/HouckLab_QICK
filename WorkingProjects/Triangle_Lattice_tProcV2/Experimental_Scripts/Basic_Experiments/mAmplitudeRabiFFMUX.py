@@ -79,7 +79,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
 
 
         prog = AmplitudeRabiFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
-                                    final_delay=self.cfg["relax_delay"])
+                                    final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         iq_list = prog.acquire(self.soc, load_pulses=True,
                                soft_avgs=self.cfg.get('rounds', 1),
                                progress=progress)

@@ -14,7 +14,7 @@ class GainSweepOscillations(SweepExperiment2D_plots):
         self.Program = ThreePartProgramOneFF
         self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Expt")
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
-        self.x_key = 'expt_cycles'
+        self.x_key = 'expt_samples'
         self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.z_value = 'population' # contrast or population
         self.ylabel = f'FF gain index {self.cfg["qubit_FF_index"]} (DAC units)'  # for plotting

@@ -118,11 +118,11 @@ class SingleShotFFMUX(ExperimentClass):
         #     self.cfg["IDataArray"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_Pulse'], 0, Q)
 
         self.cfg["Pulse"] = False
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
 
         self.cfg["Pulse"] = True
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
         print(self.cfg)
         data = {'config': self.cfg, 'data': {}}
@@ -233,7 +233,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
 
         ## 00 state
         self.cfg["Pulse"] = False
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_igg,shots_qgg = prog.acquire(self.soc, load_pulses=True)
 
         self.cfg["Pulse"] = True
@@ -242,7 +242,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_freqs'] = [qubits_freqs[0]]
         self.cfg['qubit_gains'] = [qubit_gains[0]]
 
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ieg,shots_qeg = prog.acquire(self.soc, load_pulses=True)
 
 
@@ -250,7 +250,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_freqs'] = [qubits_freqs[1]]
         self.cfg['qubit_gains'] = [qubit_gains[1]]
 
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ige, shots_qge = prog.acquire(self.soc, load_pulses=True)
 
 
@@ -278,7 +278,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         print(self.cfg['qubit_freqs'])
         print(self.cfg['qubit_gains'])
 
-        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"])
+        prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_iee, shots_qee = prog.acquire(self.soc, load_pulses=True)
 
 

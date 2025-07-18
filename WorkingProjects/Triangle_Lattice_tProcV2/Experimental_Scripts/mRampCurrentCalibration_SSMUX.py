@@ -31,13 +31,13 @@ class RampCurrentCalibrationOffset(SweepExperiment2D_plots):
         self.Program = ThreePartProgramTwoFF
         self.y_key = ("t_offset", self.cfg["swept_index"])
         self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'], dtype=int)
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
         self.z_value = 'population'  # contrast or population
         self.ylabel = f'Offset time (4.65/16 ns)'  # for plotting
         self.xlabel = 'Wait time (4.65/16 ns)'  # for plotting
 
-        self.cfg['expt_cycles1'] = self.cfg['ramp_time']
+        self.cfg['expt_samples1'] = self.cfg['ramp_time']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -68,7 +68,7 @@ class RampCurrentCalibrationOffset(SweepExperiment2D_plots):
         for i in range(len(self.cfg["IDataArray2"])):
             # pad at beginning to delay this channel
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.original_IDataArray2[i]])
 
 
@@ -79,14 +79,14 @@ class RampCurrentCalibrationGain(RampCurrentCalibrationOffset):
         self.y_key = ('FF_Qubits', str(self.cfg['swept_index']+1), 'Gain_BS')
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'],
                                     dtype=int)
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'],
                                     dtype=int)
         self.z_value = 'population'  # contrast or population
         self.ylabel = f'FF gain (Index {self.cfg["swept_index"]})'  # for plotting
         self.xlabel = 'Wait time (4.65/16 ns)'  # for plotting
 
-        self.cfg['expt_cycles1'] = self.cfg['ramp_time']
+        self.cfg['expt_samples1'] = self.cfg['ramp_time']
 
         startTime = datetime.datetime.now()
         print('\nstarting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
@@ -102,14 +102,14 @@ class RampCurrentCalibration1D(SweepExperiment1D_plots):
     def init_sweep_vars(self):
         self.Program = ThreePartProgramTwoFF
 
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
         self.z_value = 'population'  # contrast or population
         self.ylabel = f'Population'  # for plotting
         self.xlabel = 'Wait time (4.65/16 ns)'  # for plotting
         print(self.x_points)
 
-        self.cfg['expt_cycles1'] = self.cfg['ramp_time']
+        self.cfg['expt_samples1'] = self.cfg['ramp_time']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -122,7 +122,7 @@ class RampCurrentCalibration1D(SweepExperiment1D_plots):
         # for ch in range(len(self.cfg['fast_flux_chs'])):
         #     self.cfg["IDataArray1"][ch] = np.concatenate([
         #         self.cfg["IDataArray1"][ch], np.full(ramp_wait, self.cfg['FF_Qubits'][str(ch + 1)]['Gain_Expt'])])
-        # self.cfg['expt_cycles1'] = self.cfg['ramp_time'] + ramp_wait
+        # self.cfg['expt_samples1'] = self.cfg['ramp_time'] + ramp_wait
 
 
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
@@ -146,7 +146,7 @@ class RampCurrentCalibration1D(SweepExperiment1D_plots):
             # pad at beginning to delay this channel
 
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.cfg["IDataArray2"][i]])
 
 
@@ -154,14 +154,14 @@ class RampCurrentCalibration1DShots(SweepExperiment1D_plots):
     def init_sweep_vars(self):
         self.Program = ThreePartProgramTwoFF
 
-        self.x_key = 'expt_cycles2'
+        self.x_key = 'expt_samples2'
         self.x_points = np.linspace(self.cfg['timeStart'], self.cfg['timeStop'], self.cfg['timeNumPoints'], dtype=int)
         self.z_value = 'population_shots'  # contrast or population
         self.ylabel = f'Population'  # for plotting
         self.xlabel = 'Wait time (4.65/16 ns)'  # for plotting
         print(self.x_points)
 
-        self.cfg['expt_cycles1'] = self.cfg['ramp_time']
+        self.cfg['expt_samples1'] = self.cfg['ramp_time']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -174,7 +174,7 @@ class RampCurrentCalibration1DShots(SweepExperiment1D_plots):
         # for ch in range(len(self.cfg['fast_flux_chs'])):
         #     self.cfg["IDataArray1"][ch] = np.concatenate([
         #         self.cfg["IDataArray1"][ch], np.full(ramp_wait, self.cfg['FF_Qubits'][str(ch + 1)]['Gain_Expt'])])
-        # self.cfg['expt_cycles1'] = self.cfg['ramp_time'] + ramp_wait
+        # self.cfg['expt_samples1'] = self.cfg['ramp_time'] + ramp_wait
 
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
 
@@ -197,5 +197,5 @@ class RampCurrentCalibration1DShots(SweepExperiment1D_plots):
             # pad at beginning to delay this channel
 
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.cfg["IDataArray2"][i]])

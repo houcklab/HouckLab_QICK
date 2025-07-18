@@ -1,28 +1,6 @@
 import numpy as np
 from random import random
-
-def LoadWaveforms(instance, prev_value=0):
-    if type(prev_value) in [int, float]:
-        prev_value = [prev_value] * len(instance.FFChannels)
-    for gain, IQPulse, FFChannel, prev_val in zip(instance.FFExpts, instance.cfg["IDataArray"], instance.FFChannels,
-                                                  prev_value):
-        # print("prev val {}, gain {}".format(prev_val, gain))
-        gencfg = instance.soccfg['gens'][FFChannel]
-        if IQPulse is None:  # if not specified, assume constant of max value
-            # print("IQPulse is none, setting to length ", instance.cfg['FFlength'])
-            IQPulse = gain * np.ones(instance.cfg['FFlength'])
-        # add buffer to beginning of IQPulse
-        IQPulse = np.concatenate([prev_val * np.ones(48), IQPulse])
-        # print(IQPulse[:48 + 16])
-        # now iterate through and add pulses
-        for i in range(1, 17):
-            # create shifted pulse. Note all pulses are len(IQPulse) + 2 clock cycles!
-            idata = IQPulse[i:len(IQPulse) - 16 + i]
-            instance.add_pulse(ch=FFChannel, name=str(i), idata=idata, qdata=np.zeros_like(idata))
-        # set pulse register because we want to save the correct one (in register 4)
-        instance.set_pulse_registers(ch=FFChannel, freq=0, phase=0, gain=gencfg['maxv'], style='arb',
-                                     waveform='1', outsel="input")
-
+from math import ceil
 
 def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start='auto', IQPulseArray=None, waveform_label = "FF"):
     """
@@ -36,11 +14,14 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
     :param IQPulseArray: Assumed to be sampled in units of 1/16 clock cycle
     :return:
     """
+    if IQPulseArray is None:
+        print("FFPulses_direct: IQPulseArray is None, prefer using FFPulses for const pulses instead.")
 
     IQPulseArray = [None] * len(instance.FFChannels) if IQPulseArray is None else IQPulseArray
 
     for i, (gain, IQPulse) in enumerate(zip(list_of_gains, IQPulseArray)):
-        gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
+        channel = instance.FFChannels[i]
+        gencfg = instance.soccfg['gens'][channel]
         # print('FFPulse_direct gencfg["maxv"]:', gencfg['maxv'])
         if IQPulse is None:
             IQPulse = np.ones(length_dt) * gain
@@ -67,19 +48,19 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
         # print("waveforms: ", instance._gen_mgrs[i].pulses.keys())
         # print("IQPulse[:48]:", i, IQPulse[:48], IQPulse[-48:])
         # print(len(IQPulse)/16)
-        instance.add_envelope(ch=instance.FFChannels[i], name=f"{waveform_label}{i}",
+        instance.add_envelope(ch=channel, name=f"{waveform_label}_{channel}",
                            idata=IQPulse, qdata=np.zeros_like(IQPulse))
-        instance.add_pulse(ch=instance.FFChannels[i], name=f"{waveform_label}{i}",
+        instance.add_pulse(ch=channel, name=f"{waveform_label}_{channel}",
                        style="arb",
-                       envelope=f"{waveform_label}{i}",
+                       envelope=f"{waveform_label}_{channel}",
                        freq=0,
                        phase=0,
                        gain=1.0, outsel="input")
 
-        channel = instance.FFChannels[i]
+
         if t_start != 'auto':
-            t_start = t_start + instance.dac_t0[channel]
-        instance.pulse(ch=channel, name=f"{waveform_label}{i}", t=t_start)
+            t_start = t_start + instance.gen_t0[channel]
+        instance.pulse(ch=channel, name=f"{waveform_label}_{channel}", t=t_start)
 
 
 # For constant FF pulses
@@ -91,7 +72,7 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
     for i, gain in enumerate(list_of_gains):
         channel = instance.FFChannels[i]
 
-        waveform_name = f"{waveform_label}_{i}"
+        waveform_name = f"{waveform_label}_{channel}"
         # print(waveform_name)
         # length = instance.us2cycles(length_us, gen_ch=instance.FFChannels[i])
         # gencfg = instance.soccfg['gens'][instance.FFChannels[i]]
@@ -112,8 +93,6 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
             t_start_ = 'auto'
 
         instance.pulse(ch=channel, name=waveform_name, t=t_start_)
-
-
 
 def FFDefinitions(instance):
     # Start fast flux
@@ -154,6 +133,70 @@ def FFDefinitions(instance):
 
     # print(instance.dac_t0)
 
+'''Load 16 waveforms, one for each starting sample within the first clock cycle. Use for sweeping
+the length of arbitrary pulses.'''
+def FFLoad16Waveforms(instance, prev_value=0, waveform_label="swept_FF", truncation_length=None):
+    if type(prev_value) in [int, float]:
+        prev_value = [prev_value] * len(instance.FFChannels)
+    if truncation_length is not None:
+        truncation_length = ceil(truncation_length / 16) * 16
+    for gain, IQPulse, channel, prev_val in zip(instance.FFExpts, instance.cfg["IDataArray"], instance.FFChannels,
+                                                  prev_value):
+        # print("prev val {}, gain {}".format(prev_val, gain))
+        gencfg = instance.soccfg['gens'][channel]
+        if IQPulse is None:  # if not specified, assume constant of max value
+            # print("IQPulse is none, setting to length ", instance.cfg['FFlength'])
+            IQPulse = gain * np.ones(instance.cfg['FFlength'])
+        # add buffer to beginning of IQPulse
+        IQPulse = np.concatenate([prev_val * np.ones(48), IQPulse[:truncation_length]])
+        # print(IQPulse[:48 + 16])
+        # now iterate through and add pulses
+        for i in range(1, 17):
+            # create shifted pulse. Note all pulses are len(IQPulse) + 2 clock cycles!
+            idata = IQPulse[i:len(IQPulse) - 16 + i]
+            wname = f"{waveform_label}_{i}_{channel}"
+            instance.add_envelope(ch=channel, name=wname,
+                                  idata=idata, qdata=np.zeros_like(idata))
+            instance.add_pulse(ch=channel, name=wname,
+                               style="arb", envelope=wname,
+                               freq=0, phase=0, gain=1.0, outsel="input")
+        # print(len(idata))
 
 
+
+def FFPlayWaveforms(instance, waveform_label, t_start='auto'):
+    for channel in instance.FFChannels:
+        if t_start != 'auto':
+            t_start = t_start + instance.gen_t0[channel]
+
+        instance.pulse(ch=channel, name=f"{waveform_label}_{channel}", t=t_start)
+
+def FFPlayChangeLength(instance, waveform_label, length_src, t_start='auto'):
+    for channel in instance.FFChannels:
+        pulse_name = f"{waveform_label}_{channel}"
+        for wname in instance.list_pulse_waveforms(pulse_name):
+            instance.read_wmem(name=wname)
+            instance.write_reg(dst='w_length', src= length_src)
+            instance.write_wmem(name=wname)
+
+            if t_start != 'auto':
+                t_start = t_start + 0# instance.gen_t0[channel]
+            instance.pulse(ch=channel, name=pulse_name, t=t_start)
+
+def FFInvertWaveforms(instance, waveform_label, t_start='auto'):
+    for channel in instance.FFChannels:
+        pulse_name = f"{waveform_label}_{channel}"
+        gencfg = instance.soccfg['gens'][channel]
+        for wname in instance.list_pulse_waveforms(pulse_name):
+            instance.read_wmem(name=wname)
+            instance.write_reg(dst='w_gain', src= - gencfg['maxv']) # -32766
+            instance.write_wmem(name=wname)
+
+            if t_start != 'auto':
+                t_start = t_start + instance.gen_t0[channel]
+            instance.pulse(ch=channel, name=pulse_name, t=t_start)
+
+            instance.read_wmem(name=wname)
+            instance.write_reg(dst='w_gain', src= + gencfg['maxv']) # + 32766
+            instance.write_wmem(name=wname)
 

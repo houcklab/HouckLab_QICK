@@ -25,10 +25,10 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=cfg["readout_length"],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["res_length"], gen_ch=self.cfg["res_ch"]))
+                                 length=cfg["res_length"])
         # Qubit configuration
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])
 
@@ -42,12 +42,11 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
 
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
-                       freq=qubit_freq_sweep,
-                       phase=90, gain=cfg["Gauss_gain"] / 32766.)
+                       freq=qubit_freq_sweep, phase=90, gain=cfg["Gauss_gain"] / 32766.)
         self.qubit_length_us = cfg["sigma"] * 4
 
     def _body(self, cfg):
-        self.FFPulses(self.FFRamp, 2.0 + 0.00232*16) # used to be 2.02
+        self.FFPulses(self.FFRamp, 2.0 + 0.00465*16) # used to be 2.02
         # self.FFPulses(self.FFExpts,self.cycles2us(self.delay) + 0.5)
         self.FFPulses_direct(list_of_gains=self.FFExpts, length_dt=(self.cfg['delay'] + self.pulse_qubit_length + 200) * 16,
                              previous_gains=self.FFRamp, IQPulseArray=self.cfg["IDataArray"])
@@ -57,7 +56,6 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
-                     t=cfg["adc_trig_delay"])
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -67,9 +65,6 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFExpts, self.cycles2us(self.cfg['delay']+200))
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
-
-    def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)
 
 
 class FFSpecCalibrationMUX(SweepExperimentR1D):

@@ -18,8 +18,8 @@ class CurrentCorrelationMeasurement(ExperimentClass):
 
     def acquire(self, progress=False):
 
-        self.cfg['expt_cycles1'] = self.cfg['ramp_time']
-        self.cfg['expt_cycles2'] = self.cfg['beamsplitter_time']
+        self.cfg['expt_samples1'] = self.cfg['ramp_time']
+        self.cfg['expt_samples2'] = self.cfg['beamsplitter_time']
 
         startTime = datetime.datetime.now()
         print('')  ### print empty row for spacing
@@ -32,7 +32,7 @@ class CurrentCorrelationMeasurement(ExperimentClass):
         # for ch in range(len(self.cfg['fast_flux_chs'])):
         #     self.cfg["IDataArray1"][ch] = np.concatenate([
         #         self.cfg["IDataArray1"][ch], np.full(ramp_wait, self.cfg['FF_Qubits'][str(ch + 1)]['Gain_Expt'])])
-        # self.cfg['expt_cycles1'] = self.cfg['ramp_time'] + ramp_wait
+        # self.cfg['expt_samples1'] = self.cfg['ramp_time'] + ramp_wait
 
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
 
@@ -55,11 +55,11 @@ class CurrentCorrelationMeasurement(ExperimentClass):
             # pad at beginning to delay this channel
 
             self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_cycles1']:self.cfg['expt_cycles1'] + t_offset[i]],
+                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.cfg["IDataArray2"][i]])
 
         prog = ThreePartProgramTwoFF(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
-                                    final_delay=self.cfg["relax_delay"])
+                                    final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
         populations = prog.acquire_population_shots(soc=self.soc, load_pulses=True,
                                                 soft_avgs=self.cfg.get('rounds', 1),

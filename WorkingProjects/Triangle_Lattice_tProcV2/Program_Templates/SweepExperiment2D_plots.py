@@ -37,7 +37,15 @@ class SweepExperiment2D_plots(SweepExperimentND):
             x_key_name = self.x_key
         except:
             x_key_name = self.x_name
-        X, Y = data['data'][x_key_name], data['data'][y_key_name]
+
+        try:
+            X, Y = data['data'][x_key_name], data['data'][y_key_name]
+        except Exception as ex:
+            print("keys: ", x_key_name, y_key_name)
+            print("data['data']:", data['data'])
+            print("If you have a loop in your AveragerProgram, you need to define loop_pts and"
+                  "have it return a tuple of arrays for this code to work (see my SpecSlice program)")
+            raise Exception(ex)
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
         Z_mat = data['data'][self.z_value]
