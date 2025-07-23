@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf_driver import *
 # define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\HouckCage_dev\\" # end in '\\'
+outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\QCage_dev\WFQ_1\\" # end in '\\'
 
 
 
@@ -26,30 +26,31 @@ BaseConfig = BaseConfig | SwitchConfig
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": -0.12,  # 1.06, #-1,
-    "yokoVoltageStop": -0.11,  # 1,
-    "yokoVoltageNumPoints": 5,  # 5001,
+    "yokoVoltageStart": 2.9,  # 1.06, #-1,
+    "yokoVoltageStop": 3.4,  # 1,
+    "yokoVoltageNumPoints": 81,  # 5001,
 
     # Readout parameters
-    "trans_reps": 1000,
+    "trans_reps": 2000,
     "read_pulse_style": "const",
-    "read_length": 2,
-    "read_pulse_gain": 8000,
-    "trans_freq_start": 7390,
-    "trans_freq_stop": 7394,
-    "TransNumPoints": 201,
+    "read_length": 20,
+    "read_pulse_gain": 2000,
+    # "read_pulse_freq": 6723.5,
+    "trans_freq_start": 6722.5,
+    "trans_freq_stop": 6724.5,
+    'TransNumPoints': 501,
 
     # qubit spec parameters
     "spec_reps": 2000,  # 10000,#22000,
-    "qubit_pulse_style": "flat_top",  # "flat_top", "const", "arb"
-    "qubit_gain": 25000,  # 3000,
-    "qubit_length": 0.01,
-    "flat_top_length": 0.01,
-    "qubit_freq_start": 1000,
+    "qubit_pulse_style": "const",  # "flat_top", "const", "arb"
+    "qubit_gain": 30000,  # 3000,
+    "qubit_length": 10,
+    "flat_top_length": 1,
+    "qubit_freq_start": 500,
     "qubit_freq_stop": 2000,
-    "SpecNumPoints": 501,  # 101,#101
-    "sigma": 0.01,
-    "relax_delay": 10,  # 150,
+    "SpecNumPoints": 750,  # 101,#101
+    "sigma": 0.5,
+    "relax_delay": 50,  # 150,
     "use_switch": False,
 
     # Changing qubit channel ( not the standard way !!! )
@@ -57,21 +58,21 @@ UpdateConfig = {
     "qubit_nqz": 1,
 
     # Do we subtract the average of each voltage slice from the spectroscopy data?
-    "subtract_avg": True,
+    "subtract_avg": False,
     "qubit_mode_periodic": False,  # Is the const qubit tone mode periodic or not
     "ro_mode_periodic": False,
 
     # Do we draw the point picked out for spectroscopy?
     "draw_read_freq": True,
-
 }
 
 config = BaseConfig | UpdateConfig
 #
-mlbf_filter = MLBFDriver("192.168.1.10")
+mlbf_filter = MLBFDriver("192.168.1.11")
 #Updating the mlbf filter
 filter_freq = (config["trans_freq_start"] + config["trans_freq_stop"])/2
 mlbf_filter.set_frequency(filter_freq)
+print("Set filter frequency to %.3f MHz. It is now %.3f" % (filter_freq, mlbf_filter.get_frequency()))
  #%%
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -80,6 +81,27 @@ data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, subtract_avg=config["s
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
 plt.show()
+
+#%%
+# TITLE : Plot just the transmission vs flux
+
+yoko_vec = data_SpecVsFlux['data']['voltVec']
+trans_fpts = data_SpecVsFlux['data']['trans_fpts']
+trans_mas = np.abs( data_SpecVsFlux['data']['trans_Imat'] + 1j*data_SpecVsFlux['data']['trans_Qmat'])
+
+plt.figure(figsize=(18, 8))
+plt.imshow(np.transpose(trans_mas), aspect='auto', origin='lower',
+           extent=[yoko_vec[0], yoko_vec[-1], trans_fpts[0], trans_fpts[-1]],
+           interpolation='nearest', cmap='viridis')
+plt.colorbar(label='Transmission Magnitude')
+plt.xlabel('Voltage Vector')
+plt.ylabel('Transmission Frequency Points')
+plt.title('Transmission Magnitude vs Voltage and Frequency')
+plt.tight_layout()
+plt.show()
+
+
+#%%
 #
 # #%%
 # #TITLE: For multiple scans
@@ -169,26 +191,26 @@ plt.show()
 #     # Close the plot
 #     plt.close('all')
 #
-# #%%
-# from tqdm import tqdm
-# import matplotlib
-# matplotlib.use('Qt5Agg')
-#
-# # Sweep one more parameters along with flux
-# read_pulse_gain_vec = np.array([500, 1000, 3000, 6000, 9000, 12000, 16000, 20000, 25000, 30000 ])
-# trans_reps_vec = np.array([30000, 20000, 10000, 8000, 4000, 4000, 3000, 3000, 2000, 2000])
-#
-# for i in tqdm(range(read_pulse_gain_vec.size)):
-#     config["read_pulse_gain"] = read_pulse_gain_vec[i]
-#     config['trans_reps'] = trans_reps_vec[i]
-#     prefix = "_gain_"+str(read_pulse_gain_vec[i])+"_reps_"+str(trans_reps_vec[i])
-#
-#     # Running transmission vs flux
-#     Instance_SpecVsFlux = SpecVsFlux(path="TransmissionVsFluxVsPower", outerFolder=outerFolder, cfg=config, soc=soc,
-#                                      soccfg=soccfg, prefix = prefix)
-#     data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, subtract_avg=config["subtract_avg"])
-#     SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
-#     SpecVsFlux.save_config(Instance_SpecVsFlux)
-#     plt.close()
-#
-# #%%
+#%%
+from tqdm import tqdm
+import matplotlib
+matplotlib.use('Qt5Agg')
+
+# Sweep one more parameters along with flux
+read_pulse_gain_vec = np.array([1, 10, 30, 100, 300, 1000, 3000])
+trans_reps_vec = np.array([10000, 3000, 1000, 500, 400, 400, 300])
+
+for i in tqdm(range(read_pulse_gain_vec.size)):
+    config["read_pulse_gain"] = read_pulse_gain_vec[i]
+    config['trans_reps'] = trans_reps_vec[i]
+    prefix = "_gain_"+str(read_pulse_gain_vec[i])+"_reps_"+str(trans_reps_vec[i])
+
+    # Running transmission vs flux
+    Instance_SpecVsFlux = SpecVsFlux(path="TransmissionVsFluxVsPower", outerFolder=outerFolder, cfg=config, soc=soc,
+                                     soccfg=soccfg, prefix = prefix)
+    data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, subtract_avg=config["subtract_avg"])
+    SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
+    SpecVsFlux.save_config(Instance_SpecVsFlux)
+    plt.close()
+
+#%%

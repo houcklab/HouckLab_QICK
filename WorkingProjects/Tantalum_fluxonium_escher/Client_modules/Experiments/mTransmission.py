@@ -2,9 +2,10 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import time
+
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 
 class LoopbackProgramTrans(AveragerProgram):
     def __init__(self, soccfg, cfg):
@@ -18,7 +19,7 @@ class LoopbackProgramTrans(AveragerProgram):
 
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"], length=self.us2cycles((cfg["read_length"]), gen_ch=cfg["res_ch"]))
+            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"], length=self.us2cycles((cfg["read_length"]), gen_ch=res_ch))
 
         style = self.cfg["read_pulse_style"]
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][

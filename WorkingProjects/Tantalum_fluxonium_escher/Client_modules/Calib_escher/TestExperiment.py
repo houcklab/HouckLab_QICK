@@ -362,32 +362,32 @@ if config["save_data"]:
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 1000, #, 20000,
+    "reps": 2000, #, 20000,
     # cavity
     "read_pulse_style": "const",  # --Fixed
 
-    "read_length": 2, #30,  # us
-    "read_pulse_gain": 8000, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
+    "read_length": 10, #30,  # us
+    "read_pulse_gain": 9000, #int(1200/np.sqrt(10)),#3500, #1000,  # [DAC units]
 
-    "read_pulse_freq": 6723.5, #6665.367, #6664.2,
+    "read_pulse_freq": 6723.51629, #6665.367, #6664.2,
 
 
     # Transmission Experiment
-    "TransSpan": 2, #3, #4, # MHz
+    "TransSpan": 0.1, #3, #4, # MHz
 
-    "TransNumPoints": 51, #651, #601,
+    "TransNumPoints": 201, #651, #601,
 
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": 3.1,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
+    "yokoVoltage": 3.0,# 0.1281, #0.11,#0.124, #0.131 #.09473,#0.09542,
 
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "flat_top",
-    "qubit_freq": 1930,
-    "qubit_gain": 20000,
+    "qubit_pulse_style": "const",
+    "qubit_freq": 890,
+    "qubit_gain": 300,
 
     # Constant Pulse Tone
     "qubit_length": 2,
@@ -399,10 +399,10 @@ UpdateConfig_qubit = {
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 100, #2105,
-    "qubit_freq_stop": 2000,#2120,
-    "SpecNumPoints": 1901,
-    'spec_reps': 1000,#10000, #20000,
+    "qubit_freq_start": 500, #2105,
+    "qubit_freq_stop": 1500,#2120,
+    "SpecNumPoints": 251,
+    'spec_reps': 10000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
@@ -527,24 +527,24 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 ##TITLE: Transmission vs Power
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": 3.1, #0.09473, #3.1
+    "yokoVoltage": 3.0, #0.09473, #3.1
     ##### change gain instead option
-    "trans_gain_start": 10,
-    "trans_gain_stop": 20000,
-    "trans_gain_num": 51,
+    "trans_gain_start": 7000,
+    "trans_gain_stop": 15000,
+    "trans_gain_num": 41,
     ###### cavity
-    "reps": 300,
-    "trans_reps": 200,  # this will used for all experiments below unless otherwise changed in between trials
+    "reps": 200,
+    "trans_reps": 100,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
     #"readout_length": 35,  # [us] 1/7/2025 JL
-    "read_length": 2,  # [us] 1/7/2025 JL
+    "read_length": 3,  # [us] 1/7/2025 JL
     # "read_pulse_gain": 10000,  # [DAC units]
     # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
     # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_start": 6722.9,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 6724.1,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_start": 6723,  # [MHz] actual frequency is this number + "cavity_LO"
+    "trans_freq_stop": 6724,  # [MHz] actual frequency is this number + "cavity_LO"
     "TransNumPoints": 201,  ### number of points in the transmission frequecny
-    "relax_delay": 20, # us
+    "relax_delay": 2, # us
     "units": "DAC",         # in dB or DAC
 }
 #
@@ -646,25 +646,25 @@ TransVsRelaxDelay.save_config(Instance_TransVsRelaxDelay)
 
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -1.55,
+    "yokoVoltage": 3.0,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 20,  # us
-    "read_pulse_gain": 60,  # [DAC units]
-    "read_pulse_freq": 6723.51, #6664.53,  # MHz
+    "read_length": 5,  # us
+    "read_pulse_gain": 9000,  # [DAC units]
+    "read_pulse_freq": 6723.51629, #6664.53,  # MHz
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 50, #2106.7,
-    "qubit_freq_stop": 400, #2106.9,
-    "RabiNumPoints": 141,  ### number of points
+    "qubit_freq_start": 500, #2106.7,
+    "qubit_freq_stop": 1500, #2106.9,
+    "RabiNumPoints": 501,  ### number of points
     "qubit_pulse_style": "const",
     "sigma": 0.15,  ### units us, define a 20ns sigm
     "flat_top_length": 30.0, ### in us
-    "qubit_length": 10,
-    "relax_delay": 10,  ### turned into us inside the run function
+    "qubit_length": 2,
+    "relax_delay": 5,  ### turned into us inside the run function
     ##### amplitude rabi parameters
     "qubit_gain_start": 0,
-    "qubit_gain_step": 3000,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 11,  ### number of steps
+    "qubit_gain_step": 200,  ### stepping amount of the qubit gain
+    "qubit_gain_expts": 51,  ### number of steps
     "AmpRabi_reps": 2000,  # number of averages for the experiment
     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
     'use_switch': False,
@@ -672,7 +672,7 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 #
 yoko.SetVoltage(config["yokoVoltage"])
-
+matplotlib.use('Qt5Agg')
 Instance_AmplitudeRabi_Blob = AmplitudeRabi_Blob(path="dataTestRabiAmpBlob", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
 data_AmplitudeRabi_Blob = AmplitudeRabi_Blob.acquire(Instance_AmplitudeRabi_Blob)
 AmplitudeRabi_Blob.save_data(Instance_AmplitudeRabi_Blob, data_AmplitudeRabi_Blob)
