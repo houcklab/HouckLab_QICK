@@ -10,7 +10,8 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.YOKO
 #from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice import LoopbackProgramSpecSliceBuggy  #20250123 Parth says this is buggy
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko1, yoko2
+#from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko1, yoko2, yoko3
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko as yoko
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 
 class SpecVsFlux(ExperimentClass):
@@ -27,7 +28,7 @@ class SpecVsFlux(ExperimentClass):
 
     #### during the aquire function here the data is plotted while it comes in if plotDisp is true
     def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1, subtract_avg=True):
-        yoko = yoko2
+       # yoko = yoko
 
         expt_cfg = {
             ### define the yoko parameters
@@ -95,7 +96,7 @@ class SpecVsFlux(ExperimentClass):
             yoko.SetVoltage(voltVec[i])
 
             ### take the transmission data
-            data_I, data_Q = self._aquireTransData()
+            data_I, data_Q = self._acquireTransData()
             self.data['data']['trans_Imat'][i,:] = data_I
             self.data['data']['trans_Qmat'][i,:] = data_Q
 
@@ -142,7 +143,7 @@ class SpecVsFlux(ExperimentClass):
                 plt.pause(0.1)
 
             ### take the spec data
-            data_I, data_Q = self._aquireSpecData()
+            data_I, data_Q = self._acquireSpecData()
 
             data_I = np.array(data_I) # This broke after the qick update to 0.2.287. Returns I, Q as lists instead of np arrays
             data_Q = np.array(data_Q)
@@ -298,7 +299,7 @@ class SpecVsFlux(ExperimentClass):
 
         return self.data
 
-    def _aquireTransData(self):
+    def _acquireTransData(self):
         ##### code to aquire just the cavity transmission data
         expt_cfg = {
             ### transmission parameters
@@ -324,14 +325,16 @@ class SpecVsFlux(ExperimentClass):
         #### find the frequency corresponding to the cavity peak and set as cavity transmission number
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmax(avgamp0)
-
+        peak_loc = np.argmin(avgamp0)
         # peak_loc = np.argmax(avgamp0)
+
+        #TODO we need a better way of finding the resonance frequency, e.g. circle fitting. Finding the max/min point results in noise
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]
+        print(self.cfg["read_pulse_freq"])
 
         return data_I, data_Q
 
-    def _aquireSpecData(self):
+    def _acquireSpecData(self):
         ##### code to aquire just the qubit spec data
         expt_cfg = {
             ### spec parameters
@@ -348,6 +351,7 @@ class SpecVsFlux(ExperimentClass):
         results = []
         start = time.time()
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
+        self.soc.reset_gens()  # clear any DC or periodic values on generators
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False) # qick update deprecated ? , debug=False)
