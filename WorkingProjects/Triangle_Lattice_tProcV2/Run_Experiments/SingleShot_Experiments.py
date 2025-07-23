@@ -70,11 +70,13 @@ Qubit_Parameters = {
     '1': {'Readout': {'Frequency': 7122 - BaseConfig["res_LO"], 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 4188.4, 'sigma': 0.07, 'Gain': 3450},
+          # 'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 3450},
           # 'Qubit': {'Frequency': 3750, 'sigma': 0.07, 'Gain': 2700},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
     '2': {'Readout': {'Frequency': 7077.4 - BaseConfig["res_LO"], 'Gain': 7500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 3796.8, 'sigma': 0.07, 'Gain': 2470},
+          # 'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 3600},
           # 'Qubit': {'Frequency': 4150, 'sigma': 0.07, 'Gain': 2470},
           # 'Qubit': {'Frequency': 3700, 'sigma': 0.07, 'Gain': 2630},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
@@ -140,8 +142,8 @@ FF_gain8_expt = 0
 
 
 
-Qubit_Readout = [2,3]
-Qubit_Pulse   = ['A', 'B']
+Qubit_Readout = [1, 2, 3, 4]
+Qubit_Pulse   = [4]
 
 
 RunTransmissionSweep = False # determine cavity frequency
@@ -214,7 +216,7 @@ SS_R_params = {"Shots": 500,
                "gain_start": 1000, "gain_stop": 32766//4, "gain_pts": 11, "span": 1, "trans_pts": 6, 'number_of_pulses': 1}
 
 
-SingleShot_QubitOptimize = True
+SingleShot_QubitOptimize = False
 SS_Q_params = {"Shots": 1000,
                "q_gain_span": 1000, "q_gain_pts": 7, "q_freq_span": 4, "q_freq_pts": 7,
                'number_of_pulses': 1,

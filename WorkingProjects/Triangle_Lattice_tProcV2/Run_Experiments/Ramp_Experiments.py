@@ -78,7 +78,7 @@ FF_gain8_BS = 0
 
 
 Qubit_Readout = [1,2,3,4]
-Qubit_Pulse = ['C' ,'CD']
+Qubit_Pulse = ['D']
 
 
 run_ramp_gain_calibration = False
@@ -111,37 +111,33 @@ current_calibration_gain_dict = {'reps': 100, 'swept_index': 0,
                             'gainStart': -2500, 'gainStop': 1500, 'gainNumPoints': 11,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,}
 
-RampCurrentCalibration_OffsetSweep = True
+RampCurrentCalibration_OffsetSweep = False
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # sweep t_BS time and sweep offset time
 #
-current_calibration_offset_dict = {'reps': 100, 'swept_index': 0,
-                                   't_offset':  [0,0,0,0,0,0,0,0],
+current_calibration_offset_dict = {'reps': 100, 'swept_index': 3,
+                                   't_offset':  [-4,0,0,0,0,0,0,0],
                                    'ramp_time': 4500, 'relax_delay': 175,
                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,
-                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 11}
+                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 51}
 
-current_calibration_offset_dict = {'reps': 2, 'swept_index': 0,
-                                   't_offset':  [0,0,0,0,0,0,0,0],
-                                   'ramp_time': 4500, 'relax_delay': 175,
-                                   'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 2,
-                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 11}
+
 
 
 run_1D_current_calib = False
 
 current_calibration_dict = {'reps': 100,
-                            't_offset':  [-2,0,0,0,0,0,0,0],
+                            't_offset':  [-4,0,0,0,0,0,0,0],
                             'ramp_time': 3000, 'relax_delay': 200,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
 
-run_1D_current_calib_shots = False
+run_1D_current_calib_shots = True
 
-current_calibration_dict_shots = {'reps': 1000,
-                                  't_offset':  [-2,0,0,0,0,0,0,0],
+current_calibration_dict_shots = {'reps': 4000,
+                                  't_offset':  [-4,0,0,0,0,0,0,0],
                                   'ramp_time': 3000, 'relax_delay': 200,
-                                  'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
+                                  'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 201}
 
 
 run_current_correlation_measurement = False

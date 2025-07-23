@@ -106,6 +106,8 @@ class SingleShotFFMUX(ExperimentClass):
         self.ne_contrast = []
         self.ng_contrast = []
 
+        self.confusion_matrix = []
+
     def acquire(self, progress=False):
         if "number_of_pulses" not in self.cfg.keys():
             self.cfg["number_of_pulses"] = 1
@@ -147,12 +149,19 @@ class SingleShotFFMUX(ExperimentClass):
             self.ne_contrast.append(ne_contrast)
             self.ng_contrast.append(ng_contrast)
 
+            confusion_matrix = np.array([[1-ng_contrast, ne_contrast],
+                                         [ng_contrast, 1-ne_contrast]])
+
+            self.confusion_matrix.append(confusion_matrix)
+
 
         self.data['data']['threshold'] = self.threshold
         self.data['data']['angle'] = self.angle
         self.data['data']['ne_contrast'] = self.ne_contrast
         self.data['data']['ng_contrast'] = self.ng_contrast
         self.data['data']['fid'] = self.fid
+
+        self.data['data']['confusion_matrix'] = self.confusion_matrix
 
         return self.data
 
