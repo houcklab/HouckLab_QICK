@@ -10,8 +10,8 @@ import datetime
 
 import matplotlib.dates as mdates
 
-
-
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_SaraTest import \
+    LoopbackProgramSpecSlice
 
 
 class QubitSpecRepeat(ExperimentClass):
@@ -77,9 +77,14 @@ class QubitSpecRepeat(ExperimentClass):
             self.time_stamps.append(time.time())
             #### set new qubit frequency and aquire data
             self.cfg["qubit_freq"] = self.qubit_freqs[0]
-            prog = LoopbackProgramTwoToneFreqSweep(self.soccfg, self.cfg)
+            #prog = LoopbackProgramTwoToneFreqSweep(self.soccfg, self.cfg)
+            self.cfg["start"] = expt_cfg["qubit_freq_start"]
+            self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"]) / expt_cfg["SpecNumPoints"]
+            self.cfg["expts"] = expt_cfg["SpecNumPoints"]
+            self.cfg["use_switch"] = False
+            prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
 
-            x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+            x_pts, avgi, avgq = prog.acquire(self.soc, angle=None, load_pulses=True, threshold=None,
                                              readouts_per_experiment=1, save_experiments=None,
                                              start_src="internal", progress=False)#, debug=False)
             Z_avgi[idx, :] = avgi[0][0]
