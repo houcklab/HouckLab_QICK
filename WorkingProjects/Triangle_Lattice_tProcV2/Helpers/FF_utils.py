@@ -143,9 +143,7 @@ def FFLoad16Waveforms(instance, prev_value=0, waveform_label="swept_FF", truncat
     for gain, IQPulse, channel, prev_val in zip(instance.FFExpts, instance.cfg["IDataArray"], instance.FFChannels,
                                                   prev_value):
         # print("prev val {}, gain {}".format(prev_val, gain))
-        gencfg = instance.soccfg['gens'][channel]
         if IQPulse is None:  # if not specified, assume constant of max value
-            # print("IQPulse is none, setting to length ", instance.cfg['FFlength'])
             IQPulse = gain * np.ones(instance.cfg['FFlength'])
         # add buffer to beginning of IQPulse
         IQPulse = np.concatenate([prev_val * np.ones(48), IQPulse[:truncation_length]])

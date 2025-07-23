@@ -71,6 +71,10 @@ class RampCurrentCalibrationOffset(SweepExperiment2D_plots):
                 self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
                 self.original_IDataArray2[i]])
 
+        print(f't_offset: {t_offset}')
+        print(f'IDataArray1: {self.cfg["IDataArray1"][0]}')
+        print(f'padded IDataArray2: {self.cfg["IDataArray2"][0]}')
+
 
 class RampCurrentCalibrationGain(RampCurrentCalibrationOffset):
     '''Same set_up_instance as above'''

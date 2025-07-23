@@ -11,71 +11,79 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorre
 import numpy as np
 
 
+
+
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.9 - BaseConfig["res_LO"], 'Gain': 8000,
+    '1': {'Readout': {'Frequency': 7122 - BaseConfig["res_LO"], 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4213, 'sigma': 0.07, 'Gain': 2700},
-          # 'Qubit': {'Frequency': 3750, 'sigma': 0.07, 'Gain': 2700},
+          'Qubit': {'Frequency': 4188.4, 'sigma': 0.07, 'Gain': 3450},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.55 - BaseConfig["res_LO"], 'Gain': 7500,
+    '2': {'Readout': {'Frequency': 7077.4 - BaseConfig["res_LO"], 'Gain': 7500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4013, 'sigma': 0.07, 'Gain': 2630},
-          # 'Qubit': {'Frequency': 3750, 'sigma': 0.07, 'Gain': 2630},
+          'Qubit': {'Frequency': 3796.8, 'sigma': 0.07, 'Gain': 2470},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7510.6 - BaseConfig["res_LO"], 'Gain': 7400,
+    '3': {'Readout': {'Frequency': 7510.5 - BaseConfig["res_LO"], 'Gain': 7400,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3609, 'sigma': 0.07, 'Gain': 10650},
-          # 'Qubit': {'Frequency': 3700, 'sigma': 0.07, 'Gain': 10650},
+          'Qubit': {'Frequency': 3598, 'sigma': 0.07, 'Gain': 11130},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568 - BaseConfig["res_LO"], 'Gain': 8000,
+    '4': {'Readout': {'Frequency': 7568.5 - BaseConfig["res_LO"], 'Gain': 8100,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3812.9, 'sigma': 0.07, 'Gain': 2770},
-          # 'Qubit': {'Frequency': 3807, 'sigma': 0.07, 'Gain': 5300},
+          'Qubit': {'Frequency': 4001.1, 'sigma': 0.07, 'Gain': 6850},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    'D': {'Readout': {'Frequency': 7121.9 - BaseConfig["res_LO"], 'Gain': 8000,
+    'D': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 6000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3801, 'sigma': 0.07, 'Gain': 2670},
-          'Pulse_FF': [-17000, -11500, 1000, -4500, 0, 0, 0, 0]},
-    'C': {'Readout': {'Frequency': 7077.55 - BaseConfig["res_LO"], 'Gain': 7500,
+          'Qubit': {'Frequency': 3799.3, 'sigma': 0.07, 'Gain': 3250},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
+    'B': {'Readout': {'Frequency': 7077.5 - BaseConfig["res_LO"], 'Gain': 7500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3735, 'sigma': 0.07, 'Gain': 5300},
-          'Pulse_FF': [-17000, -11500, 1000, -4500, 0, 0, 0, 0]},
+          'Qubit': {'Frequency': 3700.9, 'sigma': 0.07, 'Gain': 4500},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
     'A': {'Readout': {'Frequency': 7510.6 - BaseConfig["res_LO"], 'Gain': 7400,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3634, 'sigma': 0.07, 'Gain': 15050},
-          'Pulse_FF': [-17000, -11500, 1000, -4500, 0, 0, 0, 0]},
-    'B': {'Readout': {'Frequency': 7568 - BaseConfig["res_LO"], 'Gain': 8000,
+          'Qubit': {'Frequency': 3647.2, 'sigma': 0.07, 'Gain': 11850},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
+    'C': {'Readout': {'Frequency': 7568.5 - BaseConfig["res_LO"], 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3700, 'sigma': 0.07, 'Gain': 4210},
-          'Pulse_FF': [-17000, -11500, 1000, -4500, 0, 0, 0, 0]},
+          'Qubit': {'Frequency': 3755.6, 'sigma': 0.07, 'Gain': 4226},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
+    'BD': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 6000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3800.6, 'sigma': 0.07, 'Gain': 2930},
+          # 'Qubit': {'Frequency': 3750, 'sigma': 0.07, 'Gain': 2700},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
+    'CD': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 6000,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3799.3, 'sigma': 0.07, 'Gain': 3250},
+          # 'Qubit': {'Frequency': 3750, 'sigma': 0.07, 'Gain': 2700},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
 }
 
-FF_gain1_expt = -21317
-FF_gain2_expt = -13160
-FF_gain3_expt = 3842
-FF_gain4_expt = -4500
+FF_gain1_expt = -20622
+FF_gain2_expt = -4200
+FF_gain3_expt = 4254
+FF_gain4_expt = -11705
 FF_gain5_expt = 0
 FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-FF_gain1_BS = -15000
-FF_gain2_BS = -6646
-FF_gain3_BS = 3842
-FF_gain4_BS = -4500
+FF_gain1_BS = -2005
+FF_gain2_BS = 15000
+FF_gain3_BS = 4168
+FF_gain4_BS = -11743
 FF_gain5_BS = 0
 FF_gain6_BS = 0
 FF_gain7_BS = 0
 FF_gain8_BS = 0
 
 
-Qubit_Readout = [1,3,2,4]
-Qubit_Pulse = ['D']
+Qubit_Readout = [1,2,3,4]
+Qubit_Pulse = ['C' ,'CD']
 
 
 run_ramp_gain_calibration = False
-ff_expt_vs_pop_dict = {'swept_qubit': str(1),
-                       'reps': 1000, 'gain_start': -22000, 'gain_end': -20500, 'gain_num_points': 11,
+ff_expt_vs_pop_dict = {'swept_qubit': str(3),
+                       'reps': 1000, 'gain_start': 3700, 'gain_end': 4700, 'gain_num_points': 11,
                         'ramp_duration': 3000}
 
 run_ramp_duration_calibration = False
@@ -83,8 +91,8 @@ ramp_duration_calibration_dict = {'reps': 500, 'duration_start': int(1), 'durati
                                    'ramp_wait_timesteps': 0,
                                    'relax_delay': 200, 'double': True}
 
-
-ramp_duration_calibration_dict = {'reps': 500, 'duration_start': int(2000), 'duration_end': int(6000), 'duration_num_points': 61,
+#
+ramp_duration_calibration_dict = {'reps': 500, 'duration_start': int(1), 'duration_end': int(3000), 'duration_num_points': 61,
                                    'ramp_wait_timesteps': 0,
                                    'relax_delay': 200, 'double': False}
 
@@ -98,34 +106,40 @@ delay_vs_pop_dict = {'ramp_duration' : 2000, 'ramp_shape': 'cubic',
 
 RampCurrentCalibration_GainSweep = False
 # sweep gain of the first beamsplitter qubit relative to other qubit during beamsplitter interaction and sweep  time
-current_calibration_gain_dict = {'reps': 100, 'swept_index': 3,
+current_calibration_gain_dict = {'reps': 100, 'swept_index': 0,
                                  't_offset':  [0,0,0,0,0,0,0,0], 'relax_delay': 200, 'ramp_time': 2000,
-                            'gainStart': 0, 'gainStop': 5000, 'gainNumPoints': 11,
+                            'gainStart': -2500, 'gainStop': 1500, 'gainNumPoints': 11,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,}
 
-RampCurrentCalibration_OffsetSweep = False
+RampCurrentCalibration_OffsetSweep = True
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # sweep t_BS time and sweep offset time
 #
-current_calibration_offset_dict = {'reps': 100, 'swept_index':3,
-                                   't_offset':  [0,0,0,-2,0,0,0,0],
+current_calibration_offset_dict = {'reps': 100, 'swept_index': 0,
+                                   't_offset':  [0,0,0,0,0,0,0,0],
                                    'ramp_time': 4500, 'relax_delay': 175,
                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,
-                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints':11}
+                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 11}
+
+current_calibration_offset_dict = {'reps': 2, 'swept_index': 0,
+                                   't_offset':  [0,0,0,0,0,0,0,0],
+                                   'ramp_time': 4500, 'relax_delay': 175,
+                                   'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 2,
+                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 11}
 
 
 run_1D_current_calib = False
 
 current_calibration_dict = {'reps': 100,
-                            't_offset':  [0,0,0,0,0,0,0,0],
+                            't_offset':  [-2,0,0,0,0,0,0,0],
                             'ramp_time': 3000, 'relax_delay': 200,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
 
-run_1D_current_calib_shots = True
+run_1D_current_calib_shots = False
 
 current_calibration_dict_shots = {'reps': 1000,
-                                  't_offset':  [0,0,0,0,0,0,0,0],
+                                  't_offset':  [-2,0,0,0,0,0,0,0],
                                   'ramp_time': 3000, 'relax_delay': 200,
                                   'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 

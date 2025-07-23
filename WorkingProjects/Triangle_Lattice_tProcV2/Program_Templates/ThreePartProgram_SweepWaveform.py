@@ -20,16 +20,17 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
     def __init__(self, *args, **kwargs):
 
         cfg = kwargs['cfg']
-        after_reps = kwargs.get("after_reps", AsmV2())
-        reset_loop = AsmV2()
-        # reset_loop.add_reg(name='cycle_counter')
-        reset_loop.write_reg(dst='cycle_counter', src=2 + ceil(cfg["start"] / 16))
-        # sample_counter: total samples Mod 16, but output (1...16) instead
-        # reset_loop.add_reg(name='sample_counter')
-        reset_loop.write_reg(dst='sample_counter', src=(cfg["start"] - 1) % 16 + 1)
+        assert cfg["start"] > 0, "Can't have a start time of 0 samples, start with 1 instead."
 
-        after_reps.extend_macros(reset_loop)
-        kwargs["after_reps"] = after_reps
+
+        before_reps = kwargs.get("before_reps", AsmV2())
+        reset_loop = AsmV2()
+        reset_loop.write_reg(dst='cycle_counter', src=2 + ceil(cfg["start"] / 16) - cfg["step"] // 16)
+        # sample_counter: total samples Mod 16, but output (1...16) instead
+        reset_loop.write_reg(dst='sample_counter', src=(cfg["start"] - 1) % 16 + 1 - cfg["step"]  % 16)
+
+        before_reps.extend_macros(reset_loop)
+        kwargs["before_reps"] = before_reps
 
         super().__init__(*args, **kwargs)
 
@@ -63,15 +64,14 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         # 1 cycle = 16 samples
         # cycle_counter: always 2+length of waveform in cycles
         self.add_reg(name='cycle_counter')
-        self.write_reg(dst='cycle_counter',  src= 2 + ceil(cfg["start"]/16))
+
+        # self.write_reg(dst='cycle_counter',  src= 2 + ceil(cfg["start"]/16))
         # sample_counter: total samples Mod 16, but output (1...16) instead
         self.add_reg(name='sample_counter')
-        self.write_reg(dst='sample_counter', src=(cfg["start"]-1) % 16 + 1)
+        # self.write_reg(dst='sample_counter', src=(cfg["start"]-1) % 16 + 1)
 
 
-        self.add_reg(name='data_counter')
-        self.write_reg(dst='data_counter', src=10)
-        self.add_reg(name='temp')
+
 
         self.write_dmem(addr=7, src='sample_counter')
         IncrementLength = AsmV2()
@@ -83,24 +83,23 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         IncrementLength.inc_reg(dst='cycle_counter', src= +1)
         IncrementLength.inc_reg(dst='sample_counter',src= -16)
         IncrementLength.label("finish_inc")
+        IncrementLength.nop()
         ##############
 
+        self.add_reg(name='data_counter')
+        self.write_reg(dst='data_counter', src=0)
         # IncrementLength.write_reg("temp", "w_length")
         # IncrementLength.inc_reg(addr='temp', src='sample_counter')
         IncrementLength.inc_reg(dst='data_counter', src=+1)
+        IncrementLength.write_dmem("data_counter", "cycle_counter")
+        IncrementLength.inc_reg(dst='data_counter', src=+1)
         IncrementLength.write_dmem("data_counter", "sample_counter")
-        IncrementLength.nop()
+
         #############
         print(self.cfg["expts"])
-        self.add_loop("expt_samples", self.cfg["expts"], exec_after=IncrementLength)
+        # TODO <--- V2 has a bug in exec_after!!!! need to tell Sho. give him version number too --->
+        self.add_loop("expt_samples", int(self.cfg["expts"]), exec_before=IncrementLength)
 
-        # print("writing to data memory")
-        # self.write_dmem(addr=1, src=137)
-        # self.write_dmem(addr=2, src='w_length')
-        # self.write_dmem(addr=3, src=137)
-        # self.write_dmem(addr=4, src='w_env')
-        # self.write_dmem(addr=5, src=137)
-        # self.write_dmem(addr=6, src='cycle_counter')
         self.delay_auto(200)
 
     def _body(self, cfg):
@@ -122,18 +121,16 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
             self.jump("finish")
 
         self.label("finish")
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 
-
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
-        self.wait(self.cfg["res_length"])
-        self.delay(2*self.cfg["res_length"] + 10)  # us
+        self.wait(self.cfg["res_length"] + 1)
+        self.delay(self.cfg["res_length"] + 10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)

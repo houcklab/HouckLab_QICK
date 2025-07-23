@@ -196,8 +196,8 @@ class SweepExperimentND(ExperimentClass):
             else:
                 raise ValueError("So far I only support 'contrast' or 'population' or 'population_shots'.")
 
-            print(prog)
-            self.debug()
+            # print(prog)
+            self.debug(prog)
 
             if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 # Create figure
@@ -240,7 +240,7 @@ class SweepExperimentND(ExperimentClass):
         self.save_data(data=self.data)
         return self.data
 
-    def debug(self):
+    def debug(self, prog):
         pass
 
     def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):

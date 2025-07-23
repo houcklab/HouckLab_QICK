@@ -21,6 +21,23 @@ frequencies = {
     'C6': 0,
 }
 
+frequencies = {
+    'Q1': 4200,
+    'Q2': 3800,
+    'Q3': 3600,
+    'Q4': 4000,
+    'Q5': 0,
+    'Q6': 0,
+    'Q7': 0,
+    'Q8': 0,
+    'C1': 0.25,
+    'C2': 0.25,
+    'C3': 0,
+    'C4': 0,
+    'C5': 0,
+    'C6': 0,
+}
+
 # frequencies = {
 #     'Q1': -0.,
 #     'Q2': -0.,
@@ -38,22 +55,22 @@ frequencies = {
 #     'C6': 0,
 # }
 #
-frequencies = {
-    'Q1': -0.25,
-    'Q2': -0.25,
-    'Q3': -0.25,
-    'Q4': -0.25,
-    'Q5': -0.25,
-    'Q6': -0.25,
-    'Q7': -0.25,
-    'Q8': -0.25,
-    'C1': 0,
-    'C2': 0,
-    'C3': 0,
-    'C4': 0,
-    'C5': 0,
-    'C6': 0,
-}
+# frequencies = {
+#     'Q1': -0.25,
+#     'Q2': -0.25,
+#     'Q3': -0.25,
+#     'Q4': -0.25,
+#     'Q5': -0.25,
+#     'Q6': -0.25,
+#     'Q7': -0.25,
+#     'Q8': -0.25,
+#     'C1': 0,
+#     'C2': 0,
+#     'C3': 0,
+#     'C4': 0,
+#     'C5': 0,
+#     'C6': 0,
+# }
 
 
 
@@ -82,12 +99,14 @@ for i in range(len(voltages)):
 if print_single_vector:
     print(list(np.round(voltages, 4)))
 
-print(crosstalk_matrix)
+# print(crosstalk_matrix)
 
-import matplotlib.pyplot as plt
-plt.imshow(crosstalk_matrix, interpolation='none')
-plt.show()
-all_qubits_and_couplers = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
-plt.xticks(range(14), all_qubits_and_couplers)
-plt.xlabel('Qubit or Coupler')
-plt.ylabel('Fluxline')
+
+# plot crosstalk matrix
+# import matplotlib.pyplot as plt
+# plt.imshow(crosstalk_matrix, interpolation='none')
+# plt.show()
+# all_qubits_and_couplers = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
+# plt.xticks(range(14), all_qubits_and_couplers)
+# plt.xlabel('Qubit or Coupler')
+# plt.ylabel('Fluxline')

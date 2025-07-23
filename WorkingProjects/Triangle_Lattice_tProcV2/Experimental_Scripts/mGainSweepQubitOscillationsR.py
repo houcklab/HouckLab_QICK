@@ -34,7 +34,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
                 Compensated_Pulse(self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Expt'],
                                   self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Pulse'],
                                     int(self.cfg["qubit_FF_index"]))
-        soc.load_mem(list(range(10+self.cfg['expts'])), 'dmem')
-    def debug(self):
+        soc.load_mem(list(range(10+2*self.cfg['expts'])), 'dmem')
+    def debug(self, prog):
 
-        print(soc.read_mem(10+self.cfg['expts'], 'dmem'))
+        print(soc.read_mem(10+2*self.cfg['expts'], 'dmem'))
