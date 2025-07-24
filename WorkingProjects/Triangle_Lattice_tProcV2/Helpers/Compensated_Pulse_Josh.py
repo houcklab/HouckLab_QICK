@@ -29,15 +29,11 @@ def apply_IIR(ab, waveform):
 
 def Compensate(waveform, offset, Qubit):
     '''Compensate a waveform'''
-    if Qubit not in [1,2]:
-        # print(f"No compensation found for Qubit {Qubit}.")
-        return waveform + offset
-
     if Qubit == 1:
         iir_files = [r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff1_1_toff=3.csv',
                      r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff1_2_t=3.csv',
                      r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff1_3_t=3.csv']
-    elif Qubit == 2:
+    else:
         iir_files = [r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff2_5_5_offset_1606.csv',
                      r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff2_2renorm.csv',
                      r'Z:\Joshua\5-20-25_4QS5_pulse_comp\ff2_3_renorm.csv']

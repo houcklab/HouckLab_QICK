@@ -1,14 +1,12 @@
 from Import_Functions_Transmon import *
 from Initialize_Qubit_Information import *
 
-found_qubits =[  ['Q1', -0.25, -0.25104],  # expected freq, found freq
-                 ['Q2', -0.25, -0.22278179329187275],  # expected freq, found freq
-                 ['Q3', -0.25, -0.25390300758277484],  # expected freq, found freq
-                 ['Q4', -0.25, -0.24775911079084642],  # expected freq, found freq
-                 ['Q5', -0.25, -0.3208130304902168] , # expected freq, found freq
-                 ['Q6', -0.25, -0.18622439803793023],  # expected freq, found freq
-                 ['Q7', -0.25, -0.29889707837609064],
-                 ['Q8', -0.25, -0.2316292813403365]]  # expected freq, found freq] # expected freq, found freq
+found_qubits =[
+                 ['Q2', -0.25, -0.249510709697290785],  # expected freq, found freq
+                 ['Q5', -0.25, -0.2518956339498992] , # expected freq, found freq
+                 ['Q6', -0.25, -0.2475177832852412],  # expected freq, found freq
+                 ['Q7', -0.25, -0.2541860024621924],
+                 ['Q8', -0.25, -0.2576648827144932]]  # expected freq, found freq] # expected freq, found freq
 
 # found_qubit =
 

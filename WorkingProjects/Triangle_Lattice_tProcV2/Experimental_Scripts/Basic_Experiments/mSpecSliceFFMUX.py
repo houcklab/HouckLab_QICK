@@ -51,7 +51,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
                            phase=0, gain=cfg["qubit_gain"] / 32766., length=cfg["qubit_length"])
             self.qubit_length_us = cfg["qubit_length"]
 
-        print(self.FFPulse)
+        # print(self.FFPulse)
 
 
     def _body(self, cfg):

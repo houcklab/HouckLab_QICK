@@ -38,6 +38,10 @@ Qubit_Parameters = {
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 3700.9, 'sigma': 0.07, 'Gain': 4500},
           'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
+    'B': {'Readout': {'Frequency': 7077.5 - BaseConfig["res_LO"], 'Gain': 7500,
+                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3700.9, 'sigma': 0.07, 'Gain': 4500},
+          'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
     'A': {'Readout': {'Frequency': 7510.6 - BaseConfig["res_LO"], 'Gain': 7400,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 3647.2, 'sigma': 0.07, 'Gain': 11850},
@@ -58,18 +62,20 @@ Qubit_Parameters = {
           'Pulse_FF': [-16500, -4200, 2000, -9500, 0, 0, 0, 0]},
 }
 
-FF_gain1_expt = -20622
+FF_gain1_expt = -20590
 FF_gain2_expt = -4200
-FF_gain3_expt = 4254
-FF_gain4_expt = -11705
+FF_gain3_expt = 4257
+# FF_gain3_expt = 0
+FF_gain4_expt = -11750
+# FF_gain4_expt = 0
 FF_gain5_expt = 0
 FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-FF_gain1_BS = -2005
+FF_gain1_BS = -1964
 FF_gain2_BS = 15000
-FF_gain3_BS = 4168
+FF_gain3_BS = 4329
 FF_gain4_BS = -11743
 FF_gain5_BS = 0
 FF_gain6_BS = 0
@@ -78,12 +84,13 @@ FF_gain8_BS = 0
 
 
 Qubit_Readout = [1,2,3,4]
-Qubit_Pulse = ['D']
+Qubit_Pulse = ['B', 'C']
+
 
 
 run_ramp_gain_calibration = False
-ff_expt_vs_pop_dict = {'swept_qubit': str(3),
-                       'reps': 1000, 'gain_start': 3700, 'gain_end': 4700, 'gain_num_points': 11,
+ff_expt_vs_pop_dict = {'swept_qubit': str(4),
+                       'reps': 1000, 'gain_start': -12500, 'gain_end': -11000, 'gain_num_points': 11,
                         'ramp_duration': 3000}
 
 run_ramp_duration_calibration = False
@@ -107,37 +114,44 @@ delay_vs_pop_dict = {'ramp_duration' : 2000, 'ramp_shape': 'cubic',
 RampCurrentCalibration_GainSweep = False
 # sweep gain of the first beamsplitter qubit relative to other qubit during beamsplitter interaction and sweep  time
 current_calibration_gain_dict = {'reps': 100, 'swept_index': 0,
-                                 't_offset':  [0,0,0,0,0,0,0,0], 'relax_delay': 200, 'ramp_time': 2000,
-                            'gainStart': -2500, 'gainStop': 1500, 'gainNumPoints': 11,
-                            'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,}
+                                 't_offset':  [0,0,0,0,0,0,0,0], 'relax_delay': 100, 'ramp_time': 2000,
+                            'gainStart': -2500, 'gainStop': -1500, 'gainNumPoints': 11,
+                            'timeStart': 0, 'timeStop': 2000, 'timeNumPoints': 101,}
 
 RampCurrentCalibration_OffsetSweep = False
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # sweep t_BS time and sweep offset time
 #
-current_calibration_offset_dict = {'reps': 100, 'swept_index': 3,
-                                   't_offset':  [-4,0,0,0,0,0,0,0],
-                                   'ramp_time': 4500, 'relax_delay': 175,
+current_calibration_offset_dict = {'reps': 100, 'swept_index': 0,
+                                   't_offset':  [0,0,0,0,0,0,0,0],
+                                   'ramp_time': 2000, 'relax_delay': 175,
                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,
-                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints': 51}
+                                   'offsetStart': -10, 'offsetStop': 10, 'offsetNumPoints': 21}
+
+
+# current_calibration_offset_dict = {'reps': 1, 'swept_index': 0,
+#                                    't_offset':  [0,0,0,0,0,0,0,0],
+#                                    'ramp_time': 1, 'relax_delay': 1,
+#                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 2,
+#                                    'offsetStart': -10, 'offsetStop': 10, 'offsetNumPoints': 6}
 
 
 
 
-run_1D_current_calib = False
+run_1D_current_calib = True
 
 current_calibration_dict = {'reps': 100,
                             't_offset':  [-4,0,0,0,0,0,0,0],
-                            'ramp_time': 3000, 'relax_delay': 200,
+                            'ramp_time': 2000, 'relax_delay': 200,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
 
 run_1D_current_calib_shots = True
 
 current_calibration_dict_shots = {'reps': 4000,
-                                  't_offset':  [-4,0,0,0,0,0,0,0],
+                                  't_offset':  [0,0,0,0,0,0,0,0],
                                   'ramp_time': 3000, 'relax_delay': 200,
-                                  'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 201}
+                                  'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 101}
 
 
 run_current_correlation_measurement = False

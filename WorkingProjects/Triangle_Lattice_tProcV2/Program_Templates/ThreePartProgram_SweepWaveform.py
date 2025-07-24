@@ -18,13 +18,16 @@ from math import ceil
 
 class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
     def __init__(self, *args, **kwargs):
-
         cfg = kwargs['cfg']
-        assert cfg["start"] > 0, "Can't have a start time of 0 samples, start with 1 instead."
+        assert cfg["start"] >= 0, "Can't have a negative start time."
+        assert cfg["step"] > 0, "Can't have a negative step"
 
 
         before_reps = kwargs.get("before_reps", AsmV2())
+        # The "reps" loop is outermost, so this will reset the cycle and sample counter on each of these loops
         reset_loop = AsmV2()
+        # 1 cycle = 16 samples
+        # cycle_counter: always 2+length of waveform in cycles
         reset_loop.write_reg(dst='cycle_counter', src=2 + ceil(cfg["start"] / 16) - cfg["step"] // 16)
         # sample_counter: total samples Mod 16, but output (1...16) instead
         reset_loop.write_reg(dst='sample_counter', src=(cfg["start"] - 1) % 16 + 1 - cfg["step"]  % 16)
@@ -64,20 +67,15 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         # 1 cycle = 16 samples
         # cycle_counter: always 2+length of waveform in cycles
         self.add_reg(name='cycle_counter')
-
-        # self.write_reg(dst='cycle_counter',  src= 2 + ceil(cfg["start"]/16))
         # sample_counter: total samples Mod 16, but output (1...16) instead
         self.add_reg(name='sample_counter')
-        # self.write_reg(dst='sample_counter', src=(cfg["start"]-1) % 16 + 1)
+        # Set in before_reps of the "reps" loop (see self.__init__ above)
 
 
-
-
-        self.write_dmem(addr=7, src='sample_counter')
+        # Increment the cycle and sample counter. Carry the one if sample_counter > 16.
         IncrementLength = AsmV2()
         IncrementLength.inc_reg(dst='cycle_counter',  src=cfg["step"] // 16)
         IncrementLength.inc_reg(dst='sample_counter', src=cfg["step"]  % 16)
-
         ############# If sample_counter > 16:
         IncrementLength.cond_jump("finish_inc", "sample_counter", "S", "-", 17)
         IncrementLength.inc_reg(dst='cycle_counter', src= +1)
@@ -85,18 +83,16 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         IncrementLength.label("finish_inc")
         IncrementLength.nop()
         ##############
-
-        self.add_reg(name='data_counter')
-        self.write_reg(dst='data_counter', src=0)
+        # # Write into data memory for debugging
+        # self.add_reg(name='data_counter')
+        # self.write_reg(dst='data_counter', src=0)
         # IncrementLength.write_reg("temp", "w_length")
         # IncrementLength.inc_reg(addr='temp', src='sample_counter')
-        IncrementLength.inc_reg(dst='data_counter', src=+1)
-        IncrementLength.write_dmem("data_counter", "cycle_counter")
-        IncrementLength.inc_reg(dst='data_counter', src=+1)
-        IncrementLength.write_dmem("data_counter", "sample_counter")
-
+        # IncrementLength.inc_reg(dst='data_counter', src=+1)
+        # IncrementLength.write_dmem("data_counter", "cycle_counter")
+        # IncrementLength.inc_reg(dst='data_counter', src=+1)
+        # IncrementLength.write_dmem("data_counter", "sample_counter")
         #############
-        print(self.cfg["expts"])
         # TODO <--- V2 has a bug in exec_after!!!! need to tell Sho. give him version number too --->
         self.add_loop("expt_samples", int(self.cfg["expts"]), exec_before=IncrementLength)
 
@@ -109,20 +105,26 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 if i==0 else 1 + i*4*self.cfg["sigma"]
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
+        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
 
         # 2: FFExpt
-        # Play the correct pulse depending on sample counter, which has values from 1 to 16
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        # Special case: 0 samples, so skip directly to readout (no FFExpt)
+        # If cycle_counter < 3 (the minimum length for an arb waveform)
+        self.cond_jump("start readout", "cycle_counter", 'S', '-', 3)
+        # Else, choose the correct waveform depending on the amount of samples mod 16
         for i in range(1,17):
             self.cond_jump( f"l{i}", "sample_counter", 'Z', '-', i)
         for i in range(1,17):
             self.label(f"l{i}")
             FF.FFPlayChangeLength(self, f"FFExpt_{i}", "cycle_counter", t_start=0)
             self.jump("finish")
-
         self.label("finish")
+        # Delay by cycle_counter cycles
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 
+
+
+        self.label("start readout")
         # 3: FFReadouts
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(1)
@@ -135,6 +137,7 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
+        self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
         for i in range(1, 17):
             self.cond_jump(f"{i}_inv", "sample_counter", 'Z', '-', i)
         for i in range(1, 17):
@@ -155,41 +158,51 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
 class ThreePartProgram_SweepTwoFF(ThreePartProgram_SweepOneFF):
     def _body(self, cfg):
         # 1: FFPulses
-        self.delay_auto()
+        # self.delay_auto()
         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1 if i==0 else 'auto'
+            time_ = 1 if i == 0 else 1 + i * 4 * self.cfg["sigma"]
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
+        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+
         # 2: FFExpt
-        assert 'expt_samples' not in self.cfg, "Use expt_samples1 and expt_samples2 instead."
-        assert 'IDataArray'  not in self.cfg, "Use IDataArray1 and IDataArray2 instead."
+        self.FFPulses_direct()
 
-        # print(self.cfg["IDataArray1"], self.cfg["IDataArray2"])
-        concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])
-                                    for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
-        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"],
-                             self.FFPulse, IQPulseArray=concat_IQarray, waveform_label='FFExpts')
-        self.delay_auto()
+        # Special case: 0 samples, so skip directly to readout (no FFExpt)
+        # If cycle_counter < 3 (the minimum length for an arb waveform)
+        self.cond_jump("start readout", "cycle_counter", 'S', '-', 3)
+        # Else, choose the correct waveform depending on the amount of samples mod 16
+        for i in range(1, 17):
+            self.cond_jump(f"l{i}", "sample_counter", 'Z', '-', i)
+        for i in range(1, 17):
+            self.label(f"l{i}")
+            FF.FFPlayChangeLength(self, f"FFExpt_{i}", "cycle_counter", t_start=0)
+            self.jump("finish")
+        self.label("finish")
+        # Delay by cycle_counter cycles
+        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 
-
+        self.label("start readout")
         # 3: FFReadouts
-        # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
-
+        self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
-        self.pulse(cfg["res_ch"], name='res_drive')
-        self.wait_auto()
-        self.delay_auto(10)  # us
+            self.trigger(ros=[ro_ch], pins=[0], t=adc_trig_delay)
+        self.pulse(cfg["res_ch"], name='res_drive', t=0)
+        self.wait(self.cfg["res_length"] + 1)
+        self.delay(self.cfg["res_length"] + 10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
-
-        ###     If waveform memory becomes a problem, change this code to use the same waveform
-        ###         but invert the gain on the generator channel.
-        IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in concat_IQarray]
-        self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
-                            waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
-        self.delay_auto()
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.delay(self.cfg["res_length"])
+        self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
+        for i in range(1, 17):
+            self.cond_jump(f"{i}_inv", "sample_counter", 'Z', '-', i)
+        for i in range(1, 17):
+            self.label(f"{i}_inv")
+            FF.FFInvertWaveforms(self, f"FFExpt_{i}", t_start=0)
+            self.jump("finish_inv")
+        self.label("finish_inv")
+        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
+        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01, t_start=0)
+        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 10.01)

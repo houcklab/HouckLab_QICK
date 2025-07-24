@@ -51,36 +51,30 @@ Qubit_Parameters = {
 }
 
 
-Qubit_Readout = [1,2]
-Qubit_Pulse = [2]
+Qubit_Readout = [3,4]
+Qubit_Pulse = [4]
 
-FF_gain1_expt = -20622
+FF_gain1_expt = -20590
+FF_gain1_expt = 0
 FF_gain2_expt = -4200
-FF_gain3_expt = 4254
-FF_gain3_expt = -10000
-FF_gain4_expt = -11705
-FF_gain4_expt = -31705
+FF_gain2_expt = 0
+FF_gain3_expt = 4257
+FF_gain3_expt = 4200
+FF_gain4_expt = -11750
 FF_gain5_expt = 0
 FF_gain6_expt = 0
 FF_gain7_expt = 0
 FF_gain8_expt = 0
 
-FF_gain1_BS = -9484
-FF_gain2_BS = 7000
-FF_gain3_BS = 4345
-FF_gain3_BS = -10000
+FF_gain1_BS = -1964
+FF_gain2_BS = 15000
+FF_gain3_BS = 4329
 FF_gain4_BS = -11743
-FF_gain4_BS = -31705
 FF_gain5_BS = 0
 FF_gain6_BS = 0
 FF_gain7_BS = 0
 FF_gain8_BS = 0
 
-
-
-Oscillation_Gain = False
-oscillation_gain_dict = {'reps': 1000, 'start': int(0), 'step': int(0.25 * 20), 'expts': 101, 'gainStart': -18700,
-                         'gainStop': -17700, 'gainNumPoints': 21, 'relax_delay': 150}
 
 
 CurrentCalibration = False
@@ -90,27 +84,27 @@ CurrentCalibration = False
 current_calibration_dict = {'reps': 1000, 't_evolve': 225,  't_offset': [0,0,0,-2,0,0,0,0],
                             'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 41}
 
-CurrentCalibration_GainSweep = False
+CurrentCalibration_GainSweep = True
 # sweep gain of the first beamsplitter qubit relative to other qubit during beamsplitter interaction and sweep time
 # current_calibration_gain_dict = {'reps': 1000, 't_evolve': 0, 't_offset': 0, 'relax_delay': 150, "plotDisp": True,
 #                             'gainStart': 5000, 'gainStop': 5400, 'gainNumPoints': 11, 'fixed_gain': -20000,
 #                             'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,}
 
 
-current_calibration_gain_dict = {'swept_index': 0,
-                                'reps': 100, 't_evolve': 270, 't_offset': [0,0,0,0,0,0,0,0],
-                                 'relax_delay': 200, "plotDisp": True,
-                                'gainStart': -10000, 'gainStop': -9000, 'gainNumPoints': 11,
+current_calibration_gain_dict = {'swept_index': 2,
+                                'reps': 100, 't_evolve': 300//2, 't_offset': [-5,0,0,0,0,0,0,0],
+                                 'relax_delay': 100, "plotDisp": True,
+                                'gainStart': 4200, 'gainStop': 4700, 'gainNumPoints': 11,
                                 'timeStart': 1, 'timeStop': 2000, 'timeNumPoints': 101,}
 
 
-CurrentCalibration_OffsetSweep = True
+CurrentCalibration_OffsetSweep = False
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # sweep t_BS time and sweep offset time
 
 
 current_calibration_offset_dict = {'swept_index': 0, 't_offset': [0,0,0,0,0,0,0,0],
-                                   'reps': 100, 't_evolve': 240*3//4, 'relax_delay': 200, "plotDisp": True,
+                                   'reps': 100, 't_evolve': 300*3//4, 'relax_delay': 200, "plotDisp": True,
                                    'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,
                                    'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41}
 
