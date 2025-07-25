@@ -3,7 +3,7 @@ from scipy.optimize import minimize, root_scalar
 from matplotlib import patches
 # disentangles qubit frequencies
 
-'''Joshua's code for converted dressed to bare frequencies and back again. Last updated 7/25/25'''
+'''Joshua's code for converting dressed to bare frequencies and back again. Last updated 7/25/25'''
 
 def get_bare_freq(dressed_qubit_freq, bare_coupler_freqs, betas):
     '''Dressed qubit frequency + bare coupler frequencies ----> bare qubit frequency'''
@@ -130,7 +130,7 @@ def bare_system(qubit_freqs, beta_matrix, plot=True):
                     
         ax.axis("equal")
         # ax.axis("off")
-        plt.show()
+        plt.show(block=False)
 
     return qubit_freqs, g_matrix
 
@@ -292,4 +292,4 @@ def plot_dressed_system(qubit_freqs, g_matrix):
 
     ax.axis("equal")
     # ax.axis("off")
-    plt.show()
+    plt.show(block=False)
