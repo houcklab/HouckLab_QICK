@@ -12,15 +12,6 @@ order_of_items = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'C1', 'C2', 'C
 
 order_of_qubits = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8']
 order_of_couplers = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6']
-
-model_mapping = {key: Transmon(dictionary_everything[key], key) for
-             key in order_of_items}
-crosstalk_matrix = dictionary_everything['crosstalk_matrix']
-crosstalk_offset = dictionary_everything['crosstalk_offset']
-crosstalk_inverse = dictionary_everything['crosstalk_inverse']
-beta_matrix = dictionary_everything['betas']
-
-
 flux_sign = {
     'Q1': -1,
     'Q2': -1,
@@ -46,3 +37,12 @@ flux_sign = {
     'Q7_bare': -1,
     'Q8_bare': -1,
 }
+
+
+model_mapping = {key: Transmon(dictionary_everything[key], key) for
+             key in flux_sign.keys()}
+crosstalk_matrix = dictionary_everything['crosstalk_matrix']
+crosstalk_offset = dictionary_everything['crosstalk_offset']
+crosstalk_inverse = dictionary_everything['crosstalk_inverse']
+beta_matrix = dictionary_everything['betas']
+
