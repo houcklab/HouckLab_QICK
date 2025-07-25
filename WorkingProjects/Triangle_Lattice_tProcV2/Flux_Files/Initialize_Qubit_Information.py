@@ -10,11 +10,16 @@ file_name = sorted_files[-1]  # most recent
 dictionary_everything = read_info(directory + file_name)
 order_of_items = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6'] ## Order of crosstalk matrices and everything!
 
+order_of_qubits = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8']
+order_of_couplers = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6']
+
 model_mapping = {key: Transmon(dictionary_everything[key], key) for
              key in order_of_items}
 crosstalk_matrix = dictionary_everything['crosstalk_matrix']
 crosstalk_offset = dictionary_everything['crosstalk_offset']
 crosstalk_inverse = dictionary_everything['crosstalk_inverse']
+beta_matrix = dictionary_everything['betas']
+
 
 flux_sign = {
     'Q1': -1,
@@ -31,4 +36,13 @@ flux_sign = {
     'C4': -1,
     'C5': -1,
     'C6': -1,
+
+    'Q1_bare': -1,
+    'Q2_bare': -1,
+    'Q3_bare': -1,
+    'Q4_bare': -1,
+    'Q5_bare': -1,
+    'Q6_bare': -1,
+    'Q7_bare': -1,
+    'Q8_bare': -1,
 }
