@@ -1,15 +1,9 @@
 
 from qick.asm_v2 import QickSweep1D
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 
 

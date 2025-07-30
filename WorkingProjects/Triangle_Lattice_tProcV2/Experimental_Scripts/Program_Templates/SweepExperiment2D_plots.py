@@ -1,27 +1,10 @@
 
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import *
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 
 # import matplotlib; matplotlib.use('Qt5Agg')
-import matplotlib.pyplot as plt
 
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
-import scipy
-import functools
-import operator
-import itertools
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperimentND import SweepExperimentND
-from qick.asm_v2 import AveragerProgramV2
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
 
 
 class SweepExperiment2D_plots(SweepExperimentND):
@@ -36,16 +19,17 @@ class SweepExperiment2D_plots(SweepExperimentND):
         try:
             x_key_name = self.x_key
         except:
-            x_key_name = self.x_name
+            x_key_name = self.loop_names[0]
 
         try:
             X, Y = data['data'][x_key_name], data['data'][y_key_name]
-        except Exception as ex:
-            print("keys: ", x_key_name, y_key_name)
-            print("data['data']:", data['data'])
-            print("If you have a loop in your AveragerProgram, you need to define loop_pts and"
-                  "have it return a tuple of arrays for this code to work (see my SpecSlice program)")
-            raise Exception(ex)
+        except KeyError as ex:
+            raise ValueError(f"\tkeys: {x_key_name}, {y_key_name}"
+                           f"\ndata['data'].keys():, {data['data'].keys()}"
+                           f"\nCommon cause of this error:"
+                           f"\n\tIf you have a loop in your AveragerProgram, "
+                             f" you need to define loop_pts and"
+                  " have it return a tuple of arrays for this code to work (see my SpecSlice program)")
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
         Z_mat = data['data'][self.z_value]

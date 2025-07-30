@@ -1,16 +1,11 @@
 
 
-from qick.asm_v2 import QickSpan, QickSweep1D
+from qick.asm_v2 import QickSweep1D
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
 
@@ -128,6 +123,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+        plt.axvline(self.qubitFreq, color='black', linestyle='--', label=f"{self.qubitFreq:.1f} MHz")
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
         plt.title(self.titlename)

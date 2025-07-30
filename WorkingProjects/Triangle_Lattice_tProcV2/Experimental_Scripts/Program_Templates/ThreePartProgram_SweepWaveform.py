@@ -1,19 +1,9 @@
-from qick.asm_v2 import AsmV2, AsmInst
+from qick.asm_v2 import AsmV2
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
-import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
 
-import scipy
 from math import ceil
 
 class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
@@ -93,7 +83,6 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         # IncrementLength.inc_reg(dst='data_counter', src=+1)
         # IncrementLength.write_dmem("data_counter", "sample_counter")
         #############
-        # TODO <--- V2 has a bug in exec_after!!!! need to tell Sho. give him version number too --->
         self.add_loop("expt_samples", int(self.cfg["expts"]), exec_before=IncrementLength)
 
         self.delay_auto(200)

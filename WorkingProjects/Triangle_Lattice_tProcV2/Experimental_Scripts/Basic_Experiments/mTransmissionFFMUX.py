@@ -2,16 +2,12 @@
 # from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
 # from tqdm.notebook import tqdm
 import time
 from tqdm import tqdm
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-
-from qick.asm_v2 import AveragerProgramV2
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class CavitySpecFFProg(FFAveragerProgramV2):
@@ -91,6 +87,7 @@ class CavitySpecFFMUX(ExperimentClass):
         avgq = data['data']['results'][:,0,0,1]
         x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
 
+        freq_min = (self.peakFreq_min + self.cfg["res_LO"])/1e3
         sig = avgi + 1j * avgq
 
         avgamp0 = np.abs(sig)
@@ -99,6 +96,7 @@ class CavitySpecFFMUX(ExperimentClass):
         plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+        plt.axvline(freq_min, color='black', linestyle='--', label=f"{1e3*freq_min:.1f} MHz")
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.title(self.titlename)

@@ -1,16 +1,10 @@
-
-from qick import helpers
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use("Qt5agg")
-import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
-from tqdm.notebook import tqdm
 import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 # ====================================================== #

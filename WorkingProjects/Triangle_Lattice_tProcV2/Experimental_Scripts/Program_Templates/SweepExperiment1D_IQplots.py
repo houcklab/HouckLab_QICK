@@ -1,27 +1,10 @@
 
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import *
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 
 # import matplotlib; matplotlib.use('Qt5Agg')
-import matplotlib.pyplot as plt
 
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
-import scipy
-import functools
-import operator
-import itertools
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates import SweepExperimentND
-from qick.asm_v2 import AveragerProgramV2
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates import SweepExperimentND
 
 
 class SweepExperiment1D_IQplots(SweepExperimentND):

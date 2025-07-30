@@ -1,17 +1,7 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
-import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
 
-import scipy
 
 class ThreePartProgramOneFF(FFAveragerProgramV2):
     def _initialize(self, cfg):

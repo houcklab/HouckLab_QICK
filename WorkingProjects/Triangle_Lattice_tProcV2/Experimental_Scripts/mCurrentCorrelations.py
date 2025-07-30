@@ -1,10 +1,7 @@
-
-
-import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 import datetime
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
 
 

@@ -1,22 +1,10 @@
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
-import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 import datetime
-from tqdm.notebook import tqdm
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
-import time
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-import pickle
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experiment_Scripts.mRabiOscillations import WalkFFProg
-
-import numpy as np
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 
@@ -68,19 +56,28 @@ class CurrentCalibrationOffset(SweepExperiment2D_plots):
         else:
             raise TypeError('t_offset must be an int or array like of ints')
 
-        t_offset -= np.min(self.cfg['t_offset'])
+        t_offset -= np.min(t_offset)
+
+        # for i in range(len(self.cfg["IDataArray2"])):
+        #     # pad at beginning to delay this channel
+        #
+        #     self.cfg["IDataArray2"][i] = np.concatenate([
+        #         self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
+        #         self.cfg["IDataArray2"][i]])
 
         for i in range(len(self.cfg["IDataArray2"])):
             # pad at beginning to delay this channel
+            self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
+                                                constant_values=self.cfg["IDataArray1"][i][-1])
 
-            self.cfg["IDataArray2"][i] = np.concatenate([
-                self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
-                self.cfg["IDataArray2"][i]])
-
-
+        # fig, ax = plt.subplots()
+        # for i in range(4):
+        #     print(i)
+        #     ax.plot(np.concatenate([self.cfg["IDataArray1"][i], self.cfg["IDataArray2"][i]]), label=f'Q{i+1}')
+        # ax.legend()
         # plt.show()
 
-class CurrentCalibrationGain(CurrentCalibrationOffset):
+class CurrentCalibrationGain(SweepExperiment2D_plots):
     '''Same set_up_instance as above'''
     def init_sweep_vars(self):
         self.Program = ThreePartProgramTwoFF
@@ -103,6 +100,43 @@ class CurrentCalibrationGain(CurrentCalibrationOffset):
         for Q in range(8):
             self.cfg["IDataArray1"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q + 1)]['Gain_Expt'],
                                                            self.cfg['FF_Qubits'][str(Q + 1)]['Gain_Pulse'], Q + 1)
+
+
+    def set_up_instance(self):
+        '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
+
+        for Q in range(8):
+            self.cfg["IDataArray2"][Q] = Compensated_Pulse(self.cfg['FF_Qubits'][str(Q+1)]['Gain_BS'],
+                                                           self.cfg["IDataArray1"][Q][self.cfg['expt_samples1']], Q+1)
+
+        # offset all channels from the one with the least offset defined by t_offset (units of 1/16 clock cycles
+        # t_offset can be passed as a list to define each channel's relative offset
+
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
+
+        if isinstance(t_offset, (list, np.ndarray, tuple)):
+            pass
+        elif isinstance(t_offset, int):
+            # this won't do anything because we are offsetting every channel relative to the channel with the least offset
+            t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
+        else:
+            raise TypeError('t_offset must be an int or array like of ints')
+
+        t_offset -= np.min(t_offset)
+
+        # for i in range(len(self.cfg["IDataArray2"])):
+        #     # pad at beginning to delay this channel
+        #
+        #     self.cfg["IDataArray2"][i] = np.concatenate([
+        #         self.cfg["IDataArray1"][i][self.cfg['expt_samples1']:self.cfg['expt_samples1'] + t_offset[i]],
+        #         self.cfg["IDataArray2"][i]])
+
+        for i in range(len(self.cfg["IDataArray2"])):
+            # pad at beginning to delay this channel
+            self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
+                                                constant_values=self.cfg["IDataArray1"][i][-1])
+
+
 
 class CurrentCalibrationSingle(SweepExperiment1D_lines):
     # current_calibration_offset_dict = {'reps': 1000, 't_evolve': 0, 'relax_delay': 150, "plotDisp": True,
@@ -146,7 +180,7 @@ class CurrentCalibrationSingle(SweepExperiment1D_lines):
         else:
             raise TypeError('t_offset must be an int or array like of ints')
 
-        t_offset -= np.min(self.cfg['t_offset'])
+        t_offset -= np.min(t_offset)
 
         for i in range(len(self.cfg["IDataArray2"])):
             # pad at beginning to delay this channel

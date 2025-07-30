@@ -7,25 +7,26 @@ import matplotlib.pyplot as plt
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
 
 print_single_vector = True
-plot_bare_system = False
+plot_bare_system = True
 plot_effective_system = True
 
 frequencies = {
-    'Q1': 4200,
-    'Q2': 3800,
-    'Q3': 3700,
-    'Q4': 4000,
-    'Q5': 0,
-    'Q6': 0,
-    'Q7': 0,
-    'Q8': 0,
-    'C1': 0,
-    'C2': 0,
-    'C3': 0,
-    'C4': 0,
-    'C5': 0,
-    'C6': 0,
+    'Q1': -0.26688592588125837,
+    'Q2': -0.2657941759067988,
+    'Q3': -0.2500825246438637,
+    'Q4': -0.27015370404248207,
+    'Q5': -2.6201671493863987e-06,
+    'Q6': 1.7850700189531166e-06,
+    'Q7': -7.858200090637979e-08,
+    'Q8': 1.2663603298856616e-05,
+    'C1': 0.4999981802825971,
+    'C2': 0.4999892651434272,
+    'C3': -1.3773284006410313e-05,
+    'C4': -1.6732292594939802e-06,
+    'C5': 1.4261143014143718e-06,
+    'C6': -1.274941099305496e-05,
 }
+
 
 # Whether you gave a flux value for a key
 flux_was_given = {key: (type(freq) is not str) and (freq < 10) for key,freq in frequencies.items()}
@@ -78,7 +79,7 @@ if __name__ == "__main__":
 
     # Printing and plotting
     # Convert back to dressed frequencies to check
-    effective_qubit_freqs, g_matrix = full_device_calib.dress_system(bare_freqs_all, beta_matrix=beta_matrix, plot=True)
+    effective_qubit_freqs, g_matrix = full_device_calib.dress_system(bare_freqs_all, beta_matrix=beta_matrix, plot=False)
 
     printed_freqs = np.concatenate([effective_qubit_freqs, coupler_freqs])
     for i in range(len(voltages)):

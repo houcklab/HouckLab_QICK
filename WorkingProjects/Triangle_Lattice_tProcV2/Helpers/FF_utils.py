@@ -106,8 +106,8 @@ def FFDefinitions(instance):
     if "Gain_Expt" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFExpts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Expt"] for q in instance.FFQubits])
 
-    if "Gain_Init" in instance.cfg["FF_Qubits"][str(1)]:
-        instance.FFRamp = np.array([instance.cfg["FF_Qubits"][q]["Gain_Init"] for q in instance.FFQubits])
+    # if "Gain_Init" in instance.cfg["FF_Qubits"][str(1)]:
+    #     instance.FFRamp = np.array([instance.cfg["FF_Qubits"][q]["Gain_Init"] for q in instance.FFQubits])
 
     if "Gain_Pulse" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFPulse = np.array([instance.cfg["FF_Qubits"][q]["Gain_Pulse"] for q in instance.FFQubits])
@@ -144,7 +144,7 @@ def FFLoad16Waveforms(instance, prev_value=0, waveform_label="swept_FF", truncat
                                                   prev_value):
         # print("prev val {}, gain {}".format(prev_val, gain))
         if IQPulse is None:  # if not specified, assume constant of max value
-            IQPulse = gain * np.ones(instance.cfg['FFlength'])
+            IQPulse = gain * np.ones(32768)
         # add buffer to beginning of IQPulse
         IQPulse = np.concatenate([prev_val * np.ones(48), IQPulse[:truncation_length]])
         # print(IQPulse[:48 + 16])

@@ -1,5 +1,3 @@
-
-
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import *
@@ -24,16 +22,19 @@ from qick.asm_v2 import AveragerProgramV2
 
 
 '''
-In 2025, during the transition to tProcV2, I wrote SweepExperiment1D, 2D, and R1D to make it easier to define new
-sweeps of QICK programs. Which one you used depended on how many variables you swept and whether you swept something
-within QICK on the RFSoC too. Since the three classes repeated a lot of code, I created a single
-base class to sweep over an arbitrary number of config keys an AveragerProgramV2 with an arbitrary number of QICK loops.
-- Joshua 07/03/2025
+To avoid repeating code, a single base class to sweep over an arbitrary number of config
+keys an AveragerProgramV2 with an arbitrary number of QICK loops.
+- 07/29/2025
 '''
 
 class SweepExperimentND(ExperimentClass):
     """
-        Sweeps a config entry for an AveragerProgram.
+        Sweeps a config entry for an AveragerProgram. The user will define:
+        init_sweep_vars(self): Run once at the beginning of the entire sweep
+            set_up_instance(self): Run before each iteration, utilizing the updated sweep variable.
+
+        analyze(self, data, **kwargs): (Optional). Run at the end of the entire sweep, use to fits, etc.
+
     """
     def init_sweep_vars(self):
         self.Program =  None   #  FFAveragerProgramV2
@@ -237,8 +238,12 @@ class SweepExperimentND(ExperimentClass):
             fig.clf(True)
             plt.close(fig)
 
+        self.analyze(data=self.data)
         self.save_data(data=self.data)
         return self.data
+
+    def analyze(self, data, **kwargs):
+        return super().analyze(data, **kwargs)
 
     def debug(self, prog):
         pass
