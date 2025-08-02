@@ -187,6 +187,7 @@ class SingleShotMeasure(ExperimentClass):
         self.total_size = 1
         self.mesh_grid = 0
 
+
     def acquire(self, progress=False, debug=False):
         # Perform the experiment
         # print("Acquiring data")
@@ -222,6 +223,7 @@ class SingleShotMeasure(ExperimentClass):
 
         # Update data
         self.data["data"] = self.data["data"] | self.distinctness
+
 
         return self.data
 

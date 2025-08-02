@@ -8,7 +8,7 @@ import time
 import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.YOKOGS200 import *
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_SaraTest import LoopbackProgramSpecSlice
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import LoopbackProgramTrans
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_SaraTest import Transmission
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_Enhance import Transmission_Enhance
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
@@ -166,7 +166,7 @@ class SpecVsFlux(ExperimentClass):
         }
 
         ### define the yoko vector for the voltages, note this assumes that yoko1 already exists
-        yoko1 = YOKOGS200(VISAaddress='GPIB1::4::INSTR', rm=visa.ResourceManager())
+        yoko1 = YOKOGS200(VISAaddress='GPIB1::5::INSTR', rm=visa.ResourceManager())
         #yoko1 = YOKOGS200(VISAaddress='GPIB1::2::INSTR', rm=visa.ResourceManager())
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
@@ -444,14 +444,32 @@ class SpecVsFlux(ExperimentClass):
         # print("The read gain is", self.cfg["read_pulse_gain"])
         # print("The trans reps is", self.cfg['reps'])
 
-        transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+        if "trans_method" in self.cfg.keys():
+            if self.cfg["trans_method"] == "enhanced" :
+                transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                                  outerFolder=self.outerFolder)
+                data_transm = transm_exp.acquire()
+                opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, plotDisp=False)
+                print(opt_freq)
+                self.cfg["read_pulse_freq"] = opt_freq
+                data_I = data_transm['data']['results'][0][0][0]
+                data_Q = data_transm['data']['results'][0][0][1]
+            else :
+                Instance_trans = Transmission(path="dataTestTransmission", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
+                                              outerFolder=self.outerFolder)
+                data_trans = Instance_trans.acquire()
+                opt_freq = Instance_trans.peakFreq
+                self.cfg["read_pulse_freq"] = opt_freq
+                data_I = data_trans["data"]["results"][0][0][0]
+                data_Q = data_trans["data"]["results"][0][0][1]
+        else :
+            Instance_trans = Transmission(path="dataTestTransmission", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
                                           outerFolder=self.outerFolder)
-        data_transm = transm_exp.acquire()
-        opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, plotDisp=False)
-        print(opt_freq)
-        self.cfg["read_pulse_freq"] = opt_freq
-        data_I = data_transm['data']['results'][0][0][0]
-        data_Q = data_transm['data']['results'][0][0][1]
+            data_trans = Instance_trans.acquire()
+            opt_freq = Instance_trans.peakFreq
+            self.cfg["read_pulse_freq"] = opt_freq
+            data_I = data_trans["data"]["results"][0][0][0]
+            data_Q = data_trans["data"]["results"][0][0][1]
 
         return data_I, data_Q
 

@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_10_14_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 # soc, soccfg = makeProxy()
@@ -19,38 +19,40 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -1,
-    "yokoVoltageStop": 7,
-    "yokoVoltageNumPoints": 1601,
+    "yokoVoltageStart": -0.095,
+    "yokoVoltageStop": -0.09,
+    "yokoVoltageNumPoints": 11,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 400,
+    "trans_reps": 500,
     "read_pulse_style": "const",
     "read_length": 10,  # us
-    "read_pulse_gain": 6000,  # [DAC units]
-    "trans_freq_start": 6431,
-    "trans_freq_stop": 6433,
-    "TransNumPoints": 101,
+    "read_pulse_gain": 1500,  # [DAC units]
+    "trans_freq_start": 6668,
+    "trans_freq_stop": 6673,
+    "TransNumPoints": 201,
 
     # qubit spec parameters
-    "spec_reps": 2,
+    "spec_reps": 5000,#20000,
     "qubit_pulse_style": "const",
-    "qubit_gain": 0,
-    "qubit_length": 0.01,
+    "qubit_gain": 10000,#25000,#30000,
+    "qubit_length": 10,
     "flat_top_length" : 10,
-    "qubit_freq_start": 100,
-    "qubit_freq_stop": 2500,
-    "SpecNumPoints": 2,
-    "sigma": 0.05,
-    "relax_delay": 10,
+    "qubit_freq_start": 50,
+    "qubit_freq_stop": 500,
+    "SpecNumPoints": 351,
+    "sigma": 1,
+    "relax_delay":2,
     'use_switch': False,
     'initialize_pulse': False,
     'fridge_temp': 420,
     "mode_periodic": False,
     'ro_periodic': False,
     "measurement_style": "std", # std : standard, bkg : background subtracted, ps : post-selected
-    "magnet_relax": 5, # [s] wait time after each magnet change
+    "magnet_relax": 0, # [s] wait time after each magnet change
+
+    "meas_config": 'Hanger',
 }
 config = BaseConfig | UpdateConfig
 
@@ -60,18 +62,22 @@ if config["yokoVoltageStart"] > config['yokoVoltageStop']:
 #%%
 # Run the experiment
 filter_freq = (config["trans_freq_start"] + config['trans_freq_stop'])/2
+
 mlbf_filter.set_frequency(filter_freq)
+# sometimes this doesn't work on the first try
+mlbf_filter.set_frequency(filter_freq)
+
 Instance_SpecVsFlux = SpecVsFlux(path="dataTestSpecVsFlux", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, individ_fit = False)
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
-# plt.show()
+plt.show()
 
-        #%%
+#%%
 # TITLE : For multiple scans
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\TransVsFlux\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_10_14_cooldown\\QCage_dev\\TransVsFlux\\"
 
 # Dictionary for multiple qubit
 qubit_dicts = {
@@ -82,13 +88,13 @@ qubit_dicts = {
     #     "trans_freq_stop": 6270,
     #     "yokoVoltageNumPoints": 1201,
     # },
-    "Q2_6p5": {
-        "yokoVoltageStart": 0.0,
-        "yokoVoltageStop": 2,
-        "trans_freq_start": 6431,
-        "trans_freq_stop": 6433,
-        "yokoVoltageNumPoints": 51,
-    },
+    # "Q2_6p5": {
+    #     "yokoVoltageStart": 0.0,
+    #     "yokoVoltageStop": 2,
+    #     "trans_freq_start": 6431,
+    #     "trans_freq_stop": 6433,
+    #     "yokoVoltageNumPoints": 51,
+    # },
     # "Q3_6p75": {
     #     "yokoVoltageStart": -0.3,
     #     "yokoVoltageStop": 0.5,

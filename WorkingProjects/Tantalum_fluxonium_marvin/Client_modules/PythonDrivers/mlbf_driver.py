@@ -68,7 +68,7 @@ class MLBFDriver:
 # Example usage
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)  # Enable logging
-    driver = MLBFDriver("192.168.1.101")  # Use the correct IP for the filter
+    driver = MLBFDriver("192.168.1.10")  # Use the correct IP for the filter
     driver.set_frequency(6000.0)  # Set frequency to 6000 MHz
     # print(driver.get_status())  # Retrieve status
     # print(driver.get_temperature())  # Retrieve temperature

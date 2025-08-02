@@ -143,12 +143,15 @@ class SingleShotAnalysis:
         population_dict : dict
             A dictionary containing the populations of the centers
         """
-
         if self.initialized == True:
             # Step 1 : Get the centers from the initial data
-            self.get_Centers(self.i_0_arr, self.q_0_arr)
-            self.logger.info('Centers found')
-            self.logger.info(self.centers)
+            if self.centers is not None:
+                print("Centers passed in:\n", self.centers)
+            else:
+                print("Centers is none")
+                self.get_Centers(self.i_0_arr, self.q_0_arr)
+                self.logger.info('Centers found')
+                self.logger.info(self.centers)
 
             # Step 2 : Fit gaussians to the initial data to get fit parameters
             self.inital_fit_results = self.fit_gaussians(self.i_0_arr, self.q_0_arr, self.centers)
@@ -162,10 +165,14 @@ class SingleShotAnalysis:
 
             if self.fast is False:
                 initial_params = self.inital_fit_results['result'].params
-        
+
         else:
             initial_params = None
-            self.get_Centers(self.i_arr, self.q_arr)
+            if self.centers is not None:
+                print("Centers passed in:\n", self.centers)
+            else:
+                print("centers is none")
+                self.get_Centers(self.i_arr, self.q_arr)
 
         # Step 3 : Fit gaussians to the final data to get fit parameters
 
@@ -216,7 +223,8 @@ class SingleShotAnalysis:
         else:
             self.logger.error('Invalid cluster method')
             raise ValueError('Invalid cluster method')
-        
+
+        print("Returning \n",self.centers)
         return self.centers
         
 

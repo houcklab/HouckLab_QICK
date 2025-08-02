@@ -31,7 +31,9 @@ if is_qubit_atten:
 
 # TITLE: Connect to Yoko
 if is_yoko1:
-    yoko1 = YOKOGS200(VISAaddress='GPIB1::4::INSTR', rm=visa.ResourceManager())
+    yoko1 = YOKOGS200(VISAaddress='GPIB1::5::INSTR', rm=visa.ResourceManager())
+    #yoko1 = YOKOGS200(VISAaddress= 'USB::0xB21::0x39::91PB12678', rm=visa.ResourceManager())
+    #yoko1 = YOKOGS200(VISAaddress='GPIB1::2::INSTR', rm=visa.ResourceManager()) # HC yoko
     yoko1.SetMode('voltage')
 if is_yoko2:
     yoko2 = YOKOGS200(VISAaddress = 'GPIB1::5::INSTR', rm = visa.ResourceManager())
@@ -39,7 +41,7 @@ if is_yoko2:
 
 # TITLE: Connect to MLBF
 if is_mlbf_filter:
-    mlbf_filter = MLBFDriver("192.168.1.101")
+    mlbf_filter = MLBFDriver("192.168.1.10")
 
 
 # TITLE : default configuration
@@ -51,7 +53,7 @@ BaseConfig = {
     "reps": 1000,  # --Fixed
     "nqz": 2,  #### refers to cavity
     "mode_periodic": False,
-    "qubit_nqz": 1,
+    "qubit_nqz": 2,
     "relax_delay": 10,  # us
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed

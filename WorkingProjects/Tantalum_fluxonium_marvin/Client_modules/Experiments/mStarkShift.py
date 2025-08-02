@@ -81,7 +81,10 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
-                                              gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
+                                              gen_ch=cfg["res_ch"]) + self.us2cycles(self.cfg["pop_pulse_length"]) # switch is open while populating pulse is playing
+
+        # self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+        #                                       gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
 
         self.sync_all(self.us2cycles(1))
 
@@ -92,16 +95,24 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         # Configure the cavity pulse for populating the cavity
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
                                  gain=self.cfg["cavity_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["res_ch"]))
+                                 length=self.us2cycles(self.cfg["pop_pulse_length"], gen_ch=self.cfg["res_ch"]))
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
-        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+        #if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+        if self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
 
-        self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
-        self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
+        if self.cfg['simultaneous']:
+            self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
+            self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
+            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        else:
+            self.pulse(ch=self.cfg["res_ch"])  # Play a cavity tone
+            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+            self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
+
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         # Configure the cavity pulse for readout

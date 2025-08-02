@@ -132,7 +132,10 @@ class Transmission_Enhance(ExperimentClass):
         phase_derivate = np.gradient(phase_smooth, freq)
 
         # Find the index at which phase derivative is minimum
-        index = np.argmin(phase_derivate)
+        if self.cfg['meas_config'] == 'Transmission': #added for measuring WTF; pick max frequency
+            index = np.argmax(np.abs(sig))
+        else:
+            index = np.argmin(phase_derivate)
 
         # Get the optimal frequency
         opt_freq = freq[index]
