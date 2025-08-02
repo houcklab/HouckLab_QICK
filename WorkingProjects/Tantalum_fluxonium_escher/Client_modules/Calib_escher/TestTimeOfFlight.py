@@ -12,12 +12,12 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTimeO
 
 UpdateConfig = {
     ##### set yoko
-    "yokoVoltage": 1.02,
+    "yokoVoltage": 3.12,
     "yokoVoltage_freqPoint": -0.38,
     ###### cavity
     "reps": 1,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 15,  # [us]
+    "read_length": 2,  # [us]
     "read_length_tof": 2,  # [us]
     "read_pulse_gain": 6000,  # [DAC units]
     "read_pulse_freq": 7392.4,  # [MHz]

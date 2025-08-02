@@ -1,6 +1,8 @@
 import socket
 import logging
 import re
+import time
+
 
 class MLBFDriver:
     def __init__(self, ip_address, udp_port=30303, timeout=5):
@@ -28,9 +30,19 @@ class MLBFDriver:
 
     def set_frequency(self, frequency):
         """Set the filter's frequency in MHz. No response is expected."""
+        # THIS DOES NOT ALWAYS WORK. Make sure to check the frequency has actually been changed!
+        # This is really a crutch, but I am too lazy to figure out what the actual problem is.
         command = f"F{frequency:.3f}"  # Ensure format is 'Fxxxxxx.xxx'
-        self.send_command(command, expect_response=False)
-        self.get_frequency()
+        for i in range(5):
+            self.send_command(command, expect_response=False)
+            time.sleep(0.1)
+            cur_freq = self.get_frequency()
+            if cur_freq == frequency:
+                print("Frequency set to %.3f" % cur_freq)
+                return
+            print("Frequency not set successfully! Trying again...")
+        raise Exception("Can't get the frequency to set correctly in 5 tries!")
+
 
     def get_status(self):
         """Retrieve the current status of the filter."""

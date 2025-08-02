@@ -99,7 +99,7 @@ class TransVsGain(ExperimentClass):
             avgamp0 = avgamp0 - np.min(avgamp0) #shift minimum value to 0
             #avgamp0 = avgamp0/np.max(avgamp0) # scale maximum value to 1
             #avgamp0 = avgamp0 - np.mean(avgamp0)
-            avgphase = np.angle(sig * np.exp(-X * 10j), deg = True)
+            avgphase = np.unwrap(np.angle(sig * np.exp(-X * 10j), deg = True), period = 360)
             Z1[i, :] = avgphase
             # Z[i, :] = avgamp0
 
@@ -218,7 +218,7 @@ class TransVsGain(ExperimentClass):
 
             if plotDisp:
                 plt.show(block=False)
-                plt.pause(0.1)
+                plt.pause(5)
 
             if i ==0: ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start ### time for single full row in seconds

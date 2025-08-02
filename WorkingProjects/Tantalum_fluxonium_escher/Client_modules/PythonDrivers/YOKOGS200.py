@@ -4,8 +4,8 @@ import numpy as np
 import time
 
 class YOKOGS200:
-    _rampstep = 0.001 #0.0001 #0.001 # increment step when setting voltage/current
-    _rampinterval = 0.01 # dwell time for each voltage step # Default MATLAB is 0.01, CANNOT be lower than 0.001 otherwise fridge heats up
+    _rampstep = 0.0005 #0.0001 #0.001 # increment step when setting voltage/current
+    _rampinterval = 0.02 # dwell time for each voltage step # Default MATLAB is 0.01, CANNOT be lower than 0.001 otherwise fridge heats up
 
     # Initializes session for device.
     # VISAaddress: address of device, rm: VISA resource manager

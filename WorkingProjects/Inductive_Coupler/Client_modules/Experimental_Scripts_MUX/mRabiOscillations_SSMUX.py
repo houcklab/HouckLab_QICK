@@ -70,7 +70,7 @@ class WalkProgramSS(AveragerProgram):
                      syncdelay=self.us2cycles(10))
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-        IQ_Array_Negative = np.array([-1 * array if type(array) != type(None) else None for array in self.cfg["IDataArray"]], dtype = object)
+        IQ_Array_Negative = [-1 * np.array(array) if type(array) != type(None) else None for array in self.cfg["IDataArray"]]
         self.FFPulses_direct(-1 * self.FFPulse, self.cfg["variable_wait"], -1 * self.FFPulse, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
         self.FFPulses(-1 * self.FFPulse, 2 * self.cfg["sigma"] * 4 + 1.01)
@@ -91,7 +91,7 @@ class WalkProgramSS(AveragerProgram):
                 save_experiments=None,
                 start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
@@ -120,8 +120,7 @@ class WalkFFSSMUX(ExperimentClass):
     Basic T1
     """
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
-                 ):
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
 
@@ -136,10 +135,10 @@ class WalkFFSSMUX(ExperimentClass):
                                                                                    '3']['Gain_Pulse'], 3)
             self.cfg["IDataArray"][3] = Compensated_Pulse(self.cfg['FF_Qubits']['4']['Gain_Expt'], self.cfg['FF_Qubits'][
                                                                                '4']['Gain_Pulse'], 4)
-        print(np.round(self.cfg["IDataArray"][0][:20], 4))
-        print(np.round(self.cfg["IDataArray"][1][:20], 4))
-        print(np.round(self.cfg["IDataArray"][2][:20], 4))
-        print(np.round(self.cfg["IDataArray"][3][:20], 4))
+        # print(np.round(self.cfg["IDataArray"][0][:20], 4))
+        # print(np.round(self.cfg["IDataArray"][1][:20], 4))
+        # print(np.round(self.cfg["IDataArray"][2][:20], 4))
+        # print(np.round(self.cfg["IDataArray"][3][:20], 4))
 
 
         results = [[] for i in range(len(self.cfg["ro_chs"]))]
@@ -219,7 +218,7 @@ def Compensated_AWG(Num_Points, Fit_Parameters, maximum = 1.5):
 def DoubleExponentialFit(t, A1, T1, A2, T2):
     return (A1 * np.exp(-t / T1) + A2 * np.exp(-t / T2))
 
-def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 1.5):
+def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 2):
     step = 0.00232515 / 16
     time = np.arange(0,Num_Points)*step
     ideal_AWG = np.ones(Num_Points)
@@ -242,16 +241,19 @@ def Compensated_AWG_LongTimes(Num_Points, Fit_Parameters, maximum = 1.5):
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected.p', 'rb'))
 # Qubit2_parameters = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_corrected_V3.p', 'rb'))
 # Qubit2_parameters_long = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Corrected_LongTime_3.p', 'rb'))
-
-# Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
-# Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
-# Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_PreFinal.p', 'rb'))
-
-'''Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_Final.p', 'rb'))
+Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_PreFinal.p', 'rb'))
 Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_Final.p', 'rb'))
-Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_Final.p', 'rb'))
+Qubit4_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit4_n_exp_PreFinal.p', 'rb'))
+# Qubit1_[0] *= 1.
+# Qubit1_[2] *= 1.
+# Qubit1_[4] *= 1.2
+#
+# # print(Qubit4_)
+# Qubit4_[0] *= 1.6
+# Qubit4_[2] *= 1.6
+# Qubit4_[4] *= 1.7
 
-
+# print(Qubit4_)
 
 Qubit1_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit1_n_exp_Final.p', 'rb'))
 Qubit2_ = pickle.load(open('Z:/Jeronimo/Qubit_Calibration_FF_Params/Qubit2_n_exp_PreFinal.p', 'rb'))
@@ -260,13 +262,24 @@ Qubit2_[0] *= 0.75
 Qubit2_[2] *= 0.75
 Qubit2_[4] *= 1
 
-v_awg_Q1 = Compensated_AWG(600 * 16 * 5, Qubit1_)[1]
-v_awg_Q2 = Compensated_AWG(600 * 16 * 5, Qubit2_)[1]
-v_awg_Q4 = Compensated_AWG(600 * 16 * 5, Qubit4_)[1]'''
+Qubit2_[0] *= 1.3
+Qubit2_[1] *= 1.2
+Qubit2_[2] *= 1.2
+Qubit2_[3] *= 1.2
 
-v_awg_Q1 = np.ones(600 * 16 * 3)
-v_awg_Q2 = np.ones(600 * 16 * 3)
-v_awg_Q4 = np.ones(600 * 16 * 3)
+Qubit4_[0] *= 1.3
+Qubit4_[1] *= 1.2
+Qubit4_[2] *= 1.2
+Qubit4_[3] *= 1.2
+# Qubit4_[0] *= 1.2
+
+
+
+v_awg_Q1 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit1_)[1]
+v_awg_Q2 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit2_)[1]
+v_awg_Q4 = Compensated_AWG(int(600 * 16 * 3 * 2.2), Qubit4_)[1]
+
+
 
 print(v_awg_Q1[:20])
 

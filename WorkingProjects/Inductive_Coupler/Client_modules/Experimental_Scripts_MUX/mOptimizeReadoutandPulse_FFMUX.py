@@ -341,7 +341,6 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         }
         self.gain_pts = np.linspace(expt_cfg["qubit_gain_Start"], expt_cfg["qubit_gain_Stop"], expt_cfg["qubit_gain_Points"])
         self.qubit_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["QubitNumPoints"])
-
         ####create arrays for storing the data
         X = self.qubit_fpts
         X_step = X[1] - X[0]
@@ -374,7 +373,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         for idf_qubitgain in range(len(self.gain_pts)):
             # start_2 = time.time()
             ### set the cavity attenuation
-            self.cfg["qubit_gains"][Qubit_Sweep_Index] = self.gain_pts[idf_qubitgain]
+            self.cfg["qubit_gains"][Qubit_Sweep_Index] = int(self.gain_pts[idf_qubitgain])
             ### start the loop over transmission points
             for idx_qubit in range(len(self.qubit_fpts)):
                 self.cfg["f_ges"][Qubit_Sweep_Index] = self.qubit_fpts[idx_qubit]

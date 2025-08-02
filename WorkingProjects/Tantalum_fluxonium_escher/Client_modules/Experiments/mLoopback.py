@@ -89,7 +89,7 @@ class Loopback(ExperimentClass):
         #i_mat = []
         #q_mat = []
         #for i in range(self.cfg['soft_avgs']):
-        iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False, debug=False)
+        iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False)#, debug=False)
         #    i_mat.append(iq_list[0])
         #    q_mat.append(iq_list[1])
         #iq_list = [np.mean(i_mat), np.mean(q_mat)]

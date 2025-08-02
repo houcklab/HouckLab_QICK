@@ -29,8 +29,8 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         # self.cfg["rounds"] = 2
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
-        self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get frequency register for qubit_ch
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
+        self.r_gain2 = self.sreg(cfg["qubit_ch"], "gain2")  # get second gain register for qubit_ch (for arb)
 
         res_ch = cfg["res_ch"]
         #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
@@ -84,8 +84,7 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             print("define pi or flat top pulse")
 
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=cfg["ro_chs"][0]),
-                                 ) # mode="periodic")
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -95,20 +94,21 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
     def body(self):
         #### wait 10ns
-        self.sync_all(self.us2cycles(0.01))
+        #self.sync_all(self.us2cycles(0.01))
 
         if self.cfg["qubit_gain"] != 0:
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.010)) # wait 10ns after pulse ends
+            self.sync_all(self.us2cycles(0.010))  # wait 10ns after pulse ends
 
-        # self.sync_all(self.us2cycles(100))  # wait 10ns after pulse ends
+
+        #self.sync_all(self.us2cycles(0.2))  # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=[0],
-             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],ro_ch=self.cfg["ro_chs"][0]),
+             adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
              wait=True,
              syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -117,8 +117,8 @@ class LoopbackProgramSingleShot(RAveragerProgram):
 
 
     def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update frequency list index
-        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update frequency list index
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update gain
+        self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update gain2
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
                 start_src="internal", progress=False, debug=False):
@@ -148,7 +148,7 @@ class SingleShotProgram(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         #### pull the data from the single hots
         prog = LoopbackProgramSingleShot(self.soccfg, self.cfg)
-        shots_i0,shots_q0 = prog.acquire(self.soc, load_pulses=True)
+        shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
 
         i_g = shots_i0[0]
         q_g = shots_q0[0]

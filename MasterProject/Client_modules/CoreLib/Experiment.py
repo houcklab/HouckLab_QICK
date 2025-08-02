@@ -5,6 +5,8 @@ import h5py
 import datetime
 from pathlib import Path
 
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
+
 class MakeFile(h5py.File):
     def __init__(self, *args, **kwargs):
         h5py.File.__init__(self, *args, **kwargs)
@@ -51,13 +53,14 @@ class ExperimentClass:
 
     def __init__(self, path='', outerFolder='',
                     prefix='data', soc=None, soccfg=None, cfg = None, config_file=None,
-                    liveplot_enabled=False, **kwargs):
+                    liveplot_enabled=False, short_directory_names = False, **kwargs):
         """ Initializes experiment class
             @param path - directory where data will be stored
-            @param prefix - prefix to use when creating data files
+            @param prefix [sic] - suffix to use when creating data files
             @param config_file - parameters for config file specified are loaded into the class dict
                                  (name relative to expt_directory if no leading /)
                                  Default = None looks for path/prefix.json
+            @param short_directory_names - stop duplicating info in directory names. False by default.
             @param **kwargs - by default kwargs are updated to class dict
             also loads InstrumentManager, LivePlotter, and other helpers
         """
@@ -85,14 +88,24 @@ class ExperimentClass:
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
             os.mkdir(self.outerFolder + self.path)
-        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
+        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, datestring)).is_dir() if short_directory_names \
+                            else Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
-            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
+            if short_directory_names:
+                os.mkdir(os.path.join(self.outerFolder + self.path, datestring))
+            else:
+                os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
 
-        self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
-        self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
-        ### define name for the config file
-        self.cname = os.path.join(self.outerFolder +  self.path, self.path + "_" + datestring, self.path + "_" + datetimestring + "_" + self.prefix + '.json')
+        if short_directory_names:
+            self.fname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.h5')
+            self.iname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.png')
+            ### define name for the config file
+            self.cname = os.path.join(self.outerFolder +  self.path, datestring, datetimestring + "_" + self.prefix + '.json')
+        else:
+            self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
+            self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
+            ### define name for the config file
+            self.cname = os.path.join(self.outerFolder +  self.path, self.path + "_" + datestring, self.path + "_" + datetimestring + "_" + self.prefix + '.json')
         # print(self.fname)
         #self.load_config()
     #
@@ -169,6 +182,27 @@ class ExperimentClass:
 
     def display(self, data=None, **kwargs):
         pass
+
+    @classmethod
+    def plotter(cls, plot_widget, plots, data):
+        pass
+
+    @classmethod
+    def export_data(cls, data_file, data, config):
+        """
+        Exports a dictionary with nested data into an HDF5 file.
+        Supports hierarchical storage for nested dictionaries and direct key-value pairs.
+
+        :param data_file: A path to the dataset file that is to be created
+        :type data_file: str
+        :param data: The data dictionary
+        :type data: dict
+        :param config: The config dictionary
+        :type config: dict
+        """
+
+        # Store the data dictionary
+        Helpers.dict_to_h5(data_file, data)
 
     def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
         if data is None:

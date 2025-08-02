@@ -57,7 +57,9 @@ else:
 # yoko72.SetVoltage(0)
 
 #Define Save folder
-outerFolder = "Z:\QSimMeasurements\Measurements\\5QV3_Triangle_Lattice\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\\5QV2_Triangle_Lattice\\"
+outerFolder = "Z:\QSimMeasurements\Measurements\\4Q_Test_Scalinq\\"
+
 
 ###### define default configuration
 BaseConfig = {
@@ -86,8 +88,8 @@ FF_channel2 = 1
 FF_channel3 = 2
 FF_channel4 = 3
 
-FF_channel1 = 2
-FF_channel2 = 3
+FF_channel1 = 3
+FF_channel2 = 2
 FF_channel3 = 0
 FF_channel4 = 1
 
@@ -97,6 +99,8 @@ FF_Qubits = {
     str(3): {'channel': FF_channel3, 'delay_time': 0.002},
     str(4): {'channel': FF_channel4, 'delay_time': 0.00},
 }
+
+
 
 # FF_Qubits = {
 #     str(1): {'channel': FF_channel1, 'delay_time': 0.002},

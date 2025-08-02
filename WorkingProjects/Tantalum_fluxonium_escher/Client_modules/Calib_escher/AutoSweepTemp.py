@@ -4,8 +4,8 @@ import sys
 import csv
 import time
 
-path = os.getcwd()
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+os.add_dll_directory(path)
 import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.LS370 as lk
 import pyvisa
 import datetime

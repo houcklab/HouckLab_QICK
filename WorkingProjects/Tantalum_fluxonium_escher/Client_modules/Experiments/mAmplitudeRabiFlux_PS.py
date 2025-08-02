@@ -10,7 +10,7 @@ import time
 from sklearn.cluster import KMeans
 import math
 from scipy.optimize import curve_fit
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko1
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import yoko
 
 
 class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
@@ -153,7 +153,7 @@ class AmplitudeRabiFlux_PS(ExperimentClass):
 
         voltVec = np.linspace(expt_cfg["yokoVoltageStart"],expt_cfg["yokoVoltageStop"], expt_cfg["yokoVoltageNumPoints"])
         self.voltVec = voltVec
-        yoko1.SetVoltage(expt_cfg["yokoVoltageStart"])
+        yoko.SetVoltage(expt_cfg["yokoVoltageStart"])
 
         ### define qubit frequency array
         self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
@@ -196,7 +196,7 @@ class AmplitudeRabiFlux_PS(ExperimentClass):
 
             #####
             ### set the yoko voltage for the specific run
-            yoko1.SetVoltage(voltVec[idx_yoko])
+            yoko.SetVoltage(voltVec[idx_yoko])
 
             #### loop over qubit frequencies
             for idx_freq in range(len(self.qubit_freqs)):

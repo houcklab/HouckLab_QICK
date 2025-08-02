@@ -188,7 +188,7 @@ class AmplitudeRabi_Blob(ExperimentClass):
 
             if plotDisp:
                 plt.show(block=False)
-                plt.pause(0.1)
+                plt.pause(5) # longer to prevent non-responsive matplotlib window
 
             if idx == 0:  ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start  ### time for single full row in seconds

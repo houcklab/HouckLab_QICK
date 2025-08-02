@@ -101,6 +101,7 @@ class SingleShotExperiment(RAveragerProgram):
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                              width=self.cfg["trig_len"])  # trigger for switch
+            #TODO this only works for flat_top  pulses, as arb does not accept a length parameter. inconsistent with init
             self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                      phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
                                      waveform="qubit",length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
@@ -442,4 +443,4 @@ class SingleShotMeasure(ExperimentClass):
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
-        super().save_data(data=data['data'])
+        super
