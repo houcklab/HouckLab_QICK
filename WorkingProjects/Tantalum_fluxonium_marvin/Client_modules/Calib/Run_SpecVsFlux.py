@@ -19,31 +19,31 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.095,
+    "yokoVoltageStart": -0.115,
     "yokoVoltageStop": -0.09,
-    "yokoVoltageNumPoints": 11,
+    "yokoVoltageNumPoints": 31,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 500,
+    "trans_reps": 2000,
     "read_pulse_style": "const",
     "read_length": 10,  # us
-    "read_pulse_gain": 1500,  # [DAC units]
-    "trans_freq_start": 6668,
-    "trans_freq_stop": 6673,
-    "TransNumPoints": 201,
+    "read_pulse_gain": 3000,  # [DAC units]
+    "trans_freq_start": 6669,
+    "trans_freq_stop": 6673.5,
+    "TransNumPoints": 401,
 
     # qubit spec parameters
-    "spec_reps": 5000,#20000,
+    "spec_reps": 200,
     "qubit_pulse_style": "const",
-    "qubit_gain": 10000,#25000,#30000,
-    "qubit_length": 10,
+    "qubit_gain": 10000,
+    "qubit_length": 5,
     "flat_top_length" : 10,
-    "qubit_freq_start": 50,
+    "qubit_freq_start": 100,
     "qubit_freq_stop": 500,
-    "SpecNumPoints": 351,
+    "SpecNumPoints": 201,
     "sigma": 1,
-    "relax_delay":2,
+    "relax_delay":10,
     'use_switch': False,
     'initialize_pulse': False,
     'fridge_temp': 420,
@@ -52,6 +52,7 @@ UpdateConfig = {
     "measurement_style": "std", # std : standard, bkg : background subtracted, ps : post-selected
     "magnet_relax": 0, # [s] wait time after each magnet change
 
+    "trans_method": "enhanced", # Seitch between using pphase
     "meas_config": 'Hanger',
 }
 config = BaseConfig | UpdateConfig
@@ -61,6 +62,7 @@ if config["yokoVoltageStart"] > config['yokoVoltageStop']:
     print("The start is greater than the stop. ALERT !!!")
 #%%
 # Run the experiment
+soc.reset_gens()
 filter_freq = (config["trans_freq_start"] + config['trans_freq_stop'])/2
 
 mlbf_filter.set_frequency(filter_freq)

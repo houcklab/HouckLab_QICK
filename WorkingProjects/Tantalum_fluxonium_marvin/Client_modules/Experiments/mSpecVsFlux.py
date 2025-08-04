@@ -228,7 +228,7 @@ class SpecVsFlux(ExperimentClass):
 
             #### plot out the transmission data
             sig = data_I + 1j * data_Q
-            avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
+            avgamp0 = np.abs(sig) #- np.mean(np.abs(sig))
             Z_trans[i, :] = avgamp0
             cavity_freq[i] = self.cfg["read_pulse_freq"]
             # print(cavity_freq[i])
@@ -269,10 +269,10 @@ class SpecVsFlux(ExperimentClass):
 
             #### plot out the spec data
             sig = data_I + 1j * data_Q
-            avgamp0 = np.abs(sig) - np.mean(np.abs(sig))
-            avgphase = np.angle(sig, deg = True) - np.mean(np.angle(sig, deg = True))
-            avgI = np.abs(data_I) - np.mean(np.abs(data_I))
-            avgQ = np.abs(data_Q) - np.mean(np.abs(data_Q))
+            avgamp0 = np.abs(sig) #- np.mean(np.abs(sig))
+            avgphase = np.angle(sig, deg = True) #- np.mean(np.angle(sig, deg = True))
+            avgI = np.abs(data_I) #- np.mean(np.abs(data_I))
+            avgQ = np.abs(data_Q) #- np.mean(np.abs(data_Q))
             ## Amplitude
             Z_specamp[i, :] = avgamp0
 

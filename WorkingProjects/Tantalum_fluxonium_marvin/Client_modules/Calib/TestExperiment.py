@@ -70,7 +70,7 @@ UpdateConfig = {
 
     "freq": 200,#3713,  # [MHz]
 
-    "channel": 1, #0,  # TODO default value # 0 is resonator, 1 is qubit
+    "channel": 0, #0,  # TODO default value # 0 is resonator, 1 is qubit
     "nqz": 1, #2,#1,  # TODO default value
 }
 
@@ -137,18 +137,19 @@ fff.show()
 # # TITLE: Transmission + Spectroscopy
 UpdateConfig_transmission = {
     # Parameters
-    "reps": 100000,  # Number of repetitions
+    "reps": 2000,  # Number of repetitions
 
     # cavity
     "read_pulse_style": "const",
     "read_length": 10,
     "read_pulse_gain": 3000,
-    "read_pulse_freq": 6672.525,  # 6253.8,
+    "read_pulse_freq": 6672.563,  # 6253.8,
 
     # Experiment Parameter
-    "TransSpan": 7,  # [MHz] span will be center frequency +/- this parameter
+    "TransSpan": 2,  # [MHz] span will be center frequency +/- this parameter
     "TransNumPoints": 301,  # number of points in the transmission frequency
-}
+    "meas_config": "hanger"
+,}
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",  # Constant pulse
@@ -160,12 +161,12 @@ UpdateConfig_qubit = {
     # Define spec slice experiment parameters
     "qubit_freq_start": 50,
     "qubit_freq_stop": 500,
-    "SpecNumPoints": 151,  # Number of points
-    'spec_reps': 5000,  # Number of repetition
-    "delay_btwn_pulses" : 1000, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
+    "SpecNumPoints": 101,  # Number of points
+    'spec_reps': 2000,  # Number of repetition
+    "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 
     # Define the yoko voltage
-    "yokoVoltage": -0.0935,
+    "yokoVoltage": -0.101,
     "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': False, # This is for turning off the heating tone
     'mode_periodic': False,
@@ -185,6 +186,7 @@ yoko1.SetVoltage(config["yokoVoltage"])
 # TITLE Perform the cavity transmission experiment
 
 config = BaseConfig | UpdateConfig
+soc.reset_gens()
 Instance_trans = Transmission(path="dataTestTransmission", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
 data_trans = Instance_trans.acquire()
 Instance_trans.save_data(data_trans)
@@ -225,7 +227,7 @@ print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
     # %%
 # TITLE Perform the spec slice experiment
-
+soc.reset_gens()
 # Estimate Time
 time = config["spec_reps"] * config["SpecNumPoints"] * (
             config["relax_delay"] + config["qubit_length"] + config["read_length"]) * 1e-6
@@ -303,16 +305,16 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # TITLE: Transmission vs Power
 
 UpdateConfig = {
-    "yokoVoltage": 1.34,
+    "yokoVoltage": -0.101,
     "trans_gain_start": 100,
-    "trans_gain_stop": 30000,
-    "trans_gain_num": 21,
-    "trans_reps": 5000,
+    "trans_gain_stop": 10000,
+    "trans_gain_num": 51,
+    "trans_reps": 2000,
     "read_pulse_style": "const",
-    "readout_length": 50,  # [us]
-    "trans_freq_start": 7391,  # [MHz]
-    "trans_freq_stop": 7393.5,  # [MHz]
-    "TransNumPoints": 401,
+    "readout_length": 10,  # [us]
+    "trans_freq_start": 6668,  # [MHz]
+    "trans_freq_stop": 6673,  # [MHz]
+    "TransNumPoints": 201,
     "relax_delay": 10,
     "units": "DAC",  # use "dB" or "DAC"
     "normalize": True,
