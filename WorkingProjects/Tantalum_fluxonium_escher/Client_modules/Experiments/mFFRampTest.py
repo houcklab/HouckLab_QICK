@@ -132,8 +132,8 @@ class FFRampTest(NDAveragerProgram):
         "reps": 1000,
         "sets": 5,
 
-        "angle": 0, # [radians] Angle of rotation for readout
-        "threshold": 0, # [DAC units] Threshold between g and e
+        "angle": None, # [radians] Angle of rotation for readout
+        "threshold": None, # [DAC units] Threshold between g and e
     }
 
 
@@ -170,7 +170,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plot_disp = False, fig_num = 1, **kwargs):
+    def display(self, data=None, plot_disp = True, plot_all_delays = False, fig_num = 1, **kwargs):
 
         if data is None:
             data = self.data
@@ -180,24 +180,44 @@ class FFRampTest_Experiment(ExperimentClass):
         q_arr = data['data']['q_arr']
         ramp_lengths = data['data']['ramp_lengths']
 
+        # If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
+        if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
+            import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
+            ssa = shot_analysis.SingleShotAnalysis(i_arr[0, :, 0], q_arr[0, :, 0])
+            ssa_centers = ssa.get_Centers(i_arr[0, :, 0], q_arr[0, :, 0])
+            # We rotate to undo the current rotation, so - sign
+            theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
+            # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
+            threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(-theta) - \
+                        (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(-theta)
+
+        else: # User has provided override values
+            theta = self.cfg["angle"]
+            threshold = self.cfg["threshold"]
+
         # Histogram of original data for one of the delay points
+        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr[0, :, 0], q_arr[0, :, 0])
+
+        # Make the plot
         while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
             fig_num += 1
         fig = plt.figure(figsize=(12, 12), num=fig_num)
         ax1 = plt.subplot(2, 2, 1)
-        plt.scatter(i_arr[0, :, 0], q_arr[0, :, 0])
+        plt.pcolor(X, Y, hist2d[0])
+        if self.cfg["angle"] is None or self.cfg["threshold"] is None:
+            plt.scatter(ssa_centers[:, 0], ssa_centers[:, 1], color = 'r', marker = 'x')
         plt.xlabel('I (DAC units)')
         plt.ylabel('Q (DAC units)')
         plt.title('Raw I/Q data, smallest delay, before ramp')
+        plt.colorbar()
         ax1.set_aspect('equal')
 
         # Rotate the data. Positive angle rotates ccw
-        theta = self.cfg["angle"]
         i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
         q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
 
         # Threshold; the data has been rotated such that the signal is in e
-        data_thresh = i_arr_rot > self.cfg["threshold"]
+        data_thresh = i_arr_rot > threshold
 
         # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
         ax2 = plt.subplot(2, 2, 2)
@@ -212,16 +232,22 @@ class FFRampTest_Experiment(ExperimentClass):
 
         # Scatter plot of rotated post-ramp points for start in below/above threshold. For now, plot only last delay value
         ax3 = plt.subplot(2, 2, 3)
-        plt.scatter(i_arr_rot[0, :, 1][data_thresh[0, :, 0]], q_arr_rot[0, :, 1][data_thresh[0, :, 0]],
-                    color = 'r', marker = 'o', alpha = 0.5)
+        #plt.scatter(i_arr_rot[0, :, 1][data_thresh[0, :, 0]], q_arr_rot[0, :, 1][data_thresh[0, :, 0]],
+        #            color = 'r', marker = 'o', alpha = 0.5)
+        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[0, :, 1][data_thresh[0, :, 0]],
+                                                                q_arr_rot[0, :, 1][data_thresh[0, :, 0]])
+        plt.pcolor(X, Y, hist2d[0])
         plt.xlabel('I (DAC units)')
         plt.ylabel('Q (DAC units)')
         plt.title('Rotated I/Q data, smallest length,\nafter ramp, start right of threshold')
         ax3.set_aspect('equal')
 
         ax4 = plt.subplot(2, 2, 4)
-        plt.scatter(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]], q_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
-                    color = 'b', marker = 'o', alpha = 0.5)
+        #plt.scatter(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]], q_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
+        #            color = 'b', marker = 'o', alpha = 0.5)
+        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
+                                                                q_arr_rot[0, :, 1][~data_thresh[0, :, 0]])
+        plt.pcolor(X, Y, hist2d[0])
         plt.xlabel('I (DAC units)')
         plt.ylabel('Q (DAC units)')
         plt.title('Rotated I/Q data, smallest length,\nafter ramp, start left of threshold')
@@ -262,8 +288,44 @@ class FFRampTest_Experiment(ExperimentClass):
         #     fig.clf(True)
         #     plt.close(fig)
 
+        if plot_all_delays:
+            for i, rl in enumerate(ramp_lengths):
+                plt.figure(figsize=(12, 12))
+                ax1 = plt.subplot(2, 2, 1)
+                plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
+                            color='r', marker='o', alpha=0.5)
+                plt.scatter(i_arr_rot[i, :, 0][~data_thresh[i, :, 0]], q_arr_rot[i, :, 0][~data_thresh[i, :, 0]],
+                            color='b', marker='o', alpha=0.5)
+                plt.xlabel('I (DAC units)')
+                plt.ylabel('Q (DAC units)')
+                plt.title('Rotated I/Q data, %.3f us delay, before ramp' % rl)
+                ax1.set_aspect('equal')
 
+                ax2 = plt.subplot(2, 2, 2)
+                plt.scatter(i_arr_rot[i, :, 1][data_thresh[i, :, 1]], q_arr_rot[i, :, 1][data_thresh[i, :, 1]],
+                            color='r', marker='o', alpha=0.5)
+                plt.scatter(i_arr_rot[i, :, 1][~data_thresh[i, :, 1]], q_arr_rot[i, :, 1][~data_thresh[i, :, 1]],
+                            color='b', marker='o', alpha=0.5)
+                plt.xlabel('I (DAC units)')
+                plt.ylabel('Q (DAC units)')
+                plt.title('Rotated I/Q data, %.3f us delay, after ramp' % rl)
+                ax2.set_aspect('equal')
 
+                ax3 = plt.subplot(2, 2, 3)
+
+                ax3 = plt.subplot(2, 2, 3)
+
+    @staticmethod
+    def _prepare_hist_data(i_arr, q_arr):
+        # Prepare histogram data
+        iq_data = np.vstack((i_arr, q_arr))
+        norm = np.sqrt(iq_data[0, :] ** 2 + iq_data[1, :] ** 2)
+        bin_size = np.histogram_bin_edges(norm, bins='fd').size
+        hist2d = np.histogram2d(iq_data[0, :], iq_data[1, :], bins=bin_size)
+        x_points = (hist2d[1][1:] + hist2d[1][:-1]) / 2
+        y_points = (hist2d[2][1:] + hist2d[2][:-1]) / 2
+        Y, X = np.meshgrid(y_points, x_points)
+        return X, Y, hist2d
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
