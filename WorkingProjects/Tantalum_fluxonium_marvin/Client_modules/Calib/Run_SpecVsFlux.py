@@ -19,29 +19,29 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.115,
-    "yokoVoltageStop": -0.09,
-    "yokoVoltageNumPoints": 31,
+    "yokoVoltageStart": -0.095,
+    "yokoVoltageStop": -0.088,
+    "yokoVoltageNumPoints": 21,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 2000,
+    "trans_reps": 200,
     "read_pulse_style": "const",
-    "read_length": 10,  # us
-    "read_pulse_gain": 3000,  # [DAC units]
-    "trans_freq_start": 6669,
+    "read_length": 20,  # us
+    "read_pulse_gain": 1200,  # [DAC units]
+    "trans_freq_start": 6671,
     "trans_freq_stop": 6673.5,
-    "TransNumPoints": 401,
+    "TransNumPoints": 101,
 
     # qubit spec parameters
-    "spec_reps": 200,
+    "spec_reps": 2000,
     "qubit_pulse_style": "const",
     "qubit_gain": 10000,
-    "qubit_length": 5,
+    "qubit_length": 2,
     "flat_top_length" : 10,
     "qubit_freq_start": 100,
-    "qubit_freq_stop": 500,
-    "SpecNumPoints": 201,
+    "qubit_freq_stop": 400,
+    "SpecNumPoints": 101,
     "sigma": 1,
     "relax_delay":10,
     'use_switch': False,
@@ -54,6 +54,7 @@ UpdateConfig = {
 
     "trans_method": "enhanced", # Seitch between using pphase
     "meas_config": 'Hanger',
+    "draw_read_freq": False,
 }
 config = BaseConfig | UpdateConfig
 
@@ -73,6 +74,24 @@ Instance_SpecVsFlux = SpecVsFlux(path="dataTestSpecVsFlux", outerFolder=outerFol
 data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, individ_fit = False)
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
+plt.show()
+
+#%%
+# TITLE : Plot just the transmission vs flux
+
+yoko_vec = data_SpecVsFlux['data']['voltVec']
+trans_fpts = data_SpecVsFlux['data']['trans_fpts']
+trans_mas = np.abs( data_SpecVsFlux['data']['trans_Imat'] + 1j*data_SpecVsFlux['data']['trans_Qmat'])
+
+plt.figure(figsize=(18, 8))
+plt.imshow(np.transpose(trans_mas), aspect='auto', origin='lower',
+           extent=[yoko_vec[0], yoko_vec[-1], trans_fpts[0], trans_fpts[-1]],
+           interpolation='nearest', cmap='viridis')
+plt.colorbar(label='Transmission Magnitude')
+plt.xlabel('Voltage Vector')
+plt.ylabel('Transmission Frequency Points')
+plt.title('Transmission Magnitude vs Voltage and Frequency')
+plt.tight_layout()
 plt.show()
 
 #%%

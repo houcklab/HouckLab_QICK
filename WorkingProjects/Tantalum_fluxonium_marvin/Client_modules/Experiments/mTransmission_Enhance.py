@@ -55,7 +55,7 @@ class Transmission_Enhance(ExperimentClass):
         for f in tqdm(fpts, position=0, disable=True):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True, progress=False))
         if debug:
             print(f'Time: {time.time() - start}')
         results = np.transpose(results)

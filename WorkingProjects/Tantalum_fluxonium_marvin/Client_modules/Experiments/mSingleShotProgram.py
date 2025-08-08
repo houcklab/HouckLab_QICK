@@ -120,9 +120,9 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update gain of the flat part
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
@@ -144,7 +144,7 @@ class SingleShotProgram(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         #### pull the data from the single hots
         prog = LoopbackProgramSingleShot(self.soccfg, self.cfg)
         shots_i0,shots_q0 = prog.acquire(self.soc, load_pulses=True)
