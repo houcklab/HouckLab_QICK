@@ -181,7 +181,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plot_disp = True, plot_all_delays = False, fig_num = 1, **kwargs):
+    def display(self, data=None, plot_disp = True, plot_all_lengths = False, fig_num = 1, **kwargs):
 
         if data is None:
             data = self.data
@@ -207,27 +207,6 @@ class FFRampTest_Experiment(ExperimentClass):
             theta = self.cfg["angle"]
             threshold = self.cfg["threshold"]
 
-        # Histogram of original data for one of the delay points
-        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr[0, :, 0], q_arr[0, :, 0])
-
-        # Make the plot
-        while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
-            fig_num += 1
-        fig = plt.figure(figsize=(12, 12), num=fig_num)
-        ax1 = plt.subplot(2, 2, 1)
-        p1 = plt.pcolor(X, Y, hist2d[0])
-        if self.cfg["angle"] is None or self.cfg["threshold"] is None:
-            plt.scatter(ssa_centers[:, 0], ssa_centers[:, 1], color = 'r', marker = 'x')
-        plt.xlabel('I (DAC units)')
-        plt.ylabel('Q (DAC units)')
-        plt.title('Raw I/Q data, smallest delay, before ramp')
-
-        # Matplotlib magic that makes the colourbar not be a stupid size
-        divider1 = make_axes_locatable(ax1)
-        cax1 = divider1.append_axes("right", size="5%", pad=0.05)
-        plt.colorbar(p1, cax=cax1)
-        ax1.set_aspect('equal')
-
         # Rotate the data. Positive angle rotates ccw
         i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
         q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
@@ -235,57 +214,85 @@ class FFRampTest_Experiment(ExperimentClass):
         # Threshold; the data has been rotated such that the signal is in e
         data_thresh = i_arr_rot > threshold
 
-        # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
-        ax2 = plt.subplot(2, 2, 2)
-        plt.scatter(i_arr_rot[0, :, 0][data_thresh[0, :, 0]], q_arr_rot[0, :, 0][data_thresh[0, :, 0]],
-                    color = 'r', marker = 'o', alpha = 0.5)
-        plt.scatter(i_arr_rot[0, :, 0][~data_thresh[0, :, 0]], q_arr_rot[0, :, 0][~data_thresh[0, :, 0]],
-                    color = 'b', marker = 'o', alpha = 0.5)
-        plt.xlabel('I (DAC units)')
-        plt.ylabel('Q (DAC units)')
-        plt.title('Rotated I/Q data, smallest delay, before ramp')
+        if plot_all_lengths:
+            ramp_lengths_loop = ramp_lengths
+        else:
+            ramp_lengths_loop = [ramp_lengths[0]]
 
-        ax2.set_aspect('equal')
+        for i, rl in enumerate(ramp_lengths_loop):
+        # Histogram of original data for one of the delay points
+            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr[i, :, 0], q_arr[i, :, 0])
 
-        # Scatter plot of rotated post-ramp points for start in below/above threshold. For now, plot only last delay value
-        ax3 = plt.subplot(2, 2, 3)
-        #plt.scatter(i_arr_rot[0, :, 1][data_thresh[0, :, 0]], q_arr_rot[0, :, 1][data_thresh[0, :, 0]],
-        #            color = 'r', marker = 'o', alpha = 0.5)
-        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
-                                                                q_arr_rot[0, :, 1][~data_thresh[0, :, 0]])
-        p3 = plt.pcolor(X, Y, hist2d[0])
-        plt.xlabel('I (DAC units)')
-        plt.ylabel('Q (DAC units)')
-        plt.title('Rotated I/Q data, smallest length,\nafter ramp, start left of threshold')
+            # Make the plot
+            while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+                fig_num += 1
 
-        # Matplotlib magic that makes the colourbar not be a stupid size
-        divider3 = make_axes_locatable(ax3)
-        cax3 = divider3.append_axes("right", size="5%", pad=0.05)
-        plt.colorbar(p3, cax=cax3)
+            fig = plt.figure(figsize=(12, 12), num=fig_num)
+            ax1 = plt.subplot(2, 2, 1)
+            p1 = plt.pcolor(X, Y, hist2d[0])
+            if self.cfg["angle"] is None or self.cfg["threshold"] is None:
+                plt.scatter(ssa_centers[:, 0], ssa_centers[:, 1], color = 'r', marker = 'x')
+            plt.xlabel('I (DAC units)')
+            plt.ylabel('Q (DAC units)')
+            plt.title('Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
 
-        ax3.set_aspect('equal')
+            # Matplotlib magic that makes the colourbar not be a stupid size
+            divider1 = make_axes_locatable(ax1)
+            cax1 = divider1.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(p1, cax=cax1)
+            ax1.set_aspect('equal')
 
-        ax4 = plt.subplot(2, 2, 4)
-        #plt.scatter(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]], q_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
-        #            color = 'b', marker = 'o', alpha = 0.5)
-        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[0, :, 1][data_thresh[0, :, 0]],
-                                                                q_arr_rot[0, :, 1][data_thresh[0, :, 0]])
-        p4 = plt.pcolor(X, Y, hist2d[0])
-        plt.xlabel('I (DAC units)')
-        plt.ylabel('Q (DAC units)')
-        plt.title('Rotated I/Q data, smallest length,\nafter ramp, start right of threshold')
+            # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
+            ax2 = plt.subplot(2, 2, 2)
+            plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
+                        color = 'r', marker = 'o', alpha = 0.5)
+            plt.scatter(i_arr_rot[i, :, 0][~data_thresh[i, :, 0]], q_arr_rot[i, :, 0][~data_thresh[i, :, 0]],
+                        color = 'b', marker = 'o', alpha = 0.5)
+            plt.xlabel('I (DAC units)')
+            plt.ylabel('Q (DAC units)')
+            plt.title('Rotated I/Q data, %.3f us ramp half-length, before ramp' % rl)
 
-        # Matplotlib magic that makes the colourbar not be a stupid size
-        divider4 = make_axes_locatable(ax4)
-        cax4 = divider4.append_axes("right", size="5%", pad=0.05)
-        plt.colorbar(p4, cax=cax4)
+            ax2.set_aspect('equal')
 
-        ax4.set_aspect('equal')
+            # Scatter plot of rotated post-ramp points for start in below/above threshold. For now, plot only last delay value
+            ax3 = plt.subplot(2, 2, 3)
+            #plt.scatter(i_arr_rot[0, :, 1][data_thresh[0, :, 0]], q_arr_rot[0, :, 1][data_thresh[0, :, 0]],
+            #            color = 'r', marker = 'o', alpha = 0.5)
+            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][~data_thresh[i, :, 0]],
+                                                                    q_arr_rot[i, :, 1][~data_thresh[i, :, 0]])
+            p3 = plt.pcolor(X, Y, hist2d[0])
+            plt.xlabel('I (DAC units)')
+            plt.ylabel('Q (DAC units)')
+            plt.title('Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold' % rl)
 
-        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
+            # Matplotlib magic that makes the colourbar not be a stupid size
+            divider3 = make_axes_locatable(ax3)
+            cax3 = divider3.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(p3, cax=cax3)
+
+            ax3.set_aspect('equal')
+
+            ax4 = plt.subplot(2, 2, 4)
+            #plt.scatter(i_arr_rot[0, :, 1][~data_thresh[0, :, 0]], q_arr_rot[0, :, 1][~data_thresh[0, :, 0]],
+            #            color = 'b', marker = 'o', alpha = 0.5)
+            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][data_thresh[i, :, 0]],
+                                                                    q_arr_rot[i, :, 1][data_thresh[i, :, 0]])
+            p4 = plt.pcolor(X, Y, hist2d[0])
+            plt.xlabel('I (DAC units)')
+            plt.ylabel('Q (DAC units)')
+            plt.title('Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold' % rl)
+
+            # Matplotlib magic that makes the colourbar not be a stupid size
+            divider4 = make_axes_locatable(ax4)
+            cax4 = divider4.append_axes("right", size="5%", pad=0.05)
+            plt.colorbar(p4, cax=cax4)
+
+            ax4.set_aspect('equal')
+
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+                         (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
         # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         #
         # plt.savefig(self.iname)
@@ -334,32 +341,6 @@ class FFRampTest_Experiment(ExperimentClass):
         #     fig.clf(True)
         #     plt.close(fig)
 
-        # if plot_all_delays:
-        #     for i, rl in enumerate(ramp_lengths):
-        #         plt.figure(figsize=(12, 12))
-        #         ax1 = plt.subplot(2, 2, 1)
-        #         plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
-        #                     color='r', marker='o', alpha=0.5)
-        #         plt.scatter(i_arr_rot[i, :, 0][~data_thresh[i, :, 0]], q_arr_rot[i, :, 0][~data_thresh[i, :, 0]],
-        #                     color='b', marker='o', alpha=0.5)
-        #         plt.xlabel('I (DAC units)')
-        #         plt.ylabel('Q (DAC units)')
-        #         plt.title('Rotated I/Q data, %.3f us delay, before ramp' % rl)
-        #         ax1.set_aspect('equal')
-        #
-        #         ax2 = plt.subplot(2, 2, 2)
-        #         plt.scatter(i_arr_rot[i, :, 1][data_thresh[i, :, 1]], q_arr_rot[i, :, 1][data_thresh[i, :, 1]],
-        #                     color='r', marker='o', alpha=0.5)
-        #         plt.scatter(i_arr_rot[i, :, 1][~data_thresh[i, :, 1]], q_arr_rot[i, :, 1][~data_thresh[i, :, 1]],
-        #                     color='b', marker='o', alpha=0.5)
-        #         plt.xlabel('I (DAC units)')
-        #         plt.ylabel('Q (DAC units)')
-        #         plt.title('Rotated I/Q data, %.3f us delay, after ramp' % rl)
-        #         ax2.set_aspect('equal')
-        #
-        #         ax3 = plt.subplot(2, 2, 3)
-        #
-        #         ax3 = plt.subplot(2, 2, 3)
 
     @staticmethod
     def _prepare_hist_data(i_arr, q_arr):
