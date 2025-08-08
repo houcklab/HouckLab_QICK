@@ -282,8 +282,10 @@ class FFRampTest_Experiment(ExperimentClass):
 
         ax4.set_aspect('equal')
 
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
         plt.tight_layout()
-        fig.subplots_adjust(top=0.95)
+        plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
         # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         #
         # plt.savefig(self.iname)
@@ -302,7 +304,7 @@ class FFRampTest_Experiment(ExperimentClass):
         p_start_R_end_R = (data_thresh[:, :, 0] & data_thresh[:, :, 1]).sum(axis=1) / i_arr.shape[1]
         assert all(p_no_transition - (p_start_L_end_L + p_start_R_end_R) < np.ones(p_no_transition.shape) * 1e-10)
 
-        plt.figure(figsize=(14, 8))
+        plt.figure(figsize=(16, 8))
         plt.subplot(1, 3, 1)
         plt.plot(ramp_lengths, p_no_transition)
         plt.xlabel('Ramp lengths (us)')
@@ -318,7 +320,7 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.xlabel('Ramp lengths (us)')
         plt.ylabel('P(start right, end right)')
 
-        plt.suptitle(self.fname + '\nYoko voltage %f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
                      (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
         plt.tight_layout()
 
