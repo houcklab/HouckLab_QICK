@@ -1,6 +1,9 @@
 # %%
 import os
 
+import Pyro4.util
+
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampTest import FFRampTest_Experiment
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mQubitTwoToneResonatorCool import \
     QubitTwoToneResonatorCoolExperiment
 
@@ -35,9 +38,9 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mAmpli
     AmplitudeRabiFlux_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mQubitSpecRepeat import QubitSpecRepeat
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.m2QubitFluxDrift import TwoQubitFluxDrift
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mConstantTone import ConstantTone_Experiment
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mCalibrateRFSOCSignalHound import \
-    CalibrateRFSOCSignalHound
+# from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mConstantTone import ConstantTone_Experiment
+# from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mCalibrateRFSOCSignalHound import \
+#     CalibrateRFSOCSignalHound
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_PS_sse import SpecSlice_PS_sse
@@ -68,10 +71,10 @@ UpdateConfig = {
     "read_pulse_style": "const",  # --Fixed
     "gain": 0,  # [DAC units]
 
-    "freq": 200,#3713,  # [MHz]
+    "freq": 6672.42966,#3713,  # [MHz]
 
     "channel": 0, #0,  # TODO default value # 0 is resonator, 1 is qubit
-    "nqz": 1, #2,#1,  # TODO default value
+    "nqz": 2, #2,#1,  # TODO default value
 }
 
 config = BaseConfig | UpdateConfig
@@ -141,12 +144,12 @@ UpdateConfig_transmission = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 10,
-    "read_pulse_gain": 3000,
-    "read_pulse_freq": 6672.563,  # 6253.8,
+    "read_length": 40,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6672.498,  # 6253.8,
 
     # Experiment Parameter
-    "TransSpan": 2,  # [MHz] span will be center frequency +/- this parameter
+    "TransSpan": 0.5,  # [MHz] span will be center frequency +/- this parameter
     "TransNumPoints": 301,  # number of points in the transmission frequency
     "meas_config": "hanger"
 ,}
@@ -156,17 +159,17 @@ UpdateConfig_qubit = {
     "qubit_gain": 10000,  # [DAC Units]
     'sigma': 1,
     'flat_top_length': 5,
-    "qubit_length": 10,  # [us]
+    "qubit_length": 20,  # [us]
 
     # Define spec slice experiment parameters
     "qubit_freq_start": 50,
-    "qubit_freq_stop": 500,
+    "qubit_freq_stop": 300,
     "SpecNumPoints": 101,  # Number of points
-    'spec_reps': 2000,  # Number of repetition
-    "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
+    'spec_reps': 10000,  # Number of repetition
+    "delay_btwn_pulses" : 0.5, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 
     # Define the yoko voltage
-    "yokoVoltage": -0.101,
+    "yokoVoltage": -0.092,
     "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': False, # This is for turning off the heating tone
     'mode_periodic': False,
@@ -305,7 +308,7 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # TITLE: Transmission vs Power
 
 UpdateConfig = {
-    "yokoVoltage": -0.101,
+    "yokoVoltage": -0.092,
     "trans_gain_start": 100,
     "trans_gain_stop": 10000,
     "trans_gain_num": 51,
@@ -335,27 +338,27 @@ TransVsGain.save_config(Instance_TransVsGain)
 # TITLE: Amplitude rabi Chevron
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -0.0935,
+    "yokoVoltage": -0.092,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 10,  # us
-    "read_pulse_gain": 3000,  # [DAC units]
-    "read_pulse_freq": 6672.525,
+    "read_length": 40,  # us
+    "read_pulse_gain": 5000,  # [DAC units]
+    "read_pulse_freq": 6672.498,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 50,
-    "qubit_freq_stop": 500,
-    "RabiNumPoints": 351,  ### number of points
+    "qubit_freq_start": 100,
+    "qubit_freq_stop": 200,
+    "RabiNumPoints": 50,  ### number of points
     "qubit_pulse_style": "const",
     "sigma": 1,  ### units us, define a 20ns sigma
-    "qubit_length": 10,
+    "qubit_length": 2,
     "flat_top_length": 3,  ### in us
     "relax_delay": 10,  ### turned into us inside the run function
     "qb_periodic": False,
     ##### amplitude rabi parameters
     "qubit_gain_start": 500,
-    "qubit_gain_step": 1000,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 21,  ### number of steps
-    "AmpRabi_reps": 5000,  # number of averages for the experiment
+    "qubit_gain_step": 1500,  ### stepping amount of the qubit gain
+    "qubit_gain_expts": 20,  ### number of steps
+    "AmpRabi_reps": 10000,  # number of averages for the experiment
 
     "use_switch": False,
 }
@@ -808,3 +811,64 @@ inst_q2trc = QubitTwoToneResonatorCoolExperiment(path="dataQubit2TResonatorCool"
 data_q2trc = inst_q2trc.acquire()
 inst_q2trc.display()
 inst_q2trc.save_config()
+
+#%%
+# Fast flux ramp test experiment
+
+config = {
+        # Readout section
+        "read_pulse_style": "const",  # --Fixed
+        "read_length": 2,  # [us]
+        "read_pulse_gain": 300,  # [DAC units]
+        "read_pulse_freq": 6723.5,  # [MHz]
+        # Fast flux pulse parameters
+        "ff_ramp_style": "linear",  # one of ["linear"]
+        "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 5000, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 0., # [us] Delay between fast flux ramps
+        "ff_ch": 6,  # RFSOC output channel of fast flux drive
+        "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+        # Sweep parameters
+        "ff_ramp_length_start": 10,  # [us] Total length of positive fast flux pulse, start of sweep
+        "ff_ramp_length_stop": 10,  # [us] Total length of positive fast flux pulse, end of sweep
+        "ff_ramp_expts": 3, # [int] Number of points in the ff ramp length sweep
+        "yokoVoltage": 3.12,  # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 10 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+        "relax_delay_2": 10 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "reps": 100000,
+        "sets": 5,
+        "angle": None, # [radians] Angle of rotation for readout
+        "threshold": None, # [DAC units] Threshold between g and e
+    }
+
+# We have 65536 samples (9.524 us) wave memory on the FF channel (and all other channels)
+
+#yoko.SetVoltage(config["yokoVoltage"])
+
+mlbf_filter = MLBFDriver("169.254.1.1")
+filter_freq = (config["read_pulse_freq"])
+mlbf_filter.set_frequency(int(filter_freq))
+
+config = BaseConfig | config
+# length = 1.5
+#from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest
+#prog = FFRampTest(soccfg, cfg | {"ff_ramp_length": length})
+
+Instance_FFRampTest = FFRampTest_Experiment(path="FFRampTest", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFRampTest.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+try:
+    data_FFRampTest = FFRampTest_Experiment.acquire(Instance_FFRampTest, progress = True)
+    FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=True)
+    FFRampTest_Experiment.save_data(Instance_FFRampTest, data_FFRampTest)
+    FFRampTest_Experiment.save_config(Instance_FFRampTest)
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
+
+# print(Instance_specSlice.qubitFreq)
+plt.show()

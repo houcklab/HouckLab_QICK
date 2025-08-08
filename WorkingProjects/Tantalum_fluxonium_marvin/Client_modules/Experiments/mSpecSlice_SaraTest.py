@@ -130,7 +130,7 @@ class SpecSlice(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         ##### code to aquire just the qubit spec data
         expt_cfg = {
             ### spec parameters
@@ -159,12 +159,12 @@ class SpecSlice(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
-        sig = data['data']['avgi'] + 1j * data['data']['avgq']
+        sig = data['data']['avgi'][0][0] + 1j * data['data']['avgq'][0][0]
         avgamp0 = np.abs(sig)
 
         peak_loc = np.argmax(np.abs(data['data']['avgq']))  # Maximum location
@@ -176,40 +176,6 @@ class SpecSlice(ExperimentClass):
         return data
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
-        # if data is None:
-        #     data = self.data
-
-        # while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
-        #     figNum += 1
-        # fig = plt.figure(figNum)
-        #
-        # x_pts = data['data']['x_pts'] /1e3 #### put into units of frequency GHz
-        # sig = data['data']['avgi'][0][0] + 1j * data['data']['avgq'][0][0]
-        # avgamp0 = np.abs(sig)
-        # avgpphase0 = np.angle(sig, deg=True)
-        # # plt.plot(x_pts, data['data']['avgi'][0][0],label="I")
-        # plt.plot(x_pts, data['data']['avgq'][0][0],label="Q")
-        # # plt.plot(x_pts, avgamp0, label="Amplitude")
-        # # plt.plot(x_pts, avgpphase0, label= "Phase")
-        # plt.ylabel("a.u.")
-        # plt.xlabel("Qubit Frequency (GHz)")
-        # plt.title("Averages = " + str(self.cfg["reps"]))
-        # plt.legend()
-        # plt.savefig(self.iname)
-
-        # ##### code to aquire just the qubit spec data
-        # expt_cfg = {
-        #     ### spec parameters
-        #     "qubit_freq_start": self.cfg["qubit_freq_start"],
-        #     "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-        #     "SpecNumPoints": self.cfg["SpecNumPoints"],  ### number of points
-        # }
-        # self.cfg["reps"] = self.cfg["spec_reps"]
-        # self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        # self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
-        # self.cfg["expts"] = expt_cfg["SpecNumPoints"]
-        #
-        # x_pts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
 
         if data is None:
             data = self.data

@@ -8,9 +8,9 @@ from qick import *
 from qick.averager_program import QickSweep
 from qick import helpers
 import matplotlib.pyplot as plt
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib.initialize import *
+#from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 import datetime
 
 class QubitTwoTwoResonatorCoolProgram(NDAveragerProgram):
