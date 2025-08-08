@@ -98,12 +98,22 @@ class FFRampTest(NDAveragerProgram):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress) # qick update, debug=debug)
 
-        # self.get_raw() has data in format (#channels, #reps, #measurements/expt, 2)
+        # self.get_raw() has data in format (#channels, #reps, #readouts, 2)
         # self.di/q_buf[0] have (rep1_meas1, rep1_meas2, ... rep1_measN, rep1_meas1, ...)
         # reshape to have [[rep1_meas1, rep1_meas2], [rep2_meas1, rep2_meas2], ...]
         # di_buf and dq_buf are total integration, divide out readout time
-        return (self.di_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]),
-                self.dq_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]))
+
+        # Something about this has broken, and now I don't understand how it ever worked.
+        # Currently, di/q_buf has only 2 points, which are the 2 expts averaged reps times. Why did this ever have more points?
+        #return (self.di_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]),
+        #        self.dq_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]))
+
+        # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        shots_i = np.array(self.get_raw())[0, :, :, 0].reshape((self.cfg["reps"], 2)) / length
+        shots_q = np.array(self.get_raw())[0, :, :, 1].reshape((self.cfg["reps"], 2)) / length
+        return shots_i, shots_q
+
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -190,6 +200,7 @@ class FFRampTest_Experiment(ExperimentClass):
             # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
             threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(-theta) - \
                         (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(-theta)
+            print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
 
         else: # User has provided override values
             theta = self.cfg["angle"]
