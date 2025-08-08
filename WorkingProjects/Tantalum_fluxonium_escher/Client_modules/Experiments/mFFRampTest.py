@@ -198,8 +198,8 @@ class FFRampTest_Experiment(ExperimentClass):
             # We rotate to undo the current rotation, so - sign
             theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
             # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
-            threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(-theta) - \
-                        (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(-theta)
+            threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(theta) - \
+                        (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
             print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
 
         else: # User has provided override values
