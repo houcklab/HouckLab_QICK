@@ -485,8 +485,8 @@ class SingleShotAnalysis:
 
         if plot_disp:
             plt.show()
-
-        plt.close()
+        else:
+            plt.close()
 
     # Calculate the populations
     def calculate_populations(self, fit_results, max_iter = 50000, num_trials = 50000, pop_perc = 101):
