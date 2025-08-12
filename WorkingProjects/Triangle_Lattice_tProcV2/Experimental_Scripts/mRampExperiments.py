@@ -1,9 +1,13 @@
+import time
+
+
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experiment_Scripts.mRabiOscillations import WalkFFProg
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpers
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 
 
 class BaseRampExperiment(SweepExperiment1D_lines):
@@ -11,10 +15,10 @@ class BaseRampExperiment(SweepExperiment1D_lines):
         self.Program = ThreePartProgramOneFF
         self.x_key = None
         self.x_points = None
-        self.z_value = 'population'
+        self.z_value = 'population_corrected'
         self.xlabel = None
 
-        self.cfg["IDataArray"] = [None]*4
+        self.cfg["IDataArray"] = [None]*len(self.cfg['FF_Qubits'])
 
         # print('reps:', self.cfg['reps'])
     def set_up_instance(self):
@@ -78,3 +82,4 @@ class TimeVsPopulation(BaseRampExperiment):
     def set_up_instance(self):
         # Do nothing.
         pass
+

@@ -1,3 +1,7 @@
+import math
+
+import qick.helpers
+from matplotlib import pyplot as plt
 from qick.asm_v2 import QickSweep1D
 
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
@@ -31,16 +35,19 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
                                        start=cfg["SpecStart"],
                                        end=cfg["SpecEnd"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        # qubit clock twice as fast as delay clock, and has one sample per clk of its clock
+        self.add_shifted_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=3.5 * cfg["sigma"],
+                               offset=round(cfg["delay"]%1 * 2))
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
                        freq=qubit_freq_sweep, phase=90, gain=cfg["Gauss_gain"] / 32766)
-        self.qubit_length_us = cfg["sigma"] * 4
-        self.qubit_length_cycles = self.us2cycles(self.qubit_length_us)
+        self.qubit_length_us = cfg["sigma"] * 3.5
+        self.qubit_length_cycles = self.us2cycles(self.qubit_length_us) + int(math.ceil(cfg["delay"]%1)) + 2
+        self.cfg['delay'] = int(cfg["delay"])
 
     def _body(self, cfg):
         self.FFPulses(self.FFExpts, 2.0 + self.cycles2us(8)) # used to be 2.02
         # self.FFPulses(self.FFExpts,self.cycles2us(self.delay) + 0.5)
-        self.FFPulses_direct(list_of_gains=self.FFBS, length_dt=(cfg['delay'] + self.qubit_length_cycles + 8 + 22) * 16,
+        self.FFPulses_direct(list_of_gains=self.FFBS, length_dt=(cfg['delay'] + self.qubit_length_cycles + 8 + 23) * 16,
                              previous_gains=self.FFExpts, IQPulseArray=cfg["IDataArray"])
         self.pulse(ch=cfg["qubit_ch"], name='qubit_drive', t=2.0 + self.cycles2us(cfg['delay']))  # play probe pulse
         self.delay_auto()
@@ -60,6 +67,60 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
 
     def loop_pts(self):
         return (self.get_pulse_param("qubit_drive", "freq", as_array=True),)
+
+    def add_shifted_gauss(self, ch, name, sigma, length, offset=0, maxv=None, even_length=False):
+        """Copy-paste of the qick add_gauss but with option to offset the beginning by some number of samples,
+        up to 32.
+        The envelope will peak at length/2.
+        Duration units depend on the program type: tProc v1 programs use integer number of fabric clocks, tProc v2 programs use float us.
+
+        Parameters
+        ----------
+        ch : int
+            generator channel (index in 'gens' list)
+        name : str
+            Name of the envelope
+        sigma : float
+            Standard deviation of the Gaussian (in fabric clocks or us)
+        length : int or float
+            Total envelope length (in fabric clocks or us)
+        maxv : float
+            Value at the peak (if None, the max value for this generator will be used)
+        even_length : bool
+            If length is in us, round the envelope length to an even number of fabric clock cycles.
+            This is useful for flat_top pulses, where the envelope gets split into two halves.
+        """
+        gencfg = self.soccfg['gens'][ch]
+        if maxv is None: maxv = self.soccfg.get_maxv(ch)
+        samps_per_clk = gencfg['samps_per_clk']
+
+        if self.GAUSS_BUG:
+            sigma /= np.sqrt(2.0)
+
+        # convert to integer number of fabric clocks
+        if self.USER_DURATIONS:
+            if even_length:
+                lenreg = 2*self.us2cycles(gen_ch=ch, us=length/2)
+            else:
+                lenreg = self.us2cycles(gen_ch=ch, us=length)
+            sigreg = self.us2cycles(gen_ch=ch, us=sigma)
+        else:
+            lenreg = np.round(length)
+            sigreg = np.round(sigma)
+
+        # convert to number of samples
+        lenreg *= samps_per_clk
+        sigreg *= samps_per_clk
+
+        idata = qick.helpers.gauss(mu=lenreg/2-0.5, si=sigreg, length=lenreg, maxv=maxv)
+
+        # offset the default by 2 due to the interpolation behavior
+        idata = np.pad(idata, [offset+2, offset+2], mode='constant', constant_values=0)
+        # fig, axs = plt.subplots()
+        # axs.plot(idata, marker='o')
+        # plt.show(block=True)
+
+        self.add_envelope(ch, name, idata=idata)
 
 class FFSpecCalibrationMUX(SweepExperiment2D_plots):
     """

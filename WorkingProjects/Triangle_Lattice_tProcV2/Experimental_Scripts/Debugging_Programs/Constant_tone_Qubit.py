@@ -86,17 +86,20 @@ class ConstantTone_Experiment(ExperimentClass):
 
 
 MIXER_FREQ = 4000
+MIXER_FREQ = -1000
+
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 16000,  # [DAC units]
+    "gain": 32000,  # [DAC units]
     "reps": 1000000,
     "rounds":1,
     "mixer_freq": MIXER_FREQ,
-    "freq": 3600, # [MHz]
+    "qubit_LO_freq": 5000,
+    "freq": 3300 - 5000, # [MHz]
 
     "channel": 9, #0,  # TODO default value # 8 is resonator, 9 is qubit
-    "nqz": 2, #2,#1,  # TODO default value
+    "nqz": 1, #2,#1,  # TODO default value
 }
 print("Freq:", UpdateConfig["freq"])
 

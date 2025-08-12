@@ -34,6 +34,7 @@ BaseConfig = {
     "res_nqz": 1,
     "qubit_nqz": 2,
     "mixer_freq": -1750, # 7200  # MHz
+    # "qubit_mixer_freq": -1000, # MHz with LO
     "qubit_mixer_freq": 4000, # MHz
     # range=1720.320 MHz, so allowed qubit freqs will be qubit_mixer_freq +- 860 MHz
     # e.g. 3140 MHz to 4860 MHz if mixer at 4000 MHz
@@ -44,6 +45,7 @@ BaseConfig = {
     "res_length": 20,  # length of cavity pulse for readout in us
     # "adc_trig_delay": 0.3,  # Between 0.3 and 0.5 usually [us]
     "res_LO": 9000,  #in MHz
+    "qubit_LO": 0,
 }
 
 

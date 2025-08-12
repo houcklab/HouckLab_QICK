@@ -29,3 +29,6 @@ def correct_occ(pop_data, confusion_matrix):
 
     return (np.linalg.inv(confusion_matrix)[1,:]  @  vec).flatten()
 
+def pop_to_expect(pop_vec):
+    '''Converts populations in [0,1] to expectations in [-1,1]'''
+    return 2*pop_vec - 1

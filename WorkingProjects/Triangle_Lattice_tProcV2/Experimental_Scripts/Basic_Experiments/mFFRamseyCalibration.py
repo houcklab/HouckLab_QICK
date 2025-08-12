@@ -51,6 +51,7 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         FF.FFDefinitions(self)
         longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
         # print(longest_length)
+        # print(longest_length)
         FF.FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
         # Qubit (Equal sigma for all)
@@ -97,13 +98,14 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         self.delay_auto(200)
 
     def _body(self, cfg):
+        FF_QUBIT_DELAY = 0.07905 # Time for FFPulses to asymptote
         # 1: FFPulses
         # self.delay_auto()
         # Length: 1 us to reach asymptotic value, qubit length for qubit, 0.1 us to account for relative qubit delay
-        self.FFPulses(self.FFPulse, 1 + self.qubit_length_us + 0.1)
+        self.FFPulses(self.FFPulse, FF_QUBIT_DELAY + self.qubit_length_us)
         # first pi/2
-        self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_1', t=1)
-        self.delay(self.qubit_length_us + 1.1)
+        self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_1', t= FF_QUBIT_DELAY)
+        self.delay(self.qubit_length_us + FF_QUBIT_DELAY)
 
         # 2: FFExpt
         # Special case: 0 samples, so skip directly to readout (no FFExpt)
@@ -122,17 +124,16 @@ class RamseyFFCalProg(FFAveragerProgramV2):
 
         self.label("start readout")
         # second pi/2
-        self.FFPulses(self.FFPulse, 1+self.qubit_length_us + 0.1, t_start=0)
-        self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_2', t=1)
-        self.delay(self.qubit_length_us + 1.1)
+        self.FFPulses(self.FFPulse, FF_QUBIT_DELAY+self.qubit_length_us, t_start=0)
+        self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_2', t=FF_QUBIT_DELAY)
+        self.delay(self.qubit_length_us + FF_QUBIT_DELAY)
         # 3: FFReadouts
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
-        self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
-        self.wait(self.cfg["res_length"] + 1)
-        self.delay(self.cfg["res_length"] + 10)  # us
+        self.wait(self.cfg["res_length"])
+        self.delay(self.cfg["res_length"])  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
@@ -146,8 +147,8 @@ class RamseyFFCalProg(FFAveragerProgramV2):
             self.jump("finish_inv")
         self.label("finish_inv")
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-        self.FFPulses(-1 * self.FFPulse, 2*(self.qubit_length_us + 1.01), t_start=0)
-        self.delay(2*(self.qubit_length_us + 1.01))
+        self.FFPulses(-1 * self.FFPulse, 2*(self.qubit_length_us + FF_QUBIT_DELAY+0.1), t_start=0)
+        self.delay(2*(self.qubit_length_us + FF_QUBIT_DELAY + 0.1))
 
     def loop_pts(self):
         return (self.cfg['start'] + self.cfg['step'] * np.arange(self.cfg['expts']) ,)
@@ -175,25 +176,38 @@ class FFRamseyCal(ExperimentClass):
         prog = RamseyFFCalProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                             final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
+
+        # pop_list = prog.acquire_populations(soc=self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+        #                                     progress=progress)[0]
+        # print(self.cfg['confusion_matrix'][0])
+        # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
+        # x_contrast = pop_to_expect(pop_list)
         iq_list = prog.acquire(self.soc, load_pulses=True,
                                soft_avgs=self.cfg.get('rounds', 1),
                                progress=progress)
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
-        self.data['data']['xi'] = avgi
-        self.data['data']['xq'] = avgq
-        self.save_data(data)
-        fig, axs = self.display(data, block=False, plotDisp=True)
+        self.data['data']['yi'] = avgi
+        self.data['data']['yq'] = avgq
         x_contrast = normalize_contrast(avgi, avgq)
+
+        self.data['data']['x_contrast'] = x_contrast
         self.soc.reset_gens()
 
+        fig, axs = self.display(data, block=False, plotDisp=True)
         elapsed_time = time.time() - start_time
         print(f"Elapsed time (X measurement): {datetime.timedelta(seconds=int(elapsed_time))} (hh:mm:ss)")
         print("Expected finish:", datetime.datetime.fromtimestamp(time.time()+elapsed_time).strftime('%A %B %d, %I:%M:%S %p'))
+
         # Measure in Y basis
         self.cfg['Second_Pulse_Angle'] = self.cfg['Y_meas_angle']
         prog = RamseyFFCalProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-
+        # pop_list = prog.acquire_populations(soc=self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+        #                                     progress=progress)[0]
+        # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
+        # y_contrast = pop_to_expect(pop_list)
+        #
+        self.soc.reset_gens()
         iq_list = prog.acquire(self.soc, load_pulses=True,
                                soft_avgs=self.cfg.get('rounds', 1),
                                progress=progress)
@@ -201,6 +215,7 @@ class FFRamseyCal(ExperimentClass):
         self.data['data']['yi'] = avgi
         self.data['data']['yq'] = avgq
         y_contrast = normalize_contrast(avgi, avgq)
+        self.data['data']['y_contrast'] = y_contrast
 
         phi = np.arctan2(y_contrast, x_contrast)
         detunings = phi[1:] - phi[:-1]
@@ -231,14 +246,14 @@ class FFRamseyCal(ExperimentClass):
         ax_detuning.set_xlabel("Wait time (samples)")
 
         expt_samples = data['data']['expt_samples']
-        xi, xq = data['data']['xi'], data['data']['xq']
-        x_contrast = normalize_contrast(xi, xq)
-        ax_trace.plot(expt_samples, x_contrast, 'o-', color='blue', label=f'X')
+        # xi, xq = data['data']['xi'], data['data']['xq']
+        # x_contrast = normalize_contrast(xi, xq)
+        ax_trace.plot(expt_samples, data['data']['x_contrast'], 'o-', color='blue', label=f'X')
 
-        if 'yi' in data['data'].keys():
-            yi, yq = data['data']['yi'], data['data']['yq']
-            y_contrast = normalize_contrast(yi, yq)
-            ax_trace.plot(expt_samples, y_contrast, 'o-', color='orange', label=f'Y')
+        if 'y_contrast' in data['data']:
+            # yi, yq = data['data']['yi'], data['data']['yq']
+            # y_contrast = normalize_contrast(yi, yq)
+            ax_trace.plot(expt_samples, data['data']['y_contrast'], 'o-', color='orange', label=f'Y')
 
 
             ax_detuning.plot(expt_samples[1:], data['data']['detunings_MHz'],'-o', color='red')

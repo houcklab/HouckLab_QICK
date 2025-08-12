@@ -9,6 +9,7 @@ FF_BS = [FF_gain1_BS, FF_gain2_BS, FF_gain3_BS, FF_gain4_BS, FF_gain5_BS, FF_gai
 
 for Qubit, FFR, FFE, FFP, FFBS in zip(('1','2','3','4','5','6','7','8'), FFReadouts, FFExpt, FFPulse, FF_BS):
     FF_Qubits[Qubit] |= {'Gain_Readout': FFR, 'Gain_Expt': FFE, 'Gain_Pulse': FFP, 'Gain_BS': FFBS}
+del Qubit
 
 trans_config = {
     "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32766. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
@@ -17,7 +18,7 @@ trans_config = {
     "adc_trig_delays": [Qubit_Parameters[str(Q_R)]['Readout']['ADC_Offset'] for Q_R in Qubit_Readout],
 }
 qubit_config = {
-    "qubit_freqs": [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] for Q in Qubit_Pulse],
+    "qubit_freqs": [Qubit_Parameters[str(Q)]['Qubit']['Frequency'] - BaseConfig['qubit_LO'] for Q in Qubit_Pulse],
     "qubit_gains": [Qubit_Parameters[str(Q)]['Qubit']['Gain'] / 32766. for Q in Qubit_Pulse],
     "sigma" : Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['sigma']
 }

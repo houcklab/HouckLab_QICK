@@ -36,5 +36,5 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
     def debug(self, prog):
 
         # print(soc.read_mem(10+2*self.cfg['expts'], 'dmem'))
-        print(prog)
+        # print(prog)
         pass

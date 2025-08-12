@@ -67,7 +67,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 1.05)
 
     def loop_pts(self):
-        return (self.get_pulse_param("qubit_drive", "freq", as_array=True),)
+        return (self.get_pulse_param("qubit_drive", "freq", as_array=True) + self.cfg.get('qubit_LO', 0),)
 # ====================================================== #
 
 class QubitSpecSliceFFMUX(ExperimentClass):
@@ -93,7 +93,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         # shape of results: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
         #              e.g. [1, 1, 71, 2]
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
-        x_pts = prog.get_pulse_param("qubit_drive", "freq", as_array=True)
+        x_pts = prog.get_pulse_param("qubit_drive", "freq", as_array=True) + self.cfg.get('qubit_LO', 0)
 
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data

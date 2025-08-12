@@ -1,3 +1,7 @@
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+    SingleShotFFMUX
+
+
 def characterize_readout(config, Qubit_Readout):
     '''Characterize qubits at the current readout point to return angle, threshold, and confusion_matrix for each.
     trans_config remains the same because we want to know the readout error under the MUXed pulse we will use.'''
@@ -8,10 +12,11 @@ def characterize_readout(config, Qubit_Readout):
     new_config = config.copy()
     new_config["FF_Qubits"] = copy.deepcopy(new_config["FF_Qubits"])
     new_config["Shots"] = 5000
+    print(f"Running single shot with {new_config['Shots']} shots.")
 
     for ro_ind, Qubit in enumerate(Qubit_Readout):
         '''Pulse each at a time, using the QubitParameters Pulse parameters'''
-        new_config["qubit_freqs"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Frequency']]
+        new_config["qubit_freqs"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Frequency'] - BaseConfig['qubit_LO']]
         new_config["qubit_gains"] = [Qubit_Parameters[str(Qubit)]['Qubit']['Gain'] / 32766.]
         new_config['sigma']       =  Qubit_Parameters[str(Qubit)]['Qubit']['sigma']
 

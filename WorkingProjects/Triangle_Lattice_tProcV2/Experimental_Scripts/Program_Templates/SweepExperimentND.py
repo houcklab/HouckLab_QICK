@@ -107,13 +107,13 @@ class SweepExperimentND(ExperimentClass):
 
         if self.z_value == 'population_shots':
             print('population shots true')
-            Z_mat = [np.full(self.data_shape + (self.cfg['reps'] * self.cfg.get('rounds', 1),), np.nan) for _ in readout_list]
+            Z_mat = [np.full(self.data_shape + (self.cfg['reps'] * self.cfg.get('rounds', 1),), np.nan, dtype=np.int64) for _ in readout_list]
 
         # raw i and q data
         I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
         Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
 
-        if self.z_value == "population" and "confusion_matrix" in self.cfg:
+        if self.z_value == "population" or self.z_value == "population_corrected" and "confusion_matrix" in self.cfg:
             Z_corrected = [np.full(self.data_shape, np.nan) for _ in readout_list]
         # Define data dictionary
         key_names = [SweepHelpers.key_savename(key) for key in self.keys]
@@ -130,7 +130,8 @@ class SweepExperimentND(ExperimentClass):
                      'Qubit_Readout_List': self.cfg["Qubit_Readout_List"]},
 
         }
-        if self.z_value == "population" and "confusion_matrix" in self.cfg:
+        if self.z_value == "population_corrected" or self.z_value=="population" and "confusion_matrix" in self.cfg:
+            self.data['data']['population'] = Z_mat
             self.data['data']['population_corrected'] = Z_corrected
             self.z_value = "population_corrected"
 
@@ -232,10 +233,12 @@ class SweepExperimentND(ExperimentClass):
                 self.save_data(data=self.data)
                 if plotSave:
                     plt.savefig(self.iname[:-4] + '.png')
-
+        if plotSave:
+            plt.savefig(self.iname[:-4] + '.png')
 
         if (plotDisp or plotSave):
-            fig.clf(True)
+            print("CLosing fig")
+            # fig.clear(True)
             plt.close(fig)
 
         self.analyze(data=self.data)

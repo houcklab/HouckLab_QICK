@@ -39,7 +39,7 @@ class SingleShotProgram(FFAveragerProgramV2):
 
 
     def _body(self, cfg):
-        print(cfg["readout_lengths"])
+        # print(cfg["readout_lengths"])
         FF_Delay_time = 10
         self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
         if self.cfg["Pulse"]:
@@ -79,7 +79,7 @@ class SingleShotProgram(FFAveragerProgramV2):
         all_q = []
 
         d_buf = self.get_raw() # [(*self.loop_dims, nreads, 2) for ro in ros]
-        print(np.array(d_buf).shape)
+        # print(np.array(d_buf).shape)
         for i in range(len(d_buf)):
             shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
             shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
@@ -120,7 +120,7 @@ class SingleShotFFMUX(ExperimentClass):
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
-        print(self.cfg)
+
         data = {'config': self.cfg, 'data': {}}
                 # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
         self.data = data

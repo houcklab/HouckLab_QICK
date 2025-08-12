@@ -35,16 +35,16 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
     def _body(self, cfg):
         # 1: FFPulses
+        FF_Delay_time = 9
         self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time+1.01)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1 if i==0 else 'auto'
+            time_ = 1.0 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
         # 2: FFExpt
         self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"],
                              waveform_label='FFExpts')
         self.delay_auto()
-
 
         # 3: FFReadouts
         # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
@@ -65,17 +65,18 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in self.cfg["IDataArray"]]
         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time+1.01)
         self.delay_auto()
 
 class ThreePartProgramTwoFF(ThreePartProgramOneFF):
     def _body(self, cfg):
         # 1: FFPulses
+        FF_Delay_time = 9
         self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01 + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1 if i==0 else 'auto'
-            self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
+            time_ = 1.0 + FF_Delay_time if i==0 else 'auto'
+            self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_ )
         # 2: FFExpt
         assert 'expt_samples' not in self.cfg, "Use expt_samples1 and expt_samples2 instead."
         assert 'IDataArray'  not in self.cfg, "Use IDataArray1 and IDataArray2 instead."
@@ -107,7 +108,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in concat_IQarray]
         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01 + FF_Delay_time)
         self.delay_auto()
 
 # class ThreePartProgramTwoFF(ThreePartProgramOneFF):

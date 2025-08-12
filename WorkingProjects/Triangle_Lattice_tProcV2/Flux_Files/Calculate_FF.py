@@ -14,14 +14,14 @@ plot_effective_system = True
 suffix = "expt"
 
 frequencies = {
-    'Q1': 3700,
-    'Q2': 3600,
-    'Q3': 3550,
-    # 'Q4': 4000,
-    # 'Q5': 0,
-    # 'Q6': 0,
-    # 'Q7': 0,
-    # 'Q8': 0,
+    'Q1': -0.,
+    'Q2': -0.3,
+    'Q3': -0.29,
+    'Q4': -0.3,
+    'Q5': -0.3,
+    'Q6': -0.3,
+    'Q7': -0.3,
+    'Q8': -0.3,
 }
 flux_was_given = {key: (freq < 10) for key,freq in frequencies.items()}
 

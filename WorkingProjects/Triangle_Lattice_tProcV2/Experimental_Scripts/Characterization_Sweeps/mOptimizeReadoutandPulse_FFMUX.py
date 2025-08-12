@@ -218,7 +218,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         self.gain_pts = np.linspace(expt_cfg["qubit_gain_Start"], expt_cfg["qubit_gain_Stop"], expt_cfg["qubit_gain_Points"])
         self.qubit_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["QubitNumPoints"])
         ####create arrays for storing the data
-        X = self.qubit_fpts
+        X = self.qubit_fpts + self.cfg.get('qubit_LO', 0)
         X_step = X[1] - X[0]
         Y = self.gain_pts
         Y_step = Y[1] - Y[0]

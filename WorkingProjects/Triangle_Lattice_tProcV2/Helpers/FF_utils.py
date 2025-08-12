@@ -27,9 +27,8 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
             IQPulse = np.ones(length_dt) * gain
         else:
             if np.max(IQPulse) > gencfg['maxv'] or np.min(IQPulse) < -gencfg['maxv']:
-                # print(IQPulse)
                 # print("IQPulseArray[{}] goes out of range: [{}, {}]".format(i, -gencfg['maxv'],
-                #                                                                       gencfg['maxv']))
+                #                                                                 gencfg['maxv']))
                 IQPulse[IQPulse < -gencfg['maxv']] = -gencfg['maxv']
                 IQPulse[IQPulse > gencfg['maxv']] =  gencfg['maxv']
 
@@ -133,35 +132,7 @@ def FFDefinitions(instance):
 
     # print(instance.dac_t0)
 
-'''Load 16 waveforms, one for each starting sample within the first clock cycle. Use for sweeping
-the length of arbitrary pulses.'''
-def FFLoad16Waveforms(instance, prev_value=0, waveform_label="swept_FF", truncation_length=None):
-    if type(prev_value) in [int, float]:
-        prev_value = [prev_value] * len(instance.FFChannels)
-    if truncation_length is not None:
-        truncation_length = ceil(truncation_length / 16) * 16
-    for gain, IQPulse, channel, prev_val in zip(instance.FFExpts, instance.cfg["IDataArray"], instance.FFChannels,
-                                                  prev_value):
-        # print("prev val {}, gain {}".format(prev_val, gain))
-        if IQPulse is None:  # if not specified, assume constant of max value
-            IQPulse = gain * np.ones(32768)
-        # add buffer to beginning of IQPulse
-        IQPulse = np.concatenate([prev_val * np.ones(48), IQPulse[:truncation_length]])
-        # print(IQPulse[:48 + 16])
-        # now iterate through and add pulses
-        for i in range(1, 17):
-            # create shifted pulse. Note all pulses are len(IQPulse) + 2 clock cycles!
-            idata = IQPulse[i:len(IQPulse) - 16 + i]
-            wname = f"{waveform_label}_{i}_{channel}"
-            instance.add_envelope(ch=channel, name=wname,
-                                  idata=idata, qdata=np.zeros_like(idata))
-            instance.add_pulse(ch=channel, name=wname,
-                               style="arb", envelope=wname,
-                               freq=0, phase=0, gain=1.0, outsel="input")
-        # print(len(idata))
-
-
-
+'''These assume that each pulse name has the format f"{waveform_label}_{channel_num}"'''
 def FFPlayWaveforms(instance, waveform_label, t_start='auto'):
     for channel in instance.FFChannels:
         if t_start != 'auto':
@@ -169,22 +140,11 @@ def FFPlayWaveforms(instance, waveform_label, t_start='auto'):
 
         instance.pulse(ch=channel, name=f"{waveform_label}_{channel}", t=t_start)
 
-def FFPlayChangeLength(instance, waveform_label, length_src, t_start='auto'):
-    for channel in instance.FFChannels:
-        pulse_name = f"{waveform_label}_{channel}"
-        for wname in instance.list_pulse_waveforms(pulse_name):
-            instance.read_wmem(name=wname)
-            instance.write_reg(dst='w_length', src= length_src)
-            instance.write_wmem(name=wname)
-
-            if t_start != 'auto':
-                t_start = t_start + 0# instance.gen_t0[channel]
-            instance.pulse(ch=channel, name=pulse_name, t=t_start)
-
 def FFInvertWaveforms(instance, waveform_label, t_start='auto'):
     for channel in instance.FFChannels:
         pulse_name = f"{waveform_label}_{channel}"
         gencfg = instance.soccfg['gens'][channel]
+        # print("FF_utils.FFInvertWaveforms: gencfg['maxv'] =", gencfg['maxv'])
         for wname in instance.list_pulse_waveforms(pulse_name):
             instance.read_wmem(name=wname)
             instance.write_reg(dst='w_gain', src= - gencfg['maxv']) # -32766
@@ -197,4 +157,3 @@ def FFInvertWaveforms(instance, waveform_label, t_start='auto'):
             instance.read_wmem(name=wname)
             instance.write_reg(dst='w_gain', src= + gencfg['maxv']) # + 32766
             instance.write_wmem(name=wname)
-

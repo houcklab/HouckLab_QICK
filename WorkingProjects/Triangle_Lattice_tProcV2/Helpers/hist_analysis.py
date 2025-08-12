@@ -18,7 +18,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     if plot == True:
         while plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum += 1
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(12.8, 6.4), num=figNum)
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(11.2, 5.6), num=figNum)
 
         # fig.tight_layout()
         fig.suptitle(title)
