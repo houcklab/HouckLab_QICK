@@ -45,6 +45,7 @@ cavityAtten = attenuator(27784)
 # define yokos
 # QCage bias tee DC port
 yoko = YOKOGS200(VISAaddress = 'USB::0xB21::0x39::91S929901', rm = visa.ResourceManager())
+# yoko = YOKOGS200(VISAaddress = 'GPIB1::5::INSTR', rm = visa.ResourceManager())
 yoko.SetMode('voltage')
 
 
