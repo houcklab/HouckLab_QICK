@@ -110,13 +110,22 @@ class LoopbackProgramQND(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], gen_ch = self.cfg["res_ch"])
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], gen_ch = self.cfg["res_ch"])
+        # Something about this has broken, and now I don't understand how it ever worked.
+        # Currently, di/q_buf has only 2 points, which are the 2 expts averaged reps times. Why did this ever have more points?
+        # shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], gen_ch = self.cfg["res_ch"])
+        # shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], gen_ch = self.cfg["res_ch"])
+        #
+        # i_0 = shots_i0[0::2]
+        # i_1 = shots_i0[1::2]
+        # q_0 = shots_q0[0::2]
+        # q_1 = shots_q0[1::2]
 
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        i_0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"]))[0] / length
+        q_0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"]))[0] / length
+        i_1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"]))[0] / length
+        q_1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"]))[0] / length
 
         return i_0, i_1, q_0, q_1
 
@@ -276,7 +285,8 @@ class QNDmeas(ExperimentClass):
         plt.savefig(self.iname, dpi=400)
         if plotDisp:
             plt.show()
-        plt.close()
+        else:
+            plt.close()
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
