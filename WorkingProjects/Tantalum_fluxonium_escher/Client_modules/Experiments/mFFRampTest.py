@@ -198,17 +198,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
         # If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
         if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
-            import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
-            ssa = shot_analysis.SingleShotAnalysis(i_arr[0, :, 0], q_arr[0, :, 0])
-            ssa_centers = ssa.get_Centers(i_arr[0, :, 0], q_arr[0, :, 0])
-            self.ssa_centers = ssa_centers
-            # We rotate to undo the current rotation, so - sign
-            theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
-            # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
-            threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(theta) - \
-                        (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
-            print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
-
+            theta, threshold = self._find_angle_threshold(i_arr[0, :, 0], q_arr[0, :, 0])
         else: # User has provided override values
             theta = self.cfg["angle"]
             threshold = self.cfg["threshold"]
@@ -272,16 +262,6 @@ class FFRampTest_Experiment(ExperimentClass):
             plt.tight_layout()
             plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
         # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
-        #
-        # plt.savefig(self.iname)
-        #
-        # if plot_disp:
-        #     plt.show(block=False)
-        #     plt.pause(2)
-        #
-        # else:
-        #     fig.clf(True)
-        #     plt.close(fig)
 
         # Calculate & plot probability of staying in same state vs. ramp time
         self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
@@ -296,6 +276,18 @@ class FFRampTest_Experiment(ExperimentClass):
         #     plt.close(fig)
 
 
+    def _find_angle_threshold(self, i_arr: np.ndarray, q_arr: np.ndarray) -> tuple[float, float]:
+        import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
+        ssa = shot_analysis.SingleShotAnalysis(i_arr, q_arr)
+        ssa_centers = ssa.get_Centers(i_arr, q_arr)
+        self.ssa_centers = ssa_centers
+        # We rotate to undo the current rotation, so - sign
+        theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
+        # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
+        threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(theta) - \
+                    (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
+        print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
+        return theta, threshold
 
     @staticmethod
     def _prepare_hist_data(i_arr: np.ndarray, q_arr: np.ndarray):
