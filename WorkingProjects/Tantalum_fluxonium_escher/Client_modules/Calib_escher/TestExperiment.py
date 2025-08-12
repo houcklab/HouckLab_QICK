@@ -60,7 +60,7 @@ import Pyro4.util
 import json
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import MakeFile
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\QCage_dev\WFQ_1\\" # end in \\
+outerFolder = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\HouckCage_dev\WTF\\" # end in \\
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -1318,11 +1318,11 @@ config = {
         # Sweep parameters
         "ff_ramp_length_start": 0.025,  # [us] Total length of positive fast flux pulse, start of sweep
         "ff_ramp_length_stop": 16,  # [us] Total length of positive fast flux pulse, end of sweep
-        "ff_ramp_expts": 51, # [int] Number of points in the ff ramp length sweep
+        "ff_ramp_expts": 11, # [int] Number of points in the ff ramp length sweep
         "yokoVoltage": -1.497,  # [V] Yoko voltage for magnet offset of flux
         "relax_delay_1": 0.02 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
-        "relax_delay_2": 10000 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
-        "reps": 50000,
+        "relax_delay_2": 100 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "reps": 5000,
         "sets": 5,
         "angle": None, # [radians] Angle of rotation for readout
         "threshold": None, # [DAC units] Threshold between g and e
