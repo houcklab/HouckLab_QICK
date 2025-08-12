@@ -7,6 +7,7 @@
 # * faster than any decoherence channels
 # Lev, June 2025: create file.
 ###
+import matplotlib
 from qick import NDAveragerProgram
 
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
@@ -162,13 +163,13 @@ class FFRampTest_Experiment(ExperimentClass):
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False):
-        ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
+        self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
                                    num = self.cfg["ff_ramp_expts"])
         i_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
         q_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
 
         # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
-        for idx, length in enumerate(ramp_lengths):
+        for idx, length in enumerate(self.ramp_lengths):
             prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
 
             # Collect the data
@@ -176,7 +177,7 @@ class FFRampTest_Experiment(ExperimentClass):
                                                   save_experiments=None, #readouts_per_experiment=2,
                                                   start_src="internal", progress=progress)
 
-        data = {'config': self.cfg, 'data': {'ramp_lengths': ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
+        data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
 
         return data
@@ -200,6 +201,7 @@ class FFRampTest_Experiment(ExperimentClass):
             import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
             ssa = shot_analysis.SingleShotAnalysis(i_arr[0, :, 0], q_arr[0, :, 0])
             ssa_centers = ssa.get_Centers(i_arr[0, :, 0], q_arr[0, :, 0])
+            self.ssa_centers = ssa_centers
             # We rotate to undo the current rotation, so - sign
             theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
             # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
@@ -225,9 +227,6 @@ class FFRampTest_Experiment(ExperimentClass):
 
         # Draw plots for all the desired ramp lengths
         for i, rl in enumerate(ramp_lengths_loop):
-            # Generates data for drawing a histogram
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr[i, :, 0], q_arr[i, :, 0])
-
             # Make the figure
             while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
                 fig_num += 1
@@ -235,19 +234,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
             # Make histogram of original data
             ax1 = plt.subplot(2, 2, 1)
-            p1 = plt.pcolor(X, Y, hist2d[0])
-            # If we have fit the data within this program, draw the centres
-            if self.cfg["angle"] is None or self.cfg["threshold"] is None:
-                plt.scatter(ssa_centers[:, 0], ssa_centers[:, 1], color = 'r', marker = 'x')
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
-
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider1 = make_axes_locatable(ax1)
-            cax1 = divider1.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p1, cax=cax1)
-            ax1.set_aspect('equal')
+            self._draw_histogram(ax1, i_arr[i, :, 0], q_arr[i, :, 0], 'Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
 
             # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
             ax2 = plt.subplot(2, 2, 2)
@@ -265,40 +252,20 @@ class FFRampTest_Experiment(ExperimentClass):
 
             # Histograms of rotated post-ramp points for start in below/above threshold.
             ax3 = plt.subplot(2, 2, 3)
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
-                                                                    q_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])])
-            p3 = plt.pcolor(X, Y, hist2d[0])
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold\n%.2f%% | %.2f%%'
-                      % (rl,
-                         NOT(data_thresh[i, :, 1])[NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100,
-                         data_thresh[i, :, 1][NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100 ))
+            self._draw_histogram(ax3, i_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
+                                      q_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
+                'Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold\n%.2f%% | %.2f%%' % (
+                rl,
+                NOT(data_thresh[i, :, 1])[NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100,
+                data_thresh[i, :, 1][NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100 ))
 
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider3 = make_axes_locatable(ax3)
-            cax3 = divider3.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p3, cax=cax3)
-
-            ax3.set_aspect('equal')
 
             ax4 = plt.subplot(2, 2, 4)
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][data_thresh[i, :, 0]],
-                                                                    q_arr_rot[i, :, 1][data_thresh[i, :, 0]])
-            p4 = plt.pcolor(X, Y, hist2d[0])
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold\n%.2f%% | %.2f%%'
-                      % (rl,
-                         NOT(data_thresh[i, :, 1])[data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100,
-                         data_thresh[i, :, 1][data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100 ))
-
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider4 = make_axes_locatable(ax4)
-            cax4 = divider4.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p4, cax=cax4)
-
-            ax4.set_aspect('equal')
+            self._draw_histogram(ax4, i_arr_rot[i, :, 1][data_thresh[i, :, 0]], q_arr_rot[i, :, 1][data_thresh[i, :, 0]],
+                   'Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold\n%.2f%% | %.2f%%' % (
+                   rl,
+                   NOT(data_thresh[i, :, 1])[data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100,
+                   data_thresh[i, :, 1][data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100 ))
 
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
@@ -317,32 +284,8 @@ class FFRampTest_Experiment(ExperimentClass):
         #     plt.close(fig)
 
         # Calculate & plot probability of staying in same state vs. ramp time
-        p_no_transition = (data_thresh[:, :, 0] == data_thresh[:, :, 1]).sum(axis = 1) / i_arr.shape[1]
-        p_start_L_end_L = (AND(NOT(data_thresh[:, :, 0]), NOT(data_thresh[:, :, 1]))).sum(axis=1) / NOT(data_thresh[:, :, 0]).sum(axis=1)
-        p_start_R_end_R = (AND(data_thresh[:, :, 0], data_thresh[:, :, 1])).sum(axis=1) / data_thresh[:, :, 0].sum(axis = 1)
-        #assert all(p_no_transition - (p_start_L_end_L + p_start_R_end_R) < np.ones(p_no_transition.shape) * 1e-10)
+        self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
 
-        plt.figure(figsize=(16, 8))
-        plt.subplot(1, 3, 1)
-        plt.plot(ramp_lengths, p_no_transition)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(no transition after ramp)')
-
-        plt.subplot(1, 3, 2)
-        plt.plot(ramp_lengths, p_start_L_end_L)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(start left, end left)')
-
-        plt.subplot(1, 3, 3)
-        plt.plot(ramp_lengths, p_start_R_end_R)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(start right, end right)')
-
-        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
-        plt.tight_layout()
-
-        plt.savefig(self.iname)
         #
         # if plot_disp:
         #     plt.show(block=False)
@@ -353,8 +296,9 @@ class FFRampTest_Experiment(ExperimentClass):
         #     plt.close(fig)
 
 
+
     @staticmethod
-    def _prepare_hist_data(i_arr, q_arr):
+    def _prepare_hist_data(i_arr: np.ndarray, q_arr: np.ndarray):
         # Prepare histogram data
         iq_data = np.vstack((i_arr, q_arr))
         norm = np.sqrt(iq_data[0, :] ** 2 + iq_data[1, :] ** 2)
@@ -364,6 +308,63 @@ class FFRampTest_Experiment(ExperimentClass):
         y_points = (hist2d[2][1:] + hist2d[2][:-1]) / 2
         Y, X = np.meshgrid(y_points, x_points)
         return X, Y, hist2d
+
+    def _draw_histogram(self, ax: matplotlib.axes.Axes, i_arr: np.ndarray, q_arr: np.ndarray,  title: str) -> None:
+        """ Draw a histogram of the I/Q data in i_arr/q_arr onto axes ax with title title."""
+        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr, q_arr)
+        Z = hist2d[0]
+        p1 = plt.pcolor(X, Y, Z)
+        # If we have fit the data within this program, draw the centres
+        if self.cfg["angle"] is None or self.cfg["threshold"] is None:
+            plt.scatter(self.ssa_centers[:, 0], self.ssa_centers[:, 1], color='r', marker='x')
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title(title)
+
+        # Matplotlib magic that makes the colourbar not be a stupid size
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(p1, cax=cax)
+        ax.set_aspect('equal')
+
+    def _plot_probabilities(self, shots0: np.ndarray, shots1: np.ndarray):
+        """ Plots the probabilities of (no) transition vs. ramp lengths.
+        shots0/1: ndarray of booleans, True if right of threshold. First/second measurement.
+        Shape is (# ramp lengths, # shots). """
+
+        # This seems horrible, but apparently python doesn't do operator overloading or allow &&/etc, and ~ does super
+        # weird stuff (what do you think ~True is?). Writing out the functions is too long and unreadable
+        NOT = np.logical_not
+        AND = np.logical_and
+
+        # Calculate & plot probability of staying in same state vs. ramp time
+        p_no_transition = (shots0 == shots1).sum(axis = 1) / shots0.shape[1]
+        p_start_L_end_L = (AND(NOT(shots0), NOT(shots1))).sum(axis=1) / NOT(shots0).sum(axis=1)
+        p_start_R_end_R = (AND(shots0, shots1)).sum(axis=1) / shots0.sum(axis = 1)
+        #assert all(p_no_transition - (p_start_L_end_L + p_start_R_end_R) < np.ones(p_no_transition.shape) * 1e-10)
+
+        plt.figure(figsize=(16, 8))
+        plt.subplot(1, 3, 1)
+        plt.plot(self.ramp_lengths, p_no_transition)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(no transition after ramp)')
+
+        plt.subplot(1, 3, 2)
+        plt.plot(self.ramp_lengths, p_start_L_end_L)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(start left, end left)')
+
+        plt.subplot(1, 3, 3)
+        plt.plot(self.ramp_lengths, p_start_R_end_R)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(start right, end right)')
+
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
+        plt.tight_layout()
+
+        plt.savefig(self.iname)
+
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
