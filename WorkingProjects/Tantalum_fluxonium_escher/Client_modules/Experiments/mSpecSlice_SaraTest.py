@@ -127,7 +127,10 @@ class SpecSlice(ExperimentClass):
         }
         self.cfg["reps"] = self.cfg["spec_reps"]
         self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
+        # Decreasing the denominator by 1 so that it reaches the final stop point
+        if expt_cfg["SpecNumPoints"] <= 1:
+            raise ValueError("The number of Spec Number Points has to be greater than 1")
+        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/(expt_cfg["SpecNumPoints"]-1)
         self.cfg["expts"] = expt_cfg["SpecNumPoints"]
 
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)

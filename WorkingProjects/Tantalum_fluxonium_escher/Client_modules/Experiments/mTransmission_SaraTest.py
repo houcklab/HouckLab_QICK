@@ -76,7 +76,7 @@ class Transmission(ExperimentClass):
         data['data']['results'][0][0][0] = np.real(sig)
         data['data']['results'][0][0][1] = np.imag(sig)
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmin(avgamp0)
+        peak_loc = np.argmax(avgamp0)
         self.peakFreq = data['data']['fpts'][peak_loc]
 
         return data

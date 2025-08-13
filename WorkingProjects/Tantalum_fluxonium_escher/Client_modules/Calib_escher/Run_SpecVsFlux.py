@@ -26,31 +26,31 @@ BaseConfig = BaseConfig | SwitchConfig
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": 2.9,  # 1.06, #-1,
-    "yokoVoltageStop": 3.4,  # 1,
-    "yokoVoltageNumPoints": 81,  # 5001,
+    "yokoVoltageStart": -1.7,  # 1.06, #-1,
+    "yokoVoltageStop": -0.7,  # 1,
+    "yokoVoltageNumPoints": 201,  # 5001,
 
     # Readout parameters
     "trans_reps": 2000,
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 2000,
+    "read_length": 10,
+    "read_pulse_gain": 12000,
     # "read_pulse_freq": 6723.5,
-    "trans_freq_start": 6722.5,
-    "trans_freq_stop": 6724.5,
-    'TransNumPoints': 501,
+    "trans_freq_start": 7390.5,
+    "trans_freq_stop": 7393.5,
+    'TransNumPoints': 201,
 
     # qubit spec parameters
-    "spec_reps": 2000,  # 10000,#22000,
+    "spec_reps": 8000,  # 10000,#22000,
     "qubit_pulse_style": "const",  # "flat_top", "const", "arb"
-    "qubit_gain": 30000,  # 3000,
+    "qubit_gain": 25000,  # 3000,
     "qubit_length": 10,
     "flat_top_length": 1,
-    "qubit_freq_start": 500,
-    "qubit_freq_stop": 2000,
-    "SpecNumPoints": 750,  # 101,#101
+    "qubit_freq_start": 50,
+    "qubit_freq_stop": 1000,
+    "SpecNumPoints": 301,  # 101,#101
     "sigma": 0.5,
-    "relax_delay": 50,  # 150,
+    "relax_delay": 5,  # 150,
     "use_switch": False,
 
     # Changing qubit channel ( not the standard way !!! )
@@ -63,7 +63,7 @@ UpdateConfig = {
     "ro_mode_periodic": False,
 
     # Do we draw the point picked out for spectroscopy?
-    "draw_read_freq": True,
+    "draw_read_freq": False,
 }
 
 config = BaseConfig | UpdateConfig
