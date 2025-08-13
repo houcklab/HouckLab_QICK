@@ -28,8 +28,7 @@ class LoopbackProgramQND(RAveragerProgram):
 
         ### Configure Resonator Tone
         res_ch = cfg["res_ch"]
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"],
-                         ro_ch=cfg["ro_chs"][0])  # Declare the resonator channel
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])  # Declare the resonator channel
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch,
                                   ro_ch=cfg["ro_chs"][0])  # Convert to clock ticks
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
@@ -106,21 +105,24 @@ class LoopbackProgramQND(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update frequency list index
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        i_0 = shots_i0[0]
+        i_1 = shots_i1[0]
+        q_0 = shots_q0[0]
+        q_1 = shots_q1[0]
 
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
 
         return i_0, i_1, q_0, q_1
 
@@ -145,7 +147,7 @@ class QNDmeas(ExperimentClass):
         self.mesh_grid = 0
         self.store = False
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         ### pull the data from the single hots
         prog = LoopbackProgramQND(self.soccfg, self.cfg)
         i_0, i_1, q_0, q_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1])

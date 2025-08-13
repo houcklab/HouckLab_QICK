@@ -53,7 +53,7 @@ BaseConfig = {
     "reps": 1000,  # --Fixed
     "nqz": 2,  #### refers to cavity
     "mode_periodic": False,
-    "qubit_nqz": 2,
+    "qubit_nqz": 1,
     "relax_delay": 10,  # us
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed

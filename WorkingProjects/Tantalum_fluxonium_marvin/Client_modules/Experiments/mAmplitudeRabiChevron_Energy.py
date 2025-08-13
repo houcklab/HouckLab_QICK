@@ -125,7 +125,7 @@ class RabiChevronEnergy(ExperimentClass):
 
             x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                              readouts_per_experiment=1, save_experiments=None,
-                                             start_src="internal", progress=False, debug=False)
+                                             start_src="internal", progress=False)
             Z_avgi[idx, :] = avgi[0][0]
             self.data['data']['avgi_mat'][idx,:] = avgi[0][0]
 

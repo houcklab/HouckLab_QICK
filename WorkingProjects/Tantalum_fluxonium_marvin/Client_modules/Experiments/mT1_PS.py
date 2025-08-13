@@ -68,7 +68,7 @@ class LoopbackProgramT1_PS(RAveragerProgram):
 
         res_ch = cfg["res_ch"]
         #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])
 
         # Qubit configuration
         qubit_ch = cfg["qubit_ch"]
@@ -76,10 +76,8 @@ class LoopbackProgramT1_PS(RAveragerProgram):
 
         # configure the readout lengths and downconversion frequencies
         for ro_ch in cfg["ro_chs"]:
-            # self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-            #                      length=self.us2cycles(self.cfg["state_read_length"]), gen_ch=cfg["res_ch"])
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
-                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
+                                 length=self.us2cycles(self.cfg["read_length"], gen_ch = self.cfg['res_ch']), gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         self.qubit_ge_freq = self.freq2reg(self.cfg["qubit_ge_freq"], gen_ch=self.cfg["qubit_ch"])
@@ -165,21 +163,23 @@ class LoopbackProgramT1_PS(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"]) # update frequency list index
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        i_0 = shots_i0[0]
+        i_1 = shots_i1[0]
+        q_0 = shots_q0[0]
+        q_1 = shots_q1[0]
 
         return i_0, i_1, q_0, q_1
 
@@ -194,7 +194,7 @@ class T1_PS(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         expt_cfg = {
             ### define the wait times

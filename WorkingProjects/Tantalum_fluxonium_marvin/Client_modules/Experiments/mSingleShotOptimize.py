@@ -42,7 +42,7 @@ class SingleShotExperiment(RAveragerProgram):
 
         # Configure the Resonator Tone
         res_ch = cfg["res_ch"]
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         if self.cfg["mode_periodic"]:
             self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
@@ -140,17 +140,16 @@ class SingleShotExperiment(RAveragerProgram):
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0]/ self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        shots_q0 = self.dq_buf[0] / self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
 
         return shots_i0, shots_q0
 
@@ -188,18 +187,18 @@ class SingleShotMeasure(ExperimentClass):
         self.mesh_grid = 0
 
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         # Perform the experiment
         # print("Acquiring data")
         prog = SingleShotExperiment(self.soccfg, self.cfg)
         i_arr, q_arr = prog.acquire(self.soc, load_pulses=True)
 
         # Save the data
-        data = {'config': self.cfg, 'data': {'i_arr' : i_arr, 'q_arr' : q_arr}}
+        data = {'config': self.cfg, 'data': {'i_arr' : i_arr[0], 'q_arr' : q_arr[0]}}
         self.data = data
         return data
 
-    def process(self, data=None, cen_num = None, debug=False ):
+    def process(self, data=None, cen_num = None):
         # print("Processing data")
         # Get the data
         if data is None:
@@ -210,9 +209,13 @@ class SingleShotMeasure(ExperimentClass):
 
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
+        if cen_num == 2 :
+            qubit_freq_mat = np.array([[0,self.cfg['qubit_ge_freq']],[self.cfg['qubit_ge_freq'],0]])
+        else:
+            qubit_freq_mat = None
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
                                            name = self.datetimestring, num_bins = 151, fast = self.fast_analysis,
-                                           disp_image = self.disp_image)
+                                           disp_image = self.disp_image, qubit_freq_mat= qubit_freq_mat)
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
 
         # Calculating the distinctness of cluster
