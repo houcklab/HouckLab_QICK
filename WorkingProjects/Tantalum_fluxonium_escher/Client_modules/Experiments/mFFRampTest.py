@@ -146,6 +146,8 @@ class FFRampTest(NDAveragerProgram):
 
         "angle": None, # [radians] Angle of rotation for readout
         "threshold": None, # [DAC units] Threshold between g and e
+
+        "verbose": False # [bool] Print a bunch of logging info
     }
 
 
@@ -261,7 +263,6 @@ class FFRampTest_Experiment(ExperimentClass):
                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
             plt.tight_layout()
             plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
-        # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
 
         # Calculate & plot probability of staying in same state vs. ramp time
         self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
@@ -288,6 +289,145 @@ class FFRampTest_Experiment(ExperimentClass):
                     (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
         print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
         return theta, threshold
+
+    def _gaussian_fit_assignment(self, i_0: np.ndarray, q_0: np.ndarray, i_1: np.ndarray, q_1: np.ndarray,
+                                 cen_num: int = 2, bin_size: int = 101) -> tuple[np.ndarray, np.ndarray]:
+        """ Uses Gaussian fitting to assign most probable cluster numbers to the I/Q arrays passed in.
+        We assume the i0/q0 data has enough of all blobs to perform a proper fit. The centres from that fit
+        are then used to fit the i0/q0 amplitudes and set the probability distributions.
+        :param i_0: ndarray of floats, shape is [# experiments, # shots]. I's of initial measurement
+        :param q_0: Q's of initial measurement, see i_0
+        :param i_1: I's of final measurement, see i_0
+        :param q_1: Q's of final measurement, see i_0
+        :param cen_num: number of clusters
+        :param bin_size: size of bins for histograms
+        :returns array of assignments to blobs.
+        Code adapted from mSpecSlice_PS_sse.py"""
+
+        from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
+
+        # Verify inputs
+        if not (i_0.shape == q_0.shape == i_1.shape == q_1.shape):
+            raise ValueError('Shapes of i0, q0, i1, and q1 are not all the same!')
+        if cen_num < 2:
+            raise ValueError('cen_num must be at least 2!')
+        if bin_size < 2:
+            raise ValueError('bin_size must be at least 2')
+
+        # Create empty arrays to save data
+        centers = []
+
+        # Probabilities of each shot being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
+        probability_0 = np.zeros((i_0.shape[0], cen_num, i_0.shape[1]))
+        probability_1 = np.zeros((i_0.shape[0], cen_num, i_0.shape[1]))
+
+        # Loop over experiments (i.e. variations of some external parameter)
+        for i in range(i_0.shape[0]):
+            # Perform post selection for the initial data for two centers
+            # by selecting points withing some confidence bound.
+            # This turns the arrays and gives a [2, # shots] array as a result.
+            iq_data_0 = np.stack((i_0[i, :], q_0[i, :]), axis=0)
+            iq_data_1 = np.stack((i_1[i, :], q_1[i, :]), axis=0)
+
+            # Get centers
+            if i == 0:      # First pass, just do it
+                centers.append(sse2.getCenters(iq_data_0, cen_num))
+            else:           # Already have done it, use first result as initial guess
+                centers.append(sse2.getCenters(iq_data_0, cen_num, init_guess=centers[0]))
+
+            if self.cfg["verbose"]:
+                print("Centers are ", centers[i])
+
+            # I don't really understand the code below since a lot of it is hidden in sse2. I won't look at it too
+            # carefully for now, if I can get this to work.
+
+            # Fit Gaussian to first measurement
+            # Does not require both sigmas to be the same TODO rewrite for same sigma for all gaussians
+            hist2d = sse2.createHistogram(iq_data_0, bin_size) # Generates histogrammed data
+            no_of_params = 4
+            gaussians_0, popt_0, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centers[i], cen_num)
+
+            # Don't understand the point of defining these, they're not used
+            # # create bounds given current fit
+            # bound = [popt_0 - 1e-5, popt_0 + 1e-5]
+            #
+            # for idx_bound in range(cen_num):
+            #     bound[0][0 + int(idx_bound * no_of_params)] = 0
+            #     bound[1][0 + int(idx_bound * no_of_params)] = np.inf
+
+            # Get probability density function
+            pdf_0 = sse2.calcPDF(gaussians_0)
+
+            # print("Shape of probability array is ", probability.shape)
+            for k in range(cen_num):
+                for j in range(iq_data_0.shape[1]): # This seems to loop over every shot? Probably very slow
+                    # I think the x and y points are the grid points for the histogram? Not sure
+                    # find the x,y point closest to the i,q point instead of getting a continuous pdf
+                    indx_i = np.argmin(np.abs(x_points_0 - iq_data_0[0, j]))
+                    indx_q = np.argmin(np.abs(y_points_0 - iq_data_0[1, j]))
+                    # Calculate the probability
+                    probability_0[i, k, j] = pdf_0[k][indx_i, indx_q]
+
+            # Use fit result from first measurement to fit second measurement (only amplitudes)
+            hist2d = sse2.createHistogram(iq_data_1, bin_size)
+            # I think the parameters are, in order, amplitude, x0, y0, sigma, amplitude, x0, y0, sigma
+            # Set bounds on amplitude [0, inf); every other parameter should have both bounds be its value from before
+            # We don't want the second fit to be able to change the parameters except for amplitude, but we have to
+            # provide a bit of wiggle room, otherwise curve fit complains
+            eps = 1e-6  # small number
+            bound = [(popt_0 - np.abs(popt_0) * eps) * np.array([0, 1, 1, 1, 0, 1, 1, 1]) ,
+                     (popt_0 + np.abs(popt_0) * eps) * np.array([np.inf, 1, 1, 1, np.inf, 1, 1, 1]) ]
+            gaussians_1, popt_1, x_points_1, y_points_1 = sse2.findGaussians(hist2d, centers[i], cen_num,
+                                                                             input_bounds=bound, p_guess=popt_0)
+            # Get probability density function
+            pdf_1 = sse2.calcPDF(gaussians_1)
+
+            for k in range(cen_num):
+                for j in range(iq_data_1.shape[1]): # This seems to loop over every shot? Probably very slow
+                    # I think the x and y points are the grid points for the histogram? Not sure
+                    # find the x,y point closest to the i,q point instead of getting a continuous pdf
+                    indx_i = np.argmin(np.abs(x_points_1 - iq_data_1[0, j]))
+                    indx_q = np.argmin(np.abs(y_points_1 - iq_data_1[1, j]))
+                    # Calculate the probability
+                    probability_1[i, k, j] = pdf_1[k][indx_i, indx_q]
+
+            return probability_0, probability_1
+
+    def _calculate_probs(self, i_0: np.ndarray, q_0: np.ndarray, i_1: np.ndarray, q_1: np.ndarray,
+                         prob_0: np.ndarray, prob_1: np.ndarray, confidence: float = 0.8, draw_all_plots: bool = False):
+        """
+        Calculates the probabilities of state transitions between before and after the ramp. Draws some plots.
+        :param i_0: ndarray of floats, shape is [# experiments, # shots]. I's of initial measurement
+        :param q_0: Q's of initial measurement, see i_0
+        :param i_1: I's of final measurement, see i_0
+        :param q_1: Q's of final measurement, see i_0
+        :param prob_0: probabilities of I/Q shots being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
+                       First measurement (before ramp).
+        :param prob_1: Same as prob_0 but for second measurement (after ramp).
+        :param confidence: pick which data to include by how confident we are that it belongs in a given blob. For 50%,
+                    (and cen_num = 2), this splits all data between the two blobs. For confidence > 50%, this will
+                    throw away some data about which we are not too confident (in the middle between the blobs).
+        :param draw_all_plots: Draw all the intermediate plots or just a smaller number
+        :return:
+        """
+        if not (i_0.shape == q_0.shape == i_1.shape == q_1.shape):
+            raise ValueError('Shapes of i0, q0, i1, and q1 are not all the same!')
+        if not (prob_0.shape == prob_1.shape):
+            raise ValueError('Shapes of prob_0 and prob_1 are not the same!')
+        if not (i_0.shape[0] == prob_0.shape[0]):
+            raise ValueError('Number of experiments (dimension 0) for i/q and prob are not the same!')
+        if not (i_0.shape[1] == prob_0.shape[2]):
+            raise ValueError('Number of shots (dim. 0 for i, dim. 2 for prob) are not the same!')
+        if confidence < 0.5:
+            raise ValueError('Confidence should be at least 50%')
+        elif confidence > 1:
+            raise ValueError('Confidence should be no more than 100%')
+
+
+        num_expts = prob_0.shape[0]
+        cen_num = prob_0.shape[1]
+        # Dimensions: [# start blob, # end blob, # experiments]
+        pop = np.zeros((cen_num, cen_num, num_expts]))
 
     @staticmethod
     def _prepare_hist_data(i_arr: np.ndarray, q_arr: np.ndarray):
@@ -356,6 +496,7 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.tight_layout()
 
         plt.savefig(self.iname)
+        print('Saved probabilities at %s' % self.iname)
 
 
     def save_data(self, data=None):
