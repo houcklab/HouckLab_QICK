@@ -19,42 +19,42 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.095,
-    "yokoVoltageStop": -0.088,
-    "yokoVoltageNumPoints": 21,
+    "yokoVoltageStart": -0.1032,
+    "yokoVoltageStop": -0.075,
+    "yokoVoltageNumPoints": 31,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 200,
+    "trans_reps": 1000,
     "read_pulse_style": "const",
     "read_length": 20,  # us
-    "read_pulse_gain": 1200,  # [DAC units]
-    "trans_freq_start": 6671,
+    "read_pulse_gain": 5000,  # [DAC units]
+    "trans_freq_start": 6671.2,
     "trans_freq_stop": 6673.5,
-    "TransNumPoints": 101,
+    "TransNumPoints": 201,
 
     # qubit spec parameters
     "spec_reps": 2000,
     "qubit_pulse_style": "const",
-    "qubit_gain": 10000,
-    "qubit_length": 2,
+    "qubit_gain": 4000,
+    "qubit_length": 5,
     "flat_top_length" : 10,
     "qubit_freq_start": 100,
-    "qubit_freq_stop": 400,
-    "SpecNumPoints": 101,
+    "qubit_freq_stop": 1000,
+    "SpecNumPoints": 301,
     "sigma": 1,
-    "relax_delay":10,
+    "relax_delay": 10,
     'use_switch': False,
     'initialize_pulse': False,
     'fridge_temp': 420,
     "mode_periodic": False,
     'ro_periodic': False,
     "measurement_style": "std", # std : standard, bkg : background subtracted, ps : post-selected
-    "magnet_relax": 0, # [s] wait time after each magnet change
+    "magnet_relax": 1, # [s] wait time after each magnet change
 
-    "trans_method": "enhanced", # Seitch between using pphase
+    "trans_method": "std", # Seitch between using pphase
     "meas_config": 'Hanger',
-    "draw_read_freq": False,
+    "draw_read_freq": True,
 }
 config = BaseConfig | UpdateConfig
 

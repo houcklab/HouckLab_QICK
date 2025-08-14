@@ -148,7 +148,7 @@ class SingleShotAnalysis:
             if self.centers is not None:
                 print("Centers passed in:\n", self.centers)
             else:
-                print("Centers is none")
+                # print("Centers is none")
                 self.get_Centers(self.i_0_arr, self.q_0_arr)
                 self.logger.info('Centers found')
                 self.logger.info(self.centers)
@@ -171,7 +171,7 @@ class SingleShotAnalysis:
             if self.centers is not None:
                 print("Centers passed in:\n", self.centers)
             else:
-                print("centers is none")
+                # print("centers is none")
                 self.get_Centers(self.i_arr, self.q_arr)
 
         # Step 3 : Fit gaussians to the final data to get fit parameters
@@ -224,7 +224,7 @@ class SingleShotAnalysis:
             self.logger.error('Invalid cluster method')
             raise ValueError('Invalid cluster method')
 
-        print("Returning \n",self.centers)
+        # print("Returning \n",self.centers)
         return self.centers
         
 
@@ -623,7 +623,7 @@ class SingleShotAnalysis:
             means[i,:] = [params[key+"centerx"], params[key+"centery"]]
             sigmas[i,0,0] = sigmas[i,1,1] = params[key+'sigmax']
             amps[i] = params[key+'amplitude']
-        print(amps)
+        # print(amps)
         if method == "mahalanobis":
             # Calculate the malalanabois distance
             for i in range(cen_num):

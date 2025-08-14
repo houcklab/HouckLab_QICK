@@ -6,7 +6,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.MixedShots_analysis import *
 
-
+from tqdm import tqdm
 class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -22,8 +22,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
 
         ### Configure Resonator Tone
         res_ch = cfg["res_ch"]
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"],
-                         ro_ch=cfg["ro_chs"][0])  # Declare the resonator channel
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])  # Declare the resonator channel
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch,
                                   ro_ch=cfg["ro_chs"][0])  # Convert to clock ticks
         self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
@@ -57,8 +56,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
         elif cfg["qubit_pulse_style"] == 'const':
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
                                      gain=cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
-                                     mode="periodic")
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
             print("define arb or flat top pulse or const")
@@ -92,7 +90,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait = False)
+                     wait = True)
 
         self.sync_all(self.us2cycles(0.01))
 
@@ -118,21 +116,23 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
         # self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"] / 2))  # update gain of the flat part
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        i_0 = shots_i0[0]
+        i_1 = shots_i1[0]
+        q_0 = shots_q0[0]
+        q_1 = shots_q1[0]
 
         return i_0, i_1, q_0, q_1
 
@@ -162,7 +162,7 @@ class SpecSlice_PS_sse(ExperimentClass):
         i_1_arr = np.full((qubit_freq_vec.size, int(self.cfg["shots"])), np.nan)
         q_1_arr = np.full((qubit_freq_vec.size, int(self.cfg["shots"])), np.nan)
 
-        for indx_freq in range(qubit_freq_vec.size):
+        for indx_freq in tqdm(range(qubit_freq_vec.size)):
             # Change qubit frequency
             self.cfg["qubit_freq"] = qubit_freq_vec[indx_freq]
 

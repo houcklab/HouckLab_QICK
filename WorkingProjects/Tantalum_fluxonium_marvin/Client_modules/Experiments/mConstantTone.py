@@ -48,9 +48,7 @@ class ConstantTone_Experiment(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, self.cfg)
 
-        a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
+        prog.run_rounds(self.soc)
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display
@@ -58,26 +56,31 @@ class ConstantTone_Experiment(ExperimentClass):
     def save_data(self, data=None):
         pass # No data collected
 
+if __name__ == "__main__":
+    #######################################################################################################################
+    from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
+    # Only run this if no proxy already exists
+    soc, soccfg = makeProxy()
+    outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
 
-#######################################################################################################################
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
-# Only run this if no proxy already exists
-soc, soccfg = makeProxy()
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\TF4\\"
+    ## Constant tone experiment
+    UpdateConfig = {
+        ###### cavity
+        "read_pulse_style": "const",  # --Fixed
+        "gain": 5000,  # [DAC units]
+        "freq": 1400,  # [MHz]
+        "channel": 1,  # TODO default value
+        "nqz": 1,  # TODO default value
+    }
 
-## Constant tone experiment
-UpdateConfig = {
-    ###### cavity
-    "read_pulse_style": "const",  # --Fixed
-    "gain": 5000,  # [DAC units]
-    "freq": 1400,  # [MHz]
-    "channel": 1,  # TODO default value
-    "nqz": 1,  # TODO default value
-}
-
-config = BaseConfig | UpdateConfig
-#
-
-ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+    config = BaseConfig | UpdateConfig
+    #
+    try:
+        ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
+        data_ConstantTone = ConstantTone_Experiment.acquire(ConstantTone_Instance)
+    except Exception:
+        print("Pyro traceback:")
+        print("".join(Pyro4.util.getPyroTraceback()))
+    ConstantTone_Experiment.save_data(ConstantTone_Instance)
+    ConstantTone_Experiment.save_config(ConstantTone_Instance)
 

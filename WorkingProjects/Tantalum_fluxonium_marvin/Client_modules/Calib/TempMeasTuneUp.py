@@ -22,7 +22,7 @@ import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -216,22 +216,22 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.021,
-    "yokoVoltage_freqPoint": -1.021,
+    "yokoVoltage": -0.1015,
+    "yokoVoltage_freqPoint": -0.1015,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 60,
-    "read_pulse_gain": 2000,
-    "read_pulse_freq": 6671.37,
+    "read_length": 20,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6672.5355,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 19000,
-    "qubit_length": 60,
+    "qubit_gain": 8000,
+    "qubit_length": 10,
     "sigma": 1,
-    "flat_top_length": 60.0,
-    "qubit_freq": 850,
+    "flat_top_length": 10.0,
+    "qubit_freq": 155,
 
     # Experiment
     "shots": 100000,
@@ -260,15 +260,15 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
     'read_length': (20, 90),
-    'read_pulse_gain': (1250, 1750)
+    'read_pulse_gain': (3000, 8000)
 }
 step_size = {
     "read_pulse_freq" : 0.01,
     'read_length': 10,
-    'read_pulse_gain': 100,
+    'read_pulse_gain': 500,
 }
-keys = ["read_length"]
-config["shots"] = 300000
+keys = ["read_pulse_gain"]
+config["shots"] = 200000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
 inst_qndopt.brute_search_result_display(display = True)
