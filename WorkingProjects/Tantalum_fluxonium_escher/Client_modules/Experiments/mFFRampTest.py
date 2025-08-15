@@ -291,7 +291,7 @@ class FFRampTest_Experiment(ExperimentClass):
         return theta, threshold
 
     def _gaussian_fit_assignment(self, i_0: np.ndarray, q_0: np.ndarray, i_1: np.ndarray, q_1: np.ndarray,
-                                 cen_num: int = 2, bin_size: int = 101) -> tuple[np.ndarray, np.ndarray]:
+                                 cen_num: int = 2, bin_size: int = 101) -> tuple[np.ndarray[float], np.ndarray[float]]:
         """ Uses Gaussian fitting to assign most probable cluster numbers to the I/Q arrays passed in.
         We assume the i0/q0 data has enough of all blobs to perform a proper fit. The centres from that fit
         are then used to fit the i0/q0 amplitudes and set the probability distributions.
@@ -301,7 +301,7 @@ class FFRampTest_Experiment(ExperimentClass):
         :param q_1: Q's of final measurement, see i_0
         :param cen_num: number of clusters
         :param bin_size: size of bins for histograms
-        :returns array of assignments to blobs.
+        :returns array of probabilities of assignments to blobs.
         Code adapted from mSpecSlice_PS_sse.py"""
 
         from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
@@ -391,33 +391,22 @@ class FFRampTest_Experiment(ExperimentClass):
                     # Calculate the probability
                     probability_1[i, k, j] = pdf_1[k][indx_i, indx_q]
 
-            return probability_0, probability_1
+        return probability_0, probability_1
 
-    def _calculate_probs(self, i_0: np.ndarray, q_0: np.ndarray, i_1: np.ndarray, q_1: np.ndarray,
-                         prob_0: np.ndarray, prob_1: np.ndarray, confidence: float = 0.8, draw_all_plots: bool = False):
+    def _calculate_pops(self, prob_0: np.ndarray, prob_1: np.ndarray, confidence: float = 0.5) -> np.ndarray[int]:
         """
-        Calculates the probabilities of state transitions between before and after the ramp. Draws some plots.
-        :param i_0: ndarray of floats, shape is [# experiments, # shots]. I's of initial measurement
-        :param q_0: Q's of initial measurement, see i_0
-        :param i_1: I's of final measurement, see i_0
-        :param q_1: Q's of final measurement, see i_0
+        Calculates the probabilities of state transitions between before and after the ramp.
         :param prob_0: probabilities of I/Q shots being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
                        First measurement (before ramp).
         :param prob_1: Same as prob_0 but for second measurement (after ramp).
         :param confidence: pick which data to include by how confident we are that it belongs in a given blob. For 50%,
                     (and cen_num = 2), this splits all data between the two blobs. For confidence > 50%, this will
                     throw away some data about which we are not too confident (in the middle between the blobs).
-        :param draw_all_plots: Draw all the intermediate plots or just a smaller number
-        :return:
+        :return: pop: populations of states in particular clusters before/after ramp.
+                      Shape: [# experiments, # start cluster, # end cluster]
         """
-        if not (i_0.shape == q_0.shape == i_1.shape == q_1.shape):
-            raise ValueError('Shapes of i0, q0, i1, and q1 are not all the same!')
         if not (prob_0.shape == prob_1.shape):
             raise ValueError('Shapes of prob_0 and prob_1 are not the same!')
-        if not (i_0.shape[0] == prob_0.shape[0]):
-            raise ValueError('Number of experiments (dimension 0) for i/q and prob are not the same!')
-        if not (i_0.shape[1] == prob_0.shape[2]):
-            raise ValueError('Number of shots (dim. 0 for i, dim. 2 for prob) are not the same!')
         if confidence < 0.5:
             raise ValueError('Confidence should be at least 50%')
         elif confidence > 1:
@@ -426,8 +415,33 @@ class FFRampTest_Experiment(ExperimentClass):
 
         num_expts = prob_0.shape[0]
         cen_num = prob_0.shape[1]
-        # Dimensions: [# start blob, # end blob, # experiments]
-        pop = np.zeros((cen_num, cen_num, num_expts]))
+        # Populations of states in cluster # before/after ramp. Shape: [# experiments, # start blob, # end blob]
+        pop = np.zeros((num_expts, cen_num, cen_num))
+
+        for i in range(num_expts):
+            # This can probably be done in a vectorised way, but I think it's easier to understand with nested loops
+            # cen_num is probably 2 or 3 anyway, so we're not slowing ourselves down too much
+            for j in range(cen_num):
+                # True where the first measurement places us in cluster j with probability > confidence
+                start_mask = prob_0[i, j, :] > confidence
+                for k in range(cen_num):
+                    # True where the second measurement places us in cluster k with probability > confidence
+                    end_mask = prob_1[i, k, :] > confidence
+                    pop[i, j, k] = (np.logical_and(start_mask, end_mask)).sum()
+
+        return pop
+
+
+    def _make_plots(self, pop: np.ndarray[int], i_0: np.ndarray[float], q_0: np.ndarray[float],
+                    i_1: np.ndarray[float], q_1: np.ndarray[float]):
+    """
+    Makes plots of all the things we're interested in for this program.
+    :param pop: populations of states in particular clusters before/after ramp.
+                      Shape: [# experiments, # start cluster, # end cluster]
+    :param i_0: ndarray of floats, shape is [# experiments, # shots]. I's of initial measurement
+    :param q_0: Q's of initial measurement, see i_0
+    :param i_1: I's of final measurement, see i_0
+    :param q_1: Q's of final measurement, see i_0"""
 
     @staticmethod
     def _prepare_hist_data(i_arr: np.ndarray, q_arr: np.ndarray):
