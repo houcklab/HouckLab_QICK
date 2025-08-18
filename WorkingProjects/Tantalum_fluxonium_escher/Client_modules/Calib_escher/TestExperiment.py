@@ -1326,6 +1326,9 @@ config = {
         "sets": 5,
         "angle": None, # [radians] Angle of rotation for readout
         "threshold": None, # [DAC units] Threshold between g and e
+        "confidence": 0.5,
+        "plot_all_lengths": True,
+        "verbose": True,
     }
 
 # We have 65536 samples (9.524 us) wave memory on the FF channel (and all other channels)
@@ -1351,7 +1354,8 @@ print("Time for ff spec experiment is about ", time, " s")
 
 try:
     data_FFRampTest = FFRampTest_Experiment.acquire(Instance_FFRampTest, progress = True)
-    FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=True, plot_all_lengths=True)
+    FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=True,
+                                  plot_all_lengths=config['plot_all_lengths'])
     FFRampTest_Experiment.save_data(Instance_FFRampTest, data_FFRampTest)
     FFRampTest_Experiment.save_config(Instance_FFRampTest)
 except Exception:
