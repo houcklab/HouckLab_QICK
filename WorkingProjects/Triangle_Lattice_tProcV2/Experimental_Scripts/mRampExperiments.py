@@ -6,6 +6,7 @@ import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpe
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 
@@ -23,13 +24,17 @@ class BaseRampExperiment(SweepExperiment1D_lines):
         # print('reps:', self.cfg['reps'])
     def set_up_instance(self):
         '''Create the Ramp '''
-        for i, Q in zip([0, 1, 2, 3], ['1', '2', '3', '4']):
-            self.cfg["IDataArray"][i] = RampHelpers.generate_cubic_ramp(
-                initial_gain=self.cfg['FF_Qubits'][Q]['Gain_Pulse'],
-                final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
-                ramp_duration=self.cfg['ramp_duration'])
-
+        if True:
+            self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
+                                              self.cfg['ramp_duration'])
+        # elif self.cfg['ramp_shape'] == 'linear':
+        #     self.cfg["IDataArray"] = FFEnvelope_Helpers.LinearRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
+        #                                                                 self.cfg['ramp_duration'])
         self.cfg['expt_samples'] = self.cfg['ramp_duration']
+
+    # def display(self, *args, **kwargs):
+    #     super().display(*args, **kwargs)
+
 
 
 class RampDurationVsPopulation(BaseRampExperiment):
@@ -70,13 +75,11 @@ class TimeVsPopulation(BaseRampExperiment):
         self.xlabel = 'Time (4.65 ns/16)'
 
         # Ramp + constant gain after the ramp
-        for i, Q in zip([0, 1, 2, 3], ['1', '2', '3', '4']):
-            ramp_part = RampHelpers.generate_cubic_ramp(
-                initial_gain=self.cfg['FF_Qubits'][Q]['Gain_Pulse'],
-                final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
-                ramp_duration=self.cfg['ramp_duration'])
-
-            const_part = np.full(self.cfg['time_end'], self.cfg['FF_Qubits'][Q]['Gain_Expt'])
+        self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
+                                                                    self.cfg['ramp_duration'])
+        for i in range(len(self.cfg["IDataArray"])):
+            ramp_part = self.cfg["IDataArray"][i]
+            const_part = np.full(self.cfg['time_end'], self.cfg['FF_Qubits'][str(i+1)]['Gain_Expt'])
             self.cfg["IDataArray"][i] = np.concatenate([ramp_part, const_part])
 
     def set_up_instance(self):

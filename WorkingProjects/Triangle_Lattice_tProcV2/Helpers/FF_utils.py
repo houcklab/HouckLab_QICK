@@ -14,6 +14,8 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
     :param IQPulseArray: Assumed to be sampled in units of 1/16 clock cycle
     :return:
     """
+    # if length_dt == 0:
+    #     pass
     if IQPulseArray is None:
         print("FFPulses_direct: IQPulseArray is None, prefer using FFPulses for const pulses instead.")
 

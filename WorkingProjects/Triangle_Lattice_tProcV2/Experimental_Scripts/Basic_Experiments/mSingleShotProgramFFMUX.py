@@ -54,6 +54,7 @@ class SingleShotProgram(FFAveragerProgramV2):
         self.delay_auto()
 
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
@@ -64,28 +65,6 @@ class SingleShotProgram(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time)
 
         self.delay_auto()
-
-
-    def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False):
-        start = time.time()
-        super().acquire(soc, load_pulses=load_pulses, progress=progress)
-        end = time.time()
-
-        return self.collect_shots()
-
-    def collect_shots(self):
-        all_i = []
-        all_q = []
-
-        d_buf = self.get_raw() # [(*self.loop_dims, nreads, 2) for ro in ros]
-        # print(np.array(d_buf).shape)
-        for i in range(len(d_buf)):
-            shots_i0 = d_buf[i][..., -1, 0] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
-            shots_q0 = d_buf[i][..., -1, 1] / self.us2cycles(self.cfg['readout_lengths'][i], ro_ch=self.cfg['ro_chs'][i])
-            all_i.append(shots_i0)
-            all_q.append(shots_q0)
-        return all_i,all_q
 
 
 class SingleShotFFMUX(ExperimentClass):
@@ -115,11 +94,11 @@ class SingleShotFFMUX(ExperimentClass):
 
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
 
         data = {'config': self.cfg, 'data': {}}
                 # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}

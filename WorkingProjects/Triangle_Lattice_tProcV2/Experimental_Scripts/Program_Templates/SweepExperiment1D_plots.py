@@ -9,7 +9,6 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templ
 
 class SweepExperiment1D_plots(SweepExperimentND):
     def _display_plot(self, data=None, fig_axs=None):
-        print("displaying")
         if data is None:
             data = self.data
         fig, axs = fig_axs
@@ -25,7 +24,12 @@ class SweepExperiment1D_plots(SweepExperimentND):
         else:
             ylabel = None
 
-        x_key_name = SweepHelpers.key_savename(self.x_key)
+        fig.suptitle(str(self.titlename), fontsize=16)
+        try:
+            x_key_name = SweepHelpers.key_savename(self.x_key)
+        except:
+            x_key_name = self.loop_names[0]
+
         X = data['data'][x_key_name]
         self.X = X
 

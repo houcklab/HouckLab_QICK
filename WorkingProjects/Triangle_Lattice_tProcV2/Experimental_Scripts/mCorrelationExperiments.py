@@ -1,5 +1,7 @@
 import time
 
+from itertools import product
+
 
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpers
 
@@ -16,6 +18,7 @@ class PopulationShots(ExperimentClass):
     def acquire(self, progress=False, plotDisp=True, plotSave=True, figNum=1):
 
         readout_list = self.cfg["Qubit_Readout_List"]
+        self.num_qubits = len(readout_list)
 
         self.cfg['number_of_pulses'] = self.cfg.get('number_of_pulses', 1)
         self.cfg['Pulse'] = self.cfg.get('Pulse', True)
@@ -60,7 +63,7 @@ class PopulationShots(ExperimentClass):
         for ro_index in range(len(readout_list)):
             Z_mat[ro_index] = excited_populations[ro_index]
 
-        counts = generate_counts(excited_populations, num_qubits=len(readout_list))
+        counts = generate_counts(excited_populations, num_qubits=self.num_qubits)
         self.data['data']['counts'] = counts
 
         self.save_data(data=self.data)
@@ -73,28 +76,44 @@ class PopulationShots(ExperimentClass):
 
         counts = data['data']['counts']
 
-        display_counts(counts, self.titlename, num_qubits=len(self.cfg["Qubit_Readout_List"]))
+        display_counts(counts, self.titlename, num_qubits=self.num_qubits)
 
 
         # also display points on IQ plane
+        fig, axs = plt.subplots((self.num_qubits+1)//2,2, figsize=(8, 6*self.num_qubits//2), constrained_layout=True)
+        axs = axs.flatten()
+        print(type(axs))
+        print(len(axs))
+        print(type(axs[0]))
 
-        angle = self.cfg['angle']
-        threshold = self.cfg['threshold']
+        for i in range(self.num_qubits):
+
+            ax = axs[i]
+
+            angle = self.cfg['angle'][i]
+            threshold = self.cfg['threshold'][i]
+
+            I = self.I_mat[i]
+            Q = self.Q_mat[i]
 
 
-        new_I = self.I_mat * np.cos(angle) - self.Q_mat * np.sin(angle)
-        new_Q = self.I_mat * np.sin(angle) + self.Q_mat * np.cos(angle)
+            new_I = I * np.cos(angle) - Q * np.sin(angle)
+            new_Q = I * np.sin(angle) + Q * np.cos(angle)
 
-        plt.scatter(new_I, new_Q, s=2, alpha=0.5)
+            ax.scatter(new_I, new_Q, s=2, alpha=0.5)
 
-        plt.axvline(threshold, linestyle='--', color='black', label=f'Threshold: {threshold}')
+            ax.axvline(threshold, linestyle='--', color='black', label=f'Threshold: {threshold}')
 
-        plt.xlabel('I (a.u.)')
-        plt.ylabel('Q (a.u.)')
-        plt.axis('equal')
+            ax.set_xlabel('I (a.u.)')
+            ax.set_ylabel('Q (a.u.)')
 
-        plt.title(self.titlename)
+            ax.set_title(f'Q{self.cfg["Qubit_Readout_List"][i]}')
 
+        if self.num_qubits % 2 == 1:
+            axs[-1].axis('off')
+
+        plt.tight_layout()
+        plt.suptitle(self.titlename)
         plt.show()
 
     def save_data(self, data=None):
@@ -161,7 +180,7 @@ class RampPopulationShots(ExperimentClass):
             Z_mat[ro_index] = excited_populations[ro_index]
 
 
-        counts = generate_counts(excited_populations)
+        counts = generate_counts(excited_populations, num_qubits=len(self.cfg['Qubit_Readout_List']))
         self.data['data']['counts'] = counts
 
         self.save_data(data=self.data)
@@ -207,7 +226,7 @@ class OscillationPopulationShots(QubitOscillations):
 
         # iterate over time axis
         for i in range(population_shots.shape[1]):
-            counts[:,i] = generate_counts(population_shots[:,i,:])
+            counts[:,i] = generate_counts(population_shots[:,i,:], num_qubits=num_qubits)
 
         self.data['data']['counts'] = counts
         return self.data
@@ -233,7 +252,7 @@ class RampOscillationPopulationShots(RampCurrentCalibration1D):
 
         # iterate over time axis
         for i in range(population_shots.shape[1]):
-            counts[:,i] = generate_counts(population_shots[:,i,:])
+            counts[:,i] = generate_counts(population_shots[:,i,:], num_qubits=num_qubits)
 
         self.data['data']['counts'] = counts
         return self.data
@@ -241,9 +260,7 @@ class RampOscillationPopulationShots(RampCurrentCalibration1D):
 
 #### Correlation Experiment helper functions
 
-def generate_counts(populations, num_qubits=2):
-
-    print(f'generating_counts for populations with shape: {populations.shape}')
+def generate_counts(populations, num_qubits):
 
     # if num_qubits != 2:
     #     raise ValueError('unimplemented for num qubits other than 2')
@@ -255,13 +272,14 @@ def generate_counts(populations, num_qubits=2):
         counts[1] = num_ones
 
     else:
+
         bit_values = 0
         for i in range(num_qubits):
-            bit_values = populations[i, :] * 2**(num_qubits - 1 - i)
+            bit_values += populations[i, :] * 2**(num_qubits - 1 - i)
 
             # conventional order is 00, 01, 10, 11 where the ith bit is readout_list[i]
             # Count occurrences of each bitstring from 0 to 3 (00 to 11)
-            counts = np.bincount(bit_values, minlength=4)
+            counts = np.bincount(bit_values, minlength=num_qubits**2)
 
     if num_qubits == 2:
 
@@ -277,10 +295,15 @@ def generate_counts(populations, num_qubits=2):
 
 def display_counts(counts, title, num_qubits=2):
 
-    if num_qubits == 2:
-        bitstrings = ['00', '01', '10', '11']
-    elif num_qubits == 1:
-        bitstrings = ['0', '1']
+    bitstrings = [''.join(str(x) for x in p) for p in product([0,1], repeat=num_qubits)]
+
+    print('occupation of each state:')
+    for i in range(len(bitstrings)):
+        print(f'{bitstrings[i]}: {counts[i] / np.sum(counts)}')
+
+    print(list(bitstrings))
+    print(list([float(counts[i]/ np.sum(counts)) for i in range(len(counts))]))
+
 
     fig, ax = plt.subplots()
     # Plotting
@@ -289,9 +312,12 @@ def display_counts(counts, title, num_qubits=2):
     ax.set_ylabel('Normalized Counts')
     ax.set_title(title)
     ax.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.xticks(rotation=60)
     plt.yticks(np.arange(0, 1.1, 0.1))
     plt.ylim(0,1)
     plt.show()
+
+
 
 def display_counts_sweep(counts, title):
     pass

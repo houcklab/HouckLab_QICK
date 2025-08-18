@@ -11,44 +11,35 @@ mixer_freq = -1750
 BaseConfig["mixer_freq"] = mixer_freq
 
 
-
-# with splitter
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 2300,
-                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4393.15, 'sigma': 0.07, 'Gain': 4190},
+    '1': {'Readout': {'Frequency': 7121.8 - BaseConfig["res_LO"], 'Gain': 5400,
+                      "FF_Gains": [-19000, 31000, 0, -8400, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 0.75, 'cavmin': True},
+          'Qubit': {'Frequency': 4085.7, 'sigma': 0.07, 'Gain': 2020},
+          'Pulse_FF': [-19000, 31000, 0, -8400, 0, 0, 0, 0]},
+    '2': {'Readout': {'Frequency': 7078.3 - BaseConfig["res_LO"], 'Gain': 7500,
+                      "FF_Gains" : [-19000, 31000, 0, -8400, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 0.75, 'cavmin': True},
+          'Qubit': {'Frequency': 4399, 'sigma': 0.07, 'Gain': 2570},
+          'Pulse_FF': [-19000, 31000, 0, -8400, 0, 0, 0, 0]},
+    '3': {'Readout': {'Frequency': 7510.5 - BaseConfig["res_LO"], 'Gain': 6000,
+                      "FF_Gains": [-19000, 31000, 0, -8400, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3560.7, 'sigma': 0.07, 'Gain': 9500},
+          'Pulse_FF': [-19000, 31000, 0, -8400, 0, 0, 0, 0]},
+    '4': {'Readout': {'Frequency': 7568.0 - BaseConfig["res_LO"], 'Gain': 6500,
+                      "FF_Gains": [-19000, 31000, 0, -8400, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 1, 'cavmin': True},
+          'Qubit': {'Frequency': 3905, 'sigma': 0.07, 'Gain': 3090},
+          'Pulse_FF': [-19000, 31000, 0, -8400, 0, 0, 0, 0]},
+    'D': {'Readout': {'Frequency': 7122.2 - BaseConfig["res_LO"], 'Gain': 5000,
+                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 0.75,
+                      'cavmin': True},
+          'Qubit': {'Frequency': 4393.15, 'sigma': 0.07, 'Gain': 3500},
           'Pulse_FF': [0, 12000, 0, -12000, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.65 - BaseConfig["res_LO"], 'Gain': 1600,
-                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4120.6, 'sigma': 0.07, 'Gain': 1700},
+    'C': {'Readout': {'Frequency': 7077.6 - BaseConfig["res_LO"], 'Gain': 3200,
+                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 0.75,
+                      'cavmin': True},
+          'Qubit': {'Frequency': 4120.9, 'sigma': 0.07, 'Gain': 3500},
           'Pulse_FF': [0, 12000, 0, -12000, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7510.6 - BaseConfig["res_LO"], 'Gain': 2000,
-                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3559.7, 'sigma': 0.07, 'Gain': 19140},
-          'Pulse_FF': [0, 12000, 0, -12000, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7567.9 - BaseConfig["res_LO"], 'Gain': 1500,
-                      "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3810, 'sigma': 0.07, 'Gain': 1140},
-          'Pulse_FF': [0, 12000, 0, -12000, 0, 0, 0, 0]},
-    'A': {'Readout': {'Frequency': 7510.5 - BaseConfig["res_LO"], 'Gain': 700,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3937.3, 'sigma': 0.07, 'Gain': 4085},
-          'Pulse_FF': [-21800, 12000, 14500, -4750, 0, 0, 0, 0]},
-    'C': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 820,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4024.3, 'sigma': 0.07, 'Gain': 1160},
-          'Pulse_FF': [-21800, 12000, 14500, -4750, 0, 0, 0, 0]},
-    'B': {'Readout': {'Frequency': 7568.2 - BaseConfig["res_LO"], 'Gain': 740,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3998.0, 'sigma': 0.07, 'Gain': 2280},
-          'Pulse_FF': [-21800, 12000, 14500, -4750, 0, 0, 0, 0]},
-    'D': {'Readout': {'Frequency': 7077.3 - BaseConfig["res_LO"], 'Gain': 800,
-                          "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-              'Qubit': {'Frequency': 4118.2, 'sigma': 0.07, 'Gain': 1790},
-              'Pulse_FF': [-21800, 12000, 14500, -4750, 0, 0, 0, 0]},
 
 }
-
 
 
 
@@ -66,9 +57,9 @@ FF_gain7_expt = 0
 FF_gain8_expt = 0
 
 FF_gain1_BS = -7500
-FF_gain2_BS = 22784
+FF_gain2_BS = 22555
 FF_gain3_BS = 7000
-FF_gain4_BS = -15503
+FF_gain4_BS = -15505
 FF_gain5_BS = 0
 FF_gain6_BS = 0
 FF_gain7_BS = 0
@@ -93,11 +84,11 @@ CurrentCalibration_GainSweep = True
 #                             'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,}
 
 
-current_calibration_gain_dict = {'swept_index': 1,
-                                'reps': 100, 't_evolve': 280, 't_offset': [0,0,0,0,0,0,0,0],
-                                 'relax_delay': 100, "plotDisp": True,
-                                'gainStart': 22300, 'gainStop': 23000, 'gainNumPoints': 11,
-                                'timeStart': 1, 'timeStop': 2000, 'timeNumPoints': 101,}
+# current_calibration_gain_dict = {'swept_index': 1,
+#                                 'reps': 100, 't_evolve': 280, 't_offset': [0,0,0,0,0,0,0,0],
+#                                  'relax_delay': 100, "plotDisp": True,
+#                                 'gainStart': 22300, 'gainStop': 23000, 'gainNumPoints': 11,
+#                                 'timeStart': 1, 'timeStop': 2000, 'timeNumPoints': 101,}
 
 current_calibration_gain_dict = {'swept_index': 3,
                                 'reps': 100, 't_evolve': 280, 't_offset': [0,0,0,0,0,0,0,0],

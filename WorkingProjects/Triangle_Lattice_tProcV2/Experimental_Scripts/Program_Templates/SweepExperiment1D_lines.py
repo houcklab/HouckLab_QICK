@@ -37,7 +37,10 @@ class SweepExperiment1D_lines(SweepExperimentND):
         else:
             ylabel = None
 
-        x_key_name = SweepHelpers.key_savename(self.x_key)
+        try:
+            x_key_name = SweepHelpers.key_savename(self.x_key)
+        except:
+            x_key_name = self.loop_names[0]
         X = data['data'][x_key_name]
         self.X = X
 
@@ -51,6 +54,8 @@ class SweepExperiment1D_lines(SweepExperimentND):
         ax.set_ylabel(ylabel)
         ax.set_xlabel(self.xlabel)
         ax.legend()
+
+        return fig, ax
 
     def _update_fig(self, Z_mat, fig, axs):
         lines = axs[-1].lines

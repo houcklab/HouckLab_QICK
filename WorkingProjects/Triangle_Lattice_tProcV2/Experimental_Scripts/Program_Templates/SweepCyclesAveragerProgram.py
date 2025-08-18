@@ -6,18 +6,19 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
 
 from math import ceil
 
-class SweepWaveformAveragerProgram(FFAveragerProgramV2):
+class SweepCyclesAveragerProgram(FFAveragerProgramV2):
     '''A base class containing all the subroutines used for sweeping the length of an arbitrary waveform
-    to inherit from.
+    to inherit from. See SweepWaveformAveragerProgram; however, this one only sweeps whole cycles
+    (1 clock cycle = 16 samples)
 
-    For the user: you need to supply the config with "start", "step", (units of samples) and "expts".
+    For the user: you need to supply the config with "start", "step", (units of cycles) and "expts".
         An _initialize function for most use cases is provided,
         you will write _body in which you only need to call
 
-        FFLoad16Waveforms(self, list_of_gains, previous_gains, IDataArray) once
+        FFLoad1Waveform(self, list_of_gains, previous_gains, IDataArray) once
 
-        FFPulses_arb_length_and_delay(self, t_start) in place of FFPulses_direct and
-        FFInvert_arb_length_and_delay(self, t_start) to invert the pulse at the end.
+        FFPulses_arb_cycle_and_delay(self, t_start) in place of FFPulses_direct and
+        FFInvert_arb_cycle_and_delay(self, t_start) to invert the pulse at the end.
 
         Both functions include a delay() by the correct number of cycles.
 
@@ -29,40 +30,33 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
         assert cfg["start"] >= 0, "Can't have a negative start time."
         assert cfg["step"] > 0, "Can't have a negative step"
 
-        # The "reps" loop is outermost, so this will reset the cycle and sample counter on each of these loops
-        # 1 cycle = 16 samples
+        # The "reps" loop is outermost, so this will reset the cycle counter on each of these loops
         # cycle_counter: always 2+length of waveform in cycles
-        # sample_counter: total samples Mod 16, but output (1...16) instead
         before_reps = kwargs.get("before_reps", AsmV2())
         reset_loop = AsmV2()
-        reset_loop.write_reg(dst='cycle_counter', src=2 + ceil(cfg["start"] / 16) - cfg["step"] // 16)
-        reset_loop.write_reg(dst='sample_counter', src=(cfg["start"] - 1) % 16 + 1 - cfg["step"]  % 16)
+        reset_loop.write_reg(dst='cycle_counter', src=2 + cfg["start"] - cfg["step"])
         before_reps.extend_macros(reset_loop)
         kwargs["before_reps"] = before_reps
 
         super().__init__(*args, **kwargs)
 
-    '''Load 16 waveforms, one for each starting sample within the first clock cycle. Use for sweeping
-    the length of arbitrary pulses.'''
-    def FFLoad16Waveforms(self, list_of_gains, previous_gains, IDataArray, waveform_label="FF_swept", truncation_length=None):
-        if truncation_length is None:
-            truncation_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
-        truncation_length = ceil(truncation_length / 16) * 16
+    '''Load 1 waveform, pad by 2 cycles to reach 3 cycle limit.'''
+    def FFLoad1Waveform(self, list_of_gains, previous_gains, IDataArray, waveform_label="FF_swept", truncation_cycles=None):
+        if truncation_cycles is None:
+            truncation_cycles = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
+        truncation_length = truncation_cycles * 16 # samples
 
         for channel, gain, prev_gain, IQPulse in zip(self.FFChannels, list_of_gains, previous_gains, IDataArray):
             if IQPulse is None:  # if not specified, assume constant of max value
                 IQPulse = gain * np.ones(truncation_length)
-            # add buffer to beginning of IQPulse
-            IQPulse = np.concatenate([prev_gain * np.ones(48), IQPulse[:truncation_length]])
-            for i in range(1, 17):
-                # create shifted pulse. All pulses are len(IQPulse) + 2 clock cycles!
-                idata = IQPulse[i:len(IQPulse) - 16 + i]
-                wname = f"{waveform_label}_{i}_{channel}"
-                self.add_envelope(ch=channel, name=wname,
-                                      idata=idata, qdata=np.zeros_like(idata))
-                self.add_pulse(ch=channel, name=wname,
-                                   style="arb", envelope=wname,
-                                   freq=0, phase=0, gain=1.0, outsel="input")
+            # add 2 cycle buffer to beginning of IQPulse
+            idata = np.concatenate([prev_gain * np.ones(32), IQPulse[:truncation_length]])
+            wname = f"{waveform_label}_{i}_{channel}"
+            self.add_envelope(ch=channel, name=wname,
+                                  idata=idata, qdata=np.zeros_like(idata))
+            self.add_pulse(ch=channel, name=wname,
+                               style="arb", envelope=wname,
+                               freq=0, phase=0, gain=1.0, outsel="input")
 
     def FFPlayChangeLength(self, waveform_label, length_src, t_start='auto'):
         for channel in self.FFChannels:
@@ -76,33 +70,22 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
                     t_start = t_start + 0  # instance.gen_t0[channel]
                 self.pulse(ch=channel, name=pulse_name, t=t_start)
 
-    def FFPulses_arb_length_and_delay(self, t_start, waveform_label="FF_swept"):
-        '''Play a waveform based on the values in cycle_counter and sample_counter.'''
+    def FFPulses_arb_cycles_and_delay(self, t_start, waveform_label="FF_swept"):
+        '''Play a waveform based on the value in cycle_counter.'''
         # Special case: 0 samples (cycle_counter < 3), skip directly to readout (no FFExpt)
         self.cond_jump("skip_waveform", "cycle_counter", 'S', '-', 3)
-        # Else, choose the correct waveform depending on the amount of samples mod 16
-        for i in range(1, 17):
-            self.cond_jump(f"length_is_{i}", "sample_counter", 'Z', '-', i)
-        for i in range(1, 17):
-            self.label(f"length_is_{i}")
-            self.FFPlayChangeLength(f"{waveform_label}_{i}", "cycle_counter", t_start=t_start)
-            self.jump("arb_length_finish")
-        self.label("arb_length_finish")
+        # Else, play the waveform with changed length
+        self.FFPlayChangeLength(f"{waveform_label}_{i}", "cycle_counter", t_start=t_start)
         # Delay by cycle_counter cycles
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 
         self.label("skip_waveform")
         self.nop()
 
-    def FFInvert_arb_length_and_delay(self, t_start, waveform_label="FF_swept"):
+    def FFInvert_arb_cycles_and_delay(self, t_start, waveform_label="FF_swept"):
         '''Same as above, but invert the waveform.'''
         self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
-        for i in range(1, 17):
-            self.cond_jump(f"inv_length_is_{i}", "sample_counter", 'Z', '-', i)
-        for i in range(1, 17):
-            self.label(f"inv_length_is_{i}")
-            FF.FFInvertWaveforms(self, f"{waveform_label}_{i}", t_start=t_start)
-            self.jump("finish_inv")
+        FF.FFInvertWaveforms(self, f"{waveform_label}_{i}", t_start=t_start)
         self.label("finish_inv")
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 
@@ -133,32 +116,14 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
 
         # 1 cycle = 16 samples
         # cycle_counter: always 2+length of waveform in cycles
-        # sample_counter: total samples Mod 16, but output (1...16) instead
         # Set in before_reps of the "reps" loop (see self.__init__ above)
         self.add_reg(name='cycle_counter')
-        self.add_reg(name='sample_counter')
 
 
-        # Increment the cycle and sample counter. Carry the one if sample_counter > 16.
+        # Increment the cycle counter.
         IncrementLength = AsmV2()
-        IncrementLength.inc_reg(dst='cycle_counter',  src=cfg["step"] // 16)
-        IncrementLength.inc_reg(dst='sample_counter', src=cfg["step"]  % 16)
-        ############# If sample_counter > 16:
-        IncrementLength.cond_jump("no_carry", "sample_counter", "S", "-", 17)
-        IncrementLength.inc_reg(dst='cycle_counter', src= +1)
-        IncrementLength.inc_reg(dst='sample_counter',src= -16)
-        IncrementLength.label("no_carry")
-        IncrementLength.nop()
-        ##############
-        # # Write into data memory for debugging
-        # self.add_reg(name='data_counter')
-        # self.write_reg(dst='data_counter', src=0)
-        # IncrementLength.inc_reg(dst='data_counter', src=+1)
-        # IncrementLength.write_dmem("data_counter", "cycle_counter")
-        # IncrementLength.inc_reg(dst='data_counter', src=+1)
-        # IncrementLength.write_dmem("data_counter", "sample_counter")
-        #############
-        self.add_loop("expt_samples", int(self.cfg["expts"]), exec_before=IncrementLength)
+        IncrementLength.inc_reg(dst='cycle_counter',  src=cfg["step"])
+        self.add_loop("expt_cycles", int(self.cfg["expts"]), exec_before=IncrementLength)
 
         self.delay_auto(200)
 

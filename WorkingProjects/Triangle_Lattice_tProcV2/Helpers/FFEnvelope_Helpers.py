@@ -20,3 +20,10 @@ def CubicRampArrays(cfg, initial_key, final_key, ramp_duration, reverse=False) -
     return [generate_cubic_ramp(cfg['FF_Qubits'][str(Q)][initial_key],
                               cfg['FF_Qubits'][str(Q)][final_key], ramp_duration, reverse=reverse) for Q in range(1, N + 1)]
 
+def LinearRampArrays(cfg, initial_key, final_key, ramp_duration, reverse=False) -> list:
+    '''Output: list of IQArrays'''
+    N = len(cfg['fast_flux_chs'])
+    return [generate_linear_ramp(cfg['FF_Qubits'][str(Q)][initial_key],
+                                cfg['FF_Qubits'][str(Q)][final_key], ramp_duration, reverse=reverse) for Q in
+            range(1, N + 1)]
+

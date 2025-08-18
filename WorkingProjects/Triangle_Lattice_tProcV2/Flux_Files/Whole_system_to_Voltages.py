@@ -10,17 +10,18 @@ print_single_vector = True
 plot_bare_system = True
 plot_effective_system = True
 
+
 frequencies = {
-    'Q1': -0.5,
-    'Q2': -0.5,
-    'Q3': -0.5,
-    'Q4': -0,
+    'Q1': 3950,
+    'Q2': 3950,
+    'Q3': 3950,
+    'Q4': 3950,
     'Q5': -0.5,
     'Q6': -0.5,
     'Q7': -0.5,
     'Q8': -0.5,
-    'C1': 0,
-    'C2': 0,
+    'C1': -0.5,
+    'C2': -0.5,
     'C3': 0,
     'C4': 0,
     'C5': 0,

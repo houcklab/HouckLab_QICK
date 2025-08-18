@@ -11,17 +11,17 @@ from Initialize_Qubit_Information import flux_sign, model_mapping
 from Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
 
 plot_effective_system = True
-suffix = "expt"
+suffix = "BS"
 
 frequencies = {
-    'Q1': -0.,
-    'Q2': -0.3,
-    'Q3': -0.29,
-    'Q4': -0.3,
-    'Q5': -0.3,
-    'Q6': -0.3,
-    'Q7': -0.3,
-    'Q8': -0.3,
+    'Q1': 4300,
+    'Q2': 4300,
+    'Q3': 3700,
+    'Q4': 3700,
+    # 'Q5': -0.3,
+    # 'Q6': -0.3,
+    # 'Q7': -0.3,
+    # 'Q8': -0.3,
 }
 flux_was_given = {key: (freq < 10) for key,freq in frequencies.items()}
 
@@ -34,7 +34,7 @@ for index, key in enumerate(['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8']):
         if flux_was_given[key]: # flux given
             target_fluxes[index] = frequencies[key]
 
-        else: # dressed_freq -> bare_freq -> flux
+        elif not type(frequencies[key]) is str : # dressed_freq -> bare_freq -> flux
             dressed_freq = frequencies[key]
             adjacent_couplers = np.nonzero(beta_matrix[index, 8:])[0] + 0
             bare_freq = full_device_calib.get_bare_freq(dressed_freq, [coupler_freqs[c] for c in adjacent_couplers], betas= [beta_matrix[index, c+8] for c in adjacent_couplers])
@@ -54,7 +54,7 @@ gains_list = flux_changes * FF_flux_quanta
 gains_list = np.rint(gains_list).astype(int)
 
 np.set_printoptions(linewidth=100000)
-print(repr(gains_list))
+print('['+', '.join(str(g) for g in gains_list)+']')
 
 
 bare_order_of_items = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q6_bare', 'Q7_bare', 'Q8_bare',
@@ -62,7 +62,7 @@ bare_order_of_items = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q
 bare_frequencies = [1000*model_mapping[mapping].freq(flux) for mapping,flux in zip(bare_order_of_items, target_fluxes)]
 
 dressed_freqs, g_matrix = full_device_calib.dress_system(bare_frequencies, beta_matrix=beta_matrix, plot=plot_effective_system)
-
+print('# ('+', '.join(f'{d:.1f}' for d in dressed_freqs)+')')
 for j, gain, freq in zip(range(1, 1+len(gains_list)), gains_list, dressed_freqs):
     print(f"FF_gain{j}_{suffix} = {gain:>6}  # {freq:.1f}")
 

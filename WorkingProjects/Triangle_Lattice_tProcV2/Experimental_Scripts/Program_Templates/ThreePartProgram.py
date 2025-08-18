@@ -7,9 +7,6 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
     def _initialize(self, cfg):
         # Qubit (Equal sigma for all)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
-        self.pulse_sigma = cfg["sigma"]
-        self.pulse_qubit_length = cfg["sigma"] * 4
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
@@ -35,12 +32,12 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
     def _body(self, cfg):
         # 1: FFPulses
-        FF_Delay_time = 9
-        self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time+1.01)
+        FF_Delay_time = 10
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1.0 + FF_Delay_time if i==0 else 'auto'
+            time_ = FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
+        self.delay_auto()
         # 2: FFExpt
         self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples"], self.FFPulse, IQPulseArray= self.cfg["IDataArray"],
                              waveform_label='FFExpts')
@@ -49,7 +46,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         # 3: FFReadouts
         # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
-
+        # self.delay(0.1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
@@ -65,7 +62,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in self.cfg["IDataArray"]]
         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time+1.01)
+        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time+1.1)
         self.delay_auto()
 
 class ThreePartProgramTwoFF(ThreePartProgramOneFF):

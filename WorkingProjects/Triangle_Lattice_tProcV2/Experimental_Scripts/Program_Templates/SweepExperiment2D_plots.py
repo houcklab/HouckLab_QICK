@@ -60,6 +60,7 @@ class SweepExperiment2D_plots(SweepExperimentND):
             cbar.set_label(colorbar_label, rotation=90)
 
         fig.show()
+        return fig, axs
 
     def _update_fig(self, Z_mat, fig, axs):
         for ro_index in range(len(Z_mat)):

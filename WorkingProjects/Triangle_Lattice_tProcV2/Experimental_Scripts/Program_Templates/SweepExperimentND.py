@@ -1,3 +1,5 @@
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import \
+    FFAveragerProgramV2
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import *
@@ -113,7 +115,7 @@ class SweepExperimentND(ExperimentClass):
         I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
         Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
 
-        if self.z_value == "population" or self.z_value == "population_corrected" and "confusion_matrix" in self.cfg:
+        if self.z_value == "population_corrected" or self.z_value == "population" and "confusion_matrix" in self.cfg:
             Z_corrected = [np.full(self.data_shape, np.nan) for _ in readout_list]
         # Define data dictionary
         key_names = [SweepHelpers.key_savename(key) for key in self.keys]
@@ -124,8 +126,11 @@ class SweepExperimentND(ExperimentClass):
                      "I": I_mat,
                      "Q": Q_mat,
                      'readout_list': readout_list,
+                     # Outer python loops
                      **{key_name: value_array for key_name,value_array in zip(key_names, self.sweep_arrays)},
+                     # On-board tprocV2 loops
                      **{key_name: value_array for key_name, value_array in zip(self.loop_names, self.loop_values)},
+
                      **{key : self.cfg[key] for key in ('angle', 'threshold', 'confusion_matrix') if key in self.cfg},
                      'Qubit_Readout_List': self.cfg["Qubit_Readout_List"]},
 
@@ -154,7 +159,7 @@ class SweepExperimentND(ExperimentClass):
             # set up the AveragerProgram instance
             self.set_up_instance()
 
-            if issubclass(self.Program, AveragerProgramV2):
+            if issubclass(self.Program, FFAveragerProgramV2):
                 prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                     final_delay=self.cfg["relax_delay"], initial_delay=10.0)
             else:
@@ -201,7 +206,7 @@ class SweepExperimentND(ExperimentClass):
             # print(prog)
             self.debug(prog)
 
-            if (plotDisp or plotSave) and (len(self.sweep_shape)==1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
+            if (plotDisp or plotSave) and (len(self.sweep_shape) <= 1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 # Create figure
                 # fig, ax = plt.subplots(figsize=(4,8))
                 # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])

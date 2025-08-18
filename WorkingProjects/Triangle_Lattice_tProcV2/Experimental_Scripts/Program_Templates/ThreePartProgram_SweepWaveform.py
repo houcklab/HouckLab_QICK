@@ -43,34 +43,24 @@ class ThreePartProgram_SweepOneFF(SweepWaveformAveragerProgram):
 
 
 
-class ThreePartProgram_SweepTwoFF(ThreePartProgram_SweepOneFF):
+class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
     def _body(self, cfg):
         # 1: FFPulses
         # self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        FFDelayTime = 10
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01 + FFDelayTime)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1 if i == 0 else 1 + i * 4 * self.cfg["sigma"]
+            time_ = 1 + FFDelayTime if i == 0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.delay(len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01 + FFDelayTime)
 
         # 2: FFExpt
-        self.FFPulses_direct()
+        self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples1"],
+                             self.FFPulse, IQPulseArray=cfg["IDataArray1"], waveform_label='FFExpts1')
+        self.delay_auto()
+        self.FFLoad16Waveforms(self.FFBS, self.FFExpts, cfg["IDataArray2"])
+        self.FFPulses_arb_length_and_delay(t_start=0)
 
-        # Special case: 0 samples, so skip directly to readout (no FFExpt)
-        # If cycle_counter < 3 (the minimum length for an arb waveform)
-        self.cond_jump("start readout", "cycle_counter", 'S', '-', 3)
-        # Else, choose the correct waveform depending on the amount of samples mod 16
-        for i in range(1, 17):
-            self.cond_jump(f"l{i}", "sample_counter", 'Z', '-', i)
-        for i in range(1, 17):
-            self.label(f"l{i}")
-            FF.FFPlayChangeLength(self, f"FFExpt_{i}", "cycle_counter", t_start=0)
-            self.jump("finish")
-        self.label("finish")
-        # Delay by cycle_counter cycles
-        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-
-        self.label("start readout")
         # 3: FFReadouts
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(1)
@@ -83,14 +73,9 @@ class ThreePartProgram_SweepTwoFF(ThreePartProgram_SweepOneFF):
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
-        self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
-        for i in range(1, 17):
-            self.cond_jump(f"{i}_inv", "sample_counter", 'Z', '-', i)
-        for i in range(1, 17):
-            self.label(f"{i}_inv")
-            FF.FFInvertWaveforms(self, f"FFExpt_{i}", t_start=0)
-            self.jump("finish_inv")
-        self.label("finish_inv")
-        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01, t_start=0)
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 10.01)
+        self.FFInvert_arb_length_and_delay(t_start=0)
+        self.FFPulses(-1 * self.FFPulse, FFDelayTime + len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01,
+                      t_start=0)
+        self.delay(len(self.cfg["qubit_gains"]) * self.qubit_length_us + FFDelayTime + 1.01)
+        FF.FFInvertWaveforms(self, waveform_label='FFExpts1')
+        self.delay(2+ceil(self.cfg["expt_samples1"]/16))

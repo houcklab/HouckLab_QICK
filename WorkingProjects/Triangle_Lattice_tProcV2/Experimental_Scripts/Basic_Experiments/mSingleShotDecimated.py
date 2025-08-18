@@ -14,6 +14,7 @@ import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
+# from matplotlib.widgets import Button, Slider
 
 # ====================================================== #
 class SingleShotDecimated(ExperimentClass):

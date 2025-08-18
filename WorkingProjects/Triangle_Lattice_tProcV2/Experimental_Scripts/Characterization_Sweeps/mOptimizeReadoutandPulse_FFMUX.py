@@ -151,11 +151,11 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig, shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
         # print(prog.__dict__['gen_chs'])
         # gencfg = self.soccfg['gens'][9]
         # print('mixmux gencfg["maxv"]:', gencfg['maxv'])
@@ -316,11 +316,11 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
 
         i_g = shots_ig[0]
         q_g = shots_qg[0]

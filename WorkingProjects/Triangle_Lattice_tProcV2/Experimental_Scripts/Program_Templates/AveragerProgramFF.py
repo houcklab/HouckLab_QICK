@@ -36,7 +36,7 @@ class FFAveragerProgramV2(AveragerProgramV2):
         return super().acquire(*args, **kwargs)
 
     def acquire_shots(self, *args, **kwargs):
-        self.acquire(*args, **kwargs)
+        super().acquire(*args, **kwargs)
 
         all_i = []
         all_q = []
@@ -88,8 +88,10 @@ class FFAveragerProgramV2(AveragerProgramV2):
         for ro_ind in range(len(shots_i0)):
             rotated_iq = rotate_data((shots_i0[ro_ind], shots_q0[ro_ind]), theta=angle[ro_ind])
             excited_percentage = rotated_iq[0] > threshold[ro_ind]
-
+            # Move "reps" axis to be last
+            excited_percentage = np.moveaxis(excited_percentage, 0, -1)
             excited_percentages[ro_ind] = excited_percentage
+
 
         if return_shots:
             return excited_percentages, (shots_i0, shots_q0)  ###, rotated_iq_array
