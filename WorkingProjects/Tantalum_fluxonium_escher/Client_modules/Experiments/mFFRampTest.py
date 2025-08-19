@@ -208,6 +208,8 @@ class FFRampTest_Experiment(ExperimentClass):
 
         self._make_plots_gauss(pop, prob_0, prob_1, data, confidence = self.cfg["confidence"])
 
+        self._plot_gaussian_probabilities(pop, ramp_lengths)
+
         ## If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
         #if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
         #    theta, threshold = self._find_angle_threshold(i_arr[0, :, 0], q_arr[0, :, 0])
@@ -415,7 +417,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
     def _calculate_pops(self, prob_0: np.ndarray, prob_1: np.ndarray, confidence: float = 0.5) -> np.ndarray[int]:
         """
-        Calculates the probabilities of state transitions between before and after the ramp.
+        Calculates the populations of state transitions between before and after the ramp.
         :param prob_0: probabilities of I/Q shots being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
                        First measurement (before ramp).
         :param prob_1: Same as prob_0 but for second measurement (after ramp).
@@ -603,7 +605,29 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.savefig(self.iname)
         print('Saved probabilities at %s' % self.iname)
 
-
+    def _plot_gaussian_probabilities(self, pop: np.ndarray[int], ramp_lengths: np.ndarray[float]) -> None:
+        plt.figure()
+        plt.subplot(2, 2, 1)
+        plt.plot(ramp_lengths, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 0 | assigned start 0)')
+        plt.subplot(2, 2, 2)
+        plt.plot(ramp_lengths, 100 * pop[:, 0, 1] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 1 | assigned start 0)')
+        plt.subplot(2, 2, 3)
+        plt.plot(ramp_lengths, 100 * pop[:, 1, 0] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 0 | assigned start 1)')
+        plt.subplot(2, 2, 4)
+        plt.plot(ramp_lengths, 100 * pop[:, 1, 1] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 1 | assigned start 1)')
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                      self.cfg['ff_delay'], self.cfg["confidence"]))
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.92, hspace=0.05, wspace=0.2)
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
