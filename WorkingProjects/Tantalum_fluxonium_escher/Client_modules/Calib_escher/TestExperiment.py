@@ -130,13 +130,13 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.497,
+    "yokoVoltage": -1.509,
 
 }
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "arb",
-    "qubit_freq": 850, #940.8,
+    "qubit_freq": 944, #940.8,
     "qubit_gain": 30000,
 
     # Constant Pulse Tone
@@ -1315,13 +1315,26 @@ config = {
         "ff_delay": 0, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+
+        # Optional qubit pulse before measurement, intended as pi/2 to populate both blobs
+        "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
+        "qubit_freq": 943,  # [MHz] Frequency of qubit pulse
+        "qubit_pulse_style": "flat_top",  # one of ["const", "flat_top", "arb"]
+        "sigma": 0.50,  # [us], used with "arb" and "flat_top"
+        "qubit_length": 1,  # [us], used with "const"
+        "flat_top_length": 0.300,  # [us], used with "flat_top"
+        "qubit_gain": 25000,  # [DAC units]
+        "qubit_ch": 1,  # RFSOC output channel of qubit drive
+        "qubit_nqz": 1,  # Nyquist zone to use for qubit drive
+
         # Sweep parameters
         "ff_ramp_length_start": 0.025,  # [us] Total length of positive fast flux pulse, start of sweep
         "ff_ramp_length_stop": 16,  # [us] Total length of positive fast flux pulse, end of sweep
         "ff_ramp_expts": 11, # [int] Number of points in the ff ramp length sweep
-        "yokoVoltage": -1.497,  # [V] Yoko voltage for magnet offset of flux
+        "yokoVoltage": -1.509,  # [V] Yoko voltage for magnet offset of flux
         "relax_delay_1": 0.02 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
         "relax_delay_2": 100 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+
         "reps": 5000,
         "sets": 5,
         "angle": None, # [radians] Angle of rotation for readout
@@ -1364,6 +1377,7 @@ except Exception:
 
 # print(Instance_specSlice.qubitFreq)
 plt.show()
+
 
 
 #%%

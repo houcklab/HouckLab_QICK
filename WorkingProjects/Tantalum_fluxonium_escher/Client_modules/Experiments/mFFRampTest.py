@@ -24,7 +24,9 @@ class FFRampTest(NDAveragerProgram):
         # Declare channels
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["ff_ch"], nqz=self.cfg["ff_nqz"])  # Fast flux
-        # There is no qubit pulse
+        if self.cfg["qubit_pulse"]:  # Optional qubit pulse
+            self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
+            PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq"])
 
         # Declare readout
         for ch in self.cfg["ro_chs"]:
@@ -59,8 +61,12 @@ class FFRampTest(NDAveragerProgram):
         :return:
         """
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
-        #TODO optional qubit pi/2 pulse before experiment?
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
+
+        # Play optional qubit pulse, if requested.
+        if self.cfg["qubit_pulse"]:
+            self.pulse(ch = self.cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(0.01))  # Wait a few ns to align channels
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
@@ -120,32 +126,44 @@ class FFRampTest(NDAveragerProgram):
     # Template config dictionary, used in GUI for initial values
     config_template = {
         # Readout section
-        "read_pulse_style": "linear",  # --Fixed
-        "read_length": 5,  # [us]
-        "read_pulse_gain": 8000,  # [DAC units]
-        "read_pulse_freq": 7392.25,  # [MHz]
+        "read_pulse_style": "linear",     # --Fixed
+        "read_length": 5,                 # [us]
+        "read_pulse_gain": 8000,          # [DAC units]
+        "read_pulse_freq": 7392.25,       # [MHz]
 
         # Fast flux pulse parameters
-        "ff_ramp_style": "const",  # one of ["linear"]
-        "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 100, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 1, # [us] Delay between fast flux ramps
-        "ff_ch": 6,  # RFSOC output channel of fast flux drive
-        "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+        "ff_ramp_style": "const",         # one of ["linear"]
+        "ff_ramp_start": 0,               # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 100,              # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 1,                    # [us] Delay between fast flux ramps
+        "ff_ch": 6,                       # RFSOC output channel of fast flux drive
+        "ff_nqz": 1,                      # Nyquist zone to use for fast flux drive
+
+        # Optional qubit pulse before measurement, intended as pi/2 to populate both blobs
+        "qubit_pulse": False,             # [bool] Whether to apply the optional qubit pulse at the beginning
+        "qubit_freq": 1000,               # [MHz] Frequency of qubit pulse
+        "qubit_pulse_style": "flat_top",  # one of ["const", "flat_top", "arb"]
+        "sigma": 0.050,                   # [us], used with "arb" and "flat_top"
+        "qubit_length": 1,                # [us], used with "const"
+        "flat_top_length": 0.300,         # [us], used with "flat_top"
+        "qubit_gain": 25000,              # [DAC units]
+        "qubit_ch": 1,                    # RFSOC output channel of qubit drive
+        "qubit_nqz": 1,                   # Nyquist zone to use for qubit drive
 
         # Sweep parameters
-        "ff_ramp_length_start": 1,  # [us] Total length of positive fast flux pulse, start of sweep
-        "ff_ramp_length_stop": 5,  # [us] Total length of positive fast flux pulse, end of sweep
-        "ff_ramp_expts": 10, # [int] Number of points in the ff ramp length sweep
+        "ff_ramp_length_start": 1,        # [us] Total length of positive fast flux pulse, start of sweep
+        "ff_ramp_length_stop": 5,         # [us] Total length of positive fast flux pulse, end of sweep
+        "ff_ramp_expts": 10,              # [int] Number of points in the ff ramp length sweep
 
-        "yokoVoltage": 0,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 10,  # [us] Relax delay after first readout
-        "relax_delay_2": 10, # [us] Relax delay after second readout
+        # Other parameters
+        "yokoVoltage": 0,                 # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 10,              # [us] Relax delay after first readout
+        "relax_delay_2": 10,              # [us] Relax delay after second readout
         "reps": 1000,
         "sets": 5,
 
-        "angle": None, # [radians] Angle of rotation for readout
-        "threshold": None, # [DAC units] Threshold between g and e
+        "angle": None,                    # [radians] Angle of rotation for readout
+        "threshold": None,                # [DAC units] Threshold between g and e
 
         "plot_all_lengths": False,  # [bool] Draw histograms for all lengths
         "verbose": False # [bool] Print a bunch of logging info
@@ -606,7 +624,7 @@ class FFRampTest_Experiment(ExperimentClass):
         print('Saved probabilities at %s' % self.iname)
 
     def _plot_gaussian_probabilities(self, pop: np.ndarray[int], ramp_lengths: np.ndarray[float]) -> None:
-        plt.figure()
+        plt.figure(figsize = (14, 14))
         plt.subplot(2, 2, 1)
         plt.plot(ramp_lengths, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
         plt.xlabel('Ramp half-lengths (us)')
