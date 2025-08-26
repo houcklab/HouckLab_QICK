@@ -45,21 +45,21 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.497, #1079, #0.093277, #816 , #0.09473, #25,
+    "yokoVoltage": -1.502, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 15,  # us
-    "read_pulse_gain": 15000, #1025,  # [DAC units]
+    "read_length": 13,  # us
+    "read_pulse_gain": 6800, #1025,  # [DAC units]
     "read_pulse_freq": 7391.9, #6723.55
     # qubit spec parameters
-    "qubit_pulse_style": "arb",
+    "qubit_pulse_style": "flat_top",
 
     "qubit_gain": 32000,
     "qubit_length": 10,
     "sigma": 1,
     "flat_top_length": 1,
-    "qubit_freq": 940.8, #1255,
+    "qubit_freq": 943.0, #1255,
     "relax_delay": 200, #2500,
 
     # define shots
@@ -566,22 +566,23 @@ inst_t2r_ps.save_config()
 
 #%%
 # TITLE: Single Shot Optimize
+# Parth-approved
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.497, #25,
+    "yokoVoltage": -1.502, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 15,  # us
-    "read_pulse_gain": 10000,  # [DAC units]
+    "read_length": 13,  # us
+    "read_pulse_gain": 6800,  # [DAC units]
     "read_pulse_freq": 7391.9, #6422.81,#7, #6422.757, #6423.025,
 
     # qubit spec
     "qubit_pulse_style": "flat_top",
-    "flat_top_length": 10,
+    "flat_top_length": 1,
     "qubit_ge_gain": 0,
     "qubit_ef_gain": 0,
-    "qubit_ge_freq": 940.8,
+    "qubit_ge_freq": 943.0,
     "qubit_ef_freq": 2110,
     "apply_ge": False,
     "apply_ef": False,
@@ -606,15 +607,15 @@ plt.close('all')
 param_bounds ={
     "read_pulse_freq": (config["read_pulse_freq"] - 0.5, config["read_pulse_freq"] + 0.5 ),
     'read_length': (10, 60),
-    'read_pulse_gain': (5000, 15000)
+    'read_pulse_gain': (5000, 10000)
 }
 step_size = {
     "read_pulse_freq": 0.05, #02,
     'read_length': 10,
-    'read_pulse_gain': 2500,
+    'read_pulse_gain': 500,
 }
 
-keys = ["read_pulse_freq"]
+keys = ["read_pulse_gain"]
 
 config["shots"] = 10000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config,
@@ -644,22 +645,22 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.497,
-    "yokoVoltage_freqPoint": -1.497,
+    "yokoVoltage": -1.502,
+    "yokoVoltage_freqPoint": -1.502,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 15,
-    "read_pulse_gain": 6800,
+    "read_length": 17,
+    "read_pulse_gain": 5400,
     "read_pulse_freq": 7391.9,
 
     # qubit tone
-    "qubit_pulse_style": "arb",
+    "qubit_pulse_style": "flat_top",
     "qubit_gain": 32000,
     "qubit_length": 10,
-    "sigma": 0.2,
-    "flat_top_length": 10,
-    "qubit_freq": 940.8,
+    "sigma": 0.5,
+    "flat_top_length": 1,
+    "qubit_freq": 943.0,
 
     # Experiment
     "shots": 20000,  #1000000
@@ -688,14 +689,14 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.25, config["read_pulse_freq"] + 0.25),
     'read_length': (5,20),
-    'read_pulse_gain': (6000, 7500)
+    'read_pulse_gain': (5000, 7500)
 }
 step_size = {
     "read_pulse_freq" : 0.05,
     'read_length': 1,
     'read_pulse_gain': 100,
 }
-keys = ["read_length"]
+keys = ["read_pulse_gain"]
 config["shots"] = 20000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)

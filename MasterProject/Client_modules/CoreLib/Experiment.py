@@ -97,11 +97,13 @@ class ExperimentClass:
                 os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
 
         if short_directory_names:
+            self.dname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix)
             self.fname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.h5')
             self.iname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.png')
             ### define name for the config file
             self.cname = os.path.join(self.outerFolder +  self.path, datestring, datetimestring + "_" + self.prefix + '.json')
         else:
+            self.dname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix)
             self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
             self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
             ### define name for the config file

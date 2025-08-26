@@ -9,6 +9,7 @@
 ###
 import matplotlib
 from qick import NDAveragerProgram
+from qick.averager_program import QickSweep
 
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
@@ -47,6 +48,20 @@ class FFRampTest(NDAveragerProgram):
             PulseFunctions.create_ff_ramp(self, reversed = True)
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
+
+        # Ramps are created using I/Q values, and setting the gain register to the max value.
+        # To sweep, set the ff_ramp_stop value to the max desired value, and then change the gain register.
+        # In principle. I could just do this in the loop that sweeps ramp lengths, but let's try like this first
+        # if self.cfg["sweep_ff_gain"]:
+        #     # TODO this is not going to work correctly if starting at not 0 -- not trivial to change using only gain
+        #     # The problem is that the start value needs to stay constant while the stop value changes, while gain scales everything the same
+        #     # You would basically need to do this with a loop I think and change all values via I/Q, throw error for now
+        #     if self.cfg["ff_ramp_start"] != 0:
+        #         raise ValueError("The current sweep setup does not work with a non-zero ff_ramp_start, see comments")
+        #     self.ff_gain_reg = self.get_gen_reg(self.cfg["ff_ch"], "gain")
+        #     # Start value must be 0 by above error, stop value is always max gain. Only param is number of steps
+        #     assert self.cfg["ff_ramp_start"] == 0
+        #     self.add_sweep(QickSweep(self, self.ff_gain_reg, 0, self.soccfg['gens'][0]['maxv'], self.cfg["ff_gain_expts"]))
 
         self.sync_all(self.us2cycles(0.1))
 
@@ -117,9 +132,18 @@ class FFRampTest(NDAveragerProgram):
         #        self.dq_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]))
 
         # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
+        # If no sweeps, # expts dimension goes away (not just becomes 1)
         length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        # if not self.cfg["sweep_ff_gain"]:
+            # Should have no experiments dimension, since we have not coded any other shape. If this is not true, code will break
+        assert len(np.array(self.get_raw()).shape) == 4
         shots_i = np.array(self.get_raw())[0, :, :, 0].reshape((self.cfg["reps"], 2)) / length
         shots_q = np.array(self.get_raw())[0, :, :, 1].reshape((self.cfg["reps"], 2)) / length
+        # else:
+        #     # Don't know how NDAverager works with multiple sweeps, maybe an extra dimensions. That will also break this.
+        #     assert len(np.array(self.get_raw()).shape) == 5
+        #     shots_i = np.array(self.get_raw())[0, :, :, , 0].reshape((self.cfg["reps"], 2)) / length
+        #     shots_q = np.array(self.get_raw())[0, :, :, , 1].reshape((self.cfg["reps"], 2)) / length
         return shots_i, shots_q
 
 
@@ -150,10 +174,15 @@ class FFRampTest(NDAveragerProgram):
         "qubit_ch": 1,                    # RFSOC output channel of qubit drive
         "qubit_nqz": 1,                   # Nyquist zone to use for qubit drive
 
-        # Sweep parameters
+        # Ramp length sweep parameters
         "ff_ramp_length_start": 1,        # [us] Total length of positive fast flux pulse, start of sweep
         "ff_ramp_length_stop": 5,         # [us] Total length of positive fast flux pulse, end of sweep
-        "ff_ramp_expts": 10,              # [int] Number of points in the ff ramp length sweep
+        "ff_ramp_length_expts": 10,       # [int] Number of points in the ff ramp length sweep
+
+        # Gain sweep parameters
+        "sweep_ff_gain": False,           # [bool] Do we sweep the gain of the ramp?
+        "ff_gain_expts": 10,              # [int] How many different ff ramp gains to use
+        "ff_ramp_length": 1,              # [us] Half-length of ramp to use when sweeping gain
 
         # Other parameters
         "yokoVoltage": 0,                 # [V] Yoko voltage for magnet offset of flux
@@ -165,7 +194,7 @@ class FFRampTest(NDAveragerProgram):
         "angle": None,                    # [radians] Angle of rotation for readout
         "threshold": None,                # [DAC units] Threshold between g and e
 
-        "plot_all_lengths": False,  # [bool] Draw histograms for all lengths
+        "plot_all_points": False,  # [bool] Draw histograms for all lengths
         "verbose": False # [bool] Print a bunch of logging info
     }
 
@@ -179,26 +208,43 @@ class FFRampTest_Experiment(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
-                 progress=None, short_directory_names = False):
+                 progress=None, short_directory_names = True):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False):
         self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
-                                   num = self.cfg["ff_ramp_expts"])
-        i_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
-        q_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
+                                   num = self.cfg["ff_ramp_length_expts"])
 
-        # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
-        for idx, length in enumerate(self.ramp_lengths):
-            prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
+        if not self.cfg["sweep_ff_gain"]:
+            # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
+            i_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
+            q_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
 
-            # Collect the data
-            i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                                  save_experiments=None, #readouts_per_experiment=2,
-                                                  start_src="internal", progress=progress)
+            for idx, length in enumerate(self.ramp_lengths):
+                prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
 
-        data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
+                # Collect the data
+                i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                                      save_experiments=None, #readouts_per_experiment=2,
+                                                      start_src="internal", progress=progress)
+
+            data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
+        else:  # Sweeping fast flux gain, therefore do not sweep ramp length. Only one allowed for now
+            i_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
+            q_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
+
+            self.final_gains = np.rint(np.linspace(0, self.cfg["ff_ramp_stop"], num = self.cfg["ff_gain_expts"]))
+            for idx, final_gain in enumerate(self.final_gains):
+                prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_stop": final_gain})
+
+                i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                                      save_experiments=None, #readouts_per_experiment=2,
+                                                      start_src="internal", progress=progress)
+#TODO
+            data = {'config': self.cfg, 'data': {'final_gains': self.final_gains, 'i_arr': i_arr, 'q_arr': q_arr}}
+
+
         self.data = data
 
         return data
@@ -209,7 +255,7 @@ class FFRampTest_Experiment(ExperimentClass):
         #NOT = np.logical_not
         #AND = np.logical_and
 
-        plot_all_lengths = self.cfg["plot_all_lengths"]
+        plot_all_points = self.cfg["plot_all_points"]
 
         if data is None:
             data = self.data
@@ -217,7 +263,11 @@ class FFRampTest_Experiment(ExperimentClass):
         # Dimensions: (# delay points, # reps, # measurement[before/after ramp])
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
-        ramp_lengths = data['data']['ramp_lengths']
+
+        if self.cfg["sweep_ff_gain"]:
+            x_points = data['data']['final_gains']
+        else:
+            x_points = data['data']['ramp_lengths']
 
         prob_0, prob_1 = self._gaussian_fit_assignment(i_arr[:, :, 0], q_arr[:, :, 0], i_arr[:, :, 1], q_arr[:, :, 1],
                                                        cen_num = 2)
@@ -226,7 +276,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
         self._make_plots_gauss(pop, prob_0, prob_1, data, confidence = self.cfg["confidence"])
 
-        self._plot_gaussian_probabilities(pop, ramp_lengths)
+        self._plot_gaussian_probabilities(pop, x_points)
 
         ## If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
         #if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
@@ -242,7 +292,7 @@ class FFRampTest_Experiment(ExperimentClass):
         ## Threshold; the data has been rotated such that the signal is in e
         #data_thresh = i_arr_rot > threshold
 
-        #if plot_all_lengths:
+        #if plot_all_points:
         #    ramp_lengths_loop = ramp_lengths
         #else:
         #    ramp_lengths_loop = [ramp_lengths[0]]
@@ -485,7 +535,7 @@ class FFRampTest_Experiment(ExperimentClass):
         :param fig_num: Number of figure to start plots at
         """
 
-        plot_all_lengths = self.cfg["plot_all_lengths"]
+        plot_all_points = self.cfg["plot_all_points"]
 
         # Number of clusters
         cen_num = prob_0.shape[1]
@@ -500,16 +550,23 @@ class FFRampTest_Experiment(ExperimentClass):
         # Dimensions: (# delay points, # reps, # measurement[before/after ramp])
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
-        ramp_lengths = data['data']['ramp_lengths']
+
+        # Determine the x axis
+        if self.cfg["sweep_ff_gain"]:
+            final_gains = data['data']['final_gains']
+            x_points = final_gains
+            fstring = '%d DAC units endpoint'
+        else:
+            ramp_lengths = data['data']['ramp_lengths']
+            x_points = ramp_lengths
+            fstring = '%.3f us ramp half-length'
 
         # Determine for which length values we will make a histogram. Always make one for at least the first.
-        if plot_all_lengths:
-            ramp_lengths_loop = ramp_lengths
-        else:
-            ramp_lengths_loop = [ramp_lengths[0]]
+        if not plot_all_points:
+             x_points = [x_points[0]]
 
         # Draw plots for all the desired ramp lengths
-        for i, rl in enumerate(ramp_lengths_loop):
+        for i, x_pt in enumerate(x_points):
             # Make the figure
             while plt.fignum_exists(num=fig_num):  ###account for if figure with number already exists
                 fig_num += 1
@@ -518,7 +575,7 @@ class FFRampTest_Experiment(ExperimentClass):
             # Make histogram of original data
             ax1 = plt.subplot(2, cen_num, 1)
             self._draw_histogram(ax1, i_arr[i, :, 0], q_arr[i, :, 0],
-                                 'Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
+                                 ('Raw I/Q data, ' + fstring + ', before ramp') % x_pt)
 
             # Scatter plot of data, with colour set by assignment.
             ax2 = plt.subplot(2, cen_num, 2)
@@ -528,8 +585,8 @@ class FFRampTest_Experiment(ExperimentClass):
                 plt.text(self.centers[i][c, 0], self.centers[i][c, 1], '#%d' % c, ha = 'center', va = 'center')
             plt.xlabel('I (DAC units)')
             plt.ylabel('Q (DAC units)')
-            plt.title('I/Q data, %.3f us ramp half-length, before ramp\n%.2f%% | %.2f%%' %
-                      (rl, (prob_0[i, 0, :] > confidence).sum() / prob_0.shape[2] * 100,
+            plt.title(('I/Q data, ' + fstring + ', before ramp\n%.2f%% | %.2f%%') %
+                      (x_pt, (prob_0[i, 0, :] > confidence).sum() / prob_0.shape[2] * 100,
                        (prob_0[i, 1, :] > confidence).sum() / prob_0.shape[2] * 100))
 
             ax2.set_aspect('equal')
@@ -542,14 +599,23 @@ class FFRampTest_Experiment(ExperimentClass):
                                         / (prob_0[i, c, :] > confidence).sum() * 100) for c_end in range(0, cen_num))
                 self._draw_histogram(axn, i_arr[i, :, 1][prob_0[i, c, :] > confidence],
                                           q_arr[i, :, 1][prob_0[i, c, :] > confidence],
-                        'I/Q data, %.3f us ramp half-length,\nAfter ramp, start in cluster %d\n' % (rl, c) + percentage)
+                        'I/Q data, %.3f us ramp half-length,\nAfter ramp, start in cluster %d\n' % (x_pt, c) + percentage)
 
-
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-                         (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
-                          self.cfg['ff_delay']))
+            if self.cfg["sweep_ff_gain"]:
+                plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], x_pt,
+                                           self.cfg['ff_delay'], self.cfg["ff_ramp_length"]))
+            else:
+                plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                                           self.cfg['ff_delay'], x_pt))
             plt.tight_layout()
             plt.subplots_adjust(top=0.97, hspace=0.05, wspace=0.2)
+
+            # Always save a plot of the first dataset, so we can see which blob is assigned where
+            if i == 0:
+                plt.savefig(self.dname + 'hist_plot.png')
+                print('Saved histograms at %s' % (self.dname + 'hist_plot.png'))
 
         # Calculate & plot probability of staying in same state vs. ramp time
         #self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
@@ -623,29 +689,43 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.savefig(self.iname)
         print('Saved probabilities at %s' % self.iname)
 
-    def _plot_gaussian_probabilities(self, pop: np.ndarray[int], ramp_lengths: np.ndarray[float]) -> None:
+    def _plot_gaussian_probabilities(self, pop: np.ndarray[int], x_points: np.ndarray[float]) -> None:
+        if self.cfg["sweep_ff_gain"]:
+            x_lbl = 'Ramp endpoints (DAC units)'
+        else:
+            x_lbl = 'Ramp half-lengths (us)'
         plt.figure(figsize = (14, 14))
         plt.subplot(2, 2, 1)
-        plt.plot(ramp_lengths, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
-        plt.xlabel('Ramp half-lengths (us)')
+        plt.plot(x_points, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel(x_lbl)
         plt.ylabel('P(assigned end 0 | assigned start 0)')
         plt.subplot(2, 2, 2)
-        plt.plot(ramp_lengths, 100 * pop[:, 0, 1] / (pop[:, 0, 0] + pop[:, 0, 1]))
-        plt.xlabel('Ramp half-lengths (us)')
+        plt.plot(x_points, 100 * pop[:, 0, 1] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel(x_lbl)
         plt.ylabel('P(assigned end 1 | assigned start 0)')
         plt.subplot(2, 2, 3)
-        plt.plot(ramp_lengths, 100 * pop[:, 1, 0] / (pop[:, 1, 0] + pop[:, 1, 1]))
-        plt.xlabel('Ramp half-lengths (us)')
+        plt.plot(x_points, 100 * pop[:, 1, 0] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel(x_lbl)
         plt.ylabel('P(assigned end 0 | assigned start 1)')
         plt.subplot(2, 2, 4)
-        plt.plot(ramp_lengths, 100 * pop[:, 1, 1] / (pop[:, 1, 0] + pop[:, 1, 1]))
-        plt.xlabel('Ramp half-lengths (us)')
+        plt.plot(x_points, 100 * pop[:, 1, 1] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel(x_lbl)
         plt.ylabel('P(assigned end 1 | assigned start 1)')
-        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
-                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
-                      self.cfg['ff_delay'], self.cfg["confidence"]))
+
+        if self.cfg["sweep_ff_gain"]:
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+                                      (self.cfg['yokoVoltage'], self.cfg['ff_ramp_length'],
+                                       self.cfg['ff_delay'], self.cfg["confidence"]))
+        else:
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
+                                      (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                                       self.cfg['ff_delay'], self.cfg["confidence"]))
         plt.tight_layout()
         plt.subplots_adjust(top=0.92, hspace=0.05, wspace=0.2)
+
+        plt.savefig(self.dname + 'prob_plot.png')
+        print('Saved histograms at %s' % (self.dname + 'hist_plot.png'))
+
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
