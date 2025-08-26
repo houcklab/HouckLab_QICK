@@ -7,6 +7,7 @@
 # * faster than any decoherence channels
 # Lev, June 2025: create file.
 ###
+import matplotlib
 from qick import NDAveragerProgram
 
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
@@ -23,7 +24,9 @@ class FFRampTest(NDAveragerProgram):
         # Declare channels
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["ff_ch"], nqz=self.cfg["ff_nqz"])  # Fast flux
-        # There is no qubit pulse
+        if self.cfg["qubit_pulse"]:  # Optional qubit pulse
+            self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
+            PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq"])
 
         # Declare readout
         for ch in self.cfg["ro_chs"]:
@@ -58,8 +61,12 @@ class FFRampTest(NDAveragerProgram):
         :return:
         """
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
-        #TODO optional qubit pi/2 pulse before experiment?
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
+
+        # Play optional qubit pulse, if requested.
+        if self.cfg["qubit_pulse"]:
+            self.pulse(ch = self.cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(0.01))  # Wait a few ns to align channels
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
@@ -119,32 +126,47 @@ class FFRampTest(NDAveragerProgram):
     # Template config dictionary, used in GUI for initial values
     config_template = {
         # Readout section
-        "read_pulse_style": "linear",  # --Fixed
-        "read_length": 5,  # [us]
-        "read_pulse_gain": 8000,  # [DAC units]
-        "read_pulse_freq": 7392.25,  # [MHz]
+        "read_pulse_style": "linear",     # --Fixed
+        "read_length": 5,                 # [us]
+        "read_pulse_gain": 8000,          # [DAC units]
+        "read_pulse_freq": 7392.25,       # [MHz]
 
         # Fast flux pulse parameters
-        "ff_ramp_style": "const",  # one of ["linear"]
-        "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 100, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 1, # [us] Delay between fast flux ramps
-        "ff_ch": 6,  # RFSOC output channel of fast flux drive
-        "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+        "ff_ramp_style": "const",         # one of ["linear"]
+        "ff_ramp_start": 0,               # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 100,              # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 1,                    # [us] Delay between fast flux ramps
+        "ff_ch": 6,                       # RFSOC output channel of fast flux drive
+        "ff_nqz": 1,                      # Nyquist zone to use for fast flux drive
+
+        # Optional qubit pulse before measurement, intended as pi/2 to populate both blobs
+        "qubit_pulse": False,             # [bool] Whether to apply the optional qubit pulse at the beginning
+        "qubit_freq": 1000,               # [MHz] Frequency of qubit pulse
+        "qubit_pulse_style": "flat_top",  # one of ["const", "flat_top", "arb"]
+        "sigma": 0.050,                   # [us], used with "arb" and "flat_top"
+        "qubit_length": 1,                # [us], used with "const"
+        "flat_top_length": 0.300,         # [us], used with "flat_top"
+        "qubit_gain": 25000,              # [DAC units]
+        "qubit_ch": 1,                    # RFSOC output channel of qubit drive
+        "qubit_nqz": 1,                   # Nyquist zone to use for qubit drive
 
         # Sweep parameters
-        "ff_ramp_length_start": 1,  # [us] Total length of positive fast flux pulse, start of sweep
-        "ff_ramp_length_stop": 5,  # [us] Total length of positive fast flux pulse, end of sweep
-        "ff_ramp_expts": 10, # [int] Number of points in the ff ramp length sweep
+        "ff_ramp_length_start": 1,        # [us] Total length of positive fast flux pulse, start of sweep
+        "ff_ramp_length_stop": 5,         # [us] Total length of positive fast flux pulse, end of sweep
+        "ff_ramp_expts": 10,              # [int] Number of points in the ff ramp length sweep
 
-        "yokoVoltage": 0,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 10,  # [us] Relax delay after first readout
-        "relax_delay_2": 10, # [us] Relax delay after second readout
+        # Other parameters
+        "yokoVoltage": 0,                 # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 10,              # [us] Relax delay after first readout
+        "relax_delay_2": 10,              # [us] Relax delay after second readout
         "reps": 1000,
         "sets": 5,
 
-        "angle": None, # [radians] Angle of rotation for readout
-        "threshold": None, # [DAC units] Threshold between g and e
+        "angle": None,                    # [radians] Angle of rotation for readout
+        "threshold": None,                # [DAC units] Threshold between g and e
+
+        "plot_all_lengths": False,  # [bool] Draw histograms for all lengths
+        "verbose": False # [bool] Print a bunch of logging info
     }
 
 
@@ -162,13 +184,13 @@ class FFRampTest_Experiment(ExperimentClass):
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False):
-        ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
+        self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
                                    num = self.cfg["ff_ramp_expts"])
         i_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
         q_arr = np.zeros((self.cfg["ff_ramp_expts"], self.cfg["reps"], 2))
 
         # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
-        for idx, length in enumerate(ramp_lengths):
+        for idx, length in enumerate(self.ramp_lengths):
             prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
 
             # Collect the data
@@ -176,16 +198,18 @@ class FFRampTest_Experiment(ExperimentClass):
                                                   save_experiments=None, #readouts_per_experiment=2,
                                                   start_src="internal", progress=progress)
 
-        data = {'config': self.cfg, 'data': {'ramp_lengths': ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
+        data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
         self.data = data
 
         return data
 
-    def display(self, data=None, plot_disp = True, plot_all_lengths = False, fig_num = 1, **kwargs):
-        # This seems horrible, but apparently python doesn't do operator overloading or allow &&/etc, and ~ does super
-        # weird stuff (what do you think ~True is?). Writing out the functions is too long and unreadable
-        NOT = np.logical_not
-        AND = np.logical_and
+    def display(self, data=None, plot_disp = True, fig_num = 1, **kwargs):
+        # This seems horrible, but apparently python doesn't allow &&/etc, and ~ does super weird stuff
+        # (what do you think ~True is?). Writing out the functions is too long and unreadable
+        #NOT = np.logical_not
+        #AND = np.logical_and
+
+        plot_all_lengths = self.cfg["plot_all_lengths"]
 
         if data is None:
             data = self.data
@@ -195,29 +219,290 @@ class FFRampTest_Experiment(ExperimentClass):
         q_arr = data['data']['q_arr']
         ramp_lengths = data['data']['ramp_lengths']
 
-        # If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
-        if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
-            import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
-            ssa = shot_analysis.SingleShotAnalysis(i_arr[0, :, 0], q_arr[0, :, 0])
-            ssa_centers = ssa.get_Centers(i_arr[0, :, 0], q_arr[0, :, 0])
-            # We rotate to undo the current rotation, so - sign
-            theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
-            # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
-            threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(theta) - \
-                        (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
-            print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
+        prob_0, prob_1 = self._gaussian_fit_assignment(i_arr[:, :, 0], q_arr[:, :, 0], i_arr[:, :, 1], q_arr[:, :, 1],
+                                                       cen_num = 2)
 
-        else: # User has provided override values
-            theta = self.cfg["angle"]
-            threshold = self.cfg["threshold"]
+        pop = self._calculate_pops(prob_0, prob_1, confidence = self.cfg["confidence"])
 
-        # Rotate the data. Positive angle rotates ccw
-        i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
-        q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
+        self._make_plots_gauss(pop, prob_0, prob_1, data, confidence = self.cfg["confidence"])
 
-        # Threshold; the data has been rotated such that the signal is in e
-        data_thresh = i_arr_rot > threshold
+        self._plot_gaussian_probabilities(pop, ramp_lengths)
 
+        ## If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
+        #if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
+        #    theta, threshold = self._find_angle_threshold(i_arr[0, :, 0], q_arr[0, :, 0])
+        #else: # User has provided override values
+        #    theta = self.cfg["angle"]
+        #    threshold = self.cfg["threshold"]
+
+        ## Rotate the data. Positive angle rotates ccw
+        #i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
+        #q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
+
+        ## Threshold; the data has been rotated such that the signal is in e
+        #data_thresh = i_arr_rot > threshold
+
+        #if plot_all_lengths:
+        #    ramp_lengths_loop = ramp_lengths
+        #else:
+        #    ramp_lengths_loop = [ramp_lengths[0]]
+
+        ## Draw plots for all the desired ramp lengths
+        #for i, rl in enumerate(ramp_lengths_loop):
+        #    # Make the figure
+        #    while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+        #        fig_num += 1
+        #    fig = plt.figure(figsize=(12, 12), num=fig_num)
+
+        #    # Make histogram of original data
+        #    ax1 = plt.subplot(2, 2, 1)
+        #    self._draw_histogram(ax1, i_arr[i, :, 0], q_arr[i, :, 0], 'Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
+
+        #    # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
+        #    ax2 = plt.subplot(2, 2, 2)
+        #    plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
+        #                color = 'r', marker = 'o', alpha = 0.5)
+        #    plt.scatter(i_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])], q_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])],
+        #                color = 'b', marker = 'o', alpha = 0.5)
+        #    plt.xlabel('I (DAC units)')
+        #    plt.ylabel('Q (DAC units)')
+        #    plt.title('Rotated I/Q data, %.3f us ramp half-length, before ramp\n%.2f%% | %.2f%%' %
+        #              (rl, NOT(data_thresh[i, :, 0]).sum() / data_thresh.shape[1] * 100,
+        #                   data_thresh[i, :, 0].sum() / data_thresh.shape[1] * 100 ))
+
+        #    ax2.set_aspect('equal')
+
+        #    # Histograms of rotated post-ramp points for start in below/above threshold.
+        #    ax3 = plt.subplot(2, 2, 3)
+        #    self._draw_histogram(ax3, i_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
+        #                              q_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
+        #        'Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold\n%.2f%% | %.2f%%' % (
+        #        rl,
+        #        NOT(data_thresh[i, :, 1])[NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100,
+        #        data_thresh[i, :, 1][NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100 ))
+
+
+        #    ax4 = plt.subplot(2, 2, 4)
+        #    self._draw_histogram(ax4, i_arr_rot[i, :, 1][data_thresh[i, :, 0]], q_arr_rot[i, :, 1][data_thresh[i, :, 0]],
+        #           'Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold\n%.2f%% | %.2f%%' % (
+        #           rl,
+        #           NOT(data_thresh[i, :, 1])[data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100,
+        #           data_thresh[i, :, 1][data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100 ))
+
+        #    plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+        #                 (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
+        #    plt.tight_layout()
+        #    plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
+
+        ## Calculate & plot probability of staying in same state vs. ramp time
+        #self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
+
+        ##
+        ## if plot_disp:
+        ##     plt.show(block=False)
+        ##     plt.pause(2)
+        ##
+        ## else:
+        ##     fig.clf(True)
+        ##     plt.close(fig)
+
+
+    def _find_angle_threshold(self, i_arr: np.ndarray, q_arr: np.ndarray) -> tuple[float, float]:
+        import WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis as shot_analysis
+        ssa = shot_analysis.SingleShotAnalysis(i_arr, q_arr)
+        ssa_centers = ssa.get_Centers(i_arr, q_arr)
+        self.ssa_centers = ssa_centers
+        # We rotate to undo the current rotation, so - sign
+        theta = -np.arctan((ssa_centers[1, 1] - ssa_centers[0, 1]) / (ssa_centers[1, 0] - ssa_centers[0, 0]))
+        # Threshold is the rotated i-coordinate of the midpoint between the two blobs centres (sigmas are the same)
+        threshold = (ssa_centers[0, 0] + ssa_centers[1, 0]) / 2 * np.cos(theta) - \
+                    (ssa_centers[0, 1] + ssa_centers[1, 1]) / 2 * np.sin(theta)
+        print("Fit angle: %.4f\nFit threshold: %.3f" % (theta, threshold))
+        return theta, threshold
+
+    def _gaussian_fit_assignment(self, i_0: np.ndarray, q_0: np.ndarray, i_1: np.ndarray, q_1: np.ndarray,
+                                 cen_num: int = 2, bin_size: int = 101) -> tuple[np.ndarray[float], np.ndarray[float]]:
+        """ Uses Gaussian fitting to assign most probable cluster numbers to the I/Q arrays passed in.
+        We assume the i0/q0 data has enough of all blobs to perform a proper fit. The centres from that fit
+        are then used to fit the i0/q0 amplitudes and set the probability distributions.
+        :param i_0: ndarray of floats, shape is [# experiments, # shots]. I's of initial measurement
+        :param q_0: Q's of initial measurement, see i_0
+        :param i_1: I's of final measurement, see i_0
+        :param q_1: Q's of final measurement, see i_0
+        :param cen_num: number of clusters
+        :param bin_size: size of bins for histograms
+        :returns array of probabilities of assignments to blobs. [# experiments, # clusters, # shots]
+        Code adapted from mSpecSlice_PS_sse.py"""
+
+        from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
+
+        # Verify inputs
+        if not (i_0.shape == q_0.shape == i_1.shape == q_1.shape):
+            raise ValueError('Shapes of i0, q0, i1, and q1 are not all the same!')
+        if cen_num < 2:
+            raise ValueError('cen_num must be at least 2!')
+        if bin_size < 2:
+            raise ValueError('bin_size must be at least 2')
+
+        # Create empty arrays to save data
+        centers = []
+
+        # Probabilities of each shot being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
+        probability_0 = np.zeros((i_0.shape[0], cen_num, i_0.shape[1]))
+        probability_1 = np.zeros((i_0.shape[0], cen_num, i_0.shape[1]))
+
+        # Loop over experiments (i.e. variations of some external parameter)
+        for i in range(i_0.shape[0]):
+            # Perform post selection for the initial data for two centers
+            # by selecting points withing some confidence bound.
+            # This turns the arrays and gives a [2, # shots] array as a result.
+            iq_data_0 = np.stack((i_0[i, :], q_0[i, :]), axis=0)
+            iq_data_1 = np.stack((i_1[i, :], q_1[i, :]), axis=0)
+
+            # Get centers
+            if i == 0:      # First pass, just do it
+                centre_guess = sse2.getCenters(iq_data_0, cen_num)
+            else:           # Already have done it, use first result as initial guess
+                centre_guess = sse2.getCenters(iq_data_0, cen_num, init_guess=centers[0])
+
+            # I don't really understand the code below since a lot of it is hidden in sse2. I won't look at it too
+            # carefully for now, if I can get this to work.
+
+            # Fit Gaussian to first measurement
+            # Does not require both sigmas to be the same TODO rewrite for same sigma for all gaussians
+            hist2d = sse2.createHistogram(iq_data_0, bin_size) # Generates histogrammed data
+            no_of_params = 4
+            gaussians_0, popt_0, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centre_guess, cen_num)
+
+            centers.append((popt_0.reshape(cen_num, 4))[:, 1:3]) # Get the x and y coordinates of each Gaussian
+            if self.cfg["verbose"]:
+                print('=========================================================\nLength #%d' % i)
+                print("Centers are ", centers[i])
+                print('Fit results pre-ramp: ', popt_0)
+
+
+            # Don't understand the point of defining these, they're not used
+            # # create bounds given current fit
+            # bound = [popt_0 - 1e-5, popt_0 + 1e-5]
+            #
+            # for idx_bound in range(cen_num):
+            #     bound[0][0 + int(idx_bound * no_of_params)] = 0
+            #     bound[1][0 + int(idx_bound * no_of_params)] = np.inf
+
+            # Get probability density function
+            pdf_0 = sse2.calcPDF(gaussians_0)
+
+            # print("Shape of probability array is ", probability.shape)
+            for k in range(cen_num):
+                for j in range(iq_data_0.shape[1]): # This seems to loop over every shot? Probably very slow
+                    # I think the x and y points are the grid points for the histogram? Not sure
+                    # find the x,y point closest to the i,q point instead of getting a continuous pdf
+                    indx_i = np.argmin(np.abs(x_points_0 - iq_data_0[0, j]))
+                    indx_q = np.argmin(np.abs(y_points_0 - iq_data_0[1, j]))
+                    # Calculate the probability
+                    probability_0[i, k, j] = pdf_0[k][indx_i, indx_q]
+
+            # Use fit result from first measurement to fit second measurement (only amplitudes)
+            hist2d = sse2.createHistogram(iq_data_1, bin_size)
+            # I think the parameters are, in order, amplitude, x0, y0, sigma, amplitude, x0, y0, sigma
+            # Set bounds on amplitude [0, inf); every other parameter should have both bounds be its value from before
+            # We don't want the second fit to be able to change the parameters except for amplitude, but we have to
+            # provide a bit of wiggle room, otherwise curve fit complains
+            eps = 1e-6  # small number
+            bound = [(popt_0 - np.abs(popt_0) * eps) * np.array([0, 1, 1, 1, 0, 1, 1, 1]) ,
+                     (popt_0 + np.abs(popt_0) * eps) * np.array([np.inf, 1, 1, 1, np.inf, 1, 1, 1]) ]
+            gaussians_1, popt_1, x_points_1, y_points_1 = sse2.findGaussians(hist2d, centers[i], cen_num,
+                                                                             input_bounds=bound, p_guess=popt_0)
+
+            if self.cfg["verbose"]:
+                print("Fit results post-ramp:", popt_1)
+
+            # Get probability density function
+            pdf_1 = sse2.calcPDF(gaussians_1)
+
+            for k in range(cen_num):
+                for j in range(iq_data_1.shape[1]): # This seems to loop over every shot? Probably very slow
+                    # I think the x and y points are the grid points for the histogram? Not sure
+                    # find the x,y point closest to the i,q point instead of getting a continuous pdf
+                    indx_i = np.argmin(np.abs(x_points_1 - iq_data_1[0, j]))
+                    indx_q = np.argmin(np.abs(y_points_1 - iq_data_1[1, j]))
+                    # Calculate the probability
+                    probability_1[i, k, j] = pdf_1[k][indx_i, indx_q]
+
+        self.centers = centers
+
+        return probability_0, probability_1
+
+    def _calculate_pops(self, prob_0: np.ndarray, prob_1: np.ndarray, confidence: float = 0.5) -> np.ndarray[int]:
+        """
+        Calculates the populations of state transitions between before and after the ramp.
+        :param prob_0: probabilities of I/Q shots being in cluster # cen_num. Shape: [# experiments, # clusters, # shots]
+                       First measurement (before ramp).
+        :param prob_1: Same as prob_0 but for second measurement (after ramp).
+        :param confidence: pick which data to include by how confident we are that it belongs in a given blob. For 50%,
+                    (and cen_num = 2), this splits all data between the two blobs. For confidence > 50%, this will
+                    throw away some data about which we are not too confident (in the middle between the blobs).
+        :return: pop: populations of states in particular clusters before/after ramp.
+                      Shape: [# experiments, # start cluster, # end cluster]
+        """
+        if not (prob_0.shape == prob_1.shape):
+            raise ValueError('Shapes of prob_0 and prob_1 are not the same!')
+        if confidence <= 0:
+            raise ValueError('Confidence should be at least 0%') # < 50% makes sense for > 2 clusters, maybe?
+        elif confidence > 1:
+            raise ValueError('Confidence should be no more than 100%')
+
+
+        num_expts = prob_0.shape[0]
+        cen_num = prob_0.shape[1]
+        # Populations of states in cluster # before/after ramp. Shape: [# experiments, # start blob, # end blob]
+        pop = np.zeros((num_expts, cen_num, cen_num))
+
+        for i in range(num_expts):
+            # This can probably be done in a vectorised way, but I think it's easier to understand with nested loops
+            # cen_num is probably 2 or 3 anyway, so we're not slowing ourselves down too much
+            for j in range(cen_num):
+                # True where the first measurement places us in cluster j with probability > confidence
+                start_mask = prob_0[i, j, :] > confidence
+                for k in range(cen_num):
+                    # True where the second measurement places us in cluster k with probability > confidence
+                    end_mask = prob_1[i, k, :] > confidence
+                    pop[i, j, k] = (np.logical_and(start_mask, end_mask)).sum()
+
+        return pop
+
+
+    def _make_plots_gauss(self, pop: np.ndarray[int], prob_0: np.ndarray[float], prob_1: np.ndarray[float],
+                          data: dict, confidence: float = 0.5, fig_num: int = 1) -> None:
+        """
+        Makes plots of all the things we're interested in for this program when using the Gaussian fitting method.
+        This code may break for cen_num != 2.
+        :param pop: populations of states in particular clusters before/after ramp.
+                          Shape: [# experiments, # start cluster, # end cluster]
+        :param prob_0: probability of shot being in a given cluster, first measurement. [# experiments, # clusters, # shots]
+        :param prob_1: probability of shot being in a given cluster, second measurement.
+        :param data: dictionary of the data taken
+        :param fig_num: Number of figure to start plots at
+        """
+
+        plot_all_lengths = self.cfg["plot_all_lengths"]
+
+        # Number of clusters
+        cen_num = prob_0.shape[1]
+
+        # Make sure we're not assigning any shots to multiple blobs, e.g. cen_num = 3, prob = [0.4, 0.4, 0.2], conf =0.3
+        if (((prob_0 > confidence).sum(axis=1)) > 1).any() or (((prob_1 > confidence).sum(axis=1)) > 1).any():
+            raise ValueError("At least one shot assigned to multiple blobs! Choose a higher confidence")
+
+        if data is None:
+            data = self.data
+
+        # Dimensions: (# delay points, # reps, # measurement[before/after ramp])
+        i_arr = data['data']['i_arr']
+        q_arr = data['data']['q_arr']
+        ramp_lengths = data['data']['ramp_lengths']
+
+        # Determine for which length values we will make a histogram. Always make one for at least the first.
         if plot_all_lengths:
             ramp_lengths_loop = ramp_lengths
         else:
@@ -225,136 +510,52 @@ class FFRampTest_Experiment(ExperimentClass):
 
         # Draw plots for all the desired ramp lengths
         for i, rl in enumerate(ramp_lengths_loop):
-            # Generates data for drawing a histogram
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr[i, :, 0], q_arr[i, :, 0])
-
             # Make the figure
-            while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+            while plt.fignum_exists(num=fig_num):  ###account for if figure with number already exists
                 fig_num += 1
             fig = plt.figure(figsize=(12, 12), num=fig_num)
 
             # Make histogram of original data
-            ax1 = plt.subplot(2, 2, 1)
-            p1 = plt.pcolor(X, Y, hist2d[0])
-            # If we have fit the data within this program, draw the centres
-            if self.cfg["angle"] is None or self.cfg["threshold"] is None:
-                plt.scatter(ssa_centers[:, 0], ssa_centers[:, 1], color = 'r', marker = 'x')
+            ax1 = plt.subplot(2, cen_num, 1)
+            self._draw_histogram(ax1, i_arr[i, :, 0], q_arr[i, :, 0],
+                                 'Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
+
+            # Scatter plot of data, with colour set by assignment.
+            ax2 = plt.subplot(2, cen_num, 2)
+            for c in range(cen_num): # Draw every cluster
+                plt.scatter(i_arr[i, :, 0][prob_0[i, c, :] > confidence], q_arr[i, :, 0][prob_0[i, c, :] > confidence],
+                             marker='o', alpha=0.5) # color='r',
+                plt.text(self.centers[i][c, 0], self.centers[i][c, 1], '#%d' % c, ha = 'center', va = 'center')
             plt.xlabel('I (DAC units)')
             plt.ylabel('Q (DAC units)')
-            plt.title('Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
-
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider1 = make_axes_locatable(ax1)
-            cax1 = divider1.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p1, cax=cax1)
-            ax1.set_aspect('equal')
-
-            # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
-            ax2 = plt.subplot(2, 2, 2)
-            plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
-                        color = 'r', marker = 'o', alpha = 0.5)
-            plt.scatter(i_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])], q_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])],
-                        color = 'b', marker = 'o', alpha = 0.5)
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Rotated I/Q data, %.3f us ramp half-length, before ramp\n%.2f%% | %.2f%%' %
-                      (rl, NOT(data_thresh[i, :, 0]).sum() / data_thresh.shape[1] * 100,
-                           data_thresh[i, :, 0].sum() / data_thresh.shape[1] * 100 ))
+            plt.title('I/Q data, %.3f us ramp half-length, before ramp\n%.2f%% | %.2f%%' %
+                      (rl, (prob_0[i, 0, :] > confidence).sum() / prob_0.shape[2] * 100,
+                       (prob_0[i, 1, :] > confidence).sum() / prob_0.shape[2] * 100))
 
             ax2.set_aspect('equal')
 
-            # Histograms of rotated post-ramp points for start in below/above threshold.
-            ax3 = plt.subplot(2, 2, 3)
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
-                                                                    q_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])])
-            p3 = plt.pcolor(X, Y, hist2d[0])
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold\n%.2f%% | %.2f%%'
-                      % (rl,
-                         NOT(data_thresh[i, :, 1])[NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100,
-                         data_thresh[i, :, 1][NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100 ))
+            # Histograms of post-ramp points for start in every cluster
+            # Again, nested loop, but easier to understand and cen_num is likely 2 or 3
+            for c in range(cen_num):
+                axn = plt.subplot(2, cen_num, cen_num + c + 1)
+                percentage = " | ".join("%.2f%%" % (((prob_1[i, c_end, :] > confidence)[prob_0[i, c, :] > confidence]).sum()
+                                        / (prob_0[i, c, :] > confidence).sum() * 100) for c_end in range(0, cen_num))
+                self._draw_histogram(axn, i_arr[i, :, 1][prob_0[i, c, :] > confidence],
+                                          q_arr[i, :, 1][prob_0[i, c, :] > confidence],
+                        'I/Q data, %.3f us ramp half-length,\nAfter ramp, start in cluster %d\n' % (rl, c) + percentage)
 
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider3 = make_axes_locatable(ax3)
-            cax3 = divider3.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p3, cax=cax3)
-
-            ax3.set_aspect('equal')
-
-            ax4 = plt.subplot(2, 2, 4)
-            X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr_rot[i, :, 1][data_thresh[i, :, 0]],
-                                                                    q_arr_rot[i, :, 1][data_thresh[i, :, 0]])
-            p4 = plt.pcolor(X, Y, hist2d[0])
-            plt.xlabel('I (DAC units)')
-            plt.ylabel('Q (DAC units)')
-            plt.title('Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold\n%.2f%% | %.2f%%'
-                      % (rl,
-                         NOT(data_thresh[i, :, 1])[data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100,
-                         data_thresh[i, :, 1][data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100 ))
-
-            # Matplotlib magic that makes the colourbar not be a stupid size
-            divider4 = make_axes_locatable(ax4)
-            cax4 = divider4.append_axes("right", size="5%", pad=0.05)
-            plt.colorbar(p4, cax=cax4)
-
-            ax4.set_aspect('equal')
 
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-                         (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
+                         (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                          self.cfg['ff_delay']))
             plt.tight_layout()
-            plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
-        # plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
-        #
-        # plt.savefig(self.iname)
-        #
-        # if plot_disp:
-        #     plt.show(block=False)
-        #     plt.pause(2)
-        #
-        # else:
-        #     fig.clf(True)
-        #     plt.close(fig)
+            plt.subplots_adjust(top=0.97, hspace=0.05, wspace=0.2)
 
         # Calculate & plot probability of staying in same state vs. ramp time
-        p_no_transition = (data_thresh[:, :, 0] == data_thresh[:, :, 1]).sum(axis = 1) / i_arr.shape[1]
-        p_start_L_end_L = (AND(NOT(data_thresh[:, :, 0]), NOT(data_thresh[:, :, 1]))).sum(axis=1) / NOT(data_thresh[:, :, 0]).sum(axis=1)
-        p_start_R_end_R = (AND(data_thresh[:, :, 0], data_thresh[:, :, 1])).sum(axis=1) / data_thresh[:, :, 0].sum(axis = 1)
-        #assert all(p_no_transition - (p_start_L_end_L + p_start_R_end_R) < np.ones(p_no_transition.shape) * 1e-10)
-
-        plt.figure(figsize=(16, 8))
-        plt.subplot(1, 3, 1)
-        plt.plot(ramp_lengths, p_no_transition)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(no transition after ramp)')
-
-        plt.subplot(1, 3, 2)
-        plt.plot(ramp_lengths, p_start_L_end_L)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(start left, end left)')
-
-        plt.subplot(1, 3, 3)
-        plt.plot(ramp_lengths, p_start_R_end_R)
-        plt.xlabel('Ramp lengths (us)')
-        plt.ylabel('P(start right, end right)')
-
-        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
-        plt.tight_layout()
-
-        plt.savefig(self.iname)
-        #
-        # if plot_disp:
-        #     plt.show(block=False)
-        #     plt.pause(2)
-        #
-        # else:
-        #     fig.clf(True)
-        #     plt.close(fig)
-
+        #self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
 
     @staticmethod
-    def _prepare_hist_data(i_arr, q_arr):
+    def _prepare_hist_data(i_arr: np.ndarray, q_arr: np.ndarray):
         # Prepare histogram data
         iq_data = np.vstack((i_arr, q_arr))
         norm = np.sqrt(iq_data[0, :] ** 2 + iq_data[1, :] ** 2)
@@ -365,6 +566,86 @@ class FFRampTest_Experiment(ExperimentClass):
         Y, X = np.meshgrid(y_points, x_points)
         return X, Y, hist2d
 
+    def _draw_histogram(self, ax: matplotlib.axes.Axes, i_arr: np.ndarray, q_arr: np.ndarray,  title: str) -> None:
+        """ Draw a histogram of the I/Q data in i_arr/q_arr onto axes ax with title title."""
+        X, Y, hist2d = FFRampTest_Experiment._prepare_hist_data(i_arr, q_arr)
+        Z = hist2d[0]
+        p1 = plt.pcolor(X, Y, Z)
+        # If we have fit the data within this program, draw the centres
+#        if self.cfg["angle"] is None or self.cfg["threshold"] is None:
+            #plt.scatter(self.ssa_centers[:, 0], self.ssa_centers[:, 1], color='r', marker='x')
+        plt.xlabel('I (DAC units)')
+        plt.ylabel('Q (DAC units)')
+        plt.title(title)
+
+        # Matplotlib magic that makes the colourbar not be a stupid size
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        plt.colorbar(p1, cax=cax)
+        ax.set_aspect('equal')
+
+    def _plot_probabilities(self, shots0: np.ndarray, shots1: np.ndarray):
+        """ Plots the probabilities of (no) transition vs. ramp lengths.
+        shots0/1: ndarray of booleans, True if right of threshold. First/second measurement.
+        Shape is (# ramp lengths, # shots). """
+
+        # This seems horrible, but apparently python doesn't do operator overloading or allow &&/etc, and ~ does super
+        # weird stuff (what do you think ~True is?). Writing out the functions is too long and unreadable
+        NOT = np.logical_not
+        AND = np.logical_and
+
+        # Calculate & plot probability of staying in same state vs. ramp time
+        p_no_transition = (shots0 == shots1).sum(axis = 1) / shots0.shape[1]
+        p_start_L_end_L = (AND(NOT(shots0), NOT(shots1))).sum(axis=1) / NOT(shots0).sum(axis=1)
+        p_start_R_end_R = (AND(shots0, shots1)).sum(axis=1) / shots0.sum(axis = 1)
+        #assert all(p_no_transition - (p_start_L_end_L + p_start_R_end_R) < np.ones(p_no_transition.shape) * 1e-10)
+
+        plt.figure(figsize=(16, 8))
+        plt.subplot(1, 3, 1)
+        plt.plot(self.ramp_lengths, p_no_transition)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(no transition after ramp)')
+
+        plt.subplot(1, 3, 2)
+        plt.plot(self.ramp_lengths, p_start_L_end_L)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(start left, end left)')
+
+        plt.subplot(1, 3, 3)
+        plt.plot(self.ramp_lengths, p_start_R_end_R)
+        plt.xlabel('Ramp lengths (us)')
+        plt.ylabel('P(start right, end right)')
+
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
+        plt.tight_layout()
+
+        plt.savefig(self.iname)
+        print('Saved probabilities at %s' % self.iname)
+
+    def _plot_gaussian_probabilities(self, pop: np.ndarray[int], ramp_lengths: np.ndarray[float]) -> None:
+        plt.figure(figsize = (14, 14))
+        plt.subplot(2, 2, 1)
+        plt.plot(ramp_lengths, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 0 | assigned start 0)')
+        plt.subplot(2, 2, 2)
+        plt.plot(ramp_lengths, 100 * pop[:, 0, 1] / (pop[:, 0, 0] + pop[:, 0, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 1 | assigned start 0)')
+        plt.subplot(2, 2, 3)
+        plt.plot(ramp_lengths, 100 * pop[:, 1, 0] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 0 | assigned start 1)')
+        plt.subplot(2, 2, 4)
+        plt.plot(ramp_lengths, 100 * pop[:, 1, 1] / (pop[:, 1, 0] + pop[:, 1, 1]))
+        plt.xlabel('Ramp half-lengths (us)')
+        plt.ylabel('P(assigned end 1 | assigned start 1)')
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                      self.cfg['ff_delay'], self.cfg["confidence"]))
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.92, hspace=0.05, wspace=0.2)
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
