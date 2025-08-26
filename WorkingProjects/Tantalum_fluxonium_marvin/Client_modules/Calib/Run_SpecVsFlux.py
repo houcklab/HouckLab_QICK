@@ -19,28 +19,28 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.1032,
-    "yokoVoltageStop": -0.075,
-    "yokoVoltageNumPoints": 31,
+    "yokoVoltageStart": -0.48,
+    "yokoVoltageStop": -0.28,
+    "yokoVoltageNumPoints": 151,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 1000,
+    "trans_reps": 800,
     "read_pulse_style": "const",
-    "read_length": 20,  # us
-    "read_pulse_gain": 5000,  # [DAC units]
-    "trans_freq_start": 6671.2,
+    "read_length": 5,  # us
+    "read_pulse_gain": 8000,  # [DAC units]
+    "trans_freq_start":6670,
     "trans_freq_stop": 6673.5,
     "TransNumPoints": 201,
 
     # qubit spec parameters
-    "spec_reps": 2000,
+    "spec_reps": 4000,
     "qubit_pulse_style": "const",
     "qubit_gain": 4000,
-    "qubit_length": 5,
+    "qubit_length": 0.5,
     "flat_top_length" : 10,
-    "qubit_freq_start": 100,
-    "qubit_freq_stop": 1000,
+    "qubit_freq_start": 2100,
+    "qubit_freq_stop": 2300,
     "SpecNumPoints": 301,
     "sigma": 1,
     "relax_delay": 10,

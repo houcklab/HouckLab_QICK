@@ -109,14 +109,14 @@ class T1Experiment(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
 
         #### pull the data from the amp rabi sweep
         prog = LoopbackProgramT1Experiment(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False,)
         mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
         phase = np.arctan2(avgq[0][0], avgi[0][0])
 
