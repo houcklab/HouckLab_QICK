@@ -35,6 +35,7 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
         qubit_ch = cfg["qubit_ch"]  # Get the qubit channel
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])  # Declare the qubit channel
         qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # Convert qubit length to clock ticks
+        self.qubit_freq_base = self.freq2reg(cfg["qubit_freq_base"], gen_ch=cfg["qubit_ch"])
         self.qubit_freq = qubit_freq
         # Define the qubit pulse
         if cfg["qubit_pulse_style"] == "arb":
@@ -78,12 +79,31 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
 
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"] and self.cfg["initialize_pulse"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switc
+                         width=self.cfg["trig_len"])  # trigger for switch
 
         if self.cfg["initialize_pulse"]:
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["initialize_qubit_gain"],
-                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            if self.cfg["qubit_pulse_style"] == "arb":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq_base,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         waveform="qubit")
+            elif self.cfg["qubit_pulse_style"] == "flat_top":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq_base,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            elif self.cfg["qubit_pulse_style"] == 'const':
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq_base, phase=0,
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
         ### Post Selection Measurement
@@ -92,15 +112,36 @@ class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait = True)
 
-        self.sync_all(self.us2cycles(0.01))
+        self.sync_all(self.us2cycles(self.cfg['delay_btwn_pulses']))
 
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switc
 
-        self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
-                                 phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                 waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+        if self.cfg["initialize_pulse"]:
+            if self.cfg["qubit_pulse_style"] == "arb":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["qubit_gain"],
+                                         waveform="qubit")
+            elif self.cfg["qubit_pulse_style"] == "flat_top":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["qubit_gain"],
+                                         waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            elif self.cfg["qubit_pulse_style"] == 'const':
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
+                                         gain=self.cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
+
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
         self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
 

@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.1015,#1.6,
+    "yokoVoltage": -0.42,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 60,  # us
-    "read_pulse_gain": 6000,  # [DAC units]
-    "read_pulse_freq": 6672.533,#509,#7391.96,#7392.36,#957,
+    "read_length": 6.6,  # us
+    "read_pulse_gain": 10000,  # [DAC units]
+    "read_pulse_freq": 6671.7092,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -58,13 +58,14 @@ UpdateConfig = {
     "depop_delay": .010, # 5/kappa
 
     # qubit spec
-    "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
-    "qubit_length": 3,  ###us, this is used if pulse style is const
+    "qubit_pulse_style": "const",
+    "qubit_gain": 7000,
+    "qubit_length": 0.8,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 155,
-    "relax_delay": 30,
+    "qubit_freq": 2184,
+    "relax_delay": 10,
+    'qubit_mode_periodic' : False,
 
     # define shots
     "shots": 50000,  ### this gets turned into "reps"
@@ -90,6 +91,40 @@ SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=
 SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
 SingleShotProgram.save_config(Instance_SingleShotProgram)
 plt.show()
+
+#%%
+outerFolder_sweep = outerFolder + "singleShotSweeps_read_pulse_freq_950\\"
+loop_len = 21
+param_dict = {
+    'read_pulse_freq': config["read_pulse_freq"] + np.linspace(-0.5, 0.5, 51),
+    'qubit_freq': config["qubit_freq"] + np.linspace(-50, 50, 21),
+    'qubit_gain': np.linspace(15000, 22000, 21, dtype=int),
+    'read_pulse_gain': np.linspace(5000, 30000, 51, dtype=int),
+    'read_length':np.linspace(1,20,20, dtype=int)
+}
+vary = "read_pulse_freq"
+fid = []
+
+for idx in range(param_dict[vary].shape[0]):
+    config[vary] = param_dict[vary][idx]
+    Instance_SingleShotProgram = SingleShotProgram(path="SingleShot_sweeps_yoko_"+str(config["yokoVoltage"]), outerFolder=outerFolder_sweep, cfg=config,soc=soc,soccfg=soccfg)
+    data_SingleShot = SingleShotProgram.acquire(Instance_SingleShotProgram)
+    SingleShotProgram.display(Instance_SingleShotProgram, data_SingleShot, plotDisp=False, save_fig=True)
+    SingleShotProgram.save_data(Instance_SingleShotProgram, data_SingleShot)
+    SingleShotProgram.save_config(Instance_SingleShotProgram)
+    fid.append(Instance_SingleShotProgram.fid)
+    plt.clf()
+    print(idx)
+
+# Plot the fidelity vs the varying parameter
+plt.figure(figsize=(10, 6))
+plt.plot(param_dict[vary], fid, marker='o', linestyle='-', color='b')
+plt.xlabel(vary)
+plt.ylabel('Fidelity')
+plt.title('Fidelity vs ' + vary)
+plt.grid()
+plt.show()
+
 
 #%% TITLE Single Shot MIST
 plt.close('all')
@@ -242,35 +277,35 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.1015,
-    'yokoVoltage_freqPoint': -0.1015,
+    "yokoVoltage": -0.104,
+    'yokoVoltage_freqPoint': -0.104,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 6672.535,
+    "read_length": 25,
+    "read_pulse_gain": 7000,
+    "read_pulse_freq": 6672.5512,
 
     # Qubit Tone
-    "qubit_freq_start": 152,
+    "qubit_freq_start": 150,
     "qubit_freq_stop": 160,
-    "RabiNumPoints": 51,
+    "RabiNumPoints": 11,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
-    'qubit_length': 0.2,
+    'qubit_length': 0.8,
     "relax_delay": 10,
-    "initialize_qubit_gain" : 15000,
-    "qubit_freq_base": 156.6,
+    "initialize_qubit_gain" : 1000,
+    "qubit_freq_base": 154,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 1000,
-    "qubit_gain_step": 1000,
-    "qubit_gain_expts": 11,
+    "qubit_gain_start": 10,
+    "qubit_gain_step": 100,
+    "qubit_gain_expts": 25,
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 6000,
+    "shots": 8000,
     "use_switch": False,
     'initialize_pulse': True,
     'fridge_temp': 10,
@@ -394,26 +429,26 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.1015,
+    "yokoVoltage": -0.42,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 20,  # us
-    "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6672.535,
+    "read_length": 4,  # us
+    "read_pulse_gain": 14000,  # [DAC units]
+    "read_pulse_freq": 6671.6612,
     "mode_periodic" : False,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_ge_gain": 0,
+    "qubit_ge_gain": 3000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 155,
+    "qubit_ge_freq": 2184,
     "qubit_ef_freq": 110,
-    "apply_ge": False,
+    "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 2,
+    "qubit_length": 0.8,
     "sigma": 0.05,
-    "relax_delay": 2500,
+    "relax_delay": 10,
 
     # Experiment
     "cen_num": 2,
@@ -443,19 +478,19 @@ inst_singleshotopt.save_config()
 # TITLE Running automatic optimization
 # config["read_pulse_freq"] = 6248.5
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.10, config["read_pulse_freq"] + 0.10),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.05, config["read_pulse_freq"] + 0.05),
     'read_length': (10, 70),
     'read_pulse_gain': (500, 4000)
 }
 step_size = {
-    "read_pulse_freq" : 0.0025,
+    "read_pulse_freq" : 0.01,
     'read_length': 10,
     'read_pulse_gain': 500,
 }
 keys = ["read_pulse_freq"]
 
 
-config["shots"] = 10000
+config["shots"] = 15000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_WTF", outerFolder=outerFolder, cfg=config,
                                        soc=soc, soccfg=soccfg, fast_analysis=True)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )

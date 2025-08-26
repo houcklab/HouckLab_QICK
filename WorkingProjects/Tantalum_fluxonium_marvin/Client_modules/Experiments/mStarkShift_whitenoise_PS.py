@@ -1,49 +1,8 @@
 """
 Created on 11th August 2025
 @author: pjatakia
-This code performs qubit spectroscopy while sweeping cavity power to see the AC stark shift on the qubit.
-This uses post selection on the qubit initial state so that it can be used at low frequency flux points.
-There are going to be a lot of options in which the stark shift experiment can happen
-1. The qubit tone is applied after the cavity is populated
-2. The qubit tone is applied during the cavity is populated
-    a. Along with the cavity population (left aligned)
-    b. At the end of the cavity population (right aligned)
-3. The qubit tone is periodic
-4. The cavity tone is periodic
-5. Both are periodic
+This code performs qubit spectroscopy while sweeping the noise of the AWG which generates white noise which should heat up the cavity.
 """
-"""
-Pulse Sequence Description — Stark Shift Experiment
-----------------------------------------------------
-This experiment applies a population (Stark shift) tone to the resonator,
-followed by a qubit drive, and finally a readout pulse to measure the qubit
-state. Timing is adjustable via cfg parameters.
-
-Sequence:
-
-Resonator channel (res_ch):
-  1. Population pulse (pop_length, gain=pop_gain)
-  2. Delay before readout (pre_meas_delay)
-  3. Readout pulse (read_length, gain=read_pulse_gain)
-
-Qubit channel (qubit_ch):
-  0. Qubit Pulse (qubit_lenth, gain= initializede_qubit_gain)
-     - Initializes the qubit to 50-50 ideally
-  1. Qubit pulse (qubit_length, gain=qubit_gain)
-     - Starts either simultaneously with resonator pop pulse 
-       or after post_pop_tone_delay (cfg['simultaneous'] flag)
-
-ADC:
-  1. Samples during the readout pulse, starting after adc_trig_offset
-
-Key cfg parameters controlling timing:
-  pop_length, pop_gain
-  qubit_length, qubit_gain, qubit_periodic
-  post_pop_tone_delay, pre_meas_delay
-  read_length, read_pulse_gain
-  adc_trig_offset, relax_delay
-"""
-
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,190 +10,161 @@ from tqdm.notebook import tqdm
 import time
 import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
+
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.MixedShots_analysis import *
 import matplotlib.gridspec as gridspec
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.agilent33250a import Agilent33250A
 
-class LoopbackProgramStarkSlicePS(RAveragerProgram):
+class LoopbackProgramSpecSlice_PS_sse(RAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
-        self.qubit_tone_delay = None
-        self.pre_meas_delay = None
-        self.post_pop_tone_delay = None
-        self.qubit_pulseLength = None
-        self.qubit_freq = None
-        self.q_start = None
-        self.q_step = None
-        self.q_r_gain = None
-        self.q_rp = None
-        self.f_res = None
 
     def initialize(self):
-        # # ----- Standard Declaration -------
-        # # Define Readout
-        for ch in self.cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
-                                 freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
+        cfg = self.cfg
 
-        # # Define Resonator tone
-        self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])
-        # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        self.f_res = self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"], ro_ch=self.cfg["ro_chs"][0])
-        self.f_res_resonant = self.freq2reg(self.cfg["read_pulse_freq_resonant"], gen_ch=self.cfg["res_ch"], ro_ch=self.cfg["ro_chs"][0])
-        # Adding the resonator pulse for pop_length duration with a gain of pop_gain
-        if self.cfg['ro_periodic']:
-            self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
-                                     gain=self.cfg["read_pulse_gain"],
-                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]), mode="periodic")
-        elif not self.cfg['ro_periodic']:
-            self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
-                                     gain=self.cfg["read_pulse_gain"],
-                                     length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
+        ### set up the experiment updates, only runs it once
+        cfg["start"] = 0
+        cfg["step"] = 0
+        cfg["reps"] = cfg["shots"]
+        cfg["expts"] = 1
 
-        # # Define Qubit Tone
-        self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
+        ### Configure Resonator Tone
+        res_ch = cfg["res_ch"]
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])  # Declare the resonator channel
+        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch,
+                                  ro_ch=cfg["ro_chs"][0])  # Convert to clock ticks
+        self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
+                                 gain=cfg["read_pulse_gain"],
+                                 length=self.us2cycles(self.cfg["read_length"]), )  # define the pulse
+
+        ### Configure the Qubit Tone
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_r_gain = self.sreg(self.cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
-        self.qubit_freq = self.freq2reg(self.cfg["qubit_freq"], gen_ch=self.cfg["qubit_ch"])
-        self.qubit_freq_base = self.freq2reg(self.cfg["qubit_freq_base"], gen_ch = self.cfg['qubit_ch'])
-        # add qubit and readout pulses to respective channels
-        if self.cfg["qubit_pulse_style"] == "const":
-            if self.cfg["qubit_periodic"]:
-                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
-                                         gain=self.cfg["qubit_gain"],
-                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]),
-                                         mode="periodic")
-                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=self.cfg["qubit_ch"])
-            else:
-                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
-                                         gain=self.cfg["qubit_gain"],
-                                         length=self.us2cycles(self.cfg["qubit_length"],gen_ch=self.cfg["qubit_ch"]))
-                self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"],gen_ch=self.cfg["qubit_ch"])
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get frequency register for qubit_ch
+        qubit_ch = cfg["qubit_ch"]  # Get the qubit channel
+        self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])  # Declare the qubit channel
+        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])  # Convert qubit length to clock ticks
+        self.qubit_freq_base = self.freq2reg(cfg["qubit_freq_base"], gen_ch=cfg["qubit_ch"])
+        self.qubit_freq = qubit_freq
+        # Define the qubit pulse
+        if cfg["qubit_pulse_style"] == "arb":
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+                                     waveform="qubit")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4
+        elif cfg["qubit_pulse_style"] == "flat_top":
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
+                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]),
+                           length=self.us2cycles(self.cfg["sigma"], gen_ch=cfg["qubit_ch"]) * 4)
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
+                                     phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
+                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
+        elif cfg["qubit_pulse_style"] == 'const':
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
         else:
-            raise Exception("The code only supports const QUBIT pulses :(")
+            print("define arb or flat top pulse or const")
 
-        # # ------ Declarations for Stark Shift ---------
-        # # Defining two delays
-        # Gap between the populating tone and qubit tone (In the case the qubit tone proceeds the cavity tone)
-        self.post_pop_tone_delay = self.us2cycles(self.cfg["post_pop_tone_delay"], gen_ch = self.cfg['res_ch'])
-        # Gap between the end of qubit tone / populating tone and the final measurement
-        self.pre_meas_delay = self.us2cycles(self.cfg["pre_meas_delay"], gen_ch = self.cfg['res_ch'])
+        ### Declare ADC Readout
+        for ro_ch in cfg["ro_chs"]:
+            self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
+                                 length=self.us2cycles(self.cfg["read_length"]), gen_ch=cfg["res_ch"])
 
-        # # Defining alignments
+        # Calculate length of trigger pulse
+        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
+                                              gen_ch=cfg["qubit_ch"]) + self.us2cycles(cfg['pop_length'], gen_ch = cfg["qubit_ch"])  ####
+
         self.qubit_tone_delay = 'auto'
         if 'align' in self.cfg.keys():
             if self.cfg['align'] == 'right':
-                if self.cfg['pop_length'] < self.cfg["qubit_length"] :
+                if self.cfg['pop_length'] < self.cfg["qubit_length"]:
                     raise Exception("The read length needs to be bigger to align right ")
                 else:
                     self.qubit_tone_delay = self.us2cycles(self.cfg['pop_length'] - self.cfg["qubit_length"])
-
-        # # Calculate length of trigger pulse
-        # switch is open while populating pulse is playing
-        self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
-                                              gen_ch=self.cfg["res_ch"]) + self.us2cycles(self.cfg["pop_length"])
-
-        # # --------- Miscellaneous Declaration
-        self.cfg["start"] = 0
-        self.cfg["step"] = 0
-        self.cfg["reps"] = self.cfg["shots"]
-        self.cfg["expts"] = 1
-
-        # Just Displaying what the experiment is going to be
-        if self.cfg['display_params']:
-            print(f"The qubit mode is periodic = {self.cfg['qubit_periodic']}")
-            print(f"The readout mode is periodic = {self.cfg['ro_periodic']}")
-            if self.cfg['qubit_periodic'] or self.cfg['ro_periodic']:
-                print(f"The qubit tone alignment may matter")
-            print(f"The two tones are being played simultaneously = {self.cfg['simultaneous']}")
-            if 'align' in self.cfg.keys():
-                print(f"The current alignment setting is {self.cfg['align']}")
-            print(f"The gain of the population pulse is {self.cfg['pop_gain']} and length is {self.cfg['pop_length']}")
-            print(f"The gain of the readout pulse is {self.cfg['read_pulse_gain']} and length is {self.cfg['read_length']}")
-            print(f"The gap between the population pulse and qubit tone pulse is {self.cfg['post_pop_tone_delay']}")
-            print(f"The gap between the tones and the final readout is {self.cfg['pre_meas_delay']}")
-
-        self.sync_all(self.us2cycles(200))
+        self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
+        ### intial pause
+        self.sync_all(self.us2cycles(0.010))
 
-        self.sync_all(self.us2cycles(1))  # align channels and wait 10ns
-
-        if self.cfg['initialize_pulse']:
-            if self.cfg["use_switch"]:
-                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                             width=self.cfg["trig_len"])  # trigger for switch
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style='const', freq=self.qubit_freq_base,
-                                     phase=0,
-                                     gain=self.cfg["initialize_qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch = self.cfg['qubit_ch']))
+        if self.cfg["initialize_pulse"]:
+            if self.cfg["qubit_pulse_style"] == "arb":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq_base,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         waveform="qubit")
+            elif self.cfg["qubit_pulse_style"] == "flat_top":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq_base,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            elif self.cfg["qubit_pulse_style"] == 'const':
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq_base, phase=0,
+                                         gain=self.cfg["initialize_qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-
-        # Post Selection Measurement
+        ### Post Selection Measurement
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
+                     adcs=[0],
                      adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True)
+                     wait = True)
 
-        self.sync_all(self.us2cycles(self.cfg["wait_before_exp"]))  # align channels and wait 10ns
+        self.sync_all(self.us2cycles(self.cfg['delay_btwn_pulses']))
+        if self.cfg["initialize_pulse"]:
+            if self.cfg["qubit_pulse_style"] == "arb":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["qubit_gain"],
+                                         waveform="qubit")
+            elif self.cfg["qubit_pulse_style"] == "flat_top":
+                self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
+                               sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
+                               length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"],
+                                         freq=self.qubit_freq,
+                                         phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]),
+                                         gain=self.cfg["qubit_gain"],
+                                         waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
+            elif self.cfg["qubit_pulse_style"] == 'const':
+                self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
+                                         gain=self.cfg["qubit_gain"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
 
-        # Redefining the resonator pulse
-        if self.cfg['ro_periodic']:
-            self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res_resonant, phase=0,
-                                     gain=self.cfg["pop_gain"],
-                                     length=self.us2cycles(self.cfg["pop_length"], gen_ch=self.cfg["res_ch"]), mode="periodic")
-        elif not self.cfg['ro_periodic']:
-            self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res_resonant, phase=0,
-                                     gain=self.cfg["pop_gain"],
-                                     length=self.us2cycles(self.cfg["pop_length"], gen_ch=self.cfg["res_ch"]))
-
-        # Redefining the qubit pulse
-        if self.cfg["qubit_periodic"]:
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
-                                     gain=self.cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]),
-                                     mode="periodic")
-            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"])
-        else:
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_freq, phase=0,
-                                     gain=self.cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
-            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"])
-
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-        # Playing pulses
         if self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
+        self.pulse(ch=self.cfg["qubit_ch"], t = self.qubit_tone_delay)  # play probe pulse
+        self.sync_all(self.us2cycles(self.cfg['delay_btwn_pulses']))
 
-        if self.cfg['simultaneous']:
-            self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
-            self.pulse(ch=self.cfg["qubit_ch"], t=self.qubit_tone_delay)  # Play a qubit tone
-        else:
-            self.pulse(ch=self.cfg["res_ch"])  # Play a cavity tone
-            self.sync_all(self.post_pop_tone_delay)  # align channels and wait 10ns
-            self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
-
-        self.sync_all(self.pre_meas_delay)  # align channels and wait 10ns
-
-        # Configure the cavity pulse for readout
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
-
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-
-        # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     adcs=[0],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
+
     def update(self):
-        self.mathi(self.q_rp, self.q_r_gain, self.q_r_gain, '+', self.cfg['step'])  # update gain
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])  # Updates gain of the gaussian
+        # self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"] / 2))  # update gain of the flat part
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
                 start_src="internal", progress=False):
@@ -257,7 +187,9 @@ class LoopbackProgramStarkSlicePS(RAveragerProgram):
 
         return i_0, i_1, q_0, q_1
 
-class StarkShiftPS(ExperimentClass):
+
+
+class StarkShiftwhitenoise_PS(ExperimentClass):
     """
     to write
     """
@@ -266,6 +198,9 @@ class StarkShiftPS(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
                          config_file=config_file, progress=progress)
         self.data_one_run = None
+        self.awg = Agilent33250A(resource = 'GPIB1::13::INSTR')
+        self.awg.set_noise() # Set to white noise
+        self.awg.output_off() # Turn it off for now
 
     def d__init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
@@ -292,7 +227,7 @@ class StarkShiftPS(ExperimentClass):
                 self.cfg['display_params'] = False
 
             # Measure and get the data
-            prog = LoopbackProgramStarkSlicePS(self.soccfg, self.cfg)
+            prog = LoopbackProgramSpecSlice_PS_sse(self.soccfg, self.cfg)
             i_0, i_1, q_0, q_1 = prog.acquire(self.soc, load_pulses=True, readouts_per_experiment=2,
                                               save_experiments=[0, 1])
 
@@ -334,8 +269,8 @@ class StarkShiftPS(ExperimentClass):
             iq_data_0 = np.stack((i_0[indx_freq, :], q_0[indx_freq, :]), axis=0)
             iq_data_1 = np.stack((i_1[indx_freq, :], q_1[indx_freq, :]), axis=0)
 
-            if 'centers_0' in self.data['data'].keys() and self.data['data']['centers_0'] is not None:
-                centers.append(sse2.getCenters(iq_data_0, cen_num, init_guess=self.data['data']['centers_0'][0]))
+            if 'PS_data_0' in self.data.keys() and self.data['PS_data_0']['centers'] is not None:
+                centers.append(sse2.getCenters(iq_data_0, cen_num, init_guess=self.data['PS_data_0']['centers'][0]))
             elif indx_freq == 0:
                 # Get centers
                 centers.append(sse2.getCenters(iq_data_0, cen_num))
@@ -470,9 +405,9 @@ class StarkShiftPS(ExperimentClass):
     def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
         expt_cfg = {
             ### define the gainuator parameters
-            "trans_gain_start": self.cfg["trans_gain_start"],
-            "trans_gain_stop": self.cfg["trans_gain_stop"],
-            "trans_gain_num": self.cfg["trans_gain_num"],
+            "awg_start": self.cfg["awg_start"],
+            "awg_stop": self.cfg["awg_stop"],
+            "awg_num": self.cfg["awg_num"],
             #spec parameters
             "qubit_freq_start": self.cfg["qubit_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             "qubit_freq_stop": self.cfg["qubit_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -480,11 +415,9 @@ class StarkShiftPS(ExperimentClass):
         }
 
         if self.cfg["units"] == "DAC":
-            gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"],
-                                   dtype=int) ### for current simplicity set it to an int
+            gainVec = np.linspace(expt_cfg["awg_start"], expt_cfg["awg_stop"], expt_cfg["awg_num"])
         else:
-            gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"],
-                                   dtype = int)
+            gainVec = np.logspace(np.log10(expt_cfg["awg_start"]), np.log10(expt_cfg["awg_stop"]), num= expt_cfg["awg_num"])
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -506,8 +439,8 @@ class StarkShiftPS(ExperimentClass):
         X_spec = self.spec_fpts / 1e3
         X_spec_step = X_spec[1] - X_spec[0]
 
-        Z_pop0 = np.full((expt_cfg["trans_gain_num"], expt_cfg["SpecNumPoints"]), np.nan)
-        Z_pop1 = np.full((expt_cfg["trans_gain_num"], expt_cfg["SpecNumPoints"]), np.nan)
+        Z_pop0 = np.full((expt_cfg["awg_num"], expt_cfg["SpecNumPoints"]), np.nan)
+        Z_pop1 = np.full((expt_cfg["awg_num"], expt_cfg["SpecNumPoints"]), np.nan)
 
         #### start a timer for estimating the time for the scan
         startTime = datetime.datetime.now()
@@ -522,14 +455,11 @@ class StarkShiftPS(ExperimentClass):
             print(Y[-1]**2/Y[-2])
             extents = [X_spec[0] - X_spec_step / 2, X_spec[-1] + X_spec_step / 2, 10*np.log10(Y[0]**2/Y[1]), 10*np.log10(Y[-1]**2/Y[-2])]
 
-        # Creating an entry in the dictionary for cavity pulse gain
-        self.cfg["pop_gain"] = 0
-
-        keys_reqd = ['qubit_freq_vec', "pdf_0", "gaussians_0", "x_points_0", "y_points_0", "centers", "pop"]
-
         # Looping around all the cavity pulse gains
-        for i in range(expt_cfg["trans_gain_num"]):
-            self.cfg["pop_gain"] = gainVec[i]
+        for i in range(expt_cfg["awg_num"]):
+            if i == 0 :
+                self.awg.output_on()
+            self.awg.set_voltage(gainVec[i])
 
             data_one_run = self.acquire_one_run()
             data_one_run = self.process_data_one_run(data = data_one_run)
@@ -537,8 +467,7 @@ class StarkShiftPS(ExperimentClass):
             if i == 0 :
                 self.display_one_run(data = data_one_run, plotDisp=False, saveFig=True)
 
-            for key in keys_reqd:
-                self.data['data'][key+"_"+str(i)] = data_one_run['data'][key]
+            self.data['PS_data_'+str(i)] = data_one_run['data']
 
             Z_pop0[i, :] = data_one_run['data']['pop'][0, 0, :]
             Z_pop1[i, :] = data_one_run['data']['pop'][1, 1, :]
@@ -562,9 +491,9 @@ class StarkShiftPS(ExperimentClass):
                 cbar1 = fig.colorbar(ax_plot_1, ax=axs[0], extend='both')
                 cbar1.set_label('a.u.', rotation=90)
 
-            axs[0].set_ylabel("RO gain (DAC)")
+            axs[0].set_ylabel("White noise (Vpp)")
             axs[0].set_xlabel("Spec Frequency (GHz)")
-            axs[0].set_title(f"Qubit in state A at {self.data['data']['centers_0'][0][0]}")
+            axs[0].set_title(f"Qubit in state A at {self.data['PS_data_0']['centers'][0][0]}")
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_2 = axs[1].imshow(
@@ -585,9 +514,9 @@ class StarkShiftPS(ExperimentClass):
                 cbar2 = fig.colorbar(ax_plot_2, ax=axs[1], extend='both')
                 cbar2.set_label('Phase', rotation=90)
 
-            axs[1].set_ylabel("RO gain (DAC)")
+            axs[1].set_ylabel("White Noise (Vpp)")
             axs[1].set_xlabel("Spec Frequency (GHz)")
-            axs[1].set_title(f"Qubit in State B at {self.data['data']['centers_0'][0][1]}")
+            axs[1].set_title(f"Qubit in State B at {self.data['PS_data_0']['centers'][0][1]}")
 
             plt.suptitle(self.iname)
 
@@ -603,7 +532,7 @@ class StarkShiftPS(ExperimentClass):
 
             if i == 0:  ### during the first run create a time estimate for the data aqcuisition
                 t_delta = time.time() - start  ### time for single full row in seconds
-                timeEst = t_delta * expt_cfg["trans_gain_num"]  ### estimate for full scan
+                timeEst = t_delta * expt_cfg["awg_num"]  ### estimate for full scan
                 StopTime = startTime + datetime.timedelta(seconds=timeEst)
                 print('Time for 1 sweep: ' + str(round(t_delta / 60, 2)) + ' min')
                 print('estimated total time: ' + str(round(timeEst / 60, 2)) + ' min')
@@ -627,20 +556,5 @@ class StarkShiftPS(ExperimentClass):
         super().save_data(data=data['data'])
 
 
-    def save_data_pkl(self, data=None):
-        import pickle, os
-
-        if data is None:
-            data = self.data
-
-        # choose filename: same as self.fname but with .pkl extension
-        if hasattr(self, "path_wDate") and self.path_wDate is not None:
-            fname = self.path_wDate + ".pkl"
-        else:
-            fname = "data.pkl"
-
-        print(f"Saving {fname}")
-        with open(fname, "wb") as f:
-            pickle.dump(data, f)
 
 

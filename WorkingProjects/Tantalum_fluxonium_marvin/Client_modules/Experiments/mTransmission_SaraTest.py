@@ -51,10 +51,10 @@ class Transmission(ExperimentClass):
         fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
+        for f in fpts:
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True,progress=False))
         if debug:
             print(f'Time: {time.time() - start}')
         results = np.transpose(results)

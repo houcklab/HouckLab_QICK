@@ -3,17 +3,13 @@
 # to not populate the qubit significantly.
 
 from qick import *
-from qick import helpers
 import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mTransmission_Enhance import Transmission_Enhance
-from tqdm.notebook import tqdm
-import time
 import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from tqdm.notebook import tqdm
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.agilent33250a import Agilent33250A
 import time
 
 class LoopbackProgramStarkSlice(RAveragerProgram):
@@ -101,11 +97,10 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
                                  gain=self.cfg["cavity_pulse_gain"],
                                  length=self.us2cycles(self.cfg["pop_pulse_length"], gen_ch=self.cfg["res_ch"]))
 
-        # #if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
-        # if self.cfg["use_switch"]:
-        #     self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-        #                  width=self.cfg["trig_len"])  # trigger for switch
-        #
+        if self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
+
         if self.cfg['simultaneous']:
             self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
             self.pulse(ch=self.cfg["qubit_ch"], t = self.t_delay)  # Play a qubit tone
@@ -135,21 +130,24 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 
 
-class StarkShift(ExperimentClass):
+class StarkShift_whitenoise(ExperimentClass):
     """
     to write
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        self.awg = Agilent33250A(resource='GPIB1::13::INSTR')
+        self.awg.set_noise()  # Set to white noise
+        self.awg.output_off()  # Turn it off for now
 
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1):
         expt_cfg = {
             ### define the gainuator parameters
-            "trans_gain_start": self.cfg["trans_gain_start"],
-            "trans_gain_stop": self.cfg["trans_gain_stop"],
-            "trans_gain_num": self.cfg["trans_gain_num"],
+            "trans_gain_start": self.cfg["awg_gain_start"],
+            "trans_gain_stop": self.cfg["awg_gain_stop"],
+            "trans_gain_num": self.cfg["awg_gain_num"],
             #spec parameters
             "qubit_freq_start": self.cfg["qubit_freq_start"],  # [MHz] actual frequency is this number + "cavity_LO"
             "qubit_freq_stop": self.cfg["qubit_freq_stop"],  # [MHz] actual frequency is this number + "cavity_LO"
@@ -157,11 +155,9 @@ class StarkShift(ExperimentClass):
         }
 
         if self.cfg["units"] == "DAC":
-            gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"],
-                                   dtype=int) ### for current simplicity set it to an int
+            gainVec = np.linspace(expt_cfg["trans_gain_start"], expt_cfg["trans_gain_stop"], expt_cfg["trans_gain_num"])
         else:
-            gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"],
-                                   dtype = int)
+            gainVec = np.logspace(np.log10(expt_cfg["trans_gain_start"]), np.log10(expt_cfg["trans_gain_stop"]), num= expt_cfg["trans_gain_num"])
 
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
@@ -208,9 +204,14 @@ class StarkShift(ExperimentClass):
         # Creating an entry in the dictionary for cavity pulse gain
         self.cfg["cavity_pulse_gain"] = 0
 
+        # Set up the awg
+
+
         # Looping around all the cavity pulse gains
         for i in range(expt_cfg["trans_gain_num"]):
-            self.cfg["cavity_pulse_gain"] = gainVec[i]
+            if i == 0:
+                self.awg.output_on()
+            self.awg.set_voltage(gainVec[i])
 
             if self.cfg["calibrate_cav"]:
                 # Get the new cavity frequency
@@ -263,7 +264,7 @@ class StarkShift(ExperimentClass):
                 cbar1 = fig.colorbar(ax_plot_1, ax=axs[0,0], extend='both')
                 cbar1.set_label('a.u.', rotation=90)
 
-            axs[0,0].set_ylabel("RO gain (DAC)")
+            axs[0,0].set_ylabel("White noise (Vpp)")
             axs[0,0].set_xlabel("Spec Frequency (GHz)")
             axs[0,0].set_title("Qubit Spec : Amplitude")
 
@@ -289,7 +290,7 @@ class StarkShift(ExperimentClass):
                 cbar2 = fig.colorbar(ax_plot_2, ax=axs[1,0], extend='both')
                 cbar2.set_label('Phase', rotation=90)
 
-            axs[1,0].set_ylabel("RO gain (DAC)")
+            axs[1,0].set_ylabel("White noise (Vpp)")
             axs[1,0].set_xlabel("Spec Frequency (GHz)")
             axs[1,0].set_title("Qubit Spec : Phase")
 
@@ -315,7 +316,7 @@ class StarkShift(ExperimentClass):
                 cbar3 = fig.colorbar(ax_plot_3, ax=axs[0,1], extend='both')
                 cbar3.set_label('I', rotation=90)
 
-            axs[0,1].set_ylabel("RO gain (DAC)")
+            axs[0,1].set_ylabel("White noise (Vpp)")
             axs[0,1].set_xlabel("Spec Frequency (GHz)")
             axs[0,1].set_title("Qubit Spec : I")
 
@@ -341,7 +342,7 @@ class StarkShift(ExperimentClass):
                 cbar4 = fig.colorbar(ax_plot_4, ax=axs[1,1], extend='both')
                 cbar4.set_label('Q', rotation=90)
 
-            axs[1,1].set_ylabel("RO gain (DAC)")
+            axs[1,1].set_ylabel("White noise (Vpp)")
             axs[1,1].set_xlabel("Spec Frequency (GHz)")
             axs[1,1].set_title("Qubit Spec : Q")
             plt.suptitle(self.iname)
