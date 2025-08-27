@@ -175,8 +175,8 @@ class QNDmeas(ExperimentClass):
         cen_num = self.cfg["cen_num"]
         centers = sse2.getCenters(iq_data, cen_num)
 
-        if 'confidence_selection' in kwargs:
-            confidence_selection = kwargs["confidence_selection"]
+        if 'confidence' in self.cfg.keys():
+            confidence_selection = self.cfg["confidence"]
         else:
             confidence_selection = 0.95
 

@@ -645,13 +645,13 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.502,
-    "yokoVoltage_freqPoint": -1.502,
+    "yokoVoltage": -1.499,
+    "yokoVoltage_freqPoint": -1.499,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 17,
-    "read_pulse_gain": 5400,
+    "read_length": 13,
+    "read_pulse_gain": 5600,
     "read_pulse_freq": 7391.9,
 
     # qubit tone
@@ -660,14 +660,16 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 0.5,
     "flat_top_length": 1,
-    "qubit_freq": 943.0,
+    "qubit_freq": 940.0,
 
     # Experiment
-    "shots": 20000,  #1000000
+    "shots": 2000000,  #1000000
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
     'use_switch': False,
+
+    'confidence': 0.9,
 }
 config = BaseConfig | UpdateConfig
 
