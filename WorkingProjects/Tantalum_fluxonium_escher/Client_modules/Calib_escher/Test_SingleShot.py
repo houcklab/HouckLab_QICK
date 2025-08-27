@@ -663,13 +663,13 @@ UpdateConfig = {
     "qubit_freq": 940.0,
 
     # Experiment
-    "shots": 2000000,  #1000000
+    "shots": 50000000,  #1000000
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
     'use_switch': False,
 
-    'confidence': 0.9,
+    'confidence': 0.9999,
 }
 config = BaseConfig | UpdateConfig
 

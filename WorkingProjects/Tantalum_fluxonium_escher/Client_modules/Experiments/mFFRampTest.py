@@ -49,20 +49,6 @@ class FFRampTest(NDAveragerProgram):
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
-        # Ramps are created using I/Q values, and setting the gain register to the max value.
-        # To sweep, set the ff_ramp_stop value to the max desired value, and then change the gain register.
-        # In principle. I could just do this in the loop that sweeps ramp lengths, but let's try like this first
-        # if self.cfg["sweep_ff_gain"]:
-        #     # TODO this is not going to work correctly if starting at not 0 -- not trivial to change using only gain
-        #     # The problem is that the start value needs to stay constant while the stop value changes, while gain scales everything the same
-        #     # You would basically need to do this with a loop I think and change all values via I/Q, throw error for now
-        #     if self.cfg["ff_ramp_start"] != 0:
-        #         raise ValueError("The current sweep setup does not work with a non-zero ff_ramp_start, see comments")
-        #     self.ff_gain_reg = self.get_gen_reg(self.cfg["ff_ch"], "gain")
-        #     # Start value must be 0 by above error, stop value is always max gain. Only param is number of steps
-        #     assert self.cfg["ff_ramp_start"] == 0
-        #     self.add_sweep(QickSweep(self, self.ff_gain_reg, 0, self.soccfg['gens'][0]['maxv'], self.cfg["ff_gain_expts"]))
-
         self.sync_all(self.us2cycles(0.1))
 
     def body(self):
@@ -121,29 +107,13 @@ class FFRampTest(NDAveragerProgram):
 
         super().acquire(soc, load_pulses=load_pulses, progress=progress) # qick update, debug=debug)
 
-        # self.get_raw() has data in format (#channels, #reps, #readouts, 2)
-        # self.di/q_buf[0] have (rep1_meas1, rep1_meas2, ... rep1_measN, rep1_meas1, ...)
-        # reshape to have [[rep1_meas1, rep1_meas2], [rep2_meas1, rep2_meas2], ...]
-        # di_buf and dq_buf are total integration, divide out readout time
-
-        # Something about this has broken, and now I don't understand how it ever worked.
-        # Currently, di/q_buf has only 2 points, which are the 2 expts averaged reps times. Why did this ever have more points?
-        #return (self.di_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]),
-        #        self.dq_buf[0].reshape(-1, 2) / self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0]))
-
         # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
         # If no sweeps, # expts dimension goes away (not just becomes 1)
         length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
-        # if not self.cfg["sweep_ff_gain"]:
-            # Should have no experiments dimension, since we have not coded any other shape. If this is not true, code will break
         assert len(np.array(self.get_raw()).shape) == 4
         shots_i = np.array(self.get_raw())[0, :, :, 0].reshape((self.cfg["reps"], 2)) / length
         shots_q = np.array(self.get_raw())[0, :, :, 1].reshape((self.cfg["reps"], 2)) / length
-        # else:
-        #     # Don't know how NDAverager works with multiple sweeps, maybe an extra dimensions. That will also break this.
-        #     assert len(np.array(self.get_raw()).shape) == 5
-        #     shots_i = np.array(self.get_raw())[0, :, :, , 0].reshape((self.cfg["reps"], 2)) / length
-        #     shots_q = np.array(self.get_raw())[0, :, :, , 1].reshape((self.cfg["reps"], 2)) / length
+
         return shots_i, shots_q
 
 
@@ -180,9 +150,15 @@ class FFRampTest(NDAveragerProgram):
         "ff_ramp_length_expts": 10,       # [int] Number of points in the ff ramp length sweep
 
         # Gain sweep parameters
-        "sweep_ff_gain": False,           # [bool] Do we sweep the gain of the ramp?
         "ff_gain_expts": 10,              # [int] How many different ff ramp gains to use
         "ff_ramp_length": 1,              # [us] Half-length of ramp to use when sweeping gain
+
+        # Number of cycle repetitions sweep parameters
+        "cycle_number_expts": 11,         # [int] How many values for number of cycles around to use in this experiment
+        "max_cycle_number": 5,            # [int] What is the largest number of cycles to use in sweep? Start at 1
+
+        # General sweep parameters
+        "sweep_type": 'ramp_length',      # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
 
         # Other parameters
         "yokoVoltage": 0,                 # [V] Yoko voltage for magnet offset of flux
@@ -216,7 +192,7 @@ class FFRampTest_Experiment(ExperimentClass):
         self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
                                    num = self.cfg["ff_ramp_length_expts"])
 
-        if not self.cfg["sweep_ff_gain"]:
+        if self.cfg["sweep_type"] == 'ramp_length':
             # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
             i_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
             q_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
@@ -230,7 +206,7 @@ class FFRampTest_Experiment(ExperimentClass):
                                                       start_src="internal", progress=progress)
 
             data = {'config': self.cfg, 'data': {'ramp_lengths': self.ramp_lengths, 'i_arr': i_arr, 'q_arr': q_arr}}
-        else:  # Sweeping fast flux gain, therefore do not sweep ramp length. Only one allowed for now
+        elif self.cfg["sweep_type"] == 'ff_gain':  # Sweeping fast flux gain, therefore do not sweep ramp length. Only one allowed for now
             i_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
             q_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
 
@@ -241,9 +217,11 @@ class FFRampTest_Experiment(ExperimentClass):
                 i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                                       save_experiments=None, #readouts_per_experiment=2,
                                                       start_src="internal", progress=progress)
-#TODO
             data = {'config': self.cfg, 'data': {'final_gains': self.final_gains, 'i_arr': i_arr, 'q_arr': q_arr}}
-
+        elif self.cfg["sweep_type"] == 'cycle_number':
+            pass #TODO
+        else:
+            raise ValueError("cfg[\"sweep_type\"] must be one of \'ramp_length\', \'ff_gain\', or \'cycle_number\'!")
 
         self.data = data
 
@@ -264,9 +242,9 @@ class FFRampTest_Experiment(ExperimentClass):
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
 
-        if self.cfg["sweep_ff_gain"]:
+        if self.cfg["sweep_type"] == 'ff_gain':
             x_points = data['data']['final_gains']
-        else:
+        elif self.cfg["sweep_type"] == 'ramp_length':
             x_points = data['data']['ramp_lengths']
 
         prob_0, prob_1 = self._gaussian_fit_assignment(i_arr[:, :, 0], q_arr[:, :, 0], i_arr[:, :, 1], q_arr[:, :, 1],
@@ -430,15 +408,6 @@ class FFRampTest_Experiment(ExperimentClass):
                 print("Centers are ", centers[i])
                 print('Fit results pre-ramp: ', popt_0)
 
-
-            # Don't understand the point of defining these, they're not used
-            # # create bounds given current fit
-            # bound = [popt_0 - 1e-5, popt_0 + 1e-5]
-            #
-            # for idx_bound in range(cen_num):
-            #     bound[0][0 + int(idx_bound * no_of_params)] = 0
-            #     bound[1][0 + int(idx_bound * no_of_params)] = np.inf
-
             # Get probability density function
             pdf_0 = sse2.calcPDF(gaussians_0)
 
@@ -552,11 +521,11 @@ class FFRampTest_Experiment(ExperimentClass):
         q_arr = data['data']['q_arr']
 
         # Determine the x axis
-        if self.cfg["sweep_ff_gain"]:
+        if self.cfg["sweep_type"] == 'ff_gain':
             final_gains = data['data']['final_gains']
             x_points = final_gains
             fstring = '%d DAC units endpoint'
-        else:
+        elif self.cfg["sweep_type"] == 'ramp_length':
             ramp_lengths = data['data']['ramp_lengths']
             x_points = ramp_lengths
             fstring = '%.3f us ramp half-length'
@@ -601,11 +570,11 @@ class FFRampTest_Experiment(ExperimentClass):
                                           q_arr[i, :, 1][prob_0[i, c, :] > confidence],
                         'I/Q data, %.3f us ramp half-length,\nAfter ramp, start in cluster %d\n' % (x_pt, c) + percentage)
 
-            if self.cfg["sweep_ff_gain"]:
+            if self.cfg["sweep_type"] == 'ff_gain':
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
                                           (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], x_pt,
                                            self.cfg['ff_delay'], self.cfg["ff_ramp_length"]))
-            else:
+            elif self.cfg["sweep_type"] == 'ramp_length':
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
                                           (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                            self.cfg['ff_delay'], x_pt))
@@ -690,9 +659,9 @@ class FFRampTest_Experiment(ExperimentClass):
         print('Saved probabilities at %s' % self.iname)
 
     def _plot_gaussian_probabilities(self, pop: np.ndarray[int], x_points: np.ndarray[float]) -> None:
-        if self.cfg["sweep_ff_gain"]:
+        if self.cfg["sweep_type"] == 'ff_gain':
             x_lbl = 'Ramp endpoints (DAC units)'
-        else:
+        elif self.cfg["sweep_type"] == 'ramp_length':
             x_lbl = 'Ramp half-lengths (us)'
         plt.figure(figsize = (14, 14))
         plt.subplot(2, 2, 1)
@@ -712,11 +681,11 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.xlabel(x_lbl)
         plt.ylabel('P(assigned end 1 | assigned start 1)')
 
-        if self.cfg["sweep_ff_gain"]:
+        if self.cfg["sweep_type"] == 'ff_gain':
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_length'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
-        else:
+        elif self.cfg["sweep_type"] == 'ramp_length':
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
