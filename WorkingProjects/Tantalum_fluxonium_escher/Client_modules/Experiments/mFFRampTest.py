@@ -49,13 +49,6 @@ class FFRampTest(NDAveragerProgram):
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
-        # Deal with cycles
-        # I assume that a cycle number is not defined unless we are sweeping cycles. Complain if I am wrong.
-        if not self.cfg["sweep_type"] == 'cycle_number':
-            if 'cycle_number' in self.cfg.keys():
-                raise ValueError('\'cycle_number\' defined, but we are not sweeping cycle_number! Edit code to make this ok')
-            self.cfg["cycle_number"] = 1
-            self.cfg['cycle_delay'] = 0.01
 
         self.sync_all(self.us2cycles(0.1))
 
@@ -200,13 +193,22 @@ class FFRampTest_Experiment(ExperimentClass):
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False):
-        self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
-                                   num = self.cfg["ff_ramp_length_expts"])
+        # Deal with cycles
+        # I assume that a cycle number is not defined unless we are sweeping cycles. Complain if I am wrong.
+        if not self.cfg["sweep_type"] == 'cycle_number':
+            if 'cycle_number' in self.cfg.keys():
+                raise ValueError('\'cycle_number\' defined, but we are not sweeping cycle_number! Edit code to make this ok')
+            self.cfg["cycle_number"] = 1
+            self.cfg['cycle_delay'] = 0.01
+
 
         if self.cfg["sweep_type"] == 'ramp_length':
             # Loop over different ramp lengths. This cannot be done inside an experiment, since we must recompile pulses
             i_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
             q_arr = np.zeros((self.cfg["ff_ramp_length_expts"], self.cfg["reps"], 2))
+
+            self.ramp_lengths = np.linspace(self.cfg["ff_ramp_length_start"], self.cfg["ff_ramp_length_stop"],
+                                            num=self.cfg["ff_ramp_length_expts"])
 
             for idx, length in enumerate(self.ramp_lengths):
                 prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_length": length})
@@ -230,7 +232,17 @@ class FFRampTest_Experiment(ExperimentClass):
                                                       start_src="internal", progress=progress)
             data = {'config': self.cfg, 'data': {'final_gains': self.final_gains, 'i_arr': i_arr, 'q_arr': q_arr}}
         elif self.cfg["sweep_type"] == 'cycle_number':
-            pass #TODO
+            i_arr = np.zeros((self.cfg["cycle_number_expts"], self.cfg["reps"], 2))
+            q_arr = np.zeros((self.cfg["cycle_number_expts"], self.cfg["reps"], 2))
+
+            self.cycle_numbers = np.rint(np.linspace(1, self.cfg["max_cycle_number"], num=self.cfg["cycle_number_expts"])).astype(int)
+            for idx, cycle_number in enumerate(self.cycle_numbers):
+                prog = FFRampTest(self.soccfg, self.cfg | {'cycle_number' : cycle_number})
+
+                i_arr[idx], q_arr[idx] = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                                      save_experiments=None,  # readouts_per_experiment=2,
+                                                      start_src="internal", progress=progress)
+            data = {'config': self.cfg, 'data': {'cycle_numbers': self.cycle_numbers, 'i_arr': i_arr, 'q_arr': q_arr}}
         else:
             raise ValueError("cfg[\"sweep_type\"] must be one of \'ramp_length\', \'ff_gain\', or \'cycle_number\'!")
 
@@ -257,6 +269,8 @@ class FFRampTest_Experiment(ExperimentClass):
             x_points = data['data']['final_gains']
         elif self.cfg["sweep_type"] == 'ramp_length':
             x_points = data['data']['ramp_lengths']
+        elif self.cfg["sweep_type"] == 'cycle_number':
+            x_points = data['data']['cycle_numbers']
 
         prob_0, prob_1 = self._gaussian_fit_assignment(i_arr[:, :, 0], q_arr[:, :, 0], i_arr[:, :, 1], q_arr[:, :, 1],
                                                        cen_num = 2)
@@ -540,6 +554,10 @@ class FFRampTest_Experiment(ExperimentClass):
             ramp_lengths = data['data']['ramp_lengths']
             x_points = ramp_lengths
             fstring = '%.3f us ramp half-length'
+        elif self.cfg["sweep_type"] == 'cycle_number':
+            cycle_numbers = data['data']['cycle_numbers']
+            x_points = cycle_numbers
+            fstring = '%d cycles of ramp'
 
         # Determine for which length values we will make a histogram. Always make one for at least the first.
         if not plot_all_points:
@@ -589,6 +607,10 @@ class FFRampTest_Experiment(ExperimentClass):
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
                                           (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                            self.cfg['ff_delay'], x_pt))
+            elif self.cfg["sweep_type"] == 'cycle_number':
+                plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us. %d ramp cycles' %
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
+                                           self.cfg['ff_delay'], self.cfg["ff_ramp_length"], x_pt))
             plt.tight_layout()
             plt.subplots_adjust(top=0.97, hspace=0.05, wspace=0.2)
 
@@ -674,6 +696,8 @@ class FFRampTest_Experiment(ExperimentClass):
             x_lbl = 'Ramp endpoints (DAC units)'
         elif self.cfg["sweep_type"] == 'ramp_length':
             x_lbl = 'Ramp half-lengths (us)'
+        elif self.cfg["sweep_type"] == 'cycle_number':
+            x_lbl = 'Number of cycles'
         plt.figure(figsize = (14, 14))
         plt.subplot(2, 2, 1)
         plt.plot(x_points, 100 * pop[:, 0, 0] / (pop[:, 0, 0] + pop[:, 0, 1]))
@@ -700,6 +724,10 @@ class FFRampTest_Experiment(ExperimentClass):
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
+        elif self.cfg["sweep_type"] == 'cycle_number':
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+                                      (self.cfg['yokoVoltage'], self.cfg["ff_ramp_start"], self.cfg["ff_ramp_stop"],
+                                       self.cfg['ff_ramp_length'], self.cfg['ff_delay'], self.cfg["confidence"]))
         plt.tight_layout()
         plt.subplots_adjust(top=0.92, hspace=0.05, wspace=0.2)
 
