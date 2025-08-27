@@ -49,6 +49,14 @@ class FFRampTest(NDAveragerProgram):
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
+        # Deal with cycles
+        # I assume that a cycle number is not defined unless we are sweeping cycles. Complain if I am wrong.
+        if not self.cfg["sweep_type"] == 'cycle_number':
+            if 'cycle_number' in self.cfg.keys():
+                raise ValueError('\'cycle_number\' defined, but we are not sweeping cycle_number! Edit code to make this ok')
+            self.cfg["cycle_number"] = 1
+            self.cfg['cycle_delay'] = 0.01
+
         self.sync_all(self.us2cycles(0.1))
 
     def body(self):
@@ -64,41 +72,43 @@ class FFRampTest(NDAveragerProgram):
         #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
 
-        # Play optional qubit pulse, if requested.
+        # Play optional qubit pulse, if requested. This is only done once per experiment.
         if self.cfg["qubit_pulse"]:
             self.pulse(ch = self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))  # Wait a few ns to align channels
 
-        # trigger measurement, play measurement pulse, wait for relax_delay_1
+        # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     wait = True, #t = 0,
+                     wait=True,  # t = 0,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_1"], gen_ch=self.cfg["res_ch"]))
 
+        self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
 
-        self.sync_all(self.us2cycles(0.01)) # Wait for a few ns to align channels
-
-        # play fast flux ramp
-        self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
-                                 gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-        self.pulse(ch = self.cfg["ff_ch"])
-
-        # play constant pulse to keep FF at ramped value if a delay here is desired
-        if self.cfg["ff_delay"] > 0:
-            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
-                                     length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
+        # Cycle the fr ramp as requested.
+        for c in range(self.cfg["cycle_number"]):
+            # play fast flux ramp
+            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
+                                     gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
             self.pulse(ch = self.cfg["ff_ch"])
 
-        # play reversed fast flux ramp, return to original spot
-        self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
-                                 gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-        self.pulse(ch = self.cfg["ff_ch"])
+            # play constant pulse to keep FF at ramped value if a delay here is desired
+            if self.cfg["ff_delay"] > 0:
+                self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
+                                         length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
+                self.pulse(ch = self.cfg["ff_ch"])
 
-        self.sync_all(self.us2cycles(0.01)) # Wait for a few ns to align channels
+            # play reversed fast flux ramp, return to original spot
+            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
+                                     gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
+            self.pulse(ch = self.cfg["ff_ch"])
 
-        # trigger measurement, play measurement pulse, wait for relax_delay_2
+            self.sync_all(self.us2cycles(self.cfg["cycle_delay"])) # Keep at least a few ns to align channels
+
+        # trigger measurement, play measurement pulse, wait for relax_delay_2. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_2"]))
+
 
 
     # Override acquire such that we can collect the single-shot data
@@ -156,6 +166,7 @@ class FFRampTest(NDAveragerProgram):
         # Number of cycle repetitions sweep parameters
         "cycle_number_expts": 11,         # [int] How many values for number of cycles around to use in this experiment
         "max_cycle_number": 5,            # [int] What is the largest number of cycles to use in sweep? Start at 1
+        "cycle_delay": 0.02,              # [us] How long to wait between cycles in one experiment?
 
         # General sweep parameters
         "sweep_type": 'ramp_length',      # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
