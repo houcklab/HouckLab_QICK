@@ -48,7 +48,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
 )
 
-import scripts.Helpers as Helpers
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 class QAccountPanel(QWidget):
     """

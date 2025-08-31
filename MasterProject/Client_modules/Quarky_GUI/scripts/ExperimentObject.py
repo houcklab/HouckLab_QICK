@@ -25,8 +25,8 @@ from PyQt5.QtWidgets import (
 
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
-from scripts.AuxiliaryThread import AuxiliaryThread
-import scripts.Helpers as Helpers
+from MasterProject.Client_modules.Quarky_GUI.scripts.AuxiliaryThread import AuxiliaryThread
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 class ExperimentObject():
     """

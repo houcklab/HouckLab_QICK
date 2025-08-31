@@ -34,8 +34,8 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QInputDialog,
 )
 
-import scripts.Helpers as Helpers
-from scripts.AuxiliaryThread import AuxiliaryThread
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
+from MasterProject.Client_modules.Quarky_GUI.scripts.AuxiliaryThread import AuxiliaryThread
 
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Quarky_GUI.PythonDrivers.YOKOGS200 import YOKOGS200

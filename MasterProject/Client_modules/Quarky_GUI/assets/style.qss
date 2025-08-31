@@ -42,6 +42,7 @@
 
 QMainWindow {
     background: transparent;
+    border-radius: 10px;
 }
 
 QWidget {
@@ -154,7 +155,7 @@ QPushButton#connect_button, QPushButton#create_connection_button{
 
 QPushButton#start_experiment{
     background: $BUTTON_RUN_COLOR;
-    image: url('assets/play.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/play.svg');
     padding: 5px 0px;
 }
 
@@ -165,7 +166,7 @@ QPushButton#start_experiment:hover{
 
 QPushButton#stop_experiment{
     background: $BUTTON_STOP_COLOR;
-    image: url('assets/octagon-x.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');
     padding: 5px 0px;
 }
 
@@ -199,22 +200,22 @@ QTreeView#ConfigTreePanel QPushButton#save_config {
     border-left: 1px solid $GENERAL_BORDER_COLOR;
     border-top-left-radius: 6px;
     border-bottom-left-radius: 6px;
-    image: url('assets/save.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/save.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton#load_config {
-    image: url('assets/folder.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/folder.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton#copy_config {
-    image: url('assets/copy.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/copy.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton#paste_config {
     border-right: 1px solid $GENERAL_BORDER_COLOR;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
-    image: url('assets/clipboard-paste.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/clipboard-paste.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton:hover {
@@ -224,7 +225,7 @@ QTreeView#ConfigTreePanel QPushButton:hover {
 
 
 QPushButton#documentation_button {
-    image: url('assets/book-text.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/book-text.svg');
     border: none;
     font-size: $LARGER_FONT_SIZEpx;
     background: $MENU_BAR_BACKGROUND_COLOR;
@@ -233,7 +234,7 @@ QPushButton#documentation_button {
 }
 
 QPushButton#settings_button {
-    image: url('assets/settings.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/settings.svg');
     border: none;
     border-radius: 5px;
     font-size: $LARGER_FONT_SIZEpx;
@@ -261,7 +262,7 @@ QTabWidget::tab-bar {
 }
 
 QTabBar::close-button {
-    image: url("assets/x.svg");
+    image: url("MasterProject/Client_modules/Quarky_GUI/assets/x.svg");
     subcontrol-position: left;
     margin-bottom: 2px;
     border-radius: 2px;
@@ -322,12 +323,12 @@ QLabel#soc_status_label {
 }
 
 QSplitter#main_splitter::handle {
-    image: url('assets/ellipsis-vertical.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/ellipsis-vertical.svg');
     padding: 0px 1px 0px 1px;
 }
 
 QSplitter#vert_splitter::handle {
-    image: url('assets/ellipsis.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/ellipsis.svg');
     padding: 1px 0px 1px 0px;
 }
 
@@ -389,7 +390,7 @@ QComboBox::drop-down {
 }
 
 QComboBox::down-arrow {
-    image: url('assets/chevron-down.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/chevron-down.svg');
     width: 15px;
     height: 15px;
     border-radius: 5px;
@@ -424,24 +425,24 @@ QWidget#editor_execution_container QPushButton:hover {
 }
 
 QPushButton#run_editor_button {
-    image: url('assets/play-green.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/play-green.svg');
 }
 
 QWidget#editor_execution_container QPushButton#run_editor_button:hover {
-    image: url('assets/play-white.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/play-white.svg');
     background: $BUTTON_RUN_COLOR;
 }
 
 QPushButton#open_codefile_button {
-    image: url('assets/folder.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/folder.svg');
 }
 
 QPushButton#save_codefile_button {
-    image: url('assets/save.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/save.svg');
 }
 
 QPushButton#search_codefile_button {
-    image: url('assets/search.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/search.svg');
 }
 
 QFrame#FindBar {
@@ -451,7 +452,7 @@ QFrame#FindBar {
 }
 
 QPushButton#close_findbar_button {
-    image: url('assets/x.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/x.svg');
     border: none;
     border-radius: 3px;
     background: none;
@@ -492,15 +493,15 @@ QWidget#custom_menu_bar {
     background: $MENU_BAR_BACKGROUND_COLOR;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
-    /* border-top-left-radius: 10px; */
-    /* border-top-right-radius: 10px; */
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
 }
 
 CustomTitleBar QPushButton {
     border-radius: 6px;
 }
 
-/*
+
 QPushButton#btn_close, QPushButton#btn_minimize, QPushButton#btn_fullscreen {
     background: #AAAAAA;
 }
@@ -519,7 +520,7 @@ QPushButton#btn_fullscreen:hover {
     background: #27C93F;
     border: none;
 }
-*/
+
 
 QPushButton#load_data_button, QPushButton#load_experiment_button {
     background: $BUTTON_MENU_BACKGROUND_COLOR;
@@ -572,7 +573,7 @@ QCheckBox::indicator:checked:hover {
 }
 
 QCheckBox::indicator:checked {
-    image: url('assets/check.svg');
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/check.svg');
     border: none;
 }
 

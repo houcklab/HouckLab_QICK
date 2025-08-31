@@ -27,7 +27,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColor, QFont
 from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp
 
-import scripts.Helpers as Helpers
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 class FindBar(QFrame):
     def __init__(self, editor: QTextEdit, parent=None):

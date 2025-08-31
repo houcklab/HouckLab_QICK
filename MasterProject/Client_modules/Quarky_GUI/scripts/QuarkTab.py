@@ -40,8 +40,8 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect,
 )
 import pyqtgraph as pg
-from scripts.ExperimentObject import ExperimentObject
-import scripts.Helpers as Helpers
+from MasterProject.Client_modules.Quarky_GUI.scripts.ExperimentObject import ExperimentObject
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 class QQuarkTab(QWidget):
     """

@@ -50,7 +50,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 
-import scripts.Helpers as Helpers
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 class QConfigTreePanel(QTreeView):
     """

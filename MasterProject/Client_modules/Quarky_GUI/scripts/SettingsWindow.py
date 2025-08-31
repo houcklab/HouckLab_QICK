@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 
-import scripts.Helpers as Helpers
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 
 class SettingsWindow(QWidget):

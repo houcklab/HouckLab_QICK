@@ -27,7 +27,8 @@ from PyQt5.QtCore import (
     QThread,
     pyqtSignal,
     QUrl,
-    QTimer
+    QTimer,
+    QEvent
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -50,17 +51,17 @@ from MasterProject.Client_modules.Quarky_GUI.CoreLib.ExperimentPlus import Exper
 from MasterProject.Client_modules.Quarky_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
-from scripts.CustomMenuBar import CustomMenuBar
-from scripts.ExperimentThread import ExperimentThread
-from scripts.QuarkTab import QQuarkTab
-from scripts.VoltagePanel import QVoltagePanel
-from scripts.AccountsPanel import QAccountPanel
-from scripts.LogPanel import QLogPanel
-from scripts.ConfigTreePanel import QConfigTreePanel
-from scripts.AuxiliaryThread import AuxiliaryThread
-from scripts.ConfigCodeEditor import ConfigCodeEditor
-from scripts.SettingsWindow import SettingsWindow
-import scripts.Helpers as Helpers
+from MasterProject.Client_modules.Quarky_GUI.scripts.CustomMenuBar import CustomMenuBar
+from MasterProject.Client_modules.Quarky_GUI.scripts.ExperimentThread import ExperimentThread
+from MasterProject.Client_modules.Quarky_GUI.scripts.QuarkTab import QQuarkTab
+from MasterProject.Client_modules.Quarky_GUI.scripts.VoltagePanel import QVoltagePanel
+from MasterProject.Client_modules.Quarky_GUI.scripts.AccountsPanel import QAccountPanel
+from MasterProject.Client_modules.Quarky_GUI.scripts.LogPanel import QLogPanel
+from MasterProject.Client_modules.Quarky_GUI.scripts.ConfigTreePanel import QConfigTreePanel
+from MasterProject.Client_modules.Quarky_GUI.scripts.AuxiliaryThread import AuxiliaryThread
+from MasterProject.Client_modules.Quarky_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
+from MasterProject.Client_modules.Quarky_GUI.scripts.SettingsWindow import SettingsWindow
+import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
@@ -124,6 +125,26 @@ class Quarky(QMainWindow):
 
         self.setup_ui() # Setup up the PyQt UI
 
+        # Window Event Handling (Resize and Hide)
+
+        # Resize Grip
+        self.size_grip = QSizeGrip(self)
+        self.size_grip.setStyleSheet("background: transparent;")
+        self.size_grip.setFixedSize(12, 12)
+        self.size_grip.raise_() # Ensure it's above other widgets
+
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.ApplicationActivate:
+            self.show()
+        return super().eventFilter(obj, event)
+
+    # In your resizeEvent:
+    def resizeEvent(self, event):
+        self.size_grip.move(self.width() - self.size_grip.width(), self.height() - self.size_grip.height())
+        super().resizeEvent(event)
+
     def setup_ui(self):
         """
         Initializes all the UI elements. The main sections include the central widgets tab, config panel, and the side
@@ -134,8 +155,8 @@ class Quarky(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Quarky")
-        # self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint) # removes native title bar but a bit finicky
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window) # removes native title bar but a bit finicky
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self.resize(1130, 720)
         # self.setWindowIcon(QIcon('QuarkyLogo.png'))
@@ -273,21 +294,7 @@ class Quarky(QMainWindow):
         self.central_layout.addWidget(self.wrapper)
         self.setCentralWidget(self.central_widget)
 
-        # Size Grip
-        # self.grip = QSizeGrip(self)
-        # self.grip.setCursor(Qt.SizeVerCursor)
-
         self.setup_signals()
-
-    # def resizeEvent(self, event):
-    #     """
-    #     Called upon render to move the sizegrip (self.grip) to the bottom right corner).
-    #     """
-    #     self.grip.move(
-    #         self.width() - 10,
-    #         self.height() - 10
-    #     )
-    #     super().resizeEvent(event)
 
     def setup_signals(self):
         """
@@ -367,7 +374,7 @@ class Quarky(QMainWindow):
         # UI updates
         self.soc_connected = True
         self.is_connecting = False
-        self.soc_status_label.setText('<html><b>✔ Soc connected</b></html>')
+        self.soc_status_label.setText('✔ Soc connected')
         self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
         self.accounts_panel.connect_button.setEnabled(True)
 
@@ -389,7 +396,7 @@ class Quarky(QMainWindow):
                                             "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
-            self.soc_status_label.setText('<html><b>✖ Soc Disconnected</b></html>')
+            self.soc_status_label.setText('✖ Soc Disconnected')
             QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
 
@@ -570,8 +577,8 @@ class Quarky(QMainWindow):
 
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(True)
-            self.start_experiment_button.setStyleSheet("image: url('assets/radio-tower.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x-white.svg');")
+            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/radio-tower.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x-white.svg');")
 
             self.central_tabs.setTabsClosable(False)  # Disable closing tabs
             # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
@@ -597,8 +604,8 @@ class Quarky(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
-        self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
-        self.stop_experiment_button.setStyleSheet("image: url('assets/timer-off.svg');;")
+        self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play.svg');")
+        self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/timer-off.svg');;")
         # self.is_stopping = True
         # self.stopping_dot_count = 0
         # self.animate_stopping()
@@ -622,13 +629,13 @@ class Quarky(QMainWindow):
         if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
         else:
             self.start_experiment_button.setEnabled(True)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play-white.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
 
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         # self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
@@ -715,8 +722,8 @@ class Quarky(QMainWindow):
             if self.currently_running_tab is None:
                 self.stop_experiment_button.setEnabled(False)
                 self.start_experiment_button.setEnabled(True)
-                self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
-                self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+                self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play-white.svg');")
+                self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
 
             self.current_tab = new_experiment_tab
             self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
@@ -765,13 +772,13 @@ class Quarky(QMainWindow):
                 if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
                     self.start_experiment_button.setEnabled(False)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play.svg');")
+                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
                 else:
                     self.start_experiment_button.setEnabled(True)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('assets/play-white.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play-white.svg');")
+                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
 
     def close_tab(self, idx):
         """
@@ -790,8 +797,8 @@ class Quarky(QMainWindow):
         if self.central_tabs.count() == 0: # if no tabs remaining
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Quarky_GUI/assets/octagon-x.svg');")
             self.current_tab = None
         else:
             current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
@@ -922,7 +929,7 @@ class Quarky(QMainWindow):
 
         # print("applying settings")
         if theme == "Dark Mode":
-            with open("assets/style.qss", "r") as file:
+            with open("MasterProject/Client_modules/Quarky_GUI/assets/style.qss", "r") as file:
                 style = file.read()
 
             # Backgrounds
@@ -965,7 +972,7 @@ class Quarky(QMainWindow):
             style = style.replace('$FIND_BAR_COLOR', f"#12121C")
             style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
         else:
-            with open("assets/style.qss", "r") as file:
+            with open("MasterProject/Client_modules/Quarky_GUI/assets/style.qss", "r") as file:
                 style = file.read()
 
             # Backgrounds
