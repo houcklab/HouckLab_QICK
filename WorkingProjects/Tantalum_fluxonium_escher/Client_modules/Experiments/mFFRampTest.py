@@ -62,38 +62,38 @@ class FFRampTest(NDAveragerProgram):
         as we probably want to wait for the cavity to ring down before starting the ramp.
         :return:
         """
-        #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
+        #TODO this experiment doesn't really make sense as written, it would only really work for starting ramp from 0
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
 
         # Play optional qubit pulse, if requested. This is only done once per experiment.
         if self.cfg["qubit_pulse"]:
             self.pulse(ch = self.cfg["qubit_ch"])
-            self.sync_all(self.us2cycles(0.01))  # Wait a few ns to align channels
+            self.sync_all(self.us2cycles(0.02))  # Wait a few ns to align channels
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      wait=True,  # t = 0,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_1"], gen_ch=self.cfg["res_ch"]))
 
-        self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
+        #self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
 
         # Cycle the fr ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"])
+            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(0))
 
             # play constant pulse to keep FF at ramped value if a delay here is desired
             if self.cfg["ff_delay"] > 0:
                 self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
                                          length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
-                self.pulse(ch = self.cfg["ff_ch"])
+                self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
             # play reversed fast flux ramp, return to original spot
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"])
+            self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
             self.sync_all(self.us2cycles(self.cfg["cycle_delay"])) # Keep at least a few ns to align channels
 
