@@ -80,7 +80,7 @@ class FFRampTest(NDAveragerProgram):
         # Cycle the fr ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
-            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
+            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
             self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(0))
 
