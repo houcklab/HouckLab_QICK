@@ -73,7 +73,7 @@ class FFRampTest(NDAveragerProgram):
         # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      wait=True,  # t = 0,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"], gen_ch=self.cfg["res_ch"]))
+                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"]))
 
         #self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
 
