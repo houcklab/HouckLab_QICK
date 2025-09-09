@@ -7,6 +7,8 @@
 # * faster than any decoherence channels
 # Lev, June 2025: create file.
 ###
+import sys
+
 import matplotlib
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
@@ -49,8 +51,8 @@ class FFRampTest(NDAveragerProgram):
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
-
-        self.sync_all(self.us2cycles(0.1))
+        # Give tprocessor time to execute all initialisation instructions before we expect any pulses to happen
+        self.sync_all(self.us2cycles(1))
 
     def body(self):
         """
@@ -65,26 +67,34 @@ class FFRampTest(NDAveragerProgram):
         #TODO this experiment doesn't really make sense as written, it would only really work for starting ramp from 0
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
 
+        # Check that the flux ramps finish after the first readout. Otherwise, the sync_all will insert extra delay.
+        # This can be fixed by using the t argument everywhere in the body, but I think it's not a good idea
+        if self.cfg["relax_delay_1"] + self.cfg['cycle_number'] * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] +
+                                                                  self.cfg['cycle_delay']) < self.cfg['adc_trig_offset']:
+           print('Warning: readout will not complete before flux ramps. Expect a delay before 2nd readout', file = sys.stderr)
+
         # Play optional qubit pulse, if requested. This is only done once per experiment.
         if self.cfg["qubit_pulse"]:
             self.pulse(ch = self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.02))  # Wait a few ns to align channels
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
-        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     wait=True,  # t = 0,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"]))
+        # Can't use measure command because that has sync_all which pushes us to after the trigger offset
+        self.trigger(self.cfg['ro_chs'], adc_trig_offset=adc_trig_offset_cycles, t = 0)
+        self.pulse(ch = self.cfg["res_ch"], t = 0)
 
-        #self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
-
-        # Cycle the fr ramp as requested.
+        # Cycle the ff ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
+            # I need to use the t argument so that the pulse can start before the readout trigger is complete
+            # In principle, this could also be done with synci, but sync_all doesn't know about previous synci commands
+            # and there is a bug in the current firmware that incorrectly compiles without a t argument after synci
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(0))
+            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
+                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay'])))
 
-            # play constant pulse to keep FF at ramped value if a delay here is desired
+            # # play constant pulse to keep FF at ramped value if a delay here is desired
             if self.cfg["ff_delay"] > 0:
                 self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
                                          length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
@@ -95,13 +105,13 @@ class FFRampTest(NDAveragerProgram):
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
             self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
-            self.sync_all(self.us2cycles(self.cfg["cycle_delay"])) # Keep at least a few ns to align channels
+        # Sync to make sure ramping is done before starting second measurement.
+        self.sync_all(self.us2cycles(0.02))
 
         # trigger measurement, play measurement pulse, wait for relax_delay_2. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_2"]))
-
 
 
     # Override acquire such that we can collect the single-shot data
