@@ -727,15 +727,15 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.ylabel('P(assigned end 1 | assigned start 1)')
 
         if self.cfg["sweep_type"] == 'ff_gain':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_length'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
         elif self.cfg["sweep_type"] == 'ramp_length':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
         elif self.cfg["sweep_type"] == 'cycle_number':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg["ff_ramp_start"], self.cfg["ff_ramp_stop"],
                                        self.cfg['ff_ramp_length'], self.cfg['ff_delay'], self.cfg["confidence"]))
         plt.tight_layout()
