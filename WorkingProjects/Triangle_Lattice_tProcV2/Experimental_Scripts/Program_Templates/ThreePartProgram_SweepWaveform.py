@@ -47,8 +47,8 @@ class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
     def _body(self, cfg):
         # 1: FFPulses
         # self.delay_auto()
-        FFDelayTime = 10
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01 + FFDelayTime)
+        FFDelayTime = 9
+        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01 + FFDelayTime, t_start=0)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 + FFDelayTime if i == 0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
@@ -56,10 +56,16 @@ class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
 
         # 2: FFExpt
         self.FFPulses_direct(self.FFExpts, self.cfg["expt_samples1"],
-                             self.FFPulse, IQPulseArray=cfg["IDataArray1"], waveform_label='FFExpts1')
-        self.delay_auto()
+                             self.FFPulse, IQPulseArray=cfg["IDataArray1"], waveform_label='FFExpts1',
+                             t_start=0)
+        self.label("interdelay")
+        # print(self.cfg['expt_samples1'])
+        # print(self.cycles2us(max(3,ceil(self.cfg["expt_samples1"]/16))))
+        self.delay(self.cycles2us(max(3,ceil(self.cfg["expt_samples1"]/16)) - 2))
+        # self.delay_auto()
         self.FFLoad16Waveforms(self.FFBS, self.FFExpts, cfg["IDataArray2"])
         self.FFPulses_arb_length_and_delay(t_start=0)
+        self.delay(self.cycles2us(2)) # Placeholder correction
 
         # 3: FFReadouts
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)

@@ -3,106 +3,88 @@
 from matplotlib import pyplot as plt
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
-    RampBeamsplitterGainR, RampBeamsplitterOffsetR, RampBeamsplitterR1D, RampCurrentCorrelationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibration_SSMUX import \
-    (RampCurrentCalibrationGain, RampCurrentCalibration1D,RampCurrentCalibration1DShots, RampCurrentCalibrationOffset,
-     RampCurrentCalibrationOffset_Multiple, RampCurrentCalibrationTime)
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import RampDurationVsPopulation, \
-    FFExptVsPopulation, TimeVsPopulation
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorrelations import CurrentCorrelationMeasurement
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCorrelationExperiments import PopulationShots, RampPopulationShots, OscillationPopulationShots, RampOscillationPopulationShots
+    RampBeamsplitterGainR, RampBeamsplitterOffsetR, RampBeamsplitterR1D, RampCurrentCorrelationsR, RampDoubleJumpGainR, \
+    RampDoubleJumpIntermediateSamplesR, RampDoubleJumpR1D, RampDoubleJumpCorrelations
 
-import numpy as np
-
-
-# Josh parameters
-Readout_FF = [5660, 26575, -17231, -5017, 0, 0, 0, 0]
-# Readout_FF = [56, 26575, -314, -241, 0, 0, 0, 0]
-# (4088.0, 4380.0, 3520.0, 3820.0, 3500.9, 3501.5, 3441.8, 3506.0)
-
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.7 - BaseConfig["res_LO"], 'Gain': 5250,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 4077.2, 'sigma': 0.07, 'Gain': 2388},
-          'Pulse_FF': Readout_FF},
-    '2': {'Readout': {'Frequency': 7078.3 - BaseConfig["res_LO"], 'Gain': 5200,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 4379.9, 'sigma': 0.07, 'Gain': 3200},
-          'Pulse_FF': Readout_FF},
-    '3': {'Readout': {'Frequency': 7510.55 - BaseConfig["res_LO"], 'Gain': 3200,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3624, 'sigma': 0.07, 'Gain': 5000},
-          'Pulse_FF': [5660, 26575, -17231 + 5000, -5017, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.1 - BaseConfig["res_LO"], 'Gain': 6000,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 3828.5, 'sigma': 0.07, 'Gain': 3600},
-          'Pulse_FF': Readout_FF},
-    # Resonant points. Guess: [0,0,0,0]
-    '1H': {'Qubit': {'Frequency': 4048.4, 'sigma': 0.07, 'Gain': 3000},
-           'Pulse_FF': [56 + 4000, 5, -314, -241, 0, 0, 0, 0]},
-    '2H': {'Qubit': {'Frequency': 4043.8, 'sigma': 0.07, 'Gain': 3080},
-           'Pulse_FF': [56, 5 + 4000, -314, -241, 0, 0, 0, 0]},
-    '3H': {'Qubit': {'Frequency': 4053.2, 'sigma': 0.07, 'Gain': 4050},
-           'Pulse_FF': [56, 5, -314 + 4000, -241, 0, 0, 0, 0]},
-    '1L': {'Qubit': {'Frequency': 3844.9, 'sigma': 0.07, 'Gain': 4700},
-           'Pulse_FF': [56 - 4000, 5, -314, -241, 0, 0, 0, 0]},
-
-    '1HH': {'Qubit': {'Frequency': 4047.3, 'sigma': 0.07, 'Gain': 2700},
-            'Pulse_FF': [56 + 4000, 5 - 4000, -314 - 4000, -241, 0, 0, 0, 0]},
-    '4HH': {'Qubit': {'Frequency': 3950.3, 'sigma': 0.07, 'Gain': 2200},
-            'Pulse_FF': [56 + 4000, 5 - 4000, -314 - 4000, -241, 0, 0, 0, 0]},
-
-}
-
-
-FF_gain1_expt =  56
-FF_gain2_expt =  5
-FF_gain3_expt = -314
-FF_gain4_expt = -241
-FF_gain5_expt =  0
-FF_gain6_expt =  0
-FF_gain7_expt =  0
-FF_gain8_expt =  0
-
-FF_gain1_BS =  17451  # 4300.0
-FF_gain2_BS =  17930  # 4300.0
-FF_gain3_BS =  -8884  # 3700.0
-FF_gain4_BS =  -9834  # 3700.0
-FF_gain5_BS =      0  # 3500.9
-FF_gain6_BS =      0  # 3501.5
-FF_gain7_BS =      0  # 3441.8
-FF_gain8_BS =      0  # 3506.0
-
+# from Qubit_Parameters_8QPiFlux import *
+from qubit_parameter_files.Qubit_Parameters_1234 import *
 
 Qubit_Readout = [1,2,3,4]
-Qubit_Pulse = ['1HH', '4HH']
+Qubit_Pulse = ['4HHH', '1HHH', '5HHH']
 
 
-Sweep_BeamsplitterGain = False
-sweep_bs_gain_dict = {'swept_qubit': 3, 'reps': 1600, 'ramp_time': 3000,
-                      't_offset': [-5,1,-2,3,0,0,0,0], 'relax_delay': 150,
-                        'gainStart': -10000, 'gainStop': -8000, 'gainNumPoints': 21,
-                        'start': 50, 'step': 8, 'expts': 71}
+Sweep_BeamsplitterGain = True
+# Q2-Q3
+sweep_bs_gain_dict = {'swept_qubit': 2, 'reps': 200, 'ramp_time': 3000,
+                      't_offset': [0,0,0,0,0,0,0,0], 'relax_delay': 150,
+                        'gainStart':  22734 - 3000 , 'gainStop': 22734 + 3000, 'gainNumPoints': 11,
+                        'start': 50, 'step': 12, 'expts': 71}
+
+
+# sweep_bs_gain_dict = {'swept_qubit': 4, 'reps': 1, 'ramp_time': 1,
+#                       't_offset': [0,0,0,0,0,0,0,0], 'relax_delay': 1,
+#                         'gainStart':  -16119 - 1000, 'gainStop': -16119 + 1000, 'gainNumPoints': 11,
+#                         'start': 50, 'step': 12, 'expts': 11}
+
 
 
 Sweep_BeamsplitterOffset = False
 
-sweep_bs_offset_dict = {'swept_qubit': 3, 'reps': 100, 'ramp_time': 3000,
-                      't_offset': [0,0,0,0,0,0,0,0], 'relax_delay': 200,
+# Think about how t_offset will cause some qubits to stay at FF_BS for longer than others
+sweep_bs_offset_dict = {'swept_qubit': 2, 'reps': 200, 'ramp_time': 3000,
+                      't_offset': [0,2,0,11,0,0,0,0], 'relax_delay': 100,
                         'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41,
                         'start': 0, 'step': 8, 'expts': 71}
 
 Beamsplitter1D = False
 
-Run_CurrentCorrelations = True
+Run_CurrentCorrelations = False
 
-ramp_beamsplitter_1d_dict = {'reps': 20000, 'ramp_time': 3000,
-                        't_offset': [-5,1,-2,3,0,0,0,0], 'relax_delay': 150,
-                        'start': 0, 'step': 4, 'expts': 141}
+ramp_beamsplitter_1d_dict = {'reps': 17000, 'ramp_time': 3000,
+                        't_offset':  [0,11,3,5,0,0,0,0],
+                             'relax_delay': 100,
+                        'start': 0, 'step': 8, 'expts': 201}
+
+# --------------------------------
+# Base dict that will be used for all below experiments
+
+double_jump_base = {'reps': 500, 'ramp_time': 3000,
+                      't_offset': [0+9,2+9,0,11,0,0,0,0], 'relax_delay': 150,
+                        'start': 0, 'step': 16, 'expts': 71,
+                    'intermediate_jump_samples': [0, 23, 0, 9, 0, 0, 0, 0],
+                    'intermediate_jump_gains': [None, 9900, None, -200, None, None, None, None]}
 
 
+
+
+
+Sweep_DoubleJump_IntermediateSamples = False
+sweep_intermediate_samples_dict = {
+                        'swept_qubit': 2,
+                        'samples_start': 0, 'samples_stop': 30,
+                        'samples_numPoints': 31}
+
+Sweep_DoubleJumpGain = False
+# Q1-Q2
+double_jump_gain_dict = {'swept_qubit': 2,
+                        'gainStart':  10089 - 2000, 'gainStop': 10089 + 2000, 'gainNumPoints': 21}
+
+# double_jump_gain_dict = {'swept_qubit': 4,
+#                         'gainStart':  -4428*2 - 1000, 'gainStop': -4428*2 + 1000, 'gainNumPoints': 21}
+
+# Q3-Q4
+# double_jump_gain_dict = {'swept_qubit': 4,
+#                         'gainStart':  -9834//2 - 1000, 'gainStop': -9834//2 + 1000, 'gainNumPoints': 21}
+                    # gains = None -> do not do a first jump, jump directly from FF_expt --> FF_BS
+
+
+
+DoubleJump1D = False
+
+DoubleJump_CurrentCorrelations = True
+
+double_jump_1d_dict = {'reps': 5000,
+                        'start': 0, 'step': 4, 'expts': 201}
 
 # This ends the working section of the file.
 #----------------------------------------
@@ -122,6 +104,8 @@ if Sweep_BeamsplitterGain:
     RampBeamsplitterGainR(path="RampBeamsplitterGainR", outerFolder=outerFolder,
                           cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
+
+
 if Sweep_BeamsplitterOffset:
     RampBeamsplitterOffsetR(path="RampBeamsplitterOffsetR", outerFolder=outerFolder,
                           cfg=config | sweep_bs_offset_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
@@ -134,4 +118,20 @@ if Run_CurrentCorrelations:
     RampCurrentCorrelationsR(path="RampBeamsplitterCorrelationsR", outerFolder=outerFolder,
                         cfg=config | ramp_beamsplitter_1d_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
+
+if Sweep_DoubleJumpGain:
+    RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
+                          cfg=config | double_jump_base | double_jump_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if Sweep_DoubleJump_IntermediateSamples:
+    RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
+                          cfg=config | double_jump_base | sweep_intermediate_samples_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if DoubleJump1D:
+    RampDoubleJumpR1D(path="RampDoubleJump1D", outerFolder=outerFolder,
+                      cfg=config | double_jump_base | double_jump_1d_dict, soc=soc, soccfg=soccfg,).acquire_display_save(plotDisp=True)
+
+if DoubleJump_CurrentCorrelations:
+    RampDoubleJumpCorrelations(path="RampDoubleJumpCurrentCorrelations", outerFolder=outerFolder,
+                      cfg=config | double_jump_base | double_jump_1d_dict, soc=soc, soccfg=soccfg,).acquire_display_save(plotDisp=True)
 plt.show()

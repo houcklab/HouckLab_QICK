@@ -26,7 +26,6 @@ def correct_occ(pop_data, confusion_matrix):
        Returns: 1d array of excited state percentages, adjusted by confusion matrix'''
 
     vec = np.vstack([1.-pop_data, pop_data])
-
     return (np.linalg.inv(confusion_matrix)[1,:]  @  vec).flatten()
 
 def pop_to_expect(pop_vec):

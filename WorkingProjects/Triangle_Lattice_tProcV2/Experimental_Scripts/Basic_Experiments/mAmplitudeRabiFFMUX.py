@@ -34,7 +34,7 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
 
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
-                       freq=cfg["qubit_freqs"][0],
+                       freq=cfg["qubit_freqs"][-1],
                        phase=90, gain=qubit_gain_sweep)
         self.qubit_length_us = cfg["sigma"] * 4
 
@@ -67,7 +67,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
     def acquire(self, progress=False):
         # You would overwrite these in the config if you wanted to
         cfg_ARabi_defaults = {'start': 0, "expts": 31, "reps": 30, "rounds": 30,
-                                "f_ge": self.cfg["qubit_freqs"][0]}
+                                "f_ge": self.cfg["qubit_freqs"][-1]}
         self.cfg = cfg_ARabi_defaults  | self.cfg
         self.cfg['step'] = int(self.cfg["max_gain"] / self.cfg['expts'])
 

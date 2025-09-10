@@ -2,84 +2,39 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsSpec import FFvsSpec
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillations import \
-    GainSweepOscillations
-
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
 
-import numpy as np
-from scipy.optimize import curve_fit
+# from Qubit_Parameters_8QPiFlux import *
+# from Qubit_Parameters_8QPiFlux_Matt import *
+# from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_5678 import *
+from qubit_parameter_files.Qubit_Parameters_1234 import *
 
+Q = 4
+# Qubit_Readout = ['5HHH', '1HHH', '4HHH']
+Qubit_Readout = [1]
 
-Readout_FF = [5660, 26575, -17231, -5017, 0, 0, 0, 0]
-# Readout_FF = [56, 26575, -314, -241, 0, 0, 0, 0]
-# (4088.0, 4380.0, 3520.0, 3820.0, 3500.9, 3501.5, 3441.8, 3506.0)
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.7 - BaseConfig["res_LO"], 'Gain': 5250,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 4077.2, 'sigma': 0.07, 'Gain': 2388},
-          'Pulse_FF': Readout_FF},
-    '2': {'Readout': {'Frequency': 7078.3 - BaseConfig["res_LO"], 'Gain': 5200,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 4379.9, 'sigma': 0.07, 'Gain': 3200},
-          'Pulse_FF': Readout_FF},
-    '3': {'Readout': {'Frequency': 7510.55 - BaseConfig["res_LO"], 'Gain': 3200,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3624, 'sigma': 0.07, 'Gain': 5000},
-          'Pulse_FF': [5660, 26575, -17231 + 5000, -5017, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.1 - BaseConfig["res_LO"], 'Gain': 6000,
-                      "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
-          'Qubit': {'Frequency': 3828.5, 'sigma': 0.07, 'Gain': 3600},
-          'Pulse_FF': Readout_FF},
-    # Resonant points. Guess: [0,0,0,0]
-    '1H': {'Qubit': {'Frequency': 4048.4, 'sigma': 0.07, 'Gain': 3000},
-           'Pulse_FF': [56 + 4000, 5, -314, -241, 0, 0, 0, 0]},
-    '2H': {'Qubit': {'Frequency': 4043.8, 'sigma': 0.07, 'Gain': 3080},
-           'Pulse_FF': [56, 5 + 4000, -314, -241, 0, 0, 0, 0]},
-    '3H': {'Qubit': {'Frequency': 4053.2, 'sigma': 0.07, 'Gain': 4050},
-           'Pulse_FF': [56, 5, -314 + 4000, -241, 0, 0, 0, 0]},
-    '1L': {'Qubit': {'Frequency': 3844.9, 'sigma': 0.07, 'Gain': 4700},
-           'Pulse_FF': [56 - 4000, 5, -314, -241, 0, 0, 0, 0]},
-
-    '1HH': {'Qubit': {'Frequency': 4047.3, 'sigma': 0.07, 'Gain': 2700},
-            'Pulse_FF': [56 + 4000, 5 - 4000, -314 - 4000, -241, 0, 0, 0, 0]},
-    '4HH': {'Qubit': {'Frequency': 3950.3, 'sigma': 0.07, 'Gain': 2650},
-            'Pulse_FF': [56 + 4000, 5 - 4000, -314 - 4000, -241, 0, 0, 0, 0]},
-
-}
-
-Qubit_Readout = [4]
-Qubit_Pulse = ['4HH']
-
-FF_gain1_expt = 0
-FF_gain2_expt = 0
-FF_gain3_expt = 0
-FF_gain4_expt = 0
-FF_gain5_expt = 0
-FF_gain6_expt = 0
-FF_gain7_expt = 0
-FF_gain8_expt = 0
-
-
+Qubit_Pulse = ['1H']
+# Qubit_Pulse = ['5HHH', '4HHH']
+# Qubit_Pulse = ['4HHH', '1HHH']
+# Qubit_Pulse = ['4HHH', '1HHH', '5HHH']
+# Qubit_Pulse = ['4HHH', '1HHH', '6HHH']
+# Qubit_Pulse = ['6HHH']
 
 f = False
 t = True
 
-RunTransmissionSweep = f
-RunFirst2ToneSpec = t
-RunSecond2ToneSpec = t
-RunAmplitudeRabi = t
+RunTransmissionSweep =       f
+RunFirst2ToneSpec =          f
+RunSecond2ToneSpec =         t
+RunAmplitudeRabi =           f
 SingleShot_ReadoutOptimize = f
-SingleShot_QubitOptimize = t
+SingleShot_QubitOptimize =   f
 SingleShot = True
 
 
@@ -95,15 +50,16 @@ Second_Spec_params = {"qubit_gain": 50, "SpecSpan": 10, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
                         'reps': 144, 'rounds': 1}
 
+
 Amplitude_Rabi_params = {"max_gain": 9000, 'relax_delay':200}
 
-SS_R_params = {"Shots":400, 'relax_delay':100,
+SS_R_params = {"Shots":500, 'relax_delay':100,
                "gain_start": 2000, "gain_stop": 8000, "gain_pts": 10, "span": 1, "trans_pts": 6, 'number_of_pulses': 1}
 
 
-SS_Q_params = {"Shots":400, 'relax_delay':150,
-               "q_gain_span": 500, "q_gain_pts": 5, "q_freq_span": 3, "q_freq_pts": 6,
-               'number_of_pulses': 1}
+SS_Q_params = {"Shots": 500, 'relax_delay':150,
+               "q_gain_span": 1000, "q_gain_pts": 7, "q_freq_span": 3, "q_freq_pts": 7,
+               'number_of_pulses': 3, 'qubit_sweep_index': -1}
 
 SS_params = {"Shots": 5000,
              'number_of_pulses': 1, 'relax_delay': 200}

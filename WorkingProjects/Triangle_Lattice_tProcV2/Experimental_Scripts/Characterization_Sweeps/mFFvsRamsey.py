@@ -27,28 +27,29 @@ class FFvsRamsey(SweepExperiment2D_plots):
 
         self.x_name = "delay_loop"
 
-        self.z_value = 'contrast'  # contrast or population
+        self.z_value = 'population' if self.cfg['populations'] else 'contrast' # contrast or population
         self.ylabel = f'Fast flux gain index {self.cfg["qubit_FF_index"]}'  # for plotting
         self.xlabel = 'Delay (us)'  # for plotting
 
     def analyze(self, data, **kwargs):
-        def fit(t, T2, A, y0, omega, phi):
-            return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
-
-        omegas, FFgains = [], []
-        x_pts = data["data"]["delay_loop"]
-        Zmat = data["data"]["contrast"][0]
-        for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
-            p0_guess = [x_pts[-1], (np.max(row) - np.min(row))/2, row[-1], omega_guess(x_pts, row), 1e-2]
-            try:
-                (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, row, p0=p0_guess)
-                omegas.append(np.abs(omega))
-                FFgains.append(FFgain)
-            except:
-                pass
-
-        self.omegas_fit = omegas
-        self.gains_fit = FFgains
+        pass
+        # def fit(t, T2, A, y0, omega, phi):
+        #     return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
+        #
+        # omegas, FFgains = [], []
+        # x_pts = data["data"]["delay_loop"]
+        # Zmat = data["data"]["contrast"][0]
+        # for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
+        #     p0_guess = [x_pts[-1], (np.max(row) - np.min(row))/2, row[-1], omega_guess(x_pts, row), 1e-2]
+        #     try:
+        #         (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, row, p0=p0_guess)
+        #         omegas.append(np.abs(omega))
+        #         FFgains.append(FFgain)
+        #     except:
+        #         pass
+        #
+        # self.omegas_fit = omegas
+        # self.gains_fit = FFgains
 
 
 

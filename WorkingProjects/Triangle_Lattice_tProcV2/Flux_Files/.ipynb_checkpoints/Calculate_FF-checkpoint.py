@@ -12,20 +12,17 @@ from Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_f
 
 plot_effective_system = True
 suffix = "BS"
-# (4100.0, 4419.1, 3600.0, 3900.0, 4250.0, 4250.0, 4250.0, 4250.0)
 
 frequencies = {
-    'Q1': 3785,
-    'Q2': 3785,
-    'Q3': 3785,
-    'Q4': 3785,
-    'Q5': 3785,
-    'Q6': 3785,
-    'Q7': 4250,
-    'Q8': 4250,
+    'Q1': 4300,
+    'Q2': 4300,
+    'Q3': 3700,
+    'Q4': 3700,
+    # 'Q5': -0.3,
+    # 'Q6': -0.3,
+    # 'Q7': -0.3,
+    # 'Q8': -0.3,
 }
-
-
 flux_was_given = {key: (freq < 10) for key,freq in frequencies.items()}
 
 target_fluxes = np.copy(flux_vector)

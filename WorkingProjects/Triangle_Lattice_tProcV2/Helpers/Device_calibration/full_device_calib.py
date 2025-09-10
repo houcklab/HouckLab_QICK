@@ -129,7 +129,7 @@ def bare_system(qubit_freqs, beta_matrix, plot=True):
                           fc="xkcd:pale turquoise", ec="xkcd:sea", lw=2))
                     
         ax.axis("equal")
-        # ax.axis("off")
+        ax.axis("off")
         plt.show(block=False)
 
     return qubit_freqs, g_matrix
@@ -138,13 +138,13 @@ def bare_system(qubit_freqs, beta_matrix, plot=True):
 def signed_eff_g(w1, w2, wc, g1, g2, g12):
     Δ1, Δ2 = w1 - wc, w2 - wc
     Σ1, Σ2 = w1 + wc, w2 + wc
-    return g1*g2/2*(1/Δ1 + 1/Δ2 - 1/Σ1 - 1/Σ2) + g1*g2*2/wc + g12
+    return - ( g1*g2/2*(1/Δ1 + 1/Δ2 - 1/Σ1 - 1/Σ2) + g1*g2*2/wc ) + g12
 
 def invert_eff_g(g_eff, w1, w2, beta1, beta2, beta12, bounds=(0,10000)):
     '''g_eff ---> coupler frequency'''
     g12 = beta12*np.sqrt(w1*w2)
     func = lambda wc: (signed_eff_g(w1, w2, wc, beta1*np.sqrt(w1*wc),  beta2*np.sqrt(w2*wc), g12) - g_eff)**2
-    guess = (w1+w2)/2 - beta1*beta2*w1*w2/(g_eff - g12)
+    guess = (w1+w2)/2 - beta1*beta2*w1*w2/(-g_eff - g12)
     return minimize(func, x0=guess, bounds=[bounds]).x
 
 
@@ -291,5 +291,5 @@ def plot_dressed_system(qubit_freqs, g_matrix):
 
 
     ax.axis("equal")
-    # ax.axis("off")
+    ax.axis("off")
     plt.show(block=False)

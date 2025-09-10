@@ -73,7 +73,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
             for ro_ind in range(len(axs)):
                 # Plot the first cycle
                 freq_param = self.freq_param_list[ro_ind]
-                if freq_param is not None:
+                if self.cfg.get('fit', True) and freq_param is not None:
                     axs[ro_ind].scatter(1/self.fit_freqs[ro_ind] / 0.291e-3, self.fit_gains[ro_ind], color='r', marker='o', s=150)
                     axs[ro_ind].plot(1/freqfit(gain_linspace, *freq_param) / 0.291e-3, gain_linspace,
                                      color='r', ls=':', zorder=1, lw=5, label = f'g = {freq_param[2]:.2f} MHz')

@@ -104,18 +104,15 @@ def FFDefinitions(instance):
         instance.declare_gen(ch=int(channel))
 
     instance.FFReadouts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Readout"] for q in instance.FFQubits])
+
     if "Gain_Expt" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFExpts = np.array([instance.cfg["FF_Qubits"][q]["Gain_Expt"] for q in instance.FFQubits])
-
-    # if "Gain_Init" in instance.cfg["FF_Qubits"][str(1)]:
-    #     instance.FFRamp = np.array([instance.cfg["FF_Qubits"][q]["Gain_Init"] for q in instance.FFQubits])
 
     if "Gain_Pulse" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFPulse = np.array([instance.cfg["FF_Qubits"][q]["Gain_Pulse"] for q in instance.FFQubits])
 
     if "Gain_BS" in instance.cfg["FF_Qubits"][str(1)]:
         instance.FFBS = np.array([instance.cfg["FF_Qubits"][q]["Gain_BS"] for q in instance.FFQubits])
-
     # FFDelays = np.array([instance.cfg["FF_Channels"][str(c)]["delay_time"] for c in instance.FFChannels])
     FFDelays = np.array([instance.cfg["FF_Qubits"][q]["delay_time"] for q in instance.FFQubits])
 
@@ -132,7 +129,7 @@ def FFDefinitions(instance):
     instance.gen_t0[Additional_delay_channels] = Additional_delay_times
     instance.gen_t0 = list(instance.gen_t0)
 
-    # print(instance.dac_t0)
+    # print(instance.gen_t0)
 
 '''These assume that each pulse name has the format f"{waveform_label}_{channel_num}"'''
 def FFPlayWaveforms(instance, waveform_label, t_start='auto'):

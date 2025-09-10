@@ -27,7 +27,7 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
     def __init__(self, *args, **kwargs):
         cfg = kwargs['cfg']
         assert cfg["start"] >= 0, "Can't have a negative start time."
-        assert cfg["step"] > 0, "Can't have a negative step"
+        assert cfg["step"] >= 0, "Can't have a negative step"
 
         # The "reps" loop is outermost, so this will reset the cycle and sample counter on each of these loops
         # 1 cycle = 16 samples
@@ -53,7 +53,9 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
             if IQPulse is None:  # if not specified, assume constant of max value
                 IQPulse = gain * np.ones(truncation_length)
             # add buffer to beginning of IQPulse
-            IQPulse = np.concatenate([prev_gain * np.ones(48), IQPulse[:truncation_length]])
+            IQPulse[IQPulse > 32766] = 32766
+            IQPulse[IQPulse < - 32766] = - 32766
+            IQPulse = np.concatenate([prev_gain * np.ones(3*16), IQPulse[:truncation_length]])
             for i in range(1, 17):
                 # create shifted pulse. All pulses are len(IQPulse) + 2 clock cycles!
                 idata = IQPulse[i:len(IQPulse) - 16 + i]
@@ -64,7 +66,7 @@ class SweepWaveformAveragerProgram(FFAveragerProgramV2):
                                    style="arb", envelope=wname,
                                    freq=0, phase=0, gain=1.0, outsel="input")
 
-    def FFPlayChangeLength(self, waveform_label, length_src, t_start='auto'):
+    def FFPlayChangeLength(self, waveform_label, length_src, t_start):
         for channel in self.FFChannels:
             pulse_name = f"{waveform_label}_{channel}"
             for wname in self.list_pulse_waveforms(pulse_name):

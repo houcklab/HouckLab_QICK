@@ -52,10 +52,10 @@ class SweepExperimentND(ExperimentClass):
         pass
 
 
-    def _display_plot(self, data, fig_axs):
-        pass
+    def _display_plot(self, data, fig, axs):
+        print("Display not implemented for this experiment: did you mean to inherit one of the plotting classes?")
     
-    def _update_fig(self, data, fig_axs):
+    def _update_fig(self, data, fig, axs):
         pass
 
 

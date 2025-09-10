@@ -26,7 +26,7 @@ def characterize_readout(config, Qubit_Readout):
         SSExp = SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=new_config, soc=soc, soccfg=soccfg)
         data = SSExp.acquire_display_save(plotDisp=True, block=False, display_indices=[Qubit])
 
-        angle.append(    data['data']['angle'][ro_ind])
+        angle.append(data['data']['angle'][ro_ind])
         threshold.append(data['data']['threshold'][ro_ind])
         ng_contrast = data['data']['ng_contrast'][ro_ind]
         ne_contrast = data['data']['ne_contrast'][ro_ind]

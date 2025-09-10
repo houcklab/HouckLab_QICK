@@ -51,8 +51,9 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
 
     def _body(self, cfg):
         # print(self.FFPulse)
-        self.FFPulses(self.FFPulse, self.qubit_length_us + 1.05)
-        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
+        FF_pulse_delay = 1
+        self.FFPulses(self.FFPulse, self.qubit_length_us + FF_pulse_delay + 0.05)
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = FF_pulse_delay)  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.delay_auto()
 
