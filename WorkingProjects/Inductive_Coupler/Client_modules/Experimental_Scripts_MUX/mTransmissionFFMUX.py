@@ -100,6 +100,9 @@ class CavitySpecFFMUX(ExperimentClass):
             avgi = data['data']['results'][0][i][0]
             avgq = data['data']['results'][0][i][1]
             x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
+            # x_pts = (-data['data']['fpts'] + self.cfg["cavity_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
+            # x_pts -= self.cfg['pulse_freqs'][i] / 1e3
+
             x_pts += self.cfg['pulse_freqs'][i] / 1e3
             sig = avgi + 1j * avgq
 

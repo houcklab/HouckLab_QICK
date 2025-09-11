@@ -13,9 +13,17 @@ class MakeFile(h5py.File):
     def add(self, key, data):
         data = np.array(data)
         if key not in self:
-            self.create_dataset(key, shape=data.shape,
+            try:
+                self.create_dataset(key, shape=data.shape,
                                 maxshape=tuple([None] * len(data.shape)),
                                 dtype=str(data.astype(np.float64).dtype))
+            except:
+                print(f'warning: type of ({key}: {data}) is not float')
+                if key in ['readout_list', 'Qubit_Readout_List']:
+                    data = np.array([int(qubit_str[0]) for qubit_str in data])
+                self.create_dataset(key, shape=data.shape,
+                                    maxshape=tuple([None] * len(data.shape)),
+                                    dtype=str(data.astype(np.float64).dtype))
         else:
             del self[key]
             self.create_dataset(key, shape=data.shape,

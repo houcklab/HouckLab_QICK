@@ -1,50 +1,44 @@
-from qick import *
+
 # from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
+# from tqdm.notebook import tqdm
 import time
+from tqdm import tqdm
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
-# import qick
-# print("Test", qick.__file__)
 
-class CavitySpecFFProg(AveragerProgram):
-    def initialize(self):
-        cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
+class CavitySpecFFProg(FFAveragerProgramV2):
+    def _initialize(self, cfg):
+        self.declare_gen(ch=cfg['res_ch'], ro_ch=cfg['ro_chs'][0], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
-                         mux_freqs=cfg["res_freqs"],
-                         mux_gains= cfg["res_gains"],
-                         ro_ch=cfg["ro_chs"][0])  # Readout
-        for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
-                                 freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
-                                 length=self.us2cycles(cfg["res_length"], gen_ch = self.cfg["res_ch"]))
+                         mux_freqs=cfg['res_freqs'],
+                         mux_gains=cfg['res_gains'],
+                         mux_phases=[0]*len(cfg['res_freqs']))
+        for ch, f in zip(cfg['ro_chs'], cfg['res_freqs']):
+            self.declare_readout(ch=ch, length=cfg['readout_length'], freq=f, phase=0, gen_ch=cfg['res_ch'])
+
+        self.add_pulse(ch=cfg['res_ch'], name="res_pulse",
+                       style="const",
+                       length=cfg["res_length"],
+                       mask=cfg["ro_chs"])
 
         FF.FFDefinitions(self)
-        self.synci(200)  # give processor some time to configure pulses
 
-    def body(self):
-
-        self.sync_all(gen_t0=self.gen_t0)
+    def _body(self, cfg):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(10))
+        self.delay(0.1)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
+        for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+        self.pulse(self.cfg["res_ch"], name='res_pulse')
+        self.wait_auto()
+        self.delay_auto(10)  # us
+
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.sync_all(self.us2cycles(self.cfg["cav_relax_delay"]), gen_t0=self.gen_t0)
 
-
-    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
-        FF.FFPulses(self, list_of_gains, length_us, t_start)
 
     # ====================================================== #
 
@@ -57,23 +51,26 @@ class CavitySpecFFMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False):
-        fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
-                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
-                           self.cfg["TransNumPoints"])
+        cfg = self.cfg
+        fpts = np.linspace(cfg["res_freqs"][0] - cfg["TransSpan"],
+                           cfg["res_freqs"][0] + cfg["TransSpan"],
+                           cfg["TransNumPoints"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
-            self.cfg["mixer_freq"] = f
-            prog = CavitySpecFFProg(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+        for f in tqdm(fpts, position=0, disable=False):
+            cfg["res_freqs"][0] = f
+            prog = CavitySpecFFProg(self.soccfg, reps=self.cfg['reps'],cfg=self.cfg, final_delay=self.cfg['cav_relax_delay'])
+            results.append(prog.acquire(self.soc, soft_avgs=self.cfg.get('rounds',1), load_pulses=True, progress=progress))
         print(f'Time: {time.time() - start}')
-        results = np.transpose(results)
-        print(results)
+        results = np.array(results)
+        # shape of results: (fpts, ROs, 1 [loops], I/Q)
+        # print(results.shape)
         data={'config': self.cfg, 'data': {'results': results, 'fpts':fpts}}
         self.data=data
 
+
         #### find the frequency corresponding to the peak
-        sig = data['data']['results'][0][0][0] + 1j * data['data']['results'][0][0][1]
+        sig = data['data']['results'][:,0,0,0] + 1j * data['data']['results'][:,0,0,1]
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
         self.peakFreq_min = data['data']['fpts'][peak_loc]
@@ -82,33 +79,35 @@ class CavitySpecFFMUX(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp = True, figNum = 1, block=True, **kwargs):
         if data is None:
             data = self.data
-        for i in range(len(data['data']['results'][0])):
-            avgi = data['data']['results'][0][i][0]
-            avgq = data['data']['results'][0][i][1]
-            x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
-            x_pts += self.cfg["res_freqs"][i] / 1e3
-            sig = avgi + 1j * avgq
+        # for i in range(len(data['data']['results'][0])):
+        avgi = data['data']['results'][:,0,0,0]
+        avgq = data['data']['results'][:,0,0,1]
+        x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
 
-            avgamp0 = np.abs(sig)
+        freq_min = (self.peakFreq_min + self.cfg["res_LO"])/1e3
+        sig = avgi + 1j * avgq
 
-            plt.figure(figNum)
-            plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
-            plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-            plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
-            plt.ylabel("a.u.")
-            plt.xlabel("Cavity Frequency (GHz)")
-            plt.title(self.titlename)
-            plt.legend()
+        avgamp0 = np.abs(sig)
 
-            plt.savefig(self.iname)
+        plt.figure(figNum)
+        plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
+        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+        plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+        plt.axvline(freq_min, color='black', linestyle='--', label=f"{1e3*freq_min:.1f} MHz")
+        plt.ylabel("a.u.")
+        plt.xlabel("Cavity Frequency (GHz)")
+        plt.title(self.titlename)
+        plt.legend()
 
-            if plotDisp:
-                plt.show(block=True)
-                plt.pause(0.1)
-            plt.close(figNum)
+        plt.savefig(self.iname)
+
+        if plotDisp:
+            plt.show(block=block)
+            plt.pause(0.1)
+        plt.close(figNum)
 
 
     def save_data(self, data=None):

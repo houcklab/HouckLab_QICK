@@ -3,11 +3,11 @@ import time
 import numpy as np
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFProg
 
 
-class SpecVsQblox(SweepExperimentR1D):
+class SpecVsQblox(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.Program = QubitSpecSliceFFProg
@@ -16,7 +16,7 @@ class SpecVsQblox(SweepExperimentR1D):
         self.y_points = np.linspace(self.cfg["Qblox_start"], self.cfg["Qblox_stop"], self.cfg["Qblox_steps"])
 
         # If using an RAveragerProgram, here you should define the cfg entries start, step, and stop
-        self.x_name = "Spec frequency (MHz)"
+        self.x_name = "qubit_freq_loop"
         self.cfg |= {
             "step": 2 * self.cfg["SpecSpan"] / (self.cfg["SpecNumPoints"] - 1),
             "start": self.cfg["qubit_freqs"][0] - self.cfg["SpecSpan"],

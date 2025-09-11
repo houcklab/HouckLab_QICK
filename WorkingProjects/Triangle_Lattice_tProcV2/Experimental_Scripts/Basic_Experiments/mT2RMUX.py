@@ -1,74 +1,73 @@
-from qick import *
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+
 import matplotlib.pyplot as plt
 import numpy as np
-from qick.helpers import gauss
+import scipy
+from qick.asm_v2 import QickSweep1D
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
-class T2RProgram(RAveragerProgram):
-    def initialize(self):
-        cfg = self.cfg
 
-        self.q_rp=self.ch_page(cfg["qubit_ch"])     # get register page for qubit_ch
-        self.r_wait = 3
-        self.r_phase2 = 4
-        self.r_phase=self.sreg(cfg["qubit_ch"], "phase")
-        self.regwi(self.q_rp, self.r_wait, cfg["start"])
-        self.regwi(self.q_rp, self.r_phase2, 0)
+class T2RProgram(FFAveragerProgramV2):
+    def _initialize(self, cfg):
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"],
+                         mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
                          mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=cfg["readout_lengths"][iCh],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["res_gain"],
-                                 length=self.us2cycles(cfg["res_length"]))
+        self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const", mask=cfg["ro_chs"],
+                       length=cfg["res_length"])
 
-        f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
+        ### Start fast flux
+        FF.FFDefinitions(self)
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
+        self.add_loop("delay_loop", self.cfg["expts"])
+        self.delay_loop = QickSweep1D("delay_loop", start=0, end=cfg["stop_delay_us"])
+        if cfg["stop_delay_us"]/self.cfg["expts"] < 0.00465:
+            print(f"T2RProgram: WARNING: step size ({cfg["stop_delay_us"]}/{cfg["expts"]})is less than one cycle (4.65 ns)!!!")
 
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-                                 phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["pi2_gain"],
-                                 waveform="qubit")
+        if "phase_shift_cycles" in cfg and self.cfg["phase_shift_cycles"] != 0 :
+            self.phase_loop = QickSweep1D("delay_loop", start=0, end=360*cfg["phase_shift_cycles"])
+        else:
+            self.phase_loop = 180
+        # add qubit pulse
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_1', style="arb", envelope="qubit",
+                       freq=cfg["qubit_drive_freq"],
+                       phase=0, gain=cfg["pi2_gain"])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_2', style="arb", envelope="qubit",
+                       freq=cfg["qubit_drive_freq"],
+                       phase=self.phase_loop, gain=cfg["pi2_gain"])
+        self.qubit_length_us = cfg["sigma"] * 4
 
-        self.sync_all(self.us2cycles(0.2))
+    def _body(self, cfg):
+        expt_length = self.qubit_length_us + 10.05 + self.delay_loop + self.qubit_length_us + 1
+        self.FFPulses(self.FFPulse, expt_length)
+        self.delay(10.0)
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_1", t=0)  # pi/2
+        self.delay(self.qubit_length_us)
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive_2", t=self.delay_loop, tag='swept_delay')  # pi/2, with phase
+        self.delay_auto()
 
-    def body(self):
-        self.regwi(self.q_rp, self.r_phase, 0)
+        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0], t=adc_trig_delay)
+        self.pulse(cfg["res_ch"], name='res_drive')
+        self.wait_auto()
+        self.delay_auto(10)  # us
 
-        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.01))
-        self.mathi(self.q_rp, self.r_phase, self.r_phase2, "+", 0)
+        self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
+        self.FFPulses(-1 * self.FFPulse, expt_length)
 
-        self.sync_all()
-        self.sync(self.q_rp, self.r_wait)
-
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05))
-
-        # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(10))
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
-
-    def update(self):
-        self.mathi(self.q_rp, self.r_wait, self.r_wait, '+', self.us2cycles(self.cfg["step"]))  # update the time between two π/2 pulses
-        self.mathi(self.q_rp, self.r_phase2, self.r_phase2, '+',
-                   self.cfg["phase_step"])  # advance the phase of the LO for the second π/2 pulse
-
+    def loop_pts(self):
+        return (self.get_time_param("swept_delay", "t", as_array=True),)
 
 class T2RMUX(ExperimentClass):
     """
@@ -79,21 +78,25 @@ class T2RMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False):
-        self.cfg.setdefault('start',    0)  ### start time
-        self.cfg.setdefault('f_ge',     self.cfg['qubit_freqs'][0] + self.cfg["freq_shift"])
+        self.cfg.setdefault('qubit_drive_freq',     self.cfg['qubit_freqs'][0] + self.cfg["freq_shift"])
         self.cfg.setdefault('pi_gain',  self.cfg['qubit_gains'][0])
-        self.cfg.setdefault('pi2_gain', self.cfg['qubit_gains'][0] // 2)
-        self.cfg['phase_step'] = self.soccfg.deg2reg(self.cfg["phase_step_deg"], gen_ch=self.cfg['qubit_ch'])
+        self.cfg.setdefault('pi2_gain', self.cfg['qubit_gains'][0] / 2)
 
 
-        prog = T2RProgram(self.soccfg, self.cfg)
+        prog = T2RProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                            final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq, 'qfreq': self.cfg["f_ge"],
-                                             'rfreq': self.cfg["mixer_freq"] + self.cfg["res_freqs"][0] + self.cfg["cavity_LO"] / 1e6}}
-        print(data['data']['qfreq'])
+        iq_list = prog.acquire(self.soc, load_pulses=True,
+                               soft_avgs=self.cfg.get('rounds', 1),
+                               progress=progress)
+
+        # shape of results: [num of ROs, 1 (num triggers), expts, 2 (I or Q)],
+        #              e.g. [1, 1, 71, 2]
+        avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
+        x_pts = prog.get_time_param("swept_delay", "t", as_array=True)
+
+        data = {'config': self.cfg,
+                'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq, 'qfreq': self.cfg["qubit_freqs"][0], }}
         self.data = data
 
         return data
@@ -104,21 +107,43 @@ class T2RMUX(ExperimentClass):
             data = self.data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0][0]
-        avgq = data['data']['avgq'][0][0]
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
 
         while plt.fignum_exists(num=figNum):  ###account for if figure with number already exists
             figNum += 1
-        fig, (ax_i, ax_q) = plt.subplots(1, 2, figsize=(12.8, 4.8), num=figNum, tight_layout=True)
+        # fig, (ax_i, ax_q) = plt.subplots(1, 2, figsize=(12.8, 4.8), num=figNum, tight_layout=True)
+        #
+        # ax_i.plot(x_pts, avgi, 'o-', label="i", color='orange')
+        # ax_i.set_ylabel("a.u.")
+        # ax_i.set_xlabel("Wait time (us)")
+        # ax_i.legend()
+        # ax_q.plot(x_pts, avgq, 'o-', label="q")
+        # ax_q.set_ylabel("a.u.")
+        # ax_q.set_xlabel("Wait time (us)")
+        # ax_q.legend()
 
-        ax_i.plot(x_pts, avgi, 'o-', label="i", color='orange')
-        ax_i.set_ylabel("a.u.")
-        ax_i.set_xlabel("Wait time (us)")
-        ax_i.legend()
-        ax_q.plot(x_pts, avgq, 'o-', label="q")
-        ax_q.set_ylabel("a.u.")
-        ax_q.set_xlabel("Wait time (us)")
-        ax_q.legend()
+        fig, ax = plt.subplots(figsize=(7.2, 4.8))
+        Contrast = IQ_contrast(avgi, avgq)
+        ax.plot(x_pts, Contrast, 'o-', color='blue', label=f'qfreq = {self.cfg["qubit_drive_freq"]}')
+        ax.set_ylabel("a.u.")
+        ax.set_xlabel("Wait time (us)")
+
+        def exp_fit(t, T1, A, y0):
+            return A * np.exp(-t / T1) + y0
+        def fit(t, T2, A, y0, omega, phi):
+            return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
+
+        p0_guess = [x_pts[-1] / 5, (np.max(Contrast) - np.min(Contrast))/2, Contrast[-1], omega_guess(x_pts, Contrast), 1e-2]
+        try:
+            (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, Contrast, p0=p0_guess)
+            ax.plot(x_pts, fit(x_pts, T2, A, y0, omega, phi), color='black')
+            # ax.autoscale(False)
+            ax.plot(x_pts, exp_fit(x_pts, T2, A, y0), color='black',ls='--', label=f'T2 = {T2:.3f} us')
+            ax.plot(x_pts, exp_fit(x_pts, T2, -A, y0), color='black', ls='--')
+            ax.legend(prop={'size': 14})
+        except:
+            print("No fit found.")
 
         plt.suptitle(self.titlename)
         plt.savefig(self.iname[:-4] + '.png')

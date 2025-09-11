@@ -1,23 +1,16 @@
-from qick import *
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+
+from qick.asm_v2 import QickSweep1D
+
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
-import numpy as np
-from qick.helpers import gauss
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import datetime
-from tqdm.notebook import tqdm
-import time
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 
 
-class AmplitudeRabiFFProg(RAveragerProgram):
-    def initialize(self):
-        cfg = self.cfg
-
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")  # get gain register for qubit_ch
-
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
+class AmplitudeRabiFFProg(FFAveragerProgramV2):
+    def _initialize(self, cfg):
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"],
+                         mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
@@ -25,49 +18,43 @@ class AmplitudeRabiFFProg(RAveragerProgram):
                          mux_gains= cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=cfg["readout_lengths"][iCh],
                                  freq=cfg["res_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["res_gain"],
-                                 length=self.us2cycles(cfg["res_length"]))
+        self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const", mask=cfg["ro_chs"],
+                                 length=cfg["res_length"])
 
-        f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
         FF.FFDefinitions(self)
 
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch = self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch = self.cfg["qubit_ch"])
-        print(self.pulse_sigma, self.pulse_qubit_lenth)
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma= self.pulse_sigma, length= self.pulse_qubit_lenth)
-
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=f_ge,
-                                 phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["start"],
-                                 waveform="qubit")
+        self.add_loop("qubit_gain_loop", self.cfg["expts"])
+        qubit_gain_sweep = QickSweep1D("qubit_gain_loop",
+                                       start=0,
+                                       end=cfg["max_gain"] / 32766.)
 
 
-        self.sync_all(self.us2cycles(0.05))
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
+                       freq=cfg["qubit_freqs"][-1],
+                       phase=90, gain=qubit_gain_sweep)
+        self.qubit_length_us = cfg["sigma"] * 4
 
-    def body(self):
-        self.sync_all(gen_t0=self.gen_t0)
-        # self.pulse(ch=self.cfg['ff_ch'])
+        self.delay_auto(0.05)
+
+    def _body(self, cfg):
+
         self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1)
-        self.pulse(ch=self.cfg["qubit_ch"], t=self.us2cycles(1))  # play probe pulse
-        self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
+        self.delay_auto()
 
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-                     wait=True,
-                     syncdelay=self.us2cycles(10))
+        self.FFPulses(self.FFReadouts, cfg["res_length"])
+        for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+        self.pulse(cfg["res_ch"], name='res_drive')
+        self.wait_auto()
+        self.delay_auto(10)  # us
+
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
-
-    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
-        FF.FFPulses(self, list_of_gains, length_us, t_start)
-
-    def update(self):
-        self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])  # update gain of the Gaussian
 
 class AmplitudeRabiFFMUX(ExperimentClass):
     """
@@ -80,29 +67,32 @@ class AmplitudeRabiFFMUX(ExperimentClass):
     def acquire(self, progress=False):
         # You would overwrite these in the config if you wanted to
         cfg_ARabi_defaults = {'start': 0, "expts": 31, "reps": 30, "rounds": 30,
-                                "f_ge": self.cfg["qubit_freqs"][0]}
+                                "f_ge": self.cfg["qubit_freqs"][-1]}
         self.cfg = cfg_ARabi_defaults  | self.cfg
         self.cfg['step'] = int(self.cfg["max_gain"] / self.cfg['expts'])
 
 
-        prog = AmplitudeRabiFFProg(self.soccfg, self.cfg)
+        prog = AmplitudeRabiFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                                    final_delay=self.cfg["relax_delay"], initial_delay=10.0)
+        iq_list = prog.acquire(self.soc, load_pulses=True,
+                               soft_avgs=self.cfg.get('rounds', 1),
+                               progress=progress)
+        avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
+        x_pts = prog.get_pulse_param("qubit_drive", "gain", as_array=True) * 32766
 
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True, **kwargs):
         if data is None:
             data = self.data
 
         x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0][0]
-        avgq = data['data']['avgq'][0][0]
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
@@ -115,7 +105,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         plt.title(self.titlename)
 
         if plotDisp:
-            plt.show(block=True)
+            plt.show(block=block)
             plt.pause(0.1)
         else:
             fig.clf(True)

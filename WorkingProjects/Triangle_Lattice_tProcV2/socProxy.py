@@ -8,12 +8,12 @@ def makeProxy():
     Pyro4.config.SERIALIZER = "pickle"
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
-    if 'Euler' in socket.gethostname() or 'euler' in socket.gethostname():
-        ns_host = "128.112.49.105"
-    else:
-        ns_host = "192.168.1.107" #Mac address is C6
+    # if 'Euler' in socket.gethostname() or 'euler' in socket.gethostname():
+    #     ns_host = "128.112.49.105"
+    # else:
+    #     ns_host = "192.168.1.107" #Mac address is C6
 
-    # ns_host = "192.168.1.100"
+    ns_host = "192.168.1.109"
     ns_port = 8888
     server_name = "myqick"
 

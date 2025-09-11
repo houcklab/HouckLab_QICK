@@ -51,6 +51,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
 
         ####create arrays for storing the data
         X = self.trans_fpts + self.cfg['pulse_freqs'][0] + self.cfg['cavity_LO'] / 1e6
+        print(X)
         X_step = X[1] - X[0]
         Y = self.gain_pts
         Y_step = Y[1] - Y[0]
@@ -85,6 +86,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
             ### start the loop over transmission points
             for idx_trans in range(len(self.trans_fpts)):
                 self.cfg["mixer_freq"] = self.trans_fpts[idx_trans]
+                print(self.cfg["mixer_freq"] )
                 # prog = SingleShotProgram(self.soccfg, self.cfg)
                 # shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData()

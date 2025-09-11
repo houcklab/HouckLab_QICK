@@ -1,147 +1,192 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibration_SSMUX import \
+    (RampCurrentCalibrationGain, RampCurrentCalibration1D,RampCurrentCalibration1DShots, RampCurrentCalibrationOffset,
+     RampCurrentCalibrationOffset_Multiple, RampCurrentCalibrationTime)
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import RampDurationVsPopulation, \
+    FFExptVsPopulation, TimeVsPopulation, TimeVsPopulation_GainSweep
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorrelations import CurrentCorrelationMeasurement
+
+# from Qubit_Parameters_8QPiFlux import *
+# from Qubit_Parameters_8QPiFlux_Matt import *
+from qubit_parameter_files.Qubit_Parameters_1234 import *
+
+FF4 = [1,2,3,4]
+FF8 = [5,6,7,8]
+pulse_145_readout = ['1HHH_readout', '4HHH_readout', '5HHH_readout']
+
+Qubit_Readout = FF4
+# Qubit_Readout = ['4HHH']
+# Qubit_Readout = ['1HHH', '4HHH', '5HHH']
+# Qubit_Readout = ['5HHH']
+
+Qubit_Pulse = ['1H']
+# Qubit_Pulse = ['4HHH', '1HHH', '5HHH']
+# Qubit_Pulse = ['1HHH']
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
-import numpy as np
 
-
-
-mixer_freq = 500
-BaseConfig["mixer_freq"] = mixer_freq
-
-
-
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6979.1  - BaseConfig["cavity_LO"] / 1e6, 'Gain': 12500,
-                      "FF_Gains": [0, 0, 2000, -30000], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4736.6, 'sigma': 0.05, 'Gain': 3740},
-          'Pulse_FF': [0, 0, 2000, -30000]},  # FOURTH index
-    '2': {'Readout': {'Frequency': 7095.687 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 4680,
-                      "FF_Gains": [0, 0, 2000, -30000], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4512.7, 'sigma': 0.05, 'Gain': 4200},
-          'Pulse_FF':[0, 0, 2000, -30000]}, # third index
-    '4': {'Readout': {'Frequency': 7269.7 - mixer_freq - BaseConfig["cavity_LO"] / 1e6, 'Gain': 15000,
-                      "FF_Gains": [0, 0, 2000, -30000], "Readout_Time": 2.5, "ADC_Offset": 0.3, 'cavmin': True},
-          'Qubit': {'Frequency': 4035.4, 'sigma': 0.05, 'Gain': 9500},
-          'Pulse_FF': [0, 0, 2000, -30000]},
-    'Plus': {'Qubit': {'Frequency': 4682.0, 'sigma': 0.05, 'Gain': 6150}, # RO = 1
-        'Pulse_FF': [0, 0, 1000, -22500]},
-    'Minus': {'Qubit': {'Frequency': 4559.5, 'sigma': 0.05, 'Gain': 5000}, # RO = 2
-         'Pulse_FF':[0, 0, 1000, -22500]}
-    }
-
-FF_gain1_BS = 0
-FF_gain2_BS = 0
-FF_gain3_BS = 2000
-FF_gain4_BS = -4500
-# FF_gain3_BS = 1000
-# FF_gain4_BS = -8000
-
-FF_gain1_expt = 0  # 8000
-FF_gain2_expt = 0
-FF_gain3_expt = -1150
-FF_gain4_expt = -22500
-FF_gain5_expt = 0  # 8000
-FF_gain6_expt = 0
-FF_gain7_expt = -1150
-FF_gain8_expt = -22500
-
-FF_gain1_BS = 0
-FF_gain2_BS = 0
-FF_gain3_BS = 2000
-FF_gain4_BS = -4500
-# FF_gain3_BS = 1000
-# FF_gain4_BS = -8000
-
-Qubit_Readout = [1,2]
-Qubit_Pulse = [2]
-
-
-RunTransmissionSweep = False # determine cavity frequency
-Trans_relevant_params = {"reps": 1000, "TransSpan": 1.5, "TransNumPoints": 61,
-                        "readout_length": 3, 'cav_relax_delay': 10}
-
-Run2ToneSpec = False
-Spec_relevant_params = {"qubit_gain": 200, "SpecSpan":10, "SpecNumPoints": 71,
-                        'Gauss': False, "sigma": 0.05, "Gauss_gain": 950,
-                        'reps': 15, 'rounds': 15}
-
-Run_Spec_v_FFgain = False
-### Inherits spec parameters from above
-FF_sweep_spec_relevant_params = {"qubit_FF_index": 2,
-                            "FF_gain_start": -8000, "FF_gain_stop":8000, "FF_gain_steps":11}
-
-RunAmplitudeRabi = False
-Amplitude_Rabi_params = {"sigma": 0.05, "max_gain":7000}
-
-RunT1 = False
-RunT2 = False
-
-T1_params = {"step": 5, "expts": 40, "reps": 15, "rounds": 15}
-
-T2R_params = {"step": 100 * 2.32515e-3, "expts": 100, "reps": 20, "rounds": 20,
-              "freq_shift": 0.0, "phase_step_deg": 15, "relax_delay":150}
-
-
-RunT1_TLS = False
-T1TLS_params = {'gainStart': 0, 'gainStop': 0, 'gainNumPoints': 1, 'wait_times': np.linspace(0.01, 150, 31),
-                'angle': None, 'threshold': None,
-                'meas_shots': 50, 'repeated_nums':10, 'SS_calib_shots': 1500,
-                'qubitIndex': 2}#, Qubit_Pulse[0]}
-
-SingleShot = False
-SS_params = {"Shots":500, "readout_length": 2.5, "adc_trig_offset": 0.3,
-             'number_of_pulses': 1, 'relax_delay': 200}
-
-
-SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 2000, "gain_stop": 10000, "gain_pts": 7, "span": 2, "trans_pts": 5, 'number_of_pulses': 1}
-
-SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 500, "q_gain_pts": 7, "q_freq_span": 1.5, "q_freq_pts": 9,
-               'number_of_pulses': 1}
 
 run_ramp_gain_calibration = False
-ff_expt_vs_pop_dict = {'swept_qubit': str(3),
-                       'reps': 4000, 'gain_start':-1200, 'gain_end':-1100, 'gain_num_points':6,
-                        'ramp_duration':9000}
+
+
+# # Q4 --> Q2
+ff_expt_vs_pop_dict = {'swept_qubit': str(1),
+                       'reps': 1000, 'gain_start': -11111, 'gain_end': -8000, 'gain_num_points': 11,
+                        'ramp_duration': 3000}
+
+
 
 run_ramp_duration_calibration = False
-ramp_duration_calibration_dict = {'reps': 1000, 'duration_start': int(1), 'duration_end': int(1250), 'duration_num_points': 61,
+ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'duration_end': int(3000), 'duration_num_points': 41,
                                    'ramp_wait_timesteps': 0,
                                    'relax_delay': 200, 'double': True}
 
+
+
+
+# ramp_duration_calibration_dict = {'reps': 500, 'duration_start': int(0), 'duration_end': int(5000), 'duration_num_points': 61,
+#                                    'ramp_wait_timesteps': 100,
+#                                    'relax_delay': 200, 'double': False}
+
+# ramp_duration_calibration_dict = {'reps': 500, 'duration_start': int(2000), 'duration_end': int(4000), 'duration_num_points': 61,
+#                                    'ramp_wait_timesteps': 0,
+#                                    'relax_delay': 200, 'double': False}
+
+
+
+# can plot populations during and after ramp
+run_ramp_population_over_time = False
+
+population_vs_delay_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cubic',
+                            'time_start': 80, 'time_end' : 4000, 'time_num_points' : 11, 'reps': 600,
+                            'relax_delay':100}
+
+run_ramp_population_over_time_gain_sweep = False
+population_vs_delay_gain_sweep_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cubic', 'relax_delay': 100,
+                                       'time_start': 0, 'time_end' : 4000, 'time_num_points' : 101, 'reps': 400,
+                                       'gain_start': -2000, 'gain_end' : 2000, 'gain_num_points' : 11}
+
+# population_vs_delay_gain_sweep_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cubic', 'relax_delay': 100,
+#                                        'time_start': 0, 'time_end' : 4000, 'time_num_points' : 11, 'reps': 100,
+#                                        'gain_start': -2000, 'gain_end' : 2000, 'gain_num_points' : 3}
+
+plot_population_sum = True
+
+
+# experiment to measure population shots after adiabatic ramp
+run_ramp_population_shots = False
+ramp_population_shots_dict = {'reps': 5000, 'ramp_duration': 3000, 'relax_delay': 200}
+
+
 RampCurrentCalibration_GainSweep = False
 # sweep gain of the first beamsplitter qubit relative to other qubit during beamsplitter interaction and sweep  time
-current_calibration_gain_dict = {'reps': 100, 'swept_index':3,
-                                 't_offset': -49, 'relax_delay': 200, 'ramp_time':9000,
-                            'gainStart': -4800, 'gainStop': -4200, 'gainNumPoints': 11,
-                            'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,}
+current_calibration_gain_dict = {'reps': 100, 'swept_index': 1,
+                                 # 't_offset': [-5, 1, -6, 7, 0, 0, 0, 0],
+                                 't_offset': [0, 1, -6, 7, 0, 0, 0, 0],
+                                 'relax_delay': 100, 'ramp_time': 3000,
+                                 'gainStart': 17000, 'gainStop': 19000, 'gainNumPoints': 11,
+                                 'timeStart': 0, 'timeStop': 1000, 'timeNumPoints': 101,}
 
-RampCurrentCalibration_OffsetSweep = True
+RampCurrentCalibration_OffsetSweep = False
 # t_evolve: time spent swapping in units of 1/16 clock cycles
 # sweep t_BS time and sweep offset time
 #
-current_calibration_offset_dict = {'reps': 100, 'ramp_time': 9000, 'relax_delay': 175,
+
+
+current_calibration_offset_dict = {'reps': 500, 'swept_index': 0,
+                                   't_offset':  [-5,0,-7,7,0,0,0,0],
+                                   'ramp_time': 2000, 'relax_delay': 175,
                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51,
-                                   'offsetStart': -20, 'offsetStop':20, 'offsetNumPoints':21}
+                                   'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41}
+
+current_calibration_offset_dict = {'reps': 500, 'swept_index': 0,
+                                   't_offset':  [0,0,0,0,0,0,0,0],
+                                   'ramp_time': 2000, 'relax_delay': 175,
+                                   'timeStart': 0, 'timeStop': 250, 'timeNumPoints': 31,
+                                   'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41}
+
+#
+# current_calibration_offset_dict = {'reps': 2000, 'swept_index': 2,
+#                                    't_offset':  [-5,1,-6,7,0,0,0,0],
+#                                    'ramp_time': 3000, 'relax_delay': 175,
+#                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 101,
+#                                    'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41}
+#
+# current_calibration_offset_dict = {'reps': 4000, 'swept_index': 0,
+#                                    't_offset':  [-5,1,-6,7,0,0,0,0],
+#                                    'ramp_time': 3000, 'relax_delay': 175,
+#                                    'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 101,
+#                                    'offsetStart': -20, 'offsetStop': 20, 'offsetNumPoints': 41}
+
+
+
+
 
 run_1D_current_calib = False
-t_offset = 50
 
-# qubits involved in beamsplitter interaction
-Qubit_BS = [1,2]
+current_calibration_dict = {'reps': 500,
+                            't_offset':  [-5,0,-14,0,0,0,0,0],
+                            'ramp_time': 2000, 'relax_delay': 200,
+                            'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
-qubit_to_FF_dict = {1: 3, 2: 2}
+current_calibration_dict = {'reps': 2000,
+                            't_offset':  [-5,1,-2,3,0,0,0,0], #[-5,1,-6,7,0,0,0,0],
+                            'ramp_time': 3000, 'relax_delay': 150,
+                            'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 101}
 
-# convert Qubit_BS to index based on the order [5, 1, 2, 4]
-Qubit_BS_indices = [qubit_to_FF_dict[qubit] for qubit in Qubit_BS]
-print(Qubit_BS_indices)
+# current_calibration_dict = {'reps': 2000,
+#                             't_offset': [505, 0, -7, 507, 0, 0, 0, 0],
+#                             'ramp_time': 2000, 'relax_delay': 200,
+#                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
+#
+# current_calibration_dict = {'reps': 2000,
+#                             't_offset': [505, 0, 493, 7, 0, 0, 0, 0],
+#                             'ramp_time': 2000, 'relax_delay': 200,
+#                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
+#
+# current_calibration_dict = {'reps': 2000,
+#                             't_offset': [150+5, 0, 150-7, 7, 0, 0, 0, 0],
+#                             'ramp_time': 2000, 'relax_delay': 200,
+#                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
-run_ramp_population_over_time = False
-delay_vs_pop_dict = {'ramp_duration' : 9000, 'ramp_shape': 'cubic',
-        'time_start': 9000, 'time_end' : 10000, 'time_num_points' : 20, 'reps':2000}
+# current_calibration_dict = {'reps': 2000,
+#                             't_offset': [5, 500, 493, 7, 0, 0, 0, 0],
+#                             'ramp_time': 2000, 'relax_delay': 200,
+#                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
+
+
+run_1D_current_calib_shots = False
+
+current_calibration_dict_shots = {'reps': 4000,
+                                  't_offset': [-5, 1, -6, 7, 0, 0, 0, 0],
+                                  'ramp_time': 3000, 'relax_delay': 200,
+                                  'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 101}
+
+
+
+run_current_correlation_measurement = False
+current_correlation_measurement_dict = {'reps': 1000,
+                                        't_offset':  [0,0,0,0,0,0,0,0],
+                                        'ramp_time': 3000, 'relax_delay': 200,
+                                        'beamsplitter_time': 75}
+
+ramp_current_calibration_time = False
+ramp_current_calibration_time_dict =  {'reps': 500,
+                                       't_offset':  [-5,0,93,107,0,0,0,0],
+                                       'ramp_time': 2000, 'relax_delay': 200,
+                                       'timeStart': 0, 'timeStop': 2500, 'timeNumPoints': 251}
+
+ramp_current_calibration_time_dict =  {'reps': 100,
+                                       't_offset':  [5,500,493,7,0,0,0,0],
+                                       'ramp_time': 2000, 'relax_delay': 200,
+                                       'timeStart': 0, 'timeStop': 3000, 'timeNumPoints': 301}
+
+ramp_current_calibration_time_dict =  {'reps': 500,
+                                       't_offset': [-5, 1, -6, 7, 0, 0, 0, 0],
+                                       'ramp_time': 3000, 'relax_delay': 100,
+                                       'timeStart': 2900, 'timeStop': 3200, 'timeNumPoints': 203}
+
 
 # run_ramp_oscillations = False
 # # Ramp to FFExpts, then jump to FF_BS
@@ -149,4 +194,120 @@ delay_vs_pop_dict = {'ramp_duration' : 9000, 'ramp_shape': 'cubic',
 #                            'ramp_duration': int(20000), 'ramp_shape': 'cubic'}
 
 # This ends the working section of the file.
-exec(open("RUN_EXPTS.py").read())
+exec(open("UPDATE_CONFIG.py").read())
+exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())
+
+# set ramp initial gain points from qubit parameters file
+# config['ramp_initial_gains'] = ramp_initial_gains
+
+if run_ramp_duration_calibration:
+    RampDurationVsPopulation(path="RampDurationCalibration", outerFolder=outerFolder,
+                      cfg=config | ramp_duration_calibration_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if run_ramp_gain_calibration:
+    FFExptVsPopulation(path="RampGainCalibration", outerFolder=outerFolder,
+                      cfg=config | ff_expt_vs_pop_dict, soc=soc, soccfg=soccfg).acquire_display_save(
+        plotDisp=True)
+
+if RampCurrentCalibration_GainSweep:
+    RampCurrentCalibrationGain(path="RampCurrentCalibration_GainSweep", outerFolder=outerFolder,
+                           cfg=config | current_calibration_gain_dict, soc=soc,
+                           soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if RampCurrentCalibration_OffsetSweep:
+    if isinstance(current_calibration_offset_dict['swept_index'], int):
+        RampCurrentCalibrationOffset(path="RampCurrentCalibration_OffsetSweep", outerFolder=outerFolder,
+                             cfg=config | current_calibration_offset_dict,
+                             soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+    elif isinstance(current_calibration_offset_dict['swept_index'], (list, tuple)):
+        RampCurrentCalibrationOffset_Multiple(path="RampCurrentCalibration_OffsetSweep", outerFolder=outerFolder,
+                                     cfg=config | current_calibration_offset_dict,
+                                     soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if run_1D_current_calib:
+    instance = RampCurrentCalibration1D(path="CurrentCalibration_1D", outerFolder=outerFolder,
+                             cfg=config | current_calibration_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True)
+
+
+if run_1D_current_calib_shots:
+    instance = RampCurrentCalibration1DShots(path="CurrentCalibration_1D_Shots", outerFolder=outerFolder,
+                             cfg=config | current_calibration_dict_shots,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_save(plotDisp=False, plotSave=False)
+
+if run_ramp_population_over_time:
+    instance = TimeVsPopulation(path="TimeVsPopulation", outerFolder=outerFolder,
+                             cfg=config | population_vs_delay_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True)
+
+if run_ramp_population_over_time_gain_sweep:
+    instance = TimeVsPopulation_GainSweep(path="TimeVsPopulation_GainSweep", outerFolder=outerFolder,
+                             cfg=config | population_vs_delay_gain_sweep_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True)
+
+if run_current_correlation_measurement:
+    instance = CurrentCorrelationMeasurement(path="CurrentCorrelations", outerFolder=outerFolder,
+                             cfg=config | current_correlation_measurement_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True)
+if ramp_current_calibration_time:
+    instance = RampCurrentCalibrationTime(path="RampCurrentCalibrationTime", outerFolder=outerFolder,
+                             cfg=config | ramp_current_calibration_time_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True)
+
+
+import matplotlib.pyplot as plt
+
+if plot_population_sum:
+    populations_corrected = instance.data['data']['population_corrected']
+    readout_list = instance.data['data']['readout_list']
+
+    print(type(populations_corrected[0]))
+    print(len(populations_corrected[0]))
+    print(populations_corrected[0].shape)
+
+    if len(populations_corrected[0].shape) == 1:
+
+        for i in range(len(populations_corrected)):
+            plt.plot(instance.x_points, populations_corrected[i], label=readout_list[i])
+
+        plt.plot(instance.x_points, np.sum(populations_corrected, axis=0), linestyle=':', color='black', label='total')
+
+        plt.xlabel(instance.xlabel)
+        plt.ylabel('Population')
+        plt.title('Populations')
+        plt.legend()
+        plt.show()
+
+    else:
+
+        population_sum = sum(populations_corrected)
+
+        x_values = instance.x_points
+        x_step = instance.x_points[1] - instance.x_points[0]
+
+        y_values = instance.y_points
+        y_step = instance.y_points[1] - instance.y_points[0]
+
+        z_values = population_sum
+
+        extent = (instance.x_points[0] - x_step/2, instance.x_points[-1] + x_step/2, instance.y_points[0] - y_step/2, instance.y_points[-1] + y_step/2)
+
+        plt.figure(figsize=(10, 8))
+        plt.imshow(z_values, extent=extent, origin='lower', cmap='viridis', aspect='auto', interpolation='none')
+
+        plt.xlabel(instance.xlabel)
+        plt.ylabel(instance.ylabel)
+
+        plt.title('Population sum over time vs constant gain offset')
+
+        plt.colorbar(label='Population sum')
+
+        plt.show()
+
+print(config)

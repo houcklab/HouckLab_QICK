@@ -1,12 +1,10 @@
-import numpy as np
-
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.SweepExperiment2D import SweepExperiment2D
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+# from WorkingProjects.Triangle_Lattice_tProcV2.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 
 
-class GainSweepOscillations(SweepExperiment2D):
+class GainSweepOscillations(SweepExperiment2D_plots):
     # {'reps': 1000, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 1000,
     #                      'gainStop': 1300, 'gainNumPoints': 11, 'relax_delay': 150}
 
@@ -14,11 +12,11 @@ class GainSweepOscillations(SweepExperiment2D):
         self.Program = ThreePartProgramOneFF
         self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Expt")
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
-        self.x_key = 'expt_cycles'
+        self.x_key = 'expt_samples'
         self.x_points = self.cfg["start"] + self.cfg["step"] * np.arange(self.cfg["expts"])
         self.z_value = 'population' # contrast or population
         self.ylabel = f'FF gain index {self.cfg["qubit_FF_index"]} (DAC units)'  # for plotting
-        self.xlabel = 'Time (2.32/16 ns)'  # for plotting
+        self.xlabel = 'Time (4.65/16 ns)'  # for plotting
 
         # if np.array(self.cfg["IDataArray"]).any() != None:
 

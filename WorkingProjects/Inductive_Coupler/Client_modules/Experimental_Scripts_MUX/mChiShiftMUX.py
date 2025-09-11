@@ -16,13 +16,17 @@ class ChiProgram(AveragerProgram):
 
         cfg = self.cfg
         cfg["rounds"] = 1
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])  # Readout
+
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+                         mixer_freq=cfg["mixer_freq"],
+                         mux_freqs=cfg["pulse_freqs"],
+                         mux_gains= cfg["pulse_gains"],
+                         ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["pulse_freqs"][iCh], gen_ch=cfg["res_ch"])
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"],  # gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["readout_length"] + cfg["adc_trig_offset"] + 1,
-                                                       gen_ch=self.cfg["res_ch"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", mask=cfg["ro_chs"], #gain=cfg["pulse_gain"],
+                                 length=self.us2cycles(cfg["length"], gen_ch = self.cfg["res_ch"]))
 
         qubit_ch = cfg["qubit_ch"]
         self.declare_gen(ch=qubit_ch, nqz=cfg["qubit_nqz"])
@@ -87,7 +91,13 @@ class ChiShift(ExperimentClass):
         }
         expt_cfg["step"] = 2 * expt_cfg["span"] / expt_cfg["expts"]
         expt_cfg["start"] = expt_cfg["center"] - expt_cfg["span"]
-        fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
+        # fpts = expt_cfg["start"] + expt_cfg["step"] * np.arange(expt_cfg["expts"])
+
+        fpts = np.linspace(self.cfg["mixer_freq"] - self.cfg["TransSpan"],
+                           self.cfg["mixer_freq"] + self.cfg["TransSpan"],
+                           self.cfg["TransNumPoints"])
+        print(fpts)
+
         results_ground = []
         results_01 = []
         results_12 = []
@@ -129,7 +139,7 @@ class ChiShift(ExperimentClass):
             data = self.data
 
         x_pts = (data['data']['fpts'] + self.cfg["cavity_LO"] / 1e6) / 1e3  #### put into units of frequency GHz
-
+        x_pts += self.cfg['pulse_freqs'][0] / 1e3
         #Ground Data
         avgi = data['data']['results_ground'][0][0][0]
         avgq = data['data']['results_ground'][0][0][1]

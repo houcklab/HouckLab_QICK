@@ -11,7 +11,7 @@ def rotate_data(data, theta):
     return (i_new, q_new)
 
 def count_percentage(data, threshold):
-    i = data[0][0]
+    i = data[0]
 
     excited_population = sum(val > threshold for val in i)
     return excited_population / len(i)
@@ -26,6 +26,8 @@ def correct_occ(pop_data, confusion_matrix):
        Returns: 1d array of excited state percentages, adjusted by confusion matrix'''
 
     vec = np.vstack([1.-pop_data, pop_data])
-
     return (np.linalg.inv(confusion_matrix)[1,:]  @  vec).flatten()
 
+def pop_to_expect(pop_vec):
+    '''Converts populations in [0,1] to expectations in [-1,1]'''
+    return 2*pop_vec - 1

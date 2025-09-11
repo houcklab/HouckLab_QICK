@@ -1,0 +1,1 @@
+{"read_pulse_style": "const", "gain": 16000, "reps": 1000000, "rounds": 1, "mixer_freq": -1000, "qubit_LO_freq": 5000, "freq": -1400, "channel": 9, "nqz": 2}
