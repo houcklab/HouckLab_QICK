@@ -37,7 +37,7 @@ class D5aModule(D5a_module):
 
     def set_voltage_ramp(self, DAC, voltage, ramp_step=None, ramp_interval=None):
         DAC = int(DAC)
-        print(DAC)
+        print(f'DAC {DAC} is set from {self.get_settings(DAC)[0]} V to {voltage} V.')
         if self.span[DAC] == self.range_4V_uni:
             raise ValueError('Span is set to range_4V_uni (0). Check connection ')
 

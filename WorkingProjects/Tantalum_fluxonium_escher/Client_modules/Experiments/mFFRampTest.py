@@ -7,6 +7,8 @@
 # * faster than any decoherence channels
 # Lev, June 2025: create file.
 ###
+import sys
+
 import matplotlib
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
@@ -49,8 +51,8 @@ class FFRampTest(NDAveragerProgram):
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
-
-        self.sync_all(self.us2cycles(0.1))
+        # Give tprocessor time to execute all initialisation instructions before we expect any pulses to happen
+        self.sync_all(self.us2cycles(1))
 
     def body(self):
         """
@@ -62,46 +64,59 @@ class FFRampTest(NDAveragerProgram):
         as we probably want to wait for the cavity to ring down before starting the ramp.
         :return:
         """
-        #TODO this doesn't really make sense as written, it would only really work for starting ramp from 0
+        #TODO this experiment doesn't really make sense as written, it would only really work for starting ramp from 0
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"]) # Do NOT include channel, it's wrong!
+
+        # Check that the flux ramps finish after the first readout. Otherwise, the sync_all will insert extra delay.
+        # This can be fixed by using the t argument everywhere in the body, but I think it's not a good idea
+        if self.cfg["relax_delay_1"] + self.cfg['cycle_number'] * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] +
+                                                                  self.cfg['cycle_delay']) < self.cfg['adc_trig_offset']:
+           print('Warning: readout will not complete before flux ramps. Expect a delay before 2nd readout', file = sys.stderr)
 
         # Play optional qubit pulse, if requested. This is only done once per experiment.
         if self.cfg["qubit_pulse"]:
             self.pulse(ch = self.cfg["qubit_ch"])
-            self.sync_all(self.us2cycles(0.01))  # Wait a few ns to align channels
+            self.sync_all(self.us2cycles(0.02))  # Wait a few ns to align channels
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
-        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     wait=True,  # t = 0,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay_1"], gen_ch=self.cfg["res_ch"]))
+        # Can't use measure command because that has sync_all which pushes us to after the trigger offset
+        self.trigger(self.cfg['ro_chs'], adc_trig_offset=adc_trig_offset_cycles, t = 0)
+        self.pulse(ch = self.cfg["res_ch"], t = 0)
 
-        self.sync_all(self.us2cycles(0.01))  # Wait for a few ns to align channels
-
-        # Cycle the fr ramp as requested.
+        # Cycle the ff ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
-            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
-                                     gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"])
 
-            # play constant pulse to keep FF at ramped value if a delay here is desired
+            # I need to use the t argument so that the pulse can start before the readout trigger is complete
+            # In principle, this could also be done with synci, but sync_all doesn't know about previous synci commands
+            # and there is a bug in the current firmware that incorrectly compiles without a t argument after synci
+
+            # The set pulse registers commands use up a lot of tproc command memory, so we can do at most ~ 500 pulses.
+            # If we need more pulses, replace set_pulse_registers with manual instructions to change waveform, t
+            # The other commands that this compiles into are redundant, I think (set phase, gain, etc)
+            self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
+                                     gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
+            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
+                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay'])))
+
+            # # play constant pulse to keep FF at ramped value if a delay here is desired
             if self.cfg["ff_delay"] > 0:
                 self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
                                          length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
-                self.pulse(ch = self.cfg["ff_ch"])
+                self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
             # play reversed fast flux ramp, return to original spot
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"])
+            self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
-            self.sync_all(self.us2cycles(self.cfg["cycle_delay"])) # Keep at least a few ns to align channels
+        # Sync to make sure ramping is done before starting second measurement.
+        self.sync_all(self.us2cycles(0.02))
 
         # trigger measurement, play measurement pulse, wait for relax_delay_2. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_2"]))
-
 
 
     # Override acquire such that we can collect the single-shot data
@@ -717,15 +732,15 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.ylabel('P(assigned end 1 | assigned start 1)')
 
         if self.cfg["sweep_type"] == 'ff_gain':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_length'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
         elif self.cfg["sweep_type"] == 'ramp_length':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
         elif self.cfg["sweep_type"] == 'cycle_number':
-            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.2f' %
+            plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.4f' %
                                       (self.cfg['yokoVoltage'], self.cfg["ff_ramp_start"], self.cfg["ff_ramp_stop"],
                                        self.cfg['ff_ramp_length'], self.cfg['ff_delay'], self.cfg["confidence"]))
         plt.tight_layout()

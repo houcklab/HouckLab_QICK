@@ -62,14 +62,14 @@ class FFSpecSlice(NDAveragerProgram):
         # * Eventually: Play an inverted version of the qubit pulse -- not clear why this is necessary, Jero claims that it helps with flux stability
 
         # For convenience
-        qubit_spec_delay_cycles = self.us2cycles(self.cfg["qubit_spec_delay"], gen_ch=self.cfg["ff_ch"])
         qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
 
-        self.pulse(ch = self.cfg["qubit_ch"], t = qubit_spec_delay_cycles)  # play probe pulse
-        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"], gen_ch=self.cfg["ff_ch"]))   # play fast flux pulse
+        # t uses the master clock, no generator argument!
+        self.pulse(ch = self.cfg["qubit_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay"]))  # play probe pulse
+        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"]))   # play fast flux pulse
 
-        self.sync_all(self.us2cycles(2)) # In case the channels are somewhat misaligned, wait a few tens of ns
+        self.sync_all(self.us2cycles(0.01))  # In case the channels are somewhat misaligned, wait a few ns
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,

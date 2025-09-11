@@ -48,7 +48,7 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
         pulse_length = prog.cfg["sigma"] * 4 + prog.cfg["flat_top_length"]  # [us]
     # Constant
     elif prog.cfg["qubit_pulse_style"] == "const":
-        mode_setting = "periodic" if prog.cfg["qubit_mode_periodic"] else "oneshot"
+        mode_setting = "periodic" if ("qubit_mode_periodic" in prog.cfg.keys() and prog.cfg["qubit_mode_periodic"]) else "oneshot"
         prog.set_pulse_registers(ch=prog.cfg["qubit_ch"], style="const", freq=freq_reg, phase=0,
                                  gain=prog.cfg["qubit_gain"], length=length_reg, mode=mode_setting)
         pulse_length = prog.cfg["qubit_length"]  # [us]
