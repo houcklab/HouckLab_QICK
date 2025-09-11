@@ -86,9 +86,14 @@ class FFRampTest(NDAveragerProgram):
         # Cycle the ff ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
+
             # I need to use the t argument so that the pulse can start before the readout trigger is complete
             # In principle, this could also be done with synci, but sync_all doesn't know about previous synci commands
             # and there is a bug in the current firmware that incorrectly compiles without a t argument after synci
+
+            # The set pulse registers commands use up a lot of tproc command memory, so we can do at most ~ 500 pulses.
+            # If we need more pulses, replace set_pulse_registers with manual instructions to change waveform, t
+            # The other commands that this compiles into are redundant, I think (set phase, gain, etc)
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
             self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
