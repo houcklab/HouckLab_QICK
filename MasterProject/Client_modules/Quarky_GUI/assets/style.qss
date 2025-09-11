@@ -502,6 +502,7 @@ CustomTitleBar QPushButton {
 }
 
 
+/* macOS traffic light buttons */
 QPushButton#btn_close, QPushButton#btn_minimize, QPushButton#btn_fullscreen {
     background: #AAAAAA;
 }
@@ -519,6 +520,38 @@ QPushButton#btn_minimize:hover {
 QPushButton#btn_fullscreen:hover {
     background: #27C93F;
     border: none;
+}
+
+/* Windows style buttons */
+QPushButton#win_btn_minimize,
+QPushButton#win_btn_fullscreen,
+QPushButton#win_btn_close {
+    background: transparent;
+    border: none;
+    border-radius: 3;
+    margin: 0;
+    padding: 0;
+}
+
+QPushButton#win_btn_minimize {
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/window-minimize.svg');
+}
+
+QPushButton#win_btn_fullscreen {
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/window-maximize.svg');
+}
+
+QPushButton#win_btn_close {
+    image: url('MasterProject/Client_modules/Quarky_GUI/assets/window-close.svg');
+}
+
+QPushButton#win_btn_minimize:hover,
+QPushButton#win_btn_fullscreen:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+QPushButton#win_btn_close:hover {
+    background: #E81123;
 }
 
 
