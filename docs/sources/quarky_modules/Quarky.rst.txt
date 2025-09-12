@@ -1,7 +1,7 @@
-Quarky Main
+Desq Main
 ===========
 
-.. automodule:: Quarky
+.. automodule:: Desq
    :members:
    :undoc-members:
    :show-inheritance:

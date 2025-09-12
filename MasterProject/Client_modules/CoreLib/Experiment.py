@@ -5,7 +5,7 @@ import h5py
 import datetime
 from pathlib import Path
 
-import MasterProject.Client_modules.Quarky_GUI.scripts.Helpers as Helpers
+import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
 class MakeFile(h5py.File):
     def __init__(self, *args, **kwargs):
