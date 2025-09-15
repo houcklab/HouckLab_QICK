@@ -166,8 +166,18 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
         #TODO broken by change of experiment
+        if self.cfg["qubit_pulse_style"] == "arb":
+            qubit_pulse_length = self.cfg["sigma"] * 4  # [us]
+        elif self.cfg["qubit_pulse_style"] == "flat_top":
+            qubit_pulse_length = self.cfg["sigma"] * 4 + self.cfg["flat_top_length"]  # [us]
+        elif self.cfg["qubit_pulse_style"] == "const":
+            qubit_pulse_length = self.cfg["qubit_length"]  # [us]
+
+        delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
+
+        pulse_length = sum([np.max([self.cfg['ff_length'] + self.cfg['pre_ff_delay'], delay + qubit_pulse_length]) for delay in delays])
         return (self.cfg["reps"] * self.cfg["qubit_spec_delay_steps"] * self.cfg["qubit_freq_expts"] *
-                (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6)  # [s]
+                (self.cfg['read_length'] + self.cfg["relax_delay"] + pulse_length) * 1e-6)  # [s]
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
