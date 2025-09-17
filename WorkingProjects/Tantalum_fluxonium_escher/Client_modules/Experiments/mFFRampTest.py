@@ -100,6 +100,7 @@ class FFRampTest(NDAveragerProgram):
                         c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay'])))
 
             # # play constant pulse to keep FF at ramped value if a delay here is desired
+            #TODO Parth points out this pulse is not actually necessary, just a delay, since stdysel='last' and this limits delay length to 100 us
             if self.cfg["ff_delay"] > 0:
                 self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
                                          length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
