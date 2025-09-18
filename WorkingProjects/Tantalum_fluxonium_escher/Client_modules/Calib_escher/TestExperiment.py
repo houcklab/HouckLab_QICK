@@ -9,6 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpe
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFRampTest import FFRampTest_Experiment
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecVsFlux import FFSpecVsFlux_Experiment
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFTransSlice import FFTransSlice_Experiment
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFTransVsFlux import FFTransVsFlux_Experiment
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram, Loopback
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTwoToneTransmission import \
     TwoToneTransmission
@@ -1230,6 +1231,67 @@ try:
     FFTransSlice_Experiment.display(Instance_FFTransSlice, data_FFTransSlice, plot_disp=True)
     FFTransSlice_Experiment.save_data(Instance_FFTransSlice, data_FFTransSlice)
     FFTransSlice_Experiment.save_config(Instance_FFTransSlice)
+    # print(Instance_specSlice.qubitFreq)
+    plt.show()
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
+
+
+#%%
+#TITLE: Fast Flux DC voltage Trans vs Flux
+
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 13,  # [us]
+    "read_pulse_gain": 5600,  # [DAC units]
+    "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
+
+    # Fast flux pulse parameters
+    "ff_length": 50,  # [us] Total length of positive fast flux pulse
+    "ff_pulse_style": "const",  # one of ["const", "flat_top", "arb"], currently only "const" is supported
+    "ff_ch": 6,  # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+
+    # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
+    "ff_gain_start": 0,  # [DAC] Initial value
+    "ff_gain_stop": 200,  # [DAC] Final value
+    "ff_gain_steps": 5,  # number of qubit_spec_delay points to take
+
+    # Transmission Experiment. Parameter naming convention preserved from mTransmission_SaraTest below
+    # "read_pulse_freq": 7000,        # [MHz] Centre frequency of transmission sweep
+    # "TransSpan": 5,                 # [MHz] Span of transmission sweep
+    # "TransNumPoints": 301,          # Number of poitns in transmission sweep
+
+    # New format parameters for transmission experiment
+    "start_freq": 7391.9 - 2,  # [MHz] Start frequency of sweep
+    "stop_freq": 7391.9 + 2,  # [MHz] Stop frequency of sweep
+    "num_freqs": 101,  # Number of frequency points to use
+    "init_time": 5,  # [us] Thermalisation time after FF to new point before starting measurement
+
+    "yokoVoltage": -1.494,  # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
+    "reps": 1000,  # Reps of measurements; init program is run only once
+    "sets": 5,  # Sets of whole measurement; used in GUI
+    "RFSOC_delay": 0,
+}
+
+config = BaseConfig | UpdateConfig
+yoko.SetVoltage(config["yokoVoltage"])
+
+Instance_FFTransVsFlux = FFTransVsFlux_Experiment(path="FFTransVsFlux", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFTransVsFlux.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+try:
+    data_FFTransVsFlux = FFTransVsFlux_Experiment.acquire(Instance_FFTransVsFlux, progress = True)
+    FFTransVsFlux_Experiment.display(Instance_FFTransVsFlux, data_FFTransVsFlux, plot_disp=True)
+    FFTransVsFlux_Experiment.save_data(Instance_FFTransVsFlux, data_FFTransVsFlux)
+    FFTransVsFlux_Experiment.save_config(Instance_FFTransVsFlux)
     # print(Instance_specSlice.qubitFreq)
     plt.show()
 except Exception:

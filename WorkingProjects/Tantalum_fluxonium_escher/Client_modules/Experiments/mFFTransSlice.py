@@ -125,12 +125,12 @@ class FFTransSlice_Experiment(ExperimentClass):
 
     def acquire(self, progress=False, debug=False):
         # First, run init program. Only one rep for this one!
-        init_prog = self.FFInit_Prog(self.soccfg, self.cfg | {'reps': 1})
+        init_prog = self.FFInit_Prog(soccfg = self.soccfg, cfg = self.cfg | {'reps': 1})
         init_prog.run_rounds(self.soc, progress = False)  # No measure in this one
 
         # Now, loop over transmission frequencies -- we are not allowed to change frequency inside a program!
         for i, freq in enumerate(tqdm(self.fpts, disable = not progress)):
-            trans_prog = self.FFTransPoint_Prog(self.soccfg, self.cfg | {'read_pulse_freq': freq})
+            trans_prog = self.FFTransPoint_Prog(soccfg = self.soccfg, cfg = self.cfg | {'read_pulse_freq': freq})
 
             # Collect the data
             outp = trans_prog.acquire(self.soc, angle=None, load_pulses=True,
