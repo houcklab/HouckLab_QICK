@@ -132,7 +132,7 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.494,
+    "yokoVoltage": -1.498,
 
 }
 
@@ -1249,15 +1249,14 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
 
     # Fast flux pulse parameters
-    "ff_length": 50,  # [us] Total length of positive fast flux pulse
     "ff_pulse_style": "const",  # one of ["const", "flat_top", "arb"], currently only "const" is supported
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
     # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
-    "ff_gain_start": 0,  # [DAC] Initial value
-    "ff_gain_stop": 200,  # [DAC] Final value
-    "ff_gain_steps": 5,  # number of qubit_spec_delay points to take
+    "ff_gain_start": 1150,  # [DAC] Initial value
+    "ff_gain_stop": 1300,  # [DAC] Final value
+    "ff_gain_steps": 101,  # number of qubit_spec_delay points to take
 
     # Transmission Experiment. Parameter naming convention preserved from mTransmission_SaraTest below
     # "read_pulse_freq": 7000,        # [MHz] Centre frequency of transmission sweep
@@ -1265,14 +1264,14 @@ UpdateConfig = {
     # "TransNumPoints": 301,          # Number of poitns in transmission sweep
 
     # New format parameters for transmission experiment
-    "start_freq": 7391.9 - 2,  # [MHz] Start frequency of sweep
-    "stop_freq": 7391.9 + 2,  # [MHz] Stop frequency of sweep
-    "num_freqs": 101,  # Number of frequency points to use
-    "init_time": 5,  # [us] Thermalisation time after FF to new point before starting measurement
+    "start_freq": 7390.5,  # [MHz] Start frequency of sweep
+    "stop_freq": 7393,  # [MHz] Stop frequency of sweep
+    "num_freqs": 301,  # Number of frequency points to use
+    "init_time": 100000,  # [us] Thermalisation time after FF to new point before starting measurement
 
     "yokoVoltage": -1.494,  # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
-    "reps": 1000,  # Reps of measurements; init program is run only once
+    "reps": 500,  # Reps of measurements; init program is run only once
     "sets": 5,  # Sets of whole measurement; used in GUI
     "RFSOC_delay": 0,
 }
@@ -1426,14 +1425,14 @@ config = {
         # Readout section
         "read_pulse_style": "const",  # --Fixed
         "read_length": 13,  # [us]
-        "read_pulse_gain": 5600, #5600,  # [DAC units]
+        "read_pulse_gain": 32000, #5600,  # [DAC units]
         "read_pulse_freq": 7391.9,  # [MHz]
 
         # Fast flux pulse parameters
         "ff_ramp_style": "linear",  # one of ["linear"]
         "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 500, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 0, # [us] Delay between fast flux ramps
+        "ff_ramp_stop": 32000, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 100, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
@@ -1454,16 +1453,16 @@ config = {
         "ff_ramp_length_expts": 15, # [int] Number of points in the ff ramp length sweep
         "yokoVoltage": -1.4895,  # [V] Yoko voltage for magnet offset of flux
         "relax_delay_1": 10,# - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
-        "relax_delay_2": 10 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "relax_delay_2": 20 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
 
         # Gain sweep parameters
         "ff_gain_expts": 15,    # [int] How many different ff ramp gains to use
-        "ff_ramp_length": 0.01,    # [us] Half-length of ramp to use when sweeping gain
+        "ff_ramp_length": 0.03,    # [us] Half-length of ramp to use when sweeping gain
 
         # Number of cycle repetitions sweep parameters
-        "cycle_number_expts": 10,     # [int] How many different values for number of cycles around to use in this experiment
-        "max_cycle_number": 500,        # [int] What is the largest number of cycles to use in sweep? Smallest value always 1
-        "cycle_delay": 0.0,          # [us] How long to wait between cycles in one experiment?
+        "cycle_number_expts": 2,     # [int] How many different values for number of cycles around to use in this experiment
+        "max_cycle_number": 10,        # [int] What is the largest number of cycles to use in sweep? Smallest value always 1
+        "cycle_delay": 0.005,          # [us] How long to wait between cycles in one experiment?
 
         # General parameters
         "sweep_type": 'cycle_number',  # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'

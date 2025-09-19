@@ -316,7 +316,7 @@ class SpecVsFlux(ExperimentClass):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True, progress = False))
         results = np.transpose(results)
         #### pull out I and Q data
         data_I = results[0][0][0]
