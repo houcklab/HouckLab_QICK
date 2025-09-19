@@ -1,0 +1,38 @@
+{
+    "Experiment Config": {
+        "VoltageNumPoints": 5,
+        "sleep_time": 0,
+        "DACs": [
+            5
+        ],
+        "VoltageStart": [
+            -0.5
+        ],
+        "VoltageStop": [
+            0
+        ],
+        "sets": 1,
+        "step": 5.714285714285714,
+        "start": 4408,
+        "expts": 71
+    },
+    "Base Config": {
+        "res_ch": 0,
+        "qubit_ch": 1,
+        "mixer_freq": 0.0,
+        "ro_chs": [
+            0
+        ],
+        "reps": 20,
+        "nqz": 2,
+        "qubit_nqz": 2,
+        "relax_delay": 10,
+        "res_phase": 0,
+        "pulse_style": "const",
+        "read_length": 5,
+        "pulse_gain": 30000,
+        "pulse_freq": 0.0,
+        "adc_trig_offset": 0.48800000000000004,
+        "cavity_LO": 0.0
+    }
+}
