@@ -1,6 +1,5 @@
 ###
-# This experiment runs mFFSpecSlice in a loop with varying qubit_spec_delay.
-# Lev May 13, 2025. Create file
+# This experiment runs mFFSpecSlice in a loop with varying the ff value.
 ###
 
 import numpy as np
@@ -12,7 +11,7 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecSlice import FFSpecSlice
 
 
-class FFSpecVsDelay_Experiment(ExperimentClass):
+class FFSpecVsFlux_Experiment(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
@@ -20,9 +19,9 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
     def acquire(self, progress: bool = False, plot_disp: bool = True, plot_save: bool = True, fig_num: int = None):
         """
-        Runs qubit spectroscopy with a fast flux pulse with qubit_spec_delay values changing in a for loop.
+        Runs qubit spectroscopy with a fast flux pulse with ff_gain values changing in a for loop.
         Does not currently perform cavity transmission as presumably it's not that necessary. Will be updated if
-        it looks like the readout is changing a lot. For now, readout should be tuned up AT THE POINT WE'RE MOVING TO.
+        it looks like the readout is changing a lot. .
         :param progress: bool: should the individual experiment files display a progress bar.
         :param plot_disp: bool: should we display the plots of the data during aqcuisition.
         :param plot_save: bool: should we save the plot of the data
@@ -51,13 +50,15 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         print('starting date time: ' + start_time.strftime("%Y/%m/%d %H:%M:%S"))
         start = time()
 
-        # Loop over different delay lengths
-        for i, delay in enumerate(self.delays):
+        # Loop over different ff_gains
+        for i, gain in enumerate(self.ff_gains):
+            print('Gain:')
+            print(gain)
             if i == 1:
                 step = time()
 
-            # Update qubit_spec_delay value in config; creates key on first iteration (as it's not used in FFSpecVsDelay)
-            self.cfg["qubit_spec_delay"] = delay
+            # Update ff_gain value in config; creates key on first iteration (as it's not used in FFSpecVsDelay)
+            self.cfg["ff_gain"] = gain
 
             # Run single slice program, take data
             prog = FFSpecSlice(self.soccfg, self.cfg)
@@ -87,7 +88,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                     cbar_handles[key].remove()
                     cbar_handles[key] = fig.colorbar(im_handles[key], ax=axs[key], extend='both')
 
-            extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
+            extent = [self.ff_gains[0], self.ff_gains[-1],
                       self.spec_fpts[0], self.spec_fpts[-1]]
 
             _imshow('amp', self.amps, extent)
@@ -103,7 +104,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                 axs['q'].set_title('Q')
                 for ax in axs.values():
                     ax.set_ylabel('Spec freq (MHz)')
-                    ax.set_xlabel('post-FF delay (ns)')
+                    ax.set_xlabel('FF end point [DAC units]')
 
             if plot_disp:
                 plt.show(block=False)
@@ -141,21 +142,21 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
     def __predeclare_arrays(self):
         # Create the array of delays to loop over
-        self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
+        self.ff_gains = np.rint(np.linspace(self.cfg["ff_gain_start"], self.cfg["ff_gain_stop"], num = self.cfg["ff_gain_steps"])).astype(int)
         # Create array of spectroscopy frequency points
         self.spec_fpts = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"])
 
-        # Declare and instantitate some arrays and the data dictionary, to be filled with data
+        # Declare and instantiate some arrays and the data dictionary, to be filled with data
         # We've created two references to the same arrays: for example, self.Is and self.data['data']['spec_Imat'] are
         # pointers to the same location, and changing either will change both.
-        self.Is = np.zeros((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]))
-        self.Qs = np.zeros((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]))
-        self.amps = np.full((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]), np.nan)
-        self.phases = np.full((self.cfg["qubit_spec_delay_steps"], self.cfg["qubit_freq_expts"]), np.nan)
+        self.Is = np.zeros((self.cfg["ff_gain_steps"], self.cfg["qubit_freq_expts"]))
+        self.Qs = np.zeros((self.cfg["ff_gain_steps"], self.cfg["qubit_freq_expts"]))
+        self.amps = np.full((self.cfg["ff_gain_steps"], self.cfg["qubit_freq_expts"]), np.nan)
+        self.phases = np.full((self.cfg["ff_gain_steps"], self.cfg["qubit_freq_expts"]), np.nan)
         self.data = {
             'config': self.cfg,
             'data': {'spec_Imat': self.Is, 'spec_Qmat': self.Qs, 'spec_fpts': self.spec_fpts,
-                     'delays_vec': self.delays
+                     'ff_gains_vec': self.ff_gains
                      }
         }
 
@@ -173,10 +174,8 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         elif self.cfg["qubit_pulse_style"] == "const":
             qubit_pulse_length = self.cfg["qubit_length"]  # [us]
 
-        delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
-
-        pulse_length = sum([np.max([self.cfg['ff_length'] + self.cfg['pre_ff_delay'], delay + qubit_pulse_length]) for delay in delays])
-        return (self.cfg["reps"] * self.cfg["qubit_spec_delay_steps"] * self.cfg["qubit_freq_expts"] *
+        pulse_length = self.cfg['ff_length'] + self.cfg['pre_ff_delay']
+        return (self.cfg["reps"] * self.cfg["ff_gain_steps"] * self.cfg["qubit_freq_expts"] *
                 (self.cfg['read_length'] + self.cfg["relax_delay"] + pulse_length) * 1e-6)  # [s]
 
     # Template config dictionary, used in GUI for initial values
@@ -192,6 +191,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         "qubit_freq_start": 1001,        # [MHz]
         "qubit_freq_stop": 2000,         # [MHz]
         "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+        "qubit_spec_delay": 0.05,        # [us] Delay before starting qubit spec
         "sigma": 0.050,                  # [us], used with "arb" and "flat_top"
         "qubit_length": 1,               # [us], used with "const"
         "flat_top_length": 0.300,        # [us], used with "flat_top"
@@ -201,18 +201,17 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         "qubit_mode_periodic": False,    # Bool: Applies only to "const" pulse style; if True, keeps qubit tone on always
 
         # Fast flux pulse parameters
-        "ff_gain": 1,                    # [DAC units] Gain for fast flux pulse
         "ff_length": 50,                 # [us] Total length of positive fast flux pulse
         "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
-        # qubit_spec_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-        "qubit_spec_delay_start": 0,     # [us] Initial value
-        "qubit_spec_delay_stop": 2,     # [us] Final value
-        "qubit_spec_delay_steps": 10,    # number of qubit_spec_delay points to take
+        # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
+        "ff_gain_start": 0,              # [DAC] Initial value
+        "ff_gain_stop": 2,               # [DAC] Final value
+        "ff_gain_steps": 10,             # number of qubit_spec_delay points to take
 
-        "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
+        "yokoVoltage": 0,                # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]
         "qubit_freq_expts": 2000,        # number of points of qubit frequency
         "reps": 1000,

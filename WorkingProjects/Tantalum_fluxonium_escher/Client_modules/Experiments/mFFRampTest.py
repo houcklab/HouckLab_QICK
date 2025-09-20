@@ -94,21 +94,19 @@ class FFRampTest(NDAveragerProgram):
             # The set pulse registers commands use up a lot of tproc command memory, so we can do at most ~ 500 pulses.
             # If we need more pulses, replace set_pulse_registers with manual instructions to change waveform, t
             # The other commands that this compiles into are redundant, I think (set phase, gain, etc)
+
+            # If pulses conflict, try increasing cycle_delay. This should probably be at least a few ns.
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
-                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay'])))
+            t_1 = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
+                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay']))
+            self.pulse(ch = self.cfg["ff_ch"], t = t_1)
 
-            # # play constant pulse to keep FF at ramped value if a delay here is desired
-            if self.cfg["ff_delay"] > 0:
-                self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
-                                         length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
-                self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
-            # play reversed fast flux ramp, return to original spot
+            # play reversed fast flux ramp (after delay), return to original spot
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"], t ='auto')
+            self.pulse(ch = self.cfg["ff_ch"], t = t_1 + self.us2cycles(self.cfg['ff_ramp_length'] + self.cfg['ff_delay']))
 
         # Sync to make sure ramping is done before starting second measurement.
         self.sync_all(self.us2cycles(0.02))
