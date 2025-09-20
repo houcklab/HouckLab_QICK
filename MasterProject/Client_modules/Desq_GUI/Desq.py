@@ -537,7 +537,6 @@ class Desq(QMainWindow):
 
                 self.thread = QThread()
 
-
                 # Handling config specific to the current tab
                 # An experiment (both old and T2, want base and experiment config combined and flatted. Voltage Config stays as is.
                 self.current_tab.config = self.config_tree_panel.config
@@ -766,7 +765,7 @@ class Desq(QMainWindow):
         # Extract class names
         class_names = [cls_name for cls_name, _ in experiment_classes]
         # Prompt user to select classes using multi-checkbox dialog
-        dialog = MultiCheckboxDialog(class_names)
+        dialog = MultiCheckboxDialog(class_names, "Select Experiments")
         if dialog.exec_():
             selected = dialog.get_selected()
         else:

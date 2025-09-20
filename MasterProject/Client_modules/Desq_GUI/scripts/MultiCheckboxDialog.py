@@ -5,13 +5,13 @@ class MultiCheckboxDialog(QDialog):
     A generic dialog to allow the user to select multiple items from a list.
     """
 
-    def __init__(self, items, parent=None):
+    def __init__(self, items, dialog_name: str="Multi-selector", parent=None):
         """
         :param items: List of strings to display as checkboxes.
         :param parent: Parent QWidget.
         """
         super().__init__(parent)
-        self.setWindowTitle("Select Experiment Classes")
+        self.setWindowTitle(dialog_name)
         self.selected = []
 
         layout = QVBoxLayout()

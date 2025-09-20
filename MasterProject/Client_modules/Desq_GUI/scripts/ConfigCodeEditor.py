@@ -28,6 +28,8 @@ from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColo
 from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp, QRect, qWarning
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
+from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
+
 
 class FindBar(QFrame):
     def __init__(self, editor: QTextEdit, parent=None):
@@ -386,22 +388,141 @@ class ConfigCodeEditor(QWidget):
     #         QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet(
     #             "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
 
+    # def run_script_blocking_funcs(self):
+    #     """
+    #     Runs Python code from a QTextEdit and extracts a variable,while blocking specific function calls and banned imports.
+    #
+    #     - Uses an AST check to detect banned imports statically.
+    #     - Uses a runtime import hook to block dynamic/deep imports.
+    #     - Stops execution of certain banned functions
+    #     - Also catches and reports execution errors.
+    #
+    #     """
+    #     qInfo("Attempting Config Extraction:")
+    #     banned_imports = ["socProxy"] # Banned Imports
+    #
+    #     code = self.code_text_editor.toPlainText().replace('\x00', '')
+    #
+    #     # Step 1: AST static check for banned imports
+    #     try:
+    #         tree = ast.parse(code)
+    #         for node in ast.walk(tree):
+    #             if isinstance(node, ast.Import):
+    #                 for alias in node.names:
+    #                     if alias.name.split('.')[-1] in banned_imports:
+    #                         qWarning(f"[Blocked] Import of '{alias.name}' is not allowed.")
+    #             elif isinstance(node, ast.ImportFrom):
+    #                 if node.module and node.module.split('.')[-1] in banned_imports:
+    #                     qWarning(f"[Blocked] Import from '{node.module}' is not allowed.")
+    #             elif isinstance(node, ast.ClassDef):
+    #                 for base in node.bases:
+    #                     if (isinstance(base, ast.Name)
+    #                         and (base.id == "ExperimentClass" or base.id == "ExperimentClassPlus")):
+    #                         qWarning(f"[Blocked] Defining subclass of ExperimentClass/ExperimentClassPlus: '{node.name}'")
+    #     except Exception as e:
+    #         print(f"Static analysis error: {e}")
+    #
+    #     # Step 2: Define import hook and dummy classes
+    #     class BlockImportHook:
+    #         def find_spec(self_inner, fullname, path, target=None):
+    #             if fullname.split('.')[-1] in banned_imports:
+    #                 qWarning(f"[Blocked] Skipping import of '{fullname}'")
+    #                 return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
+    #             return None
+    #
+    #     class DummyLoader:
+    #         """
+    #         The DummyLoader class is used to simulate an empty import and skip execution.
+    #         """
+    #
+    #         def __init__(self, name):
+    #             self.name = name
+    #
+    #         def create_module(self, spec):
+    #             # Create a dummy module with the expected attributes as None or dummy functions
+    #             dummy_module = SimpleNamespace()
+    #             if self.name.endswith('socProxy'):
+    #                 dummy_module.makeProxy = None  # or a dummy function if needed
+    #                 dummy_module.soc = None
+    #                 dummy_module.soccfg = None
+    #             return dummy_module
+    #
+    #         def exec_module(self, module):
+    #             pass  # do nothing
+    #
+    #     import_hook = BlockImportHook()
+    #     sys.meta_path.insert(0, import_hook)
+    #
+    #     class DummyExperimentClass:
+    #         def __init__(self, *args, **kwargs):
+    #             # skip all init code
+    #             qWarning("Skipped ExperimentClass/ExperimentClassPlus Initialization")
+    #             pass
+    #
+    #         def __getattr__(self, name):
+    #             # skip any method calls or attribute access
+    #             print("Skipped")
+    #             return lambda *args, **kwargs: None
+    #
+    #     # Step 3: Block selected function names
+    #     def blocked_function(*args, **kwargs):
+    #         print("Blocked function call.")
+    #
+    #     blocked_funcs = {}  # Blocked Global Functions
+    #
+    #     namespace = {
+    #         **{name: blocked_function for name in blocked_funcs},
+    #         "ExperimentClass": DummyExperimentClass,
+    #         "ExperimentClassPlus": DummyExperimentClass,
+    #         "__builtins__": __builtins__
+    #     }
+    #
+    #     try:
+    #         exec(code, namespace)
+    #
+    #         config = namespace.get("config", {})
+    #         self.extracted_config.emit(config)
+    #         qInfo("Extracted config.")
+    #     except Exception as e:
+    #         qCritical("Error while running script:")
+    #         qCritical(traceback.format_exc())
+    #         QMessageBox.critical(self, "Error", f"Error while running script: \n{e}. "
+    #                                             f"Still attempting config extraction. See Log.")
+    #         traceback.print_exc()
+    #
+    #         config = namespace.get("config", {})
+    #         self.extracted_config.emit(config)
+    #     finally:
+    #         try:
+    #             sys.meta_path.remove(import_hook)
+    #
+    #             self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
+    #             QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
+    #         except ValueError:
+    #             pass
+
     def run_script_blocking_funcs(self):
         """
-        Runs Python code from a QTextEdit and extracts a variable,while blocking specific function calls and banned imports.
+        Runs Python code from a QTextEdit and extracts a variable, while blocking specific function calls
+        and banned imports.
 
         - Uses an AST check to detect banned imports statically.
         - Uses a runtime import hook to block dynamic/deep imports.
-        - Stops execution of certain banned functions
+        - Blocks execution of ExperimentClass/ExperimentClassPlus subclasses via dummy class.
         - Also catches and reports execution errors.
-
         """
+        import os
+        import sys
+        import ast
+        import traceback
+        from types import SimpleNamespace
+
         qInfo("Attempting Config Extraction:")
-        banned_imports = ["socProxy"] # Banned Imports
+        banned_imports = ["socProxy"]  # Banned Imports
 
         code = self.code_text_editor.toPlainText().replace('\x00', '')
 
-        # Step 1: AST static check for banned imports
+        # Step 1: AST static check for banned imports and class definitions
         try:
             tree = ast.parse(code)
             for node in ast.walk(tree):
@@ -414,33 +535,21 @@ class ConfigCodeEditor(QWidget):
                         qWarning(f"[Blocked] Import from '{node.module}' is not allowed.")
                 elif isinstance(node, ast.ClassDef):
                     for base in node.bases:
-                        if (isinstance(base, ast.Name)
-                            and (base.id == "ExperimentClass" or base.id == "ExperimentClassPlus")):
+                        if isinstance(base, ast.Name) and base.id in ("ExperimentClass", "ExperimentClassPlus"):
                             qWarning(f"[Blocked] Defining subclass of ExperimentClass/ExperimentClassPlus: '{node.name}'")
         except Exception as e:
             print(f"Static analysis error: {e}")
 
-        # Step 2: Define import hook and dummy classes
-        class BlockImportHook:
-            def find_spec(self_inner, fullname, path, target=None):
-                if fullname.split('.')[-1] in banned_imports:
-                    qWarning(f"[Blocked] Skipping import of '{fullname}'")
-                    return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
-                return None
-
+        # Step 2: Define import hook and dummy loader
         class DummyLoader:
-            """
-            The DummyLoader class is used to simulate an empty import and skip execution.
-            """
-
+            """Simulates empty imports for blocked modules."""
             def __init__(self, name):
                 self.name = name
 
             def create_module(self, spec):
-                # Create a dummy module with the expected attributes as None or dummy functions
                 dummy_module = SimpleNamespace()
                 if self.name.endswith('socProxy'):
-                    dummy_module.makeProxy = None  # or a dummy function if needed
+                    dummy_module.makeProxy = None
                     dummy_module.soc = None
                     dummy_module.soccfg = None
                 return dummy_module
@@ -448,25 +557,31 @@ class ConfigCodeEditor(QWidget):
             def exec_module(self, module):
                 pass  # do nothing
 
+        class BlockImportHook:
+            def find_spec(self_inner, fullname, path, target=None):
+                if fullname.split('.')[-1] in banned_imports:
+                    qWarning(f"[Blocked] Skipping import of '{fullname}'")
+                    return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
+                return None
+
         import_hook = BlockImportHook()
         sys.meta_path.insert(0, import_hook)
 
+        # Step 3: Define dummy Experiment classes
         class DummyExperimentClass:
             def __init__(self, *args, **kwargs):
-                # skip all init code
                 qWarning("Skipped ExperimentClass/ExperimentClassPlus Initialization")
                 pass
 
             def __getattr__(self, name):
-                # skip any method calls or attribute access
                 print("Skipped")
                 return lambda *args, **kwargs: None
 
-        # Step 3: Block selected function names
+        # Step 4: Block specific functions (currently empty)
         def blocked_function(*args, **kwargs):
             print("Blocked function call.")
 
-        blocked_funcs = {}  # Blocked Global Functions
+        blocked_funcs = {}
 
         namespace = {
             **{name: blocked_function for name in blocked_funcs},
@@ -475,26 +590,65 @@ class ConfigCodeEditor(QWidget):
             "__builtins__": __builtins__
         }
 
+        orig_cwd = os.getcwd()
+        orig_sys_path = sys.path.copy()
+
+        # Step 5: Execute code in script directory to allow relative imports
         try:
+            # Use the directory where this script is being run as the current dir
+            script_dir = os.path.dirname(os.path.abspath(self.code_file))  # folder of the loaded file
+            sys.path.insert(0, script_dir)
+            os.chdir(script_dir)
+
             exec(code, namespace)
 
             config = namespace.get("config", {})
             self.extracted_config.emit(config)
             qInfo("Extracted config.")
+
         except Exception as e:
             qCritical("Error while running script:")
             qCritical(traceback.format_exc())
-            QMessageBox.critical(self, "Error", f"Error while running script: \n{e}. "
-                                                f"Still attempting config extraction. See Log.")
+            QMessageBox.critical(
+                self, "Error",
+                f"Error while running script: \n{e}. Still attempting config extraction. See Log."
+            )
             traceback.print_exc()
-
             config = namespace.get("config", {})
-            self.extracted_config.emit(config)
+
         finally:
+            os.chdir(orig_cwd)
+            sys.path = orig_sys_path
+
+            # List all variables that are dictionaries
+            dict_vars = {
+                name: value for name, value in namespace.items()
+                if isinstance(value, dict) and name != "__builtins__"
+            }
+            # Prompt user to select classes using multi-checkbox dialog
+            dialog = MultiCheckboxDialog(list(dict_vars.keys()), "Select Additional Configs")
+            if dialog.exec_():
+                selected = dialog.get_selected()
+            else:
+                selected = []
+
+            # Update config with these additional configs
+            for dict_var_name in selected:
+                config |= dict_vars[dict_var_name]
+
+            # Emit the final config
+            self.extracted_config.emit(config)
+
             try:
                 sys.meta_path.remove(import_hook)
-
-                self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
-                QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
+                self.run_editor_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');"
+                )
+                QTimer.singleShot(
+                    2000,
+                    lambda: self.run_editor_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"
+                    )
+                )
             except ValueError:
                 pass

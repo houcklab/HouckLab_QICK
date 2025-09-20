@@ -460,6 +460,7 @@ class QConfigTreePanel(QTreeView):
             str_dict = text.strip().replace("\'", '\"')
             str_dict = re.sub(r"np\.int64\((-?\d+)\)", r"\1", str_dict)
             str_dict = re.sub(r"np\.float64\((-?[\d\.]+)\)", r"\1", str_dict)
+            str_dict = str_dict.replace("False", "false").replace("True", "true").replace("None", "null")
 
             print(str_dict)
             update_config = json.loads(str_dict) # json.loads only allows double quotes
