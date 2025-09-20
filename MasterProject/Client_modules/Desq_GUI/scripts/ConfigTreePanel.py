@@ -23,6 +23,7 @@ import os
 import json
 import ast
 import datetime
+import re
 import traceback
 
 from PyQt5 import QtGui, QtCore
@@ -457,6 +458,10 @@ class QConfigTreePanel(QTreeView):
 
         try:
             str_dict = text.strip().replace("\'", '\"')
+            str_dict = re.sub(r"np\.int64\((-?\d+)\)", r"\1", str_dict)
+            str_dict = re.sub(r"np\.float64\((-?[\d\.]+)\)", r"\1", str_dict)
+
+            print(str_dict)
             update_config = json.loads(str_dict) # json.loads only allows double quotes
             update_config.update(update_config.pop("Base Config", {}))
             update_config.update(update_config.pop("Experiment Config", {}))

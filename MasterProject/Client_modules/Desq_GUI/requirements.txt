@@ -1,15 +1,31 @@
+# conda create -n my_env_name python=3.12
 # pip install -r requirements.txt
 # If some installations fail, comment them out and pip install them independently
-h5py==3.12.1
-numpy==1.26
-matplotlib==3.9.4
-PyQt5==5.15.10
-PyQt5_sip==12.13.0
+colorama==0.4.6
+contourpy==1.3.2
+cycler==0.12.1
+fonttools==4.58.5
+h5py==3.14.0
+kiwisolver==1.4.8
+matplotlib==3.10.3
+narwhals==2.5.0
+numpy==2.3.1
+packaging==25.0
+pillow==11.3.0
+plotly==6.3.0
+pyparsing==3.2.3
+PyQt5==5.15.11
+PyQt5_sip==12.17.0
 pyqtgraph==0.13.7
 Pyro4==4.82
+pyserial==3.5
+python-dateutil==2.9.0.post0
+qick==0.2.367
+qutip==5.2.0
+scipy==1.16.0
+serpent==1.41
+six==1.17.0
+spirack==0.2.5
+tqdm==4.67.1
 pyvisa==1.15.0
 pyvisa-py==0.7.2
-qick==0.2.324
-spirack==0.2.5
-# visa==1.0.0
-scipy==1.13.1
