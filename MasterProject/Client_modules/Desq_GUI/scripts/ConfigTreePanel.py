@@ -26,6 +26,7 @@ import datetime
 import re
 import traceback
 
+import numpy as np
 from PyQt5 import QtGui, QtCore
 from PyQt5.QtCore import (
     QEvent,
@@ -394,7 +395,18 @@ class QConfigTreePanel(QTreeView):
                 unformatted_config.update(unformatted_config.pop("Experiment Config", {}))
 
                 with open(file_path, "w") as json_file:
-                    json.dump(unformatted_config, json_file, indent=4)
+                    json.dump(
+                        unformatted_config,
+                        json_file,
+                        indent=4,
+                        default=lambda x: (
+                            int(x) if isinstance(x, np.integer) else
+                            float(x) if isinstance(x, np.floating) else
+                            bool(x) if isinstance(x, np.bool_) else
+                            str(x)
+                        )
+                    )
+
                 qInfo(f"Configuration saved to {file_path}")
             except Exception as e:
                 qCritical(f"Failed to save the configuration to {file_path}: {str(e)}")

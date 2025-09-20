@@ -1161,7 +1161,17 @@ class QDesqTab(QWidget):
             # Save config
             try:
                 with open(config_filename, "w") as json_file:
-                    json.dump(self.config, json_file, indent=4)
+                    json.dump(
+                        self.config,
+                        json_file,
+                        indent=4,
+                        default=lambda x: (
+                            int(x) if isinstance(x, np.integer) else
+                            float(x) if isinstance(x, np.floating) else
+                            bool(x) if isinstance(x, np.bool_) else
+                            str(x)
+                        )
+                    )
 
             except Exception as e:
                 qCritical(f"Failed to save the configuration to {config_filename}: {str(e)}")

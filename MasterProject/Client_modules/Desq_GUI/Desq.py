@@ -897,13 +897,11 @@ class Desq(QMainWindow):
 
         unformatted_config = self.currently_running_tab.config["Base Config"] | self.currently_running_tab.config["Experiment Config"]
         # Getting the total reps and sets to be run from the experiment configs
+        reps, sets = 1, 1
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
-            self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
-            self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
-            print(f"Sets completed {sets_complete} out of ")
-        else:
-            pass
+        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
+        self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
 
     def call_tab_runtime_prediction(self, config):
         """

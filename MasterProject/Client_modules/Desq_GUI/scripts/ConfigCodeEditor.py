@@ -603,16 +603,14 @@ class ConfigCodeEditor(QWidget):
             exec(code, namespace)
 
             config = namespace.get("config", {})
-            self.extracted_config.emit(config)
-            qInfo("Extracted config.")
 
         except Exception as e:
             qCritical("Error while running script:")
             qCritical(traceback.format_exc())
-            QMessageBox.critical(
-                self, "Error",
-                f"Error while running script: \n{e}. Still attempting config extraction. See Log."
-            )
+            # QMessageBox.critical(
+            #     self, "Error",
+            #     f"Error while running script: \n{e}. Still attempting config extraction. See Log."
+            # )
             traceback.print_exc()
             config = namespace.get("config", {})
 
@@ -638,6 +636,7 @@ class ConfigCodeEditor(QWidget):
 
             # Emit the final config
             self.extracted_config.emit(config)
+            qInfo("Extracted config.")
 
             try:
                 sys.meta_path.remove(import_hook)
