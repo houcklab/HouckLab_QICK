@@ -901,6 +901,9 @@ class Desq(QMainWindow):
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
             self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
             self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
+            print(f"Sets completed {sets_complete} out of ")
+        else:
+            pass
 
     def call_tab_runtime_prediction(self, config):
         """

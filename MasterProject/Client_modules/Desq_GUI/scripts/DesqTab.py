@@ -237,7 +237,7 @@ class QDesqTab(QWidget):
         ### Experiment Information Bar
         self.experiment_infobar = ExperimentInfoBar(self)
 
-        self.source_file_label = QLabel(f"Source File: {self.source_file_name}")
+        self.source_file_label = QLabel(f"Source File: {self.source_file_name}.py")
         self.source_file_label.setObjectName("source_file_label")
         self.runtime_label = QLabel("Estimated Runtime: ---")  # estimated experiment time
         self.runtime_label.setObjectName("runtime_label")
