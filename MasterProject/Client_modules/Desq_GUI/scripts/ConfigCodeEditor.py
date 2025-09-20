@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QPlainTextEdit
 )
 from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QPainter, QTextFormat
-from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp, QRect, qWarning
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
@@ -396,6 +396,7 @@ class ConfigCodeEditor(QWidget):
         - Also catches and reports execution errors.
 
         """
+        qInfo("Attempting Config Extraction:")
         banned_imports = ["socProxy"] # Banned Imports
 
         code = self.code_text_editor.toPlainText().replace('\x00', '')
@@ -407,19 +408,23 @@ class ConfigCodeEditor(QWidget):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name.split('.')[-1] in banned_imports:
-                            raise ImportError(f"[Blocked] Import of '{alias.name}' is not allowed.")
+                            qWarning(f"[Blocked] Import of '{alias.name}' is not allowed.")
                 elif isinstance(node, ast.ImportFrom):
                     if node.module and node.module.split('.')[-1] in banned_imports:
-                        raise ImportError(f"[Blocked] Import from '{node.module}' is not allowed.")
+                        qWarning(f"[Blocked] Import from '{node.module}' is not allowed.")
+                elif isinstance(node, ast.ClassDef):
+                    for base in node.bases:
+                        if (isinstance(base, ast.Name)
+                            and (base.id == "ExperimentClass" or base.id == "ExperimentClassPlus")):
+                            qWarning(f"[Blocked] Defining subclass of ExperimentClass/ExperimentClassPlus: '{node.name}'")
         except Exception as e:
             print(f"Static analysis error: {e}")
-            return
 
-        # Step 2: Define import hook
+        # Step 2: Define import hook and dummy classes
         class BlockImportHook:
             def find_spec(self_inner, fullname, path, target=None):
                 if fullname.split('.')[-1] in banned_imports:
-                    print(f"[Blocked] Skipping import of '{fullname}'")
+                    qWarning(f"[Blocked] Skipping import of '{fullname}'")
                     return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
                 return None
 
@@ -446,6 +451,17 @@ class ConfigCodeEditor(QWidget):
         import_hook = BlockImportHook()
         sys.meta_path.insert(0, import_hook)
 
+        class DummyExperimentClass:
+            def __init__(self, *args, **kwargs):
+                # skip all init code
+                qWarning("Skipped ExperimentClass/ExperimentClassPlus Initialization")
+                pass
+
+            def __getattr__(self, name):
+                # skip any method calls or attribute access
+                print("Skipped")
+                return lambda *args, **kwargs: None
+
         # Step 3: Block selected function names
         def blocked_function(*args, **kwargs):
             print("Blocked function call.")
@@ -454,6 +470,8 @@ class ConfigCodeEditor(QWidget):
 
         namespace = {
             **{name: blocked_function for name in blocked_funcs},
+            "ExperimentClass": DummyExperimentClass,
+            "ExperimentClassPlus": DummyExperimentClass,
             "__builtins__": __builtins__
         }
 
