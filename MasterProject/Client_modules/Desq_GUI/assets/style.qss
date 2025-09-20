@@ -68,13 +68,40 @@ QTabWidget#central_tabs::pane {
     background: $MAIN_ACCENT_BACKGROUND_COLOR;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
-    padding-top: 10px;
+    padding-top: 5px;
     border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
 QWidget#central_tabs_container {
+    background: $TAB_BAR_BACKGROUND_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
     border-bottom-left-radius: 5px;
     border-bottom-right-radius: 5px;
+}
+
+QWidget#plot_utilities_container QPushButton{
+    border-top: 1px solid $GENERAL_BORDER_COLOR;
+    border-bottom: 1px solid $GENERAL_BORDER_COLOR;
+    border-right: 1px solid $GENERAL_BORDER_COLOR;
+    border-radius: 0px;
+    margin: 0px;
+    padding: 3px 15px;
+}
+
+QWidget#plot_utilities_container QPushButton#reExtract_experiment_button{
+    border-right: 1px solid $GENERAL_BORDER_COLOR;
+    border-bottom-left-radius: 5px;
+    border-top-left-radius: 5px;
+}
+
+QWidget#plot_utilities_container QPushButton#output_dir_button{
+    border-bottom-right-radius: 5px;
+    border-top-right-radius: 5px;
+}
+
+QWidget#plot_utilities_container QPushButton:hover{
+    background: $GENERAL_BORDER_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
 QTreeView#config_tree {
@@ -150,11 +177,6 @@ QWidget#DirectoryTreePanel QPushButton#load_directory {
 
 QWidget#DirectoryTreePanel QPushButton:hover {
     background: $GENERAL_BORDER_COLOR;
-    border: 1px solid $GENERAL_BORDER_COLOR;
-}
-
-QWidget#central_tabs_container {
-    background: $TAB_BAR_BACKGROUND_COLOR;
     border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
@@ -325,7 +347,8 @@ QTabWidget#side_tabs QTabBar::tab {
 }
 
 QLabel#runtime_label, QLabel#endtime_label, QLabel#voltage_range_label, QLabel#hardware_label,
-    QTextEdit#voltage_interface_settings, QLabel#coord_label, QLabel#delete_label, QLabel#instructions_label {
+    QTextEdit#voltage_interface_settings, QLabel#coord_label, QLabel#delete_label, QLabel#instructions_label,
+    QLabel#source_file_label{
     font-size: $SMALL_FONT_SIZEpx;
 }
 
@@ -650,4 +673,17 @@ QCheckBox::indicator:checked {
 
 QMessageBox {
     background: $MAIN_ACCENT_BACKGROUND_COLOR;
+}
+
+QPushButton#toggle_button {
+    border: none;
+    border-radius: 3px;
+    background: none;
+    padding: 0px 0px;
+    margin 0px;
+}
+
+QScrollArea#info_content_area QWidget {
+    border-radius: 3px;
+    background-color: $CONFIG_TREE_HEADER_BACKGROUND_COLOR;
 }

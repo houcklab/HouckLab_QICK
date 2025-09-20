@@ -38,10 +38,100 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QCheckBox,
     QGraphicsDropShadowEffect,
+    QScrollArea,
+    QPushButton,
 )
 import pyqtgraph as pg
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentObject import ExperimentObject
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
+
+
+class ExperimentInfoBar(QWidget):
+    """
+    Collapsible experiment information section.
+    Can store multiple rows of data and expand/collapse on click.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ExperimentInfoBar")
+        self.setContentsMargins(0, 0, 0, 0)
+
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        # Header bar with toggle button
+        self.header = QWidget()
+        self.header.setObjectName("info_headerbar")
+        self.header.setContentsMargins(0, 0, 0, 0)
+        self.header_layout = QHBoxLayout(self.header)
+        self.header_layout.setContentsMargins(0, 0, 0, 0)
+        self.header_layout.setSpacing(0)
+
+        self.toggle_button = Helpers.create_button("", "toggle_button", True, self.header)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.setStyleSheet(
+            "image: url('MasterProject/Client_modules/Desq_GUI/assets/chevron-right.svg');")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.toggle_button.clicked.connect(self.toggle_content)
+
+        self.header_label = QLabel("Info")
+
+        self.header_layout.addWidget(self.toggle_button)
+        self.header_layout.addWidget(self.header_label)
+        self.header_layout.addStretch()
+
+        self.main_layout.addWidget(self.header)
+
+        # Scrollable content area
+        self.content_area = QScrollArea()
+        self.content_area.setObjectName("info_content_area")
+        self.content_area.setWidgetResizable(True)
+        self.content_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.content_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.content_area.setMaximumHeight(0)  # collapsed initially
+        self.content_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self.content_widget = QWidget()
+        self.content_widget.setObjectName("info_content_widget")
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(5, 5, 5, 5)
+        self.content_layout.setSpacing(3)
+
+        self.content_area.setWidget(self.content_widget)
+        self.main_layout.addWidget(self.content_area)
+
+        self.setMaximumHeight(15)
+
+    def add_info_row(self, widget: QWidget):
+        """Adds a widget row to the content area."""
+        self.content_layout.addWidget(widget)
+
+    def toggle_content(self):
+        """Expand or collapse the content area."""
+        if self.toggle_button.isChecked():
+            self.toggle_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/chevron-down.svg');")
+            # Calculate needed height dynamically: header + content
+            header_height = self.header.sizeHint().height()
+            content_height = self.content_widget.sizeHint().height()
+            total_height = header_height + content_height
+
+            # Cap the maximum to avoid it growing too big
+            max_allowed = 300  # adjust if needed
+            final_height = min(total_height, max_allowed)
+
+            self.content_area.setMaximumHeight(content_height)
+            self.setMaximumHeight(final_height)
+        else:
+            self.toggle_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/chevron-right.svg');")
+            # Collapse
+            self.content_area.setMaximumHeight(0)
+            self.setMaximumHeight(self.header.sizeHint().height())
+
 
 class QDesqTab(QWidget):
     """
@@ -59,17 +149,27 @@ class QDesqTab(QWidget):
     The Signal sent to the main application (Desq.py) that tells the program the current tab was updated.
     """
 
-    def __init__(self, experiment_path=None, tab_name=None, is_experiment=None, dataset_file=None, app=None):
+    def __init__(
+        self,
+        experiment_id=(None, None),
+        tab_name=None,
+        source_file_name=None,
+        is_experiment=None,
+        dataset_file=None,
+        app=None
+    ):
         """
         Initializes an instance of a QQuarkTab widget that will either be of type experiment based on the parameters
         passed.
             * An experiment will pass: [experiment_path, tab_name, is_experiment=True].
             * A dataset will pass: [tab_name, is_experiment=False, dataset_file]
 
-        :param experiment_obj: The experiment module object extracted from an experiment file.
-        :type experiment_obj: Experiment Module
+        :param experiment_id: The experiment path and the class name in a tuple
+        :type experiment_id: tuple(str, str)
         :param tab_name: The name of the tab widget.
         :type tab_name: str
+        :param source_file_name: The name of the file the experiment lies in.
+        :type source_file_name: str
         :param is_experiment: Whether the tab corresponds to an experiment or dataset.
         :type is_experiment: bool
         :param dataset_file: The path to the dataset file.
@@ -84,8 +184,9 @@ class QDesqTab(QWidget):
         ### Experiment Variables
         self.config = {"Experiment Config": {}, "Base Config": self.app.base_config} # default config found in initialize.py
         self.tab_name = str(tab_name)
-        self.experiment_obj = None if experiment_path is None \
-            else ExperimentObject(self, self.tab_name, experiment_path)
+        self.source_file_name = source_file_name
+        self.experiment_obj = None if experiment_id == (None, None) \
+            else ExperimentObject(self, experiment_id)
         self.is_experiment = is_experiment
         self.dataset_file = dataset_file
         self.data = None
@@ -94,46 +195,21 @@ class QDesqTab(QWidget):
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setObjectName("QQuarkTab")
+        self.setObjectName("QDesqTab")
 
         ### Plotter within Tab
         self.plot_layout = QVBoxLayout(self)
-        self.plot_layout.setContentsMargins(10, 2, 10, 7)
+        self.plot_layout.setContentsMargins(10, 0, 10, 7)
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
-
-        ### Experiment Information Bar
-        self.experiment_infobar_container = QWidget()
-        self.experiment_infobar_container.setMaximumHeight(15)
-        self.experiment_infobar = QHBoxLayout(self.experiment_infobar_container)
-        self.experiment_infobar.setContentsMargins(0, 0, 0, 2)
-        self.experiment_infobar.setSpacing(3)
-        self.experiment_infobar.setObjectName("experiment_infobar")
-
-        self.runtime_label = QLabel("Estimated Runtime: ---")  # estimated experiment time
-        self.runtime_label.setObjectName("runtime_label")
-        self.endtime_label = QLabel("End: ---")  # estimated experiment time
-        self.endtime_label.setObjectName("endtime_label")
-        self.hardware_label = QLabel("Hardware Requirement: [Proxy, QickConfig]")
-
-        if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
-            hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
-            self.hardware_label.setText("Hardware Requirement: " + hardware_str)
-        self.hardware_label.setAlignment(Qt.AlignRight)
-        self.hardware_label.setObjectName("hardware_label")
-
-        self.experiment_infobar.addWidget(self.runtime_label)
-        self.experiment_infobar.addWidget(self.endtime_label)
-        self.experiment_infobar.addWidget(self.hardware_label)
-        self.plot_layout.addWidget(self.experiment_infobar_container)
 
         ### Plot Utilities Bar
         self.plot_utilities_container = QWidget()
         self.plot_utilities_container.setMaximumHeight(30)
         self.plot_utilities_container.setObjectName("plot_utilities_container")
         self.plot_utilities = QHBoxLayout(self.plot_utilities_container)
-        self.plot_utilities.setContentsMargins(2, 5, 2, 0)
-        self.plot_utilities.setSpacing(5)
+        self.plot_utilities.setContentsMargins(2, 0, 2, 0)
+        self.plot_utilities.setSpacing(0)
         self.plot_utilities.setObjectName("plot_utilities")
 
         self.reExtract_experiment_button = Helpers.create_button("ReExtract", "reExtract_experiment_button", False, self.plot_utilities_container)
@@ -157,6 +233,28 @@ class QDesqTab(QWidget):
         self.plot_utilities.addItem(spacerItem)
         self.plot_utilities.addWidget(self.coord_label)
         self.plot_layout.addWidget(self.plot_utilities_container)
+
+        ### Experiment Information Bar
+        self.experiment_infobar = ExperimentInfoBar(self)
+
+        self.source_file_label = QLabel(f"Source File: {self.source_file_name}")
+        self.source_file_label.setObjectName("source_file_label")
+        self.runtime_label = QLabel("Estimated Runtime: ---")  # estimated experiment time
+        self.runtime_label.setObjectName("runtime_label")
+        self.endtime_label = QLabel("End: ---")  # estimated experiment time
+        self.endtime_label.setObjectName("endtime_label")
+        self.hardware_label = QLabel(f"Hardware: [Proxy, QickConfig]")
+
+        if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
+            hardware_str = "[" + (", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
+            self.hardware_label.setText("Hardware: " + hardware_str)
+        self.hardware_label.setObjectName("hardware_label")
+
+        self.experiment_infobar.add_info_row(self.source_file_label)
+        self.experiment_infobar.add_info_row(self.runtime_label)
+        self.experiment_infobar.add_info_row(self.endtime_label)
+        self.experiment_infobar.add_info_row(self.hardware_label)
+        self.plot_layout.addWidget(self.experiment_infobar)
 
         ### Plot Settings Bar
         self.plot_settings_container = QWidget()
@@ -362,7 +460,7 @@ class QDesqTab(QWidget):
             if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
                 hardware_str = "[" + (
                     ", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
-                self.hardware_label.setText("Hardware Requirement: " + hardware_str)
+                self.hardware_label.setText("Hardware: " + hardware_str)
             qDebug("ReExtracted Experiment: experiment attributes extracted.")
             self.updated_tab.emit()
 

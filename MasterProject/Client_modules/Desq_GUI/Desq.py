@@ -49,6 +49,7 @@ from PyQt5.QtWidgets import (
 # Use absolute imports maybe
 from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Desq_GUI.CoreLib.VoltageInterface import VoltageInterface
+from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
@@ -60,9 +61,10 @@ from MasterProject.Client_modules.Desq_GUI.scripts.LogPanel import QLogPanel
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.DirectoryTreePanel import DirectoryTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import AuxiliaryThread
-from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentCodeEditor import ExperimentCodeEditor
+from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
 from MasterProject.Client_modules.Desq_GUI.scripts.SettingsWindow import SettingsWindow
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
+from MasterProject.Client_modules.Desq_GUI.scripts import ExperimentLoader
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)
@@ -210,7 +212,7 @@ class Desq(QMainWindow):
         self.vert_splitter.setOrientation(Qt.Vertical)
 
         # Defint he Universal Config Loader section
-        self.experiment_code_editor = ExperimentCodeEditor(self.vert_splitter)
+        self.config_code_editor = ConfigCodeEditor(self.vert_splitter)
 
         ### Tab Splitter with the directory tree and tabs
         self.tab_splitter = QSplitter(self.vert_splitter)
@@ -239,7 +241,7 @@ class Desq(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(650, 0))
+        self.central_tabs.setMinimumSize(QSize(550, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setUsesScrollButtons(True)
         self.central_tabs.setDocumentMode(False)
@@ -289,6 +291,10 @@ class Desq(QMainWindow):
         self.side_tabs.addTab(self.log_panel, "Log")
 
         self.side_tabs.setCurrentIndex(1) # select accounts panel by default
+
+        # Defining default sizes for tab splitter
+        self.tab_splitter.setStretchFactor(0, 4)
+        self.tab_splitter.setStretchFactor(1, 6)
 
         # Defining default sizes for vertical splitter
         self.vert_splitter.setStretchFactor(0, 3)
@@ -356,7 +362,7 @@ class Desq(QMainWindow):
         self.settings_window.apply_settings() # Apply the saved settings
 
         # Config editor
-        self.experiment_code_editor.extracted_config.connect(self.extracted_config)
+        self.config_code_editor.extracted_config.connect(self.extracted_config)
 
         self.update_progress(0)
         if TESTING:
@@ -521,111 +527,115 @@ class Desq(QMainWindow):
             }
         """
 
-        if TESTING or self.soc_connected: # ensure RFSoC connection
-            if self.current_tab.experiment_obj is None: # ensure tab is not a data tab
-                qCritical("Attempted execution of a data tab (" + self.current_tab.tab_name +
-                          ")rather than an experiment tab")
-                QMessageBox.critical(None, "Error", "Tab is a Data tab.")
+        try:
+            if TESTING or self.soc_connected: # ensure RFSoC connection
+                if self.current_tab.experiment_obj is None: # ensure tab is not a data tab
+                    qCritical("Attempted execution of a data tab (" + self.current_tab.tab_name +
+                              ")rather than an experiment tab")
+                    QMessageBox.critical(None, "Error", "Tab is a Data tab.")
+                    return
+
+                self.thread = QThread()
+
+
+                # Handling config specific to the current tab
+                # An experiment (both old and T2, want base and experiment config combined and flatted. Voltage Config stays as is.
+                self.current_tab.config = self.config_tree_panel.config
+                experiment_format_config = self.current_tab.config.copy()
+                experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
+                experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
+
+                if "sets" not in experiment_format_config:
+                    experiment_format_config["sets"] = 1
+
+                # Create experiment object using updated config and current tab's experiment instance
+                experiment_class = self.current_tab.experiment_obj.experiment_class
+                # print(inspect.getsourcelines(experiment_class))
+
+                experiment_type = self.current_tab.experiment_obj.experiment_type
+                if experiment_type == ExperimentClassPlus:
+                    # Retrieving hardware (ie. if voltage interface required, make sure it is included)
+                    collected_hardware = [self.soc, self.soccfg]
+                    hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
+
+                    if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
+                        if TESTING:
+                            pass
+                        elif not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
+                            QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
+                            qCritical("Voltage Controller needed but not connected.")
+                            return
+
+                        voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
+                        if TESTING:
+                            collected_hardware.append(voltage_hardware)
+                        elif not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
+                            QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
+                            qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
+                            return
+                        else:
+                            collected_hardware.append(voltage_hardware)
+
+                    self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
+
+                # Normal Experiments
+                else:
+                    self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+
+
+                print(experiment_format_config)
+
+                ### Creating the experiment worker from ExperimentThread and Connecting Signals
+                self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
+                                                          exp=self.experiment_instance, soc=self.soc)
+                self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
+
+                # Connecting started and finished signals
+                self.thread.started.connect(self.current_tab.prepare_file_naming)
+                self.thread.started.connect(self.current_tab.clear_plots)
+                self.thread.started.connect(self.experiment_worker.run) # run experiment
+                self.experiment_worker.finished.connect(self.thread.quit) # stop thread
+                self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
+                self.thread.finished.connect(self.thread.deleteLater) # delete thread
+                self.thread.finished.connect(self.finished_experiment) # update UI
+
+                # UI updates for tab
+                self.currently_running_tab = self.current_tab
+                idx = self.central_tabs.indexOf(self.currently_running_tab)
+                self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
+
+                # Connecting data related slots
+                self.experiment_worker.updateData.connect(self.currently_running_tab.update_data) # update data & plot
+                self.experiment_worker.intermediateData.connect(self.currently_running_tab.intermediate_data) # intermediate data & plot
+                self.experiment_worker.updateRuntime.connect(self.currently_running_tab.update_runtime_estimation) # update runtime
+
+                self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
+                self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
+
+                ### button and GUI updates
+                self.update_progress(0)
+                self.experiment_progress_bar.setValue(5)
+
+                self.start_experiment_button.setEnabled(False)
+                self.stop_experiment_button.setEnabled(True)
+                self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
+                self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
+
+                self.central_tabs.setTabsClosable(False)  # Disable closing tabs
+                # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
+                # self.load_experiment_button.setEnabled(False)
+                # self.load_data_button.setEnabled(False)
+
+                qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
+                self.thread.start()
+
+            else:
+                qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
+                QMessageBox.critical(None, "Error", "RfSoC Disconnected.")
                 return
 
-            self.thread = QThread()
-
-
-            # Handling config specific to the current tab
-            # An experiment (both old and T2, want base and experiment config combined and flatted. Voltage Config stays as is.
-            self.current_tab.config = self.config_tree_panel.config
-            experiment_format_config = self.current_tab.config.copy()
-            experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
-            experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
-
-            if "sets" not in experiment_format_config:
-                experiment_format_config["sets"] = 1
-
-            # Create experiment object using updated config and current tab's experiment instance
-            experiment_class = self.current_tab.experiment_obj.experiment_class
-            # print(inspect.getsourcelines(experiment_class))
-
-            experiment_type = self.current_tab.experiment_obj.experiment_type
-            if experiment_type == ExperimentClassPlus:
-                # Retrieving hardware (ie. if voltage interface required, make sure it is included)
-                collected_hardware = [self.soc, self.soccfg]
-                hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
-
-                if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
-                    if TESTING:
-                        pass
-                    elif not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
-                        QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
-                        qCritical("Voltage Controller needed but not connected.")
-                        return
-
-                    voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
-                    if TESTING:
-                        collected_hardware.append(voltage_hardware)
-                    elif not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
-                        QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
-                        qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
-                        return
-                    else:
-                        collected_hardware.append(voltage_hardware)
-
-                self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
-
-            # Normal Experiments
-            else:
-                self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
-
-
-            print(experiment_format_config)
-
-            ### Creating the experiment worker from ExperimentThread and Connecting Signals
-            self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
-                                                      exp=self.experiment_instance, soc=self.soc)
-            self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
-
-            # Connecting started and finished signals
-            self.thread.started.connect(self.current_tab.prepare_file_naming)
-            self.thread.started.connect(self.current_tab.clear_plots)
-            self.thread.started.connect(self.experiment_worker.run) # run experiment
-            self.experiment_worker.finished.connect(self.thread.quit) # stop thread
-            self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
-            self.thread.finished.connect(self.thread.deleteLater) # delete thread
-            self.thread.finished.connect(self.finished_experiment) # update UI
-
-            # UI updates for tab
-            self.currently_running_tab = self.current_tab
-            idx = self.central_tabs.indexOf(self.currently_running_tab)
-            self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
-
-            # Connecting data related slots
-            self.experiment_worker.updateData.connect(self.currently_running_tab.update_data) # update data & plot
-            self.experiment_worker.intermediateData.connect(self.currently_running_tab.intermediate_data) # intermediate data & plot
-            self.experiment_worker.updateRuntime.connect(self.currently_running_tab.update_runtime_estimation) # update runtime
-
-            self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
-            self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
-
-            ### button and GUI updates
-            self.update_progress(0)
-            self.experiment_progress_bar.setValue(5)
-
-            self.start_experiment_button.setEnabled(False)
-            self.stop_experiment_button.setEnabled(True)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
-
-            self.central_tabs.setTabsClosable(False)  # Disable closing tabs
-            # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
-            # self.load_experiment_button.setEnabled(False)
-            # self.load_data_button.setEnabled(False)
-
-            qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
-            self.thread.start()
-
-        else:
-            qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
-            QMessageBox.critical(None, "Error", "RfSoC Disconnected.")
-            return
+        except Exception as e:
+            qCritical("Error while starting experiment: " + str(e))
 
     def stop_experiment(self):
         """
@@ -733,55 +743,78 @@ class Desq(QMainWindow):
 
     def create_experiment_tab(self, path):
         """
-        Creates a new QQuarkTab instance for the new tab of an experiment type by passing the absolute path of the
-        selected experiment file. Also handles UI updates. See QQuarkTab class for how information is extracted from
-        the given path.
+        Creates one or more experiment tabs from an experiment file.
+
+        Searches for all ExperimentClass / ExperimentClassPlus subclasses inside the file,
+        prompts the user to select which to load, and creates a tab for each selected class.
 
         :param path: The path to the experiment file.
         :type path: str
         """
 
-        # NEW METHOD
-        # FIND ALL VALID EXPERIMENTS
-        # ALLOW USER TO SELECT WHICH ONES
-        # CREATE AN EXPERIMENT TAB ONE FOR EACH ONE
-        # GIVE EXPERIMENT TAB THE EXPERIMENT OBJECT ATTRIBUTE
-        # WHAT DOES REEXTRACTING MEAN THEN?
-        # Need to specify which file and which experiment
-
         tab_count = self.central_tabs.count()
-        experiment_name = os.path.splitext(os.path.basename(path))[0]
+        file_name = os.path.splitext(os.path.basename(path))[0]  # just for tooltip/logging
 
-        # Creating a new QQuarkTab that extracts all features from the experiment file (see QQuarkTab documentation)
-        new_experiment_tab = QDesqTab(path, experiment_name, True, app=self)
+        # Use ExperimentLoader to find classes
+        _, experiment_classes = ExperimentLoader.load_and_find(path)
 
-        if new_experiment_tab.experiment_obj.experiment_module is not None:
+        if not experiment_classes:
+            qCritical("No valid ExperimentClass subclasses found.")
+            QMessageBox.critical(None, "Error", "No valid ExperimentClass subclasses found in this file.")
+            return
 
-            # Handling UI updates: Update current tab, enable experiment running, update ConfigPanel
-            tab_idx = self.central_tabs.addTab(new_experiment_tab, (experiment_name + ".py"))
+        # Extract class names
+        class_names = [cls_name for cls_name, _ in experiment_classes]
+        # Prompt user to select classes using multi-checkbox dialog
+        dialog = MultiCheckboxDialog(class_names)
+        if dialog.exec_():
+            selected = dialog.get_selected()
+        else:
+            selected = []
+
+        if not selected:
+            return  # user cancelled or selected nothing
+
+        # Create a tab for each selected class
+        for class_name in selected:
+            experiment_name = class_name
+
+            # Pass absolute file path + class name to QDesqTab
+            new_experiment_tab = QDesqTab(
+                (path, class_name),
+                experiment_name,
+                file_name,
+                True,
+                app=self
+            )
+
+            if new_experiment_tab.experiment_obj.experiment_module is None:
+                qCritical(f"Failed to load experiment: {class_name}")
+                continue
+
+            tab_idx = self.central_tabs.addTab(
+                new_experiment_tab,
+                f"{class_name}"
+            )
             self.central_tabs.setCurrentIndex(tab_idx)
 
             if self.currently_running_tab is None:
                 self.stop_experiment_button.setEnabled(False)
                 self.start_experiment_button.setEnabled(True)
-                self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
-                self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+                self.start_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');"
+                )
+                self.stop_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');"
+                )
 
             self.current_tab = new_experiment_tab
-            self.central_tabs.setTabToolTip(tab_idx, experiment_name + ".py")
-
-            # Signals from QuarkTabs
+            self.central_tabs.setTabToolTip(tab_idx, f"{class_name} ({file_name}.py)")
             self.current_tab.updated_tab.connect(self.update_tab)
 
-            # Remove the template tab created on GUI initialization
             if not self.tabs_added and tab_count == 1:
-                    self.central_tabs.removeTab(0)
+                self.central_tabs.removeTab(0)
             self.tabs_added = True
-
-        else:
-            qCritical("The experiment tab failed to be created - source of the error found in QQuarkTab module.")
-            # QMessageBox.critical(None, "Extraction error", "GUI failed to extract experiment (see log).")
-            return
 
     def update_tab(self):
         """

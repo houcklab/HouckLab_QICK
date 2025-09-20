@@ -22,10 +22,10 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QTextEdit, QToolBar, QAction,
     QLineEdit, QHBoxLayout, QPushButton, QApplication,
     QFrame, QSpacerItem, QSizePolicy, QShortcut, QLabel,
-    QMessageBox
+    QMessageBox, QPlainTextEdit
 )
-from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColor, QFont
-from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp
+from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QPainter, QTextFormat
+from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp, QRect
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
@@ -63,8 +63,80 @@ class FindBar(QFrame):
             self.editor.moveCursor(self.editor.textCursor().Start)
             self.editor.find(text)
 
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.setObjectName("line_number_widget")
+        self.code_editor = editor
 
-class ExperimentCodeEditor(QWidget):
+    def sizeHint(self):
+        return Qt.QSize(self.code_editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event):
+        self.code_editor.line_number_area_paint_event(event)
+
+class CodeTextEditor(QPlainTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.line_number_area = LineNumberArea(self)
+        self.block_signals = []  # store blocked line numbers
+
+        self.blockCountChanged.connect(self.update_line_number_area_width)
+        self.updateRequest.connect(self.update_line_number_area)
+
+        self.update_line_number_area_width(0)
+
+    def line_number_area_width(self):
+        digits = len(str(max(1, self.blockCount())))
+        space = 20 + self.fontMetrics().width('9') * digits
+        return space
+
+    def update_line_number_area_width(self, _):
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def update_line_number_area(self, rect, dy):
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+
+        if rect.contains(self.viewport().rect()):
+            self.update_line_number_area_width(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.line_number_area.setGeometry(QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height()))
+
+    def line_number_area_paint_event(self, event):
+        painter = QPainter(self.line_number_area)
+        painter.fillRect(event.rect(), Qt.white)
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = int(top + self.blockBoundingRect(block).height())
+
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                color = QColor("red") if block_number in self.block_signals else QColor("black")
+                painter.setPen(color)
+                painter.drawText(0, top, self.line_number_area.width() - 10, self.fontMetrics().height(),
+                                 Qt.AlignRight, number)
+            block = block.next()
+            top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+            bottom = int(top + self.blockBoundingRect(block).height())
+            block_number += 1
+
+        # Draw right border
+        border_color = QColor("#cccccc")  # light gray
+        painter.setPen(border_color)
+        painter.drawLine(self.line_number_area.width() - 1, event.rect().top(),
+                         self.line_number_area.width() - 1, event.rect().bottom())
+
+
+class ConfigCodeEditor(QWidget):
 
     extracted_config = pyqtSignal(dict)
 
@@ -75,7 +147,7 @@ class ExperimentCodeEditor(QWidget):
         self.code_file = None
 
         self.setContentsMargins(0,0,0,0)
-        self.setObjectName("experiment_code_editor")
+        self.setObjectName("config_code_editor")
 
         # Main Layout
         self.main_layout = QVBoxLayout(self)
@@ -99,11 +171,10 @@ class ExperimentCodeEditor(QWidget):
         self.code_file_label.setAlignment(Qt.AlignCenter)
 
         # Code Editor
-        self.code_text_editor = QTextEdit()
+        self.code_text_editor = CodeTextEditor()
         self.code_text_editor.setObjectName("code_text_editor")
-        self.code_text_editor.setPlaceholderText("Blocks socProxy imports. Works optimally with code that "
-                                                 "does not instantiate or execute any experiments. \n"
-                                                 "Extracts global config variable if present to send to configuration panel and runs experiments.")
+        self.code_text_editor.setPlaceholderText("Blocks socProxy imports and lines corresponding to experiment instantiation or execution. \n"
+                                                 "Extracts \"config\" variable if present to send to configuration panel.")
 
         ### Editor Utilities Bar
         self.editor_utilities_container = QWidget()
@@ -218,11 +289,102 @@ class ExperimentCodeEditor(QWidget):
             with open(self.code_file, 'w', encoding='utf-8') as f:
                 f.write(self.code_text_editor.toPlainText())
 
-            self.save_codefile_button.setStyleSheet("image: url('assets/check.svg');")
-            QTimer.singleShot(2000, lambda: self.save_codefile_button.setStyleSheet("image: url('assets/save.svg');"))
+            self.save_codefile_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
+            QTimer.singleShot(2000, lambda: self.save_codefile_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/save.svg');"))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
             qCritical("Could not save config extractor file: \n%s", traceback.format_exc())
+
+    # def run_script_blocking_funcs(self):
+    #     """
+    #     Safely execute a Python config file from the editor, with:
+    #     - AST static analysis to block banned imports and subclasses of ExperimentClass
+    #     - Runtime import hook to block dynamic/deep imports
+    #     - Relative imports work correctly
+    #     - Emits 'config' even if execution fails
+    #     """
+    #     banned_imports = ["socProxy"]
+    #     code_file = self.code_file
+    #     if code_file is None:
+    #         QMessageBox.warning(self, "No File", "Please open a Python config file first.")
+    #         return
+    #
+    #     # Step 1: Static AST analysis
+    #     try:
+    #         with open(code_file, "r", encoding="utf-8") as f:
+    #             code = f.read().replace("\x00", "")
+    #         tree = ast.parse(code)
+    #         for node in ast.walk(tree):
+    #             # Block banned imports
+    #             if isinstance(node, ast.Import):
+    #                 for alias in node.names:
+    #                     if alias.name.split('.')[-1] in banned_imports:
+    #                         raise ImportError(f"[Blocked] Import of '{alias.name}' is not allowed.")
+    #             elif isinstance(node, ast.ImportFrom):
+    #                 if node.module and node.module.split('.')[-1] in banned_imports:
+    #                     raise ImportError(f"[Blocked] Import from '{node.module}' is not allowed.")
+    #             # Block ExperimentClass subclasses
+    #             elif isinstance(node, ast.ClassDef):
+    #                 for base in node.bases:
+    #                     if isinstance(base, ast.Name) and base.id == "ExperimentClass":
+    #                         raise RuntimeError(f"[Blocked] Defining subclass of ExperimentClass: '{node.name}'")
+    #     except Exception as e:
+    #         qCritical(f"Static analysis blocked code: {e}")
+    #         QMessageBox.critical(self, "Blocked Code", f"Code cannot be executed:\n{e}")
+    #         return
+    #
+    #     # Step 2: Runtime import hook
+    #     class DummyLoader:
+    #         def __init__(self, name):
+    #             self.name = name
+    #
+    #         def create_module(self, spec):
+    #             return SimpleNamespace()
+    #
+    #         def exec_module(self, module):
+    #             pass
+    #
+    #     class BlockImportHook:
+    #         def __init__(self, banned):
+    #             self.banned = banned
+    #
+    #         def find_spec(self_inner, fullname, path, target=None):
+    #             if fullname.split('.')[-1] in self_inner.banned:
+    #                 qInfo(f"[Blocked] Skipping import: {fullname}")
+    #                 return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
+    #             return None
+    #
+    #     import_hook = BlockImportHook(banned_imports)
+    #     sys.meta_path.insert(0, import_hook)
+    #
+    #     # Step 3: Load file as a module
+    #     try:
+    #         spec = importlib.util.spec_from_file_location("__temp_config_module__", code_file)
+    #         module = importlib.util.module_from_spec(spec)
+    #         spec.loader.exec_module(module)
+    #
+    #         config = getattr(module, "config", {})
+    #         self.extracted_config.emit(config)
+    #         qInfo("Config extracted successfully.")
+    #     except Exception as e:
+    #         qCritical("Error during execution:")
+    #         qCritical(traceback.format_exc())
+    #         QMessageBox.critical(self, "Execution Error",
+    #                              f"Error while running script:\n{e}\nConfig extraction will continue if possible.")
+    #         # attempt to extract config even if partial execution
+    #         config = getattr(module, "config", {}) if 'module' in locals() else {}
+    #         self.extracted_config.emit(config)
+    #     finally:
+    #         try:
+    #             sys.meta_path.remove(import_hook)
+    #         except ValueError:
+    #             pass
+    #
+    #         # Update run button icon
+    #         self.run_editor_button.setStyleSheet(
+    #             "image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
+    #         QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet(
+    #             "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
 
     def run_script_blocking_funcs(self):
         """
@@ -314,7 +476,7 @@ class ExperimentCodeEditor(QWidget):
             try:
                 sys.meta_path.remove(import_hook)
 
-                self.run_editor_button.setStyleSheet("image: url('assets/check.svg');")
+                self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
                 QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
             except ValueError:
                 pass
