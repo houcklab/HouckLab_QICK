@@ -42,6 +42,9 @@ from PyQt5.QtWidgets import (
     QPushButton,
 )
 import pyqtgraph as pg
+from matplotlib.collections import PathCollection
+from matplotlib.patches import Rectangle
+
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentObject import ExperimentObject
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
@@ -452,7 +455,7 @@ class QDesqTab(QWidget):
 
         if self.experiment_obj is not None:
             self.config = {"Experiment Config": {}, "Base Config": self.app.base_config}
-            self.experiment_obj.extract_experiment_attributes()
+            self.experiment_obj.load_module_and_class()
 
             if self.experiment_obj.experiment_plotter is not None:
                 self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
@@ -589,27 +592,59 @@ class QDesqTab(QWidget):
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
 
-        if len(self.plots) == 0:
+        # Title is filename if it is a datafile
+        if len(self.plots) == 0 and not self.is_experiment:
             self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
 
         figures = list(map(plt.figure, plt.get_fignums()))
+        curr_row = 0
         self.curr_plot = 0
         for i, fig in enumerate(figures):
-            for ax in fig.get_axes():
-                if i % 2 == 0:
+            ncols = len(fig.get_axes())  # This currently places all plots on the same row
+
+            # Get figure title and display
+            fig_title = fig._suptitle.get_text() if fig._suptitle else f"{self.file_name} fig{i+1}"
+            self.plot_widget.addLabel(fig_title, row=curr_row, col=0, colspan=ncols, size='12pt')
+            self.plot_widget.nextRow()
+            curr_row += 1
+
+            for j, ax in enumerate(fig.get_axes()):
+
+                if (
+                    len(ax.get_lines()) == 0 and
+                    len(ax.get_images()) == 0 and
+                    len([coll for coll in ax.collections if isinstance(coll, PathCollection)]) == 0 and
+                    len([pat for pat in ax.patches if isinstance(pat, Rectangle)]) == 0
+                ):  # Skip plotting if no data in axes
+                    continue
+
+                # Extract title for specific plot
+                ax_title = ax.get_title() or f"Plot {self.curr_plot+1}"
+                self.plot_widget.addLabel(ax_title, row=curr_row, col=j % ncols, colspan=1, size='10pt')
+                self.plot_widget.nextRow()
+                curr_row += 1
+
+                # Extract and plot the actual axes
+                self.extract_and_plot_pyqtgraph(ax)
+
+                # Determine when to go next row
+                if j % ncols == 0:
                     self.plot_widget.nextRow()
-                self.extract_and_plot_pyqtgraph(i, ax)
+                    curr_row += 1
+
+            # Next figure should appear on the next row
+            self.plot_widget.nextRow()
+            curr_row += 1
 
         plt.close() # close all figs
+        qInfo("Finished plotting matplotlib extractions.")
 
         return
 
-    def extract_and_plot_pyqtgraph(self, i, ax):
+    def extract_and_plot_pyqtgraph(self, ax):
         """
         Convert a matplotlib Axes to a PyQtGraph plot.
 
-        :param i: The index of the figure.
-        :type i: int
         :param ax: Matplotlib axis containing plot data to convert.
         :type ax: matplotlib.axes.Axes
         """
@@ -630,8 +665,8 @@ class QDesqTab(QWidget):
         if (
             len(ax.get_lines()) == 0 and
             len(ax.get_images()) == 0 and
-            len(ax.collections) == 0 and
-            len(ax.patches) == 0
+            len([coll for coll in ax.collections if isinstance(coll, PathCollection)]) == 0 and
+            len([pat for pat in ax.patches if isinstance(pat, Rectangle)]) == 0
         ): # Skip plotting if no data in axes
             return
 

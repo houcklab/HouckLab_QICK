@@ -454,7 +454,7 @@ class Desq(QMainWindow):
                     self.config_tree_panel.set_config({"Experiment Config": {}, "Base Config": self.base_config})
 
             self.aux_thread = QThread()
-            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=3)
+            self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=5)
             self.aux_worker.moveToThread(self.aux_thread)
 
             # Connecting started and finished signals
@@ -953,7 +953,7 @@ class Desq(QMainWindow):
         tab_count = self.central_tabs.count()
         file_name = os.path.basename(file)
         # Creates the new QQuarkTab instance specifying not an experiment tab
-        new_data_tab = QDesqTab(None, file_name, False, file, app=self)
+        new_data_tab = QDesqTab((None, None), file_name, file_name, False, file, app=self)
 
         # Handle UI updates
         tab_idx = self.central_tabs.addTab(new_data_tab, (file_name))

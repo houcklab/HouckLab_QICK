@@ -178,7 +178,13 @@ class TesterExperiment(ExperimentClassPlus):
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
+        fig, axs = plt.subplots(2, 3, figsize=(8, 6), num=figNum)
+
+        print(fig.get_axes())
+
+        axs = axs.flat[0]
+        plt.suptitle("Tester Experiment: Voltage Sweep")
+        axs.set_title("Voltage Sweep")
 
         voltage_matrix = data['data']['voltage_matrix']
         X_spec = self.spec_fpts / 1e3
