@@ -63,7 +63,7 @@ class CustomMenuBar(QWidget):
         self.start_experiment_button = Helpers.create_button("", "start_experiment", False, self)
         self.start_experiment_button.setToolTip("Run")
         self.start_experiment_button.setFixedWidth(35)
-        self.stop_experiment_button = Helpers.create_button("️", "stop_experiment", False, self)
+        self.stop_experiment_button = Helpers.create_button("", "stop_experiment", False, self)
         self.stop_experiment_button.setToolTip("Stop")
         self.stop_experiment_button.setFixedWidth(35)
         self.soc_status_label = QLabel('✖ Soc Disconnected', self)
@@ -118,18 +118,18 @@ class CustomMenuBar(QWidget):
 
     def minimize_window(self):
         if self.is_macos:
-            self.parent.hide()
+            self.parent.showMinimized()
         else:
             self.parent.showMinimized()
 
     def toggle_fullscreen(self):
         if self.is_macos:
             if self.parent.isFullScreen():
-                self.parent.showMinimized()
+                self.parent.showNormal()
                 self.btn_minimize.setEnabled(True)
-                self.parent.setAttribute(Qt.WA_TranslucentBackground, True)
                 self.parent.setStyleSheet("QMainWindow{background: transparent; border-radius: 10px}")
                 self.setStyleSheet("QWidget#custom_menu_bar{border-top-left-radius: 10px; border-top-right-radius: 10px;}")
+                self.parent.setAttribute(Qt.WA_TranslucentBackground, True)
             else:
                 self.parent.showFullScreen()
                 self.btn_minimize.setEnabled(False)

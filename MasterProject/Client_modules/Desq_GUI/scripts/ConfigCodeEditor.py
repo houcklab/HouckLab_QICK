@@ -164,7 +164,7 @@ class ConfigCodeEditor(QWidget):
         self.editor_layout.setObjectName("editor_layout")
 
         # Title
-        self.editor_title_label = QLabel("Experiment Runner Editor (beta)")  # estimated experiment time
+        self.editor_title_label = QLabel("Config Extractor Editor (beta)")  # estimated experiment time
         self.editor_title_label.setObjectName("editor_title_label")
         self.editor_title_label.setAlignment(Qt.AlignCenter)
         # File name
@@ -176,7 +176,7 @@ class ConfigCodeEditor(QWidget):
         self.code_text_editor = CodeTextEditor()
         self.code_text_editor.setObjectName("code_text_editor")
         self.code_text_editor.setPlaceholderText("Blocks socProxy imports and lines corresponding to experiment instantiation or execution. \n"
-                                                 "Extracts \"config\" variable if present to send to configuration panel.")
+                                                 "Extracts \"config\" variable if present to send to configuration panel, and additional dictionaries.")
 
         ### Editor Utilities Bar
         self.editor_utilities_container = QWidget()
@@ -296,210 +296,6 @@ class ConfigCodeEditor(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
             qCritical("Could not save config extractor file: \n%s", traceback.format_exc())
-
-    # def run_script_blocking_funcs(self):
-    #     """
-    #     Safely execute a Python config file from the editor, with:
-    #     - AST static analysis to block banned imports and subclasses of ExperimentClass
-    #     - Runtime import hook to block dynamic/deep imports
-    #     - Relative imports work correctly
-    #     - Emits 'config' even if execution fails
-    #     """
-    #     banned_imports = ["socProxy"]
-    #     code_file = self.code_file
-    #     if code_file is None:
-    #         QMessageBox.warning(self, "No File", "Please open a Python config file first.")
-    #         return
-    #
-    #     # Step 1: Static AST analysis
-    #     try:
-    #         with open(code_file, "r", encoding="utf-8") as f:
-    #             code = f.read().replace("\x00", "")
-    #         tree = ast.parse(code)
-    #         for node in ast.walk(tree):
-    #             # Block banned imports
-    #             if isinstance(node, ast.Import):
-    #                 for alias in node.names:
-    #                     if alias.name.split('.')[-1] in banned_imports:
-    #                         raise ImportError(f"[Blocked] Import of '{alias.name}' is not allowed.")
-    #             elif isinstance(node, ast.ImportFrom):
-    #                 if node.module and node.module.split('.')[-1] in banned_imports:
-    #                     raise ImportError(f"[Blocked] Import from '{node.module}' is not allowed.")
-    #             # Block ExperimentClass subclasses
-    #             elif isinstance(node, ast.ClassDef):
-    #                 for base in node.bases:
-    #                     if isinstance(base, ast.Name) and base.id == "ExperimentClass":
-    #                         raise RuntimeError(f"[Blocked] Defining subclass of ExperimentClass: '{node.name}'")
-    #     except Exception as e:
-    #         qCritical(f"Static analysis blocked code: {e}")
-    #         QMessageBox.critical(self, "Blocked Code", f"Code cannot be executed:\n{e}")
-    #         return
-    #
-    #     # Step 2: Runtime import hook
-    #     class DummyLoader:
-    #         def __init__(self, name):
-    #             self.name = name
-    #
-    #         def create_module(self, spec):
-    #             return SimpleNamespace()
-    #
-    #         def exec_module(self, module):
-    #             pass
-    #
-    #     class BlockImportHook:
-    #         def __init__(self, banned):
-    #             self.banned = banned
-    #
-    #         def find_spec(self_inner, fullname, path, target=None):
-    #             if fullname.split('.')[-1] in self_inner.banned:
-    #                 qInfo(f"[Blocked] Skipping import: {fullname}")
-    #                 return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
-    #             return None
-    #
-    #     import_hook = BlockImportHook(banned_imports)
-    #     sys.meta_path.insert(0, import_hook)
-    #
-    #     # Step 3: Load file as a module
-    #     try:
-    #         spec = importlib.util.spec_from_file_location("__temp_config_module__", code_file)
-    #         module = importlib.util.module_from_spec(spec)
-    #         spec.loader.exec_module(module)
-    #
-    #         config = getattr(module, "config", {})
-    #         self.extracted_config.emit(config)
-    #         qInfo("Config extracted successfully.")
-    #     except Exception as e:
-    #         qCritical("Error during execution:")
-    #         qCritical(traceback.format_exc())
-    #         QMessageBox.critical(self, "Execution Error",
-    #                              f"Error while running script:\n{e}\nConfig extraction will continue if possible.")
-    #         # attempt to extract config even if partial execution
-    #         config = getattr(module, "config", {}) if 'module' in locals() else {}
-    #         self.extracted_config.emit(config)
-    #     finally:
-    #         try:
-    #             sys.meta_path.remove(import_hook)
-    #         except ValueError:
-    #             pass
-    #
-    #         # Update run button icon
-    #         self.run_editor_button.setStyleSheet(
-    #             "image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
-    #         QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet(
-    #             "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
-
-    # def run_script_blocking_funcs(self):
-    #     """
-    #     Runs Python code from a QTextEdit and extracts a variable,while blocking specific function calls and banned imports.
-    #
-    #     - Uses an AST check to detect banned imports statically.
-    #     - Uses a runtime import hook to block dynamic/deep imports.
-    #     - Stops execution of certain banned functions
-    #     - Also catches and reports execution errors.
-    #
-    #     """
-    #     qInfo("Attempting Config Extraction:")
-    #     banned_imports = ["socProxy"] # Banned Imports
-    #
-    #     code = self.code_text_editor.toPlainText().replace('\x00', '')
-    #
-    #     # Step 1: AST static check for banned imports
-    #     try:
-    #         tree = ast.parse(code)
-    #         for node in ast.walk(tree):
-    #             if isinstance(node, ast.Import):
-    #                 for alias in node.names:
-    #                     if alias.name.split('.')[-1] in banned_imports:
-    #                         qWarning(f"[Blocked] Import of '{alias.name}' is not allowed.")
-    #             elif isinstance(node, ast.ImportFrom):
-    #                 if node.module and node.module.split('.')[-1] in banned_imports:
-    #                     qWarning(f"[Blocked] Import from '{node.module}' is not allowed.")
-    #             elif isinstance(node, ast.ClassDef):
-    #                 for base in node.bases:
-    #                     if (isinstance(base, ast.Name)
-    #                         and (base.id == "ExperimentClass" or base.id == "ExperimentClassPlus")):
-    #                         qWarning(f"[Blocked] Defining subclass of ExperimentClass/ExperimentClassPlus: '{node.name}'")
-    #     except Exception as e:
-    #         print(f"Static analysis error: {e}")
-    #
-    #     # Step 2: Define import hook and dummy classes
-    #     class BlockImportHook:
-    #         def find_spec(self_inner, fullname, path, target=None):
-    #             if fullname.split('.')[-1] in banned_imports:
-    #                 qWarning(f"[Blocked] Skipping import of '{fullname}'")
-    #                 return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
-    #             return None
-    #
-    #     class DummyLoader:
-    #         """
-    #         The DummyLoader class is used to simulate an empty import and skip execution.
-    #         """
-    #
-    #         def __init__(self, name):
-    #             self.name = name
-    #
-    #         def create_module(self, spec):
-    #             # Create a dummy module with the expected attributes as None or dummy functions
-    #             dummy_module = SimpleNamespace()
-    #             if self.name.endswith('socProxy'):
-    #                 dummy_module.makeProxy = None  # or a dummy function if needed
-    #                 dummy_module.soc = None
-    #                 dummy_module.soccfg = None
-    #             return dummy_module
-    #
-    #         def exec_module(self, module):
-    #             pass  # do nothing
-    #
-    #     import_hook = BlockImportHook()
-    #     sys.meta_path.insert(0, import_hook)
-    #
-    #     class DummyExperimentClass:
-    #         def __init__(self, *args, **kwargs):
-    #             # skip all init code
-    #             qWarning("Skipped ExperimentClass/ExperimentClassPlus Initialization")
-    #             pass
-    #
-    #         def __getattr__(self, name):
-    #             # skip any method calls or attribute access
-    #             print("Skipped")
-    #             return lambda *args, **kwargs: None
-    #
-    #     # Step 3: Block selected function names
-    #     def blocked_function(*args, **kwargs):
-    #         print("Blocked function call.")
-    #
-    #     blocked_funcs = {}  # Blocked Global Functions
-    #
-    #     namespace = {
-    #         **{name: blocked_function for name in blocked_funcs},
-    #         "ExperimentClass": DummyExperimentClass,
-    #         "ExperimentClassPlus": DummyExperimentClass,
-    #         "__builtins__": __builtins__
-    #     }
-    #
-    #     try:
-    #         exec(code, namespace)
-    #
-    #         config = namespace.get("config", {})
-    #         self.extracted_config.emit(config)
-    #         qInfo("Extracted config.")
-    #     except Exception as e:
-    #         qCritical("Error while running script:")
-    #         qCritical(traceback.format_exc())
-    #         QMessageBox.critical(self, "Error", f"Error while running script: \n{e}. "
-    #                                             f"Still attempting config extraction. See Log.")
-    #         traceback.print_exc()
-    #
-    #         config = namespace.get("config", {})
-    #         self.extracted_config.emit(config)
-    #     finally:
-    #         try:
-    #             sys.meta_path.remove(import_hook)
-    #
-    #             self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/check.svg');")
-    #             QTimer.singleShot(2000, lambda: self.run_editor_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-green.svg');"))
-    #         except ValueError:
-    #             pass
 
     def run_script_blocking_funcs(self):
         """

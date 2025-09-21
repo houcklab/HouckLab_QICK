@@ -627,7 +627,12 @@ class QDesqTab(QWidget):
             r, g, b, a = [int(255 * c) for c in rgba]
             return (r, g, b, a)
 
-        if len(ax.get_lines()) == 0 and len(ax.get_images()) == 0: # Skip plotting if no data in axes
+        if (
+            len(ax.get_lines()) == 0 and
+            len(ax.get_images()) == 0 and
+            len(ax.collections) == 0 and
+            len(ax.patches) == 0
+        ): # Skip plotting if no data in axes
             return
 
         new_plot = True
@@ -694,6 +699,32 @@ class QDesqTab(QWidget):
                 # Create ColorBarItem
                 color_bar = pg.ColorBarItem(values=(np.nanmin(img_item.image), np.nanmax(img_item.image)), colorMap=color_map)
                 color_bar.setImageItem(img_item, insert_in=plot)  # Add color bar to the plot
+
+        # Handle scatter plots (PathCollection)
+        for coll in ax.collections:
+            if isinstance(coll, PathCollection):
+                offsets = coll.get_offsets()
+                if len(offsets) > 0:
+                    x, y = offsets[:, 0], offsets[:, 1]
+                    # Grab color info (fallback red)
+                    facecolors = coll.get_facecolors()
+                    color = (255, 0, 0, 150) if len(facecolors) == 0 else tuple(
+                        (facecolors[0, :3] * 255).astype(int)) + (int(facecolors[0, 3] * 255),)
+                    plot.plot(x, y, pen=None, symbol='o', symbolSize=5, symbolBrush=color)
+
+        # Handle histogram bars (Rectangles)
+        for patch in ax.patches:
+            if isinstance(patch, Rectangle):
+                x = patch.get_x()
+                y = patch.get_y()
+                w = patch.get_width()
+                h = patch.get_height()
+                rect = pg.QtWidgets.QGraphicsRectItem(x, y, w, h)
+                color = patch.get_facecolor()
+                brush = pg.mkBrush([int(c * 255) for c in color])
+                rect.setBrush(brush)
+                rect.setPen(pg.mkPen(None))
+                plot.addItem(rect)
 
         if new_plot: # only add legends if your plotting for the first time
             # Legends

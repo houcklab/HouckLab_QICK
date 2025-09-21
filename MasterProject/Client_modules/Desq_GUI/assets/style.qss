@@ -227,7 +227,7 @@ QPushButton#stop_experiment{
 
 QPushButton#stop_experiment:hover{
     background: $BUTTON_STOP_HOVER_COLOR;
-    border: none
+    border: none;
 }
 
 QPushButton#connect_button:disabled,
@@ -270,7 +270,7 @@ QTreeView#ConfigTreePanel QPushButton#paste_config {
     border-right: 1px solid $GENERAL_BORDER_COLOR;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
-    image: url('MasterProject/Client_modules/Desq_GUI/assets/clipboard-paste.svg');
+    image: url('MasterProject/Client_modules/Desq_GUI/assets/square-pen.svg');
 }
 
 QTreeView#ConfigTreePanel QPushButton:hover {
@@ -614,7 +614,6 @@ QPushButton#win_btn_fullscreen:hover {
 QPushButton#win_btn_close:hover {
     background: #E81123;
 }
-
 
 QPushButton#load_data_button, QPushButton#load_experiment_button {
     background: $BUTTON_MENU_BACKGROUND_COLOR;
