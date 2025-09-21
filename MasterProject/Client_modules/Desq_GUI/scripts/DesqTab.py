@@ -602,11 +602,15 @@ class QDesqTab(QWidget):
         for i, fig in enumerate(figures):
             ncols = len(fig.get_axes())  # This currently places all plots on the same row
 
+            print(ncols)
+
             # Get figure title and display
             fig_title = fig._suptitle.get_text() if fig._suptitle else f"{self.file_name} fig{i+1}"
             self.plot_widget.addLabel(fig_title, row=curr_row, col=0, colspan=ncols, size='12pt')
+
+            curr_row += 2  # Skip two at a time for plot titles and the plot
             self.plot_widget.nextRow()
-            curr_row += 1
+            self.plot_widget.nextRow()
 
             for j, ax in enumerate(fig.get_axes()):
 
@@ -620,33 +624,39 @@ class QDesqTab(QWidget):
 
                 # Extract title for specific plot
                 ax_title = ax.get_title() or f"Plot {self.curr_plot+1}"
-                self.plot_widget.addLabel(ax_title, row=curr_row, col=j % ncols, colspan=1, size='10pt')
-                self.plot_widget.nextRow()
-                curr_row += 1
+                self.plot_widget.addLabel(ax_title, row=curr_row - 1, col=j % ncols, colspan=1, size='10pt')
 
                 # Extract and plot the actual axes
-                self.extract_and_plot_pyqtgraph(ax)
+                self.extract_and_plot_pyqtgraph(ax, curr_row, j % ncols)
 
                 # Determine when to go next row
-                if j % ncols == 0:
+                if (j+1) % ncols == 0:
+                    print("moving to next row")
+                    curr_row += 2  # Skip two at a time for plot titles and the plot
                     self.plot_widget.nextRow()
-                    curr_row += 1
+                    self.plot_widget.nextRow()
 
             # Next figure should appear on the next row
+            curr_row += 2  # Skip two at a time for plot titles and the plot
             self.plot_widget.nextRow()
-            curr_row += 1
+            self.plot_widget.nextRow()
 
         plt.close() # close all figs
-        qInfo("Finished plotting matplotlib extractions.")
+        qInfo(f"Finished plotting {self.curr_plot} matplotlib extractions.")
+        print(len(self.plots))
 
         return
 
-    def extract_and_plot_pyqtgraph(self, ax):
+    def extract_and_plot_pyqtgraph(self, ax, row, col):
         """
         Convert a matplotlib Axes to a PyQtGraph plot.
 
         :param ax: Matplotlib axis containing plot data to convert.
         :type ax: matplotlib.axes.Axes
+        :param row: Row to plot to on the layout.
+        :type row: int
+        :param col: Column to plot to on the layout.
+        :type col: int
         """
         def mpl_color_to_pg(color):
             """
@@ -678,7 +688,7 @@ class QDesqTab(QWidget):
             plot_data_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
             new_plot = False
         else:
-            plot = self.plot_widget.addPlot() # Otherwise, create new plots
+            plot = self.plot_widget.addPlot(row, col) # Otherwise, create new plots
             self.plots.append(plot)
         self.curr_plot += 1
 
