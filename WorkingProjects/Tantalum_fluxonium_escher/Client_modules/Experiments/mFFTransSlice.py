@@ -43,6 +43,8 @@ class FFTransSlice_Experiment(ExperimentClass):
         "stop_freq": 6000,              # [MHz] Stop frequency of sweep
         "num_freqs": 101,               # Number of frequency points to use
         "init_time": 1,                 # [us] Thermalisation time after FF to new point before starting measurement
+        "therm_time": 1,                # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
+        "measure_at_0": False,          # [Bool] Do we go back to 0 DAC units on the FF to measure?
 
         "yokoVoltage": 0,               # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,              # [us] Delay after measurement before starting next measurement
@@ -99,9 +101,21 @@ class FFTransSlice_Experiment(ExperimentClass):
             # For convenience
             adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
 
+            # If measuring at 0 ff DAC units, send back to 0
+            if self.cfg["measure_at_0"]:
+                self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0, gain=0, length=3)
+                self.pulse(ch=self.cfg['ff_ch'], t=0)
+
             # trigger measurement, play measurement pulse, wait for qubit to relax
             self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                          wait=True, syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+
+            # If measuring at 0 ff DAC units, go back to high value and leave it there; wait for init time
+            if self.cfg["measure_at_0"]:
+                self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
+                                         gain=self.cfg["ff_gain"], length=3, stdysel = 'last')
+                self.pulse(ch=self.cfg['ff_ch'], t=0)
+                self.sync_all(self.us2cycles(self.cfg["therm_time"]))
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):

@@ -186,6 +186,7 @@ class FFTransVsFlux_Experiment(ExperimentClass):
         "stop_freq": 6000,               # [MHz] Stop frequency of sweep
         "num_freqs": 101,                # Number of frequency points to use
         "init_time": 1,                  # [us] Thermalisation time after FF to new point before starting measurement
+        "measure_at_0": False,           # [Bool] Do we go back to 0 DAC units on the FF to measure?
 
         "yokoVoltage": 0,                # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]
