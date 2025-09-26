@@ -187,6 +187,7 @@ class FFTransVsFlux_Experiment(ExperimentClass):
         "num_freqs": 101,                # Number of frequency points to use
         "init_time": 1,                  # [us] Thermalisation time after FF to new point before starting measurement
         "measure_at_0": False,           # [Bool] Do we go back to 0 DAC units on the FF to measure?
+        "reversed_pulse": False,         # [Bool] Do we play a reversed pulse on the ff channel after measurement?
 
         "yokoVoltage": 0,                # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]

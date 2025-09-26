@@ -45,6 +45,7 @@ class FFTransSlice_Experiment(ExperimentClass):
         "init_time": 1,                 # [us] Thermalisation time after FF to new point before starting measurement
         "therm_time": 1,                # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
         "measure_at_0": False,          # [Bool] Do we go back to 0 DAC units on the FF to measure?
+        "reversed_pulse": False,        # [Bool] Do we play a reversed pulse on the ff channel after measurement?
 
         "yokoVoltage": 0,               # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,              # [us] Delay after measurement before starting next measurement
@@ -112,6 +113,13 @@ class FFTransSlice_Experiment(ExperimentClass):
 
             # If measuring at 0 ff DAC units, go back to high value and leave it there; wait for init time
             if self.cfg["measure_at_0"]:
+                # If we want to play a reversed FF pulse to cancel out the residual currents in the system and bring
+                # us back to the correct amount of flux. Since we thermalise at ff_gain, the "pulse" is going back to 0.
+                if self.cfg["reversed_pulse"]:
+                    self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
+                                             gain=2 * self.cfg["ff_gain"], length=3, stdysel='last')
+                    self.pulse(ch=self.cfg['ff_ch'], t=0)
+                    self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
                 self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
                                          gain=self.cfg["ff_gain"], length=3, stdysel = 'last')
                 self.pulse(ch=self.cfg['ff_ch'], t=0)
@@ -136,6 +144,10 @@ class FFTransSlice_Experiment(ExperimentClass):
         self.avgq = np.zeros(self.cfg['num_freqs'])
 
         self.data = {}
+
+        if (self.cfg["measure_at_0"] and self.cfg["reversed_pulse"] and
+            (self.cfg["ff_gain"] * 2 > self.soc.get_maxv(self.cfg['ff_ch']))):
+            raise ValueError('If playing reversed pulse and measuring at 0, ff_gain * 2 cannot exceed maximum value')
 
     def acquire(self, progress=False, debug=False):
         # First, run init program. Only one rep for this one!

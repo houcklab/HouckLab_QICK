@@ -132,7 +132,7 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.478,
+    "yokoVoltage": -1.483,
 
 }
 
@@ -1246,7 +1246,7 @@ UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,  # [us]
-    "read_pulse_gain": 5600,  # [DAC units]
+    "read_pulse_gain": 10000,  # [DAC units]
     "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
 
     # Fast flux pulse parameters
@@ -1255,9 +1255,9 @@ UpdateConfig = {
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
     # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
-    "ff_gain_start": -100,  # [DAC] Initial value
-    "ff_gain_stop": 300,  # [DAC] Final value
-    "ff_gain_steps": 101,  # number of qubit_spec_delay points to take
+    "ff_gain_start": -400,  # [DAC] Initial value
+    "ff_gain_stop": 0,  # [DAC] Final value
+    "ff_gain_steps": 31,  # number of qubit_spec_delay points to take
 
     # Transmission Experiment. Parameter naming convention preserved from mTransmission_SaraTest below
     # "read_pulse_freq": 7000,        # [MHz] Centre frequency of transmission sweep
@@ -1267,12 +1267,13 @@ UpdateConfig = {
     # New format parameters for transmission experiment
     "start_freq": 7390.5,  # [MHz] Start frequency of sweep
     "stop_freq": 7393,  # [MHz] Stop frequency of sweep
-    "num_freqs": 301,  # Number of frequency points to use
+    "num_freqs": 75,  # Number of frequency points to use
     "init_time": 100000,  # [us] Thermalisation time after FF to new point before starting measurement
-    "therm_time": 1000,  # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
-    "measure_at_0": True,  # [Bool] Do we go back to 0 DAC units on the FF to measure?
+    "therm_time": 5000,  # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
+    "measure_at_0": False,  # [Bool] Do we go back to 0 DAC units on the FF to measure?
+    "reversed_pulse": True,        # [Bool] Do we play a reversed pulse on the ff channel after measurement?
 
-    "yokoVoltage": -1.494,  # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -1.483,  # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
     "reps": 500,  # Reps of measurements; init program is run only once
     "sets": 5,  # Sets of whole measurement; used in GUI
@@ -1312,8 +1313,8 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 10,        # [MHz]
-    "qubit_freq_stop": 110,         # [MHz]
+    "qubit_freq_start": 700,        # [MHz]
+    "qubit_freq_stop": 1500,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
     "sigma": 0.0250,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 0.2,               # [us], used with "const"
@@ -1325,7 +1326,7 @@ UpdateConfig = {
     "qubit_spec_delay": 0.,          # [us] Delay before qubit pulse
 
     # Fast flux pulse parameters
-    "ff_gain": 630,                  # [DAC units] Gain for fast flux pulse
+    "ff_gain": 70,                  # [DAC units] Gain for fast flux pulse
     "ff_length": 0.15,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
@@ -1333,7 +1334,7 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
     "yokoVoltage": -1.494,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 10,               # [us]
+    "relax_delay": 1000,               # [us]
     "qubit_freq_expts": 51,         # number of points
     "reps": 50000,
     "use_switch": False,
