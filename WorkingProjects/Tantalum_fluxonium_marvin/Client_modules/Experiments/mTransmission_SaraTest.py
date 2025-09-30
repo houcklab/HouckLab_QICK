@@ -14,7 +14,7 @@ class LoopbackProgramTrans(AveragerProgram):
         cfg = self.cfg
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),#gen_ch=cfg["res_ch"]), NOT THIS !!!!!!!!!!!!!!!
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),#gen_ch=cfg["res_ch"]), NOT THIS !!!!!!!!!!!!!!!
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
@@ -55,6 +55,7 @@ class Transmission(ExperimentClass):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             results.append(prog.acquire(self.soc, load_pulses=True,progress=False))
+            # time.sleep(0.01) # Added to wait for the RFSOC to send all data
         if debug:
             print(f'Time: {time.time() - start}')
         results = np.transpose(results)

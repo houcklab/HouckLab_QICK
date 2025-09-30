@@ -177,7 +177,7 @@ class QNDmeas(ExperimentClass):
         if 'confidence_selection' in kwargs:
             confidence_selection = kwargs["confidence_selection"]
         else:
-            confidence_selection = 0.95
+            confidence_selection = 0.99
 
         # Calculate the probability
         (state0_probs, state0_probs_err, state0_num,
@@ -284,13 +284,15 @@ class QNDmeas(ExperimentClass):
         plt.savefig(self.iname, dpi=400)
         if plotDisp:
             plt.show()
-        plt.close()
+        else:
+            plt.close()
+
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
-    def calculate_qnd(self, read_param):
+    def calculate_qnd(self, read_param, confidence_selection  = 0.99):
         params = {}
         for i in range(len(self.keys)):
             self.cfg[self.keys[i]] = read_param[i]
@@ -304,7 +306,7 @@ class QNDmeas(ExperimentClass):
 
         # Get QND Data and process
         data = self.acquire()
-        data = self.process_data(data=data)
+        data = self.process_data(data=data,confidence_selection = confidence_selection )
 
         if self.store:
             self.display(data=data)
@@ -323,7 +325,7 @@ class QNDmeas(ExperimentClass):
 
         return val
 
-    def brute_search(self, keys, param_bounds, tolerance, store = False):
+    def brute_search(self, keys, param_bounds, tolerance, store = False, confidence_selection = 0.99):
         # Resetting
         self.params = []
         self.quants = []
@@ -359,7 +361,7 @@ class QNDmeas(ExperimentClass):
         best_val = -np.inf
         best_params = None
         for i, params in enumerate(param_combinations):
-            value = self.calculate_qnd(params)
+            value = self.calculate_qnd(params, confidence_selection = confidence_selection)
             if best_val < value:
                 best_val = value
                 best_params = self.params[-1]

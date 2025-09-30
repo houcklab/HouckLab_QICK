@@ -163,8 +163,7 @@ class SingleShotAnalysis:
             if self.fast is False or self.disp_image:
                 self.book_keeping(self.inital_fit_results, 'Initial')
 
-            if self.fast is False:
-                initial_params = self.inital_fit_results['result'].params
+            initial_params = self.inital_fit_results['result'].params
 
         else:
             initial_params = None

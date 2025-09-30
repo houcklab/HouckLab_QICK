@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.42,#1.6,
+    "yokoVoltage": -0.115,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 6.6,  # us
-    "read_pulse_gain": 10000,  # [DAC units]
-    "read_pulse_freq": 6671.7092,#509,#7391.96,#7392.36,#957,
+    "read_length": 40,  # us
+    "read_pulse_gain": 4600,  # [DAC units]
+    "read_pulse_freq": 6670.85,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -59,11 +59,11 @@ UpdateConfig = {
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 7000,
-    "qubit_length": 0.8,  ###us, this is used if pulse style is const
+    "qubit_gain": 1500,
+    "qubit_length": 0.5,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 2184,
+    "qubit_freq": 513,
     "relax_delay": 10,
     'qubit_mode_periodic' : False,
 
@@ -277,31 +277,31 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.104,
-    'yokoVoltage_freqPoint': -0.104,
+    "yokoVoltage": -0.115,
+    'yokoVoltage_freqPoint': -0.115,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 25,
-    "read_pulse_gain": 7000,
-    "read_pulse_freq": 6672.5512,
+    "read_length": 30,
+    "read_pulse_gain": 4600,
+    "read_pulse_freq": 6671.71,
 
     # Qubit Tone
-    "qubit_freq_start": 150,
-    "qubit_freq_stop": 160,
+    "qubit_freq_start": 470,
+    "qubit_freq_stop": 570,
     "RabiNumPoints": 11,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
-    'qubit_length': 0.8,
+    'qubit_length': 0.015,
     "relax_delay": 10,
-    "initialize_qubit_gain" : 1000,
-    "qubit_freq_base": 154,
+    "initialize_qubit_gain" : 1500,
+    "qubit_freq_base": 512,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 10,
-    "qubit_gain_step": 100,
-    "qubit_gain_expts": 25,
+    "qubit_gain_start": 2000,
+    "qubit_gain_step": 6000,
+    "qubit_gain_expts": 6,
 
     # define number of clusters to use
     "cen_num": 2,
@@ -429,24 +429,24 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.42,
+    "yokoVoltage": -0.115,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 4,  # us
-    "read_pulse_gain": 14000,  # [DAC units]
-    "read_pulse_freq": 6671.6612,
+    "read_length": 10,  # us
+    "read_pulse_gain": 6000,  # [DAC units]
+    "read_pulse_freq": 6671.7,
     "mode_periodic" : False,
 
     # qubit spec
     "qubit_pulse_style": "const",
     "qubit_ge_gain": 3000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 2184,
+    "qubit_ge_freq": 512,
     "qubit_ef_freq": 110,
     "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 0.8,
+    "qubit_length": 0.5,
     "sigma": 0.05,
     "relax_delay": 10,
 
@@ -478,7 +478,7 @@ inst_singleshotopt.save_config()
 # TITLE Running automatic optimization
 # config["read_pulse_freq"] = 6248.5
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.05, config["read_pulse_freq"] + 0.05),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.08, config["read_pulse_freq"] + 0.08),
     'read_length': (10, 70),
     'read_pulse_gain': (500, 4000)
 }

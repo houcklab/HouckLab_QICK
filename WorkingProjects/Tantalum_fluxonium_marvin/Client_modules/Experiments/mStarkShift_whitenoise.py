@@ -68,12 +68,12 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         # Adding the resonator pulse
         if self.cfg['ro_periodic']:
             self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
-                                     gain=cfg["cavity_pulse_gain"],
-                                     length=self.us2cycles(cfg["pop_pulse_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode="periodic")
         elif not self.cfg['ro_periodic']:
             self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
-                                     gain=cfg["cavity_pulse_gain"],
-                                     length=self.us2cycles(cfg["pop_pulse_length"], gen_ch=cfg["res_ch"]))
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -87,37 +87,26 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
            self.t_delay = 'auto'
         print(f"t_delay = {self.t_delay}")
         print(f"cavity gain = {self.cfg['cavity_pulse_gain']}")
+        print(f"Using switch = {self.cfg['use_switch']}")
         self.sync_all(self.us2cycles(1))
 
     def body(self):
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
 
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
-                                 gain=self.cfg["cavity_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["pop_pulse_length"], gen_ch=self.cfg["res_ch"]))
-
-        if self.cfg["use_switch"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switch
-
-        if self.cfg['simultaneous']:
-            self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
-            self.pulse(ch=self.cfg["qubit_ch"], t = self.t_delay)  # Play a qubit tone
-            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-        else:
-            self.pulse(ch=self.cfg["res_ch"])  # Play a cavity tone
-            self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-            self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
+        # if self.cfg["use_switch"]:
+        #     self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+        #                  width=self.cfg["trig_len"])  # trigger for switch
+        #
+        # if self.cfg['simultaneous']:
+        #     self.pulse(ch=self.cfg["qubit_ch"], t = self.t_delay)  # Play a qubit tone
+        # else:
+        #     self.sync_all(self.us2cycles(self.cfg['pop_pulse_length']))  # align channels and wait 10ns
+        #     self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
 
         self.sync_all(self.us2cycles(self.cfg["wait_between_pulses"]))  # align channels and wait 10ns
 
-        # # Configure the cavity pulse for readout
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
-
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
@@ -212,6 +201,7 @@ class StarkShift_whitenoise(ExperimentClass):
             if i == 0:
                 self.awg.output_on()
             self.awg.set_voltage(gainVec[i])
+            time.sleep(1)
 
             if self.cfg["calibrate_cav"]:
                 # Get the new cavity frequency
@@ -243,7 +233,7 @@ class StarkShift_whitenoise(ExperimentClass):
             avgQ = data_Q
 
                 ## Amplitude
-            Z_specamp[i, :] = avgamp0/np.mean(avgamp0)
+            Z_specamp[i, :] = avgamp0
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_1 = axs[0,0].imshow(

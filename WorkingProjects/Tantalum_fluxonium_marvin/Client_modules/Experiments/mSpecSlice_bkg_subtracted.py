@@ -159,6 +159,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
             f_reqd = popt[1]
         except:
             print("Cannot amp-plot fit")
+            f_reqd = self.qubit_freqs[np.argmax(amp)]
 
 
         ### Save Data
