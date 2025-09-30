@@ -132,7 +132,7 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.494,
+    "yokoVoltage": -1.483,
 
 }
 
@@ -1208,6 +1208,7 @@ UpdateConfig = {
     "stop_freq": 7391.9 + 2,  # [MHz] Stop frequency of sweep
     "num_freqs": 301,  # Number of frequency points to use
     "init_time": 5,  # [us] Thermalisation time after FF to new point before starting measurement
+    "measure_at_0": True,  # [Bool] Do we go back to 0 DAC units on the FF to measure?
 
     "yokoVoltage": -1.494,  # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
@@ -1245,19 +1246,18 @@ UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,  # [us]
-    "read_pulse_gain": 5600,  # [DAC units]
+    "read_pulse_gain": 10000,  # [DAC units]
     "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
 
     # Fast flux pulse parameters
-    "ff_length": 50,  # [us] Total length of positive fast flux pulse
     "ff_pulse_style": "const",  # one of ["const", "flat_top", "arb"], currently only "const" is supported
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
     # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
-    "ff_gain_start": 0,  # [DAC] Initial value
-    "ff_gain_stop": 200,  # [DAC] Final value
-    "ff_gain_steps": 5,  # number of qubit_spec_delay points to take
+    "ff_gain_start": -400,  # [DAC] Initial value
+    "ff_gain_stop": 0,  # [DAC] Final value
+    "ff_gain_steps": 31,  # number of qubit_spec_delay points to take
 
     # Transmission Experiment. Parameter naming convention preserved from mTransmission_SaraTest below
     # "read_pulse_freq": 7000,        # [MHz] Centre frequency of transmission sweep
@@ -1265,14 +1265,17 @@ UpdateConfig = {
     # "TransNumPoints": 301,          # Number of poitns in transmission sweep
 
     # New format parameters for transmission experiment
-    "start_freq": 7391.9 - 2,  # [MHz] Start frequency of sweep
-    "stop_freq": 7391.9 + 2,  # [MHz] Stop frequency of sweep
-    "num_freqs": 101,  # Number of frequency points to use
-    "init_time": 5,  # [us] Thermalisation time after FF to new point before starting measurement
+    "start_freq": 7390.5,  # [MHz] Start frequency of sweep
+    "stop_freq": 7393,  # [MHz] Stop frequency of sweep
+    "num_freqs": 75,  # Number of frequency points to use
+    "init_time": 100000,  # [us] Thermalisation time after FF to new point before starting measurement
+    "therm_time": 5000,  # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
+    "measure_at_0": False,  # [Bool] Do we go back to 0 DAC units on the FF to measure?
+    "reversed_pulse": True,        # [Bool] Do we play a reversed pulse on the ff channel after measurement?
 
-    "yokoVoltage": -1.494,  # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -1.483,  # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
-    "reps": 1000,  # Reps of measurements; init program is run only once
+    "reps": 500,  # Reps of measurements; init program is run only once
     "sets": 5,  # Sets of whole measurement; used in GUI
     "RFSOC_delay": 0,
 }
@@ -1310,8 +1313,8 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 10,        # [MHz]
-    "qubit_freq_stop": 110,         # [MHz]
+    "qubit_freq_start": 700,        # [MHz]
+    "qubit_freq_stop": 1500,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
     "sigma": 0.0250,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 0.2,               # [us], used with "const"
@@ -1323,7 +1326,7 @@ UpdateConfig = {
     "qubit_spec_delay": 0.,          # [us] Delay before qubit pulse
 
     # Fast flux pulse parameters
-    "ff_gain": 630,                  # [DAC units] Gain for fast flux pulse
+    "ff_gain": 70,                  # [DAC units] Gain for fast flux pulse
     "ff_length": 0.15,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
@@ -1331,7 +1334,7 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
     "yokoVoltage": -1.494,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 10,               # [us]
+    "relax_delay": 1000,               # [us]
     "qubit_freq_expts": 51,         # number of points
     "reps": 50000,
     "use_switch": False,
@@ -1431,9 +1434,9 @@ config = {
 
         # Fast flux pulse parameters
         "ff_ramp_style": "linear",  # one of ["linear"]
-        "ff_ramp_start": 0, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": 500, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_delay": 0, # [us] Delay between fast flux ramps
+        "ff_ramp_start": 1150, # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 1300, # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 10000, # [us] Delay between fast flux ramps
         "ff_ch": 6,  # RFSOC output channel of fast flux drive
         "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
@@ -1452,22 +1455,22 @@ config = {
         "ff_ramp_length_start": 0.02,  # [us] Total length of positive fast flux pulse, start of sweep
         "ff_ramp_length_stop": 0.1,  # [us] Total length of positive fast flux pulse, end of sweep
         "ff_ramp_length_expts": 15, # [int] Number of points in the ff ramp length sweep
-        "yokoVoltage": -1.4895,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 10,# - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
-        "relax_delay_2": 10 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
+        "yokoVoltage": -1.478,  # [V] Yoko voltage for magnet offset of flux
+        "relax_delay_1": 0.2,# - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+        "relax_delay_2": 20 - BaseConfig["adc_trig_offset"], # [us] Relax delay after second readout
 
         # Gain sweep parameters
-        "ff_gain_expts": 15,    # [int] How many different ff ramp gains to use
+        "ff_gain_expts": 3,    # [int] How many different ff ramp gains to use
         "ff_ramp_length": 0.01,    # [us] Half-length of ramp to use when sweeping gain
 
         # Number of cycle repetitions sweep parameters
-        "cycle_number_expts": 10,     # [int] How many different values for number of cycles around to use in this experiment
-        "max_cycle_number": 500,        # [int] What is the largest number of cycles to use in sweep? Smallest value always 1
-        "cycle_delay": 0.0,          # [us] How long to wait between cycles in one experiment?
+        "cycle_number_expts": 2,     # [int] How many different values for number of cycles around to use in this experiment
+        "max_cycle_number": 10,        # [int] What is the largest number of cycles to use in sweep? Smallest value always 1
+        "cycle_delay": 0.005,          # [us] How long to wait between cycles in one experiment?
 
         # General parameters
-        "sweep_type": 'cycle_number',  # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
-        "reps": 500000,
+        "sweep_type": 'ff_gain',  # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
+        "reps": 1000,
         "sets": 5,
         "angle": None, # [radians] Angle of rotation for readout
         "threshold": None, # [DAC units] Threshold between g and e
