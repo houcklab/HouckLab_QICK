@@ -4,41 +4,30 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
     (RampCurrentCalibrationGain, RampCurrentCalibration1D,RampCurrentCalibration1DShots, RampCurrentCalibrationOffset,
      RampCurrentCalibrationOffset_Multiple, RampCurrentCalibrationTime)
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import RampDurationVsPopulation, \
-    FFExptVsPopulation, TimeVsPopulation, TimeVsPopulation_GainSweep
+    FFExptVsPopulation, TimeVsPopulation, TimeVsPopulation_GainSweep, TimeVsPopulation_Shots, \
+    RampCheckDensityCorrelations
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorrelations import CurrentCorrelationMeasurement
 
-# from Qubit_Parameters_8QPiFlux import *
-# from Qubit_Parameters_8QPiFlux_Matt import *
-from qubit_parameter_files.Qubit_Parameters_1234 import *
 
-FF4 = [1,2,3,4]
-FF8 = [5,6,7,8]
-pulse_145_readout = ['1HHH_readout', '4HHH_readout', '5HHH_readout']
+from qubit_parameter_files.Qubit_Parameters_Master import *
 
-Qubit_Readout = FF4
-# Qubit_Readout = ['4HHH']
-# Qubit_Readout = ['1HHH', '4HHH', '5HHH']
-# Qubit_Readout = ['5HHH']
-
-Qubit_Pulse = ['1H']
-# Qubit_Pulse = ['4HHH', '1HHH', '5HHH']
-# Qubit_Pulse = ['1HHH']
-
-
-
+Qubit_Readout = [1,2,3,4,5,6,7,8]
+# Qubit_Readout = ['4_4815_readout', '8_4815_readout', '1_4815_readout', '5_4815_readout']
+Qubit_Pulse = ['4_4815', '8_4815', '1_4815', '5_4815']
+# Qubit_Pulse = [6]
 
 run_ramp_gain_calibration = False
 
 
 # # Q4 --> Q2
-ff_expt_vs_pop_dict = {'swept_qubit': str(1),
-                       'reps': 1000, 'gain_start': -11111, 'gain_end': -8000, 'gain_num_points': 11,
-                        'ramp_duration': 3000}
+ff_expt_vs_pop_dict = {'swept_qubit': str(5),
+                       'reps': 1000, 'gain_start': -8640 - 1000, 'gain_end': -8640 + 1000, 'gain_num_points': 11,
+                        'ramp_duration': 2000}
 
 
 
 run_ramp_duration_calibration = False
-ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'duration_end': int(3000), 'duration_num_points': 41,
+ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'duration_end': int(2000), 'duration_num_points': 21,
                                    'ramp_wait_timesteps': 0,
                                    'relax_delay': 200, 'double': True}
 
@@ -57,10 +46,11 @@ ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'durat
 
 # can plot populations during and after ramp
 run_ramp_population_over_time = False
+run_ramp_population_over_time_shots = True
+population_vs_delay_dict = {'ramp_duration' : 1000, 'ramp_shape': 'cubic',
+                            'time_start': 10, 'time_end' : 3000, 'time_num_points' : 21, 'reps': 1000,
+                            'relax_delay':100, 'time_to_show_shots_samples': 0}
 
-population_vs_delay_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cubic',
-                            'time_start': 80, 'time_end' : 4000, 'time_num_points' : 11, 'reps': 600,
-                            'relax_delay':100}
 
 run_ramp_population_over_time_gain_sweep = False
 population_vs_delay_gain_sweep_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cubic', 'relax_delay': 100,
@@ -71,12 +61,19 @@ population_vs_delay_gain_sweep_dict = {'ramp_duration' : 3000, 'ramp_shape': 'cu
 #                                        'time_start': 0, 'time_end' : 4000, 'time_num_points' : 11, 'reps': 100,
 #                                        'gain_start': -2000, 'gain_end' : 2000, 'gain_num_points' : 3}
 
-plot_population_sum = True
+plot_population_sum = False
 
 
 # experiment to measure population shots after adiabatic ramp
 run_ramp_population_shots = False
 ramp_population_shots_dict = {'reps': 5000, 'ramp_duration': 3000, 'relax_delay': 200}
+
+run_ramp_density_correlations = False
+ramp_density_correlations_dict = {'reps': 40000, 'ramp_duration':3000, 'relax_delay': 200,
+                                  'first_pair':[1,2],
+                                  'second_pairs':[[3,4], [4,5], [5,6], [6,7], [7,8]],
+                                  }
+
 
 
 RampCurrentCalibration_GainSweep = False
@@ -241,7 +238,18 @@ if run_ramp_population_over_time:
     instance = TimeVsPopulation(path="TimeVsPopulation", outerFolder=outerFolder,
                              cfg=config | population_vs_delay_dict,
                              soc=soc, soccfg=soccfg)
-    instance.acquire_display_save(plotDisp=True)
+    instance.acquire_display_save(plotDisp=True, block=False)
+
+if run_ramp_population_over_time_shots:
+    instance = TimeVsPopulation_Shots(path="TimeVsPopulationShots", outerFolder=outerFolder,
+                             cfg=config | population_vs_delay_dict,
+                             soc=soc, soccfg=soccfg)
+    instance.acquire_display_save(plotDisp=True, block=False)
+
+if run_ramp_density_correlations:
+    RampCheckDensityCorrelations(path="RampDensityCorrelations", outerFolder=outerFolder,
+                           cfg=config | ramp_density_correlations_dict,
+                           soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=True)
 
 if run_ramp_population_over_time_gain_sweep:
     instance = TimeVsPopulation_GainSweep(path="TimeVsPopulation_GainSweep", outerFolder=outerFolder,
@@ -273,8 +281,8 @@ if plot_population_sum:
 
     if len(populations_corrected[0].shape) == 1:
 
-        for i in range(len(populations_corrected)):
-            plt.plot(instance.x_points, populations_corrected[i], label=readout_list[i])
+        # for i in range(len(populations_corrected)):
+        #     plt.plot(instance.x_points, populations_corrected[i], label=readout_list[i])
 
         plt.plot(instance.x_points, np.sum(populations_corrected, axis=0), linestyle=':', color='black', label='total')
 
@@ -311,3 +319,4 @@ if plot_population_sum:
         plt.show()
 
 print(config)
+plt.show()

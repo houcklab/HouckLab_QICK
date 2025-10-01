@@ -13,7 +13,7 @@ def makeProxy():
     # else:
     #     ns_host = "192.168.1.107" #Mac address is C6
 
-    ns_host = "192.168.1.109"
+    ns_host = "192.168.1.110"
     ns_port = 8888
     server_name = "myqick"
 

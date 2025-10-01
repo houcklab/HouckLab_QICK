@@ -3,7 +3,7 @@ import numpy as np
 
 
 # import qubit parameters from this file
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_1234 import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 from Initialize_Qubit_Information import model_mapping
 from Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
@@ -26,14 +26,12 @@ def ff_gains_to_freqs(ff_gains):
     return dressed_freqs
 
 
-intermediate_jump_gains = [None, 9900, None, -200, None, None, None, None]
+intermediate_jump_gains = [-13344, None, 8565, None, -4754, None, 19250, None]
 for i in range(len(intermediate_jump_gains)):
     if intermediate_jump_gains[i] is None:
         intermediate_jump_gains[i] = BS_FF[i]
 
-gains = [pulse_145, Expt_FF, intermediate_jump_gains, BS_FF, Readout_FF4]
-gains = [pulse_145, Readout_FF4]
-gains = [pulse_145, Expt_FF, Readout_FF4]
+gains = [Readout_FF, Ramp_FF, intermediate_jump_gains, BS_FF, Readout_FF]
 
 freqs = np.array([ff_gains_to_freqs(arr) for arr in tuple(gains)])
 

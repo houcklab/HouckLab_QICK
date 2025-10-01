@@ -42,7 +42,7 @@ class SweepExperiment1D_IQplots(SweepExperimentND):
             axs[ro_index].legend()
 
 
-    def update_1D_IQ(self, Z_mat, fig, axs):
+    def update_1D_IQ(self, data=None, fig, axs):
         I_mat = self.data['data']['I']
         Q_mat = self.data['data']['Q']
 

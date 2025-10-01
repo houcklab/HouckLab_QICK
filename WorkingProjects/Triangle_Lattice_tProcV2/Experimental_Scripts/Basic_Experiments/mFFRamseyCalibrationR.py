@@ -176,7 +176,7 @@ class RamseyFFCalR(ExperimentClass):
         prog = RamseyFFCalRProg(self.soccfg, self.cfg)
         print(datetime.datetime.now())
         try:
-            t_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True)
+            t_pts, avgi, avgq = prog.acquire(self.soc, load_envelopes=True)
         except:
             print("Pyro traceback:")
             print("".join(Pyro4.util.getPyroTraceback()))

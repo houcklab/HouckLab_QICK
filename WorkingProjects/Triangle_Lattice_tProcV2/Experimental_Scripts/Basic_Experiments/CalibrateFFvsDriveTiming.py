@@ -205,7 +205,7 @@ class CalibrateFFvsDriveTiming(SweepExperiment1D_lines):
         print(NS_PER_SAMPLE)
 
         ax.secondary_xaxis('top', (lambda t: t * NS_PER_SAMPLE, lambda t: t / NS_PER_SAMPLE))
-        ax.set_title(f'Qubit {self.cfg['qubit_index']} FF pulse delay relative to qubit (ns)')
+        ax.set_title(f"Qubit {self.cfg['qubit_index']} FF pulse delay relative to qubit (ns)")
 
         # def lorentzian_fit(x, x0, a, b, c):
         #     return a / (1 + (x - x0) ** 2 / b ** 2) + c

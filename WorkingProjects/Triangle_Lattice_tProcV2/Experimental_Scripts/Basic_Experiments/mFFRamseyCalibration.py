@@ -8,39 +8,20 @@ from qick.asm_v2 import AsmV2
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
+    SweepWaveformAveragerProgram
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, normalize_contrast
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
 
 from math import ceil
 
-class RamseyFFCalProg(FFAveragerProgramV2):
-    def __init__(self, *args, **kwargs):
-        cfg = kwargs['cfg']
-        assert cfg["start"] >= 0, "Can't have a negative start time."
-        assert cfg["step"] > 0, "Can't have a negative step"
-
-
-        before_reps = kwargs.get("before_reps", AsmV2())
-        # The "reps" loop is outermost, so this will reset the cycle and sample counter on each of these loops
-        reset_loop = AsmV2()
-        # 1 cycle = 16 samples
-        # cycle_counter: always 2+length of waveform in cycles
-        reset_loop.write_reg(dst='cycle_counter', src=2 + ceil(cfg["start"] / 16) - cfg["step"] // 16)
-        # sample_counter: total samples Mod 16, but output (1...16) instead
-        reset_loop.write_reg(dst='sample_counter', src=(cfg["start"] - 1) % 16 + 1 - cfg["step"]  % 16)
-
-        before_reps.extend_macros(reset_loop)
-        kwargs["before_reps"] = before_reps
-
-        super().__init__(*args, **kwargs)
-
-
+class RamseyFFCalProg(SweepWaveformAveragerProgram):
     def _initialize(self, cfg):
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
                          mixer_freq=cfg["mixer_freq"],
                          mux_freqs=cfg["res_freqs"],
-                         mux_gains= cfg["res_gains"],
+                         mux_gains=cfg["res_gains"],
                          ro_ch=cfg["ro_chs"][0])  # Readout
         for iCh, ch in enumerate(cfg["ro_chs"]):  # configure the readout lengths and downconversion frequencies
             self.declare_readout(ch=ch, length=cfg["readout_lengths"][iCh],
@@ -52,14 +33,13 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
         # print(longest_length)
         # print(longest_length)
-        FF.FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
         # Qubit (Equal sigma for all)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
         self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive_1', style="arb", envelope="qubit",
-                           freq=cfg["qubit_freqs"][0],
-                           phase=0, gain=cfg["pi2_gain"])
+                       freq=cfg["qubit_freqs"][0],
+                       phase=0, gain=cfg["pi2_gain"])
         self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive_2', style="arb", envelope="qubit",
                        freq=cfg["qubit_freqs"][0],
                        phase=cfg["Second_Pulse_Angle"], gain=cfg["pi2_gain"])
@@ -71,15 +51,14 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         self.add_reg(name='sample_counter')
         # Set in before_reps of the "reps" loop (see self.__init__ above)
 
-
         # Increment the cycle and sample counter. Carry the one if sample_counter > 16.
         IncrementLength = AsmV2()
-        IncrementLength.inc_reg(dst='cycle_counter',  src=cfg["step"] // 16)
-        IncrementLength.inc_reg(dst='sample_counter', src=cfg["step"]  % 16)
+        IncrementLength.inc_reg(dst='cycle_counter', src=cfg["step"] // 16)
+        IncrementLength.inc_reg(dst='sample_counter', src=cfg["step"] % 16)
         ############# If sample_counter > 16:
         IncrementLength.cond_jump("finish_inc", "sample_counter", "S", "-", 17)
-        IncrementLength.inc_reg(dst='cycle_counter', src= +1)
-        IncrementLength.inc_reg(dst='sample_counter',src= -16)
+        IncrementLength.inc_reg(dst='cycle_counter', src=+1)
+        IncrementLength.inc_reg(dst='sample_counter', src=-16)
         IncrementLength.label("finish_inc")
         IncrementLength.nop()
         ##############
@@ -98,7 +77,7 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         self.delay_auto(200)
 
     def _body(self, cfg):
-        FF_QUBIT_DELAY = 0.07905 # Time for FFPulses to asymptote
+        FF_QUBIT_DELAY = 0.085 # Time for FFPulses to asymptote
         # 1: FFPulses
         # self.delay_auto()
         # Length: 1 us to reach asymptotic value, qubit length for qubit, 0.1 us to account for relative qubit delay
@@ -108,21 +87,11 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         self.delay(self.qubit_length_us + FF_QUBIT_DELAY)
 
         # 2: FFExpt
-        # Special case: 0 samples, so skip directly to readout (no FFExpt)
-        # If cycle_counter < 3 (the minimum length for an arb waveform)
-        self.cond_jump("start readout", "cycle_counter", 'S', '-', 3)
-        # Else, choose the correct waveform depending on the amount of samples mod 16
-        for i in range(1,17):
-            self.cond_jump( f"l{i}", "sample_counter", 'Z', '-', i)
-        for i in range(1,17):
-            self.label(f"l{i}")
-            FF.FFPlayChangeLength(self, f"FFExpt_{i}", "cycle_counter", t_start=0)
-            self.jump("finish")
-        self.label("finish")
-        # Delay by cycle_counter cycles
-        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-
-        self.label("start readout")
+        # self.delay(self.cycles2us(max(3, ceil(self.cfg["expt_samples1"] / 16)) - 2))
+        # self.delay_auto()
+        self.FFLoad16Waveforms(self.FFExpts, self.FFPulse, cfg["IDataArray"])
+        self.FFPulses_arb_length_and_delay(t_start=0)
+        # self.delay(self.cycles2us(2))  # Placeholder correction
         # second pi/2
         self.FFPulses(self.FFPulse, FF_QUBIT_DELAY+self.qubit_length_us, t_start=0)
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive_2', t=FF_QUBIT_DELAY)
@@ -138,15 +107,7 @@ class RamseyFFCalProg(FFAveragerProgramV2):
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
-        self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
-        for i in range(1, 17):
-            self.cond_jump(f"{i}_inv", "sample_counter", 'Z', '-', i)
-        for i in range(1, 17):
-            self.label(f"{i}_inv")
-            FF.FFInvertWaveforms(self, f"FFExpt_{i}", t_start=0)
-            self.jump("finish_inv")
-        self.label("finish_inv")
-        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
+        self.FFInvert_arb_length_and_delay(t_start=0)
         self.FFPulses(-1 * self.FFPulse, 2*(self.qubit_length_us + FF_QUBIT_DELAY+0.1), t_start=0)
         self.delay(2*(self.qubit_length_us + FF_QUBIT_DELAY + 0.1))
 
@@ -177,13 +138,13 @@ class FFRamseyCal(ExperimentClass):
                             final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
 
-        # pop_list = prog.acquire_populations(soc=self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+        # pop_list = prog.acquire_populations(soc=self.soc, load_envelopes=True, rounds=self.cfg.get('rounds', 1),
         #                                     progress=progress)[0]
         # print(self.cfg['confusion_matrix'][0])
         # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
         # x_contrast = pop_to_expect(pop_list)
-        iq_list = prog.acquire(self.soc, load_pulses=True,
-                               soft_avgs=self.cfg.get('rounds', 1),
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get('rounds', 1),
                                progress=progress)
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         self.data['data']['yi'] = avgi
@@ -202,14 +163,14 @@ class FFRamseyCal(ExperimentClass):
         self.cfg['Second_Pulse_Angle'] = self.cfg['Y_meas_angle']
         prog = RamseyFFCalProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        # pop_list = prog.acquire_populations(soc=self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+        # pop_list = prog.acquire_populations(soc=self.soc, load_envelopes=True, rounds=self.cfg.get('rounds', 1),
         #                                     progress=progress)[0]
         # pop_list = correct_occ(pop_list, self.cfg['confusion_matrix'][0])
         # y_contrast = pop_to_expect(pop_list)
         #
         self.soc.reset_gens()
-        iq_list = prog.acquire(self.soc, load_pulses=True,
-                               soft_avgs=self.cfg.get('rounds', 1),
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get('rounds', 1),
                                progress=progress)
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         self.data['data']['yi'] = avgi

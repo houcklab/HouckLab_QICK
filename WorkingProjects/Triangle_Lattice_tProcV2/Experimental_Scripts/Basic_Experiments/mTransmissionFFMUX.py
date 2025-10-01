@@ -60,7 +60,7 @@ class CavitySpecFFMUX(ExperimentClass):
         for f in tqdm(fpts, position=0, disable=False):
             cfg["res_freqs"][0] = f
             prog = CavitySpecFFProg(self.soccfg, reps=self.cfg['reps'],cfg=self.cfg, final_delay=self.cfg['cav_relax_delay'])
-            results.append(prog.acquire(self.soc, soft_avgs=self.cfg.get('rounds',1), load_pulses=True, progress=progress))
+            results.append(prog.acquire(self.soc, rounds=self.cfg.get('rounds',1), load_envelopes=True, progress=progress))
         print(f'Time: {time.time() - start}')
         results = np.array(results)
         # shape of results: (fpts, ROs, 1 [loops], I/Q)
@@ -79,7 +79,7 @@ class CavitySpecFFMUX(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp = True, figNum = 1, block=True, **kwargs):
+    def display(self, data=None, plotDisp = True, figNum = 1, block=True, ax=None, **kwargs):
         if data is None:
             data = self.data
         # for i in range(len(data['data']['results'][0])):
@@ -92,7 +92,10 @@ class CavitySpecFFMUX(ExperimentClass):
 
         avgamp0 = np.abs(sig)
 
-        plt.figure(figNum)
+        if ax is None:
+            plt.figure()
+        else:
+            plt.sca(ax)
         plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
@@ -107,7 +110,7 @@ class CavitySpecFFMUX(ExperimentClass):
         if plotDisp:
             plt.show(block=block)
             plt.pause(0.1)
-        plt.close(figNum)
+        # plt.close(figNum)
 
 
     def save_data(self, data=None):

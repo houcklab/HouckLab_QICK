@@ -119,7 +119,7 @@ class FFSpecCalibrationProgram(FFAveragerProgramV2):
         # fig, axs = plt.subplots()
         # axs.plot(idata, marker='o')
         # plt.show(block=True)
-
+        # print("len idata:", len(idata))
         self.add_envelope(ch, name, idata=idata)
 
 class FFSpecCalibrationMUX(SweepExperiment2D_plots):

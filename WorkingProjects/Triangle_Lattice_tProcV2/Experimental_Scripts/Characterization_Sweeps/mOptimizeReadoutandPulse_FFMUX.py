@@ -10,6 +10,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
 
+import matplotlib; matplotlib.use('Qt5Agg')
+
 import time
 from tqdm.notebook import tqdm
 
@@ -34,16 +36,18 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
                  calibrate = True, cavityAtten =None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1, ax=None):
         #### function used to actually find the cavity parameters
+        opt_index = self.cfg.get('qubit_sweep_index', 0)
+        self.opt_index = opt_index
         expt_cfg = {
             ### define the attenuator parameters
             "cav_gain_Start": self.cfg["gain_start"],
             "cav_gain_Stop": self.cfg["gain_stop"],
             "cav_gain_Points": self.cfg["gain_pts"],
             ### transmission parameters
-            "trans_freq_start": self.cfg["res_freqs"][0] - self.cfg["span"]/2,  # [MHz] actual frequency is this number + "cavity_LO"
-            "trans_freq_stop": self.cfg["res_freqs"][0] + self.cfg["span"]/2,  # [MHz] actual frequency is this number + "cavity_LO"
+            "trans_freq_start": self.cfg["res_freqs"][opt_index] - self.cfg["span"]/2,  # [MHz] actual frequency is this number + "cavity_LO"
+            "trans_freq_stop": self.cfg["res_freqs"][opt_index] + self.cfg["span"]/2,  # [MHz] actual frequency is this number + "cavity_LO"
             "TransNumPoints": self.cfg["trans_pts"],  ### number of points in the transmission frequecny
         }
         self.gain_pts = np.linspace(expt_cfg["cav_gain_Start"], expt_cfg["cav_gain_Stop"], expt_cfg["cav_gain_Points"])
@@ -62,15 +66,20 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
             'config': self.cfg,
             'data': {'fid_mat': Z_fid, 'overlap_mat': Z_overlap,
                      'trans_fpts':self.trans_fpts, 'gain_pts':self.gain_pts,
+                     'ro_opt_index':opt_index,
                      }
         }
 
         ### create the figure and subplots that data will be plotted on
-        while plt.fignum_exists(num = figNum):
+        while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(1,1, figsize = (8,5), num = figNum)
-        axs = [axs]
-        plt.suptitle(self.titlename)
+        if ax is None:
+            fig, axs = plt.subplots(1, 1, figsize=(8, 5), num=figNum)
+            axs = [axs]
+        else:
+            print("using this ax")
+            fig, axs = ax.get_figure(), [ax]
+        axs[0].set_title(self.titlename)
 
 
         #### start a timer for estimating the time for the scan
@@ -83,16 +92,14 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         for idf_cavgain in range(len(self.gain_pts)):
             # start_2 = time.time()
             ### set the cavity attenuation
-            self.cfg["res_gains"][0] = self.gain_pts[idf_cavgain] / 32766. * len(self.cfg["Qubit_Readout_List"])
+            self.cfg["res_gains"][opt_index] = self.gain_pts[idf_cavgain] / 32766. * len(self.cfg["Qubit_Readout_List"])
             ### start the loop over transmission points
             for idx_trans in range(len(self.trans_fpts)):
-                self.cfg["res_freqs"][0] = self.trans_fpts[idx_trans]
+                self.cfg["res_freqs"][opt_index] = self.trans_fpts[idx_trans]
 
                 # prog = SingleShotProgram(self.soccfg, self.cfg)
-                # shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
+                # shots_i0, shots_q0 = prog.acquire(self.soc, load_envelopes=True)
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData()
-                if plt.fignum_exists(10):
-                    plt.close(10)
 
                 fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10, print_fidelities=False)
 
@@ -123,12 +130,14 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
 
                 axs[0].set_ylabel("Cavity Gain (a.u.)")
                 axs[0].set_xlabel("Cavity Frequency (GHz)")
-                axs[0].set_title("fidelity")
 
 
                 if plotDisp:
-                    plt.show(block=False)
-                    plt.pause(0.1)
+                    if idf_cavgain == 0 and idx_trans ==0:
+                        plt.show(block=False)
+                    else:
+                        fig.canvas.draw()
+                        fig.canvas.flush_events()
 
 
                 if idf_cavgain == 0 and idx_trans ==0:  ### during the first run create a time estimate for the data aqcuisition
@@ -143,7 +152,7 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         plt.savefig(self.iname)  #### save the figure
-        plt.show(block=True)
+        # plt.show(block=False)
         return self.data
 
 
@@ -151,19 +160,19 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig, shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
+        shots_ig, shots_qg = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
         # print(prog.__dict__['gen_chs'])
         # gencfg = self.soccfg['gens'][9]
         # print('mixmux gencfg["maxv"]:', gencfg['maxv'])
 
-        i_g = shots_ig[0]
-        q_g = shots_qg[0]
-        i_e = shots_ie[0]
-        q_e = shots_qe[0]
+        i_g = shots_ig[self.opt_index]
+        q_g = shots_qg[self.opt_index]
+        i_e = shots_ie[self.opt_index]
+        q_e = shots_qe[self.opt_index]
 
         ### use the helper histogram to find the fidelity and such
         # fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, print_fidelities=False)
@@ -200,10 +209,10 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False,
-                cavityAtten=None, figNum = 1):
+                cavityAtten=None, figNum = 1, ax = None):
 
         Qubit_Sweep_Index = self.cfg.get('qubit_sweep_index', 0)
-
+        self.Readout_Index = self.cfg.get('readout_index', 0)
         #### function used to actually find the cavity parameters
         expt_cfg = {
             ### define the attenuator parameters
@@ -235,9 +244,13 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
             figNum += 1
-        fig, axs = plt.subplots(1,1, figsize = (8,5), num = figNum)
-        axs = [axs]
-        plt.suptitle(self.titlename)
+        if ax is None:
+            fig, axs = plt.subplots(1,1, figsize = (8,5), num = figNum)
+
+            axs = [axs]
+        else:
+            fig, axs = ax.get_figure(), [ax]
+        axs[0].set_title(self.titlename)
 
 
         #### start a timer for estimating the time for the scan
@@ -255,8 +268,6 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
                 self.cfg["qubit_freqs"][Qubit_Sweep_Index] = self.qubit_fpts[idx_qubit]
 
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData()
-                if plt.fignum_exists(10):
-                    plt.close(10)
 
                 fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, figNum=10)
 
@@ -289,12 +300,14 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
 
                 axs[0].set_ylabel("Qubit Gain (a.u.)")
                 axs[0].set_xlabel("Qubit Frequency (GHz)")
-                axs[0].set_title("fidelity")
 
 
                 if plotDisp:
-                    plt.show(block=False)
-                    plt.pause(0.1)
+                    if idf_qubitgain == 0 and idx_qubit ==0:
+                        plt.show(block=False)
+                    else:
+                        fig.canvas.draw()
+                        fig.canvas.flush_events()
 
 
                 if idf_qubitgain == 0 and idx_qubit ==0:  ### during the first run create a time estimate for the data aqcuisition
@@ -309,23 +322,23 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         plt.savefig(self.iname)  #### save the figure
-        plt.show(block=True)
+        # plt.show(block=False)
         return self.data
 
     def _acquireSingleShotData(self):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
+        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
-
-        i_g = shots_ig[0]
-        q_g = shots_qg[0]
-        i_e = shots_ie[0]
-        q_e = shots_qe[0]
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
+        print("RO index:", self.Readout_Index)
+        i_g = shots_ig[self.Readout_Index]
+        q_g = shots_qg[self.Readout_Index]
+        i_e = shots_ie[self.Readout_Index]
+        q_e = shots_qe[self.Readout_Index]
 
         ### use the helper histogram to find the fidelity and such
         fid, threshold, angle = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None)
@@ -413,7 +426,7 @@ class ReadOpt_wSingleShotFF_HigherMUX(ExperimentClass):
             for idx_trans in range(len(self.trans_fpts)):
                 self.cfg["mixer_freq"] = self.trans_fpts[idx_trans]
                 # prog = SingleShotProgram(self.soccfg, self.cfg)
-                # shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
+                # shots_i0, shots_q0 = prog.acquire(self.soc, load_envelopes=True)
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData_Higher(ground=ground, excited=excited)
                 if plt.fignum_exists(10):
                     plt.close(10)
@@ -526,11 +539,11 @@ class ReadOpt_wSingleShotFF_HigherMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, self.cfg)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig,shots_qg = prog.acquire(self.soc, load_envelopes=True)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, self.cfg)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire(self.soc, load_envelopes=True)
 
         i_g = shots_ig[0][0]
         q_g = shots_qg[0][0]
@@ -662,7 +675,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
                     self.cfg["qubit_freq01"] = self.qubit_fpts[idx_qubit]
                 print(self.cfg["qubit_gain01"], self.cfg["qubit_gain12"], self.cfg["qubit_freq01"], self.cfg["qubit_freq12"])
                 # prog = SingleShotProgram(self.soccfg, self.cfg)
-                # shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
+                # shots_i0, shots_q0 = prog.acquire(self.soc, load_envelopes=True)
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData_Higher(ground = ground, excited = excited)
                 if plt.fignum_exists(10):
                     plt.close(10)
@@ -777,11 +790,11 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, self.cfg)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig,shots_qg = prog.acquire(self.soc, load_envelopes=True)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, self.cfg)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire(self.soc, load_envelopes=True)
 
         i_g = shots_ig[0][0]
         q_g = shots_qg[0][0]
@@ -889,7 +902,7 @@ class ROTimingOpt_wSingleShotFFMUX(ExperimentClass):
                 self.cfg["readout_lengths"][0] = self.read_length_pts[idx_read_length]
 
                 # prog = SingleShotProgram(self.soccfg, self.cfg)
-                # shots_i0, shots_q0 = prog.acquire(self.soc, load_pulses=True)
+                # shots_i0, shots_q0 = prog.acquire(self.soc, load_envelopes=True)
                 i_g, q_g, i_e, q_e = self._acquireSingleShotData()
                 if plt.fignum_exists(10):
                     plt.close(10)
@@ -942,7 +955,7 @@ class ROTimingOpt_wSingleShotFFMUX(ExperimentClass):
         print('actual end: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
         plt.savefig(self.iname)  #### save the figure
-        plt.show(block=True)
+        plt.show(block=False)
         return self.data
 
 
@@ -950,11 +963,11 @@ class ROTimingOpt_wSingleShotFFMUX(ExperimentClass):
         #### pull the data from the single hots
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire(self.soc, load_pulses=True)
+        shots_ig,shots_qg = prog.acquire(self.soc, load_envelopes=True)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire(self.soc, load_pulses=True)
+        shots_ie,shots_qe = prog.acquire(self.soc, load_envelopes=True)
         # print(prog.__dict__['gen_chs'])
         # gencfg = self.soccfg['gens'][9]
         # print('mixmux gencfg["maxv"]:', gencfg['maxv'])

@@ -58,8 +58,8 @@ class CurrentCorrelationMeasurement(ExperimentClass):
         prog = ThreePartProgramTwoFF(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                     final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
-        populations = prog.acquire_population_shots(soc=self.soc, load_pulses=True,
-                                                soft_avgs=self.cfg.get('rounds', 1),
+        populations = prog.acquire_population_shots(soc=self.soc, load_envelopes=True,
+                                                rounds=self.cfg.get('rounds', 1),
                                                 progress=progress)
 
         data = {'config': self.cfg, 'data': {'populations': populations, 'angle': self.cfg['angle'],

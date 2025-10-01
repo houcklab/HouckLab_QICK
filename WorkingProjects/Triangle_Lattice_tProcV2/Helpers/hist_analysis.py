@@ -87,9 +87,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     ne_contrast = np.cumsum(ne)[tind] / ne.sum()
     ng_contrast = 1 - np.cumsum(ng)[tind] / ng.sum()
     if print_fidelities:
-        print("Single shot:")
-        print(" ne contrast: ", ne_contrast)
-        print(" ng contrast: ", ng_contrast)
+        print(f"Single shot: ne contrast={ne_contrast}, ng contrast={ng_contrast}")
 
     if plot ==True:
         axs[2].axvline(threshold, 0, 20, color = 'black', alpha = 0.7, ls = '--')

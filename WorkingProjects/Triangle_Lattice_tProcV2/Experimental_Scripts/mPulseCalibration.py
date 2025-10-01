@@ -112,10 +112,10 @@ class BB1(FFAveragerProgramV2):
         self.delay_auto()
 
 
-    # def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
+    # def acquire(self, soc, threshold=None, angle=None, load_envelopes=True, readouts_per_experiment=1, save_experiments=None,
     #             start_src="internal", progress=False):
     #     start = time.time()
-    #     super().acquire(soc, load_pulses=load_pulses, progress=progress)
+    #     super().acquire(soc, load_envelopes=load_envelopes, progress=progress)
     #     end = time.time()
     #
     #     return self.collect_shots()
@@ -178,8 +178,8 @@ class BB1_Base(ExperimentClass):
 
 
         excited_populations, (self.I_mat, self.Q_mat) = prog.acquire_population_shots(soc=self.soc, return_shots=True,
-                                                            load_pulses=True,
-                                                            progress=progress, soft_avgs=1)
+                                                            load_envelopes=True,
+                                                            progress=progress, rounds=1)
 
         excited_populations = np.array(excited_populations)
 

@@ -29,14 +29,14 @@ frequencies = {
 }
 
 # frequencies = {
-#     'Q1': -0.5,
-#     'Q2': -0.5,
-#     'Q3': -0.5,
-#     'Q4': -0.5,
-#     'Q5': -0.5,
-#     'Q6': -0.5,
-#     'Q7': -0.5,
-#     'Q8': -0.2,
+#     'Q1': 3800,
+#     'Q2': -1+0.3323,
+#     'Q3': 0,
+#     'Q4': 0,
+#     'Q5': 0,
+#     'Q6': 0,
+#     'Q7': 0,
+#     'Q8': 0,
 #     'C1': 0,
 #     'C2': 0,
 #     'C3': 0,
@@ -90,6 +90,7 @@ for mapping_key, freq, orig_key in zip(bare_order_of_items, bare_freqs_all, orde
 
 
 if __name__ == "__main__":
+    print(np.round(flux_vector,4))
     voltages = flux_to_voltage(flux_vector, crosstalk_matrix, crosstalk_offset, crosstalk_inverse)
     # fluxes_rounded = voltage_to_flux(np.round(voltages, 4), crosstalk_matrix, crosstalk_offset, crosstalk_inverse)
 

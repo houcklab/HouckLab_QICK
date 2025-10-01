@@ -43,7 +43,8 @@ class SweepExperiment1D_plots(SweepExperimentND):
             axs[ro_index].set_xlabel(self.xlabel)
             axs[ro_index].legend()
 
-    def _update_fig(self, Z_mat, fig, axs):
+    def _update_fig(self, data, fig, axs):
+        Z_mat = data['data'][self.z_value]
         for ro_index in range(len(Z_mat)):
             line = axs[ro_index].lines[-1]
             line.set_data(self.X, Z_mat[ro_index])

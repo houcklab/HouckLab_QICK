@@ -32,47 +32,61 @@ class FFvsRamsey(SweepExperiment2D_plots):
         self.xlabel = 'Delay (us)'  # for plotting
 
     def analyze(self, data, **kwargs):
-        pass
-        # def fit(t, T2, A, y0, omega, phi):
-        #     return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
-        #
-        # omegas, FFgains = [], []
-        # x_pts = data["data"]["delay_loop"]
-        # Zmat = data["data"]["contrast"][0]
-        # for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
-        #     p0_guess = [x_pts[-1], (np.max(row) - np.min(row))/2, row[-1], omega_guess(x_pts, row), 1e-2]
-        #     try:
-        #         (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, row, p0=p0_guess)
-        #         omegas.append(np.abs(omega))
-        #         FFgains.append(FFgain)
-        #     except:
-        #         pass
-        #
-        # self.omegas_fit = omegas
-        # self.gains_fit = FFgains
+        def fit(t, T2, A, y0, omega, phi):
+            return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
+
+        omegas, FFgains = [], []
+        x_pts = data["data"][self.loop_names[0]]
+        Zmat = data["data"]["contrast"][0]
+        for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
+            w_guess = omega_guess(x_pts, row)
+            period_guess = 2*np.pi/w_guess
+            if period_guess > 2/3 * x_pts[-1] or period_guess < 1/10 * x_pts[-1]:
+                continue
+            p0_guess = [x_pts[-1], (np.max(row) - np.min(row))/2, row[-1], w_guess, 1e-2]
+            try:
+                (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, row, p0=p0_guess)
+                omegas.append(np.abs(omega))
+                FFgains.append(FFgain)
+            except:
+                pass
+
+        self.omegas_fit = omegas
+        self.gains_fit = FFgains
 
 
+    def _display_plot(self, data=None, fig_axs=None):
+        fig, axs = super()._display_plot(data, fig_axs)
+
+        if 'omegas_fit' in self.__dict__:
+            # Assume FF gain is linear to detuning
+            def freq_fit(FF_gain, center_gain, k):
+                return k * np.abs(FF_gain - center_gain)
+
+            half_periods = 2*np.pi/np.array(self.omegas_fit) / 2
+            axs[0].scatter(half_periods, self.gains_fit, color='r', zorder=11)
+
+            omegas = self.omegas_fit
+            FFgains = self.gains_fit
+            ax = axs[0]
+
+            try:
+                (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"]["Gain_Pulse"]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
+                y_pts = data["data"]["Gain_Pulse"]
+                y_spacing = np.abs(y_pts[1] - y_pts[0])
+                gains_up = np.linspace(np.max(y_pts)+y_spacing, center_gain,  num=50,endpoint=False,)
+                gains_lo = np.linspace(np.min(y_pts) - y_spacing, center_gain,  num=50,endpoint=False,)
+                print(gains_up, gains_lo)
+                fig.canvas.draw()
+                ax.autoscale(False)
+                ax.plot(2*np.pi/freq_fit(gains_up, center_gain, k)/2, gains_up, '--', color='red',zorder=10,lw=3)
+                ax.plot(2 * np.pi / freq_fit(gains_lo, center_gain, k)/2, gains_lo, '--', color='red',zorder=10,lw=3)
 
 
+                ax.axhline(center_gain, color='red', ls='--', label=f'FF Gain = {center_gain:.1f}', lw=3)
+                ax.legend(prop={'size': 14})
+            except:
+                print("Fitting failed.")
 
-    # def display(self, *args, **kwargs):
-    #     fig, axs = super().display(*args, **kwargs)
-    #
-    #     if 'omegas_fit' in self.__dict__:
-    #         # Assume FF gain is linear to detuning
-    #         def freq_fit(FF_gain, center_gain, k):
-    #             return k * np.abs(FF_gain - center_gain)
-    #
-    #         quarter_periods = 2*np.pi/np.array(self.omegas_fit) / 4
-    #         axs[0].plot(quarter_periods, self.gains_fit, 'o-', color='r', zorder=11)
-    #         # (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"]["Gain_Pulse"]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
-    #         # ax.plot(omegas, FFgains, '-o', color='red')
-    #         # ax.plot(freq_fit(FFgains, center_gain, k), FFgains, '-', color='black')
-    #         # ax.set_ylabel("FF gains")
-    #         # ax.set_xlabel("Oscillation frequency (2pi * MHz)")
-    #         # ax.axhline(center_gain, color='black', ls='--', label=center_gain)
-    #         # ax.legend()
-    #         fig.show()
-    #         plt.show(block=True)
-    #
-    #     return fig, axs
+
+        return fig, axs

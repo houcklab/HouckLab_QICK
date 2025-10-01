@@ -23,16 +23,27 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
 
         self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
 
+        # fig, ax = plt.subplots()
+        # for j, arr in enumerate(self.cfg["IDataArray"]):
+        #     plt.plot(arr, label=j)
+        # plt.legend()
+        # fig.canvas.draw()
+        # plt.show()
+
 
     def set_up_instance(self):
         '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
         # print(self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Expt'])
         soc.reset_gens()
-        if type(self.cfg["IDataArray"][0]) != type(None):
-            self.cfg["IDataArray"][self.cfg["qubit_FF_index"] - 1] = \
-                Compensated_Pulse(self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Expt'],
-                                  self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Pulse'],
-                                    int(self.cfg["qubit_FF_index"]))
+        self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
+
+        # fig, ax = plt.subplots()
+        # for j, arr in enumerate(self.cfg["IDataArray"]):
+        #     plt.plot(arr, label=j)
+        # plt.legend()
+        # fig.canvas.draw()
+        # plt.show()
+
         # soc.load_mem(list(range(10+2*self.cfg['expts'])), 'dmem')
     def debug(self, prog):
 

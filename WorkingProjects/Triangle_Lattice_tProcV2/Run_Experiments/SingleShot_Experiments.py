@@ -28,35 +28,36 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsT1 import FFvsT1
 
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
+
 import numpy as np
 
-from qubit_parameter_files.Qubit_Parameters_1234 import *
+from qubit_parameter_files.Qubit_Parameters_Master import *
 
-# FF_gain1_expt = -20000
-# FF_gain2_expt = -20000
-# FF_gain3_expt = -20000
-# FF_gain4_expt = -20000
-# FF_gain5_expt = -20000
-# FF_gain6_expt = -20000
-# FF_gain7_expt = -20000
-# FF_gain8_expt = -20000
+# Qubit_Readout = [1,2,3,4,5,6,7,8]
+# Qubit_Pulse = ['3_362', '6_362', '2_362']
 
-Qubit_Readout = [1]
-Qubit_Pulse =   ['1H']
 
-# print(f'pulse gains: {Qubit_Parameters[prepared_state]['Pulse_FF']}')
+Qubit_Readout = ['1_4815_readout', '4_4815_readout', '5_4815_readout', '8_4815_readout']
+# Qubit_Readout = ['4_4815_readout']
+Qubit_Pulse = ['4_4815', '8_4815', '1_4815', '5_4815']
+# Qubit_Pulse = ['5_4815_readout']
+# Qubit_Pulse = ['4_4815', '8_4815', '1_4815']
+# Qubit_Pulse = ['4_4815', '8_4815']
+# Qubit_Pulse = ['4_4815']
+
+# Qubit_Readout = [5]
+# Qubit_Pulse =   [5]
 
 t = True
 f = False
 
 Run_FF_v_Ramsey = False
 FF_sweep_Ramsey_relevant_params = {"stop_delay_us": 4, "expts": 61, "reps": 200,
-                                    "qubit_FF_index": Qubit_Readout[0],
-                                    "FF_gain_start": Expt_FF[Qubit_Readout[0]-1] - 100,
-                                    "FF_gain_stop": Expt_FF[Qubit_Readout[0]-1] + 100,
+                                    "qubit_FF_index": int(str(Qubit_Readout[0])[0]),
+                                    "FF_gain_start": Expt_FF[int(str(Qubit_Readout[0])[0])-1] - 100,
+                                    "FF_gain_stop": Expt_FF[int(str(Qubit_Readout[0])[0])-1] + 100,
                                     "FF_gain_steps": 11,
-                                    "relax_delay":100, 'populations':False# "qubit_drive_freq":3950.0
+                                    "relax_delay":100, 'populations':True# "qubit_drive_freq":3950.0
                                    }
 
 RunTransmissionSweep = False # determine cavity frequency
@@ -65,16 +66,16 @@ Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
 Run2ToneSpec = False
 Spec_relevant_params = {
                       # "qubit_gain": 8000, "SpecSpan": 400, "SpecNumPoints": 71,
-                        # "qubit_gain": 4000, "SpecSpan": 200, "SpecNumPoints": 71,
-                      #   "qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 71,
-                        "qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71,
+                        "qubit_gain": 400, "SpecSpan": 200, "SpecNumPoints": 71,
+                        # "qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 71,
+                        # "qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71,
                         'Gauss': False, "sigma": 0.03, "Gauss_gain": 6800,
-                        'reps': 155, 'rounds': 1}
+                        'reps': 200, 'rounds': 1}
 
 Run_Spec_v_FFgain = False # Inherit spec parameters from above
-FF_sweep_spec_relevant_params = {"qubit_FF_index": 8,
-                            "FF_gain_start": -30000, "FF_gain_stop": 30000, "FF_gain_steps": 11,
-                                 'relax_delay':100}
+FF_sweep_spec_relevant_params = {"qubit_FF_index": 5,
+                            "FF_gain_start": -16358 - 2000, "FF_gain_stop": -16358 + 2000, "FF_gain_steps": 6,
+                                 'relax_delay': 100}
 
 FluxStability = False # Repeat SpecSlice over time
 Flux_Stability_params = {"delay_minutes": 10, "num_steps": 6 * 8}
@@ -87,8 +88,8 @@ RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"max_gain": 10000, 'relax_delay':100}
 
 
-SingleShot = False
-SS_params = {"Shots": 4000, 'number_of_pulses': 1, 'relax_delay': 200}
+SingleShot = True
+SS_params = {"Shots": 2500, 'number_of_pulses': 1, 'relax_delay': 200}
 
 SingleShotDecimate = False
 
@@ -97,10 +98,10 @@ SS_R_params = {"Shots": 500,
                "gain_start": 2000, "gain_stop": 8000, "gain_pts": 8, "span": 1, "trans_pts": 6, 'number_of_pulses': 1}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"Shots": 500,
-               "q_gain_span": 1000, "q_gain_pts": 7, "q_freq_span": 2.0, "q_freq_pts": 7,
+SS_Q_params = {"Shots": 1000,
+               "q_gain_span": 2000, "q_gain_pts": 9, "q_freq_span": 3.0, "q_freq_pts": 9,
                'number_of_pulses': 1,
-               'qubit_sweep_index': -1}
+               'qubit_sweep_index': 0}
 
 if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pulse):
     raise ValueError("Qubit optimize sweep index out of range")
@@ -109,17 +110,17 @@ if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pu
 RunT1 = False
 RunT2 = False
 
-T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
+T1_params = {"stop_delay_us": 300, "expts": 40, "reps": 150}
 
-T2R_params = {"stop_delay_us": 4, "expts": 125, "reps": 300,
-              "freq_shift": 0.0, "phase_shift_cycles": 4, "relax_delay":200}
+T2R_params = {"stop_delay_us": 5, "expts": 125, "reps": 300,
+              "freq_shift": 0.0, "phase_shift_cycles": -3, "relax_delay":200}
 
 
 
-RunT1_TLS = True
-T1TLS_params = {"FF_gain_start": -12000, "FF_gain_stop": -9500, "FF_gain_steps": 101,
-                "stop_delay_us": 2, "expts": 5, "reps": 300,
-                'qubitIndex': int(str(Qubit_Readout[0])[0])}
+RunT1_TLS = False
+T1TLS_params = {"FF_gain_start": -8874 - 4000, "FF_gain_stop": -8874 + 4000, "FF_gain_steps": 301,
+                    "stop_delay_us": 10, "expts": 5, "reps": 300,
+                    'qubitIndex': int(str(Qubit_Pulse[0])[0])}
 
 # SingleShot_ROTimingOptimize = False
 # SS_Timing_params = {"Shots": 500,
@@ -127,10 +128,10 @@ T1TLS_params = {"FF_gain_start": -12000, "FF_gain_stop": -9500, "FF_gain_steps":
 #                   "trig_time_start":0.1, "trig_time_end":3, "trig_time_points":5}
 
 Oscillation_Gain = False
-oscillation_gain_dict = {'qubit_FF_index': 5, 'reps': 300,
-                         'start': 1, 'step': 20, 'expts': 51,
-                         'gainStart': -6000,
-                         'gainStop': -4000, 'gainNumPoints': 11, 'relax_delay': 100,
+oscillation_gain_dict = {'qubit_FF_index': 2, 'reps': 200,
+                         'start': 0, 'step': 8, 'expts': 2000,
+                         'gainStart': - 500,
+                         'gainStop': + 500, 'gainNumPoints': 16, 'relax_delay': 200,
                          'fit': True}
 Oscillation_Gain_QICK_sweep = True
 
@@ -164,14 +165,7 @@ SS_2Q_params = {"Shots": 5000, 'number_of_pulses': 1, 'relax_delay': 400,
 # This ends the working section of the file.
 #----------------------------------------
 # Not used
-FF_gain1_BS = 0
-FF_gain2_BS = 0
-FF_gain3_BS = 0
-FF_gain4_BS = 0
-FF_gain5_BS = 0
-FF_gain6_BS = 0
-FF_gain7_BS = 0
-FF_gain8_BS = 0
+
 exec(open("UPDATE_CONFIG.py").read())
 #--------------------------------------------------
 # This begins the booleans
@@ -279,4 +273,5 @@ if Calib_FF_vs_drive_delay:
 # while True:
 #     plt.pause(50)
 print(config)
+plt.show()
 

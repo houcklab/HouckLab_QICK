@@ -11,24 +11,41 @@ class MakeFile(h5py.File):
         self.flush()
 
     def add(self, key, data):
+        # print(f'Adding {key}: {data}')
         data = np.array(data)
-        if key not in self:
-            try:
-                self.create_dataset(key, shape=data.shape,
-                                maxshape=tuple([None] * len(data.shape)),
-                                dtype=str(data.astype(np.float64).dtype))
-            except:
-                print(f'warning: type of ({key}: {data}) is not float')
-                if key in ['readout_list', 'Qubit_Readout_List']:
-                    data = np.array([int(qubit_str[0]) for qubit_str in data])
-                self.create_dataset(key, shape=data.shape,
-                                    maxshape=tuple([None] * len(data.shape)),
-                                    dtype=str(data.astype(np.float64).dtype))
-        else:
+
+        # print(data)
+        if key in self:
             del self[key]
+        try:
+            self.create_dataset(key, shape=data.shape,
+                            maxshape=tuple([None] * len(data.shape)),
+                            dtype=str(data.astype(np.float64).dtype))
+        except:
+            print(f'warning: type of ({key}: {data}) is not float')
+            if key in ['readout_list', 'Qubit_Readout_List']:
+                data = np.array([int(qubit_str[0]) for qubit_str in data])
             self.create_dataset(key, shape=data.shape,
                                 maxshape=tuple([None] * len(data.shape)),
                                 dtype=str(data.astype(np.float64).dtype))
+
+        # if key not in self:
+        #     try:
+        #         self.create_dataset(key, shape=data.shape,
+        #                         maxshape=tuple([None] * len(data.shape)),
+        #                         dtype=str(data.astype(np.float64).dtype))
+        #     except:
+        #         print(f'warning: type of ({key}: {data}) is not float')
+        #         if key in ['readout_list', 'Qubit_Readout_List']:
+        #             data = np.array([int(qubit_str[0]) for qubit_str in data])
+        #         self.create_dataset(key, shape=data.shape,
+        #                             maxshape=tuple([None] * len(data.shape)),
+        #                             dtype=str(data.astype(np.float64).dtype))
+        # else:
+        #     del self[key]
+        #     self.create_dataset(key, shape=data.shape,
+        #                         maxshape=tuple([None] * len(data.shape)),
+        #                         dtype=str(data.astype(np.float64).dtype))
         self[key][...] = data
 
 
@@ -135,7 +152,22 @@ class ExperimentClass:
 
         with self.datafile() as f:
             for k, d in data.items():
-                f.add(k, np.array(d))
+                f.add(k, d)
+                # try:
+                #     print(f'd: {d}')
+                #     print(type(d))
+                #     _d = d
+                #     while isinstance(_d, (list, tuple)):
+                #         _d = _d[0]
+                #         print(f'_d: {_d}')
+                #         print(type(_d))
+                #     if isinstance(_d, str):
+                #         f.add(k, d)
+                #     else:
+                #         f.add(k, np.array(d))
+                # except Exception as e:
+                #     print('key:',k,', value:', d)
+                #     raise e
 
     def load_data(self, f):
         data={}

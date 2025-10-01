@@ -62,7 +62,8 @@ class SweepExperiment2D_plots(SweepExperimentND):
         fig.show()
         return fig, axs
 
-    def _update_fig(self, Z_mat, fig, axs):
+    def _update_fig(self, data, fig, axs):
+        Z_mat = data['data'][self.z_value]
         for ro_index in range(len(Z_mat)):
             # print(axs[ro_index].images[-1][-1])
             im = axs[ro_index].get_images()[-1],

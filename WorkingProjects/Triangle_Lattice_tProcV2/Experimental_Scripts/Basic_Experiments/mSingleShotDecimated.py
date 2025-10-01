@@ -62,14 +62,14 @@ class SingleShotDecimated(ExperimentClass):
             self.cfg["Pulse"] = False
             prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=shots_per_iteration, final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
-            decim = prog.acquire_decimated(self.soc, load_pulses=True, progress = False)[0]
+            decim = prog.acquire_decimated(self.soc, load_envelopes=True, progress = False)[0]
             # print(np.array(decim).shape)
             i_g = np.concatenate([i_g, decim[...,0]], axis=0)
             q_g = np.concatenate([q_g, decim[...,1]], axis=0)
 
             self.cfg["Pulse"] = True
             prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=shots_per_iteration, final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-            decim = prog.acquire_decimated(self.soc, load_pulses=True, progress = False)[0]
+            decim = prog.acquire_decimated(self.soc, load_envelopes=True, progress = False)[0]
             i_e = np.concatenate([i_e, decim[..., 0]], axis=0)
             q_e = np.concatenate([q_e, decim[..., 1]], axis=0)
 

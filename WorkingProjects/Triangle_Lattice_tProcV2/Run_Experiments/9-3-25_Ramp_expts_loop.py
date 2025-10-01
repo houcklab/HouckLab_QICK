@@ -2,16 +2,14 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import TimeVsPopulation
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_1234 import *
 import matplotlib.pyplot as plt
 
-FF4 = [1,2,3,4]
-FF8 = [5,6,7,8]
+from qubit_parameter_files.Qubit_Parameters_Master import *
 
-Qubit_Readout = FF4
-
-for Q in ['1H', '2H', '3H', '4H']:
-    Qubit_Pulse = [Q]
+calibrated_ss = False
+for Q in [1,2,3,4,5,6,7,8]:
+    Qubit_Readout = [1,2,3,4,5,6,7,8]
+    Qubit_Pulse = [f'{Q}H']
 
 
     # can plot populations during and after ramp
@@ -23,7 +21,15 @@ for Q in ['1H', '2H', '3H', '4H']:
 
     # This ends the working section of the file.
     exec(open("UPDATE_CONFIG.py").read())
-    exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())
+
+    if not calibrated_ss:
+        exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())
+        angle, threshold = config['angle'], config['threshold']
+        confusion_matrix = config['confusion_matrix']
+        calibrated_ss = True
+    else:
+        config['angle'], config['threshold'] = angle, threshold
+        config['confusion_matrix'] = confusion_matrix
 
     if run_ramp_population_over_time:
         instance = TimeVsPopulation(path="TimeVsPopulation", outerFolder=outerFolder,

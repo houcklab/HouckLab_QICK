@@ -92,7 +92,6 @@ class FFAveragerProgramV2(AveragerProgramV2):
             excited_percentage = np.moveaxis(excited_percentage, 0, -1)
             excited_percentages[ro_ind] = excited_percentage
 
-
         if return_shots:
             return excited_percentages, (shots_i0, shots_q0)  ###, rotated_iq_array
         else:

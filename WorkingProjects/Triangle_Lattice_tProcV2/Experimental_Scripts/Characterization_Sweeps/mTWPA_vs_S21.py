@@ -12,21 +12,22 @@ class FFvsSpec(SweepExperiment2D_plots):
     def init_sweep_vars(self):
         self.Program = CavitySpecFFProg
 
-        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Pulse")
-        self.y_points = np.linspace(self.cfg["FF_gain_start"], self.cfg["FF_gain_stop"], self.cfg["FF_gain_steps"],
+        self.y_key = "pump_power"
+        self.y_points = np.linspace(self.cfg["power_start"], self.cfg["power_stop"], self.cfg["power_steps"],
                                     dtype=int)
 
-        self.x_name = "qubit_freq_loop"
-        self.cfg["qubit_length"] = self.cfg.get("qubit_length") or 100  ### length of CW drive in us
+        self.x_key = "pump_freq"
+        self.x_points = np.linspace(self.cfg["pump_freq_start"], self.cfg["pump_freq_stop"], self.cfg["pump_freq_steps"],
+                                    dtype=int)
 
-        self.z_value = 'contrast'  # contrast or population
-        self.ylabel = f'Fast flux gain index {self.cfg["qubit_FF_index"]}'  # for plotting
-        self.xlabel = 'Spec frequency (MHz)'  # for plotting
+        self.z_value = 'IQ'  # contrast or population
+        self.ylabel = 'Pump power (dB)'  # for plotting
+        self.xlabel = 'Pump frequency (Hz)'  # for plotting
 
         self.synth = SynthHD(r'USB\VID_0483&PID_A3E5&MI_00\6&371C5830&0&0000')
         self.synth.init()
 
-    def setup_sweep_vars(self):
+    def set_up_instance(self):
         # Set channel 0 power and frequency
         self.synth[0].power = -10.
         self.synth[0].frequency = 2.e9

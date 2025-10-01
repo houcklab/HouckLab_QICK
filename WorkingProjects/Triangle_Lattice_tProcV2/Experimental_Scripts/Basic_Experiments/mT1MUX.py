@@ -74,8 +74,8 @@ class T1MUX(ExperimentClass):
         prog = T1Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                             final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
-        iq_list = prog.acquire(self.soc, load_pulses=True,
-                               soft_avgs=self.cfg.get('rounds', 1),
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get('rounds', 1),
                                progress=progress)
 
         # shape of results: [num of ROs, 1 (num triggers), expts, 2 (I or Q)],
@@ -90,7 +90,7 @@ class T1MUX(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True,**kwargs):
         if data is None:
             data = self.data
 
@@ -132,10 +132,11 @@ class T1MUX(ExperimentClass):
             print("No fit found.")
 
         plt.suptitle(self.titlename)
+        plt.title("Read:" + str(self.cfg["Qubit_Readout_List"]))
         plt.savefig(self.iname[:-4] + '.png')
 
         if plotDisp:
-            plt.show(block=True)
+            plt.show(block=block)
             plt.pause(0.1)
         else:
             fig.clf(True)

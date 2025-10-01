@@ -28,12 +28,32 @@ def apply_IIR(ab, waveform):
     return y
 
 DIR = r"Z:\QSimMeasurements\Measurements\8QV1_Triangle_Lattice\_IIR_PulseCompensations"
+# Fudging factor (See "0918 Compensated Pulse Ramseys" in the Triangle_Lattice OneNote)
+true_asmpytote = np.array([-9208, -9814, -7200, -9696, -8458, -8877, -6039, -7206])
+comp_asymptote = np.array([-9216, -9838, -7218, -9695, -8487, -8845, -6066, -7221])
+fudge_scaling = comp_asymptote / true_asmpytote
+
 def Compensate(waveform, offset, Qubit):
     '''Compensate a waveform'''
 
-    iir_files = [rf'{DIR}\ff{Qubit}_0.csv',
-                rf'{DIR}\ff{Qubit}_1.csv',
-                 rf'{DIR}\ff{Qubit}_2.csv',]
+    if isinstance(Qubit, str):
+        try:
+            Qubit = int(Qubit)
+        except Exception as e:
+            print(f'Qubit needs to be an integer, given {type(Qubit)}')
+            raise e
+
+    if Qubit in [1,2,3,4,5,6,8]:
+        iir_files = [rf'{DIR}\ff{Qubit}_0.csv',
+                    rf'{DIR}\ff{Qubit}_1.csv',
+                     rf'{DIR}\ff{Qubit}_2.csv',]
+    elif Qubit in [7]:
+        iir_files = [rf'{DIR}\ff{Qubit}_0.csv',
+                     rf'{DIR}\ff{Qubit}_1.csv',
+                     rf'{DIR}\ff{Qubit}_2.csv',
+                     rf'{DIR}\ff{Qubit}_3.csv',]
+                     # rf'{DIR}\ff{Qubit}_R.csv',]
+
 
     # if Qubit in [1]:
     #     iir_files.append(rf'{DIR}\ffr{Qubit}.csv')
@@ -41,6 +61,9 @@ def Compensate(waveform, offset, Qubit):
     for iir_file in iir_files:
         ab = load_ab_file(iir_file)
         waveform = apply_IIR(ab, waveform)
+
+
+    waveform = waveform * fudge_scaling[Qubit-1]
 
     return waveform + offset
 

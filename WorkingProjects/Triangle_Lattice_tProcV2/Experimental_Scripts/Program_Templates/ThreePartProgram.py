@@ -46,6 +46,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         # 3: FFReadouts
         # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
+        # FF.FFPulses_compensated(self, self.FFReadouts, self.FFExpts, self.cfg["res_length"])
         # self.delay(0.1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
@@ -55,6 +56,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
+
         # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
 
         ###     If waveform memory becomes a problem, change this code to use the same waveform

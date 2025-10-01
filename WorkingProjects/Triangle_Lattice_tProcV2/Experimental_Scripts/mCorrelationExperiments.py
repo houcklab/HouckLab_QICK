@@ -55,7 +55,7 @@ class PopulationShots(ExperimentClass):
                                 final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
         excited_populations, (self.I_mat, self.Q_mat) = prog.acquire_population_shots(soc=self.soc, return_shots=True,
-                                                            load_pulses=True,
+                                                            load_envelopes=True,
                                                             progress=progress)
 
         excited_populations = np.array(excited_populations)
@@ -64,6 +64,10 @@ class PopulationShots(ExperimentClass):
             Z_mat[ro_index] = excited_populations[ro_index]
 
         counts = generate_counts(excited_populations, num_qubits=self.num_qubits)
+
+        print(counts)
+        print(counts.shape)
+
         self.data['data']['counts'] = counts
 
         self.save_data(data=self.data)
@@ -75,6 +79,34 @@ class PopulationShots(ExperimentClass):
             data = self.data
 
         counts = data['data']['counts']
+
+        k = 20
+
+        probs = counts/np.sum(counts)
+        bitstrings = list(product([0,1], repeat=self.num_qubits))
+
+        k = 20
+        idx_sorted = np.argsort(probs)[::-1]
+        top_idx = idx_sorted[:k]
+        top_probs = probs[top_idx]
+        top_labels = [''.join(map(str, bitstrings[i])) for i in top_idx]
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.bar(range(k), top_probs)
+        ax.set_xticks(range(k))
+        ax.set_xticklabels(top_labels, rotation=70, fontsize=9)
+        # ax.set_yscale('log')  # optional: show log scale for rare events
+        ax.set_ylabel('Probability')
+        ax.set_title(f'Top {k} outcomes by probability')
+        plt.tight_layout()
+        plt.show()
+
+        # import plotly.graph_objects as go
+        #
+        # fig = go.Figure([go.Bar(x=top_labels, y=top_probs, text=[int(counts[i]) for i in top_idx],
+        #                         hovertemplate='bitstring: %{x}<br>prob: %{y:.4f}<br>counts: %{text}<extra></extra>')])
+        # fig.update_layout(title=f'Top {k} bitstrings (interactive)', xaxis_tickangle=-45)
+        # fig.show()
 
         display_counts(counts, self.titlename, num_qubits=self.num_qubits)
 
@@ -172,8 +204,8 @@ class RampPopulationShots(ExperimentClass):
                                 final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
         excited_populations = prog.acquire_population_shots(soc=self.soc, return_shots=False,
-                                                            load_pulses=True,
-                                                            soft_avgs=self.cfg.get('rounds', 1),
+                                                            load_envelopes=True,
+                                                            rounds=self.cfg.get('rounds', 1),
                                                             progress=progress)
 
         for ro_index in range(len(readout_list)):
@@ -279,7 +311,7 @@ def generate_counts(populations, num_qubits):
 
             # conventional order is 00, 01, 10, 11 where the ith bit is readout_list[i]
             # Count occurrences of each bitstring from 0 to 3 (00 to 11)
-            counts = np.bincount(bit_values, minlength=num_qubits**2)
+            counts = np.bincount(bit_values, minlength=2**num_qubits)
 
     if num_qubits == 2:
 

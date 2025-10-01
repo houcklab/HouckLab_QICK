@@ -86,8 +86,8 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
         prog = QubitSpecSliceFFProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
                                     final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        iq_list = prog.acquire(self.soc, load_pulses=True,
-                               soft_avgs=self.cfg.get('rounds', 1),
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get('rounds', 1),
                                progress=progress)
         # print(np.array(iq_list).shape)
 
@@ -109,7 +109,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp = False, figNum = 1, block=True, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True,ax=None, **kwargs):
         if data is None:
             data = self.data
         x_pts = data['data']['x_pts']
@@ -120,8 +120,10 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
 
-
-        plt.figure(figNum)
+        if ax is None:
+            plt.figure()
+        else:
+            plt.sca(ax)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.axvline(self.qubitFreq, color='black', linestyle='--', label=f"{self.qubitFreq:.1f} MHz")
@@ -134,7 +136,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         if plotDisp:
             plt.show(block=block)
             plt.pause(0.1)
-        plt.close(figNum)
+        # plt.close(figNum)
 
 
 

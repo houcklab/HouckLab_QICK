@@ -15,8 +15,8 @@ def set_nested_item(d, key_list, value):
 def key_savename(key_list):
     """Generates a readable single string to be the key in the returned data dictionary.
     e.g. key_savename('delay') ---- > 'delay'
-         key_savename('pulse_freqs', 0) -----> 'pulse_freqs'
-         key_savename(['FF_Qubits', '1', 'Gain_Pulse') -----> 'Gain_Pulse'"""
+         key_savename(('pulse_freqs', 0)) -----> 'pulse_freqs'
+         key_savename(['FF_Qubits', '1', 'Gain_Pulse']) -----> 'Gain_Pulse'"""
     if not isinstance(key_list, (list, tuple)):
         return key_list
     else:

@@ -94,11 +94,11 @@ class SingleShotFFMUX(ExperimentClass):
 
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
+        shots_ig,shots_qg = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
 
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_pulses=True, progress=False)
+        shots_ie,shots_qe = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
 
         data = {'config': self.cfg, 'data': {}}
                 # {'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e}
@@ -114,7 +114,7 @@ class SingleShotFFMUX(ExperimentClass):
             self.data['data']['i_e' + str(read_index)] = i_e
             self.data['data']['q_e' + str(read_index)] = q_e
 
-            fid, threshold, angle, ne_contrast, ng_contrast = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, return_errors=True) ### arbitrary ran, change later
+            fid, threshold, angle, ne_contrast, ng_contrast = hist_process(data=[i_g, q_g, i_e, q_e], plot=False, ran=None, return_errors=True, print_fidelities=False) ### arbitrary ran, change later
             self.data_in_hist = [i_g, q_g, i_e, q_e]
             self.fid.append(fid)
             self.threshold.append(threshold)
@@ -154,7 +154,7 @@ class SingleShotFFMUX(ExperimentClass):
 
             #### plotting is handled by the helper histogram
             title = 'Read Length: ' + str(self.cfg["readout_lengths"][j]) + "us" + ", Read: " + str(read_index)
-            hist_process(data=[i_g, q_g, i_e, q_e], plot=True, print_fidelities=False, ran=None, title = title)
+            hist_process(data=[i_g, q_g, i_e, q_e], plot=True, print_fidelities=True, ran=None, title = title)
 
             plt.suptitle(self.titlename + " , Read: " + str(read_index))
 
@@ -216,7 +216,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         ## 00 state
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_igg,shots_qgg = prog.acquire(self.soc, load_pulses=True)
+        shots_igg,shots_qgg = prog.acquire(self.soc, load_envelopes=True)
 
         self.cfg["Pulse"] = True
 
@@ -225,7 +225,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_gains'] = [qubit_gains[0]]
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ieg,shots_qeg = prog.acquire(self.soc, load_pulses=True)
+        shots_ieg,shots_qeg = prog.acquire(self.soc, load_envelopes=True)
 
 
         ## 01 state
@@ -233,7 +233,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_gains'] = [qubit_gains[1]]
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ige, shots_qge = prog.acquire(self.soc, load_pulses=True)
+        shots_ige, shots_qge = prog.acquire(self.soc, load_envelopes=True)
 
 
         ## 11 state
@@ -261,7 +261,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         print(self.cfg['qubit_gains'])
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_iee, shots_qee = prog.acquire(self.soc, load_pulses=True)
+        shots_iee, shots_qee = prog.acquire(self.soc, load_envelopes=True)
 
 
 

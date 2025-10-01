@@ -1,7 +1,7 @@
 
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Jero import Compensated_Pulse
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -159,13 +159,13 @@ class TimeDomainSpec(ExperimentClass):
         # Phase of second drive is 180, such that
         self.cfg['second_qubit_phase'] = self.soccfg.deg2reg(180, gen_ch=self.cfg['qubit_ch'])
         prog = TimeDomainSpecProgram(self.soccfg, self.cfg)
-        avg_pop = prog.acquire_populations(soc=self.soc, load_pulses=True)
+        avg_pop = prog.acquire_populations(soc=self.soc, load_envelopes=True)
         avg_x = 1 - 2 * np.asarray(avg_pop)  # Convert from avg of 0,1 shots to avg of +1,-1 shots
 
         # Measure <sigma Y>
         self.cfg['second_qubit_phase'] = self.soccfg.deg2reg(270, gen_ch=self.cfg['qubit_ch'])
         prog = TimeDomainSpecProgram(self.soccfg, self.cfg)
-        avg_pop = prog.acquire_populations(soc=self.soc, load_pulses=True)
+        avg_pop = prog.acquire_populations(soc=self.soc, load_envelopes=True)
         avg_y = 1 - 2 * np.asarray(avg_pop)  # Convert from avg of 0,1 shots to avg of +1,-1 shots
 
         t_pts = self.cfg['start'] + self.cfg['step'] * np.arange(self.cfg['expts'])

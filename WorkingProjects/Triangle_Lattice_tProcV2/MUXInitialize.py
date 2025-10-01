@@ -42,14 +42,11 @@ BaseConfig = {
 
     "relax_delay": 200,  # --Fixed
     "res_phase": 0,  # --Fixed
-    "res_length": 20,  # length of cavity pulse for readout in us
+    "res_length":20,  # length of cavity pulse for readout in us
     "res_LO": 9000,  #in MHz
     "qubit_LO": 0,
 
-    # "ff_crosstalk_matrix_path": r"Z:\QSimMeasurements\Measurements\8QV1_Triangle_Lattice\qubit_parameters\FF_crosstalk_2.csv"
 }
-if "ff_crosstalk_matrix_path" in BaseConfig:
-    print("Using FF crosstalk matrix.")
 
 ### Lets do this within the waveform from now on instead, since it gives better resolution
 FF_Qubits = {

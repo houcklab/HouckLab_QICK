@@ -61,11 +61,10 @@ class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
         self.label("interdelay")
         # print(self.cfg['expt_samples1'])
         # print(self.cycles2us(max(3,ceil(self.cfg["expt_samples1"]/16))))
-        self.delay(self.cycles2us(max(3,ceil(self.cfg["expt_samples1"]/16)) - 2))
+        self.delay(self.cycles2us(max(3,ceil(self.cfg["expt_samples1"]/16))))
         # self.delay_auto()
         self.FFLoad16Waveforms(self.FFBS, self.FFExpts, cfg["IDataArray2"])
         self.FFPulses_arb_length_and_delay(t_start=0)
-        self.delay(self.cycles2us(2)) # Placeholder correction
 
         # 3: FFReadouts
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)

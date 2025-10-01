@@ -17,8 +17,8 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
 
         FFLoad1Waveform(self, list_of_gains, previous_gains, IDataArray) once
 
-        FFPulses_arb_cycle_and_delay(self, t_start) in place of FFPulses_direct and
-        FFInvert_arb_cycle_and_delay(self, t_start) to invert the pulse at the end.
+        FFPulses_arb_cycles_and_delay(self, t_start) in place of FFPulses_direct and
+        FFInvert_arb_cycles_and_delay(self, t_start) to invert the pulse at the end.
 
         Both functions include a delay() by the correct number of cycles.
 
@@ -50,8 +50,11 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
             if IQPulse is None:  # if not specified, assume constant of max value
                 IQPulse = gain * np.ones(truncation_length)
             # add 2 cycle buffer to beginning of IQPulse
+            if len(IQPulse) < truncation_length:
+                print(f"Channel {channel}: Maximum length longer than given array, padding with final value.")
+                IQPulse = np.concatenate([IQPulse, np.full(truncation_length-len(IQPulse), IQPulse[-1])])
             idata = np.concatenate([prev_gain * np.ones(32), IQPulse[:truncation_length]])
-            wname = f"{waveform_label}_{i}_{channel}"
+            wname = f"{waveform_label}_{channel}"
             self.add_envelope(ch=channel, name=wname,
                                   idata=idata, qdata=np.zeros_like(idata))
             self.add_pulse(ch=channel, name=wname,
@@ -70,14 +73,14 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
                     t_start = t_start + 0  # instance.gen_t0[channel]
                 self.pulse(ch=channel, name=pulse_name, t=t_start)
 
-    def FFPulses_arb_cycles_and_delay(self, t_start, waveform_label="FF_swept"):
-        '''Play a waveform based on the value in cycle_counter.'''
+    def FFPulses_arb_cycles_and_delay(self, t_start, waveform_label="FF_swept", delay_reg='cycle_counter'):
+        '''Play a waveform based on the value in cycle_counter, and delay by cycle_counter (or a custom delay)'''
         # Special case: 0 samples (cycle_counter < 3), skip directly to readout (no FFExpt)
         self.cond_jump("skip_waveform", "cycle_counter", 'S', '-', 3)
         # Else, play the waveform with changed length
-        self.FFPlayChangeLength(f"{waveform_label}_{i}", "cycle_counter", t_start=t_start)
+        self.FFPlayChangeLength(f"{waveform_label}", "cycle_counter", t_start=t_start)
         # Delay by cycle_counter cycles
-        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
+        self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg(delay_reg)}, addr_inc=1)
 
         self.label("skip_waveform")
         self.nop()
@@ -85,7 +88,7 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
     def FFInvert_arb_cycles_and_delay(self, t_start, waveform_label="FF_swept"):
         '''Same as above, but invert the waveform.'''
         self.cond_jump("finish_inv", "cycle_counter", 'S', '-', 3)
-        FF.FFInvertWaveforms(self, f"{waveform_label}_{i}", t_start=t_start)
+        FF.FFInvertWaveforms(self, f"{waveform_label}", t_start=t_start)
         self.label("finish_inv")
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
 

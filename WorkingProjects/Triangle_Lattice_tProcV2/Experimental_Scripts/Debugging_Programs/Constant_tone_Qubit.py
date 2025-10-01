@@ -63,10 +63,10 @@ class ConstantTone_Experiment(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=0)
 
-        # a, b = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+        # a, b = prog.acquire(self.soc, threshold=None, angle=None, load_envelopes=True,
         #                                  readouts_per_experiment=1, save_experiments=None,
         #                                  start_src="internal", progress=False)#, debug=False)
-        #a = prog.acquire(self.soc) #, load_pulses=True)
+        #a = prog.acquire(self.soc) #, load_envelopes=True)
         prog.run_rounds(self.soc) # Necessary instead of acquire, since we are not collecting any results
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
         pass # No data to display

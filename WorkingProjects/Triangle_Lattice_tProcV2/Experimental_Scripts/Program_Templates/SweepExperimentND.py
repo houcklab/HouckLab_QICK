@@ -56,17 +56,21 @@ class SweepExperimentND(ExperimentClass):
         print("Display not implemented for this experiment: did you mean to inherit one of the plotting classes?")
     
     def _update_fig(self, data, fig, axs):
-        pass
+        print("Update fig not implemented for this experiment: did you mean to inherit one of the plotting classes?")
 
 
     def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg=None, config_file=None,
                  liveplot_enabled=False, **kwargs):
         super().__init__(path=path, prefix=prefix, soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file,
                          liveplot_enabled=liveplot_enabled, **kwargs)
+
         self.keys = tuple()
         self.sweep_arrays = tuple()
 
         self.init_sweep_vars()
+
+        if not issubclass(self.Program, FFAveragerProgramV2):
+            raise TypeError("Please assign an AveragerProgramV2 object in self.Program.")
         if "x_key" in self.__dict__:
             self.keys = (self.x_key,) + self.keys
             self.sweep_arrays = (self.x_points,) + self.sweep_arrays
@@ -96,36 +100,16 @@ class SweepExperimentND(ExperimentClass):
         
         
 
-    def acquire(self, progress=False, plotDisp=True, plotSave=True, figNum=1):
+    def acquire(self, progress=False, plotDisp=True, plotSave=True, figNum=None):
         while plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum += 1
 
+        ### ------------   DATA DICT SETUP      ---------- ###
         readout_list = self.cfg["Qubit_Readout_List"]
-
-        '''Index by Z_mat[ro_index][*sweep_shape, *data_shape].
-            e.g., 4 MUXed readouts on a FF gain vs SpecSlice. sweep_shape = (50,), acquire_shape = (71,).
-            Z_mat will have shape (4)(50, 71).'''
-        Z_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
-
-        if self.z_value == 'population_shots':
-            print('population shots true')
-            Z_mat = [np.full(self.data_shape + (self.cfg['reps'] * self.cfg.get('rounds', 1),), np.nan, dtype=np.int64) for _ in readout_list]
-
-        # raw i and q data
-        I_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
-        Q_mat = [np.full(self.data_shape, np.nan) for _ in readout_list]
-
-        if self.z_value == "population_corrected" or self.z_value == "population" and "confusion_matrix" in self.cfg:
-            Z_corrected = [np.full(self.data_shape, np.nan) for _ in readout_list]
-        # Define data dictionary
         key_names = [SweepHelpers.key_savename(key) for key in self.keys]
-
         self.data = {
             'config': self.cfg,
-            'data': {self.z_value: Z_mat,
-                     "I": I_mat,
-                     "Q": Q_mat,
-                     'readout_list': readout_list,
+            'data': { 'readout_list': readout_list,
                      # Outer python loops
                      **{key_name: value_array for key_name,value_array in zip(key_names, self.sweep_arrays)},
                      # On-board tprocV2 loops
@@ -135,13 +119,34 @@ class SweepExperimentND(ExperimentClass):
                      'Qubit_Readout_List': self.cfg["Qubit_Readout_List"]},
 
         }
-        if self.z_value == "population_corrected" or self.z_value=="population" and "confusion_matrix" in self.cfg:
-            self.data['data']['population'] = Z_mat
-            self.data['data']['population_corrected'] = Z_corrected
+        data_dict = self.data["data"]
+        if self.z_value == "contrast":
+            '''Index by Z_mat[ro_index][*sweep_shape, *data_shape].
+                        e.g., 4 MUXed readouts on a FF gain vs SpecSlice. sweep_shape = (50,), acquire_shape = (71,).
+                        Z_mat will have shape (4)(50, 71).'''
+            data_dict["contrast"] = [np.full(self.data_shape, np.nan) for _ in readout_list]
+            data_dict["I"]        = [np.full(self.data_shape, np.nan) for _ in readout_list]
+            data_dict["Q"]        = [np.full(self.data_shape, np.nan) for _ in readout_list]
+
+        elif self.z_value == "population_corrected" or self.z_value=="population" and "confusion_matrix" in self.cfg:
+            self.data['data']['population'] = [np.full(self.data_shape, np.nan) for _ in readout_list]
+            self.data['data']['population_corrected'] = [np.full(self.data_shape, np.nan) for _ in readout_list]
             self.z_value = "population_corrected"
 
-        self.last_saved_time = time.time()
+        elif self.z_value == "population":
+            self.data['data']['population'] = [np.full(self.data_shape, np.nan) for _ in readout_list]
 
+        elif self.z_value == 'population_shots':
+            self.data['data']['population'] = [np.full(self.data_shape, np.nan) for _ in readout_list]
+            if 'confusion_matrix' in self.cfg:
+                self.data['data']['population_corrected'] = [np.full(self.data_shape, np.nan) for _ in readout_list]
+
+            self.data['data']['population_shots'] = [np.full(self.data_shape + (self.cfg['reps'] * self.cfg.get('rounds', 1),), np.nan, dtype=np.int64)
+                     for _ in readout_list]
+
+
+
+        ### ----------   BEGIN SWEEP  ------------- ###
         '''iterating through itertools.product is equivalent to a nested for loop such as
         for i, y_pt in enumerate(self.y_points):
             for j, x_pt in enumerate(self.x_points):'''
@@ -149,111 +154,113 @@ class SweepExperimentND(ExperimentClass):
         '''e.g. index_iterator yields (0,0), (0,1), (0,2), ... (1,0), (1,1), ... (M-1, N-1)'''
         index_iterator = itertools.product(*(range(len(arr)) for arr in self.sweep_arrays))
         value_iterator = itertools.product(*self.sweep_arrays)
-
         first_iteration = True
+        self.last_saved_time = time.time()
+
         for sweep_indices, sweep_values in zip(index_iterator, value_iterator): 
             # Update config entries based on sweep
             for key, pt in zip(self.keys, sweep_values):
                 SweepHelpers.set_nested_item(self.cfg, key, pt)
 
-            # set up the AveragerProgram instance
+            # set up the AveragerProgramV2
             self.set_up_instance()
+            prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                                final_delay=self.cfg["relax_delay"], initial_delay=10.0)
 
-            if issubclass(self.Program, FFAveragerProgramV2):
-                prog = self.Program(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
-                                    final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-            else:
-                raise TypeError("Please assign an AveragerProgramV2 object in self.Program.")
 
             # shape of iq_list: [num of ROs, 1 (num triggers?), SpecNumPoints, 2 (I or Q)],
             #              e.g. [1, 1, 71, 2] for SpecSlice
             if self.z_value == 'contrast':
-                iq_list = prog.acquire(self.soc, load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
+                iq_list = prog.acquire(self.soc, load_envelopes=True, rounds=self.cfg.get('rounds', 1), progress=progress)
                 avgi, avgq = [iq[-1, ..., 0] for iq in iq_list], [iq[-1, ..., 1] for iq in iq_list]
                 
                 for ro_index in range(len(readout_list)):
-                    I_mat[ro_index][*sweep_indices, ...] = avgi[ro_index]
-                    Q_mat[ro_index][*sweep_indices, ...] = avgq[ro_index]
+                    data_dict["I"][ro_index][*sweep_indices, ...] = avgi[ro_index]
+                    data_dict["Q"][ro_index][*sweep_indices, ...] = avgq[ro_index]
                     slices = tuple(slice(j+1) for j in sweep_indices)
 
-                    rotated_i = IQ_contrast(I_mat[ro_index][*slices], Q_mat[ro_index][*slices])
+                    rotated_i = IQ_contrast(data_dict["I"][ro_index][*slices], data_dict["Q"][ro_index][*slices])
 
-                    Z_mat[ro_index][*slices] = rotated_i
+                    data_dict["contrast"][ro_index][*slices] = rotated_i
+
             elif self.z_value == 'population' or self.z_value == 'population_corrected':
                 excited_populations = prog.acquire_populations(soc=self.soc, return_shots=False,
-                                                            load_pulses=True, soft_avgs=self.cfg.get('rounds', 1), progress=progress)
-
+                                                            load_envelopes=True, rounds=self.cfg.get('rounds', 1), progress=progress)
                 for ro_index in range(len(readout_list)):
-                    Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
+                    data_dict["population"][ro_index][*sweep_indices, ...] = excited_populations[ro_index]
                     if self.cfg.get('confusion_matrix') is not None:
                         corrected_population = correct_occ(excited_populations[ro_index],
                                                            self.cfg['confusion_matrix'][ro_index])
-                        Z_corrected[ro_index][*sweep_indices, ...] = corrected_population
+                        data_dict["population_corrected"][ro_index][*sweep_indices, ...] = corrected_population
 
             elif self.z_value == 'population_shots':
-
-
-                excited_populations = prog.acquire_population_shots(soc=self.soc, return_shots=False,
-                                                               load_pulses=True, soft_avgs=self.cfg.get('rounds', 1),
+                population_shots = prog.acquire_population_shots(soc=self.soc, return_shots=False,
+                                                               load_envelopes=True, rounds=self.cfg.get('rounds', 1),
                                                                progress=progress)
-
-
                 for ro_index in range(len(readout_list)):
-                    Z_mat[ro_index][*sweep_indices, ...] = excited_populations[ro_index]
+                    population = np.mean(population_shots[ro_index], axis=-1)
+                    data_dict["population_shots"][ro_index][*sweep_indices, ...] = population_shots[ro_index]
+                    data_dict['population'][ro_index][*sweep_indices, ...] = population
+                    if self.cfg.get('confusion_matrix') is not None:
+                        corrected_population = correct_occ(population, self.cfg['confusion_matrix'][ro_index])
+                        data_dict['population_corrected'][ro_index][*sweep_indices, ...]= corrected_population
             else:
                 raise ValueError("So far I only support 'contrast' or 'population' or 'population_shots'.")
 
-            # print(prog)
+            self.process_data(sweep_indices, sweep_values)
             self.debug(prog)
 
+            ### ------ PLOT DATA ------- ###
             if (plotDisp or plotSave) and (len(self.sweep_shape) <= 1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
-                # Create figure
-                # fig, ax = plt.subplots(figsize=(4,8))
-                # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])
-                #                   for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
-                # for i in range(4):
-                #     ax.plot(concat_IQarray[i])
-                #     ax.set_xlim(0,500)
-                # plt.show(block=True)
-
-                if first_iteration:
+                if first_iteration: # Create figure
                     fig, axs = self.display(self.data, figNum=figNum,
                                             plotDisp=plotDisp, block=False,plotSave=False)
                     first_iteration = False
-                # Update figure
-                else:
-                    if self.z_value == "population_corrected":
-                        self._update_fig(Z_corrected, fig, axs)
-                    else:
-                        self._update_fig(Z_mat, fig, axs)
-
+                else: # Update figure
+                    self._update_fig(self.data, fig, axs)
                     fig.canvas.draw()
                     fig.canvas.flush_events()
                     # fig.show()
                     # plt.pause(0.01)
 
             if time.time() - self.last_saved_time > 5 * 60:  # Save data every 5 minutes
-                ### print(self.data)
                 self.last_saved_time = time.time()
                 self.save_data(data=self.data)
                 if plotSave:
                     plt.savefig(self.iname[:-4] + '.png')
+
+        ### ----------- END SWEEP --------------- ###
+
+        self.analyze(data=self.data)
+        self.save_data(data=self.data)
+
         if plotSave:
             plt.savefig(self.iname[:-4] + '.png')
 
         if (plotDisp or plotSave):
             print("CLosing fig")
-            # fig.clear(True)
             plt.close(fig)
 
-        self.analyze(data=self.data)
-        self.save_data(data=self.data)
         return self.data
 
     def analyze(self, data, **kwargs):
+        '''Data analysis/fitting done at the end of the sweep'''
         return super().analyze(data, **kwargs)
 
+    def process_data(self, sweep_values, sweep_indices):
+        '''Data processing done each iteration. Use self.data['data'][z_value][*sweep_indices]
+        to access recently acquired data'''
+        pass
+
     def debug(self, prog):
+        # Create figure
+        # fig, ax = plt.subplots(figsize=(4,8))
+        # concat_IQarray = [np.concatenate([arr1[:self.cfg["expt_samples1"]], arr2])
+        #                   for arr1, arr2, in zip(self.cfg["IDataArray1"], self.cfg["IDataArray2"])]
+        # for i in range(4):
+        #     ax.plot(concat_IQarray[i])
+        #     ax.set_xlim(0,500)
+        # plt.show(block=True)
         pass
 
     def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):
@@ -286,17 +293,27 @@ class SweepExperimentND(ExperimentClass):
         if plt.fignum_exists(num=figNum):  # if figure with number already exists
             figNum = None
         if count == 1:
-            fig, ax = plt.subplots(1, 1, figsize=(10, 8), num=figNum)
+            fig, ax = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
             axs = [ax]
         elif count == 2:
-            fig, axs = plt.subplots(1, 2, figsize=(14, 8), num=figNum, tight_layout=True)
+            fig, axs = plt.subplots(1, 2, figsize=(12, 6), num=figNum, tight_layout=True)
         elif count in [3, 4]:
-            fig, axs = plt.subplots(2, 2, figsize=(14, 8), num=figNum, tight_layout=True)
+            fig, axs = plt.subplots(2, 2, figsize=(12, 8), num=figNum, tight_layout=True)
             axs = (axs[0][0], axs[0][1], axs[1][0], axs[1][1])
-            if count == 3:
-                axs[3].set_axis_off()
+            if count % 2 == 1:
+                axs[-1].set_axis_off()
+        elif count in [5, 6]:
+            fig, axs = plt.subplots(2, 3, figsize=(18, 8), num=figNum, tight_layout=True)
+            axs = axs.flatten()
+            if count % 2 == 1:
+                axs[-1].set_axis_off()
+        elif count in [7, 8]:
+            fig, axs = plt.subplots(2, 4, figsize=(24, 8), num=figNum, tight_layout=True)
+            axs = axs.flatten()
+            if count % 2 == 1:
+                axs[-1].set_axis_off()
         else:
-            raise Exception("I don't think we support MUX with N > 4 yet???")
+            raise Exception("Can't do MUX with N > 8.")
         
         return fig, axs
 
