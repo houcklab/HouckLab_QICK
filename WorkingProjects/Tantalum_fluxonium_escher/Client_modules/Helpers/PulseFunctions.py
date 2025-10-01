@@ -58,14 +58,16 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
 
     return pulse_length
 
-def create_ff_ramp(prog: AcquireProgram, reversed: bool):
+def create_ff_ramp(prog: AcquireProgram, ramp_start: int, ramp_stop: int, pulse_name: str):
     """
     This function takes a program prog with a defined configuration dictionary prog.cfg, and sets up creates a fast flux
     ramp pulse. For now, the only type of pulse supported is "linear". The pulse is DC, and goes from
-    ff_ramp_start to ff_ramp_stop in ff_ramp_length time.
+    ramp_start to ramp_stop in ff_ramp_length time.
 
     :param prog: AcquireProgram: the program object
-    :param reversed: bool: Make a reversed version of the ramp instead
+    :param ramp_start: int: Starting value of ramp, in DAC units
+    :param ramp_stop: int: Ending value of ramp, in DAC units
+    :param pulse_name: str: name of pulse to use
     """
     # TODO decide whether it's better to pass parameters instead of taking them from the cfg file
 
@@ -73,8 +75,8 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool):
     if style != "linear":
         raise ValueError("cfg[\"ff_ramp_style_\"] must be \"linear\"; received \"" + prog.cfg["ff_ramp_style"] + "\" instead.")
 
-    if np.max([np.abs(prog.cfg["ff_ramp_start"]), np.abs(prog.cfg["ff_ramp_stop"])]) > prog.soccfg['gens'][0]['maxv']:
-        raise ValueError("cfg[\"ffr_ramp_start\"] and cfg[\"ff_ramp_stop\"] must not exceed max value in magnitude.")
+    if np.max([np.abs(ramp_start), np.abs(ramp_stop)]) > prog.soccfg['gens'][0]['maxv']:
+        raise ValueError("ramp_start and ramp_stop must not exceed max value in magnitude.")
 
     length = prog.us2cycles(prog.cfg["ff_ramp_length"], gen_ch = prog.cfg["ff_ch"])
     if length < 3: # If we start wanting to make pulses shorter than 3 clock cycles ~7 ns, we can pad with zeros
@@ -86,29 +88,16 @@ def create_ff_ramp(prog: AcquireProgram, reversed: bool):
     # 		fs=6881.280 MHz, fabric=430.080 MHz, 32-bit DDS, range=6881.280 MHz
     # 		DAC tile 3, blk 2 is 2_231, on JHC3
     # fs is around 16x larger than fabric. I do NOT fully understand why it's not EXACTLY 16.
-    if reversed:
-        idata = np.linspace(start=prog.cfg["ff_ramp_stop"], stop=prog.cfg["ff_ramp_start"], num=length * 16)
-    else:
-        idata = np.linspace(start = prog.cfg["ff_ramp_start"], stop = prog.cfg["ff_ramp_stop"], num = length * 16)
+    idata = np.linspace(start = ramp_start, stop = ramp_stop, num = length * 16)
     qdata = np.zeros(length * 16)
 
     # TODO figure out how does i and q work for DC signals and for arb with gain
 
-    if reversed:
-        prog.add_pulse(ch=prog.cfg["ff_ch"], name="ramp_reversed", idata=idata, qdata=qdata)
+    prog.add_pulse(ch=prog.cfg["ff_ch"], name=pulse_name, idata = idata, qdata = qdata)
 
-        # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
-        prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = prog.soccfg['gens'][0]['maxv'],
-                                 waveform="ramp_reversed", outsel="input",
-                                 # mode = "periodic",
-                                 )
-    else:
-        prog.add_pulse(ch=prog.cfg["ff_ch"], name="ramp", idata = idata, qdata = qdata)
-
-        # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
-        prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
-                                 phase=0, gain = prog.soccfg['gens'][0]['maxv'],
-                                 waveform="ramp", outsel="input",
-                                 # mode = "periodic",
-                                 )
+    # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
+    prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
+                             phase=0, gain = prog.soccfg['gens'][0]['maxv'],
+                             waveform="ramp", outsel="input",
+                             # mode = "periodic",
+                             )
