@@ -140,40 +140,39 @@ fff.show()
 # # TITLE: Transmission + Spectroscopy
 UpdateConfig_transmission = {
     # Parameters
-    "reps": 8000,  # Number of repetitions
+    "reps": 10000,  # Number of repetitions
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 6.6,
-    "read_pulse_gain": 10000,
-    "read_pulse_freq": 6671.6612,  # 6253.8,
+    "read_length": 30,
+    "read_pulse_gain": 4600,
+    "read_pulse_freq": 6671.71,  # 6253.8,
 
     # Experiment Parameter
-    "TransSpan":  1,  # [MHz] span will be center frequency +/- this parameter
-    "TransNumPoints": 201,  # number of points in the transmission frequency
+    "TransSpan":  0.25,  # [MHz] span will be center frequency +/- this parameter
+    "TransNumPoints": 51,  # number of points in the transmission frequency
     "meas_config": "hanger"
 ,}
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",  # Constant pulse
-    "qubit_gain": 1000,  # [DAC Units]
+    "qubit_gain": 250,  # [DAC Units]
     'sigma': 2,
     'flat_top_length': 2,
-    "qubit_length": 2,  # [us]
+    "qubit_length": 4,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 2180,
-    "qubit_freq_stop": 2190,
+    "qubit_freq_start": 450,
+    "qubit_freq_stop": 570,
     "SpecNumPoints": 101,  # Number of points
-    'spec_reps': 10000,  # Number of repetition
+    'spec_reps': 12000,  # Number of repetition
     "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 
     # Define the yoko voltage
-    "yokoVoltage": -0.42,
+    "yokoVoltage": -0.115,
     "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': False, # This is for turning off the heating tone
     'mode_periodic': False,
-
     'ro_periodic': False,
 }
 
@@ -199,9 +198,9 @@ plt.show()
 
 # Update the transmission frequency to be the peak
 
-config["read_pulse_freq"] = Instance_trans.peakFreq
+# config["read_pulse_freq"] = Instance_trans.peakFreq
 print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
-# %%
+  # %%
 # TITLE: Cavity Transmission with phase calculated optimal point of measurement
 transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=config, soc=soc, soccfg=soccfg,
                                   outerFolder=outerFolder)
@@ -216,17 +215,12 @@ print(opt_freq)
 # TITLE Perform the cavity transmission experiment with qubit tone
 
 config = BaseConfig | UpdateConfig
-config["qubit_freq"] = 2184
+config["qubit_freq"] = 512.8
 Instance_trans = Transmission_wQubitTone(path="Transmission_wQubTone", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
 data_trans = Instance_trans.acquire()
 Instance_trans.save_data(data_trans)
 Instance_trans.display(data_trans, plotDisp=True)
 plt.show()
-
-# Update the transmission frequency to be the peak
-
-config["read_pulse_freq"] = Instance_trans.peakFreq
-print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
 
     # %%
@@ -311,16 +305,16 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # TITLE: Transmission vs Power
 
 UpdateConfig = {
-    "yokoVoltage": -0.42,
-    "trans_gain_start": 1000,
+    "yokoVoltage": -0.12,
+    "trans_gain_start": 100,
     "trans_gain_stop": 30000,
-    "trans_gain_num": 51,
-    "trans_reps": 500,
+    "trans_gain_num": 81,
+    "trans_reps": 1000,
     "read_pulse_style": "const",
     "readout_length": 10,  # [us]
-    "trans_freq_start": 6668,  # [MHz]
-    "trans_freq_stop": 6673,  # [MHz]
-    "TransNumPoints": 101,
+    "trans_freq_start": 6670.5,  # [MHz]
+    "trans_freq_stop": 6672.5,  # [MHz]
+    "TransNumPoints": 401,
     "relax_delay": 10,
     "units": "DAC",  # use "dB" or "DAC"
     "normalize": True,
@@ -341,27 +335,27 @@ TransVsGain.save_config(Instance_TransVsGain)
 # TITLE: Amplitude rabi Chevron
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -0.42,
+    "yokoVoltage": -0.115,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 10,  # us
-    "read_pulse_gain": 10000,  # [DAC units]
-    "read_pulse_freq": 6671.6812,
+    "read_length": 20,  # us
+    "read_pulse_gain": 5000,  # [DAC units]
+    "read_pulse_freq": 6671.7,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 2182,
-    "qubit_freq_stop": 2187,
-    "RabiNumPoints": 21,  ### number of points
+    "qubit_freq_start": 490,
+    "qubit_freq_stop": 540,
+    "RabiNumPoints": 51,  ### number of points
     "qubit_pulse_style": "const",
     "sigma": 1,  ### units us, define a 20ns sigma
-    "qubit_length": 2,
+    "qubit_length": 0.5,
     "flat_top_length": 25,  ### in us
-    "relax_delay": 100,  ### turned into us inside the run function
+    "relax_delay": 500,  ### turned into us inside the run function
     "qb_periodic": False,
     ##### amplitude rabi parameters
     "qubit_gain_start": 0,
-    "qubit_gain_step": 250,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 21,  ### number of steps
-    "AmpRabi_reps": 6000,  # number of averages for the experiment
+    "qubit_gain_step": 300,  ### stepping amount of the qubit gain
+    "qubit_gain_expts": 11,  ### number of steps
+    "AmpRabi_reps": 4000,  # number of averages for the experiment
     "use_switch": False,
 }
 config = BaseConfig | UpdateConfig
@@ -399,7 +393,7 @@ UpdateConfig = {
     "sigma": 1,  ### units us, define a 20ns sigma
     "qubit_length": 5,
     "flat_top_length": 20,  ### in us
-    "relax_delay": 10,  ### turned into us inside the run function
+    "relax_delay": 1000,  ### turned into us inside the run function
 
     # amplitude rabi parameters
     "qubit_gain_start": 50,

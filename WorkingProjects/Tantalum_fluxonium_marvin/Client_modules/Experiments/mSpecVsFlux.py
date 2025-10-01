@@ -217,7 +217,7 @@ class SpecVsFlux(ExperimentClass):
         #### loop over the yoko vector
         for i in range(expt_cfg["yokoVoltageNumPoints"]):
             ### set the yoko voltage for the specific run
-            yoko1.SetVoltage(voltVec[i])
+            yoko1.SetVoltage(voltVec[i],toPrint=False)
             time.sleep(self.cfg['magnet_relax'])
             self.cfg["yokoVoltage"] = voltVec[i]
 

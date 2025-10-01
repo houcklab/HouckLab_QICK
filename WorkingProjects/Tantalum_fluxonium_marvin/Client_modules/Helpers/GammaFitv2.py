@@ -49,7 +49,8 @@ class GammaFit:
         state0_probs_err = []
         state1_probs = []
         state1_probs_err = []
-        self.centers = []
+        self.centers_init = []
+        self.centers_final = []
         
         for idx_t in tqdm(range(len(self.wait_arr))):
 
@@ -62,9 +63,9 @@ class GammaFit:
             # Get centers of the data
             cen_num = 2
             if idx_t == 0:
-                self.centers.append(sse2.getCenters(iq_data, cen_num))
+                self.centers_init.append(sse2.getCenters(iq_data, cen_num))
             else:
-                self.centers.append(sse2.getCenters(iq_data, cen_num, init_guess=self.centers[0]))
+                self.centers_init.append(sse2.getCenters(iq_data, cen_num, init_guess=self.centers_init[idx_t - 1]))
 
             #### bin into a histogram
             bin_size = 51
@@ -72,34 +73,12 @@ class GammaFit:
 
             # Find the fit parameters for the double 2D Gaussian
             gaussians, popt, x_points, y_points, bounds = sse2.findGaussians(
-                hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
+                hist2d, self.centers_init[idx_t], cen_num, plot= self.verbose,
                 return_bounds = True,
                 fname = "Wait_Arr_0_0", loc = "plots/")
 
             #### extract the fit parameters
             self.popt = popt
-
-            ##############################
-            #### create bounds given current fit
-            lower_bound = np.zeros(len(popt))
-            upper_bound = np.zeros(len(popt))
-            p_guess = popt
-
-            for idx in range(len(popt)):
-
-                lower_bound[idx] = popt[idx] - 0.000001
-                upper_bound[idx] = popt[idx] + 0.000001
-
-                if idx == 0:
-                    lower_bound[idx] = 0
-                    upper_bound[idx] = np.inf
-
-                if idx == 4:
-                    lower_bound[idx] = 0
-                    upper_bound[idx] = np.inf
-
-            bounds = [lower_bound, upper_bound]
-            ##############################
 
             # Extract the sigma
             sigma = []
@@ -137,7 +116,14 @@ class GammaFit:
                 if sorted_shots_1[idx] > 0.8:
                     i1_shots.append(self.i_1_arr[idx_t][idx])
                     q1_shots.append(self.q_1_arr[idx_t][idx])
-           
+
+            ### Find the centers
+            if idx_t == 0:
+                self.centers_final.append(sse2.getCenters(np.stack((self.i_1_arr[idx_t], self.q_1_arr[idx_t]), axis = 0), cen_num))
+            else:
+                self.centers_final.append(sse2.getCenters(np.stack((self.i_1_arr[idx_t], self.q_1_arr[idx_t]), axis = 0), cen_num, init_guess=self.centers_final[0]))
+
+
             ##### use the sorted shots
             for idx_cen in range(2):
                 if idx_cen == 0:
@@ -149,8 +135,7 @@ class GammaFit:
                 
                 # Find the fit parameters for the double 2D Gaussian
                 gaussians, popt, x_points, y_points = sse2.findGaussians(
-                    hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
-                    input_bounds = bounds, p_guess = p_guess,
+                    hist2d, self.centers_final[idx_t], cen_num, plot= self.verbose,
                     sigma = sigma,
                     fname = "Wait_Arr_0_0", loc = "plots/")
                 

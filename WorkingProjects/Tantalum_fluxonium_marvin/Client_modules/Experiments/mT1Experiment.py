@@ -143,6 +143,8 @@ class T1Experiment(ExperimentClass):
         self.T1_est = self.pOpt[1]
         self.T1_err = self.pCov
 
+        data['data']['T1'] = self.T1_est
+        data['data']['T1_err'] = self.T1_err
         self.data = data
 
         return data
@@ -183,7 +185,7 @@ class T1Experiment(ExperimentClass):
         axs[3].set_xlabel("Time (us)")
         axs[3].legend()
 
-        print(self.T1_err)
+        # print(self.T1_err)
 
         plt.suptitle("T1 Experiment, T1 = " + str(round(self.T1_est, 1)) + " us")
 

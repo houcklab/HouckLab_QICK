@@ -3,6 +3,7 @@ from sklearn.cluster import KMeans
 from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
+from sklearn.mixture import GaussianMixture as GMM
 # plt.rc('text', usetex=True)
 # plt.rc('font', family='serif')
 from tqdm import tqdm
@@ -20,15 +21,31 @@ def plotCenter(iq_data, centers, fname, loc):
 
 def getCenters(iq_data, cen_num,**kwargs):
     # use kmeans to cluster the data
-    if 'init_guess' in kwargs:
-        # use kmeans to cluster the data
-        kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
-    else:
-        # use kmeans to cluster the data
-        kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
+    init_method = 'GMM'
+    if 'init_method' in kwargs:
+        init_method = kwargs['init_method']
 
-    # Get the centers of the clusters
-    centers = kmeans.cluster_centers_
+    if init_method == 'GMM':
+        if 'init_guess' in kwargs:
+            # use GMM to cluster the data
+            gmm = GMM(n_components=cen_num, covariance_type='tied', means_init=kwargs["init_guess"]).fit(iq_data.T)
+        else:
+            # use GMM to cluster the data
+            gmm = GMM(n_components=cen_num, covariance_type='tied').fit(iq_data.T)
+        centers = gmm.means_
+        return centers
+    elif init_method == 'kmeans':
+        if 'init_guess' in kwargs:
+            # use kmeans to cluster the data
+            kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
+        else:
+            # use kmeans to cluster the data
+            kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
+
+        # Get the centers of the clusters
+        centers = kmeans.cluster_centers_
+    else:
+        raise ValueError('init_method must be either GMM or kmeans')
 
     # Check if plot is given as input
     if 'plot' in kwargs:
@@ -321,8 +338,14 @@ def calcProbability(
     std_probability = np.zeros(cen_num)
     total_samples = np.sum(num_samples_in_gaussian)
     for i in range(cen_num):
-        probability[i] = num_samples_in_gaussian[i]/total_samples
-        std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
+        if total_samples == 0:
+            probability[i] = 0
+            std_probability[i] = 0
+            print("TOTAL SAMPLES: ", total_samples)
+        else:
+            probability[i] = num_samples_in_gaussian[i]/total_samples
+            std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
+
 
     return probability, std_probability
 
@@ -406,7 +429,7 @@ def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, ax
         isColor = False
     if isColor:
         im = axs.scatter(iq_data[0,:], iq_data[1,:], c = np.max(probability, axis = 0), cmap = 'Spectral',
-                         norm = LogNorm(vmin = 0.6, vmax = 1), s = 15, aspect = 'equal')
+                         norm = LogNorm(vmin = 0.6, vmax = 1), s = 15)
         fig.colorbar(im, ax = axs, label = 'Center')
     else:
         im = axs.scatter(iq_data[0, :], iq_data[1, :], s=15)

@@ -168,7 +168,7 @@ class SpecSlice(ExperimentClass):
         sig = data['data']['avgi'][0][0] + 1j * data['data']['avgq'][0][0]
         avgamp0 = np.abs(sig)
 
-        peak_loc = np.argmax(np.abs(data['data']['avgq']))  # Maximum location
+        peak_loc = np.argmax(avgamp0)  # Maximum location
         # print(np.max(np.abs(data['data']['avgq'])))
         self.qubitFreq = data['data']['x_pts'][peak_loc]
 
