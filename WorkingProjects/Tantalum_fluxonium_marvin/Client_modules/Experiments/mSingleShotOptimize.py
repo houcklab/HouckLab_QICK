@@ -184,7 +184,7 @@ class SingleShotMeasure(ExperimentClass):
         self.keys = []
         self.index = 0
         self.total_size = 1
-        self.mesh_grid = 0
+        self.mesh_grid = None
 
 
     def acquire(self, progress=False):
@@ -420,6 +420,8 @@ class SingleShotMeasure(ExperimentClass):
                 best_value = value
                 best_params = params
 
+        print(">>>>>>>>>>>Optimization finished<<<<<<<<<<")
+        print(f"Results : {best_params} with value {best_value}")
         return best_params, best_value
 
     def display_opt(self, data=None, plotDisp=False, figNum=1, save_fig=True, ran=None, **kwargs):
@@ -439,7 +441,30 @@ class SingleShotMeasure(ExperimentClass):
             plt.savefig(self.iname, dpi = 500)
             if plotDisp == True:
                 plt.show()
-        return
+            return
+
+        elif len(self.keys) == 2:
+            quants = self.quants
+            # Reshape quants to match the grid
+            X = self.mesh_grid[0]
+            Y = self.mesh_grid[1]
+            rows, cols = X.shape
+            quants_grid = np.array(quants).reshape(cols,rows).T
+
+            # Create a 2d color plot using pcolormesh
+            plt.figure(figsize=(10, 8))
+            pcm = plt.pcolormesh(X, Y, quants_grid, shading='auto', cmap='viridis')
+            plt.colorbar(pcm, label='KL Divergence')
+            plt.xlabel(self.keys[0])
+            plt.ylabel(self.keys[1])
+            plt.title('Optimization')
+            plt.tight_layout()
+            if save_fig:
+                plt.savefig(self.iname, dpi = 500)
+            if plotDisp == True:
+                plt.show()
+            return
+
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
