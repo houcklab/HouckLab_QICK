@@ -83,6 +83,22 @@ def double_gaussian_2d(points, *p):
         result += gaussian_2d(points, *p[i*no_of_params:(i+1)*no_of_params])
     return result
 
+# Same as gaussian 2d except sigma is the first parameter and all the random crap is removed. ss = same sigma
+def gaussian_2d_ss(points, sigma, A, x0, y0):
+    x, y = points
+    return A * np.exp(-((x - x0)**2 + (y - y0)**2) / (2 * sigma ** 2))
+
+# Same as double gaussian 2d, but all sigmas are the same. sigma is the first parameter, each gaussian then has 3 params
+def double_gaussian_2d_ss(points, *p):
+    no_of_params = 3
+    cen_num = int((len(p) - 1)/no_of_params)
+    result = np.zeros(points[0].shape)
+    sigma = p[0]
+    other_args = p[1:]
+    for i in range(cen_num):
+        result += gaussian_2d_ss(points, sigma, *other_args[i*no_of_params:(i+1)*no_of_params])
+    return result
+
 # Plot the 2d gaussians
 def plotGaussians(gaussians, x_points, y_points, fname, loc):
     # Plot the 2d gaussians

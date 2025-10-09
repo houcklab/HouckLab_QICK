@@ -45,7 +45,7 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.502, #1079, #0.093277, #816 , #0.09473, #25,
+    "yokoVoltage": -1.4895, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
@@ -645,8 +645,8 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.499,
-    "yokoVoltage_freqPoint": -1.499,
+    "yokoVoltage": -1.483,
+    "yokoVoltage_freqPoint": -1.4895,
 
     # cavity
     "read_pulse_style": "const",
@@ -660,16 +660,16 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 0.5,
     "flat_top_length": 1,
-    "qubit_freq": 940.0,
+    "qubit_freq": 943.0,
 
     # Experiment
-    "shots": 50000000,  #1000000
+    "shots": 500000,  #1000000
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
     'use_switch': False,
 
-    'confidence': 0.9999,
+    'confidence': 0.999,
 }
 config = BaseConfig | UpdateConfig
 
@@ -681,11 +681,15 @@ print("QND Measure Time Required: ", time_required, "min")
 inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
                    soc=soc, soccfg=soccfg)
 
-data_QNDmeas = inst_qnd.acquire()
-data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
-inst_qnd.save_data(data_QNDmeas)
-inst_qnd.save_config()
-inst_qnd.display(data_QNDmeas, plotDisp=True)
+try:
+    data_QNDmeas = inst_qnd.acquire()
+    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+    inst_qnd.save_data(data_QNDmeas)
+    inst_qnd.save_config()
+    inst_qnd.display(data_QNDmeas, plotDisp=True)
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
