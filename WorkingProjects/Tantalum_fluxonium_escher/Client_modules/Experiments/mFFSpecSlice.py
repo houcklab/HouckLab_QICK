@@ -76,6 +76,14 @@ class FFSpecSlice(NDAveragerProgram):
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
+        # Reverse pulse assumes base ff value is 0 DAC
+        # It doesn't really matter that we relax before this I think, this will effectively just start with a reverse pulse
+        if self.cfg['reverse_pulse']:
+            self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0,
+                                     gain = -self.cfg["ff_gain"], length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"]))
+            self.pulse(ch=self.cfg["ff_ch"])
+
+
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -106,6 +114,7 @@ class FFSpecSlice(NDAveragerProgram):
         "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+        "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
         "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]

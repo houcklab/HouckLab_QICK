@@ -132,7 +132,7 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.483,
+    "yokoVoltage": -1.489,
 
 }
 
@@ -1332,6 +1332,7 @@ UpdateConfig = {
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+    "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
     "yokoVoltage": -1.494,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 1000,               # [us]
@@ -1387,6 +1388,7 @@ UpdateConfig = {
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+    "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
     "yokoVoltage": -1.494,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 5,               # [us]
@@ -1548,6 +1550,7 @@ UpdateConfig = {
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+    "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
     "yokoVoltage": -1.494,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 10,               # [us]
