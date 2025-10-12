@@ -4,7 +4,7 @@ import matplotlib.gridspec as gridspec
 
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest import FFRampHoldTest
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldPopTest import FFRampHoldPopTest
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
 import scipy.optimize as opt
 
@@ -12,7 +12,7 @@ import scipy.optimize as opt
 @author: Parth Jatakia
 '''
 
-class FFSingleShotSSE(ExperimentClass):
+class FFPopulateProbe(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None,
                  progress=None, fast_analysis=False, disp_image = True):
@@ -32,7 +32,7 @@ class FFSingleShotSSE(ExperimentClass):
 
     def acquire(self):
         # pull the data from the single shots
-        prog = FFRampHoldTest(self.soccfg, self.cfg)
+        prog = FFRampHoldPopTest(self.soccfg, self.cfg)
         i_0,  shots_i, q_0, shots_q = prog.acquire(self.soc, load_pulses=True, progress=self.progress)
         data = {'config': self.cfg, 'data': {'i_arr': shots_i, 'q_arr': shots_q, "i_0": i_0, "q_0": q_0}}
         self.data = data

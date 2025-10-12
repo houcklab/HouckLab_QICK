@@ -104,7 +104,7 @@ class mFFnTransmission(NDAveragerProgram):
     # Override acquire such that we can collect the single-shot data
 
 
-class FFTransmission(ExperimentClass):
+class FFHoldTransmission(ExperimentClass):
     """
     Transmission Experiment basic
     """

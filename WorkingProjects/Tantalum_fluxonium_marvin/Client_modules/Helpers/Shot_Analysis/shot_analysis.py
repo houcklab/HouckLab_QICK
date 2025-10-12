@@ -497,7 +497,7 @@ class SingleShotAnalysis:
         plt.close()
 
     # Calculate the populations
-    def calculate_populations(self, fit_results, max_iter = 50000, num_trials = 50000):
+    def calculate_populations(self, fit_results, max_iter = 1000, num_trials = 50000):
         """
         Calculate the populations
         """
@@ -552,6 +552,18 @@ class SingleShotAnalysis:
             mean_estimate = np.mean(estimates, axis=1)
             std_estimate = np.std(estimates, axis=1)
 
+            # Get the centers of the gaussians
+            keys_x = ['g' + str(idx) + '_centerx' for idx in range(self.cen_num)]
+            keys_y = ['g' + str(idx) + '_centery' for idx in range(self.cen_num)]
+            centers = []
+            for i in range(self.cen_num):
+                centers.append((
+                    fit_results['result'].best_values[keys_x[i]],
+                    fit_results['result'].best_values[keys_y[i]]
+                ))
+            centers = np.array(centers)
+
+
             population_dict = {
                 'mean_pop': mean_estimate,
                 'std_pop': std_estimate,
@@ -560,6 +572,7 @@ class SingleShotAnalysis:
                 'mean_temp': mean_temperature,
                 'std_temp': std_temperatures,
                 'temperatures': temperatures,
+                'centers': centers,
             }
         else:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]

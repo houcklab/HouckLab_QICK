@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.115,#1.6,
+    "yokoVoltage": -0.12,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 40,  # us
-    "read_pulse_gain": 4600,  # [DAC units]
-    "read_pulse_freq": 6670.85,#509,#7391.96,#7392.36,#957,
+    "read_length": 30,  # us
+    "read_pulse_gain": 5000,  # [DAC units]
+    "read_pulse_freq": 6671.655,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -59,11 +59,11 @@ UpdateConfig = {
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 1500,
-    "qubit_length": 0.5,  ###us, this is used if pulse style is const
+    "qubit_gain": 30000,
+    "qubit_length": 1,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 513,
+    "qubit_freq": 925,
     "relax_delay": 10,
     'qubit_mode_periodic' : False,
 
@@ -79,7 +79,7 @@ config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 #%% Basic Single Shot
-plt.close('all')
+# plt.close('all')
 scan_time = (config["relax_delay"] * config["shots"] * 2) * 1e-6 / 60
 
 print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
@@ -277,31 +277,31 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.115,
-    'yokoVoltage_freqPoint': -0.115,
+    "yokoVoltage": -0.12,
+    'yokoVoltage_freqPoint': -0.12,
 
     # Readout
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 4600,
-    "read_pulse_freq": 6671.71,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6671.655,
 
     # Qubit Tone
-    "qubit_freq_start": 470,
-    "qubit_freq_stop": 570,
+    "qubit_freq_start": 900,
+    "qubit_freq_stop": 950,
     "RabiNumPoints": 11,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
-    'qubit_length': 0.015,
+    'qubit_length': 1,
     "relax_delay": 10,
-    "initialize_qubit_gain" : 1500,
-    "qubit_freq_base": 512,
+    "initialize_qubit_gain" : 20000,
+    "qubit_freq_base": 920.8,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 2000,
-    "qubit_gain_step": 6000,
-    "qubit_gain_expts": 6,
+    "qubit_gain_start": 1000,
+    "qubit_gain_step": 3000,
+    "qubit_gain_expts": 11,
 
     # define number of clusters to use
     "cen_num": 2,
@@ -429,24 +429,24 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.115,
+    "yokoVoltage": -0.12,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 10,  # us
-    "read_pulse_gain": 6000,  # [DAC units]
-    "read_pulse_freq": 6671.7,
+    "read_length": 20,  # us
+    "read_pulse_gain": 5000,  # [DAC units]
+    "read_pulse_freq": 6671.58,
     "mode_periodic" : False,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_ge_gain": 3000,
+    "qubit_ge_gain": 6000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 512,
+    "qubit_ge_freq": 942,
     "qubit_ef_freq": 110,
     "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 0.5,
+    "qubit_length": 2,
     "sigma": 0.05,
     "relax_delay": 10,
 
@@ -478,16 +478,16 @@ inst_singleshotopt.save_config()
 # TITLE Running automatic optimization
 # config["read_pulse_freq"] = 6248.5
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.08, config["read_pulse_freq"] + 0.08),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.6, config["read_pulse_freq"]+ 0.1 ),
     'read_length': (10, 70),
-    'read_pulse_gain': (500, 4000)
+    'read_pulse_gain': (4000, 8000)
 }
 step_size = {
-    "read_pulse_freq" : 0.01,
+    "read_pulse_freq" : 0.02,
     'read_length': 10,
-    'read_pulse_gain': 500,
+    'read_pulse_gain': 1000,
 }
-keys = ["read_pulse_freq"]
+keys = [ "read_pulse_freq", "read_pulse_gain"]
 
 
 config["shots"] = 15000

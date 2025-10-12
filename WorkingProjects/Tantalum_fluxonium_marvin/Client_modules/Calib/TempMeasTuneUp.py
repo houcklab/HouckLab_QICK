@@ -216,22 +216,22 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.115,
-    "yokoVoltage_freqPoint": -0.115,
+    "yokoVoltage": -0.12,
+    "yokoVoltage_freqPoint": -0.12,
 
     # cavity
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 4600,
-    "read_pulse_freq": 6671.71,
+    "read_pulse_gain": 12000,
+    "read_pulse_freq": 6671.25,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 10000,
-    "qubit_length": 0.2,
+    "qubit_gain": 30000,
+    "qubit_length": 2,
     "sigma": 0.02,
-    "flat_top_length": 0.5,
-    "qubit_freq": 512,
+    "flat_top_length": 4,
+    "qubit_freq": 925,
 
     # Experiment
     "shots": 2000000,
@@ -245,6 +245,7 @@ config = BaseConfig | UpdateConfig
 yoko1.SetVoltage(config["yokoVoltage"])
 
 # %%
+soc.reset_gens()
 time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
 print("QND Measure Time Required: ", time_required, "min")
 inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
@@ -258,19 +259,19 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.05, config["read_pulse_freq"] + 0.02 ),
-    'read_length': (10, 90),
-    'read_pulse_gain': (4000, 10000)
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.1 ),
+    'read_length': (5, 50),
+    'read_pulse_gain': (4000, 14000)
 }
 step_size = {
     "read_pulse_freq" : 0.005,
     'read_length': 5,
-    'read_pulse_gain': 500,
+    'read_pulse_gain': 1000,
 }
-keys = ["read_pulse_gain"]
-config["shots"] = 1500000
+keys = ["read_pulse_freq", "read_pulse_gain"]
+config["shots"] = 400000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
-opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True, confidence_selection = 0.995)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True, confidence_selection = 0.98)
 inst_qndopt.brute_search_result_display(display = True)
 
 #%%
