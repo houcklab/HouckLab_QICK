@@ -1,6 +1,8 @@
 ###
 # This file contains an NDAveragerProgram and ExperimentClass for doing qubit spectroscopy with a fast flux pulse.
 # Lev, May 2025: create file.
+# Lev, October 2025: Add reverse pulse.
+# Lev, October 2025: Modify to allow arbitrarily-long ff pulses via short pulse + stdysel = 'last' + delay
 ###
 
 from qick import NDAveragerProgram
@@ -46,9 +48,10 @@ class FFSpecSlice(NDAveragerProgram):
 
         # Define the fast flux pulse #TODO just constant for now
         if self.cfg["ff_pulse_style"] == "const":
+            # In order to allow the pulse to be very long, define the pulse itself as 3 clock ticks, then wait
+            # using stdysel = 'last' to keep the ff value at ff_gain
             self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0,
-                                     gain = self.cfg["ff_gain"], length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"]))
-            self.flux_pulse_length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"])
+                                     gain = self.cfg["ff_gain"], stdysel = 'last', length = 3)
 
         self.sync_all(self.us2cycles(0.1))
 
@@ -67,7 +70,15 @@ class FFSpecSlice(NDAveragerProgram):
 
         # t uses the master clock, no generator argument!
         self.pulse(ch = self.cfg["qubit_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay"]))  # play probe pulse
+
+        self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
+                                 gain=self.cfg["ff_gain"], stdysel='last', length=3)
         self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"]))   # play fast flux pulse
+
+        # Define pulse to bring ff back to 0, and pulse
+        self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
+                                 gain=0, stdysel='last', length=3)
+        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"] + self.cfg["ff_length"]) - 3)
 
         self.sync_all(self.us2cycles(0.05))  # Wait for a bit to make sure the fast flux is back to 0 in case there's delay
 
@@ -79,9 +90,19 @@ class FFSpecSlice(NDAveragerProgram):
         # Reverse pulse assumes base ff value is 0 DAC
         # It doesn't really matter that we relax before this I think, this will effectively just start with a reverse pulse
         if self.cfg['reverse_pulse']:
-            self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0,
-                                     gain = -self.cfg["ff_gain"], length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"]))
+            self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0, stdysel = 'last',
+                                     gain = -self.cfg["ff_gain"], length = 3)
             self.pulse(ch=self.cfg["ff_ch"])
+
+            # Wait -- no need for any command, just increase t on next pulse
+
+            # Come back to 0 DAC
+            self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0, stdysel = 'last',
+                                     gain = 0, length = 3)
+            self.pulse(ch=self.cfg["ff_ch"], t = self.us2cycles(self.cfg["ff_length"]) - 3)
+
+        # sync everything again before start of next loop, else pulses come in at the wrong time!
+        self.sync_all(3)
 
 
 
@@ -139,9 +160,13 @@ class FFSpecSlice_Experiment(ExperimentClass):
     def acquire(self, progress=False, debug=False):
         prog = FFSpecSlice(self.soccfg, self.cfg)
 
+        # print(prog)
+        # import sys
+        # sys.exit()
         # Check that the arguments make sense. We need the program first, to know the correct qubit pulse length
-        if self.cfg["qubit_spec_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
-            print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
+        # This warning is not relevant in this version, the sync_all ensures readout happens at 0 ff
+        # if self.cfg["qubit_spec_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
+        #     print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
         print("Qubit pulse length: ", prog.qubit_pulse_length)
 
         # Collect the data
