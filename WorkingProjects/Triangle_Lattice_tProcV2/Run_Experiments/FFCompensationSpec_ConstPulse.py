@@ -5,6 +5,8 @@ import time
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mFFSpecCalibration_MUX import \
     FFSpecCalibrationMUX
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Debugging_Programs.mFFSpecCalibration_MUX_CONST_PULSE import \
+    FFSpecCalCONST
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 
@@ -14,37 +16,37 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh imp
 import numpy as np
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.3, 'Gain': 3500,
-                      "FF_Gains": [-21498, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3890.9, 'sigma': 0.05, 'Gain': 3200},
+    '1': {'Readout': {'Frequency': 7121.4, 'Gain': 542,
+                      'FF_Gains': [-21498, 0, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3892.8, 'sigma': 0.05, 'Gain': 3019},
           'Pulse_FF': [-21498, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.6, 'Gain': 4700,
-                      "FF_Gains": [0, -23200, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3894.0, 'sigma': 0.05, 'Gain': 2850},
+    '2': {'Readout': {'Frequency': 7077.5, 'Gain': 885,
+                      'FF_Gains': [0, -23200, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3893.7, 'sigma': 0.05, 'Gain': 2994},
           'Pulse_FF': [0, -23200, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.05, 'Gain': 5300,
-                      "FF_Gains": [0, 0, -19298, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3880.24, 'sigma': 0.05, 'Gain': 7830},
+    '3': {'Readout': {'Frequency': 7510.8, 'Gain': 1228,
+                      'FF_Gains': [0, 0, -19298, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3881.1, 'sigma': 0.05, 'Gain': 7301},
           'Pulse_FF': [0, 0, -19298, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.4, 'Gain': 4700,
-                      "FF_Gains": [0, 0, 0, -22048, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3914.1, 'sigma': 0.05, 'Gain': 4200},
+    '4': {'Readout': {'Frequency': 7568.4, 'Gain': 885,
+                      'FF_Gains': [0, 0, 0, -22048, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3913.2, 'sigma': 0.05, 'Gain': 4404},
           'Pulse_FF': [0, 0, 0, -22048, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7363.2, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0, -20560, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3871.8, 'sigma': 0.05, 'Gain': 4000},
+    '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1400,
+                      'FF_Gains': [0, 0, 0, 0, -20560, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3871.5, 'sigma': 0.05, 'Gain': 4270},
           'Pulse_FF': [0, 0, 0, 0, -20560, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7441.3, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0, 0, -22448, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3877.3, 'sigma': 0.05, 'Gain': 5000},
+    '6': {'Readout': {'Frequency': 7441.6, 'Gain': 1400,
+                      'FF_Gains': [0, 0, 0, 0, 0, -22448, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3875.9, 'sigma': 0.05, 'Gain': 4649},
           'Pulse_FF': [0, 0, 0, 0, 0, -22448, 0, 0]},
-    '7': {'Readout': {'Frequency': 7254.0, 'Gain': 7000,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, -20578, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3812.5, 'sigma': 0.05, 'Gain': 3100},
+    '7': {'Readout': {'Frequency': 7253.7, 'Gain': 1228,
+                      'FF_Gains': [0, 0, 0, 0, 0, 0, -20578, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3812.5, 'sigma': 0.05, 'Gain': 3041},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, -20578, 0]},
-    '8': {'Readout': {'Frequency': 7308.8, 'Gain': 8000,
-                      "FF_Gains": [0, 0, 0, 0, 0, 0, 0, -19516], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3859.2, 'sigma': 0.05, 'Gain': 4000},
+    '8': {'Readout': {'Frequency': 7309.1, 'Gain': 1057,
+                      'FF_Gains': [0, 0, 0, 0, 0, 0, 0, -19516], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3858.1, 'sigma': 0.05, 'Gain': 4000},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, -19516]},
 }
 
@@ -70,7 +72,7 @@ FF_gain6_BS = 0
 FF_gain7_BS = 0
 FF_gain8_BS = 0
 
-for Q in [8]:
+for Q in [1,2,3,4,5,6,7,8]:
 
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
@@ -89,14 +91,13 @@ for Q in [8]:
 
                     "sigma": 0.00465,
                     # Delays are in units of clock cycles! delay step must be an integer # one clock cycle is 2.3 ns
-                    'delay_start': 20, 'delay_step': 0.5, 'delay_points': 120//2,
-                    'reps': 200, 'relax_delay':100,
-                    'IDataArray': idataArray,
+                    'delay_start': 20, 'delay_step': 6, 'delay_points': 10400,
+                    'reps': 200, 'relax_delay':100
                     }
 
-    FFSpecCalibrationMUX(path="FFSpecCalibration", cfg=config | FFCal_params,
+    FFSpecCalCONST(path="FFSpecCONST", cfg=config | FFCal_params,
                        soc=soc, soccfg=soccfg, outerFolder=outerFolder,
-                         prefix=f'Q{Q}_comp_final').acquire_display_save(plotDisp=True, block=False)
+                         prefix=f'Q{Q}_CONST').acquire_display_save(plotDisp=True, block=False)
 
     print(f"Q{Q} finished at", datetime.datetime.fromtimestamp(time.time()).strftime('%A %B %d, %I:%M:%S %p'))
     #

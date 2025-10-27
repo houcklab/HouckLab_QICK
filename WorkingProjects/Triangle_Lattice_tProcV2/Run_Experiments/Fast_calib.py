@@ -1,7 +1,5 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-from matplotlib.pyplot import tight_layout
-from scipy.optimize import curve_fit
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
@@ -12,7 +10,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, frequency_guess
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
@@ -22,16 +20,65 @@ t = True
 
 
 Qubit_Pulse = ['4_4815', '8_4815', '1_4815', '5_4815']
-# for Q in [1,4,5,8]:
-for Q in [1,2,3,4,5,6,7,8]:
+Qubit_Pulse =   ['1_4815', '4_4815', '8_4815', '5_4815']
+Qubit_Pulse =   ['4_4815']
+# Qubit_Pulse = ['1_4QB', '4_4QB', '8_4QB', '5_4QB']
+
+Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','5_4Q_readout']
+Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','6_4Q_readout']
+# Qubit_Pulse = ['6_4Q_readout']
+
+Qubit_configs = []
+
+Qubit_Parameters = {
+    '1': {'Readout': {'Frequency': 7121.4, 'Gain': 542,
+                      'FF_Gains': [-21498, 0, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3892.8, 'sigma': 0.05, 'Gain': 3019},
+          'Pulse_FF': [-21498, 0, 0, 0, 0, 0, 0, 0]},
+    '2': {'Readout': {'Frequency': 7077.5, 'Gain': 885,
+                      'FF_Gains': [0, -23200, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3893.7, 'sigma': 0.05, 'Gain': 2994},
+          'Pulse_FF': [0, -23200, 0, 0, 0, 0, 0, 0]},
+    '3': {'Readout': {'Frequency': 7510.8, 'Gain': 1228,
+                      'FF_Gains': [0, 0, -19298, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3881.1, 'sigma': 0.05, 'Gain': 7301},
+          'Pulse_FF': [0, 0, -19298, 0, 0, 0, 0, 0]},
+    '4': {'Readout': {'Frequency': 7568.4, 'Gain': 885,
+                      'FF_Gains': [0, 0, 0, -22048, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3913.2, 'sigma': 0.05, 'Gain': 4404},
+          'Pulse_FF': [0, 0, 0, -22048, 0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1400,
+                      'FF_Gains': [0, 0, 0, 0, -20560, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3871.5, 'sigma': 0.05, 'Gain': 4270},
+          'Pulse_FF': [0, 0, 0, 0, -20560, 0, 0, 0]},
+    '6': {'Readout': {'Frequency': 7441.6, 'Gain': 1400,
+                      'FF_Gains': [0, 0, 0, 0, 0, -22448, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3875.9, 'sigma': 0.05, 'Gain': 4649},
+          'Pulse_FF': [0, 0, 0, 0, 0, -22448, 0, 0]},
+    '7': {'Readout': {'Frequency': 7253.7, 'Gain': 1228,
+                      'FF_Gains': [0, 0, 0, 0, 0, 0, -20578, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3812.5, 'sigma': 0.05, 'Gain': 3041},
+          'Pulse_FF': [0, 0, 0, 0, 0, 0, -20578, 0]},
+    '8': {'Readout': {'Frequency': 7309.1, 'Gain': 1057,
+                      'FF_Gains': [0, 0, 0, 0, 0, 0, 0, -19516], 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3858.1, 'sigma': 0.05, 'Gain': 4000},
+          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, -19516]},
+}
+
+
+### !!! ###
+varname_FF = None
+for Q in [4]:
 # Qubit_Readout = ['5HHH', '1HHH', '4HHH']
 # Qubit_Readout =['4HHH_readout', '1HHH_readout', '5HHH_readout']
-    Qubit_Readout = [1,2,3,4,5,6,7,8]
+#     Qubit_Readout = [1,2,3,4,5,6,7,8]
+    Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
-    # Qubit_Pulse = [Q]
+    # Qubit_Pulse = [f'{Q}L']
+    # Qubit_Pulse = [f'{Q}R-']
     # Qubit_Pulse =   [f'{Q}_1854']
-    # Qubit_Readout = [f'{Q}_4815_readout']
-    # Qubit_Pulse =   [f'{Q}_4815_readout']
+    # Qubit_Readout = [f'{Q}_4QB']
+    # Qubit_Pulse =   [f'{Q}_4QB']
 
     pulse_numbers = [int(label[0]) if isinstance(label, str) else label for label in Qubit_Readout]
     OptReadout_index = pulse_numbers.index(Q) # Which readout index OptReadout should sweep
@@ -42,11 +89,12 @@ for Q in [1,2,3,4,5,6,7,8]:
 
     RunTransmissionSweep =       f
     RunFirst2ToneSpec =          f
-    RunSecond2ToneSpec =         f
-    RunAmplitudeRabi =           f
-    SingleShot_ReadoutOptimize = f
+    RunSecond2ToneSpec =         t
+    RunAmplitudeRabi =           t
+    SingleShot_ReadoutOptimize = t
     SingleShot_QubitOptimize =   t
     SingleShot = f
+
 
 
     Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
@@ -62,15 +110,17 @@ for Q in [1,2,3,4,5,6,7,8]:
                             'reps': 144, 'rounds': 1}
 
 
-    Amplitude_Rabi_params = {"max_gain": 9000, 'relax_delay':100}
+    Amplitude_Rabi_params = {"max_gain": 12000, 'relax_delay':100}
 
-    SS_R_params = {"Shots":400, 'relax_delay':100,
-                   "gain_start": 200, "gain_stop": 2000, "gain_pts": 8, "span": 1, "trans_pts": 5, 'number_of_pulses': 1,
+    SS_R_params = {"Shots": 500, 'relax_delay':150,
+                   "gain_start": 200, "gain_stop": 1400, "gain_pts": 8,
+                   "span": 1, "trans_pts": 5, 'number_of_pulses': 1,
                    'qubit_sweep_index':OptReadout_index}
 
 
-    SS_Q_params = {"Shots": 400, 'relax_delay':150,
-                   "q_gain_span": 1000, "q_gain_pts": 5, "q_freq_span": 3, "q_freq_pts": 7,
+    SS_Q_params = {"Shots": 500, 'relax_delay':150,
+                   "q_gain_span": 2*1000, "q_gain_pts": 2+5,
+                   "q_freq_span": 2*3, "q_freq_pts": 7,
                    'number_of_pulses': 1,
                    'readout_index': OptReadout_index,
                    'qubit_sweep_index': OptQubit_index}
@@ -95,6 +145,7 @@ for Q in [1,2,3,4,5,6,7,8]:
     fig, axs = plt.subplots(2, 3, figsize=(12, 7), tight_layout=True)
     fig.suptitle(f"Qubit_Readout={Qubit_Readout}, Qubit_Pulse={Qubit_Pulse}")
     iter_axs = iter(axs.flatten())
+
 
     if RunTransmissionSweep:
         Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
@@ -124,10 +175,10 @@ for Q in [1,2,3,4,5,6,7,8]:
                             soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
 
         if 'ampl_fit' in data['data']:
-            config["qubit_gains"][0] = data['data']['pi_gain_fit'] / 32766
+            config["qubit_gains"][OptQubit_index] = data['data']['pi_gain_fit'] / 32766
         else:
             user_gain = input("Enter gain:")
-            config["qubit_gains"][0] = int(user_gain) / 32766
+            config["qubit_gains"][OptQubit_index] = int(user_gain) / 32766
 
         print("Qubit gain found at: ", config["qubit_gains"][0] * 32766)
 
@@ -175,7 +226,7 @@ for Q in [1,2,3,4,5,6,7,8]:
         SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder,
                                cfg=config | SS_params, soc=soc,soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
-
+    Qubit_configs.append(QubitConfig(config, Q, len(Qubit_Readout), OptReadout_index, OptQubit_index, varname_FF))
 
     # TimeDomainSpec(path="TimeDomainSpec", outerFolder=outerFolder,
     #                           cfg=config | {'reps': 5,
@@ -185,6 +236,9 @@ for Q in [1,2,3,4,5,6,7,8]:
     # import matplotlib.pyplot as plt
     # while True:
     #     plt.pause(50)
-print(config)
+    # print(config)
+for qconf in Qubit_configs:
+    print(qconf)
+
 plt.show()
 

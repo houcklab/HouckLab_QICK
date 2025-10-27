@@ -1,9 +1,9 @@
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartRProgram import ThreePartRProgram
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartRProgram import ThreePartRProgram
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
 
 
 class GainSweepOscillationsR(SweepExperimentR1D):

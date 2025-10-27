@@ -1,39 +1,39 @@
 from matplotlib import pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsSpec import FFvsSpec
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7122.0 - BaseConfig['res_LO'], 'Gain': 4000,
+    '1': {'Readout': {'Frequency': 7122.0, 'Gain': 4000,
                       'FF_Gains': [0, 20000, 20000, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 20000, 20000, 20000, 20000, 20000, 20000, 20000]},
-    '2': {'Readout': {'Frequency': 7077.9 - BaseConfig['res_LO'], 'Gain': 4000,
+    '2': {'Readout': {'Frequency': 7077.9, 'Gain': 4000,
                       'FF_Gains': [20000, 0, 20000, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.23 - BaseConfig['res_LO'], 'Gain': 4000,
+    '3': {'Readout': {'Frequency': 7511.23, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 0, 20000, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.65 - BaseConfig['res_LO'], 'Gain': 4000,
+    '4': {'Readout': {'Frequency': 7568.65, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 0, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7363.56 - BaseConfig['res_LO'], 'Gain': 4000,
+    '5': {'Readout': {'Frequency': 7363.56, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 20000, 0, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7441.54 - BaseConfig['res_LO'], 'Gain': 4000,
+    '6': {'Readout': {'Frequency': 7441.54, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 20000, 20000, 0, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '7': {'Readout': {'Frequency': 7254.31 - BaseConfig['res_LO'], 'Gain': 4000,
+    '7': {'Readout': {'Frequency': 7254.31, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 20000, 20000, 20000, 0, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '8': {'Readout': {'Frequency': 7309.53 - BaseConfig['res_LO'], 'Gain': 4000,
+    '8': {'Readout': {'Frequency': 7309.53, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 20000, 20000, 20000, 20000, 0], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},

@@ -27,8 +27,6 @@ class BaseRampExperiment(SweepExperiment1D_lines):
         self.cfg["IDataArray"] = [None]*len(self.cfg['FF_Qubits'])
 
     def set_up_instance(self):
-
-
         '''Create the Ramp '''
         self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain', 'Gain_Expt',
                                               self.cfg['ramp_duration'])
@@ -43,31 +41,34 @@ class RampCheckDensityCorrelations(BaseRampExperiment):
         self.Program = ThreePartProgramOneFF
         self.z_value = 'population_shots'
 
-    def analyze(self, data, **kwargs):
+    def process_data(self, sweep_indices, sweep_values):
         print("RampCheckDensityCorrelations: Analyzing data.")
-        data_dict = data['data']
-        shots_matrices = data_dict['population_shots']
+        data_dict = self.data['data']
+        shots_matrices = [d[*sweep_indices] for d in data_dict['population_shots']]
         # Extract correlation data
-        nn_correls = []
-        nn_correls_corrected = []
-        def get_ro_ind(Qubit):
-            return data_dict['readout_list'].index(Qubit)
+        shape = self.sweep_shape + (len(self.cfg['pairs']),)
+        if 'nn_correlations' not in data_dict:
+            data_dict['nn_correlations'] = np.full(shape, np.nan)
+        if 'corrected_nn' not in data_dict:
+            data_dict['corrected_nn'] = np.full(shape, np.nan)
+        if 'pairs' not in data_dict:
+            data_dict['pairs'] = self.cfg['pairs']
 
-        shot_matrices_first = [shots_matrices[get_ro_ind(q)] for q in self.cfg['first_pair']]
-        for second_pair in self.cfg['second_pairs']:
+        def get_ro_ind(Qubit):
+            return self.data['data']['readout_list'].index(Qubit)
+
+
+        for j, four_qubits in enumerate(self.cfg['pairs']):
+            first_pair = four_qubits[:2]
+            second_pair = four_qubits[2:]
+            shot_matrices_first = [shots_matrices[get_ro_ind(q)] for q in first_pair]
             shot_matrices_second = [shots_matrices[get_ro_ind(q)] for q in second_pair]
-            nn_correls.append(CorrelationAnalysis.get_nn_correlations(*shot_matrices_first, *shot_matrices_second))
+            data_dict['nn_correlations'][*sweep_indices, j] = CorrelationAnalysis.get_nn_correlations(*shot_matrices_first, *shot_matrices_second)
 
             if 'confusion_matrix' in data_dict:
-                four_qubits = np.concatenate([self.cfg['first_pair'], second_pair])
                 conf_mats = [data_dict['confusion_matrix'][get_ro_ind(q)] for q in four_qubits]
-                nn_correls_corrected.append(CorrelationAnalysis.get_corrected_nn_correlations(
-                    *shot_matrices_first, *shot_matrices_second, conf_mats))
-
-        data_dict['nn_correlations'] = nn_correls
-        data_dict['corrected_nn'] = nn_correls_corrected
-        data_dict['first_pair'] = self.cfg['first_pair']
-        data_dict['second_pairs'] = self.cfg['second_pairs']
+                data_dict['corrected_nn'][*sweep_indices, j] = CorrelationAnalysis.get_corrected_nn_correlations(
+                    *shot_matrices_first, *shot_matrices_second, conf_mats)
 
     def _make_subplots(self, figNum, count):
         '''Modify display to produce 1 axes'''
@@ -94,9 +95,8 @@ class RampCheckDensityCorrelations(BaseRampExperiment):
             ax.legend()
 
             ax = fig_axs[1][1]
-            k = len(data_dict['second_pairs'])
-            q1, q2 = data_dict['first_pair']
-            bar_labels = [rf'$\langle n_{{{q2}{q1}}} n_{{{q4}{q3}}}\rangle$' for q3, q4 in data_dict['second_pairs']]
+            k = len(data_dict['pairs'])
+            bar_labels = [rf'$\langle n_{{{q2}{q1}}} n_{{{q4}{q3}}}\rangle$' for q1, q2, q3, q4 in data_dict['pairs']]
 
             if len(data_dict['corrected_nn']) > 0:
                 ax.bar(range(k), data_dict['nn_correlations'], linewidth=5, edgecolor='black', color='none', label="Uncorrected", zorder=2)
@@ -110,6 +110,50 @@ class RampCheckDensityCorrelations(BaseRampExperiment):
             ax.axhline(0, color='black')
 
             fig.suptitle(str(self.titlename), fontsize=16)
+
+class RampSweepLengthCorrelations(RampCheckDensityCorrelations):
+    def init_sweep_vars(self):
+        self.Program = ThreePartProgramOneFF
+        self.x_key = 'ramp_duration'
+        self.x_points = np.linspace(self.cfg['duration_start'], self.cfg['duration_end'], self.cfg['duration_num_points'], dtype=int)
+        self.z_value = 'population_shots'
+        self.xlabel = "Ramp length"
+
+    def _make_subplots(self, figNum, count):
+        '''Modify display to produce 2 axes, one for populations and one for correlations'''
+        if plt.fignum_exists(num=figNum):  # if figure with number already exists
+            figNum = None
+        fig, axs = plt.subplots(1, 1, figsize=(14, 8), num=figNum, tight_layout=True)
+        return fig, [axs]
+
+    def _display_plot(self, data=None, fig_axs=None):
+        if data is None:
+            data = self.data
+        fig, axs = fig_axs
+        ax = axs[-1]
+
+        X = data['data']['ramp_duration']
+        self.X = X
+
+        Z_mat = data['data']['corrected_nn']
+
+        fig.suptitle(str(self.titlename), fontsize=16)
+        for j, pair in enumerate(data['data']['pairs']):
+            ax.plot(X, Z_mat[:,j], marker='o', label=f"{pair}")
+        ax.axhline(0, color='black', ls='dashed')
+        ax.set_ylabel(r'$\langle n_{ab} n_{cd}\rangle$')
+        ax.set_xlabel(self.xlabel)
+        ax.legend()
+
+        return fig, ax
+
+    def _update_fig(self, data, fig, axs):
+        Z_mat = data['data']['corrected_nn']
+        lines = axs[-1].lines
+        for j in range(len(data['data']['pairs'])):
+            lines[j].set_data(self.X, Z_mat[:,j])
+        axs[-1].relim()
+        axs[-1].autoscale()
 
 class RampDurationVsPopulation(BaseRampExperiment):
     def init_sweep_vars(self):
@@ -143,7 +187,7 @@ class FFExptVsPopulation(BaseRampExperiment):
         self.x_points = np.linspace(self.cfg['gain_start'], self.cfg['gain_end'], self.cfg['gain_num_points'])
         self.xlabel = f'FF gain index {self.cfg["swept_qubit"]} (DAC units)'
 
-class TimeVsPopulation(BaseRampExperiment):
+class PopulationVsTime(BaseRampExperiment):
     def init_sweep_vars(self):
         super().init_sweep_vars()
         self.x_key = 'expt_samples'
@@ -179,12 +223,17 @@ class TimeVsPopulation(BaseRampExperiment):
         fig, ax = super()._display_plot(data=data, fig_axs=fig_axs)
         if 'pop_sum_corrected' in data['data']:
             ax.plot(data['data']['expt_samples'], data['data']['pop_sum_corrected'], label='Population Sum', color='black', linestyle='dashed', marker='o')
+            ax.plot(data['data']['expt_samples'], data['data']['pop_sum_corrected']/len(data['data']['readout_list']), label='Population average',
+                    color='black', linestyle='dashed', marker='o', markerfacecolor='white')
             ax.legend()
         elif 'pop_sum' in data['data']:
             ax.plot(data['data']['expt_samples'], data['data']['pop_sum'], label='Sum', color='black', linestyle='dashed', marker='o')
+            ax.plot(data['data']['expt_samples'], data['data']['pop_sum'] / len(data['data']['readout_list']),
+                    label='Population average',
+                    color='black', linestyle='dashed', marker='o', markerfacecolor='white')
             ax.legend()
 
-class TimeVsPopulation_Shots(TimeVsPopulation):
+class PopulationVsTime_Shots(PopulationVsTime):
     def init_sweep_vars(self):
         super().init_sweep_vars()
         self.z_value = 'population_shots'
@@ -251,7 +300,7 @@ class TimeVsPopulation_Shots(TimeVsPopulation):
 
         return fig, ax
 
-class TimeVsPopulation_GainSweep(BaseRampExperiment, SweepExperiment2D_plots):
+class PopulationVsTime_GainSweep(BaseRampExperiment, SweepExperiment2D_plots):
     def init_sweep_vars(self):
         super().init_sweep_vars()
         self.Program = ThreePartProgramOneFF
@@ -286,7 +335,7 @@ class TimeVsPopulation_GainSweep(BaseRampExperiment, SweepExperiment2D_plots):
             self.cfg['FF_Qubits'][str(i+1)]['Gain_Expt'] = self.initial_ramp_gains[i] + self.cfg['ramp_gain_offset']
 
         # Ramp + constant gain after the ramp
-        self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain', 'Gain_Expt',
+        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'ramp_initial_gain', 'Gain_Expt',
                                                                     self.cfg['ramp_duration'])
         for i in range(len(self.cfg["IDataArray"])):
             ramp_part = self.cfg["IDataArray"][i]

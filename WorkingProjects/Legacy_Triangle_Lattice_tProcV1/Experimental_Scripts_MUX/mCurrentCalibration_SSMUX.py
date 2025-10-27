@@ -1,23 +1,23 @@
 from qick import *
-from WorkingProjects.Triangle_Lattice_tProcV1.socProxy import makeProxy
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.rotate_SS_data import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.rotate_SS_data import *
 import time
-import WorkingProjects.Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
+import WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
 import pickle
-# from WorkingProjects.Triangle_Lattice_tProcV1.Experiment_Scripts.mRabiOscillations import WalkFFProg
+# from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment_Scripts.mRabiOscillations import WalkFFProg
 
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment2D import SweepExperiment2D
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment2D import SweepExperiment2D
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
 
 
 class CurrentCalibrationOffset(SweepExperiment2D):

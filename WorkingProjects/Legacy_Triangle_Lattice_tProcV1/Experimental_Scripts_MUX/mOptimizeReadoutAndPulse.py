@@ -1,7 +1,7 @@
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment2D import SweepExperiment2D
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment2D import SweepExperiment2D
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
 
 
 

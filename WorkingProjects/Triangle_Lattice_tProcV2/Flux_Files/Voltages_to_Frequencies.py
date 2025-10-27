@@ -4,11 +4,8 @@ from Initialize_Qubit_Information import *
 all_qubits_and_couplers = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7', 'Q8',
                            'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
 
-voltages = [0.0743, 1.4213, -0.1825, 1.3751, 1.2473, 1.3359, 1.2115, 1.1834,
-            1.5, 1.5641, 1.4432, 1.6475, 1.4175, 1.4889]
+voltages = [-0.468, -0.6662, -0.4134, -0.8272, -0.4123, -0.7101, -0.4943, -0.4976, -1.4398, -1.518, -1.4673, -1.5751, -1.431, -1.302]
 
-voltages = [-1, 0, -0.6, 0, 0, 0, 0, 0,
-            0.9, 0, 0, 0, 0, 0]
 
 Voltage_Dictionary = {all_qubits_and_couplers[i]: voltages[i] for i in range(len(all_qubits_and_couplers))}
 
@@ -43,3 +40,4 @@ for i in range(len(voltage_vector)):
 print()
 print()
 print(f'C1: {np.round(model_mapping[order_of_items[8]].freq(fluxes_rounded[8]) * 1e3, 2)}')
+print(f'C2: {np.round(model_mapping[order_of_items[9]].freq(fluxes_rounded[9]) * 1e3, 2)}')

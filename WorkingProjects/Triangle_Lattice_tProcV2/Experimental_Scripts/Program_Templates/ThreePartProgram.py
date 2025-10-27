@@ -32,10 +32,10 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
     def _body(self, cfg):
         # 1: FFPulses
-        FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time)
+        FF_Delay_time = 9
+        self.FFPulses(self.FFPulse, 1.01 + len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = FF_Delay_time if i==0 else 'auto'
+            time_ = 1 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
         self.delay_auto()
         # 2: FFExpt

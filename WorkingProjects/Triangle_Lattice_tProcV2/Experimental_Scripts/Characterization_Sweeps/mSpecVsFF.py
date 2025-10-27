@@ -4,7 +4,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
-class FFvsSpec(SweepExperiment2D_plots):
+class SpecVsFF(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.Program = QubitSpecSliceFFProg

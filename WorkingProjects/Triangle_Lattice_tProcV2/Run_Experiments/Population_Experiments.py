@@ -8,13 +8,13 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
     QubitSpecSliceFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsRamsey import FFvsRamsey
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsT1 import FFvsT1
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import FFvsRamsey
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import FFvsT1
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsSpec import FFvsSpec
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX, ROTimingOpt_wSingleShotFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillations import \
@@ -35,22 +35,22 @@ import numpy as np
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7122.1 - BaseConfig["res_LO"], 'Gain': 4500,
+    '1': {'Readout': {'Frequency': 7122.1, 'Gain': 4500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 4398.7, 'sigma': 0.03, 'Gain': 6000},
           'Pulse_FF': [21750, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.85 - BaseConfig["res_LO"], 'Gain': 5000,
+    '2': {'Readout': {'Frequency': 7077.85, 'Gain': 5000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 0.75,
                       'cavmin': True},
           'Qubit': {'Frequency': 4406.4, 'sigma': 0.03, 'Gain':4900},
           'Pulse_FF': [0, 23307, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.0 - BaseConfig["res_LO"], 'Gain': 8000,
+    '3': {'Readout': {'Frequency': 7511.0, 'Gain': 8000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.75, "ADC_Offset": 0.75,
                       'cavmin': True},
           'Qubit': {'Frequency': 3468.35, 'sigma': 0.03, 'Gain': 9500},
           'Pulse_FF': [    0,     0, -20313,     0,     0,     0,     0,     0]},
 
-    '4': {'Readout': {'Frequency': 7568.7 - BaseConfig["res_LO"], 'Gain': 7500,
+    '4': {'Readout': {'Frequency': 7568.7, 'Gain': 7500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 2.5, "ADC_Offset": 1,
                       'cavmin': True},
           'Qubit': {'Frequency': 4421.152, 'sigma': 0.03, 'Gain': 6750},

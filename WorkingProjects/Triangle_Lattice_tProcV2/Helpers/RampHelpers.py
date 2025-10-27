@@ -106,6 +106,25 @@ def generate_exp_ramp(initial_gain, final_gain, ramp_duration, ramp_start_time=0
 
     return gains
 
+def generate_three_exp_ramp(initial_gain, final_gain, ramp_duration, reverse=False):
+    tau1, A1, tau2, A2, tau3 = [ 2.00087636e+01, -6.70982023e-02,  4.67917212e+00, -5.44374547e+02, -1.17120788e-01]
+
+    def func(t):
+        if t == 0:
+            return initial_gain
+        elif t >= ramp_duration:
+            return final_gain
+        else:
+            return initial_gain + (final_gain - initial_gain) * (
+                        A1 * np.exp(-t / ramp_duration * tau1) + A2 * np.exp(-t / ramp_duration * tau2) + (1 - A1 - A2) * np.exp(
+                    -t / ramp_duration * tau3) - 1) \
+                / (A1 * np.exp(-tau1) + A2 * np.exp(-tau2) + (1 - A1 - A2) * np.exp(-tau3) - 1)
+
+    gains = np.array([func(tt) for tt in range(ramp_duration)])
+    if reverse:
+        gains = np.flip(gains)
+    return gains
+
 def generate_ramp(initial_gain, final_gain, ramp_duration, ramp_start_time=0, reverse=False, ramp_shape='cubic'):
     if ramp_shape.lower() == 'cubic':
         return generate_cubic_ramp(initial_gain, final_gain, ramp_duration, ramp_start_time=ramp_start_time, reverse=reverse)

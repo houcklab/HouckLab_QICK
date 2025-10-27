@@ -55,7 +55,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
         data_dict = data['data']
         Z, time = data_dict['population_corrected'], data_dict['expt_samples']
         gains = data_dict.get('Gain_Expt', data_dict.get('Gain_BS'))
-        self.freq_param_list = [None]*len(Z)
+        self.freq_param_list = []
         self.fit_freqs = [None] * len(Z)
         self.fit_gains = [None] * len(Z)
         time = time * 0.291e-3 # Convert to us
@@ -64,7 +64,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
             try:
                 pop_matrix = Z[ro_ind]
                 freq_param, fit_freqs, fit_gains = fit_chevron(gains, time, pop_matrix, return_fit_points=True)
-                self.freq_param_list[ro_ind] = freq_param
+                self.freq_param_list.append(freq_param)
                 self.fit_freqs[ro_ind] = np.array(fit_freqs)
                 self.fit_gains[ro_ind] = np.array(fit_gains)
             except RuntimeError:

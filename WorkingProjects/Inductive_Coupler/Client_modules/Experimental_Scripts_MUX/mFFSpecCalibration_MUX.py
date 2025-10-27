@@ -104,47 +104,6 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
     def update(self):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 
-    # def body(self):
-    #     print(self.delay, self.cfg["sigma"], self.pulse_qubit_lenth)
-    #     print(self.FFRamp, self.FFExpts, self.FFReadouts)
-    #     self.sync_all(50, gen_t0=self.gen_t0)
-    #     self.FFPulses(self.FFExpts, 2)
-    #     # self.FFPulses(self.FFRamp, self.qubit_length_us,
-    #     #               t_start=self.us2cycles(2))  # Sara: Length specified in us in FFPulses argument; add 20 ns
-    #     # self.pulse(ch=self.cfg["qubit_ch"], t=self.delay)  # probe pulse at 2 us + delay FIXME CLOCK
-    #     # self.FFPulses(self.FFExpts, self.qubit_length_us + 0.05)
-    #     # self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-    #     #                         + 200 * 16, self.FFRamp,
-    #     #                      IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2')
-    #     # # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
-    #     # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(0.26) + self.delay)  # play probe pulse
-    #     self.FFPulses(self.FFExpts, self.qubit_length_us + self.delay + 0.3)
-    #
-    #     # self.FFPulses_direct(1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-    #     #                         + 200 * 16, self.FFRamp,
-    #     #                      IQPulseArray = self.cfg["IDataArray"], waveform_label='FF2', t_start= self.us2cycles(0.05))
-    #     # self.FFPulses(self.FFPulse, self.qubit_length_us + 0.3)
-    #     self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(2.02) + self.delay)  # play probe pulse
-    #
-    #     # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
-    #     # trigger measurement, play measurement pulse, wait for qubit to relax
-    #     print(self.FFRamp, self.FFExpts)
-    #     self.sync_all(gen_t0=self.gen_t0)
-    #     self.FFPulses(self.FFReadouts, self.cfg["length"])
-    #     self.measure(pulse_ch=self.cfg["res_ch"],
-    #                  adcs=self.cfg["ro_chs"], pins=[0],
-    #                  adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-    #                  wait=True,
-    #                  syncdelay=self.us2cycles(10))
-    #     self.FFPulses(-1 * self.FFReadouts, self.cfg["length"])
-    #     # self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + 0.3)
-    #     self.FFPulses_direct(-1 * self.FFExpts, self.pulse_qubit_lenth * 16 + self.delay * 16  # FIXME CLOCK
-    #                             + 200 * 16, self.FFRamp,
-    #                          IQPulseArray = self.cfg["IDataArray"], waveform_label='FF3')
-    #     self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
-
-
-
 
 # ====================================================== #
 

@@ -1,23 +1,16 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibration_SSMUX import \
-    (RampCurrentCalibrationGain, RampCurrentCalibration1D,RampCurrentCalibration1DShots, RampCurrentCalibrationOffset,
-     RampCurrentCalibrationOffset_Multiple, RampCurrentCalibrationTime)
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import RampDurationVsPopulation, \
-    FFExptVsPopulation, TimeVsPopulation
+    (RampCurrentCalibration1DShots)
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import TimeVsPopulation
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorrelations import CurrentCorrelationMeasurement
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCorrelationExperiments import PopulationShots, RampPopulationShots, OscillationPopulationShots, RampOscillationPopulationShots
-
-import numpy as np
-
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 
 Qubit_Readout = [1,2,3,4,5,6,7,8]
-Qubit_Pulse = ['4_4815', '8_4815', '1_4815', '5_4815']
+Qubit_Pulse = ['1_4815', '4_4815', '8_4815', '5_4815']
 
 
 # simple population experiment after pulse state preparation

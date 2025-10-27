@@ -216,7 +216,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         ## 00 state
         self.cfg["Pulse"] = False
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_igg,shots_qgg = prog.acquire(self.soc, load_envelopes=True)
+        shots_igg,shots_qgg = prog.acquire_shots(self.soc, load_envelopes=True)
 
         self.cfg["Pulse"] = True
 
@@ -225,7 +225,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_gains'] = [qubit_gains[0]]
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ieg,shots_qeg = prog.acquire(self.soc, load_envelopes=True)
+        shots_ieg,shots_qeg = prog.acquire_shots(self.soc, load_envelopes=True)
 
 
         ## 01 state
@@ -233,7 +233,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         self.cfg['qubit_gains'] = [qubit_gains[1]]
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_ige, shots_qge = prog.acquire(self.soc, load_envelopes=True)
+        shots_ige, shots_qge = prog.acquire_shots(self.soc, load_envelopes=True)
 
 
         ## 11 state
@@ -261,7 +261,7 @@ class SingleShot_2QFFMUX(ExperimentClass):
         print(self.cfg['qubit_gains'])
 
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
-        shots_iee, shots_qee = prog.acquire(self.soc, load_envelopes=True)
+        shots_iee, shots_qee = prog.acquire_shots(self.soc, load_envelopes=True)
 
 
 
@@ -351,10 +351,10 @@ class SingleShot_2QFFMUX(ExperimentClass):
             p_eg = (i_eg_new > threshold).astype(int)
             p_ee = (i_ee_new > threshold).astype(int)
 
-            population_shots[i, 0] = p_gg
-            population_shots[i, 1] = p_ge
-            population_shots[i, 2] = p_eg
-            population_shots[i, 3] = p_ee
+            population_shots[i, 0, :] = p_gg
+            population_shots[i, 1, :] = p_ge
+            population_shots[i, 2, :] = p_eg
+            population_shots[i, 3, :] = p_ee
 
 
         # convert outcomes (00, 01, 10, 11) to (0, 1, 2, 3)

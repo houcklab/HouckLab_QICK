@@ -1,15 +1,15 @@
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV1.socProxy import makeProxy
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.RampHelpers import generate_ramp
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Triangle_Lattice_tProcV1.Helpers.FF_utils_NEW as FF
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.rotate_SS_data import *
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
+import WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.FF_utils_NEW as FF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.rotate_SS_data import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
 import scipy
 
 # get waveforms of less than 3 clock cycles by padding the first 3 cycles of the arbitrary pulse

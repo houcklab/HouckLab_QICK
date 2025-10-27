@@ -3,8 +3,8 @@ import time
 import numpy as np
 
 from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.Qblox_Functions import Qblox
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFProg
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSpecSliceFFMUX import QubitSpecSliceFFProg
 
 
 class SpecVsQblox(SweepExperimentR1D):

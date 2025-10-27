@@ -6,7 +6,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import omega_g
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
-class FFvsRamsey(SweepExperiment2D_plots):
+class RamseyVsFF(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.cfg.setdefault('qubit_drive_freq', self.cfg['qubit_freqs'][0] + self.cfg.get("freq_shift",0))
@@ -15,7 +15,7 @@ class FFvsRamsey(SweepExperiment2D_plots):
 
         print("Drive frequency at:", self.cfg['qubit_drive_freq'])
         if "phase_shift_cycles" in self.cfg:
-            print("Caution: Adding additional cycles to FFvsRamsey. Did you intend to do this?")
+            print("Caution: Adding additional cycles to RamseyVsFF. Did you intend to do this?")
         # else:
         #     self.cfg["phase_shift_cycles"] = 0
 
@@ -37,7 +37,7 @@ class FFvsRamsey(SweepExperiment2D_plots):
 
         omegas, FFgains = [], []
         x_pts = data["data"][self.loop_names[0]]
-        Zmat = data["data"]["contrast"][0]
+        Zmat = data["data"][self.z_value][0]
         for row, FFgain in zip(Zmat, data["data"]["Gain_Pulse"]):
             w_guess = omega_guess(x_pts, row)
             period_guess = 2*np.pi/w_guess
@@ -85,6 +85,8 @@ class FFvsRamsey(SweepExperiment2D_plots):
 
                 ax.axhline(center_gain, color='red', ls='--', label=f'FF Gain = {center_gain:.1f}', lw=3)
                 ax.legend(prop={'size': 14})
+
+                self.data['data']['center_gain'] = center_gain
             except:
                 print("Fitting failed.")
 

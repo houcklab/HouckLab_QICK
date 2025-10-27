@@ -2,7 +2,7 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
 
-from WorkingProjects.Triangle_Lattice_tProcV1.MUXInitialize import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.MUXInitialize import *
 import numpy as np
 
 

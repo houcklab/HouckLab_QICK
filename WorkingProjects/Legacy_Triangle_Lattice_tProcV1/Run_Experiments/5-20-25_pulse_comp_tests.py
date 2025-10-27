@@ -1,9 +1,9 @@
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFCompOvershootTests import SweepFFInitPoint, \
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFCompOvershootTests import SweepFFInitPoint, \
     StarkShift_vs_qubit_gain, StarkShift_vs_Gauss_gain
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFSpecCalibration_MUX import FFSpecCalibrationMUX
-from WorkingProjects.Triangle_Lattice_tProcV1.MUXInitialize import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mFFSpecCalibration_MUX import FFSpecCalibrationMUX
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.MUXInitialize import *
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
 import numpy as np
 
 

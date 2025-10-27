@@ -15,7 +15,7 @@ import numpy as np
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7122.2 - BaseConfig["res_LO"], 'Gain': 1200,
+    '1': {'Readout': {'Frequency': 7122.2, 'Gain': 1200,
                       "FF_Gains": [0, 12000, 0, -12000, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 4393.15, 'sigma': 0.07, 'Gain': 1920,
                     'Gain_2': 1920, 'Gain_3': 1920*2, 'Gain_4': 1920},

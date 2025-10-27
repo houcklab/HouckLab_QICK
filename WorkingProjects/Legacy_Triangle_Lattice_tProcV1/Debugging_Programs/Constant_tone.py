@@ -13,9 +13,9 @@ import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
 
-from WorkingProjects.Triangle_Lattice_tProcV1.MUXInitialize import soc, soccfg
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.MUXInitialize import soc, soccfg
 # soc, soccfg = makeProxy_RFSOC_11()
 
 class ConstantTone(AveragerProgram):

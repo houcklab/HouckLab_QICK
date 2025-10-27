@@ -1,9 +1,9 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
-from WorkingProjects.Triangle_Lattice_tProcV1.MUXInitialize import *
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mCurrentCalibration_SSMUX import CurrentCalibrationOffset, CurrentCalibrationGain
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.MUXInitialize import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mCurrentCalibration_SSMUX import CurrentCalibrationOffset, CurrentCalibrationGain
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mSingleShotProgramFFMUX import SingleShotFFMUX
 import numpy as np
 
 mixer_freq = 500

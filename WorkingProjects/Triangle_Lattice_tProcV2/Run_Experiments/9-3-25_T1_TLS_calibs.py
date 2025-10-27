@@ -2,7 +2,7 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from matplotlib import pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsT1 import FFvsT1
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import FFvsT1
 
 # from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mT1_TLS_SSMUX import T1_TLS_SS
 

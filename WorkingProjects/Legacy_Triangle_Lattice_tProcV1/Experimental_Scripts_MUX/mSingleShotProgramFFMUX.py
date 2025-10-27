@@ -2,11 +2,11 @@ from qick import *
 from qick import helpers
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.hist_analysis import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.hist_analysis import *
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
+import WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
 
 # ====================================================== #
 class SingleShotProgram(AveragerProgram):

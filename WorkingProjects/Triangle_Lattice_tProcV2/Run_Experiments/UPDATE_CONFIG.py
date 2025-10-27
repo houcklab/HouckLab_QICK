@@ -15,14 +15,18 @@ try:
         for Qubit, FFI in zip(('1', '2', '3', '4', '5', '6', '7', '8'), Init_FF):
             FF_Qubits[Qubit]['ramp_initial_gain'] = FFI
         print('using init FFs')
+    else:
+        raise Exception
 except:
-    pass
+    print('using pulse FFs as init FFs')
+    for Qubit, FFI in zip(('1', '2', '3', '4', '5', '6', '7', '8'), FFPulse):
+        FF_Qubits[Qubit]['ramp_initial_gain'] = FFI
 
 del Qubit
 
 trans_config = {
     "res_gains": [Qubit_Parameters[str(Q_R)]['Readout']['Gain'] / 32766. * len(Qubit_Readout) for Q_R in Qubit_Readout],  # [DAC units]
-    "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
+    "res_freqs": [Qubit_Parameters[str(Q_R)]['Readout']['Frequency'] - BaseConfig["res_LO"] for Q_R in Qubit_Readout], # [MHz] actual frequency is this number + "cavity_LO"
     "readout_lengths":[Qubit_Parameters[str(Q_R)]['Readout']['Readout_Time'] for Q_R in Qubit_Readout],
     "adc_trig_delays": [Qubit_Parameters[str(Q_R)]['Readout']['ADC_Offset'] for Q_R in Qubit_Readout],
 }

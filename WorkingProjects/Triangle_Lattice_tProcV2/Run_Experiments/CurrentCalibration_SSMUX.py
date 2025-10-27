@@ -17,19 +17,19 @@ Readout_FF = [5660, 26575, -17231, -5017, 0, 0, 0, 0]
 # (4088.0, 4380.0, 3520.0, 3820.0, 3500.9, 3501.5, 3441.8, 3506.0)
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.8 - BaseConfig["res_LO"], 'Gain': 4200,
+    '1': {'Readout': {'Frequency': 7121.8, 'Gain': 4200,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 4084.7, 'sigma': 0.07, 'Gain': 2450},
           'Pulse_FF': Readout_FF},
-    '2': {'Readout': {'Frequency': 7078.3 - BaseConfig["res_LO"], 'Gain': 5200,
+    '2': {'Readout': {'Frequency': 7078.3, 'Gain': 5200,
                       "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
           'Qubit': {'Frequency': 4379.2, 'sigma': 0.07, 'Gain': 3200},
           'Pulse_FF': Readout_FF},
-    '3': {'Readout': {'Frequency': 7510.55 - BaseConfig["res_LO"], 'Gain': 3800,
+    '3': {'Readout': {'Frequency': 7510.55, 'Gain': 3800,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
           'Qubit': {'Frequency': 3626.6, 'sigma': 0.07, 'Gain': 5250},
           'Pulse_FF': [5660, 26575, -17231 + 5000, -5017, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.1 - BaseConfig["res_LO"], 'Gain': 6000,
+    '4': {'Readout': {'Frequency': 7568.1, 'Gain': 6000,
                       "FF_Gains": Readout_FF, "Readout_Time": 3.5, "ADC_Offset": 0.5, 'cavmin': True},
           'Qubit': {'Frequency': 3824.7, 'sigma': 0.07, 'Gain': 3260},
           'Pulse_FF': Readout_FF},

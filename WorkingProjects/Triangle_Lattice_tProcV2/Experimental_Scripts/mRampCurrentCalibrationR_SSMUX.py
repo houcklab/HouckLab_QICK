@@ -27,18 +27,6 @@ class RampBeamsplitterBase(SweepExperimentND):
         # self.z_value = 'population_shots'  # contrast or population
         self.xlabel = 'Wait time (4.65/16 ns)'  # for plotting
 
-        # initialize ramp initial gain
-        # if the list ramp_initial_gain is provided in cfg, use that
-        # if not, use the gain pulse values
-        for i in range(len(self.cfg['FF_Qubits'])):
-            if not 'ramp_initial_gain' in self.cfg['FF_Qubits'][str(i + 1)]:
-                if 'ramp_initial_gains' in self.cfg:
-                    self.cfg['FF_Qubits'][str(i + 1)]['ramp_initial_gain'] = self.cfg['ramp_initial_gains'][i]
-                else:
-                    self.cfg['FF_Qubits'][str(i + 1)]['ramp_initial_gain'] = self.cfg['FF_Qubits'][str(i + 1)][
-                        'Gain_Pulse']
-                    print("Using gain_pulse value")
-
 
 
     def set_up_instance(self):
@@ -46,7 +34,7 @@ class RampBeamsplitterBase(SweepExperimentND):
         self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
 
-        t_offset = np.array(self.cfg['t_offset'], dtype=int)
+        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
         if isinstance(t_offset, int):
             # this won't do anything because we are offsetting every channel relative to the channel with the least offset
             t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
@@ -145,8 +133,6 @@ class RampCurrentCorrelationsR(RampBeamsplitterR1D):
             data = self.data
         fig, axs = fig_axs
 
-        if 'nn_correlations' not in data['data']:
-            self.analyze(data)
 
         # Display population data as usual
         self.z_value = 'population_corrected' if 'population_corrected' in data['data'] else 'population'
@@ -246,6 +232,93 @@ class SweepRampLengthCorrelations(RampCurrentCorrelationsR, SweepExperiment2D_pl
         im.autoscale()
         cbar.update_normal()
 
+
+class RampCorrelations_Sweep_Base(RampCurrentCorrelationsR, SweepExperiment2D_plots):
+
+    def _make_subplots(self, figNum, count):
+        '''Modify display to produce 2 axes, one for populations and one for correlations'''
+        if plt.fignum_exists(num=figNum):  # if figure with number already exists
+            figNum = None
+        fig, axs = plt.subplots(1, 1, figsize=(14, 8), num=figNum, tight_layout=True)
+        return fig, [axs]
+
+    def _display_plot(self, data=None, fig_axs=None):
+        if data is None:
+            data = self.data
+        fig, axs = fig_axs
+
+        fig.suptitle(str(self.titlename), fontsize=16)
+
+        y_key_name = SweepHelpers.key_savename(self.y_key)
+        try:
+            x_key_name = self.x_key
+        except:
+            x_key_name = self.loop_names[0]
+
+        X, Y = data['data'][x_key_name], data['data'][y_key_name]
+
+        X_step = X[1] - X[0]
+        Y_step = Y[1] - Y[0]
+        Z_mat = data['data']['corrected_nn']
+
+        q1, q2 = self.cfg['readout_pair_1']
+        q3, q4 = self.cfg['readout_pair_2']
+        colorbar_label = rf'$\langle n_{{ {q2}{q1}}} n_{{{q4}{q3}}}\rangle$'
+
+        ax_im = axs[0].imshow(
+            Z_mat,
+            aspect='auto',
+            extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
+                    Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
+            origin='lower',
+            interpolation='none')
+        axs[0].set_ylabel(self.ylabel)
+        axs[0].set_xlabel(self.xlabel)
+        axs[0].set_title(rf'$\langle n_{{ {q2}{q1}}} n_{{{q4}{q3}}}\rangle$')
+        cbar = fig.colorbar(ax_im, ax=axs[0], extend='both')
+        cbar.set_label(colorbar_label, rotation=90)
+
+        fig.show()
+        return fig, axs
+
+    def _update_fig(self, data, fig, axs):
+        im = axs[0].get_images()[-1],
+        im = im[-1]
+        cbar = im.colorbar
+        im.set_data(data['data']["corrected_nn"])
+        im.autoscale()
+        cbar.update_normal()
+
+
+class RampCorrelations_Sweep_BS_Gain(RampCorrelations_Sweep_Base, SweepExperiment2D_plots):
+    def init_sweep_vars(self):
+        RampCurrentCorrelationsR.init_sweep_vars(self)
+        self.y_key = ('FF_Qubits', str(self.cfg['swept_qubit']), 'Gain_BS')
+        self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'], dtype=int)
+        self.ylabel = f'FF gain (Qubit {self.cfg["swept_qubit"]})'  # for plotting
+
+
+
+class RampCorrelations_Sweep_BS_Offset(RampCorrelations_Sweep_Base, SweepExperiment2D_plots):
+
+    def init_sweep_vars(self):
+        super().init_sweep_vars()
+        self.y_key = ("t_offset", self.cfg["swept_qubit"] - 1)
+        self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'],
+                                    dtype=int)
+        self.ylabel = f"Offset time of Qubit {self.cfg["swept_qubit"]} (4.65/16 ns)"
+
+    def set_up_instance(self):
+        print(f'setting up instance')
+        print(f't offsets: {self.cfg["t_offset"]}')
+        super().set_up_instance()
+
+######################################
+
+# Double Jump Experiments
+
+######################################
+
 class RampDoubleJumpBase(RampBeamsplitterBase):
     def init_sweep_vars(self):
         super().init_sweep_vars()
@@ -258,16 +331,16 @@ class RampDoubleJumpBase(RampBeamsplitterBase):
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
         # Add first jump
         total_len = self.cfg['start'] + self.cfg['step'] * self.cfg['expts']
+        gains_expt = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Expt')
+        gains_bs = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_BS')
         for i in range(len(self.cfg["IDataArray2"])):
             first_jump_gain = self.cfg['intermediate_jump_gains'][i]
             if first_jump_gain is not None:
-                gain_expt, gain_bs = (self.cfg['FF_Qubits'][str(i+1)][ff_key] for ff_key in ['Gain_Expt', 'Gain_BS'])
-
                 # Jumps relative to gain_expt
-                first_jump = first_jump_gain - gain_expt
-                second_jump = gain_bs - gain_expt
+                first_jump = first_jump_gain - gains_expt[i]
+                second_jump = gains_bs[i] - gains_expt[i]
                 IData = np.concatenate([np.full(self.cfg["intermediate_jump_samples"][i], first_jump), np.full(total_len+16-self.cfg['intermediate_jump_samples'][i], second_jump)])
-                self.cfg["IDataArray2"][i] = Compensate(IData, gain_expt, i+1)
+                self.cfg["IDataArray2"][i] = Compensate(IData, gains_expt[i], i+1)
 
         t_offset = np.array(self.cfg['t_offset'], dtype=int)
         if isinstance(t_offset, int):

@@ -1,8 +1,8 @@
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment1D import SweepExperiment1D
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperiment1D import SweepExperiment1D
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.Compensated_Pulse_Jero import *
 
 
 class QubitOscillations(SweepExperiment1D):

@@ -1,28 +1,37 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.BS_Mux8_Readouts import BS1278_Readout, Readout_1278FF, BS1254_Readout, Readout_1254FF
 
 # 8Q Pi Flux parameters
-Readout_FF = np.array([-1638, -14218, 18524, -4102, -16358, 15227, 3721, -19085])
-# (4000.0, 3700.0, 4350.0, 3950.0, 3600.0, 4300.0, 4050.0, 3550.0)
+# (3950.0, 3700.0, 4380.0, 4150.0, 3550.0, 3800.0, 4300.0, 4050.0)
+Readout_FF = np.array([-3580, -14218, 25392, 3954, -20123, -8932, 19191, 371])
+
 
 
 # Expt_FF = np.array([-11175, -12314, -9138, -11986, -10533, -11127, -7795, -7165])
 # (3750.0, 3750.0, 3750.0, 3750.0, 3750.0, 3750.0, 3750.0, 3750.0)
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = np.array([-9260, -9812, -7228, -9688, -8477, -8869, -6010, -7171])
+Expt_FF = np.array([-9276, -9864, -7285, -9788, -8530, -8946, -6069, -7323])
+
+# (4320.0, 4320.0, 4320.0, 4320.0, 4320.0, 4320.0, 4320.0, 4320.0))
+Expt_FF_sweet_spot = np.array([13854, 14463, 14777, 12299, 12873, 16038, 21900, 13230])
 
 # manual
-Expt_FF = np.array([-9360, -9712, -7228, -9888, -8477, -8869, -6010, -7171])
+Expt_FF_sweet_spot = np.array([13854, 14563, 14677, 12099, 12973, 16138, 22000, 13130])
+
+Expt_FF = Expt_FF_sweet_spot
+
 
 # From RampFFvsRamsey with ramp time = 2000
 # Expt_FF = np.array([-9231, -9880, -7278, -9681, -8492, -9070, -6088, -7157])
 
-# for beamsplitter points
-# Expt_FF = np.array([-9260, -9807, -7227, -9681, -8026, -8875, -6010, -7160])
+# From RampFFvsRamsey with ramp time = 1000
+# Expt_FF = np.array([-9267, -9835, -7243, -9706, -8503, -8968, -6043, -7226])
 
-# Expt_FF = np.array([-9420, -9760, -7210, -10000, -8274, -9278, -6017, -6976])
+# for beamsplitter points
+# Expt_FF = np.array([-9260, -9712, -7228, -9688, -8477, -8869, -6010, -7171])
 
 
 _45 = 1800 # FF for 45 MHz
@@ -30,50 +39,52 @@ ordering =  [8, 5, 4, 1,  3,  2,  6,  7]
 detunings = [3, 2, 1, 0, -1, -2, -3, -4]
 pulse_1854 = np.array([x for _,x in sorted(zip(ordering,detunings))]) * _45
 print("pulse_1854:", pulse_1854 / _45)
-
+print(Expt_FF + pulse_1854)
 # (4100.0, 3600.0, 3600.0, 4280.0, 3850.0, 3550.0, 3600.0, 4150.0)
-pulse_4815 = [2437, -19389, -14955, 10372, -6525, -21935, -13757, 4160]
-# (4100.0, 3600.0, 3600.0, 4200.0, 3850.0, 3550.0, 3600.0, 4150.0)
-# pulse_4815 = [2437, -19389, -14955, 6240, -6525, -21935, -13757, 4160]
+# pulse_4815 = [2437, -19389, -14955, 10372, -6525, -21935, -13757, 4160]
+# (4100.0, 3600.0, 3600.0, 4200.0, 3800.0, 3550.0, 3600.0, 4150.0)
+pulse_4815 = [2437, -19389, -14955, 6240, -8477, -21935, -13757, 4160]
 
 
 resonance_frequency = 3800
+# resonance_frequency = 4320
 
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.4 - BaseConfig["res_LO"], 'Gain': 710,
+MUX8_Readout = {
+    '1': {'Readout': {'Frequency': 7121.3, 'Gain': 714,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3999.2, 'sigma': 0.07, 'Gain': 3400},
+          'Qubit': {'Frequency': 3949.7, 'sigma': 0.07, 'Gain': 1924},
           'Pulse_FF': Readout_FF},
-    '2': {'Readout': {'Frequency': 7077.3 - BaseConfig["res_LO"], 'Gain': 1000,
+    '2': {'Readout': {'Frequency': 7077.3, 'Gain': 1200,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3699.5, 'sigma': 0.07, 'Gain': 3300},
+          'Qubit': {'Frequency': 3699.86, 'sigma': 0.07, 'Gain': 3236},
           'Pulse_FF': Readout_FF},
-    '3': {'Readout': {'Frequency': 7511.33 - BaseConfig["res_LO"], 'Gain': 970,
+    '3': {'Readout': {'Frequency': 7511.6, 'Gain': 970,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4362.0, 'sigma': 0.07, 'Gain': 4350},
+          'Qubit': {'Frequency': 4395.4, 'sigma': 0.07, 'Gain': 4720},
           'Pulse_FF': Readout_FF},
-    '4': {'Readout': {'Frequency': 7568.1 - BaseConfig["res_LO"], 'Gain': 1229,
+    '4': {'Readout': {'Frequency': 7568.6, 'Gain': 1229,
                       "FF_Gains": Readout_FF, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3948.9, 'sigma': 0.07, 'Gain': 2250},
+          'Qubit': {'Frequency': 4151.4, 'sigma': 0.07, 'Gain': 2882},
           'Pulse_FF': Readout_FF + [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7362.65 - BaseConfig['res_LO'], 'Gain': 971,
+    '5': {'Readout': {'Frequency': 7362.9, 'Gain': 971,
                       'FF_Gains': Readout_FF, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3612.0, 'sigma': 0.07, 'Gain': 2827},
+          'Qubit': {'Frequency': 3552.6, 'sigma': 0.07, 'Gain': 6430},
           'Pulse_FF': Readout_FF },
-    '6': {'Readout': {'Frequency': 7441.6 - BaseConfig['res_LO'], 'Gain': 1000,
+    '6': {'Readout': {'Frequency': 7441.35, 'Gain': 1486,
                       'FF_Gains': Readout_FF, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4308.4, 'sigma': 0.07, 'Gain': 3250},
+          'Qubit': {'Frequency': 3799.4, 'sigma': 0.07, 'Gain': 1957},
           'Pulse_FF': Readout_FF},
-    '7': {'Readout': {'Frequency': 7254.1 - BaseConfig['res_LO'], 'Gain': 1000,
+    '7': {'Readout': {'Frequency': 7254.4, 'Gain': 1000,
                       'FF_Gains': Readout_FF, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-          'Qubit': {'Frequency': 4052.17, 'sigma': 0.07, 'Gain': 3350},
+          'Qubit': {'Frequency': 4302.4, 'sigma': 0.07, 'Gain': 3038},
           'Pulse_FF': Readout_FF},
-    '8': {'Readout': {'Frequency': 7308.54 - BaseConfig['res_LO'], 'Gain': 1280,
+    '8': {'Readout': {'Frequency': 7309.5, 'Gain': 971,
                       'FF_Gains': Readout_FF, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           # 'Qubit': {'Frequency': 3537.05  + 40, 'sigma': 0.07, 'Gain': 3000},
-          'Qubit': {'Frequency': 3601.1, 'sigma': 0.07, 'Gain': 2544},
-          'Pulse_FF': Readout_FF + [0,0,0,0, 4000,0,0,4000]},
-
+          'Qubit': {'Frequency': 4023.0, 'sigma': 0.07, 'Gain': 2478},
+          'Pulse_FF': Readout_FF},
+}
+Drive_params = {
     # Resonant points. +- 4000 FF gain ~ 100 MHz
     '1H': {'Qubit': {'Frequency': 3878.3, 'sigma': 0.07, 'Gain': 3600},
            'Pulse_FF': Expt_FF + [3000, 0, 0, 0, 0, 0, 0, 0]},
@@ -116,63 +127,59 @@ Qubit_Parameters = {
 
 
     # far away
-    '1_4815': {'Qubit': {'Frequency': 4098.73, 'sigma': 0.07, 'Gain': 2562},
+    '1_4815': {'Qubit': {'Frequency': 4099.5, 'sigma': 0.03, 'Gain': 6505},
                    'Pulse_FF': pulse_4815},
-    '4_4815': {'Qubit': {'Frequency': 4285, 'sigma': 0.07, 'Gain': 2950},
+    '4_4815': {'Qubit': {'Frequency': 4203, 'sigma': 0.03, 'Gain': 6530},
                    'Pulse_FF': pulse_4815},
-    '5_4815': {'Qubit': {'Frequency': 3853.1, 'sigma': 0.07, 'Gain': 4800},
+    '5_4815': {'Qubit': {'Frequency': 3801.8, 'sigma': 0.03, 'Gain': 8800},
                    'Pulse_FF': pulse_4815},
-    '8_4815': {'Qubit': {'Frequency': 4123.7, 'sigma': 0.07, 'Gain': 2800},
+    '8_4815': {'Qubit': {'Frequency': 4126.6, 'sigma': 0.03, 'Gain': 6698},
                  'Pulse_FF': pulse_4815},
 
 
-    '1_4815_readout': {'Readout': {'Frequency': 7121.75 - BaseConfig["res_LO"], 'Gain': 714,
+    '1_4815_readout': {'Readout': {'Frequency': 7121.75, 'Gain': 714,
                                    "FF_Gains": pulse_4815, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-                       'Qubit': {'Frequency': 4099.0, 'sigma': 0.07, 'Gain': 3100},
+                       'Qubit': {'Frequency': 4099.0, 'sigma': 0.07, 'Gain': 2600},
                        'Pulse_FF': pulse_4815},
-    '4_4815_readout': {'Readout': {'Frequency': 7568.85 - BaseConfig["res_LO"], 'Gain': 1229,
+    '4_4815_readout': {'Readout': {'Frequency': 7568.85, 'Gain': 1229,
                                    "FF_Gains": pulse_4815, "Readout_Time": 3, "ADC_Offset": 1, 'cavmin': True},
-                       'Qubit': {'Frequency': 4203.1, 'sigma': 0.07, 'Gain': 3000},
+                       'Qubit': {'Frequency': 4204.1, 'sigma': 0.07, 'Gain': 3000},
                        'Pulse_FF': pulse_4815},
-    '5_4815_readout': {'Readout': {'Frequency': 7363.37 - BaseConfig['res_LO'], 'Gain': 1229,
+    '5_4815_readout': {'Readout': {'Frequency': 7363.37, 'Gain': 1229,
                                    'FF_Gains': pulse_4815, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-                       'Qubit': {'Frequency': 3855.36, 'sigma': 0.07, 'Gain': 5300},
+                       'Qubit': {'Frequency': 3801.8, 'sigma': 0.07, 'Gain': 5300},
                        'Pulse_FF': pulse_4815},
-    '8_4815_readout': {'Readout': {'Frequency': 7309.3 - BaseConfig['res_LO'], 'Gain': 1229,
+    '8_4815_readout': {'Readout': {'Frequency': 7309.3, 'Gain': 1229,
                                    'FF_Gains': pulse_4815, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-                       'Qubit': {'Frequency': 4123.54, 'sigma': 0.07, 'Gain': 2070},
+                       'Qubit': {'Frequency': 4126.6, 'sigma': 0.07, 'Gain': 3000},
                        'Pulse_FF': pulse_4815},
+}
 
 
 
 
-
-
-
-
-
-
+Ramp_params = {
     'no_ramp_4815': {'Ramp':{'Init_FF': None,
                     'Expt_FF': pulse_4815}},
-    '12': {'Ramp':{'Init_FF': None,
-                    'Expt_FF': Expt_FF + [0,0, 8000, -8000, -8000, 8000, 8000, -8000]}},
-    '34': {'Ramp':{'Init_FF': Readout_FF,
-                        'Expt_FF': Expt_FF + [-8000,-8000,0,0,-8000,-8000, -8000, -8000]}},
+    '12': {'Ramp':{'Init_FF': Expt_FF + [0,-5000, -12000, -12000, -12000, -12000, -12000, -12000],
+                    'Expt_FF': Expt_FF + [0,0, -12000, -12000, -12000, -12000, -12000, -12000]}},
+    '34': {'Ramp':{'Init_FF': Expt_FF + [-12000,-12000,0,-5000,-12000,-12000, -15000, -12000],
+                        'Expt_FF': Expt_FF + [-12000,-12000,0,0,-12000,-12000, -15000, -12000]}},
     '35': {'Ramp':{'Init_FF': None,
                         'Expt_FF': Expt_FF + [8000,8000,0,8000,0,8000, 8000, 8000]}},
     '46': {'Ramp': {'Init_FF': None,
                     'Expt_FF': Expt_FF + [-8000, -8000, -8000, 0, -8000, 0, -8000, -8000]}},
 
-    '45': {'Ramp': {'Init_FF': None,
-                    'Expt_FF': Expt_FF + [8000, 8000, 8000, 0, 0, 8000, 8000, 8000]}},
+    '45': {'Ramp': {'Init_FF': Expt_FF + [-12000, -12000, -12000, 0, -5000, -12000, -12000, -12000],
+                    'Expt_FF': Expt_FF + [-12000, -12000, -12000, 0, 0, -12000, -12000, -12000]}},
 
-    '56': {'Ramp':{'Init_FF': Readout_FF,
-                        'Expt_FF': Expt_FF + [-8000, -8000, 8000, -8000,0,0, -8000, -8000]}},
+    '56': {'Ramp':{'Init_FF': Expt_FF + [-12000, -12000, -12000, -12000,-5000,0, -12000, -12000],
+                        'Expt_FF': Expt_FF + [-8000, -8000, -8000, -8000,0,0, -8000, -8000]}},
 
-    '67': {'Ramp':{'Init_FF': None,
-                        'Expt_FF': Expt_FF + [-8000,-8000,-8000,-8000,-8000, 0, 0, -8000]}},
-    '78': {'Ramp': {'Init_FF': Readout_FF,
-                    'Expt_FF': Expt_FF + [8000, 8000, 8000, 8000, 8000, 8000, 0, 0]}},
+    '67': {'Ramp':{'Init_FF': Expt_FF + [-12000,-12000,-12000,-12000,-12000, 0, -5000, -12000],
+                        'Expt_FF': Expt_FF + [-12000,-12000,-12000,-12000,-12000, 0, 0, -12000]}},
+    '78': {'Ramp': {'Init_FF': Expt_FF + [-12000, -12000, -12000, -12000, -12000, -12000, 0, -5000],
+                    'Expt_FF': Expt_FF + [-12000, -12000, -12000, -12000, -12000, -12000, 0, 0]}},
 
     '68': {'Ramp': {'Init_FF': None,
                         'Expt_FF': Expt_FF + [8000, 8000,-8000, 8000, 8000, 0, 8000, 0]}},
@@ -194,79 +201,129 @@ Qubit_Parameters = {
 
     '8Q_4815': {'Ramp':{'Init_FF': Expt_FF + [0, -3600, -1800, 0, 0, -5400, -7200, 0],
                        'Expt_FF': Expt_FF}},
+    '8Q_4815_holes_resonant': {'Ramp':
+                {'Init_FF': [Expt_FF[0], -13763, -10472, Expt_FF[3], Expt_FF[4], -12794, -9303, Expt_FF[7]],
+                 'Expt_FF': Expt_FF}},
+
+    '8Q_4815_holes_resonant': {'Ramp':
+                {'Init_FF': [Expt_FF[0], 8414, 9331, Expt_FF[3], Expt_FF[4], 9873, 12362, Expt_FF[7]],
+                 'Expt_FF': Expt_FF}},
+
+
+
+    # init 4245
+    # (4245.0, 4245.0, 4245.0, 4245.0, 4245.0, 4245.0, 4245.0, 4245.0)
+    # '8Q_4815_sweet_spot': {'Ramp':
+    #             {'Init_FF': [Expt_FF_sweet_spot[0], 9802, 10677, Expt_FF_sweet_spot[3], Expt_FF_sweet_spot[4], 11380, 14078, Expt_FF_sweet_spot[7]],
+    #              'Expt_FF': Expt_FF_sweet_spot}},
+
 
 
     # beamsplitter definitions
     # (3600.0, 3600.0, 4300.0, 4300.0, 3700.0, 3700.0, 4100.0, 4100.0)
-    '1234_correlations': {'BS':{'BS_FF': [-18685, -19389, 14131, 11543, -12678, -13248, 4768, 2214]}},
-    '1234_correlations_double': {'BS':{'BS_FF': [-18782, -19389, 14131, 11543, -12678, -13248, 4768, 2214]}},
+    '1234_correlations': {'BS':{'BS_FF': [-18610, -19389, 13973, 11543, -12553, -13248, 4781, 2214]}},
+
+    '1234_correlations_double': {'BS':{'BS_FF': [-18686, -19389, 13667, 11543, -12325, -13248, 4424, 2214]}},
+
+    # (3720.0, 3720.0, 3960.0, 3960.0, 3640.0, 3640.0, 3880.0, 3880.0)
+    '1234_correlations_close': {'BS':{'BS_FF': [-12609, -13315, -1830, -3721, -14911, -16151, -4350, -5505]}},
+
+    '1278_correlations_+-50':  {'BS':{'BS_FF': [-11136, -11797,  12621,  10312, -17836, -18869,  -3589,  -5243]}},
+
+    '1278_correlations_+-50_12':  {'BS':{'BS_FF': [-11200, -11797,  25392, 27560, -25700, -28060, 25722, 24395]}},
+
+    '1278_correlations_+-100_12':  {'BS':{'BS_FF': [-13114, -13797,  25392, 27560, -25700, -28060, 25722, 24395]}},
+
     # '1234_correlations_2': {'BS':{'BS_FF': [-18440, -19389, 13904, 11543, -12400, -13248, 17110, 11182]}},
 
 
     # (3600.0, 3600.0, 4000.0, 4400.0, 4400.0, 3700.0, 3700.0, 4300.0)
-    '1245_correlations': {'BS': {'BS_FF': [-18633, -19389, -41, 19544, 23097, -13444, -9686, 11182]}},
-    # '1245_correlations_2': {'BS': {'BS_FF': [-18440, -19389, -41, 19742, 23097, -22139, -16113, 11182]}},
+    '1245_correlations': {'BS': {'BS_FF': [-18685, -19389, -41, 19778, 23678, -13444, -9686, 11182]}},
+    # (3600.0, 3600.0, 4000.0, 4050.0, 4050.0, 3700.0, 3700.0, 4300.0)
+    '1245_correlations_2': {'BS': {'BS_FF': [-18386, -19389, -41, -221, 937, -13248, -9686, 11182]}},
 
     # (3600.0, 3600.0, 4380.0, 4435.8, 4404.2, 3600.0, 3600.0, 4418.0)
-    '1267_correlations': {'BS': {'BS_FF': [-18440, -19389, 25392, 27560, 25700, -18375, -13757, 24395]}},
+    '1267_correlations': {'BS': {'BS_FF': [-18685, -19389, 25392, 27560, 25700, -18375, -13757, 24395]}},
+
+    # (4095.0, 4095.0, 4245.0, 4245.0, 4020.0, 4020.0, 4170.0, 4170.0)
+    '1234_correlations_ss': {'BS':{'BS_FF': [2153, 2336, 10534, 8472, -103, 147, 9361, 5891]}},
+
+    # (4020.0, 4020.0, 4380.0, 4245.0, 4245.0, 4095.0, 4095.0, 4418.0)
+    '1254_correlations_ss': {'BS':{'BS_FF': [-919, -908, 25392, 8436, 9011, 3699, 5709, 24395]}},
 
 
-    # Resonant points. Guess: [0,0,0,0]
-    '1R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 1750},
-           'Pulse_FF': Expt_FF + [0, +4000, +4000, +4000, +4000, +4000, +4000, +4000]},
-    '2R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2000},
-           'Pulse_FF': Expt_FF + [+4000, 0, +4000, +4000, +4000, +4000, +4000, +4000]},
-    '3R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3150},
-           'Pulse_FF': Expt_FF + [+4000, +4000, 0, +4000, +4000, +4000, +4000, +4000]},
-    '4R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
-           'Pulse_FF': Expt_FF + [+4000, +4000, +4000, 0, +4000, +4000, +4000, +4000]},
-    '5R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
-            'Pulse_FF': Expt_FF + [+4000, +4000, +4000, +4000, 0, +4000, +4000, +4000]},
-    # '5R': {'Qubit': {'Frequency': 3789.3, 'sigma': 0.07, 'Gain': 3876},
-    #         'Pulse_FF': Expt_FF + [+4000, +4000, +4000, +4000, 0, +4000, +4000, +4000]},
-    '6R': {'Readout': {'Frequency': 7441.1 - BaseConfig['res_LO'], 'Gain': 4000,
-            'FF_Gains': Expt_FF + [+4000, +4000, +4000, +4000, +4000, 0, +4000, +4000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-            'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2200},
-           'Pulse_FF': Expt_FF + [+4000, +4000, +4000, +4000, +4000, 0, +4000, +4000]},
-    '7R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
-           'Pulse_FF': Expt_FF + [+4000, +4000, +4000, +4000, +4000, +4000, 0, +4000]},
-    '8R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
-           'Pulse_FF': Expt_FF + [+4000, +4000, +4000, +4000, +4000, +4000, +4000, 0]},
-
-   # Resonant points but with other FFs in opposite direction. Guess: [0,0,0,0]
-    '1R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 1750},
-           'Pulse_FF': Expt_FF + [0, -4000, -4000, -4000, -4000, -4000, -4000, -4000]},
-    '2R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2000},
-           'Pulse_FF': Expt_FF + [-4000, 0, -4000, -4000, -4000, -4000, -4000, -4000]},
-    '3R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3150},
-           'Pulse_FF': Expt_FF + [-4000, -4000, 0, -4000, -4000, -4000, -4000, -4000]},
-    '4R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
-           'Pulse_FF': Expt_FF + [-4000, -4000, -4000, 0, -4000, -4000, -4000, -4000]},
-    '5R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
-            'Pulse_FF': Expt_FF + [-4000, -4000, -4000, -4000, 0, -4000, -4000, -4000]},
-    # '5R-': {'Qubit': {'Frequency': 3789.3, 'sigma': 0.07, 'Gain': 3876},
-    #         'Pulse_FF': Expt_FF + [-4000, -4000, -4000, -4000, 0, -4000, -4000, -4000]},
-    '6R-': {'Readout': {'Frequency': 7441.1 - BaseConfig['res_LO'], 'Gain': 4000,
-            'FF_Gains': Expt_FF + [-4000, -4000, -4000, -4000, -4000, 0, -4000, -4000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-            'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2200},
-           'Pulse_FF': Expt_FF + [-4000, -4000, -4000, -4000, -4000, 0, -4000, -4000]},
-    '7R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
-           'Pulse_FF': Expt_FF + [-4000, -4000, -4000, -4000, -4000, -4000, 0, -4000]},
-    '8R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
-           'Pulse_FF': Expt_FF + [-4000, -4000, -4000, -4000, -4000, -4000, -4000, 0]},
 
 }
 
+
+
+ramsey_point_separation = 8000
+ramsey_point_separation_list = -np.diag([ramsey_point_separation]*8) + ramsey_point_separation
+
+Ramsey_params = {
+    # Resonant points. Guess: [0,0,0,0]
+    '1R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 1750},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[0]},
+    '2R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2000},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[1]},
+    '3R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3150},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[2]},
+    '4R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[3]},
+    '5R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
+            'Pulse_FF': Expt_FF + ramsey_point_separation_list[4]},
+    '6R': {'Readout': {'Frequency': 7441.1, 'Gain': 4000,
+            'FF_Gains': Expt_FF + ramsey_point_separation_list[5], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
+            'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2200},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[5]},
+    '7R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[6]},
+    '8R': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
+           'Pulse_FF': Expt_FF + ramsey_point_separation_list[7]},
+
+   # Resonant points but with other FFs in opposite direction. Guess: [0,0,0,0]
+    '1R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 1750},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[0]},
+    '2R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2000},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[1]},
+    '3R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3150},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[2]},
+    '4R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[3]},
+    '5R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
+            'Pulse_FF': Expt_FF - ramsey_point_separation_list[4]},
+    '6R-': {'Readout': {'Frequency': 7441.1, 'Gain': 4000,
+            'FF_Gains': Expt_FF - ramsey_point_separation_list[5]},
+            'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2200},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[5]},
+    '7R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 3100},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[6]},
+    '8R-': {'Qubit': {'Frequency': resonance_frequency, 'sigma': 0.07, 'Gain': 2500},
+           'Pulse_FF': Expt_FF - ramsey_point_separation_list[7]},
+
+}
+
+
+Qubit_Parameters = BS1278_Readout | Drive_params | Ramp_params | Ramsey_params
+# Qubit_Parameters = MUX8_Readout | Drive_params | Ramp_params | Ramsey_params
+Qubit_Parameters = BS1254_Readout | Drive_params | Ramp_params | Ramsey_params
+
+
 Ramp_state = '8Q_4815'
-# Ramp_state = '12'
+Ramp_state = '8Q_4815_holes_resonant'
+# Ramp_state = '8Q_4815_sweet_spot'
+# Ramp_state = '67'
 
 Init_FF = Qubit_Parameters[Ramp_state]['Ramp']['Init_FF']
 Ramp_FF = Qubit_Parameters[Ramp_state]['Ramp']['Expt_FF']
 
 
-beamsplitter_point = '1234_correlations'
-# beamsplitter_point = '1234_correlations_double'
-# beamsplitter_point = '1245_correlations'
+# beamsplitter_point = '1234_correlations_close'
+# beamsplitter_point = '1234_correlations'
+beamsplitter_point = '1278_correlations_+-100_12'
+# beamsplitter_point =  '1234_correlations_ss'
+beamsplitter_point =  '1254_correlations_ss'
+# beamsplitter_point = '1245_correlations_2'
 BS_FF = Qubit_Parameters[beamsplitter_point]['BS']['BS_FF']
 
 

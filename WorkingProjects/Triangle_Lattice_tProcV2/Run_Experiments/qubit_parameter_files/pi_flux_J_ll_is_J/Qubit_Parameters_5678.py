@@ -10,19 +10,19 @@ Readout = np.array([27728, 29032, 27519, 26664, 1895, -17022, 18917, 5170])
 Expt_FF = np.array([27728, 29032, 27519, 26664, -428, 35, -248, -701])
 
 Qubit_Parameters = {
-    '5': {'Readout': {'Frequency': 7362.9 - BaseConfig['res_LO'], 'Gain': 6400,
+    '5': {'Readout': {'Frequency': 7362.9, 'Gain': 6400,
                       'FF_Gains': Readout, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3804.7, 'sigma': 0.07, 'Gain': 3200},
           'Pulse_FF': Readout},
-    '6': {'Readout': {'Frequency': 7440.6 - BaseConfig['res_LO'], 'Gain': 5300,
+    '6': {'Readout': {'Frequency': 7440.6, 'Gain': 5300,
                       'FF_Gains': Readout, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3576.1, 'sigma': 0.07, 'Gain': 3150},
           'Pulse_FF': Readout + [0, 0, 0, 0, 0, +8000, 0, 0]},
-    '7': {'Readout': {'Frequency': 7254.1 - BaseConfig['res_LO'], 'Gain': 7000,
+    '7': {'Readout': {'Frequency': 7254.1, 'Gain': 7000,
                       'FF_Gains': Readout, 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 4199.1, 'sigma': 0.07, 'Gain': 3100},
           'Pulse_FF': Readout },
-    '8': {'Readout': {'Frequency': 7308.8 - BaseConfig['res_LO'], 'Gain': 4000,
+    '8': {'Readout': {'Frequency': 7308.8, 'Gain': 4000,
                       'FF_Gains': Readout , 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3915.4, 'sigma': 0.07, 'Gain': 3590},
           'Pulse_FF': Readout},

@@ -6,7 +6,7 @@ file to create basic initialization of things used for RFSOC This will include:
 - defining the basic config dict that will state the channels used for all subsequent code
 """
 
-from WorkingProjects.Triangle_Lattice_tProcV1.socProxy import makeProxy, soc, soccfg
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.socProxy import makeProxy, soc, soccfg
 import os
 import platform
 

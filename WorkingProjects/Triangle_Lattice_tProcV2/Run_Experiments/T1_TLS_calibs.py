@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mFFRamseyCalibration import \
     FFRamseyCal
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFFvsT1 import FFvsT1
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import FFvsT1
 from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.QbloxVoltageSet_function import spi_rack, set_voltages
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
@@ -16,19 +16,19 @@ import numpy as np
 
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.6 - BaseConfig["res_LO"], 'Gain': 4500,
+    '1': {'Readout': {'Frequency': 7121.6, 'Gain': 4500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1., 'cavmin': True},
           'Qubit': {'Frequency': 4028.5, 'sigma': 0.05, 'Gain': 3000},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.7 - BaseConfig["res_LO"], 'Gain': 6500,
+    '2': {'Readout': {'Frequency': 7077.7, 'Gain': 6500,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 1., 'cavmin': True},
           'Qubit': {'Frequency': 4029.7, 'sigma': 0.05, 'Gain': 2450},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7511.0 - BaseConfig["res_LO"], 'Gain': 5000,
+    '3': {'Readout': {'Frequency': 7511.0, 'Gain': 5000,
                       "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3.0, "ADC_Offset": 0.9, 'cavmin': True},
           'Qubit': {'Frequency': 3989.2, 'sigma': 0.05, 'Gain': 9730},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.5 - BaseConfig["res_LO"], 'Gain': 5000,
+    '4': {'Readout': {'Frequency': 7568.5, 'Gain': 5000,
                           "FF_Gains": [0, 0, 0, 0, 0, 0, 0, 0], "Readout_Time": 3, "ADC_Offset": 0.9, 'cavmin': True},
               'Qubit': {'Frequency': 4047.7, 'sigma': 0.05, 'Gain': 4500},
             'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},

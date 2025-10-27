@@ -4,8 +4,8 @@ from qick import *
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+import WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
 import Pyro4.util
 
 class RamseyFFCalRProg(RAveragerProgram):

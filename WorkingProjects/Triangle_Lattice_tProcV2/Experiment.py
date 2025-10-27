@@ -12,8 +12,11 @@ class MakeFile(h5py.File):
 
     def add(self, key, data):
         # print(f'Adding {key}: {data}')
-        data = np.array(data)
-
+        try:
+            data = np.array(data)
+        except Exception as e:
+            print(f'Failed adding {key}: {data}')
+            raise e
         # print(data)
         if key in self:
             del self[key]

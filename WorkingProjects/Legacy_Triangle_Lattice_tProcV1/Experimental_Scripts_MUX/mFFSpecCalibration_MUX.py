@@ -1,15 +1,15 @@
 from jupyterlab.labextensions import list_flags
 from qick import *
 import matplotlib.pyplot as plt
-from WorkingProjects.Triangle_Lattice_tProcV1.Experiment import ExperimentClass
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experiment import ExperimentClass
 from tqdm.notebook import tqdm
 import datetime
 import time
 from scipy.signal import savgol_filter
-import WorkingProjects.Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFProg
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
-from WorkingProjects.Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
+import WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Helpers.FF_utils as FF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Experimental_Scripts_MUX.mTransmissionFFMUX import CavitySpecFFProg
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
+from WorkingProjects.Legacy_Triangle_Lattice_tProcV1.Basic_Experiments_Programs.SweepExperimentR1D import SweepExperimentR1D
 import numpy as np
 
 class FFSpecCalibrationProgram(RAveragerProgramFF):

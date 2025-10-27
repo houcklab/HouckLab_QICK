@@ -27,7 +27,7 @@ class T1_FFExpt_Program(T1Program):
         self.FFPulses(-1 * self.FFPulse, self.delay_loop+1.0)
 
 
-class FFvsT1(SweepExperiment2D_plots):
+class T1vsFF(SweepExperiment2D_plots):
 
     def init_sweep_vars(self):
         self.Program = T1_FFExpt_Program
