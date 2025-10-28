@@ -88,7 +88,9 @@ class FFSpecSlice(NDAveragerProgram):
 
         # Play another pulse (that does nothing) at the last time, such that the sync_all waits until after this
         # Add 3 clock cycles just to make sure it's not overlapping with previous, it's only a few ns anyway
-        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay_stop"]) + 3)
+        # Only do this if this is a mFFSpecVsDelay instance
+        if self.cfg["qubit_spec_delay_stop"] in self.cfg:
+            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay_stop"]) + 3)
 
         self.sync_all(self.us2cycles(0.05))  # Wait for a bit to make sure the fast flux is back to 0 in case there's delay
 
