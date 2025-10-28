@@ -68,6 +68,12 @@ class FFSpecSlice(NDAveragerProgram):
         qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
 
+        ### For debugging ###
+        # Marker pulse for beginning of experiment
+        # self.pulse(ch = self.cfg["qubit_ch"])
+        # self.sync_all(10)
+        #####################
+
         # t uses the master clock, no generator argument!
         self.pulse(ch = self.cfg["qubit_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay"]))  # play probe pulse
 
@@ -79,6 +85,10 @@ class FFSpecSlice(NDAveragerProgram):
         self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
                                  gain=0, stdysel='last', length=3)
         self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"] + self.cfg["ff_length"]) - 3)
+
+        # Play another pulse (that does nothing) at the last time, such that the sync_all waits until after this
+        # Add 3 clock cycles just to make sure it's not overlapping with previous, it's only a few ns anyway
+        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["qubit_spec_delay_stop"]) + 3)
 
         self.sync_all(self.us2cycles(0.05))  # Wait for a bit to make sure the fast flux is back to 0 in case there's delay
 
