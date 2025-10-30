@@ -40,11 +40,13 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect,
     QScrollArea,
     QPushButton,
+    QSplitter,
 )
 import pyqtgraph as pg
 from matplotlib.collections import PathCollection
 from matplotlib.patches import Rectangle
 
+from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentObject import ExperimentObject
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
@@ -159,7 +161,8 @@ class QDesqTab(QWidget):
         source_file_name=None,
         is_experiment=None,
         dataset_file=None,
-        app=None
+        app=None,
+        workspace=None,
     ):
         """
         Initializes an instance of a QQuarkTab widget that will either be of type experiment based on the parameters
@@ -185,24 +188,51 @@ class QDesqTab(QWidget):
         self.app = app
 
         ### Experiment Variables
-        self.config = {"Experiment Config": {}, "Base Config": self.app.base_config} # default config found in initialize.py
-        self.tab_name = str(tab_name)
+        self.tab_name = str(tab_name) if tab_name else None
         self.source_file_name = source_file_name
+        self.is_experiment = is_experiment
+        self.workspace = workspace or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        # Experiment config panel
+        self.experiment_config_panel = QConfigTreePanel(
+            self,
+            self.tab_name if self.is_experiment else None,
+            "Experiment",
+            None,
+            {},
+            workspace=self.workspace,
+        )
+
         self.experiment_obj = None if experiment_id == (None, None) \
             else ExperimentObject(self, experiment_id)
-        self.is_experiment = is_experiment
         self.dataset_file = dataset_file
         self.data = None
         self.plots = []
-        self.output_dir = None
+        self.labels = []
+        self.last_run_experiment_config = {}
 
         ### Setting up the Tab
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setObjectName("QDesqTab")
 
+        self.tab_layout = QHBoxLayout(self)
+        self.tab_layout.setContentsMargins(0, 0, 0, 0)
+        self.wrapper = QWidget()
+        self.wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.wrapper.setObjectName("wrapper")
+
+        # Create splitter for plot and config panel
+        self.splitter = QSplitter(self.wrapper)
+        self.splitter.setOpaqueResize(True)
+        self.splitter.setHandleWidth(6)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setObjectName("desq_tab_splitter")
+        self.splitter.setOrientation(Qt.Horizontal)
+
         ### Plotter within Tab
-        self.plot_layout = QVBoxLayout(self)
-        self.plot_layout.setContentsMargins(10, 0, 10, 7)
+        self.plot_wrapper = QWidget(self.splitter)
+        self.plot_layout = QVBoxLayout(self.plot_wrapper)
+        self.plot_layout.setContentsMargins(10, 0, 2, 7)
         self.plot_layout.setSpacing(0)
         self.plot_layout.setObjectName("plot_layout")
 
@@ -222,7 +252,6 @@ class QDesqTab(QWidget):
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.snip_plot_button.setToolTip("Snip Plot to Clipboard")
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False, self.plot_utilities_container)
-        self.output_dir_button = Helpers.create_button("Save To...", "output_dir_button", False, self.plot_utilities_container)
         self.coord_label = QLabel("X: _____ Y: _____")  # coordinate of the mouse over the current plot
         self.coord_label.setAlignment(Qt.AlignRight)
         self.coord_label.setObjectName("coord_label")
@@ -232,7 +261,6 @@ class QDesqTab(QWidget):
         self.plot_utilities.addWidget(self.replot_button)
         self.plot_utilities.addWidget(self.snip_plot_button)
         self.plot_utilities.addWidget(self.export_data_button)
-        self.plot_utilities.addWidget(self.output_dir_button)
         self.plot_utilities.addItem(spacerItem)
         self.plot_utilities.addWidget(self.coord_label)
         self.plot_layout.addWidget(self.plot_utilities_container)
@@ -274,7 +302,7 @@ class QDesqTab(QWidget):
         self.plot_method_combo.setFixedWidth(130)
         self.plot_method_combo.setObjectName("plot_method_combo")
         # TODO: add autosave checkbox
-        self.average_simult_checkbox = QCheckBox("Average Simultaneously", self.plot_settings_container)
+        self.average_simult_checkbox = QCheckBox("Average Simult.", self.plot_settings_container)
         self.average_simult_checkbox.setToolTip("Average intermediate data simultaneously versus at end of set.")
         self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot
         self.delete_label.setAlignment(Qt.AlignRight)
@@ -290,7 +318,8 @@ class QDesqTab(QWidget):
 
         # The actual plot itself (lots of styling attributes
         self.plot_widget = pg.GraphicsLayoutWidget(self)
-        self.plot_widget.addLabel("Nothing to plot.", row=0, col=0, colspan=2, size='12pt')
+        label = self.plot_widget.ci.addLabel("Nothing to plot.", row=0, col=0, colspan=2, size='12pt')
+        self.labels.append(label)
         self.plot_widget.setBackground("w")
         self.plot_widget.ci.setSpacing(2)  # Reduce spacing
         self.plot_widget.ci.setContentsMargins(3, 3, 3, 3)  # Adjust margins of plots
@@ -301,9 +330,18 @@ class QDesqTab(QWidget):
         self.plot_layout.addWidget(self.plot_widget)
         self.plot_layout.setStretch(0, 1)
         self.plot_layout.setStretch(1, 10)
+        self.plot_wrapper.setLayout(self.plot_layout)
 
-        self.setLayout(self.plot_layout)
         self.setup_plotter_options()
+
+        # Add config panel
+        self.experiment_config_panel.setParent(self.splitter)
+
+        # Defining the default sizes for the splitter and adding everything together
+        self.splitter.setStretchFactor(0, 7)
+        self.splitter.setStretchFactor(1, 3)
+        self.tab_layout.addWidget(self.splitter)
+        self.setLayout(self.tab_layout)
 
         # extract dataset file depending on the tab type being a dataset
         if not self.is_experiment and self.dataset_file is not None:
@@ -320,7 +358,6 @@ class QDesqTab(QWidget):
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates) # coordinates viewer
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
         self.export_data_button.clicked.connect(self.export_data)
-        self.output_dir_button.clicked.connect(self.change_output_dir)
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
         self.replot_button.clicked.connect(self.replot_data)
         self.plot_method_combo.currentIndexChanged.connect(self.handle_plot_combo_selection)
@@ -330,15 +367,11 @@ class QDesqTab(QWidget):
 
         # Create the default export output_dir for autosaving if of type experiment
         if self.is_experiment:
+            # Experiment Config Tree Panel signal
+            self.experiment_config_panel.update_voltage_panel.connect(self.app.voltage_controller_panel.update_sweeps)
+            self.experiment_config_panel.update_runtime_prediction.connect(self.app.call_tab_runtime_prediction)
+
             self.reExtract_experiment_button.setEnabled(True)
-            self.output_dir_button.setEnabled(True)
-
-            settings = QSettings("HouckLab", "Desq")
-            self.output_dir = settings.value("output_dir", os.path.join(os.path.abspath(""), "data"))
-
-            qInfo("Default output_dir for " + self.tab_name + " is at: " + str(self.output_dir))
-            if not Path(self.output_dir).is_dir():
-                os.mkdir(self.output_dir)
 
             # add custom plotter to options
             if self.is_experiment and self.experiment_obj is not None:
@@ -346,7 +379,7 @@ class QDesqTab(QWidget):
                     QDesqTab.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
 
             # predict runtime
-            self.predict_runtime(self.config)
+            self.predict_runtime(self.experiment_config_panel.config)
 
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
@@ -421,16 +454,11 @@ class QDesqTab(QWidget):
         self.data = Helpers.h5_to_dict(dataset_file)
 
         # Extracting the Config
-        self.config["Base Config"] = {}
         if "config" in self.data:
             qInfo("Config in h5 metadata found")
             temp_config = self.data["config"]
 
-            if "Experiment Config" in temp_config:
-                self.config = temp_config
-            else:
-                self.config["Experiment Config"] = temp_config
-
+            self.experiment_config_panel.update_config_dict(temp_config, reset=True)
             self.data.pop("config")
         else:
             qDebug("No config in metadata found")
@@ -443,9 +471,15 @@ class QDesqTab(QWidget):
         """
         Clears the plots.
         """
+        qInfo("Clearing plots")
+        for label in self.labels:
+            self.plot_widget.ci.removeItem(label)
+        for plot in self.plots:
+            self.plot_widget.ci.removeItem(plot)
 
         self.plot_widget.ci.clear()
         self.plots = []
+        self.labels = []
 
     def reExtract_experiment(self):
         """
@@ -454,7 +488,6 @@ class QDesqTab(QWidget):
         """
 
         if self.experiment_obj is not None:
-            self.config = {"Experiment Config": {}, "Base Config": self.app.base_config}
             self.experiment_obj.load_module_and_class()
 
             if self.experiment_obj.experiment_plotter is not None:
@@ -594,7 +627,8 @@ class QDesqTab(QWidget):
 
         # Title is filename if it is a datafile
         if len(self.plots) == 0 and not self.is_experiment:
-            self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+            label = self.plot_widget.ci.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+            self.labels.append(label)
 
         figures = list(map(plt.figure, plt.get_fignums()))
         curr_row = 0
@@ -602,14 +636,12 @@ class QDesqTab(QWidget):
         for i, fig in enumerate(figures):
             ncols = len(fig.get_axes())  # This currently places all plots on the same row
 
-            print(ncols)
-
             # Get figure title and display
             fig_title = fig._suptitle.get_text() if fig._suptitle else f"{self.file_name} fig{i+1}"
-            self.plot_widget.addLabel(fig_title, row=curr_row, col=0, colspan=ncols, size='12pt')
+            label = self.plot_widget.ci.addLabel(fig_title, row=curr_row, col=0, colspan=ncols, size='12pt')
+            self.labels.append(label)
 
-            curr_row += 2  # Skip two at a time for plot titles and the plot
-            self.plot_widget.nextRow()
+            curr_row += 1
             self.plot_widget.nextRow()
 
             for j, ax in enumerate(fig.get_axes()):
@@ -624,26 +656,25 @@ class QDesqTab(QWidget):
 
                 # Extract title for specific plot
                 ax_title = ax.get_title() or f"Plot {self.curr_plot+1}"
-                self.plot_widget.addLabel(ax_title, row=curr_row - 1, col=j % ncols, colspan=1, size='10pt')
+                label = self.plot_widget.ci.addLabel(ax_title, row=curr_row, col=j % ncols, colspan=1, size='10pt')
+                self.labels.append(label)
+                curr_row += 1
+                self.plot_widget.nextRow()
 
                 # Extract and plot the actual axes
                 self.extract_and_plot_pyqtgraph(ax, curr_row, j % ncols)
 
                 # Determine when to go next row
                 if (j+1) % ncols == 0:
-                    print("moving to next row")
-                    curr_row += 2  # Skip two at a time for plot titles and the plot
-                    self.plot_widget.nextRow()
+                    curr_row += 1
                     self.plot_widget.nextRow()
 
             # Next figure should appear on the next row
-            curr_row += 2  # Skip two at a time for plot titles and the plot
-            self.plot_widget.nextRow()
+            curr_row += 1
             self.plot_widget.nextRow()
 
         plt.close() # close all figs
         qInfo(f"Finished plotting {self.curr_plot} matplotlib extractions.")
-        print(len(self.plots))
 
         return
 
@@ -688,7 +719,7 @@ class QDesqTab(QWidget):
             plot_data_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
             new_plot = False
         else:
-            plot = self.plot_widget.addPlot(row, col) # Otherwise, create new plots
+            plot = self.plot_widget.ci.addPlot(row, col) # Otherwise, create new plots
             self.plots.append(plot)
         self.curr_plot += 1
 
@@ -826,7 +857,8 @@ class QDesqTab(QWidget):
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
-        self.plot_widget.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+        label = self.plot_widget.ci.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
+        self.labels.append(label)
         self.plot_widget.nextRow()
 
         prepared_data = {"plots": [], "images": [], "columns": []}
@@ -848,7 +880,8 @@ class QDesqTab(QWidget):
             except Exception as e:
                 qDebug("Auto plotter could not handle data: " + str(e))
                 qDebug(traceback.print_exc())
-                self.plot_widget.addLabel("Could not handle plotting", colspan=2, size='12pt')
+                label = self.plot_widget.ci.addLabel("Could not handle plotting", colspan=2, size='12pt')
+                self.labels.append(label)
                 return
 
             # Handle 1D data -> 2D Plots
@@ -902,7 +935,7 @@ class QDesqTab(QWidget):
         # Create the plots
         if "plots" in prepared_data:
             for i, plot in enumerate(prepared_data["plots"]):
-                p = self.plot_widget.addPlot(title=plot["label"])
+                p = self.plot_widget.ci.addPlot(title=plot["label"])
                 p.addLegend()
                 p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
                 p.setLabel('bottom', plot["xlabel"])
@@ -921,7 +954,7 @@ class QDesqTab(QWidget):
         if "images" in prepared_data:
             for i, img in enumerate(prepared_data["images"]):
                 # Create PlotItem
-                p = self.plot_widget.addPlot(title=img["label"])
+                p = self.plot_widget.ci.addPlot(title=img["label"])
                 p.setLabel('bottom', img["xlabel"])
                 p.setLabel('left', img["ylabel"])
                 p.showGrid(x=True, y=True)
@@ -946,7 +979,7 @@ class QDesqTab(QWidget):
                 y_data = column["data"][:, 1]  # Y-values (imaginary part)
 
                 # Create PlotItem for IQ plot
-                p = self.plot_widget.addPlot(title=column["label"])
+                p = self.plot_widget.ci.addPlot(title=column["label"])
                 p.setLabel('bottom', column["xlabel"])
                 p.setLabel('left', column["ylabel"])
                 p.showGrid(x=True, y=True)
@@ -1079,8 +1112,6 @@ class QDesqTab(QWidget):
         # Get runtime prediction if method is implemented
         if self.experiment_obj.experiment_runtime_estimator is not None:
             flattened_config = config.copy()
-            flattened_config.update(flattened_config.pop("Base Config", {}))
-            flattened_config.update(flattened_config.pop("Experiment Config", {}))
 
             time_delta = self.experiment_obj.experiment_runtime_estimator(flattened_config)
             self.update_runtime_estimation(time_delta, 0)
@@ -1095,8 +1126,8 @@ class QDesqTab(QWidget):
         :type set_num: int
         """
         total_sets = 1
-        if "sets" in self.config["Experiment Config"]:
-            total_sets = self.config["Experiment Config"]["sets"]
+        if "sets" in self.experiment_config_panel.config:
+            total_sets = self.experiment_config_panel.config["sets"]
         sets_left = total_sets - set_num
 
         runtime_estimate = time_delta * total_sets
@@ -1140,25 +1171,11 @@ class QDesqTab(QWidget):
         """
         Is the function called when the export button clicked. Prepares file naming and saves data.
         """
-
         self.prepare_file_naming()
-        self.save_data()
+        self.save_data(custom_path=True)
 
         self.export_data_button.setText('Done!')
         QTimer.singleShot(3000, lambda: self.export_data_button.setText('Export')) # called after 3 seconds
-
-    def change_output_dir(self):
-        """
-        Changes the output directory that data is autosaved to via a file dialog.
-        """
-
-        self.output_dir = Helpers.open_file_dialog("Select Folder for Autosave", "",
-                                        "output_dir", self, file=False)
-
-        qInfo("Output directory for experiment data changed to: " + self.output_dir)
-
-        self.output_dir_button.setText('Changed!')
-        QTimer.singleShot(3000, lambda: self.output_dir_button.setText('Output Dir'))
 
     def prepare_file_naming(self):
         """
@@ -1178,7 +1195,7 @@ class QDesqTab(QWidget):
             self.folder_name = self.tab_name + "_" + date_string
             self.file_name = self.tab_name + "_" + date_time_string
 
-    def save_data(self):
+    def save_data(self, custom_path=False):
         """
         Performs the saving of an experiment's data via 3 files:
             * h5 : Saves data by force dumping it into an h5 format with the config stored as metadata
@@ -1213,22 +1230,31 @@ class QDesqTab(QWidget):
 
         # Saving experiments
         elif self.is_experiment:
+            folder_path = self.workspace
+            if custom_path:
+                folder_path = Helpers.open_file_dialog("Select Folder to Save Dataset", "",
+                                                       "save_dataset", self, file=False)
+            else:
+                if not Path(os.path.join(folder_path, 'Data')).is_dir():
+                    os.mkdir(os.path.join(folder_path, 'Data'))
+                folder_path = os.path.join(folder_path, 'Data')
+
             date_time_now = datetime.datetime.now()
             date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-            data_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.h5')
-            config_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.json')
-            image_filename = os.path.join(self.output_dir, self.tab_name, self.folder_name, self.file_name + '.png')
+            data_filename = os.path.join(folder_path, self.tab_name, self.folder_name, self.file_name + '.h5')
+            config_filename = os.path.join(folder_path, self.tab_name, self.folder_name, self.file_name + '.json')
+            image_filename = os.path.join(folder_path, self.tab_name, self.folder_name, self.file_name + '.png')
 
             # Make directories if they don't already exist
-            if not Path(os.path.join(self.output_dir, self.tab_name)).is_dir():
-                os.mkdir(os.path.join(self.output_dir, self.tab_name))
-            if not Path(os.path.join(self.output_dir, self.tab_name, self.folder_name)).is_dir():
-                os.mkdir(os.path.join(self.output_dir, self.tab_name, self.folder_name))
+            if not Path(os.path.join(folder_path, self.tab_name)).is_dir():
+                os.mkdir(os.path.join(folder_path, self.tab_name))
+            if not Path(os.path.join(folder_path, self.tab_name, self.folder_name)).is_dir():
+                os.mkdir(os.path.join(folder_path, self.tab_name, self.folder_name))
 
             # Save dataset
             if self.experiment_obj.experiment_exporter is not None:
                 try:
-                    self.experiment_obj.experiment_exporter(data_filename, self.data, self.config)
+                    self.experiment_obj.experiment_exporter(data_filename, self.data, self.last_run_experiment_config)
                 except RuntimeError as e:
                     qCritical(f"Failed to save the dataset to {data_filename}: {str(e)}")
             else :
@@ -1238,7 +1264,7 @@ class QDesqTab(QWidget):
             try:
                 with open(config_filename, "w") as json_file:
                     json.dump(
-                        self.config,
+                        self.last_run_experiment_config, # Saves the last run experiment config
                         json_file,
                         indent=4,
                         default=lambda x: (
@@ -1260,7 +1286,7 @@ class QDesqTab(QWidget):
                 qCritical(f"Failed to save the plot image to {image_filename}: {str(e)}")
 
             qDebug("Data export attempted at " + date_time_string +
-                  " to: " + self.output_dir + "/" + self.tab_name + "/" + self.folder_name)
+                  " to: " + folder_path + "/" + self.tab_name + "/" + self.folder_name)
 
     def backup_exporter(self, data_filename):
         """

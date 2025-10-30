@@ -87,13 +87,7 @@ class ExperimentObject:
             qInfo(f"Found config_template in {self.experiment_name}.")
             new_config = obj.config_template.copy()
 
-            # Merge into tab config
-            base_config = self.experiment_tab.config.get("Base Config", {})
-            overlap_keys = [k for k in new_config if k in base_config]
-            for key in overlap_keys:
-                base_config[key] = new_config.pop(key)
-
-            self.experiment_tab.config["Experiment Config"] = new_config
+            self.experiment_tab.experiment_config_panel.update_config_dict(new_config)
             return True
         return False
 
@@ -165,6 +159,6 @@ class ExperimentObject:
         self.find_config(obj)
 
         # Ensure "sets" exists
-        exp_config = self.experiment_tab.config.setdefault("Experiment Config", {})
+        exp_config = self.experiment_tab.experiment_config_panel.config
         if "sets" not in exp_config:
             exp_config["sets"] = 1

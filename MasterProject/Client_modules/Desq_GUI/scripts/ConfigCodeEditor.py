@@ -270,18 +270,20 @@ class ConfigCodeEditor(QWidget):
             self.find_bar.search_input.setFocus()
 
     def open_codefile(self):
-        self.code_file = Helpers.open_file_dialog("Open Python Config Extractor File", "Python Files (*.py)",
+        code_file = Helpers.open_file_dialog("Open Python Config Extractor File", "Python Files (*.py)",
                                         "open_config_codefile", self, file=True)
-        try:
-            with open(self.code_file, 'r', encoding='utf-8') as f:
-                code = f.read()
-                self.code_text_editor.setPlainText(code)
-                filename = os.path.basename(self.code_file)
-                self.code_file_label.setText(filename)
+        if code_file:
+            self.code_file = code_file
+            try:
+                with open(self.code_file, 'r', encoding='utf-8') as f:
+                    code = f.read()
+                    self.code_text_editor.setPlainText(code)
+                    filename = os.path.basename(self.code_file)
+                    self.code_file_label.setText(filename)
 
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open config extractor file: \n{e}")
-            qCritical("Could not open config extractor file: \n%s", traceback.format_exc())
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Could not open config extractor file: \n{e}")
+                qCritical("Could not open config extractor file: \n%s", traceback.format_exc())
 
     def save_codefile(self):
         if self.code_file is None:

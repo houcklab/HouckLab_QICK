@@ -177,7 +177,7 @@ def simple_h5_to_dict(h5file):
             data_dict[key] = f[key][()]  # Load dataset into memory
         return data_dict
 
-def create_button(text, name, enabled=True, parent=None, shadow=True):
+def create_button(text, name, enabled=True, parent=None, shadow=True, checkable=False):
     """
     Creates a QPushButton.
 
@@ -196,6 +196,7 @@ def create_button(text, name, enabled=True, parent=None, shadow=True):
     btn = QPushButton(text, parent)
     btn.setObjectName(name)
     btn.setEnabled(enabled)
+    btn.setCheckable(checkable)
 
     # if shadow:
     #     # Create and configure shadow effect
@@ -210,7 +211,7 @@ def create_button(text, name, enabled=True, parent=None, shadow=True):
 
     return btn
 
-def open_file_dialog(prompt, file_args, settings_id, parent=None, file=True):
+def open_file_dialog(prompt, file_args, settings_id, parent=None, file=True, dir=None):
     """
     Opens a file dialog to open a file/directory based on the specified parameters and retrieves the last opened
     folder location in QSettings via the identifier to open to.
@@ -229,6 +230,9 @@ def open_file_dialog(prompt, file_args, settings_id, parent=None, file=True):
 
     settings = QSettings("HouckLab", "Desq") # The identifiers of the application
     last_dir = settings.value(str(settings_id), "..\\")  # Default to "..\\" if not set
+
+    if dir:
+        last_dir = dir
 
     options = QFileDialog.Options()
     if file:

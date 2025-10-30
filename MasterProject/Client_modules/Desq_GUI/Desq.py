@@ -28,7 +28,8 @@ from PyQt5.QtCore import (
     pyqtSignal,
     QUrl,
     QTimer,
-    QEvent
+    QEvent,
+    QCoreApplication
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -73,6 +74,10 @@ try:
 except AttributeError:
     os.environ["PATH"] = script_parent_directory + '\\PythonDrivers' + ";" + os.environ["PATH"]
 
+# Use HighDef
+QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
 # to be used with TesterExperiment.py
 TESTING = True
@@ -114,9 +119,7 @@ class Desq(QMainWindow):
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
-
-        # The BaseConfig of the currently selected account (default is the one in MasterClient)
-        self.base_config = BaseConfig
+        self.workspace = None
 
         # Tracks the central tab module by the currently selected tab
         self.current_tab = None
@@ -164,7 +167,7 @@ class Desq(QMainWindow):
         self.resize(1300, 820)
         # self.setWindowIcon(QIcon('DesqLogo.png'))
         self.central_widget = QWidget()
-        self.central_widget.setMinimumSize(1300, 820)
+        self.central_widget.setMinimumSize(1350, 820)
         self.central_widget.setObjectName("central_widget")
         self.central_layout = QVBoxLayout(self.central_widget)
         self.central_layout.setContentsMargins(0, 0, 0, 0)
@@ -223,7 +226,11 @@ class Desq(QMainWindow):
         self.tab_splitter.setContentsMargins(0, 0, 0, 0)
 
         ### Directory Tree panel
-        self.directory_tree_panel = DirectoryTreePanel(parent=self.tab_splitter)
+        self.directory_tree_panel = DirectoryTreePanel(
+            parent=self.tab_splitter,
+            file_filters=['.py', '.h5'],
+            history_key="load_directory"
+        )
 
         ### The Central Tabs (contains experiment tabs and data tab)
         self.central_tabs_container = QWidget(self.tab_splitter)
@@ -241,7 +248,7 @@ class Desq(QMainWindow):
         central_tab_sizepolicy.setVerticalStretch(0)
         central_tab_sizepolicy.setHeightForWidth(self.central_tabs.sizePolicy().hasHeightForWidth())
         self.central_tabs.setSizePolicy(central_tab_sizepolicy)
-        self.central_tabs.setMinimumSize(QSize(550, 0))
+        self.central_tabs.setMinimumSize(QSize(650, 0))
         self.central_tabs.setTabPosition(QTabWidget.North)
         self.central_tabs.setUsesScrollButtons(True)
         self.central_tabs.setDocumentMode(False)
@@ -259,7 +266,13 @@ class Desq(QMainWindow):
         self.central_tabs.setCurrentIndex(0)
 
         ### Config Tree Panel
-        self.config_tree_panel = QConfigTreePanel(self, self.main_splitter, template_experiment_tab.config)
+        self.global_config_panel = QConfigTreePanel(
+            self,
+            "Global",
+            "Global",
+            self.main_splitter,
+            {}
+        )
 
         ### Side Tabs Panel (Contains voltage, accounts, and log panels)
         self.side_tabs = QTabWidget(self.main_splitter)
@@ -281,10 +294,13 @@ class Desq(QMainWindow):
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel(self.config_tree_panel, template_experiment_tab, parent=self.side_tabs)
+        self.voltage_controller_panel = QVoltagePanel(self.global_config_panel, template_experiment_tab, parent=self.side_tabs)
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
         self.accounts_panel = QAccountPanel(parent=self.side_tabs)
+        self.workspace = self.accounts_panel.workspace_edit.text().strip()
+        template_experiment_tab.experiment_config_panel.directory_tree.set_directory(self.workspace)
+        self.global_config_panel.directory_tree.set_directory(self.workspace)
         self.side_tabs.addTab(self.accounts_panel, "Accounts")
         ### Log Panel
         self.log_panel = QLogPanel(parent=self.side_tabs)
@@ -293,8 +309,9 @@ class Desq(QMainWindow):
         self.side_tabs.setCurrentIndex(1) # select accounts panel by default
 
         # Defining default sizes for tab splitter
-        self.tab_splitter.setStretchFactor(0, 4)
+        self.tab_splitter.setStretchFactor(0, 2)
         self.tab_splitter.setStretchFactor(1, 6)
+        self.tab_splitter.setStretchFactor(2, 2)
 
         # Defining default sizes for vertical splitter
         self.vert_splitter.setStretchFactor(0, 3)
@@ -340,6 +357,7 @@ class Desq(QMainWindow):
         # Signals for RFSoC from the accounts panel
         self.accounts_panel.rfsoc_attempt_connection.connect(self.connect_rfsoc)
         self.accounts_panel.rfsoc_disconnect.connect(self.disconnect_rfsoc)
+        self.accounts_panel.workspace_changed.connect(self.update_config_workspaces)
         # Signals for the RFSoC to the accounts panel
         self.rfsoc_connection_updated.connect(self.accounts_panel.rfsoc_connection_updated)
 
@@ -348,8 +366,8 @@ class Desq(QMainWindow):
         # self.test_logging()
 
         # Config Tree Panel signal
-        self.config_tree_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
-        self.config_tree_panel.update_runtime_prediction.connect(self.call_tab_runtime_prediction)
+        self.global_config_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
+        self.global_config_panel.update_runtime_prediction.connect(self.call_tab_runtime_prediction)
 
         # Plot Interceptor
         self.last_intercept_time = 0
@@ -376,7 +394,6 @@ class Desq(QMainWindow):
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
-        self.base_config = BaseConfig
         qInfo("Disconnected from RFSoC")
 
     def save_RFSoC(self, soc, soccfg, ip_address):
@@ -446,12 +463,6 @@ class Desq(QMainWindow):
 
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
-
-            if config is not None:
-                module = importlib.import_module(config)
-                self.base_config = getattr(module, "BaseConfig")
-                if not self.tabs_added:
-                    self.config_tree_panel.set_config({"Experiment Config": {}, "Base Config": self.base_config})
 
             self.aux_thread = QThread()
             self.aux_worker = AuxiliaryThread(target_func=makeProxy, func_kwargs={"ns_host": ip_address}, timeout=5)
@@ -538,11 +549,21 @@ class Desq(QMainWindow):
                 self.thread = QThread()
 
                 # Handling config specific to the current tab
-                # An experiment (both old and T2, want base and experiment config combined and flatted. Voltage Config stays as is.
-                self.current_tab.config = self.config_tree_panel.config
-                experiment_format_config = self.current_tab.config.copy()
-                experiment_format_config.update(experiment_format_config.pop("Base Config", {}))
-                experiment_format_config.update(experiment_format_config.pop("Experiment Config", {})) # will override duplicates
+                # An experiment (both old and T2, want base and experiment config combined and flatted.
+                current_experiment_config = self.current_tab.experiment_config_panel.config.copy()
+                current_global_config = self.global_config_panel.config.copy()
+
+                experiment_format_config = {}
+                experiment_format_config.update(current_global_config)
+                experiment_format_config.update(current_experiment_config)  # will override duplicates
+
+                qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
+                self.current_tab.last_run_experiment_config = {
+                    "Base Config": current_experiment_config,
+                    "Experiment Config": current_experiment_config,
+                }
+                print(f"Experiment Format Config: {experiment_format_config}")
+                qInfo("Gathered Config: " + str(self.current_tab.last_run_experiment_config))
 
                 if "sets" not in experiment_format_config:
                     experiment_format_config["sets"] = 1
@@ -580,9 +601,6 @@ class Desq(QMainWindow):
                 # Normal Experiments
                 else:
                     self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
-
-
-                print(experiment_format_config)
 
                 ### Creating the experiment worker from ExperimentThread and Connecting Signals
                 self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
@@ -625,9 +643,7 @@ class Desq(QMainWindow):
                 # self.load_experiment_button.setEnabled(False)
                 # self.load_data_button.setEnabled(False)
 
-                qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
                 self.thread.start()
-
             else:
                 qCritical("The RfSoC instance is not yet connected. Current soc has the value: " + str(self.soc))
                 QMessageBox.critical(None, "Error", "RfSoC Disconnected.")
@@ -635,6 +651,9 @@ class Desq(QMainWindow):
 
         except Exception as e:
             qCritical("Error while starting experiment: " + str(e))
+            format_exc = traceback.format_exc()
+            qCritical(format_exc)
+            print(format_exc)
 
     def stop_experiment(self):
         """
@@ -784,7 +803,8 @@ class Desq(QMainWindow):
                 experiment_name,
                 file_name,
                 True,
-                app=self
+                app=self,
+                workspace=self.workspace,
             )
 
             if new_experiment_tab.experiment_obj.experiment_module is None:
@@ -819,7 +839,6 @@ class Desq(QMainWindow):
         """
         Updates a tab UI, which currently just means the config and voltage panel.
         """
-        self.config_tree_panel.set_config(self.current_tab.config) # Important, update config panel
         self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
         self.current_tab.setup_plotter_options()  # setup plotter options
 
@@ -833,12 +852,12 @@ class Desq(QMainWindow):
 
         # update old tab
         if self.current_tab is not None:
-            self.current_tab.config = self.config_tree_panel.config
+            # before current_tab is changed
+            pass
 
         # now handle new tab
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
-            self.config_tree_panel.set_config(self.current_tab.config) # Important: update config panel
             self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
             self.current_tab.setup_plotter_options() # setup plotter options
 
@@ -881,6 +900,10 @@ class Desq(QMainWindow):
 
         tab_to_delete.deleteLater() # safely delete the tab
 
+    def update_config_workspaces(self, workspace):
+        self.workspace = workspace
+        self.global_config_panel.directory_tree.change_workspace(workspace)
+
     def update_progress(self, sets_complete):
         """
         The function that updates the progress bar based on experiment progress. It retrieves the reps and sets fields
@@ -895,7 +918,10 @@ class Desq(QMainWindow):
             self.experiment_progress_bar_label.setText("--/--")
             return
 
-        unformatted_config = self.currently_running_tab.config["Base Config"] | self.currently_running_tab.config["Experiment Config"]
+        unformatted_config = {
+            **self.currently_running_tab.last_run_experiment_config["Experiment Config"],
+            **self.currently_running_tab.last_run_experiment_config["Base Config"]
+        }
         # Getting the total reps and sets to be run from the experiment configs
         reps, sets = 1, 1
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
@@ -959,7 +985,6 @@ class Desq(QMainWindow):
         tab_idx = self.central_tabs.addTab(new_data_tab, (file_name))
         self.central_tabs.setCurrentIndex(tab_idx)
         self.start_experiment_button.setEnabled(False)
-        self.config_tree_panel.set_config(new_data_tab.config) # update config (when data files have config)
         self.current_tab = new_data_tab
 
         if not self.tabs_added:
@@ -1105,8 +1130,9 @@ class Desq(QMainWindow):
         Function called when a config is extracted. Calls the update config button of the config tree.
         """
         print(config)
-        self.config_tree_panel.update_config_dict(config)
-        self.config_tree_panel.populate_tree()
+        qInfo(str(config))
+        self.global_config_panel.update_config_dict(config)
+        self.global_config_panel.populate_tree()
 
     def extract_direct_imports(self, file_path):
         """

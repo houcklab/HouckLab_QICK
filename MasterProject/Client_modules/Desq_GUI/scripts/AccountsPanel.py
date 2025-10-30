@@ -30,6 +30,7 @@ from PyQt5.QtCore import (
     QRect,
     Qt,
     pyqtSignal,
+    QSettings, qInfo,
 )
 from PyQt5.QtWidgets import (
     QWidget,
@@ -46,9 +47,12 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QMessageBox,
+    QHBoxLayout,
+    QFileDialog,
 )
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
+
 
 class QAccountPanel(QWidget):
     """
@@ -62,20 +66,25 @@ class QAccountPanel(QWidget):
     """
 
     ### Defining Signals
-    rfsoc_attempt_connection = pyqtSignal(str, str) # argument is ip_address
+    rfsoc_attempt_connection = pyqtSignal(str, str)  # argument is ip_address
     """
     The Signal sent to the main application (Desq.py) that tells the program to attempt a connection to a RFSoC via
     the given IP address.
-    
+
     :param ip_address: The IP address to attempt a connection to.
     :type ip_address: str
-    :param config: The path to the module that contains the BaseConfig.
-    :type config: str
+    :param workspace: The path to the directory where workspace files will be stored.
+    :type workspace: str
     """
 
     rfsoc_disconnect = pyqtSignal()
     """
     The Signal sent to the main application (Desq.py) that tells the program to disconnect the RFSoC.
+    """
+
+    workspace_changed = pyqtSignal(str)
+    """
+    The Signal sent to the main application when workspace has changed (account selected changed).
     """
 
     def __init__(self, parent=None):
@@ -88,11 +97,11 @@ class QAccountPanel(QWidget):
 
         super(QAccountPanel, self).__init__(parent)
 
-        self.current_account_name = None # currently selected account name (str)
-        self.current_account_item = None # currently selected account item (QListWidget)
-        self.default_account_name = None # the default account name (str)
-        self.default_account_item = None # the default account item (str) (QListWidget)
-        self.connected_account_name = None # currently connected account name (str)
+        self.current_account_name = None  # currently selected account name (str)
+        self.current_account_item = None  # currently selected account item (QListWidget)
+        self.default_account_name = None  # the default account name (str)
+        self.default_account_item = None  # the default account item (str) (QListWidget)
+        self.connected_account_name = None  # currently connected account name (str)
 
         # This generates the direct path to the "accounts" folder (even if it doesn't exist)
         self.root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -127,7 +136,7 @@ class QAccountPanel(QWidget):
 
         ### Accounts Group
         self.accounts_group = QGroupBox("Accounts")
-        self.accounts_group.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
+        self.accounts_group.setAlignment(Qt.AlignLeading | Qt.AlignLeft | Qt.AlignTop)
         self.accounts_group.setObjectName("accounts_group")
         self.accounts_layout = QVBoxLayout(self.accounts_group)
         self.accounts_layout.setContentsMargins(4, 5, 4, 5)
@@ -161,13 +170,29 @@ class QAccountPanel(QWidget):
         self.ip_edit = QLineEdit()
         self.ip_edit.setObjectName("ip_edit")
         self.form_layout.setWidget(1, QFormLayout.FieldRole, self.ip_edit)
-        self.config_label = QLabel()
-        self.config_label.setText("Config")
-        self.config_label.setObjectName("config_label")
-        self.form_layout.setWidget(2, QFormLayout.LabelRole, self.config_label)
-        self.config_edit = QLineEdit()
-        self.config_edit.setObjectName("config_edit")
-        self.form_layout.setWidget(2, QFormLayout.FieldRole, self.config_edit)
+
+        self.workspace_label = QLabel()
+        self.workspace_label.setText("Dir")
+        self.workspace_label.setToolTip("Directory for ConfigLibrary Workspace")
+        self.workspace_label.setObjectName("workspace_label")
+        self.form_layout.setWidget(2, QFormLayout.LabelRole, self.workspace_label)
+
+        # Add workspace edit directly to form layout
+        self.workspace_edit = QLineEdit()
+        self.workspace_edit.setObjectName("workspace_edit")
+        self.workspace_edit.setToolTip("Directory for ConfigLibrary Workspace")
+        self.form_layout.setWidget(2, QFormLayout.FieldRole, self.workspace_edit)
+
+        # Add browse button on a new row (row 3)
+        self.browse_label = QLabel()  # Empty label for alignment
+        self.browse_label.setObjectName("browse_label")
+        self.form_layout.setWidget(3, QFormLayout.LabelRole, self.browse_label)
+
+        self.workspace_browse_button = QPushButton("Browse")
+        self.workspace_browse_button.setObjectName("workspace_browse_button")
+        self.workspace_browse_button.setToolTip("Select Directory for ConfigLibrary Workspace")
+        self.workspace_browse_button.clicked.connect(self.browse_workspace)
+        self.form_layout.setWidget(3, QFormLayout.FieldRole, self.workspace_browse_button)
 
         self.accounts_layout.addLayout(self.form_layout)
 
@@ -176,11 +201,11 @@ class QAccountPanel(QWidget):
         self.form_button_layout.setSpacing(5)
         self.form_button_layout.setObjectName("form_button_layout")
 
-        self.save_button = Helpers.create_button("Up to Date","save_button",False)
-        self.delete_button = Helpers.create_button("Delete","delete_button",True)
-        self.create_new_button = Helpers.create_button("Create as New","create_new_button",False)
-        self.set_default_button = Helpers.create_button("Set as Default","set_default_button",False)
-        self.connect_button = Helpers.create_button("Connect","connect_button",True)
+        self.save_button = Helpers.create_button("Up to Date", "save_button", False)
+        self.delete_button = Helpers.create_button("Delete", "delete_button", True)
+        self.create_new_button = Helpers.create_button("Create as New", "create_new_button", False)
+        self.set_default_button = Helpers.create_button("Set as Default", "set_default_button", False)
+        self.connect_button = Helpers.create_button("Connect", "connect_button", True)
 
         self.form_button_layout.addWidget(self.save_button)
         self.form_button_layout.addWidget(self.delete_button)
@@ -199,8 +224,24 @@ class QAccountPanel(QWidget):
         self.main_layout.addWidget(self.scroll_area)
         self.setLayout(self.main_layout)
 
-        self.load_accounts() # Loads all the accounts saved locally
+        self.load_accounts()  # Loads all the accounts saved locally
         self.setup_signals()
+
+    def browse_workspace(self):
+        """
+        Opens a file dialog to select a workspace directory.
+        """
+        workspace_dir = Helpers.open_file_dialog(
+            prompt="Select Workspace Directory",
+            file_args="",
+            settings_id="workspace_directory",
+            parent=self,
+            file=False
+        )
+
+        if workspace_dir:
+            self.workspace_edit.setText(workspace_dir)
+            self.unsaved_indicate()
 
     def setup_signals(self):
         """
@@ -216,7 +257,7 @@ class QAccountPanel(QWidget):
 
         self.ip_edit.textChanged.connect(self.unsaved_indicate)
         self.name_edit.textChanged.connect(self.unsaved_indicate)
-        self.config_edit.textChanged.connect(self.unsaved_indicate)
+        self.workspace_edit.textChanged.connect(self.unsaved_indicate)
         self.accounts_list.currentItemChanged.connect(self.select_item)
 
     def load_accounts(self):
@@ -233,14 +274,17 @@ class QAccountPanel(QWidget):
         ### Creating an accounts folder with a template account and default.json file if one doesn't exist
         default_file = os.path.join(self.account_dir, "default.json")
         if not os.path.exists(self.account_dir) or not os.path.exists(default_file):
-            os.makedirs(self.account_dir)
+            os.makedirs(self.account_dir, exist_ok=True)
             template_file = os.path.join(self.account_dir, "template.json")
 
             with open(default_file, "w") as f:
                 json.dump({"default_account_name": "template"}, f, indent=4)
             with open(template_file, "w") as f:
-                json.dump({"ip_address": "111.111.1.111", "account_name": "template",
-                                "config": "MasterProject.Client_modules.Init.initialize"}, f, indent=4)
+                json.dump({
+                    "ip_address": "111.111.1.111",
+                    "account_name": "template",
+                    "workspace": os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                }, f, indent=4)
 
         ### Handles the default.json file to retrieve the default account name
         with open(default_file, "r") as f:
@@ -254,7 +298,7 @@ class QAccountPanel(QWidget):
                     data = json.load(f)
                     name = data["account_name"]
                     ip = data["ip_address"]
-                    config = data["config"]
+                    workspace = data["workspace"]
 
                     # handling the default account case
                     if name == self.default_account_name:
@@ -265,10 +309,10 @@ class QAccountPanel(QWidget):
                             self.current_account_item = item
                     else:
                         item = QListWidgetItem(str(name))
-                    self.accounts_list.addItem(item) # add item to the list
+                    self.accounts_list.addItem(item)  # add item to the list
 
         self.select_item(self.current_account_item)
-        self.saved_indicate() # sets the button status
+        self.saved_indicate()  # sets the button status
 
     def attempt_connection_or_disconnect(self):
         """
@@ -279,22 +323,22 @@ class QAccountPanel(QWidget):
 
         if self.connected_account_name is None:
             ip_address = self.ip_edit.text().strip()
-            config = self.config_edit.text().strip()
+            workspace = self.workspace_edit.text().strip()
 
-            self.rfsoc_attempt_connection.emit(ip_address, config)
+            self.rfsoc_attempt_connection.emit(ip_address, workspace)
         else:
             self.rfsoc_disconnect.emit()
 
             # Not very efficient but this is what resets all the UI and the variables for the disconnected status
             self.connect_button.setText("Connect")
             self.connected_account_name = None
-            self.load_accounts() # reload all the accounts (very inefficient but is a simple way to handle UI)
+            self.load_accounts()  # reload all the accounts (very inefficient but is a simple way to handle UI)
 
             self.ip_edit.setDisabled(False)
             self.name_edit.setDisabled(False)
-            self.config_edit.setDisabled(False)
+            self.workspace_edit.setDisabled(False)
+            self.workspace_browse_button.setDisabled(False)
             self.saved_indicate()
-
 
     def unsaved_indicate(self):
         """
@@ -335,7 +379,8 @@ class QAccountPanel(QWidget):
         self.set_default_button.setEnabled(False)
         self.ip_edit.setDisabled(True)
         self.name_edit.setDisabled(True)
-        self.config_edit.setDisabled(True)
+        self.workspace_edit.setDisabled(True)
+        self.workspace_browse_button.setDisabled(True)
 
     def update_account(self):
         """
@@ -347,9 +392,10 @@ class QAccountPanel(QWidget):
             # Validating form entries
             new_ip_address = self.ip_edit.text().strip()
             new_account_name = self.name_edit.text().strip()
-            new_config = self.config_edit.text().strip()
+            new_workspace = self.workspace_edit.text().strip()
 
-            if not self.validate_account_input(new_ip_address, new_account_name, new_config,'update'): return
+            if not self.validate_account_input(new_ip_address, new_account_name, new_workspace, 'update'):
+                return
 
             # Load the existing JSON file
             file = os.path.join(self.account_dir, self.current_account_name + '.json')
@@ -359,7 +405,7 @@ class QAccountPanel(QWidget):
                     data = json.load(f)
                     data["ip_address"] = new_ip_address
                     data["account_name"] = new_account_name
-                    data["config"] = new_config
+                    data["workspace"] = new_workspace
                 with open(file, "w") as f:
                     # dump to json
                     json.dump(data, f, indent=4)
@@ -378,11 +424,13 @@ class QAccountPanel(QWidget):
 
                 self.current_account_name = new_account_name
                 self.saved_indicate()
+
+                self.workspace_changed.emit(new_workspace)
             except (json.JSONDecodeError, FileNotFoundError):
                 QMessageBox.critical(None, "Error", "Error updating Json file.")
                 return
 
-    def validate_account_input(self, new_ip_address, new_account_name, new_config, purpose):
+    def validate_account_input(self, new_ip_address, new_account_name, new_workspace, purpose):
         """
         Validating the input to create accounts via an account name and an ip_address. Moreover, based on the purpose
         of the validation (either 'create' or 'update'), it will check for account name duplicates.
@@ -391,6 +439,8 @@ class QAccountPanel(QWidget):
         :type new_ip_address: str
         :param new_account_name: The new account name of the account.
         :type new_account_name: str
+        :param new_workspace: The new workspace directory path of the account.
+        :type new_workspace: str
         :param purpose: The purpose of the validation, to either 'create' or 'update' an account.
         :type purpose: str
         :return: True if the input is valid, False otherwise.
@@ -409,13 +459,15 @@ class QAccountPanel(QWidget):
             QMessageBox.critical(None, "Error", "IP address invalid.")
             return False
 
-        # config import path validation
-        try:
-            module = importlib.import_module(new_config)
-            config = getattr(module, "BaseConfig")
-        except Exception as e:
-            QMessageBox.critical(None, "Error", "Config import path is invalid. "
-                                                "Verify BaseConfig exists and no socProxy imports are present.")
+        # workspace directory validation
+        if not new_workspace:
+            QMessageBox.critical(None, "Error", "Workspace directory cannot be empty.")
+            return False
+        if not os.path.exists(new_workspace):
+            QMessageBox.critical(None, "Error", "The workspace directory '{new_workspace}' does not exist.")
+            return False
+        if not os.path.isdir(new_workspace):
+            QMessageBox.critical(None, "Error", f"'{new_workspace}' is not a directory.")
             return False
 
         # duplication validation
@@ -463,16 +515,20 @@ class QAccountPanel(QWidget):
 
         new_ip_address = self.ip_edit.text().strip()
         new_account_name = self.name_edit.text().strip()
-        new_config = self.config_edit.text().strip()
+        new_workspace = self.workspace_edit.text().strip()
 
-        if not self.validate_account_input(new_ip_address, new_account_name, new_config, 'create'): return
+        if not self.validate_account_input(new_ip_address, new_account_name, new_workspace, 'create'):
+            return
 
         new_filename = (new_account_name.strip() + ".json")
-        new_account_file = os.path.join(self.account_dir,new_filename)
+        new_account_file = os.path.join(self.account_dir, new_filename)
 
         with open(new_account_file, "w") as f:
-            json.dump({"ip_address": str(new_ip_address), "account_name": str(new_account_name),
-                            "config": str(new_config)}, f, indent=4)
+            json.dump({
+                "ip_address": str(new_ip_address),
+                "account_name": str(new_account_name),
+                "workspace": str(new_workspace)
+            }, f, indent=4)
 
         item = QListWidgetItem(str(new_account_name))
         self.accounts_list.addItem(item)
@@ -497,15 +553,28 @@ class QAccountPanel(QWidget):
             self.accounts_list.setCurrentItem(current)
 
             file = os.path.join(self.account_dir, self.current_account_name + '.json')
-            with open(file, "r") as f:
-                data = json.load(f)
-                name = data["account_name"]
-                ip = data["ip_address"]
-                config = data["config"]
+            try:
+                with open(file, "r") as f:
+                    data = json.load(f)
+                    name = data["account_name"]
+                    ip = data["ip_address"]
 
-                self.name_edit.setText(name)
-                self.ip_edit.setText(ip)
-                self.config_edit.setText(config)
+                    # Handle both old and new format
+                    if "workspace" in data:
+                        workspace = data["workspace"]
+                    elif "config" in data:
+                        workspace = data["config"]
+                    else:
+                        workspace = ""
+
+                    self.name_edit.setText(name)
+                    self.ip_edit.setText(ip)
+                    self.workspace_edit.setText(workspace)
+
+                    self.workspace_changed.emit(workspace)
+            except Exception as e:
+                QMessageBox.critical(None, "Error", f"Error loading account file: {str(e)}")
+                return
 
             if self.connected_account_name is not None:
                 self.disable_since_connected()
