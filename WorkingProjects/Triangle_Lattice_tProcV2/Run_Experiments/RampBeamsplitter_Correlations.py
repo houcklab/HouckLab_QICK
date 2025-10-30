@@ -18,15 +18,15 @@ Qubit_Readout = [1,2,3,4,5,6,7,8]
 Qubit_Pulse = ['1_4815', '4_4815', '8_4815', '5_4815']
 Qubit_Pulse = ['1_4QB', '4_4QB', '8_4QB', '5_4QB']
 
-Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+# Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '6_4Q_readout']
 
 Q = 4
-Qubit_Pulse = [Q]
+# Qubit_Pulse = [Q]
 Qubit_Readout = [Q, Q+1]
 
 Sweep_BeamsplitterGain = True
-sweep_bs_gain_dict = {'swept_qubit': Q, 'reps': 10000, 'ramp_time': 1000,
+sweep_bs_gain_dict = {'swept_qubit': Q, 'reps': 1000, 'ramp_time': 1000,
                       # 't_offset': [13,15,4,15,10,10,6,0],
                       # 't_offset': [25,27,16,27,10,10,9,0],
                       't_offset': [-1,1-3,3,6,5,-1,1,-2],
@@ -47,7 +47,7 @@ sweep_bs_gain_dict['gainStop'] = center + 1000
 
 
 
-Sweep_BeamsplitterOffset = True
+Sweep_BeamsplitterOffset = False
 # Think about how t_offset will cause some qubits to stay at FF_BS for longer than others
 sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 2000,
                         't_offset': [20,22,11,22,10,10,9,0],

@@ -30,45 +30,45 @@ Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','6_4Q_readout']
 
 Qubit_configs = []
 
-Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 7121.4, 'Gain': 542,
-                      'FF_Gains': [-21498, 0, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3892.8, 'sigma': 0.05, 'Gain': 3019},
-          'Pulse_FF': [-21498, 0, 0, 0, 0, 0, 0, 0]},
-    '2': {'Readout': {'Frequency': 7077.5, 'Gain': 885,
-                      'FF_Gains': [0, -23200, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3893.7, 'sigma': 0.05, 'Gain': 2994},
-          'Pulse_FF': [0, -23200, 0, 0, 0, 0, 0, 0]},
-    '3': {'Readout': {'Frequency': 7510.8, 'Gain': 1228,
-                      'FF_Gains': [0, 0, -19298, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3881.1, 'sigma': 0.05, 'Gain': 7301},
-          'Pulse_FF': [0, 0, -19298, 0, 0, 0, 0, 0]},
-    '4': {'Readout': {'Frequency': 7568.4, 'Gain': 885,
-                      'FF_Gains': [0, 0, 0, -22048, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3913.2, 'sigma': 0.05, 'Gain': 4404},
-          'Pulse_FF': [0, 0, 0, -22048, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1400,
-                      'FF_Gains': [0, 0, 0, 0, -20560, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3871.5, 'sigma': 0.05, 'Gain': 4270},
-          'Pulse_FF': [0, 0, 0, 0, -20560, 0, 0, 0]},
-    '6': {'Readout': {'Frequency': 7441.6, 'Gain': 1400,
-                      'FF_Gains': [0, 0, 0, 0, 0, -22448, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3875.9, 'sigma': 0.05, 'Gain': 4649},
-          'Pulse_FF': [0, 0, 0, 0, 0, -22448, 0, 0]},
-    '7': {'Readout': {'Frequency': 7253.7, 'Gain': 1228,
-                      'FF_Gains': [0, 0, 0, 0, 0, 0, -20578, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3812.5, 'sigma': 0.05, 'Gain': 3041},
-          'Pulse_FF': [0, 0, 0, 0, 0, 0, -20578, 0]},
-    '8': {'Readout': {'Frequency': 7309.1, 'Gain': 1057,
-                      'FF_Gains': [0, 0, 0, 0, 0, 0, 0, -19516], 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3858.1, 'sigma': 0.05, 'Gain': 4000},
-          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, -19516]},
-}
+# Qubit_Parameters = {
+#     '1': {'Readout': {'Frequency': 7121.4, 'Gain': 542,
+#                       'FF_Gains': [-21498, 0, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3892.8, 'sigma': 0.05, 'Gain': 3019},
+#           'Pulse_FF': [-21498, 0, 0, 0, 0, 0, 0, 0]},
+#     '2': {'Readout': {'Frequency': 7077.5, 'Gain': 885,
+#                       'FF_Gains': [0, -23200, 0, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3893.7, 'sigma': 0.05, 'Gain': 2994},
+#           'Pulse_FF': [0, -23200, 0, 0, 0, 0, 0, 0]},
+#     '3': {'Readout': {'Frequency': 7510.8, 'Gain': 1228,
+#                       'FF_Gains': [0, 0, -19298, 0, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3881.1, 'sigma': 0.05, 'Gain': 7301},
+#           'Pulse_FF': [0, 0, -19298, 0, 0, 0, 0, 0]},
+#     '4': {'Readout': {'Frequency': 7568.4, 'Gain': 885,
+#                       'FF_Gains': [0, 0, 0, -22048, 0, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3913.2, 'sigma': 0.05, 'Gain': 4404},
+#           'Pulse_FF': [0, 0, 0, -22048, 0, 0, 0, 0]},
+#     '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1400,
+#                       'FF_Gains': [0, 0, 0, 0, -20560, 0, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3871.5, 'sigma': 0.05, 'Gain': 4270},
+#           'Pulse_FF': [0, 0, 0, 0, -20560, 0, 0, 0]},
+#     '6': {'Readout': {'Frequency': 7441.6, 'Gain': 1400,
+#                       'FF_Gains': [0, 0, 0, 0, 0, -22448, 0, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3875.9, 'sigma': 0.05, 'Gain': 4649},
+#           'Pulse_FF': [0, 0, 0, 0, 0, -22448, 0, 0]},
+#     '7': {'Readout': {'Frequency': 7253.7, 'Gain': 1228,
+#                       'FF_Gains': [0, 0, 0, 0, 0, 0, -20578, 0], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3812.5, 'sigma': 0.05, 'Gain': 3041},
+#           'Pulse_FF': [0, 0, 0, 0, 0, 0, -20578, 0]},
+#     '8': {'Readout': {'Frequency': 7309.1, 'Gain': 1057,
+#                       'FF_Gains': [0, 0, 0, 0, 0, 0, 0, -19516], 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 3858.1, 'sigma': 0.05, 'Gain': 4000},
+#           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, -19516]},
+# }
 
 
 ### !!! ###
 varname_FF = None
-for Q in [4]:
+for Q in [1,2,3,4,5,6,7,8]:
 # Qubit_Readout = ['5HHH', '1HHH', '4HHH']
 # Qubit_Readout =['4HHH_readout', '1HHH_readout', '5HHH_readout']
 #     Qubit_Readout = [1,2,3,4,5,6,7,8]
@@ -89,11 +89,11 @@ for Q in [4]:
 
     RunTransmissionSweep =       f
     RunFirst2ToneSpec =          f
-    RunSecond2ToneSpec =         t
-    RunAmplitudeRabi =           t
-    SingleShot_ReadoutOptimize = t
+    RunSecond2ToneSpec =         f
+    RunAmplitudeRabi =           f
+    SingleShot_ReadoutOptimize = f
     SingleShot_QubitOptimize =   t
-    SingleShot = f
+    SingleShot = t
 
 
 

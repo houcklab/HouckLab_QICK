@@ -33,7 +33,7 @@ Pulse_4815_FFB = FF_gains([2203, -14469, -11500, 3883, 13298, -13800, -10102, 68
 
 # Start of ramp, after pulse
 # set to 100 MHz below ramp point at 4320
-holes = ['Q2', 'Q3', 'Q6', 'Q7']
+# holes = ['Q2', 'Q3', 'Q6', 'Q7']
 holes = ['Q2', 'Q3', 'Q5', 'Q7']
 set_kwargs = {f'Q{i+1}': Expt_FF[i] for i in range(8)}
 for hole in holes:
@@ -255,7 +255,7 @@ Qubit_Parameters = Qps.d
 # print(Qubit_Parameters)
 
 Ramp_state = '8Q_4815'
-# Ramp_state = '12'
+# Ramp_state = '45'
 
 # beamsplitter_point = '1234_correlations'
 beamsplitter_point = '1254_correlations'
