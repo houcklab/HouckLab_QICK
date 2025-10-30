@@ -393,6 +393,11 @@ QSplitter#desq_tab_splitter::handle {
     padding: 0px 1px 0px 1px;
 }
 
+QSplitter#builder_content_splitter::handle {
+    image: url('MasterProject/Client_modules/Desq_GUI/assets/ellipsis.svg');
+    padding: 1px 0px 1px 0px;
+}
+
 QLineEdit {
     background-color: $MAIN_BACKGROUND_COLOR;
     border: 1px solid $GENERAL_BORDER_COLOR;

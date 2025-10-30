@@ -59,7 +59,10 @@ from MasterProject.Client_modules.Desq_GUI.scripts.DesqTab import QDesqTab
 from MasterProject.Client_modules.Desq_GUI.scripts.VoltagePanel import QVoltagePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AccountsPanel import QAccountPanel
 from MasterProject.Client_modules.Desq_GUI.scripts.LogPanel import QLogPanel
-from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
+
+# from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
+from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanelAdv import QConfigTreePanel
+
 from MasterProject.Client_modules.Desq_GUI.scripts.DirectoryTreePanel import DirectoryTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import AuxiliaryThread
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
@@ -264,6 +267,7 @@ class Desq(QMainWindow):
         template_experiment_tab = QDesqTab(app=self)
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")
         self.central_tabs.setCurrentIndex(0)
+        self.current_tab = template_experiment_tab
 
         ### Config Tree Panel
         self.global_config_panel = QConfigTreePanel(
@@ -559,7 +563,7 @@ class Desq(QMainWindow):
 
                 qInfo("Starting experiment: " + self.current_tab.tab_name + "...")
                 self.current_tab.last_run_experiment_config = {
-                    "Base Config": current_experiment_config,
+                    "Base Config": current_global_config,
                     "Experiment Config": current_experiment_config,
                 }
                 print(f"Experiment Format Config: {experiment_format_config}")
@@ -1125,14 +1129,20 @@ class Desq(QMainWindow):
 
         app.setStyleSheet(style)
 
-    def extracted_config(self, config):
+    def extracted_config(self, global_config, exp_config):
         """
         Function called when a config is extracted. Calls the update config button of the config tree.
         """
-        print(config)
-        qInfo(str(config))
-        self.global_config_panel.update_config_dict(config)
-        self.global_config_panel.populate_tree()
+        print(f"Global: {global_config}, Exp: {exp_config}")
+        qInfo(f"Global: {str(global_config)}, Exp: {str(exp_config)}")
+
+        # Update global panel
+        self.global_config_panel.update_config_dict(global_config)
+        self.global_config_panel.populate_config_view()
+
+        # Update experiment panel
+        self.current_tab.experiment_config_panel.update_config_dict(exp_config)
+        self.current_tab.experiment_config_panel.populate_config_view()
 
     def extract_direct_imports(self, file_path):
         """

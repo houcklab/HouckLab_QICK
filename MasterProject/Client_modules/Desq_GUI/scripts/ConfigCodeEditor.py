@@ -28,7 +28,7 @@ from PyQt5.QtGui import QKeySequence, QSyntaxHighlighter, QTextCharFormat, QColo
 from PyQt5.QtCore import Qt, pyqtSignal, qCritical, qInfo, QTimer, QRegExp, QRect, qWarning
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
-from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
+from MasterProject.Client_modules.Desq_GUI.scripts.DualMultiCheckboxDialog import DualMultiCheckboxDialog
 
 
 class FindBar(QFrame):
@@ -140,7 +140,7 @@ class CodeTextEditor(QPlainTextEdit):
 
 class ConfigCodeEditor(QWidget):
 
-    extracted_config = pyqtSignal(dict)
+    extracted_config = pyqtSignal(dict, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -400,7 +400,7 @@ class ConfigCodeEditor(QWidget):
 
             exec(code, namespace)
 
-            config = namespace.get("config", {})
+            # config = namespace.get("config", {})
 
         except Exception as e:
             qCritical("Error while running script:")
@@ -410,7 +410,7 @@ class ConfigCodeEditor(QWidget):
             #     f"Error while running script: \n{e}. Still attempting config extraction. See Log."
             # )
             traceback.print_exc()
-            config = namespace.get("config", {})
+            # config = namespace.get("config", {})
 
         finally:
             os.chdir(orig_cwd)
@@ -422,18 +422,24 @@ class ConfigCodeEditor(QWidget):
                 if isinstance(value, dict) and name != "__builtins__"
             }
             # Prompt user to select classes using multi-checkbox dialog
-            dialog = MultiCheckboxDialog(list(dict_vars.keys()), "Select Additional Configs")
+            dialog = DualMultiCheckboxDialog(list(dict_vars.keys()), "Select Configs")
             if dialog.exec_():
-                selected = dialog.get_selected()
+                selected_global, selected_exp = dialog.get_selected()
             else:
-                selected = []
+                selected_global = []
+                selected_exp = []
+
+            global_config = {}
+            exp_config = {}
 
             # Update config with these additional configs
-            for dict_var_name in selected:
-                config |= dict_vars[dict_var_name]
+            for dict_var_name in selected_global:
+                global_config |= dict_vars[dict_var_name]
+            for dict_var_name in selected_exp:
+                exp_config |= dict_vars[dict_var_name]
 
             # Emit the final config
-            self.extracted_config.emit(config)
+            self.extracted_config.emit(global_config, exp_config)
             qInfo("Extracted config.")
 
             try:
