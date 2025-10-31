@@ -70,8 +70,9 @@ class FFSpecSlice(NDAveragerProgram):
 
         ### For debugging ###
         # Marker pulse for beginning of experiment
-        # self.pulse(ch = self.cfg["qubit_ch"])
-        # self.sync_all(10)
+        if "marker_pulse" in self.cfg and self.cfg["marker_pulse"]:
+            self.pulse(ch = self.cfg["qubit_ch"])
+            self.sync_all(10)
         #####################
 
         # t uses the master clock, no generator argument!
@@ -84,7 +85,7 @@ class FFSpecSlice(NDAveragerProgram):
         # Define pulse to bring ff back to 0, and pulse
         self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
                                  gain=0, stdysel='last', length=3)
-        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"] + self.cfg["ff_length"]) - 3)
+        self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"] + self.cfg["ff_length"]))
 
         # Play another pulse (that does nothing) at the last time, such that the sync_all waits until after this
         # Add 3 clock cycles just to make sure it's not overlapping with previous, it's only a few ns anyway
@@ -111,7 +112,7 @@ class FFSpecSlice(NDAveragerProgram):
             # Come back to 0 DAC
             self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0, stdysel = 'last',
                                      gain = 0, length = 3)
-            self.pulse(ch=self.cfg["ff_ch"], t = self.us2cycles(self.cfg["ff_length"]) - 3)
+            self.pulse(ch=self.cfg["ff_ch"], t = self.us2cycles(self.cfg["ff_length"]))
 
         # sync everything again before start of next loop, else pulses come in at the wrong time!
         self.sync_all(3)
