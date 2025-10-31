@@ -124,12 +124,6 @@ class FFTransmission(ExperimentClass):
             # time.sleep(0.01) # Added to wait for the RFSOC to send all data
         if debug:
             print(f'Time: {time.time() - start}')
-        # results = np.transpose(results)
-        #
-        # prog = LoopbackProgram(self.soccfg, self.cfg)
-        # self.soc.reset_gens()  # clear any DC or periodic values on generators
-        # iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False, debug=False)
-
 
         #### find the frequency corresponding to the peak
         avgi = np.array([elem[1] for elem in results])[:,0,0]

@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.12,#1.6,
+    "yokoVoltage": -0.1235,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 30,  # us
+    "read_length": 80,  # us
     "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6671.655,#509,#7391.96,#7392.36,#957,
+    "read_pulse_freq": 6671.61,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -63,7 +63,7 @@ UpdateConfig = {
     "qubit_length": 1,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 925,
+    "qubit_freq": 1125,
     "relax_delay": 10,
     'qubit_mode_periodic' : False,
 
@@ -277,26 +277,26 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.12,
-    'yokoVoltage_freqPoint': -0.12,
+    "yokoVoltage": -0.1235,
+    'yokoVoltage_freqPoint': -0.1235,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 30,
+    "read_length": 60,
     "read_pulse_gain": 5000,
-    "read_pulse_freq": 6671.655,
+    "read_pulse_freq": 6671.61,
 
     # Qubit Tone
-    "qubit_freq_start": 900,
-    "qubit_freq_stop": 950,
-    "RabiNumPoints": 11,
+    "qubit_freq_start": 1050,
+    "qubit_freq_stop": 1200,
+    "RabiNumPoints": 31,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
-    'qubit_length': 1,
+    'qubit_length': 0.5,
     "relax_delay": 10,
     "initialize_qubit_gain" : 20000,
-    "qubit_freq_base": 920.8,
+    "qubit_freq_base": 1125,
 
     # amplitude rabi parameters
     "qubit_gain_start": 1000,
@@ -305,7 +305,7 @@ UpdateConfig = {
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 8000,
+    "shots": 6000,
     "use_switch": False,
     'initialize_pulse': True,
     'fridge_temp': 10,

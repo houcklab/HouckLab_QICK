@@ -41,7 +41,7 @@ if is_yoko2:
 
 # TITLE: Connect to MLBF
 if is_mlbf_filter:
-    mlbf_filter = MLBFDriver("192.168.1.10")
+    mlbf_filter = MLBFDriver("192.168.1.11")
 
 
 # TITLE : default configuration

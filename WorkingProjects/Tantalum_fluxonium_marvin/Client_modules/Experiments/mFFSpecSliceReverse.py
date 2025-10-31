@@ -1,6 +1,5 @@
 ###
-# This file contains an NDAveragerProgram and ExperimentClass for doing qubit spectroscopy with a fast flux pulse.
-# Lev, May 2025: create file.
+
 ###
 
 from qick import NDAveragerProgram
@@ -13,7 +12,7 @@ import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
 
 
-class FFSpecSlice(NDAveragerProgram):
+class FFSpecSliceReversed(NDAveragerProgram):
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
@@ -44,13 +43,9 @@ class FFSpecSlice(NDAveragerProgram):
         # Qubit pulse
         self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq_start"])
 
-        # Define the fast flux pulse #TODO just constant for now
-        if self.cfg["ff_pulse_style"] == "const":
-            self.set_pulse_registers(ch = self.cfg["ff_ch"], style = "const", freq = 0, phase = 0,
-                                     gain = self.cfg["ff_gain"], length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"]))
-            self.flux_pulse_length = self.us2cycles(self.cfg["ff_length"], gen_ch = self.cfg["ff_ch"])
-        elif self.cfg["ff_pulse_style"] == "ramp":
-            # print("Using RAMP")
+        # Define the fast flux pulse
+        if self.cfg["ff_pulse_style"] == "ramp":
+            print("Using RAMP")
             self.cfg["ff_ramp_start"] = 0
             self.cfg['ff_ramp_stop'] = self.cfg['ff_gain']
             self.cfg['ff_ramp_style'] = "linear"
@@ -58,79 +53,27 @@ class FFSpecSlice(NDAveragerProgram):
                 raise Exception("ff_ramp_length nor defined in the config")
             PulseFunctions.create_ff_ramp(self, reversed=False)
             PulseFunctions.create_ff_ramp(self, reversed=True)
+        else:
+            raise Exception("Only 'ramp' ff_pulse_style is currently supported")
 
         if "negative_pulse" in self.cfg.keys():
             if self.cfg["negative_pulse"]:
                 print(f"Playing negative pulses for integration to be zero")
         else:
             self.cfg['negative_pulse'] = False
-            # print("Not playing negative pulses")
+            print("Not playing negative pulses")
 
-        self.wait_4_pulse_pattern = 0
-        if "qubit_spec_delay_stop" in self.cfg.keys():
-            if self.cfg["ff_pulse_style"] == "const":
-                self.wait_4_pulse_pattern = max(0, self.cfg["qubit_spec_delay_stop"] - max(self.cfg['qubit_spec_delay'], self.cfg['ff_length'] + self.cfg["pre_ff_delay"]))
-                # print(f"Waiting {self.wait_4_pulse_pattern} us after pulse pattern to ensure each experiment is the same length")
-            elif self.cfg["ff_pulse_style"] == "ramp":
-                self.wait_4_pulse_pattern = max(0, self.cfg["qubit_spec_delay_stop"] - max(self.cfg['qubit_spec_delay'], self.cfg['ff_length'] + self.cfg["pre_ff_delay"] + self.cfg['ff_ramp_length']))
-                print(f"Waiting {self.wait_4_pulse_pattern} us after pulse pattern to ensure each experiment is the same length")
-
-        # print(f"Qubit Spec delay number of cycles is {self.us2cycles(self.cfg['qubit_spec_delay'])}")
-        # print(f"Qubit Spec delay number of cycles is for gen ch qubit {self.us2cycles(self.cfg['qubit_spec_delay'], gen_ch=self.cfg['qubit_ch'])}")
         self.sync_all(self.us2cycles(0.1))
 
 
 
     def body(self):
-        # The pulse sequence is (for now) as follows:
-        # * After a delay time, start the qubit probe pulse
-        # * DC fast flux pulse (from zero) to some value (order of first two depends on parameters)
-        # * Play the readout pulse
-        # * Eventually: Play an inverted version of the qubit pulse -- not clear why this is necessary, Jero claims that it helps with flux stability
-
-        # For convenience
-        if self.cfg["ff_pulse_style"] == "const":
-            qubit_spec_delay_cycles = self.us2cycles(self.cfg["qubit_spec_delay"])
-            qubit_pulse_length_cycles = self.us2cycles(self.qubit_pulse_length, gen_ch=self.cfg["qubit_ch"])
-            adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
-
-            self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
-                                     gain=self.cfg["ff_gain"],
-                                     length=self.us2cycles(self.cfg["ff_length"], gen_ch=self.cfg["ff_ch"]))
-
-            self.pulse(ch = self.cfg["qubit_ch"], t = qubit_spec_delay_cycles)  # play probe pulse
-            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["pre_ff_delay"]))   # play fast flux pulse
-
-            self.sync_all(self.us2cycles(self.cfg['pre_meas_delay'] + self.wait_4_pulse_pattern)) # In case the channels are somewhat misaligned, wait a few tens of ns
-
-            # trigger measurement, play measurement pulse, wait for qubit to relax
-            self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                         t = 0, wait = True,
-                         syncdelay=self.us2cycles(0))
-
-            # Play the negative pulses
-            if self.cfg['negative_pulse']:
-                self.sync_all(self.us2cycles(1))
-                self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0,
-                                         gain=-self.cfg["ff_gain"],
-                                         length=self.us2cycles(self.cfg["ff_length"], gen_ch=self.cfg["ff_ch"]))
-                self.pulse(ch=self.cfg["ff_ch"])
-
-            self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
-
-        elif self.cfg['ff_pulse_style'] == 'ramp':
-
             qubit_spec_delay_cycles = self.us2cycles(self.cfg["qubit_spec_delay"])
             adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
+            meas_delay_cycles = self.us2cycles(self.cfg.get("pre_meas_delay", self.cfg['qubit_spec_delay'] + self.qubit_pulse_length))
             pre_ff_delay_cycles = self.us2cycles(self.cfg["pre_ff_delay"])
             ff_length_cycles = self.us2cycles(self.cfg["ff_length"])
             ramp_length_cycles = self.us2cycles(self.cfg["ff_ramp_length"])
-            qubit_length_cycles = self.us2cycles(self.qubit_pulse_length)
-
-            ff_ramp_down_cycles = max(pre_ff_delay_cycles + ramp_length_cycles + 2,
-                                      min(qubit_spec_delay_cycles + 2*qubit_length_cycles,
-                                          pre_ff_delay_cycles + ff_length_cycles+ramp_length_cycles))
-            # The + 2 cycles are to ensure there is no overlap. Ideally it shouldn't be there but it is what it is.
 
             self.pulse(ch=self.cfg["qubit_ch"], t=qubit_spec_delay_cycles)
 
@@ -140,15 +83,13 @@ class FFSpecSlice(NDAveragerProgram):
 
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain=self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-            self.pulse(ch=self.cfg["ff_ch"], t=ff_ramp_down_cycles)
-
-            self.sync_all(self.us2cycles(self.cfg['pre_meas_delay']))  # In case the channels are somewhat misaligned, wait a few tens of ns
+            self.pulse(ch=self.cfg["ff_ch"], t=pre_ff_delay_cycles + ff_length_cycles+ramp_length_cycles)
 
             # trigger measurement, play measurement pulse, wait for qubit to relax
             self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                         t='auto', wait=True,
-                         syncdelay=self.us2cycles(self.wait_4_pulse_pattern)) #self.wait_4_pulse_pattern
-
+                         t=meas_delay_cycles, wait=False) #self.wait_4_pulse_pattern
+            # Sync all
+            self.sync_all(self.us2cycles(1))
             if self.cfg['negative_pulse']:
                 self.sync_all(self.us2cycles(1))
                 self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
@@ -201,7 +142,7 @@ class FFSpecSlice(NDAveragerProgram):
 
 # ====================================================== #
 
-class FFSpecSlice_Experiment(ExperimentClass):
+class FFSpecSliceReverse_Experiment(ExperimentClass):
     """
     Perform qubit spectroscopy during a fast flux pulse.
     """
@@ -213,16 +154,20 @@ class FFSpecSlice_Experiment(ExperimentClass):
 
     def acquire(self, progress=False, debug=False):
         self.soc.reset_gens()
-        prog = FFSpecSlice(self.soccfg, self.cfg)
 
-        # Check that the arguments make sense. We need the program first, to know the correct qubit pulse length
-        if self.cfg["qubit_spec_delay"] + prog.qubit_pulse_length + self.cfg["read_length"] > self.cfg["ff_length"]:
-            print("!!! WARNING: fast flux pulse turns off before readout is complete !!!")
-        # print("Qubit pulse length: ", prog.qubit_pulse_length)
+        if self.cfg['qubit_spec_delay'] + self.cfg["qubit_length"] - self.cfg["pre_ff_delay"] - self.cfg["ff_length"] > 0:
+            print("The qubit tone is on after the end of the fast flux pulse.")
+        if self.cfg['qubit_spec_delay'] + self.cfg["qubit_length"] - self.cfg["pre_ff_delay"] < 0:
+            print("The qubit tone starts before the beginning of the fast flux pulse.")
+        if self.cfg["pre_meas_delay"] < self.cfg['qubit_spec_delay'] + self.cfg["qubit_length"]:
+            print("Warning: Measurement starts before the end of the qubit pulse.")
+        if self.cfg["pre_meas_delay"] > self.cfg["pre_ff_delay"] + self.cfg["ff_length"]:
+            print("Warning: Measurement starts after the end of the fast flux pulse.")
+        if self.cfg["pre_meas_delay"] + self.cfg["read_length"] > self.cfg["pre_ff_delay"] + self.cfg["ff_length"]:
+            print("Warning: Measurement ends after the end of the fast flux pulse.")
 
-        if 'pre_meas_delay' not in self.cfg:
-            self.cfg['pre_meas_delay'] = 2
-
+         # Create the experiment program
+        prog = FFSpecSliceReversed(self.soccfg, self.cfg)
         # Collect the data
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,

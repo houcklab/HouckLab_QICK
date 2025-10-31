@@ -107,7 +107,7 @@ class FFRampTest(NDAveragerProgram):
             self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
         # Sync to make sure ramping is done before starting second measurement.
-        self.sync_all(self.us2cycles(0.02))
+        self.sync_all(self.us2cycles(1))
 
         # trigger measurement, play measurement pulse, wait for relax_delay_2. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
