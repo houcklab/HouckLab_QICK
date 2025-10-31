@@ -205,6 +205,7 @@ class FFSpecVsFlux_Experiment(ExperimentClass):
         "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+        "reverse_pulse": True,  # [Bool] reverse fast flux pulse to cancel current in reactive components
 
         # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
         "ff_gain_start": 0,              # [DAC] Initial value

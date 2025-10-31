@@ -206,6 +206,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+        "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
         # qubit_spec_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
         "qubit_spec_delay_start": 0,     # [us] Initial value
