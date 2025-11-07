@@ -19,6 +19,7 @@ import shutil
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import numpy as np
 from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap, QColor
 from PyQt5.QtCore import (
@@ -42,6 +43,7 @@ from PyQt5.QtWidgets import (
     QScrollArea,
     QPushButton,
     QSplitter,
+    QStackedWidget,
 )
 import pyqtgraph as pg
 from matplotlib.collections import PathCollection
@@ -213,9 +215,11 @@ class QDesqTab(QWidget):
         self.plots = []
         self.labels_added = False
         self.labels = []
+
+        # Matplotlib-specific storage
         self.matplotlib_canvases = []
-        self.matplotlib_proxies = []
-        self.matplotlib_viewboxes = []
+        self.matplotlib_toolbars = []
+
         self.last_run_experiment_config = {}
 
         ### Setting up the Tab
@@ -331,7 +335,11 @@ class QDesqTab(QWidget):
         self.plot_settings.addWidget(self.delete_label)
         self.plot_layout.addWidget(self.plot_settings_container)
 
-        # The actual plot itself (lots of styling attributes
+        # Create a stacked widget to switch between PyQtGraph and Matplotlib
+        self.plot_stack = QStackedWidget()
+        self.plot_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # PyQtGraph widget (index 0)
         self.plot_widget = pg.GraphicsLayoutWidget(self)
         label = self.plot_widget.ci.addLabel("Nothing to plot.", row=0, col=0, colspan=2, size='12pt')
         self.labels.append(label)
@@ -342,7 +350,19 @@ class QDesqTab(QWidget):
         self.plot_widget.setMinimumSize(QSize(375, 0))
         self.plot_widget.setObjectName("plot_widget")
 
-        self.plot_layout.addWidget(self.plot_widget)
+        # Matplotlib widget (index 1)
+        self.matplotlib_container = QWidget()
+        self.matplotlib_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.matplotlib_layout = QVBoxLayout(self.matplotlib_container)
+        self.matplotlib_layout.setContentsMargins(0, 0, 0, 0)
+        self.matplotlib_layout.setSpacing(5)
+
+        # Add both to stacked widget
+        self.plot_stack.addWidget(self.plot_widget)  # Index 0
+        self.plot_stack.addWidget(self.matplotlib_container)  # Index 1
+        self.plot_stack.setCurrentIndex(0)  # Start with PyQtGraph
+
+        self.plot_layout.addWidget(self.plot_stack)
         self.plot_layout.setStretch(0, 1)
         self.plot_layout.setStretch(1, 10)
         self.plot_wrapper.setLayout(self.plot_layout)
@@ -458,29 +478,23 @@ class QDesqTab(QWidget):
             if self.data is not None:
                 self.replot_data()
 
-    def load_dataset_file(self, dataset_file):
+    def capture_plot_to_clipboard(self):
         """
-        Takes the dataset file and loads the dict, before calling the plotter.
-
-        :param dataset_file: The path to the dataset file.
-        :type dataset_file: str
+        Captures a screenshot of the plot via a QPixmap and saves it to the users clipboard. Paste normally.
         """
-
-        self.data = Helpers.h5_to_dict(dataset_file)
-
-        # Extracting the Config
-        if "config" in self.data:
-            qInfo("Config in h5 metadata found")
-            temp_config = self.data["config"]
-
-            self.experiment_config_panel.update_config_dict(temp_config, reset=True)
-            self.data.pop("config")
+        if self.use_matplotlib_checkbox.isChecked():
+            # Capture the matplotlib container
+            pixmap = self.matplotlib_container.grab()
         else:
-            qDebug("No config in metadata found")
+            # Capture the pyqtgraph widget
+            pixmap = self.plot_widget.grab()
 
-        # print(self.data)
+        clipboard = QApplication.clipboard()
+        clipboard.setPixmap(pixmap)
+        qInfo("Current graph snipped to clipboard!")
 
-        self.plot_data()
+        self.snip_plot_button.setText('Done!')
+        QTimer.singleShot(3000, lambda: self.snip_plot_button.setText('Snip'))
 
     def clear_plots(self):
         """
@@ -493,110 +507,37 @@ class QDesqTab(QWidget):
             self.plot_widget.ci.removeItem(plot)
 
         # Clear matplotlib canvases and related widgets if they exist
-        if hasattr(self, 'matplotlib_canvases'):
-            for canvas in self.matplotlib_canvases:
-                canvas.close()
-            self.matplotlib_canvases = []
-
-        if hasattr(self, 'matplotlib_proxies'):
-            for proxy in self.matplotlib_proxies:
-                if proxy.scene():
-                    self.plot_widget.scene().removeItem(proxy)
-            self.matplotlib_proxies = []
-
-        if hasattr(self, 'matplotlib_viewboxes'):
-            for vb in self.matplotlib_viewboxes:
-                self.plot_widget.ci.removeItem(vb)
-            self.matplotlib_viewboxes = []
+        self.clear_matplotlib_plots()
 
         self.plot_widget.ci.clear()
         self.plots = []
         self.labels = []
         self.labels_added = False
 
-    def reExtract_experiment(self):
+    def clear_matplotlib_plots(self):
         """
-        ReExtracts the current experiment via the experiment_path given. This allows a user to change the experiment code
-        or even the plotter without having to exit the GUI, close any tabs, or import the experiment from scratch.
+        Clears all matplotlib canvases and toolbars from the matplotlib container.
         """
+        # Remove all widgets from matplotlib layout
+        while self.matplotlib_layout.count():
+            item = self.matplotlib_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-        if self.experiment_obj is not None:
-            self.experiment_obj.load_module_and_class()
-
-            if self.experiment_obj.experiment_plotter is not None:
-                self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
-
-            if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
-                hardware_str = "[" + (
-                    ", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
-                self.hardware_label.setText("Hardware: " + hardware_str)
-            qDebug("ReExtracted Experiment: experiment attributes extracted.")
-            self.updated_tab.emit()
-
-            self.reExtract_experiment_button.setText('Done!')
-            QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))
-
-    def update_coordinates(self, pos):
-        """
-        Updates the coordinates label to reflect the cursor's location on a plot's axis. Also gets the value of the
-        plot at the coordinates if the plot is a color plot.
-
-        :param pos: The coordinates of the cursor
-        :type pos: tuple
-        """
-
-        # find the active plot
-        for plot in self.plots:
-            vb = plot.vb  # ViewBox of each plot
-            if plot.sceneBoundingRect().contains(pos):
-                self.plot_widget.setCursor(Qt.CrossCursor)  # make cursor cross-hairs
-                mouse_point = vb.mapSceneToView(pos)  # translate location to axis coordinates
-                x, y = mouse_point.x(), mouse_point.y()
-
-                # Try to find an ImageItem in the plot (for color data)
-                image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
-                if image_items:
-                    img_item = image_items[0]
-                    image = img_item.image.T  # The underlying numpy array, assuming plotting origins
-                    if image is not None:
-                        # Map view coordinates to array indices
-                        transform = img_item.transform()
-                        inv_transform = transform.inverted()[0]
-                        mapped = inv_transform.map(mouse_point)
-
-                        ix, iy = int(mapped.x()), int(mapped.y())
-                        if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
-                            value = image[iy, ix]  # Note: row = y, col = x
-                            self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} Val: {value:.4f}")
-                            return
-
-                # If no image or outside bounds
-                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
-                return
-
-    def capture_plot_to_clipboard(self):
-        """
-        Captures a screenshot of the plot via a QPixmap and saves it to the users clipboard. Paste normally.
-        """
-        pixmap = self.plot_widget.grab()  # This grabs the content of the plot_widget
-        clipboard = QApplication.clipboard()
-        clipboard.setPixmap(pixmap)
-        qInfo("Current graph snipped to clipboard!")
-
-        self.snip_plot_button.setText('Done!')
-        QTimer.singleShot(3000, lambda: self.snip_plot_button.setText('Snip'))
+        # Clear stored references
+        self.matplotlib_canvases.clear()
+        self.matplotlib_toolbars.clear()
 
     def remove_plot(self):
         """
-        Retrieves the cursor's current position and removes the corresponding plot that it is hovering over
-        from the layout.
+        Removes a plot at the mouse cursor position (only works for PyQtGraph mode).
         """
+        if self.use_matplotlib_checkbox.isChecked():
+            qWarning("Plot removal not supported in Matplotlib mode")
+            return
 
-        # Get cursor position
-        global_pos = QCursor.pos()
-        pos = self.plot_widget.mapFromGlobal(global_pos)  # maps it to its position relative to the plotting space
-
-        # Loops through the list of plots
+        pos = self.plot_widget.mapFromGlobal(QCursor.pos())
         for plot in self.plots:
             vb = plot.vb  # ViewBox of each plot
             if plot.sceneBoundingRect().contains(pos):
@@ -668,59 +609,59 @@ class QDesqTab(QWidget):
 
     def embed_matplotlib_plots(self, *args, **kwargs):
         """
-        Embeds matplotlib plots directly into the GraphicsLayout using QGraphicsProxyWidget.
+        Embeds matplotlib plots natively using FigureCanvasQTAgg widgets.
+        This provides full matplotlib functionality including interactive zooming, panning, etc.
         """
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
 
+        # Switch to matplotlib view
+        self.plot_stack.setCurrentIndex(1)
+
+        # Clear any existing matplotlib plots
+        self.clear_matplotlib_plots()
+
+        # Get all current matplotlib figures
         figures = list(map(plt.figure, plt.get_fignums()))
-        curr_row = 0
+
+        if len(figures) == 0:
+            qWarning("No matplotlib figures to embed")
+            return
+
+        qInfo(f"Embedding {len(figures)} matplotlib figure(s) natively...")
 
         for i, fig in enumerate(figures):
-            ncols = len(fig.get_axes()) if len(fig.get_axes()) > 0 else 1
+            # Apply tight layout to the figure
+            fig.tight_layout(pad=1.0)
 
-            # Set figure size to be reasonable and tight
-            dpi = fig.get_dpi()
-            fig.set_size_inches(8, 6)
-            fig.tight_layout(pad=0.5)
-
-            # Create matplotlib canvas for the figure
+            # Create FigureCanvas from the figure
             canvas = FigureCanvas(fig)
-            canvas.draw()  # Ensure the canvas is fully rendered
-
-            # Set reasonable size constraints
-            canvas.setMinimumSize(600, 450)
-            canvas.setMaximumSize(1200, 900)
             canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            canvas.setMinimumHeight(400)
 
-            # Create a proxy widget to embed the matplotlib canvas
-            proxy = self.plot_widget.scene().addWidget(canvas)
+            # Create navigation toolbar for interactive controls
+            toolbar = NavigationToolbar(canvas, self.matplotlib_container)
+            toolbar.setStyleSheet("background-color: #f0f0f0; padding: 2px;")
 
-            # Add the proxy to a ViewBox in the GraphicsLayout
-            view_box = self.plot_widget.ci.addViewBox(row=curr_row, col=0, colspan=ncols)
-            view_box.setAspectLocked(True)
-            view_box.invertY(True)  # Ensure Y axis is inverted
-            view_box.addItem(proxy)
+            # Add toolbar and canvas to layout
+            self.matplotlib_layout.addWidget(toolbar)
+            self.matplotlib_layout.addWidget(canvas)
 
-            # Store references to prevent garbage collection and allow cleanup
-            if not hasattr(self, 'matplotlib_canvases'):
-                self.matplotlib_canvases = []
-            if not hasattr(self, 'matplotlib_proxies'):
-                self.matplotlib_proxies = []
-            if not hasattr(self, 'matplotlib_viewboxes'):
-                self.matplotlib_viewboxes = []
-
+            # Store references to prevent garbage collection
             self.matplotlib_canvases.append(canvas)
-            self.matplotlib_proxies.append(proxy)
-            self.matplotlib_viewboxes.append(view_box)
+            self.matplotlib_toolbars.append(toolbar)
 
-            curr_row += 1
-            self.plot_widget.nextRow()
+            # Draw the canvas
+            canvas.draw()
 
-        self.labels_added = True
-        plt.close('all')  # Close matplotlib figures after creating canvases
-        qInfo(f"Finished embedding {len(figures)} matplotlib figure(s).")
+        # Add stretch at the end to push plots to the top
+        self.matplotlib_layout.addStretch()
+
+        # Don't close the figures yet - let them remain open for the canvas
+        # plt.close('all') is called when clearing or switching modes
+
+        qInfo(f"Successfully embedded {len(figures)} matplotlib figure(s) with native controls.")
 
         return
 
@@ -729,6 +670,9 @@ class QDesqTab(QWidget):
         Converts matplotlib plots to pyqtgraph by extracting their data.
         (This is the original handle_pltplot behavior)
         """
+
+        # Switch to PyQtGraph view
+        self.plot_stack.setCurrentIndex(0)
 
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
@@ -785,7 +729,7 @@ class QDesqTab(QWidget):
             self.plot_widget.nextRow()
 
         self.labels_added = True
-        plt.close()  # close all figs
+        plt.close('all')  # close all figs
         qInfo(f"Finished plotting {self.curr_plot} matplotlib extractions.")
 
         return
@@ -930,6 +874,11 @@ class QDesqTab(QWidget):
                         pg_legend.addItem(item, label)
             # set legend location
 
+    # NOTE: The rest of the file continues with the remaining methods from the original file
+    # For brevity, I'm including the key updated methods. The remaining methods
+    # (auto_plot_prepare, load_dataset_file, process_data, update_data, etc.)
+    # remain the same as in the original file.
+
     def auto_plot_prepare(self, data_to_plot=None):
         """
         Automatically prepares the data based on its shape. This is not always correct but attempts to infer. This
@@ -968,6 +917,9 @@ class QDesqTab(QWidget):
         :type data_to_plot: dict
 
         """
+
+        # Switch to PyQtGraph view for auto plotting
+        self.plot_stack.setCurrentIndex(0)
 
         self.clear_plots()
 
@@ -1108,6 +1060,30 @@ class QDesqTab(QWidget):
                     self.plot_widget.nextRow()
         return
 
+    def load_dataset_file(self, dataset_file):
+        """
+        Takes the dataset file and loads the dict, before calling the plotter.
+
+        :param dataset_file: The path to the dataset file.
+        :type dataset_file: str
+        """
+
+        self.data = Helpers.h5_to_dict(dataset_file)
+
+        # Extracting the Config
+        if "config" in self.data:
+            qInfo("Config in h5 metadata found")
+            temp_config = self.data["config"]
+
+            self.experiment_config_panel.update_config_dict(temp_config, reset=True)
+            self.data.pop("config")
+        else:
+            qDebug("No config in metadata found")
+
+        # print(self.data)
+
+        self.plot_data()
+
     def intermediate_data(self, data, exp_instance):
         """
         Handles intermediate data - meaning data passed from within a set, not at the end. The difference being it
@@ -1133,31 +1109,14 @@ class QDesqTab(QWidget):
 
     def process_data(self, data):
         """
-        Processes the dataset in the form of averaging.
+        Processes incoming data from experiments.
 
-        :param data: The data to be processed.
+        :param data: The data to process.
         :type data: dict
         """
-
-        # Outdated averaging code that only averages avgi and avgq. Migrated to a general recursive averager
-        # self.data = data
-        # # check what set number is being run and average the data
-        # if "avgi" in self.data["data"] and "avgq" in self.data["data"]:
-        #     set_num = data['data']['set_num']
-        #     if set_num == 0:
-        #         self.data_cur = data
-        #     elif set_num > 0:
-        #         avgi = (self.data_cur['data']['avgi'][0][0] * (set_num) + data['data']['avgi'][0][0]) / (set_num + 1)
-        #         avgq = (self.data_cur['data']['avgq'][0][0] * (set_num) + data['data']['avgq'][0][0]) / (set_num + 1)
-        #         self.data_cur['data']['avgi'][0][0] = avgi
-        #         self.data_cur['data']['avgq'][0][0] = avgq
-        #     self.data['data']['avgi'][0][0] = self.data_cur['data']['avgi'][0][0]
-        #     self.data['data']['avgq'][0][0] = self.data_cur['data']['avgq'][0][0]
-
         if "data" not in data or "set_num" not in data["data"]:
-            raise qWarning("Input data must have 'data' key with 'set_num'.")
+            qWarning("Input data must have 'data' key with 'set_num'.")
             self.data = data
-
         else:
             set_num = data["data"]["set_num"]
 
@@ -1221,6 +1180,66 @@ class QDesqTab(QWidget):
         # Unsupported type
         else:
             qWarning(f"Unsupported data type: {type(new)}")
+
+    def update_coordinates(self, pos):
+        """
+        Updates the coordinates label to reflect the cursor's location on a plot's axis. Also gets the value of the
+        plot at the coordinates if the plot is a color plot.
+
+        :param pos: The coordinates of the cursor
+        :type pos: tuple
+        """
+
+        # find the active plot
+        for plot in self.plots:
+            vb = plot.vb  # ViewBox of each plot
+            if plot.sceneBoundingRect().contains(pos):
+                self.plot_widget.setCursor(Qt.CrossCursor)  # make cursor cross-hairs
+                mouse_point = vb.mapSceneToView(pos)  # translate location to axis coordinates
+                x, y = mouse_point.x(), mouse_point.y()
+
+                # Try to find an ImageItem in the plot (for color data)
+                image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
+                if image_items:
+                    img_item = image_items[0]
+                    image = img_item.image.T  # The underlying numpy array, assuming plotting origins
+                    if image is not None:
+                        # Map view coordinates to array indices
+                        transform = img_item.transform()
+                        inv_transform = transform.inverted()[0]
+                        mapped = inv_transform.map(mouse_point)
+
+                        ix, iy = int(mapped.x()), int(mapped.y())
+                        if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
+                            value = image[iy, ix]  # Note: row = y, col = x
+                            self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} Val: {value:.4f}")
+                            return
+
+                # If no image or outside bounds
+                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
+                return
+
+    def reExtract_experiment(self):
+        """
+        ReExtracts the current experiment via the experiment_path given. This allows a user to change the experiment code
+        or even the plotter without having to exit the GUI, close any tabs, or import the experiment from scratch.
+        """
+
+        if self.experiment_obj is not None:
+            self.experiment_obj.load_module_and_class()
+
+            if self.experiment_obj.experiment_plotter is not None:
+                self.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
+
+            if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
+                hardware_str = "[" + (
+                    ", ".join(cls.__name__ for cls in self.experiment_obj.experiment_hardware_req)) + "]"
+                self.hardware_label.setText("Hardware: " + hardware_str)
+            qDebug("ReExtracted Experiment: experiment attributes extracted.")
+            self.updated_tab.emit()
+
+            self.reExtract_experiment_button.setText('Done!')
+            QTimer.singleShot(3000, lambda: self.reExtract_experiment_button.setText('ReExtract'))
 
     def predict_runtime(self, config):
         """
@@ -1336,7 +1355,11 @@ class QDesqTab(QWidget):
                 if folder_path:
                     try:
                         shutil.copy2(self.dataset_file, folder_path)
-                        pixmap = self.plot_widget.grab()
+                        # Capture the appropriate plot widget
+                        if self.use_matplotlib_checkbox.isChecked():
+                            pixmap = self.matplotlib_container.grab()
+                        else:
+                            pixmap = self.plot_widget.grab()
                         file_path = os.path.join(folder_path, self.file_name + ".png")
                         pixmap.save(file_path)
                         qInfo("Saved dataset to " + str(folder_path))
@@ -1397,7 +1420,11 @@ class QDesqTab(QWidget):
 
             # Save image
             try:
-                pixmap = self.plot_widget.grab()
+                # Capture the appropriate plot widget
+                if self.use_matplotlib_checkbox.isChecked():
+                    pixmap = self.matplotlib_container.grab()
+                else:
+                    pixmap = self.plot_widget.grab()
                 pixmap.save(image_filename, "PNG")
             except Exception as e:
                 qCritical(f"Failed to save the plot image to {image_filename}: {str(e)}")

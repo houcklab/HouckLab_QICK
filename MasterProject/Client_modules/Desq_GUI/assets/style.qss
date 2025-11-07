@@ -660,6 +660,7 @@ QCheckBox::indicator {
     margin: 2px;
     border-radius: 4px;
     background: $MAIN_BACKGROUND_COLOR;
+    border: 1px solid $GENERAL_BORDER_COLOR;
 }
 
 QCheckBox::indicator:hover {

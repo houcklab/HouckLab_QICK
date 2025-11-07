@@ -604,7 +604,17 @@ class Desq(QMainWindow):
 
                 # Normal Experiments
                 else:
-                    self.experiment_instance = experiment_class(soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+                    # Inject outerFolder variable manually for triangle lattice (this should be changed later to be more general)
+                    # This solves the weird pycharm workspace issue
+                    obj = object.__new__(experiment_class) # runs without init
+                    if self.soc_connected: # inject before init
+                        setattr(
+                            obj,
+                            "outerFolder",
+                            "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
+                        )
+                    experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+                    self.experiment_instance = obj
 
                 ### Creating the experiment worker from ExperimentThread and Connecting Signals
                 self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
