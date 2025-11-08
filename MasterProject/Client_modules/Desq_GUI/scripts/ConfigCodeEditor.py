@@ -23,6 +23,7 @@ import sys
 import ast
 import importlib.util
 from types import SimpleNamespace
+import matplotlib.pyplot as plt
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QTextEdit, QToolBar, QAction,
@@ -950,7 +951,10 @@ class ConfigCodeEditor(QWidget):
             sys.path.insert(0, script_dir)
             os.chdir(script_dir)
 
+            # Get rid of plt intercept hook during the config extraction
+            plt.show = self.app._original_show
             exec(code, namespace)
+            plt.show = self._intercept_plt_show_wrapper()
 
         except Exception as e:
             qCritical("Error while running script:")
