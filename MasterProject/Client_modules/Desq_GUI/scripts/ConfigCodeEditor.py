@@ -323,8 +323,11 @@ class ScintillaCodeEditor(QsciScintilla):
         self.lexer = QsciLexerPython(self)
         self.setLexer(self.lexer)
 
-        # Set monospace font
-        font = QFont("JetBrains Mono", 12)
+        font = None
+        if sys.platform == "darwin":  # macOS
+            font = QFont("JetBrains Mono", 12)
+        else:  # Windows / Linux
+            font = QFont("JetBrains Mono", 10)
         font.setStyleHint(QFont.Monospace)
         font.setFixedPitch(True)
         self.setFont(font)
@@ -467,9 +470,9 @@ class ScintillaCodeEditor(QsciScintilla):
 class ConfigCodeEditor(QWidget):
     extracted_config = pyqtSignal(dict, dict)
 
-    def __init__(self, parent=None):
+    def __init__(self, app, parent=None):
         super().__init__(parent)
-
+        self.app = app
         # The current code file
         self.code_file = None
         self.file_last_modified = None
@@ -886,28 +889,32 @@ class ConfigCodeEditor(QWidget):
         class DummyLoader:
             """Simulates empty imports for blocked modules."""
 
-            def __init__(self, name):
+            def __init__(self, app, name):
+                self.app = app
                 self.name = name
 
             def create_module(self, spec):
                 dummy_module = SimpleNamespace()
                 if self.name.endswith('socProxy'):
                     dummy_module.makeProxy = None
-                    dummy_module.soc = None
-                    dummy_module.soccfg = None
+                    dummy_module.soc = self.app.soc
+                    dummy_module.soccfg = self.app.soccfg
                 return dummy_module
 
             def exec_module(self, module):
                 pass  # do nothing
 
         class BlockImportHook:
+            def __init__(self, app):
+                self.app = app
+
             def find_spec(self_inner, fullname, path, target=None):
                 if fullname.split('.')[-1] in banned_imports:
                     qWarning(f"[Blocked] Skipping import of '{fullname}'")
-                    return importlib.util.spec_from_loader(fullname, DummyLoader(fullname))
+                    return importlib.util.spec_from_loader(fullname, DummyLoader(self.app, fullname))
                 return None
 
-        import_hook = BlockImportHook()
+        import_hook = BlockImportHook(self.app)
         sys.meta_path.insert(0, import_hook)
 
         # Step 3: Define dummy Experiment classes

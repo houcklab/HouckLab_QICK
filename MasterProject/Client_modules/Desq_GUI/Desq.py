@@ -218,7 +218,7 @@ class Desq(QMainWindow):
         self.vert_splitter.setOrientation(Qt.Vertical)
 
         # Defint he Universal Config Loader section
-        self.config_code_editor = ConfigCodeEditor(self.vert_splitter)
+        self.config_code_editor = ConfigCodeEditor(self, self.vert_splitter)
 
         ### Tab Splitter with the directory tree and tabs
         self.tab_splitter = QSplitter(self.vert_splitter)
