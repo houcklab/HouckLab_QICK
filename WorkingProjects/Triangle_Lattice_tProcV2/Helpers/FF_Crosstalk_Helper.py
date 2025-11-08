@@ -1,12 +1,13 @@
 import numpy as np
+from pathlib import Path
 
 '''Currently implemented in FFDefinitions in FF_utils.py, to correct constant pulse FF gains,
 and in FFEnvelope_Helpers.py, to correct arbitrary waveform gains.'''
 
 # ff_crosstalk_matrix_path = None
-ff_crosstalk_matrix_path = r"Z:\QSimMeasurements\Measurements\8QV1_Triangle_Lattice\qubit_parameters\FF_crosstalk_2.csv"
+ff_crosstalk_matrix_path = Path(r"Z:\QSimMeasurements\Measurements\8QV1_Triangle_Lattice\qubit_parameters\FF_crosstalk_2.csv")
 
-if ff_crosstalk_matrix_path is not None:
+if ff_crosstalk_matrix_path and ff_crosstalk_matrix_path.exists():
     FF_CROSSTALK = np.loadtxt(ff_crosstalk_matrix_path, delimiter=",")
     FF_CORRECTION = np.linalg.inv(FF_CROSSTALK)
     print("Applying FF crosstalk correction.")

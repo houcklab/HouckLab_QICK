@@ -69,7 +69,9 @@ class QLogPanel(QWidget):
         }
 
         color = color_map.get(mode, "#CCCCCC")  # Default gray
-        formatted_message = f'<span style="color:{color}">> {message}</span>'
+        formatted_message = (
+            f'<span style="color:{color}">> {message}</span>'
+        )
 
         self.logger.append(formatted_message)
         # self.logger.ensureCursorVisible()

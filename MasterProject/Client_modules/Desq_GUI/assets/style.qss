@@ -526,7 +526,7 @@ QPushButton#close_findbar_button {
 }
 
 QTextEdit#code_text_editor {
-    font-size: $SMALL_FONT_SIZEpx;
+    font-size: $GLOBAL_FONT_SIZE;
     border: 1px solid $GENERAL_BORDER_COLOR;
     background: $MAIN_BACKGROUND_COLOR;
 }

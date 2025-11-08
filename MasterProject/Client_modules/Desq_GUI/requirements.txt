@@ -29,3 +29,4 @@ spirack==0.2.5
 tqdm==4.67.1
 pyvisa==1.15.0
 pyvisa-py==0.7.2
+QScintilla==2.14.1

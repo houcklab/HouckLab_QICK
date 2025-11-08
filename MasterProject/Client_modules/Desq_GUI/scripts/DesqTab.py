@@ -26,6 +26,7 @@ from PyQt5.QtCore import (
     Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer,
     pyqtSignal, qWarning, QSettings
 )
+from typing import Optional, Tuple, Dict
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -54,6 +55,7 @@ from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanelAdv import QCo
 
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentObject import ExperimentObject
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
+from MasterProject.Client_modules.Desq_GUI.scripts.SmartFitter import FitManager, FitResult
 
 
 class ExperimentInfoBar(QWidget):
@@ -220,6 +222,11 @@ class QDesqTab(QWidget):
         self.matplotlib_canvases = []
         self.matplotlib_toolbars = []
 
+        # Fit manager and results
+        self.fit_manager = FitManager()
+        self.fit_results = []
+        self.fit_overlays = []  # Store fit curve overlays on plots
+
         self.last_run_experiment_config = {}
 
         ### Setting up the Tab
@@ -310,7 +317,7 @@ class QDesqTab(QWidget):
 
         self.plot_method_label = QLabel("Plotter:")
         self.plot_method_label.setObjectName("plot_method_label")
-        self.plot_method_combo = QComboBox(self.plot_settings_container)
+        self.plot_method_combo = QComboBox()
 
         self.plot_method_combo.setFixedWidth(100)
         self.plot_method_combo.setObjectName("plot_method_combo")
@@ -322,13 +329,31 @@ class QDesqTab(QWidget):
         self.use_matplotlib_checkbox.setToolTip("Use native Matplotlib rendering instead of converting to PyQtGraph.")
         self.use_matplotlib_checkbox.setChecked(False)
 
-        self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot
+        self.fit_label = QLabel("Fit:")
+        self.fit_label.setObjectName("fit_label")
+        self.fit_combo = QComboBox(self.plot_settings_container)
+        self.fit_combo.setFixedWidth(150)
+        self.fit_combo.setObjectName("fit_combo")
+        # Add 1D models and 2D analysis methods
+        fit_options = ["None", "Auto"] + self.fit_manager.get_available_models_1d() + ["---", "Chevron Pattern"]
+        self.fit_combo.addItems(fit_options)
+        self.fit_combo.setToolTip("Select fitting model (1D or 2D)")
+
+        self.fit_button = Helpers.create_button("Fit", "fit_button", True, self.plot_settings_container)
+        self.fit_button.setToolTip("Fit data and overlay results")
+        self.fit_button.setFixedWidth(50)
+
+        # self.delete_label = QLabel("hover + \'d\' to delete")  # coordinate of the mouse over the current plot
+        self.delete_label = QLabel("")  # coordinate of the mouse over the current plot
         self.delete_label.setAlignment(Qt.AlignRight)
         self.delete_label.setObjectName("delete_label")
 
         spacerItem = QSpacerItem(0, 30, QSizePolicy.Expanding, QSizePolicy.Fixed)  # spacer
-        self.plot_settings.addWidget(self.plot_method_label)
-        self.plot_settings.addWidget(self.plot_method_combo)
+        # self.plot_settings.addWidget(self.plot_method_label)
+        # self.plot_settings.addWidget(self.plot_method_combo)
+        self.plot_settings.addWidget(self.fit_label)
+        self.plot_settings.addWidget(self.fit_combo)
+        self.plot_settings.addWidget(self.fit_button)
         self.plot_settings.addWidget(self.average_simult_checkbox)
         self.plot_settings.addWidget(self.use_matplotlib_checkbox)
         self.plot_settings.addItem(spacerItem)
@@ -396,6 +421,7 @@ class QDesqTab(QWidget):
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
         self.replot_button.clicked.connect(self.replot_data)
         self.plot_method_combo.currentIndexChanged.connect(self.handle_plot_combo_selection)
+        self.fit_button.clicked.connect(self.perform_fit)
 
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
@@ -500,7 +526,7 @@ class QDesqTab(QWidget):
         """
         Clears the plots.
         """
-        qInfo("Clearing plots")
+        # qInfo("Clearing plots")
         for label in self.labels:
             self.plot_widget.ci.removeItem(label)
         for plot in self.plots:
@@ -508,6 +534,9 @@ class QDesqTab(QWidget):
 
         # Clear matplotlib canvases and related widgets if they exist
         self.clear_matplotlib_plots()
+
+        # Clear fit overlays
+        self.clear_fit_overlays()
 
         self.plot_widget.ci.clear()
         self.plots = []
@@ -632,6 +661,15 @@ class QDesqTab(QWidget):
         qInfo(f"Embedding {len(figures)} matplotlib figure(s) natively...")
 
         for i, fig in enumerate(figures):
+            # Get figure title
+            fig_title = fig._suptitle.get_text() if fig._suptitle else f"{self.file_name} fig{i + 1}"
+
+            # Add a label for the figure title
+            title_label = QLabel(fig_title)
+            title_label.setStyleSheet("font-size: 12pt; font-weight: bold; padding: 5px;")
+            title_label.setAlignment(Qt.AlignCenter)
+            self.matplotlib_layout.addWidget(title_label)
+
             # Apply tight layout to the figure
             fig.tight_layout(pad=1.0)
 
@@ -1083,6 +1121,546 @@ class QDesqTab(QWidget):
         # print(self.data)
 
         self.plot_data()
+
+    def perform_fit(self):
+        """
+        Performs fitting on the current plots based on fit_combo selection.
+        Handles both 1D line plots and 2D image data.
+        Now supports both PyQtGraph and Matplotlib modes!
+        """
+        fit_model = self.fit_combo.currentText()
+
+        if fit_model == "None":
+            qInfo("No fitting model selected")
+            return
+
+        # Check which rendering mode is active
+        if self.use_matplotlib_checkbox.isChecked():
+            # Use matplotlib-specific fitting
+            self.perform_fit_matplotlib(fit_model)
+        else:
+            # Use PyQtGraph fitting (original implementation)
+            self.perform_fit_pyqtgraph(fit_model)
+
+    def perform_fit_pyqtgraph(self, fit_model: str):
+        """
+        Performs fitting on PyQtGraph plots.
+        (This is the original perform_fit logic)
+        """
+        if not self.plots:
+            qWarning("No plots available to fit")
+            return
+
+        # Clear previous fit overlays
+        self.clear_fit_overlays()
+
+        qInfo(f"Performing fit with model: {fit_model}")
+
+        # Try to fit each plot
+        fit_count = 0
+        for plot_idx, plot in enumerate(self.plots):
+            # Check if this is a 2D image plot or 1D line plot
+            has_image = any(isinstance(item, pg.ImageItem) for item in plot.items)
+
+            if has_image:
+                # Handle 2D fitting
+                result = self.fit_2d_plot(plot, fit_model)
+                if result and result.get("success"):
+                    fit_count += 1
+                    self.display_2d_fit_results(result)
+
+                    if result.get("fit_performed"):
+                        self.overlay_chevron_fit_on_pyqtgraph(plot, result)
+            else:
+                # Handle 1D fitting
+                x_data, y_data = self.extract_plot_data(plot)
+
+                if x_data is not None and y_data is not None and len(x_data) > 3:
+                    # Perform fit
+                    if fit_model == "Auto":
+                        result = self.fit_manager.fit_1d(x_data, y_data, model_name="Auto")
+                    else:
+                        result = self.fit_manager.fit_1d(x_data, y_data, model_name=fit_model)
+
+                    if result.success:
+                        qInfo(f"Fit successful on plot {plot_idx}: {result.model_name}, R^2={result.r_squared:.4f}")
+                        self.fit_results.append(result)
+
+                        # Overlay fit on plot
+                        self.overlay_fit_on_plot(plot, result)
+                        fit_count += 1
+
+                        # Display fit parameters
+                        self.display_fit_results(result)
+                    else:
+                        qWarning(f"Fit failed on plot {plot_idx}: {result.message}")
+
+        if fit_count > 0:
+            self.fit_button.setText('Done!')
+            QTimer.singleShot(2000, lambda: self.fit_button.setText('Fit'))
+        else:
+            qWarning("No fits were successful")
+
+    def perform_fit_matplotlib(self, fit_model: str):
+        """
+        Performs fitting on matplotlib plots.
+        Extracts data from matplotlib axes and overlays fit curves.
+        """
+        if not self.matplotlib_canvases:
+            qWarning("No matplotlib plots available to fit")
+            return
+
+        # Clear previous fit overlays
+        self.clear_fit_overlays()
+
+        qInfo(f"Performing matplotlib fit with model: {fit_model}")
+
+        # Get all current matplotlib figures
+        figures = list(map(plt.figure, plt.get_fignums()))
+        if not figures: # try again
+            figures = [canvas.figure for canvas in self.matplotlib_canvases]
+            print(figures)
+
+        if not figures:
+            qWarning("No matplotlib figures found")
+            return
+
+        fit_count = 0
+
+        for fig_idx, fig in enumerate(figures):
+            for ax_idx, ax in enumerate(fig.get_axes()):
+
+                # Check for 2D image data
+                if ax.get_images():
+                    qInfo(f"Found 2D image in figure {fig_idx}, axis {ax_idx}")
+                    result = self.fit_2d_matplotlib(ax, fit_model)
+                    if result and result.get("success"):
+                        fit_count += 1
+                        self.display_2d_fit_results(result)
+
+                        if result.get("fit_performed"):
+                            self.overlay_chevron_fit_on_matplotlib(ax, result)
+
+                # Check for 1D line data
+                elif ax.get_lines():
+                    qInfo(f"Found {len(ax.get_lines())} line(s) in figure {fig_idx}, axis {ax_idx}")
+
+                    # Get the first line (main data, not fits)
+                    lines = [line for line in ax.get_lines() if line.get_linestyle() != '--']
+
+                    if not lines:
+                        continue
+
+                    line = lines[0]  # Fit the first data line
+                    x_data = line.get_xdata()
+                    y_data = line.get_ydata()
+
+                    if x_data is not None and y_data is not None and len(x_data) > 3:
+                        # Perform fit
+                        if fit_model == "Auto":
+                            result = self.fit_manager.fit_1d(x_data, y_data, model_name="Auto")
+                        else:
+                            result = self.fit_manager.fit_1d(x_data, y_data, model_name=fit_model)
+
+                        if result.success:
+                            qInfo(f"Fit successful: {result.model_name}, R^2={result.r_squared:.4f}")
+                            self.fit_results.append(result)
+
+                            # Overlay fit on matplotlib axis
+                            self.overlay_fit_on_matplotlib(ax, result)
+                            fit_count += 1
+
+                            # Display fit parameters
+                            self.display_fit_results(result)
+                        else:
+                            qWarning(f"Fit failed: {result.message}")
+
+        # Redraw all matplotlib canvases to show the overlaid fits
+        for canvas in self.matplotlib_canvases:
+            try:
+                canvas.draw()
+            except Exception as e:
+                qWarning(f"Failed to redraw canvas: {str(e)}")
+
+        if fit_count > 0:
+            self.fit_button.setText('Done!')
+            QTimer.singleShot(2000, lambda: self.fit_button.setText('Fit'))
+            qInfo(f"Successfully fitted {fit_count} plot(s)")
+        else:
+            qWarning("No fits were successful")
+
+    def fit_2d_matplotlib(self, ax, fit_model: str) -> Optional[Dict]:
+        """
+        Fit 2D image data in a matplotlib axis (e.g., chevron pattern).
+        """
+        try:
+            # Get image data
+            images = ax.get_images()
+            if not images:
+                return None
+
+            img = images[0]
+            data = img.get_array()
+
+            # Try to get extent information for axes
+            extent = img.get_extent()  # [left, right, bottom, top]
+
+            if extent:
+                left, right, bottom, top = extent
+                ny, nx = data.shape
+                x_axis = np.linspace(left, right, nx)
+                y_axis = np.linspace(bottom, top, ny)
+            else:
+                # Fallback to pixel coordinates
+                ny, nx = data.shape
+                x_axis = np.arange(nx)
+                y_axis = np.arange(ny)
+
+            qInfo(f"2D matplotlib data shape: {data.shape}, "
+                  f"x range: [{x_axis[0]:.3f}, {x_axis[-1]:.3f}], "
+                  f"y range: [{y_axis[0]:.3f}, {y_axis[-1]:.3f}]")
+
+            # Perform 2D analysis
+            if fit_model == "Auto":
+                result = self.fit_manager.analyze_2d(data, method_name="Auto",
+                                                     x_axis=x_axis, y_axis=y_axis, do_fit=True)
+            elif fit_model == "Chevron Pattern":
+                result = self.fit_manager.analyze_2d(data, method_name="Chevron Pattern",
+                                                     x_axis=x_axis, y_axis=y_axis, do_fit=True)
+            else:
+                qWarning(f"2D analysis not available for model: {fit_model}")
+                return None
+
+            return result
+
+        except Exception as e:
+            qCritical(f"2D matplotlib fitting failed: {str(e)}")
+            traceback.print_exc()
+            return None
+
+    def fit_2d_plot(self, plot, fit_model: str) -> Optional[Dict]:
+        """
+        Fit 2D image data (e.g., chevron pattern).
+        Tries to extract real axis values from self.data first.
+        """
+        try:
+            # Extract ImageItem
+            image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
+            if not image_items:
+                return None
+
+            img_item = image_items[0]
+            data = img_item.image.T  # Transpose to get (y, x) orientation
+
+            # Try to get real axis values from data dictionary
+            x_axis_data, y_axis_data = self.try_extract_axes_from_data()
+
+            if x_axis_data is not None and y_axis_data is not None:
+                # Use actual axis values
+                qInfo(f"Using axis data from self.data: x shape={x_axis_data.shape}, y shape={y_axis_data.shape}")
+                x_axis = x_axis_data
+                y_axis = y_axis_data
+            else:
+                # Fallback to pixel coordinates from bounding rect
+                qInfo("No axis data found, using pixel coordinates")
+                rect = img_item.boundingRect()
+                x_min, x_max = rect.left(), rect.right()
+                y_min, y_max = rect.top(), rect.bottom()
+
+                ny, nx = data.shape
+                x_axis = np.linspace(x_min, x_max, nx)
+                y_axis = np.linspace(y_min, y_max, ny)
+
+            qInfo(
+                f"2D data shape: {data.shape}, x range: [{x_axis[0]:.3f}, {x_axis[-1]:.3f}], y range: [{y_axis[0]:.3f}, {y_axis[-1]:.3f}]")
+
+            # Perform 2D analysis
+            if fit_model == "Auto":
+                result = self.fit_manager.analyze_2d(data, method_name="Auto",
+                                                     x_axis=x_axis, y_axis=y_axis, do_fit=True)
+            elif fit_model == "Chevron Pattern":
+                result = self.fit_manager.analyze_2d(data, method_name="Chevron Pattern",
+                                                     x_axis=x_axis, y_axis=y_axis, do_fit=True)
+            else:
+                qWarning(f"2D analysis not available for model: {fit_model}")
+                return None
+
+            return result
+
+        except Exception as e:
+            qCritical(f"2D fitting failed: {str(e)}")
+            traceback.print_exc()
+            return None
+
+    def display_2d_fit_results(self, result: Dict):
+        """Display 2D fit results (e.g., chevron parameters)."""
+        if not result.get("success"):
+            qWarning(f"2D analysis unsuccessful: {result.get('message')}")
+            return
+
+        # Format results
+        lines = ["=== 2D Chevron Fit Results ==="]
+
+        if result.get("fit_performed"):
+            lines.append(f"Coupling g = {result['coupling_g']:.6g} +/- {result['coupling_g_stderr']:.6g}")
+            lines.append(f"Center Delta0 = {result['center_detuning']:.6g} +/- {result['center_detuning_stderr']:.6g}")
+            lines.append(f"Asymmetry b = {result['asymmetry_b']:.6g} +/- {result['asymmetry_b_stderr']:.6g}")
+            lines.append(f"R^2 = {result['fit_r_squared']:.4f}")
+            lines.append(f"Rows fit successfully: {result.get('n_rows_fit', 'N/A')}")
+            lines.append(f"Equation: {result['fit_equation']}")
+
+        lines.append(f"\nSweet spot: row={result['sweet_spot'][0]}, col={result['sweet_spot'][1]}")
+        lines.append(f"Min width: {result['min_width']:.2f}")
+        lines.append(f"Max contrast: {result['max_contrast']:.4f}")
+
+        result_text = "\n".join(lines)
+        qInfo(result_text)
+
+        # Store result
+        self.fit_results.append(result)
+
+        # Optionally show message box
+        # msg = QMessageBox(self)
+        # msg.setWindowTitle("Chevron Fit Results")
+        # msg.setText(result_text)
+        # msg.exec_()
+
+    def try_extract_axes_from_data(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Try to extract x and y axis arrays from self.data for 2D fitting.
+        Looks for common naming conventions.
+        """
+        if self.data is None:
+            return None, None
+
+        data_dict = self.data.get('data', self.data) if isinstance(self.data, dict) else {}
+
+        # Common x-axis names (times, pulses, etc.)
+        x_keys = ['times', 'time', 'pulse_lengths', 'pulse_length', 'x_pts', 'x_axis', 'x']
+        # Common y-axis names (gains, detunings, frequencies, etc.)
+        y_keys = ['gains', 'gain', 'detunings', 'detuning', 'frequencies', 'frequency', 'y_pts', 'y_axis', 'y']
+
+        x_axis = None
+        y_axis = None
+
+        for key in x_keys:
+            if key in data_dict:
+                try:
+                    x_axis = np.array(data_dict[key])
+                    qInfo(f"Found x-axis: {key}, shape: {x_axis.shape}")
+                    break
+                except:
+                    pass
+
+        for key in y_keys:
+            if key in data_dict:
+                try:
+                    y_axis = np.array(data_dict[key])
+                    qInfo(f"Found y-axis: {key}, shape: {y_axis.shape}")
+                    break
+                except:
+                    pass
+
+        return x_axis, y_axis
+
+    def extract_plot_data(self, plot) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Extract x and y data from a PyQtGraph plot.
+        """
+        try:
+            # Get all PlotDataItems from the plot
+            items = [item for item in plot.items if isinstance(item, pg.PlotDataItem)]
+
+            if not items:
+                return None, None
+
+            # Use the first data item (usually the main data)
+            item = items[0]
+            x_data = item.xData
+            y_data = item.yData
+
+            if x_data is not None and y_data is not None:
+                return np.array(x_data), np.array(y_data)
+
+        except Exception as e:
+            qWarning(f"Failed to extract plot data: {str(e)}")
+
+        return None, None
+
+    def overlay_fit_on_matplotlib(self, ax, fit_result: FitResult):
+        """
+        Overlay the fitted curve on a matplotlib axis.
+
+        Parameters:
+        -----------
+        ax : matplotlib.axes.Axes
+            The matplotlib axis to overlay the fit on
+        fit_result : FitResult
+            The fit result containing fit data and parameters
+        """
+        try:
+            if fit_result.fit_data.size == 0:
+                qWarning("No fit data to overlay")
+                return
+
+            x_fit = fit_result.fit_data[:, 0]
+            y_fit = fit_result.fit_data[:, 1]
+
+            # Add fit curve with distinct style
+            line, = ax.plot(x_fit, y_fit, 'r--', linewidth=2.5,
+                            label=f'{fit_result.model_name} Fit (R²={fit_result.r_squared:.3f})',
+                            zorder=10)  # High zorder to draw on top
+
+            # Store reference for later removal
+            self.fit_overlays.append(line)
+
+            # Update or add legend
+            handles, labels = ax.get_legend_handles_labels()
+            if labels:  # Only add legend if there are labels
+                ax.legend(loc='best', framealpha=0.9, fontsize='small')
+
+            qInfo(f"Overlaid fit curve for {fit_result.model_name}")
+
+        except Exception as e:
+            qCritical(f"Failed to overlay fit on matplotlib: {str(e)}")
+            traceback.print_exc()
+
+    def overlay_fit_on_plot(self, plot, fit_result: FitResult):
+        """
+        Overlay the fitted curve on a PyQtGraph plot.
+        """
+        try:
+            if fit_result.fit_data.size == 0:
+                return
+
+            x_fit = fit_result.fit_data[:, 0]
+            y_fit = fit_result.fit_data[:, 1]
+
+            # Add fit curve with distinct color
+            fit_curve = plot.plot(x_fit, y_fit, pen=pg.mkPen(color='r', width=2, style=Qt.DashLine))
+
+            # Store reference
+            self.fit_overlays.append(fit_curve)
+
+        except Exception as e:
+            qCritical(f"Failed to overlay fit: {str(e)}")
+
+    def clear_fit_overlays(self):
+        """
+        Clear all fit overlay curves from both PyQtGraph and matplotlib plots.
+        """
+        for overlay in self.fit_overlays:
+            try:
+                # PyQtGraph overlay
+                if hasattr(overlay, 'scene') and overlay.scene() is not None:
+                    overlay.scene().removeItem(overlay)
+                # Matplotlib line
+                elif hasattr(overlay, 'remove'):
+                    overlay.remove()
+            except Exception as e:
+                qWarning(f"Failed to remove overlay: {str(e)}")
+
+        # Redraw matplotlib canvases if in matplotlib mode
+        if self.use_matplotlib_checkbox.isChecked():
+            for canvas in self.matplotlib_canvases:
+                try:
+                    canvas.draw()
+                except Exception as e:
+                    qWarning(f"Failed to redraw canvas: {str(e)}")
+
+        self.fit_overlays.clear()
+        self.fit_results.clear()
+
+        # qInfo("Cleared all fit overlays")
+
+    def display_fit_results(self, fit_result: FitResult):
+        """Display fit results in a message or label."""
+        # Create a formatted text box
+        result_text = fit_result.format_params()
+        qInfo(f"Fit Results:\n{result_text}")
+
+        # Optionally show a message box with results
+        # msg = QMessageBox(self)
+        # msg.setWindowTitle("Fit Results")
+        # msg.setText(result_text)
+        # msg.setStandardButtons(QMessageBox.Ok)
+        # msg.exec_()
+
+    def overlay_chevron_fit_on_pyqtgraph(self, plot, result: Dict):
+        """
+        Overlay chevron fit visualization on a PyQtGraph plot.
+        """
+        try:
+            if not result.get("fit_performed"):
+                qWarning("No chevron fit to overlay")
+                return
+
+            # Extract fitted parameters
+            g = result.get("coupling_g")
+            delta0 = result.get("center_detuning")
+            b = result.get("asymmetry_b", 0)
+
+            # Draw horizontal line at center detuning (sweet spot)
+            center_line = pg.InfiniteLine(
+                pos=delta0,
+                angle=0,  # Horizontal line
+                pen=pg.mkPen(color='cyan', width=2, style=Qt.DashLine),
+                label=f'Center Δ₀={delta0:.3f}',
+                labelOpts={'position': 0.70, 'color': 'cyan'}
+            )
+            plot.addItem(center_line)
+            self.fit_overlays.append(center_line)
+
+            qInfo(f"Overlaid chevron fit: g={g:.3e}, Δ_0={delta0:.3f}")
+
+        except Exception as e:
+            qCritical(f"Failed to overlay chevron fit on PyQtGraph: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def overlay_chevron_fit_on_matplotlib(self, ax, result: Dict):
+        """
+        Overlay chevron fit visualization on a matplotlib axis.
+
+        Draws:
+        1. Chevron trajectory curve(s) based on fitted parameters
+        2. Horizontal line at center detuning (sweet spot)
+
+        Parameters:
+        -----------
+        ax : matplotlib.axes.Axes
+            The matplotlib axis containing the 2D image
+        result : Dict
+            The chevron fit result dictionary
+        """
+        try:
+            if not result.get("fit_performed"):
+                qWarning("No chevron fit to overlay")
+                return
+
+            # Extract fitted parameters
+            g = result.get("coupling_g")
+            delta0 = result.get("center_detuning")
+            b = result.get("asymmetry_b", 0)
+
+            # Draw horizontal line at center detuning
+            hline = ax.axhline(
+                y=delta0,
+                color='cyan', linestyle='--', linewidth=2.5,
+                label=f'Center Δ₀={delta0:.3f}',
+                zorder=14
+            )
+            self.fit_overlays.append(hline)
+
+            # Update legend
+            ax.legend(loc='best', framealpha=0.9, fontsize='small', ncol=1)
+
+            qInfo(f"Overlaid chevron fit on matplotlib: g={g:.3e}, Δ₀={delta0:.3f}")
+
+        except Exception as e:
+            qCritical(f"Failed to overlay chevron fit on matplotlib: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def intermediate_data(self, data, exp_instance):
         """

@@ -1202,7 +1202,10 @@ class Desq(QMainWindow):
             qInfo("Matplotlib plt.plot intercepted.")
             # traceback.print_stack()
 
-            return self.currently_running_tab.handle_pltplot(*args, **kwargs)
+            if self.currently_running_tab:
+                return self.currently_running_tab.handle_pltplot(*args, **kwargs)
+            elif self.current_tab:
+                return self.current_tab.handle_pltplot(*args, **kwargs)
         return wrapper
 
 # Creating the Desq GUI Main Window

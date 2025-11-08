@@ -650,7 +650,7 @@ class QConfigTreePanel(QWidget):
         self.model.clear()
         self.model.setHorizontalHeaderLabels(['Parameter', 'Value'])
 
-        print(f"to populate: {self._config}")
+        # print(f"to populate: {self._config}")
         for category, params in self._config.items():
             if isinstance(params, dict):
                 # Nested dictionary - add as category with children
