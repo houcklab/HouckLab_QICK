@@ -109,36 +109,45 @@ class ExperimentThread(QObject):
         """
 
         #yoko1.SetVoltage(self.config["yokoVoltage"]) # this needs to go somewhere else
+        try:
+            self.running = True
+            self.idx_set = 0
+            prev_time = time.perf_counter()
 
-        self.running = True
-        self.idx_set = 0
-        prev_time = time.perf_counter()
+            ### loop over all the sets for the data taking
+            while self.running and self.idx_set < self.config["sets"]:
 
-        ### loop over all the sets for the data taking
-        while self.running and self.idx_set < self.config["sets"]:
+                try:
+                    data = self.experiment_instance.acquire()
+                    data['data']['set_num'] = self.idx_set
+                except Exception as e:
+                    format_exc = traceback.format_exc()
+                    self.RFSOC_error.emit(e, format_exc)
+                    self.finished.emit()
+                    return # Do not want to update data -- no new data was recorded!
 
-            try:
-                data = self.experiment_instance.acquire()
-                data['data']['set_num'] = self.idx_set
-            except Exception as e:
-                format_exc = traceback.format_exc()
-                self.RFSOC_error.emit(e, format_exc)
-                self.finished.emit()
-                return # Do not want to update data -- no new data was recorded!
+                # Emit the signal with new data and update the progress bar with additional set complete
+                # Each set clears and recreates the plot (inefficient)
+                self.updateData.emit(data, self.experiment_instance)
 
-            # Emit the signal with new data and update the progress bar with additional set complete
-            # Each set clears and recreates the plot (inefficient)
-            self.updateData.emit(data, self.experiment_instance)
+                self.idx_set += 1
+                curr_time = time.perf_counter()
+                time_delta = curr_time - prev_time
+                prev_time = curr_time
 
-            self.idx_set += 1
-            curr_time = time.perf_counter()
-            time_delta = curr_time - prev_time
-            prev_time = curr_time
+                self.updateRuntime.emit(time_delta, self.idx_set)
+                self.updateProgress.emit(self.idx_set)
 
-            self.updateRuntime.emit(time_delta, self.idx_set)
-            self.updateProgress.emit(self.idx_set)
+            self.finished.emit()
 
-        self.finished.emit()
+        except Exception as e:
+            # emit an error signal (add one if you don't have it)
+            self.RFSOC_error.emit(str(e))
+            qWarning(f"Experiment thread crashed: {e}")
+        finally:
+            self.running = False
+            # emit finished either way
+            self.finished.emit()
 
     def intermediate_data_handler(self, data):
         """

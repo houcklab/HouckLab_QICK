@@ -202,9 +202,10 @@ class ChevronTesterExperiment(ExperimentClassPlus):
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         """
-        Display the chevron as an updating heatmap, matching TesterExperiment style.
+        Display the chevron as a single heatmap, matching TesterExperiment style.
         """
 
+        # default to the experiment's own data
         if data is None:
             data = self.data
 
@@ -215,36 +216,42 @@ class ChevronTesterExperiment(ExperimentClassPlus):
         # choose an unused figure number like TesterExperiment
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(2, 3, figsize=(8, 6), num=figNum)
 
-        axs = axs.flat[0]
+        # single-axes layout
+        fig, ax = plt.subplots(figsize=(8, 6), num=figNum)
         plt.suptitle("Chevron Tester: Synthetic 2D Chevron")
-        axs.set_title("Chevron Heatmap")
+        ax.set_title("Chevron Heatmap")
 
         # extent setup for imshow
         t_step = times[1] - times[0] if len(times) > 1 else 1.0
         g_step = gains[1] - gains[0] if len(gains) > 1 else 1.0
+        extent = [
+            times[0] - t_step / 2.0,
+            times[-1] + t_step / 2.0,
+            gains[0] - g_step / 2.0,
+            gains[-1] + g_step / 2.0,
+        ]
 
-        # initialize once, then update
-        ax_im = axs.imshow(
+        # draw the heatmap
+        im = ax.imshow(
             Z,
             aspect="auto",
-            extent=[times[0] - t_step / 2.0, times[-1] + t_step / 2.0,
-                    gains[0] - g_step / 2.0, gains[-1] + g_step / 2.0],
+            extent=extent,
             origin="lower",
             interpolation="none",
         )
-        cbar = fig.colorbar(ax_im, ax=axs, extend="both")
+
+        cbar = fig.colorbar(im, ax=ax, extend="both")
         cbar.set_label("a.u.", rotation=90)
 
-        axs.set_ylabel("Gain/Detuning (arb.)")
-        axs.set_xlabel("Time (arb.)")
+        ax.set_ylabel("Gain/Detuning (arb.)")
+        ax.set_xlabel("Time (arb.)")
 
-        # draw once
         if plotDisp:
             plt.show(block=False)
             plt.pause(0.1)
-        plt.close(figNum)
+
+        plt.close(fig)
 
     @classmethod
     def export_data(cls, data_file, data, config):

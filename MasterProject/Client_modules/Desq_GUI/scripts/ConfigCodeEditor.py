@@ -23,6 +23,8 @@ import sys
 import ast
 import importlib.util
 from types import SimpleNamespace
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from PyQt5.QtWidgets import (
@@ -326,9 +328,9 @@ class ScintillaCodeEditor(QsciScintilla):
 
         font = None
         if sys.platform == "darwin":  # macOS
-            font = QFont("JetBrains Mono", 12)
+            font = QFont("Menlo", 12)
         else:  # Windows / Linux
-            font = QFont("JetBrains Mono", 10)
+            font = QFont("Consolas", 10)
         font.setStyleHint(QFont.Monospace)
         font.setFixedPitch(True)
         self.setFont(font)
@@ -954,7 +956,7 @@ class ConfigCodeEditor(QWidget):
             # Get rid of plt intercept hook during the config extraction
             plt.show = self.app._original_show
             exec(code, namespace)
-            plt.show = self._intercept_plt_show_wrapper()
+            plt.show = self.app._intercept_plt_show_wrapper()
 
         except Exception as e:
             qCritical("Error while running script:")
@@ -962,6 +964,8 @@ class ConfigCodeEditor(QWidget):
             traceback.print_exc()
 
         finally:
+            # restore custom interceptor, and namespace directories
+            plt.show = self.app._intercept_plt_show_wrapper()
             os.chdir(orig_cwd)
             sys.path = orig_sys_path
 

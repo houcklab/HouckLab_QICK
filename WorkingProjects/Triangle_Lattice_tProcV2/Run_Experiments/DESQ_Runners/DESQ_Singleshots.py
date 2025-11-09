@@ -15,6 +15,8 @@ Qubit_Pulse = [f'{q}R' for q in Qubit_Readout]
 t = True
 f = False
 
+calibrate_singleshot = False
+
 ######################################################
 ############### Experiment Specific ##################
 ######################################################
@@ -131,4 +133,6 @@ SS_2Q_params = {"Shots": 2500, 'number_of_pulses': 1, 'relax_delay': 300}
 ######################################################
 from pathlib import Path
 exec(Path("../UPDATE_CONFIG.py").resolve().read_text(), globals())
-exec(Path("../CALIBRATE_SINGLESHOT_READOUTS.py").resolve().read_text(), globals())
+
+if calibrate_singleshot:
+    exec(Path("../CALIBRATE_SINGLESHOT_READOUTS.py").resolve().read_text(), globals())

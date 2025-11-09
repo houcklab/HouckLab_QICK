@@ -15,10 +15,16 @@ import ast
 import math
 import time
 import traceback
+import threading
 import numpy as np
 import concurrent.futures
+from collections import deque
 from pathlib import Path
+os.environ["MPLBACKEND"] = "Agg"  # ensures headless backend globally
+import matplotlib
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
+from matplotlib import _pylab_helpers as _pylab
 from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices, QFont, QCursor
 from PyQt5.QtCore import (
     qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
@@ -29,7 +35,7 @@ from PyQt5.QtCore import (
     QUrl,
     QTimer,
     QEvent,
-    QCoreApplication
+    QCoreApplication, QObject
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -55,7 +61,7 @@ from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentThread import ExperimentThread
-from MasterProject.Client_modules.Desq_GUI.scripts.DesqTab import QDesqTab
+from MasterProject.Client_modules.Desq_GUI.scripts.DesqTabAdv import QDesqTab
 from MasterProject.Client_modules.Desq_GUI.scripts.VoltagePanel import QVoltagePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AccountsPanel import QAccountPanel
 from MasterProject.Client_modules.Desq_GUI.scripts.LogPanel import QLogPanel
@@ -85,6 +91,30 @@ QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 # to be used with TesterExperiment.py
 TESTING = True
 
+
+from PyQt5.QtCore import QObject, pyqtSignal, Qt
+
+class _ShowRelay(QObject):
+    showRequested = pyqtSignal(object, tuple)  # (target, (args, kwargs))
+
+_relay = None
+def _get_relay(parent_on_gui):
+    """
+    Create the relay lazily on the GUI thread once the QApplication is running.
+    parent_on_gui is a bound slot (e.g., self._on_show_requested_gui)
+    """
+    global _relay
+    if _relay is None:
+        _relay = _ShowRelay()  # constructed on GUI thread
+    # Safe to connect multiple times from different owners; Qt de-duplicates exact same connections
+    try:
+        _relay.showRequested.disconnect(parent_on_gui)
+    except TypeError:
+        pass
+    _relay.showRequested.connect(parent_on_gui, Qt.QueuedConnection)
+    return _relay
+
+
 class Desq(QMainWindow):
     """
     The class for the main Desq application window.
@@ -108,6 +138,13 @@ class Desq(QMainWindow):
     :type status: str
     """
 
+    # Relay to hop to GUI thread
+    class _ShowRelay(QObject):
+        """
+        Class that relays plt.show in a thread safe manner via signals.
+        """
+        showRequested = pyqtSignal(object, tuple)  # (target_tab, (args, kwargs))
+
     def __init__(self):
         """
         Initializes an instance of a Desq GUI application.
@@ -128,6 +165,19 @@ class Desq(QMainWindow):
         self.current_tab = None
         self.currently_running_tab = None
         self.tabs_added = False
+
+        # Plot Interceptor
+        # queue + timer you already have
+        self._show_queue = deque()
+        self._show_lock = threading.Lock()
+        self._draining_shows = False
+
+        self._show_timer = QTimer(self)
+        self._show_timer.setSingleShot(True)
+        self._show_timer.timeout.connect(self._drain_show_queue)
+
+        # connect relay on GUI thread
+        self._relay = _get_relay(self._on_show_requested_gui)
 
         # The settings window
         self.settings_window = SettingsWindow()
@@ -737,16 +787,28 @@ class Desq(QMainWindow):
         """
 
         self.stop_experiment()
+
         if hasattr(self, 'aux_worker') and self.aux_worker is not None:
             try:
                 self.aux_worker.stop()
             except:
                 pass
 
+        if getattr(self, "thread", None):
+            self.thread.requestInterruption()
+            self.thread.quit()
+            self.thread.wait(5000)  # avoid zombie threads
+            if self.worker:
+                self.worker.deleteLater()
+            self.thread.deleteLater()
+
         self.settings_window.close()
 
         # reassign plt.show
-        plt.show = self._original_show
+        try:
+            plt.show = self._original_show
+        except Exception:
+            pass
 
         event.accept()
 
@@ -1182,31 +1244,92 @@ class Desq(QMainWindow):
 
         return direct_imports
 
+    # def _intercept_plt_show_wrapper(self):
+    #     """
+    #     Intercept plt.show() and forward the plot handling to the GUI thread.
+    #     Ensures thread-safety by dispatching off-main calls via QTimer.singleShot.
+    #     Also throttles excessive calls using self.intercept_delay.
+    #     """
+    #
+    #     def wrapper(*args, **kwargs):
+    #         now = time.monotonic()
+    #         with self._intercept_lock:
+    #             if now - self.last_intercept_time < self.intercept_delay:
+    #                 return
+    #             self.last_intercept_time = now
+    #
+    #         target = self.currently_running_tab or self.current_tab
+    #         if not target or not hasattr(target, 'handle_pltplot'):
+    #             return
+    #
+    #         def do_handle():
+    #             try:
+    #                 qInfo("Matplotlib plt.show intercepted; handling on GUI thread.")
+    #                 target.handle_pltplot(*args, **kwargs)
+    #             except Exception as e:
+    #                 qWarning(f"Error handling intercepted plt.show: {e}")
+    #
+    #         # If we're on the GUI thread, handle immediately; otherwise queue to GUI.
+    #         if threading.current_thread() is threading.main_thread():
+    #             return do_handle()
+    #         else:
+    #             QTimer.singleShot(0, do_handle)
+    #             return
+    #
+    #     return wrapper
+
     def _intercept_plt_show_wrapper(self):
-        """
-        The wrapper function used to intercept any calls plt.show that is run from the GUI. This wrapper intercept
-        method is required for a pyqt thread to catch calls.
-        """
-
         def wrapper(*args, **kwargs):
-            """
-            The wrapper function that intercepts the call and calls handle_pltplot.
-            """
-            current_time = time.time()
-            # Check if enough time has passed since the last interception
-            if current_time - self.last_intercept_time < self.intercept_delay:
-                # qDebug("Interception is temporarily disabled.")
+            target = self.currently_running_tab or self.current_tab
+            if not target or not hasattr(target, "handle_pltplot"):
                 return
-            self.last_intercept_time = current_time
 
-            qInfo("Matplotlib plt.plot intercepted.")
-            # traceback.print_stack()
+            # Grab the ACTUAL figures at the call site (thread-safe Python objects)
+            managers = list(_pylab.Gcf.get_all_fig_managers())
+            captured_figures = [m.canvas.figure for m in managers if hasattr(m, "canvas")]
 
-            if self.currently_running_tab:
-                return self.currently_running_tab.handle_pltplot(*args, **kwargs)
-            elif self.current_tab:
-                return self.current_tab.handle_pltplot(*args, **kwargs)
+            payload = {"_captured_figures": captured_figures, "args": args or (), "kwargs": kwargs or {}}
+
+            if threading.current_thread() is threading.main_thread():
+                # enqueue on GUI thread (immediate drain for single-call case)
+                self._enqueue_show_request(target, (), payload)
+            else:
+                # async hop to GUI thread
+                self._relay.showRequested.emit(target, ((), payload))
+            return
+
         return wrapper
+
+    def _on_show_requested_gui(self, target, payload):
+        args, kwargs = payload
+        self._enqueue_show_request(target, args, kwargs)
+
+    def _enqueue_show_request(self, target, args, kwargs):
+        with self._show_lock:
+            self._show_queue.append((target, args, kwargs))
+        if not self._show_timer.isActive():
+            self._show_timer.start(15)  # small coalesce window; set 0 if you want immediate
+
+    def _drain_show_queue(self):
+        if self._draining_shows:
+            return
+        self._draining_shows = True
+        try:
+            while True:
+                with self._show_lock:
+                    if not self._show_queue:
+                        break
+                    target, args, kwargs = self._show_queue.popleft()
+                if hasattr(target, "handle_pltplot"):
+                    try:
+                        target.handle_pltplot(*args, **kwargs)
+                    except Exception as e:
+                        qWarning(f"Error handling queued plt.show: {e}")
+        finally:
+            self._draining_shows = False
+            if self._show_queue and not self._show_timer.isActive():
+                self._show_timer.start(15)
+
 
 # Creating the Desq GUI Main Window
 if __name__ == '__main__':
