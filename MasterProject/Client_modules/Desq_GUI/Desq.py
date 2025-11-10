@@ -53,28 +53,26 @@ from PyQt5.QtWidgets import (
     QSizePolicy, QTextEdit, QSizeGrip, QMenu
 )
 
-# Use absolute imports maybe
+from MasterProject.Client_modules.Init.initialize import BaseConfig
+from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+
 from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Desq_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
-from MasterProject.Client_modules.Init.initialize import BaseConfig
-from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentThread import ExperimentThread
 from MasterProject.Client_modules.Desq_GUI.scripts.DesqTabAdv import QDesqTab
 from MasterProject.Client_modules.Desq_GUI.scripts.VoltagePanel import QVoltagePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AccountsPanel import QAccountPanel
 from MasterProject.Client_modules.Desq_GUI.scripts.LogPanel import QLogPanel
-
-# from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanelAdv import QConfigTreePanel
 
 from MasterProject.Client_modules.Desq_GUI.scripts.DirectoryTreePanel import DirectoryTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import AuxiliaryThread
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
 from MasterProject.Client_modules.Desq_GUI.scripts.SettingsWindow import SettingsWindow
-import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 from MasterProject.Client_modules.Desq_GUI.scripts import ExperimentLoader
+import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
 script_parent_directory = os.path.dirname(script_directory)

@@ -87,6 +87,7 @@ class MatplotlibFigureItem:
     figure: Any  # matplotlib.figure.Figure
     canvas: FigureCanvas
     toolbar: NavigationToolbar
+    container: QWidget
     labels: List[Any] = field(default_factory=list)  # Label widgets
 
 
@@ -140,6 +141,13 @@ class PlotManager:
                 try:
                     plt.close(fig_item.figure)
                 except:
+                    pass
+
+                try:
+                    if fig_item.container is not None:
+                        fig_item.container.setParent(None)
+                        fig_item.container.deleteLater()
+                except Exception:
                     pass
 
             # Clear matplotlib layout
@@ -793,12 +801,6 @@ class QDesqTab(QWidget):
         else:
             self.convert_matplotlib_to_pyqtgraph(*args, **kwargs)
 
-        # Clean up to prevent memory leaks
-        try:
-            plt.close('all')
-        except:
-            pass
-
     def embed_matplotlib_plots(self, *args, **kwargs):
         self.plot_stack.setCurrentIndex(1)
         self.clear_plots()
@@ -851,7 +853,13 @@ class QDesqTab(QWidget):
             self.matplotlib_layout.addWidget(fig_widget)
 
             # Track and draw
-            fig_item = MatplotlibFigureItem(figure=fig, canvas=canvas, toolbar=toolbar, labels=[])
+            fig_item = MatplotlibFigureItem(
+                figure=fig,
+                canvas=canvas,
+                toolbar=toolbar,
+                container=fig_widget,
+                labels=[]
+            )
             self.plot_manager.add_matplotlib_figure(fig_item)
             canvas.draw()
 
@@ -1778,33 +1786,36 @@ class QDesqTab(QWidget):
         """
         UPDATED: Updates the coordinates label with plot_manager.
         """
-        # Find the active plot
-        for plot in self.plot_manager.get_pyqtgraph_plots():  # UPDATED
-            vb = plot.vb
-            if plot.sceneBoundingRect().contains(pos):
-                self.plot_widget.setCursor(Qt.CrossCursor)
-                mouse_point = vb.mapSceneToView(pos)
-                x, y = mouse_point.x(), mouse_point.y()
 
-                # Try to find an ImageItem for color data
-                image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
-                if image_items:
-                    img_item = image_items[0]
-                    image = img_item.image.T
-                    if image is not None:
-                        # Map view coordinates to array indices
-                        transform = img_item.transform()
-                        inv_transform = transform.inverted()[0]
-                        mapped = inv_transform.map(mouse_point)
+        if not self.use_matplotlib_checkbox.isChecked():
 
-                        ix, iy = int(mapped.x()), int(mapped.y())
-                        if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
-                            value = image[iy, ix]
-                            self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} Val: {value:.4f}")
-                            return
+            # Find the active plot
+            for plot in self.plot_manager.get_pyqtgraph_plots():  # UPDATED
+                vb = plot.vb
+                if plot.sceneBoundingRect().contains(pos):
+                    self.plot_widget.setCursor(Qt.CrossCursor)
+                    mouse_point = vb.mapSceneToView(pos)
+                    x, y = mouse_point.x(), mouse_point.y()
 
-                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
-                return
+                    # Try to find an ImageItem for color data
+                    image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
+                    if image_items:
+                        img_item = image_items[0]
+                        image = img_item.image.T
+                        if image is not None:
+                            # Map view coordinates to array indices
+                            transform = img_item.transform()
+                            inv_transform = transform.inverted()[0]
+                            mapped = inv_transform.map(mouse_point)
+
+                            ix, iy = int(mapped.x()), int(mapped.y())
+                            if 0 <= ix < image.shape[1] and 0 <= iy < image.shape[0]:
+                                value = image[iy, ix]
+                                self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f} Val: {value:.4f}")
+                                return
+
+                    self.coord_label.setText(f"X: {x:.4f} Y: {y:.4f}")
+                    return
 
     # =========================================================================
     # EXPERIMENT MANAGEMENT
