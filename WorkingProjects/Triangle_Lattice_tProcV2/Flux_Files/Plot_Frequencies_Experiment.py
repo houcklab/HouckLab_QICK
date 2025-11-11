@@ -23,7 +23,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
 
     def __init__(self, *args, **kwargs):
         # No soc/soccfg required; just pass through to keep API consistent
-        self.outerFolder = None
+        self.outerFolder = ""
         super().__init__(*args, **kwargs)
         self.cfg = self.cfg or {}
         self.cfg.setdefault('plot', True)  # Plot by default
