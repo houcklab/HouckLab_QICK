@@ -157,7 +157,9 @@ class PlotFrequenciesExperiment(ExperimentClass):
             p4 = (xs[k_end], freqs[k_end, j])
             pt = self._segment_intersection(p1, p2, p3, p4)
             if pt is not None:
-                plt.scatter([pt[0]], [pt[1]], marker='^', s=80, zorder=5)
+                plt.scatter([pt[0]], [pt[1]], marker='^', s=100, color='red', zorder=5)
+                plt.text(pt[0], pt[1], '!', color='white', fontsize=10,
+                         ha='center', va='center', fontweight='bold', zorder=6)
 
         plt.xticks(xs)
         plt.xlabel('experimental section index')
