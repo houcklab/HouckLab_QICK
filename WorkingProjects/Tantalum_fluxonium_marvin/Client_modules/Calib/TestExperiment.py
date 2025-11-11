@@ -144,9 +144,9 @@ UpdateConfig_transmission = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 4000,
-    "read_pulse_freq": 6671.55,  # 6253.8,
+    "read_length": 60,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6671.58,  # 6253.8,
 
     # Experiment Parameter
     "TransSpan":  3,  # [MHz] span will be center frequency +/- this parameter
@@ -162,14 +162,14 @@ UpdateConfig_qubit = {
     "qubit_length": 2,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 700,
-    "qubit_freq_stop": 1100,
+    "qubit_freq_start": 1000,
+    "qubit_freq_stop": 1300,
     "SpecNumPoints": 101,  # Number of points
     'spec_reps': 10000,  # Number of repetition
     "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 
     # Define the yoko voltage
-    "yokoVoltage": -0.12,
+    "yokoVoltage": -0.1235,
     "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': False, # This is for turning off the heating tone
     'mode_periodic': False,
@@ -305,14 +305,14 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # TITLE: Transmission vs Power
 
 UpdateConfig = {
-    "yokoVoltage": -0.122,
+    "yokoVoltage": -0.1235,
     "trans_gain_start": 100,
     "trans_gain_stop": 10000,
     "trans_gain_num": 31,
-    "trans_reps": 800,
+    "trans_reps": 2000,
     "read_pulse_style": "const",
     "readout_length": 10,  # [us]
-    "trans_freq_start": 6668,  # [MHz]
+    "trans_freq_start": 6671,  # [MHz]
     "trans_freq_stop": 6672.5,  # [MHz]
     "TransNumPoints": 401,
     "relax_delay": 10,
@@ -351,19 +351,19 @@ for flux in flux_list:
 # TITLE: Amplitude rabi Chevron
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -0.12,
+    "yokoVoltage": -0.122,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 30,  # us
     "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6671.655,
+    "read_pulse_freq": 6671.52,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 900,
-    "qubit_freq_stop": 950,
-    "RabiNumPoints": 21,  ### number of points
+    "qubit_freq_start": 950,
+    "qubit_freq_stop": 1100,
+    "RabiNumPoints": 101,  ### number of points
     "qubit_pulse_style": "const",
     "sigma": 1,  ### units us, define a 20ns sigma
-    "qubit_length": 0.5,
+    "qubit_length": 1,
     "flat_top_length": 25,  ### in us
     "relax_delay": 50,  ### turned into us inside the run function
     "qb_periodic": False,

@@ -19,29 +19,29 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.135,
-    "yokoVoltageStop": -0.11,
-    "yokoVoltageNumPoints": 101,
+    "yokoVoltageStart": -0.125,
+    "yokoVoltageStop": -0.115,
+    "yokoVoltageNumPoints": 41,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 200,
+    "trans_reps": 500,
     "read_pulse_style": "const",
     "read_length": 40,  # us
-    "read_pulse_gain": 1000,  # [DAC units]
+    "read_pulse_gain": 3000,  # [DAC units]
     "trans_freq_start":6671,
     "trans_freq_stop": 6673,
-    "TransNumPoints": 401,
+    "TransNumPoints": 201,
 
     # qubit spec parameters
-    "spec_reps": 5000,
+    "spec_reps": 3000,
     "qubit_pulse_style": "const",
-    "qubit_gain": 14000,
-    "qubit_length": 0.5,
+    "qubit_gain": 15000,
+    "qubit_length": 1,
     "flat_top_length" : 10,
     "qubit_freq_start": 600,
     "qubit_freq_stop": 1500,
-    "SpecNumPoints": 151,
+    "SpecNumPoints": 301,
     "sigma": 1,
     "relax_delay": 20,
     'use_switch': False,
@@ -66,9 +66,9 @@ if config["yokoVoltageStart"] > config['yokoVoltageStop']:
 soc.reset_gens()
 filter_freq = (config["trans_freq_start"] + config['trans_freq_stop'])/2
 
-mlbf_filter.set_frequency(filter_freq)
-# sometimes this doesn't work on the first try
-mlbf_filter.set_frequency(filter_freq)
+# mlbf_filter.set_frequency(filter_freq)
+# # sometimes this doesn't work on the first try
+# mlbf_filter.set_frequency(filter_freq)
 
 Instance_SpecVsFlux = SpecVsFlux(path="dataTestSpecVsFlux", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
 data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, individ_fit = False)
