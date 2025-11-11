@@ -36,6 +36,7 @@ class CalculateFFExperiment(ExperimentClass):
 
     def __init__(self, *args, **kwargs):
         # No soc/soccfg required; just pass through to keep API consistent
+        self.outerFolder = ""
         super().__init__(*args, **kwargs)
         self.cfg = self.cfg or {}
         self.cfg.setdefault('plot_effective_system', True)
@@ -49,7 +50,7 @@ class CalculateFFExperiment(ExperimentClass):
         cfg = self.cfg
         plot_effective_system = bool(cfg.get('plot_effective_system', True))
         suffix = str(cfg.get('suffix', 'BS'))
-        frequencies = cfg.get('frequencies', config_template[frequencies])
+        frequencies = cfg.get('frequencies', self.config_template["frequencies"])
 
         try:
             flux_was_given = {key: (freq < 10) for key, freq in frequencies.items()}
@@ -126,9 +127,13 @@ class CalculateFFExperiment(ExperimentClass):
         if not data:
             data = self.data
 
+        print("Plotting FF")
+
         dressed_freqs = data['dressed_freqs']
         g_matrix = data['g_matrix']
         full_device_calib.plot_dressed_system(dressed_freqs, g_matrix)
+        plt.show()
+        plt.pause(0.1)
 
     def save_data(self, data: Dict[str, Any]) -> None:
         pass
@@ -155,8 +160,7 @@ def main():
     }
 
     expt = CalculateFFExperiment(path='', prefix='CalculateFF', soc=None, soccfg=None, cfg=cfg)
-    expt.acquire()
-    expt.display()
+    expt.acquire() # Display determined by config field "plot_effective_system", can also call display manually
 
 if __name__ == '__main__':
     main()
