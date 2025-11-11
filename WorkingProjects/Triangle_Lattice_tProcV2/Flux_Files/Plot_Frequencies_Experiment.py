@@ -115,7 +115,7 @@ def main():
         'gains': gains,
     }
 
-    expt = FFGainPathExperiment(path='', prefix='PlotFrequencies', soc=None, soccfg=None, cfg=config)
+    expt = PlotFrequenciesExperiment(path='', prefix='PlotFrequencies', soc=None, soccfg=None, cfg=config)
     expt.acquire()
 
 
