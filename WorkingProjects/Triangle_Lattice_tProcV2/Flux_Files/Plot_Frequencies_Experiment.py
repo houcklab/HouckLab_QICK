@@ -134,12 +134,12 @@ class PlotFrequenciesExperiment(ExperimentClass):
         xs = np.arange(S, dtype=float)
 
         coupled_pairs = self.coupled_pairs
-        label_offset = 0.0
+        label_offset = 15.0
 
         # plot and label
         for qi in range(Q):
             plt.plot(xs, freqs[:, qi], '-o', label=f'Q{qi + 1}')
-            for s in range(S):
+            for s in [0, S-1]: # Only label first and last or else they overlap
                 plt.annotate(f'Q{qi + 1}', (xs[s], freqs[s, qi] + label_offset), fontsize=8,
                              ha='center', va='bottom')
 
