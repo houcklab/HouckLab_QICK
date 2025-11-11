@@ -15,6 +15,7 @@ def characterize_readout(config, Qubit_Readout):
     new_config = config.copy()
     new_config["FF_Qubits"] = copy.deepcopy(new_config["FF_Qubits"])
     new_config["Shots"] = 4000
+    # new_config["Shots"] = 1
     print(f"Running single shot with {new_config['Shots']} shots.")
 
     fidelity_matrix = np.zeros((len(Qubit_Readout), len(Qubit_Readout)))
@@ -41,7 +42,6 @@ def characterize_readout(config, Qubit_Readout):
 
         print(f"Qubit {Qubit} fidelity = {1-ng_contrast-ne_contrast:.3f};   ng={ng_contrast:.3f}, ne={ne_contrast:.3f}")
         print("All qubit fidelities:",  np.round(100*fidelity, 1))
-
         fidelity_matrix[ro_ind,:] = fidelity
 
         conf_mat = np.array([[1 - ng_contrast, ne_contrast],

@@ -14,7 +14,7 @@ Qubit_Pulse = ['1_4815', '4_4815', '8_4815', '5_4815']
 
 
 # simple population experiment after pulse state preparation
-run_population_shots = True
+run_population_shots = False
 population_shots_dict = {'reps': 5000, 'relax_delay': 200}
 
 run_oscillation_population_shots = False

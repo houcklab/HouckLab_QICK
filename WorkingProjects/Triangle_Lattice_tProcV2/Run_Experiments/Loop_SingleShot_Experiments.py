@@ -121,8 +121,8 @@ for Q in [1,2,3,4,5,6,7,8]:
 
     T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
-    T2R_params = {"stop_delay_us": 3, "expts": 150, "reps": 300,
-                  "freq_shift": 0.0, "phase_shift_cycles": 4, "relax_delay":200}
+    T2R_params = {"stop_delay_us": 5, "expts": 150, "reps": 300,
+                  "freq_shift": 0.0, "phase_shift_cycles": 5, "relax_delay":200}
 
     RunT2E = False
 

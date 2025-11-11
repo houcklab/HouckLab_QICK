@@ -8,6 +8,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
     QubitSpecSliceFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
+    SNROpt_wSingleShot
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
@@ -30,14 +32,16 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterizat
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
-Qubit_Readout = [8]
-Qubit_Pulse   = ['8R']
+Qubit_Readout = [5]
+Qubit_Pulse   = [5]
+
 
 
 
 # Qubit_Readout = [1,2,3,4,5,6,7,8]
-# # Qubit_Readout = ['4_4815_readout', '8_4815_readout', '1_4815_readout', '5_4815_readout']
-# Qubit_Pulse = ['1_4815', '4_4815', '8_4815', '5_4815']
+# Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
+
+
 
 t = True
 f = False
@@ -64,24 +68,24 @@ Spec_relevant_params = {
                         'reps': 200, 'rounds': 1}
 
 Q = 8
-Qubit_Pulse = [f'{Q}R']
+# Qubit_Pulse = [f'{Q}R']
 # Qubit_Pulse = [Q]
-Qubit_Readout = [Q]
+# Qubit_Readout = [Q]
 
-Run_Spec_v_FFgain = True # Inherit spec parameters from above
-FF_sweep_spec_relevant_params = {"qubit_FF_index": Q,
-                            "FF_gain_start": -10000 - 5000, "FF_gain_stop": -10000 + 5000, "FF_gain_steps": 11,
+Run_Spec_vs_FFgain = False # Inherit spec parameters from above
+FF_sweep_spec_relevant_params = {"qubit_FF_index": 5,
+                            "FF_gain_start": -10000, "FF_gain_stop": 0, "FF_gain_steps": 11,
                                  'relax_delay': 100}
 
-center = Expt_FF[FF_sweep_spec_relevant_params['qubit_FF_index']-1]
-FF_sweep_spec_relevant_params['FF_gain_start'] = center - 6000
-FF_sweep_spec_relevant_params['FF_gain_stop'] = center + 6000
+# center = Expt_FF[FF_sweep_spec_relevant_params['qubit_FF_index']-1]
+# FF_sweep_spec_relevant_params['FF_gain_start'] = center - 6000
+# FF_sweep_spec_relevant_params['FF_gain_stop'] = center + 6000
 
 FluxStability = False # Repeat SpecSlice over time
-Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 60*1}
+Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 60*60}
 
 
-Run_Spec_v_Qblox = False
+Run_Spec_vs_Qblox = False
 Spec_v_Qblox_params = {"Qblox_start": 0.4, "Qblox_stop": 1.2, "Qblox_steps": 6, "DAC": 9}
 
 RunAmplitudeRabi = False
@@ -103,22 +107,34 @@ SS_Q_params = {"Shots": 500,
                'number_of_pulses': 1,
                'qubit_sweep_index': -1}
 
+SingleShot_SNROptimize = False
+SNR_params = {'Shots': 500,
+              'gain_start': -3, 'gain_stop':0.5, 'gain_pts': 10,
+              'freq_start': 7900, 'freq_stop': 8000, 'freq_pts': 10,
+              'number_of_pulses': 1}
+
+# SS_Q_params = {"Shots": 500,
+#                "q_gain_span": 4000, "q_gain_pts": 7, "q_freq_span": 8.0, "q_freq_pts": 11,
+#                'number_of_pulses': 1,
+#                'qubit_sweep_index': -1}
+
+
 if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pulse):
     raise ValueError("Qubit optimize sweep index out of range")
 
 # These T1 and T2R experiments are done at FFPulses!
-RunT1 = False
-RunT2 = False
+RunT1 = True
+RunT2 = True
 
-T1_params = {"stop_delay_us": 300, "expts": 40, "reps": 150}
+T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
 T2R_params = {"stop_delay_us": 5, "expts": 125, "reps": 300,
-              "freq_shift": 0.0, "phase_shift_cycles": -3, "relax_delay":200}
+              "freq_shift": 0.0, "phase_shift_cycles": -3, "relax_delay":150}
 
 
 
 RunT1_TLS = False
-T1TLS_params = {"FF_gain_start": -8874 - 4000, "FF_gain_stop": -8874 + 4000, "FF_gain_steps": 301,
+T1TLS_params = {"FF_gain_start": -10000, "FF_gain_stop": 0, "FF_gain_steps": 301,
                     "stop_delay_us": 10, "expts": 5, "reps": 300,
                     'qubitIndex': int(str(Qubit_Pulse[0])[0])}
 
@@ -159,8 +175,8 @@ SingleShot_2Qubit = False
 SS_2Q_params = {"Shots": 2500, 'number_of_pulses': 1, 'relax_delay': 300}
 
 
-# SS_2Q_params = {"Shots": 2500, 'number_of_pulses': 1, 'relax_delay': 300,
-#                 'second_qubit_freq': 3548.1, 'second_qubit_gain': 1630}
+SS_2Q_params = {"Shots": 2500, 'number_of_pulses': 1, 'relax_delay': 300,
+                'second_qubit_freq': 4271.5, 'second_qubit_gain': 8000}
 
 # This ends the working section of the file.
 #----------------------------------------
@@ -190,11 +206,11 @@ if Run2ToneSpec:
     QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Spec_relevant_params,
                         soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True)
 
-if Run_Spec_v_FFgain:
+if Run_Spec_vs_FFgain:
     SpecVsFF(path="SpecVsFF", cfg=config | Spec_relevant_params | FF_sweep_spec_relevant_params,
                              soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True)
 
-if Run_Spec_v_Qblox:
+if Run_Spec_vs_Qblox:
     SpecVsQblox(path="SpecVsQblox", cfg=config | Spec_relevant_params | Spec_v_Qblox_params,
                              soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True)
 
@@ -229,6 +245,11 @@ if SingleShot_QubitOptimize:
 # if SingleShot_ROTimingOptimize:
 #     ROTimingOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
 #                              cfg=config | SS_params | SS_Timing_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True)
+
+if SingleShot_SNROptimize:
+    SNROpt_wSingleShot(path="SNR_OptPump", outerFolder=outerFolder,
+                                   cfg=config | SNR_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True)
+
 
 if Oscillation_Gain or Oscillation_Single or Calib_FF_vs_drive_delay or RunT1_TLS or Run_FF_v_Ramsey and FF_sweep_Ramsey_relevant_params['populations']:
     exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())

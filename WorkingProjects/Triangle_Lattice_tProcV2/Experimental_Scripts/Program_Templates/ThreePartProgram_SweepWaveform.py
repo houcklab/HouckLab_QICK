@@ -77,8 +77,9 @@ class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(self.cfg["res_length"])
         self.FFInvert_arb_length_and_delay(t_start=0)
+        FF.FFInvertWaveforms(self, waveform_label='FFExpts1', t_start=0)
+        self.delay(2 + ceil(self.cfg["expt_samples1"] / 16))
         self.FFPulses(-1 * self.FFPulse, FFDelayTime + len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01,
                       t_start=0)
         self.delay(len(self.cfg["qubit_gains"]) * self.qubit_length_us + FFDelayTime + 1.01)
-        FF.FFInvertWaveforms(self, waveform_label='FFExpts1')
-        self.delay(2+ceil(self.cfg["expt_samples1"]/16))
+

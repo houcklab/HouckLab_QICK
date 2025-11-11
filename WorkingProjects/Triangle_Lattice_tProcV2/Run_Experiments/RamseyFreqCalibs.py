@@ -13,7 +13,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 Gain_list = []
-for Q in [5]:
+for Q in [1,2,3,4,5,6,7,8]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [f'{Q}R']
     # Expt_FF = Pulse_4815_FF

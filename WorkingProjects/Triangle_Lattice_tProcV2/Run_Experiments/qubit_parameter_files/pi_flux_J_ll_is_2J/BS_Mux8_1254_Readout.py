@@ -1,62 +1,50 @@
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers import FF_gains
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import BaseConfig
 import numpy as np
 
 
-# (3550.0, 3800.0, 4300.0, 4150.0, 4000.0, 3900.0, 3650.0, 4200.0)
-Readout_1254_FF = np.array([-22047, -9897, 16124, 5700, -2000, -6341, -13053, 10250])
 
-Readout_1254_FF = np.array([-22047, -11000, 16124, 5700, -2000, -6341, -13053, 10250])
-Readout_1254_FF = np.array([-22047, -11000, 16124, 5700, 500, -6341, -13053, 10250])
+# (4200.0, 4424.4, 3800.0, 4050.0, 4300.0, 3534.5, 3900.0, 3650.0)
+Readout_1254_FF = FF_gains(
+    [6719, 29001, -7719, -718, 12011, -28060, -2498, -14219]
+)
 
-# new readout point
-# (4280.0, 4130.0, 4350.0, 3880.0, 3750.0, 3960.0, 4055.0, 4205.0)
-Readout_1254_FF = np.array([11035, 3643, 17468, -7290, -10862, -2912, 3665, 6214])
-Readout_1254_FF = np.array([11035, 3643, 17468, -7290, -10862, -2400, 3665, 6214]) # 6 good
 
-Readout_1254_FF = np.array([11035, 3643, 17468, -7290, -8500, -2400, 3665, 6214]) # 6 good
-Readout_1254_FF = np.array([11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]) # 6 good
+
 
 
 BS1254_Readout = {
-    '1': {'Readout': {'Frequency': 7121.9, 'Gain': 1057,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4277.4, 'sigma': 0.03, 'Gain': 8288},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '2': {'Readout': {'Frequency': 7077.8, 'Gain': 885,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4127.6, 'sigma': 0.03, 'Gain': 5781},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '3': {'Readout': {'Frequency': 7511.4, 'Gain': 885,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4362.9, 'sigma': 0.03, 'Gain': 7435},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '4': {'Readout': {'Frequency': 7568.1, 'Gain': 1400,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 2,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3867.9, 'sigma': 0.03, 'Gain': 10917},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '5': {'Readout': {'Frequency': 7362.8, 'Gain': 1400,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3814.0, 'sigma': 0.03, 'Gain': 10166},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '6': {'Readout': {'Frequency': 7441.2, 'Gain': 1057,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3973.4, 'sigma': 0.03, 'Gain': 6752},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '7': {'Readout': {'Frequency': 7253.8, 'Gain': 700,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4058.8, 'sigma': 0.03, 'Gain': 10876},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
-    '8': {'Readout': {'Frequency': 7309.3, 'Gain': 885,
-                      'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
-                      'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4209.7, 'sigma': 0.03, 'Gain': 6339},
-          'Pulse_FF': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214]},
+    '1': {'Readout': {'Frequency': 7122.0, 'Gain': 885,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 4196.4, 'sigma': 0.03, 'Gain': 4665},
+          'Pulse_FF': Readout_1254_FF},
+    '2': {'Readout': {'Frequency': 7078.1, 'Gain': 1400,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 4428.0, 'sigma': 0.03, 'Gain': 5057},
+          'Pulse_FF': Readout_1254_FF},
+    '3': {'Readout': {'Frequency': 7510.9, 'Gain': 1400,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3800.0, 'sigma': 0.03, 'Gain': 10500},
+          'Pulse_FF': Readout_1254_FF},
+    '4': {'Readout': {'Frequency': 7568.0, 'Gain': 885,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 4051.1, 'sigma': 0.03, 'Gain': 7645},
+          'Pulse_FF': Readout_1254_FF},
+    '5': {'Readout': {'Frequency': 7363.6, 'Gain': 1228,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 4316.3, 'sigma': 0.03, 'Gain': 7810},
+          'Pulse_FF': Readout_1254_FF},
+    '6': {'Readout': {'Frequency': 7440.9, 'Gain': 1100,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3538.9, 'sigma': 0.03, 'Gain': 3665},
+          'Pulse_FF': Readout_1254_FF},
+    '7': {'Readout': {'Frequency': 7254.1, 'Gain': 714,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3904.3, 'sigma': 0.03, 'Gain': 6596},
+          'Pulse_FF': Readout_1254_FF},
+    '8': {'Readout': {'Frequency': 7308.6, 'Gain': 1100,
+                      'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 3666.9, 'sigma': 0.03, 'Gain': 5755},
+          'Pulse_FF': Readout_1254_FF},
 }
 

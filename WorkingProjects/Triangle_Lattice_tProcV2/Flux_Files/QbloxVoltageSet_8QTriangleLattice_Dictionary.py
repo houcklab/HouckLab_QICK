@@ -57,7 +57,6 @@ Voltage_Dictionary = {
 print(list(Voltage_Dictionary.values()))
 
 
-
 # Voltage_Dictionary = {
 #     'Q1': -0.1588,  # 4335.88
 #     'Q2': -0.2677,  # 4343.7

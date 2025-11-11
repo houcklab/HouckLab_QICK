@@ -29,11 +29,11 @@ outerFolder = "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
 BaseConfig = {
     "res_ch": 8,  # --Fixed
     "qubit_ch": 9,  # --Fixed
-    "ro_chs": [0, 1, 2, 3],  # --Fixed
+    "ro_chs": [0],  # --Fixed, overwritten if using MUX
     "fast_flux_chs": [0,1,2,3,4,5,6,7],
     "res_nqz": 1,
     "qubit_nqz": 2,
-    "mixer_freq": -1200, # 7200  # MHz
+    "mixer_freq": -1750, # 7200  # MHz
     # "qubit_mixer_freq": -1000, # MHz with LO
     "qubit_mixer_freq": 4000, # MHz
     # range=1720.320 MHz, so allowed qubit freqs will be qubit_mixer_freq +- 860 MHz

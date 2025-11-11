@@ -47,9 +47,10 @@ class RampBeamsplitterBase(SweepExperimentND):
 
         assert((t_offset >= 0).all())
         self.cfg['max_t_offset'] = np.max(t_offset)
+        FFExpts = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Expt')
         for i in range(len(self.cfg["IDataArray2"])):
             self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
-                                            constant_values=self.cfg["IDataArray1"][i][self.cfg['expt_samples1']-1])
+                                            constant_values=FFExpts[i])
 
 class RampBeamsplitterOffsetR(RampBeamsplitterBase, SweepExperiment2D_plots):
     def init_sweep_vars(self):

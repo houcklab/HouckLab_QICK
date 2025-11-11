@@ -1,6 +1,7 @@
 # Translation of Qubit_Parameters dict to resonator and qubit parameters.
 # Nothing defined here should be changed in an Experiment unless it is one of the swept variables.
 # Update FF_Qubits dict
+
 FFReadouts = Qubit_Parameters[str(Qubit_Readout[0])]['Readout']['FF_Gains']
 FFPulse = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
 FFExpt = [FF_gain1_expt, FF_gain2_expt, FF_gain3_expt, FF_gain4_expt, FF_gain5_expt, FF_gain6_expt, FF_gain7_expt, FF_gain8_expt]

@@ -15,8 +15,12 @@ Qubit_Readout = [1,2,3,4,5,6,7,8]
 Qubit_Pulse = ['1_4QB', '4_4QB', '8_4QB', '5_4QB']
 
 Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
-Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '6_4Q_readout']
+# Qubit_Pulse = [1,4,8,5]
+# Qubit_Pulse = ['1_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+# Qubit_Pulse = ['1_4Q_readout', '5_4Q_readout', '8_4Q_readout', '6_4Q_readout']
+# Qubit_Pulse = ['2_4Q_readout','3_4Q_readout','6_4Q_readout','7_4Q_readout']
 
+# Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
 # Qubit_Pulse = [3]
 # Qubit_Readout = [3,4]
@@ -52,9 +56,9 @@ ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'durat
 # can plot populations during and after ramp
 run_ramp_population_over_time = True
 run_ramp_population_over_time_shots = False
-population_vs_delay_dict = {'ramp_duration' : 1000, 'ramp_shape': 'cubic',
-                            'time_start': 10, 'time_end' : 3000, 'time_num_points' : 21, 'reps': 1000,
-                            'relax_delay':100, 'time_to_show_shots_samples': 0}
+population_vs_delay_dict = {'ramp_duration' : 1500, 'ramp_shape': 'cubic',
+                            'time_start': 0, 'time_end' : 1500, 'time_num_points' : 21, 'reps': 1000,
+                            'relax_delay':200, 'time_to_show_shots_samples': 0}
 
 
 run_ramp_population_over_time_gain_sweep = False
@@ -74,11 +78,15 @@ run_ramp_population_shots = False
 ramp_population_shots_dict = {'reps': 5000, 'ramp_duration': 1000, 'relax_delay': 200}
 
 run_ramp_density_correlations = False
-ramp_density_correlations_dict = {'reps': 10000, 'ramp_duration': 1000, 'relax_delay': 200,
+ramp_density_correlations_dict = {'reps': 1000000, 'ramp_duration': 1000, 'relax_delay': 200,
                                   'pairs':[[1,2,3,4],[1,2,4,5],[1,2,5,6],[1,2,6,7],[1,2,7,8],
                                             [2,3,4,5],[2,3,5,6],[2,3,6,7],
-                                            [3,4,5,6]],
+                                            [3,4,5,6],
+                                            [4,5,6,7]]
                                   }
+
+
+
 run_ramp_density_sweep_ramp_duration = False
 ramp_density_sweep_dict = {'duration_start':100, 'duration_end':3000, 'duration_num_points':11,}
 
@@ -136,10 +144,11 @@ current_calibration_dict = {'reps': 1000,
                             'timeStart': 0, 'timeStop': 500, 'timeNumPoints': 51}
 
 
+
 run_1D_current_calib_shots = False
 
 current_calibration_dict_shots = {'reps': 1000,
-                                  't_offset': [12, 14, 3, 14, 10, 10, 9, 0],
+                                  't_offset': [24,26,15,26,10,10,9,0],
                                   'ramp_time': 1000, 'relax_delay': 150,
                                   'timeStart': 0, 'timeStop': 560, 'timeNumPoints': 71}
 
@@ -152,10 +161,10 @@ current_correlation_measurement_dict = {'reps': 1000,
                                         'beamsplitter_time': 75}
 
 ramp_current_calibration_time = False
-ramp_current_calibration_time_dict =  {'reps': 500,
-                                       't_offset':  [12,14,3,14,10,10,9,0],
+ramp_current_calibration_time_dict =  {'reps': 1000,
+                                       't_offset':  [24,26,15,26,10,10,9,0],
                                        'ramp_time': 1000, 'relax_delay': 200,
-                                       'timeStart': 800, 'timeStop': 2000, 'timeNumPoints': 251}
+                                       'timeStart': 0, 'timeStop': 1500, 'timeNumPoints': 301}
 
 # run_ramp_oscillations = False
 # # Ramp to FFExpts, then jump to FF_BS

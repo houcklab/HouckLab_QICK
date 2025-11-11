@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 from h5py import File
 import os
 import datetime
+from sklearn.mixture import GaussianMixture
+
 
 def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha = 0.5, print_fidelities = True, return_errors=False):
     ig = data[0]
@@ -25,12 +27,24 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
 
         axs[0].scatter(ig, qg, label='g', color='r', marker='*', alpha=alpha)
         axs[0].scatter(ie, qe, label='e', color='b', marker='*', alpha=alpha)
-        axs[0].scatter(xg, yg, color='k', marker='o')
-        axs[0].scatter(xe, ye, color='k', marker='o')
+        # axs[0].scatter(xg, yg, color='k', marker='o')
+        # axs[0].scatter(xe, ye, color='k', marker='o')
+
+        ###
+        # Testing mv gaussian fit
+        means, variances = multivariate_gaussian(data)
+        axs[0].plot([means[0][0], means[1][0]], [means[0][1], means[1][1]], marker='o',color='black', zorder=10, ls='--')
+        axs[0].add_patch(plt.Circle(means[0], variances[0], color='black', fill=None))
+        axs[0].add_patch(plt.Circle(means[1], variances[1], color='black', fill=None))
+        signal = np.linalg.norm(means[0] - means[1])
+        noise = max(variances)
+        snr = signal / noise
+        ####
+
         axs[0].set_xlabel('I (a.u.)')
         axs[0].set_ylabel('Q (a.u.)')
         axs[0].legend(loc='upper right')
-        axs[0].set_title('Unrotated')
+        axs[0].set_title(f'Unrotated, Sep={signal:.2f}, Var={noise:.2f}, SNR={snr:.2f}')
         axs[0].axis('equal')
     """Compute the rotation angle"""
     theta = -np.arctan2((ye - yg), (xe - xg))
@@ -245,3 +259,21 @@ def hist_process_2Q(data=None, ran=None, figNum = 1, title = '', alpha = 0.5, pr
         axs[i,2].axvline(threshold, 0, 20, color = 'black', alpha = 0.7, ls = '--')
 
         axs[i,2].set_title(f"Fi: {fid * 100:.1f}%; Thr: {threshold:.1f}; ne: {ne_contrast:.2f}, ng: {ng_contrast:.2f}, Read: {read_index}")
+
+def multivariate_gaussian(data=None):
+    ig = data[0]
+    qg = data[1]
+    ie = data[2]
+    qe = data[3]
+
+    X = np.concatenate([np.array(list(zip(ig, qg))), np.array(list(zip(ie, qe)))])
+    gm = GaussianMixture(n_components=2, covariance_type='spherical').fit(X)
+    means = gm.means_
+    variances = gm.covariances_
+
+    # If blobs are close, the covariance fit isn't too great
+    # single_blob_fit = GaussianMixture(n_components=1, covariance_type='spherical').fit(np.array(list(zip(ig, qg))))
+    # variance = single_blob_fit.covariances_[0]
+    # variances = [variance, variance]
+
+    return means, variances

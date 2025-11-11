@@ -200,8 +200,11 @@ class RampCurrentCalibration1D(SweepExperiment1D_plots):
         print('')  ### print empty row for spacing
         print('starting date time: ' + startTime.strftime("%Y/%m/%d %H:%M:%S"))
 
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
-                                                                     self.cfg['ramp_time'])
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
+        #                                                              self.cfg['ramp_time'])
+
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+
 
         # ramp_wait = 3000
         # for ch in range(len(self.cfg['fast_flux_chs'])):
