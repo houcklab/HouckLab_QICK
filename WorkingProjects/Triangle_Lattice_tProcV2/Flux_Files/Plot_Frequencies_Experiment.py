@@ -31,6 +31,8 @@ class PlotFrequenciesExperiment(ExperimentClass):
         (2, 3), (4, 5), (6, 7),
         # diagonals (down-right)
         (1, 4), (3, 6), (5, 8),
+        # Added for testing intersection
+        (4,7),
     ]
 
     def __init__(self, *args, **kwargs):
@@ -158,7 +160,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
             pt = self._segment_intersection(p1, p2, p3, p4)
             if pt is not None:
                 plt.scatter([pt[0]], [pt[1]], marker='^', s=100, color='red', zorder=5)
-                plt.text(pt[0], pt[1], '!', color='white', fontsize=10,
+                plt.text(pt[0]+0.009, pt[1]-5, '!', color='white', fontsize=10,
                          ha='center', va='center', fontweight='bold', zorder=6)
 
         plt.xticks(xs)
