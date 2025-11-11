@@ -86,6 +86,8 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                     im_handles[key].set_clim(vmin=np.nanmin(mat), vmax=np.nanmax(mat))
                     cbar_handles[key].remove()
                     cbar_handles[key] = fig.colorbar(im_handles[key], ax=axs[key], extend='both')
+                    if self.cfg["qubit_spec_delay_type"] == 'log':
+                        axs[key].set_xscale('log')
 
             extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
                       self.spec_fpts[0], self.spec_fpts[-1]]
@@ -137,11 +139,24 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         plt.savefig(self.iname)
 
+        # Time the experiments
+        end_time = datetime.now()
+        print('') ### print empty row for spacing
+        print('ending date time: ' + end_time.strftime("%Y/%m/%d %H:%M:%S"))
+
         return self.data
 
     def __predeclare_arrays(self):
         # Create the array of delays to loop over
-        self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
+        if self.cfg["qubit_spec_delay_type"] == 'linear':
+            self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"],
+                                      self.cfg["qubit_spec_delay_steps"])
+        elif self.cfg["qubit_spec_delay_type"] == 'log':
+            self.delays = np.logspace(np.log(self.cfg["qubit_spec_delay_start"]), np.log(self.cfg["qubit_spec_delay_stop"]),
+                                      self.cfg["qubit_spec_delay_steps"], base = np.e)  # logspace is base 10, log is e
+        else:
+            raise ValueError("cfg[\"qubit_spec_delay_type\"] must be \'linear\' or \'log\'!")
+
         # Create array of spectroscopy frequency points
         self.spec_fpts = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"])
 
@@ -173,11 +188,20 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         elif self.cfg["qubit_pulse_style"] == "const":
             qubit_pulse_length = self.cfg["qubit_length"]  # [us]
 
-        delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
+        if self.cfg["qubit_spec_delay_type"] == 'linear':
+            delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"],
+                                      self.cfg["qubit_spec_delay_steps"])
+        elif self.cfg["qubit_spec_delay_type"] == 'log':
+            delays = np.logspace(np.log(self.cfg["qubit_spec_delay_start"]), np.log(self.cfg["qubit_spec_delay_stop"]),
+                                      self.cfg["qubit_spec_delay_steps"], base = np.e)  # logspace is base 10, log is e
+        else:
+            raise ValueError("cfg[\"qubit_spec_delay_type\"] must be \'linear\' or \'log\'!")
 
-        pulse_length = sum([np.max([self.cfg['ff_length'] + self.cfg['pre_ff_delay'], delay + qubit_pulse_length]) for delay in delays])
-        return (self.cfg["reps"] * self.cfg["qubit_spec_delay_steps"] * self.cfg["qubit_freq_expts"] *
-                (self.cfg['read_length'] + self.cfg["relax_delay"] + pulse_length) * 1e-6)  # [s]
+        reverse_pulse_time = self.cfg['ff_length'] if self.cfg['reverse_pulse'] else 0
+        pulse_length = sum([np.max([self.cfg['ff_length'] + self.cfg['pre_ff_delay'] + reverse_pulse_time,
+                                    delay + qubit_pulse_length]) for delay in delays])
+        return (self.cfg["reps"] * self.cfg["qubit_freq_expts"] *
+                (self.cfg["qubit_spec_delay_steps"] * (self.cfg['read_length'] + self.cfg["relax_delay"]) + pulse_length) * 1e-6)  # [s]
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -209,9 +233,10 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
         # qubit_spec_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-        "qubit_spec_delay_start": 0,     # [us] Initial value
-        "qubit_spec_delay_stop": 2,     # [us] Final value
-        "qubit_spec_delay_steps": 10,    # number of qubit_spec_delay points to take
+        "qubit_spec_delay_start": 0,        # [us] Initial value
+        "qubit_spec_delay_stop": 2,         # [us] Final value
+        "qubit_spec_delay_steps": 10,       # number of qubit_spec_delay points to take
+        "qubit_spec_delay_type": 'linear',  # [string] 'linear' or 'log': how to space the points
 
         "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]
@@ -220,3 +245,41 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         "sets": 5,
         "use_switch": False,
     }
+
+    # Fits the output of acquire, draws some plots. data is a dictionary in the same format as acquire returns.
+    # p0 is the array of initial guesses, one for each parameter in lorentzian (4 atm).
+    def fit_data(self, data, p0):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from scipy.optimize import curve_fit
+
+        def lorentzian(x, x0, gamma, A, y0):
+            return A * gamma ** 2 / ((x - x0) ** 2 + gamma ** 2) + y0
+
+        # dim: [delays, spec]
+        spec_Imat = data['data']['spec_Imat']
+        spec_Qmat = data['data']['spec_Qmat']
+        delays_vec = data['data']['delays_vec']
+        spec_fpts = data['data']['spec_fpts']
+        mag = np.sqrt(spec_Imat ** 2, spec_Qmat ** 2)
+
+        # p0 = [540, 20, -0.3, 2.8]
+        popts = np.zeros((4, mag.shape[0]))
+
+        for j, delay in enumerate(delays_vec):
+            try:
+                popts[:, j], pcov = curve_fit(lorentzian, spec_fpts, mag[j, :], p0 = p0)
+            except RuntimeError:
+                popts[:, j] = [np.nan, np.nan, np.nan, np.nan]
+
+
+        plt.figure()
+        plt.subplot(2, 1, 1)
+        plt.plot( delays_vec, popts[0])
+        plt.ylabel('Centre frequency [MHz]')
+        plt.xlabel('Delay [ns]')
+
+        plt.subplot(2, 1, 2)
+        plt.plot(delays_vec, popts[1])
+        plt.ylabel('Bandwidth [MHz]')
+        plt.xlabel('Delay [ns]')

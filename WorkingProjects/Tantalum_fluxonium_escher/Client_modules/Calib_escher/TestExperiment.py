@@ -129,7 +129,7 @@ UpdateConfig_transmission = {
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,
     "read_pulse_gain": 5000,
-    "read_pulse_freq": 7392.2,
+    "read_pulse_freq": 7391.9,
 
     # Transmission Experiment
     "TransSpan": 1.6,
@@ -137,7 +137,7 @@ UpdateConfig_transmission = {
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.6,
+    "yokoVoltage": -1.125,
 
 }
 
@@ -156,10 +156,10 @@ UpdateConfig_qubit = {
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 200, #2105,
-    "qubit_freq_stop": 1100,#2120,
+    "qubit_freq_start": 800, #2105,
+    "qubit_freq_stop": 1200,#2120,
     "SpecNumPoints": 301,
-    'spec_reps': 5000,#10000, #20000,
+    'spec_reps': 2000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
@@ -775,28 +775,28 @@ AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 # region Spec on repeat Config
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -1.467,
+    "yokoVoltage": -1.125,
     ###### cavity
     "read_pulse_style": "const", # --Fixed
     "read_length": 15, # us
-    "read_pulse_gain": 8000, # [DAC units]
-    "read_pulse_freq": 7391.9441,
+    "read_pulse_gain": 5000, # [DAC units]
+    "read_pulse_freq": 7391.9,
     ##### spec parameters for finding the qubit frequency
     "qubit_freq_start": 900, #1167-10
-    "qubit_freq_stop": 980,
-    "SpecNumPoints": 101,  ### number of points
-    "qubit_pulse_style": "arb",
+    "qubit_freq_stop": 1000,
+    "SpecNumPoints": 51,  ### number of points
+    "qubit_pulse_style": "flat_top",
     "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
-    "sigma": 0.5,  ### units us, define a 20ns sigma
+    "sigma": 0.05,  ### units us, define a 20ns sigma
     # "qubit_length": 1, ### units us, doesnt really get used though
-    # "flat_top_length": 0.025, ### in us
+    "flat_top_length": 0.5, ### in us
     "relax_delay": 10,  ### turned into us inside the run function
     "qubit_gain": 32000, # Constant gain to use
     # "qubit_gain_start": 18500, # shouldn't need this...
-    "reps": 5000, # number of averages of every experiment
+    "reps": 3000, # number of averages of every experiment
     ##### time parameters
-    "delay":  30, # s
-    "repetitions": 60,  ### number of steps
+    "delay":  10, # s
+    "repetitions": 30,  ### number of steps
 }
 config = BaseConfig | UpdateConfig
 
@@ -1164,7 +1164,7 @@ inst_q2trc.display()
 #     "read_pulse_gain": 4000, # [DAC units]
 #     "read_pulse_freq": 5747.5, # [MHz] actual frequency is this number + "cavity_LO"
 #     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 4656.0,
+#     "qubit_freq": 4656.0,G
 #     "pi_qubit_gain": 25000, # Gain of pi pulse
 #     "pi2_qubit_gain": 12500, # Gain of pi/2 pulse
 #     "sigma": 0.050,  ### units us, define a 20ns sigma
@@ -1256,7 +1256,7 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
 
     # Fast flux pulse parameters
-    "ff_gain": 3000,  # [DAC units] Gain for fast flux pulse
+    "ff_gain": -5000,  # [DAC units] Gain for fast flux pulse
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
     "ff_length": 1000,  # [us] Total length of positive fast flux pulse
@@ -1264,12 +1264,12 @@ UpdateConfig = {
     "post_ff_delay": 0.1,  # [us] Delay after ff pulse is over and before measurement
 
     # New format parameters for transmission experiment
-    "start_freq": 7391.5,  # [MHz] Start frequency of sweep
-    "stop_freq": 7392.5,  # [MHz] Stop frequency of sweep
+    "start_freq": 7390.5,  # [MHz] Start frequency of sweep
+    "stop_freq": 7393.5,  # [MHz] Stop frequency of sweep
     "num_freqs": 201,  # Number of frequency points to use
 
-    "yokoVoltage": -1.485,  # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 3000,  # [us] Delay after measurement before starting next measurement
+    "yokoVoltage": -1.05,  # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
     "reps": 500,  # Reps of measurements; init program is run only once
     "reversed_pulse": False,
     "marker_pulse": False,
@@ -1313,7 +1313,7 @@ UpdateConfig = {
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
     # ff_gain sweep parameters: DAC value of fast flux pulse endpoint
-    "ff_gain_start": 100,  # [DAC] Initial value
+    "ff_gain_start": 0,  # [DAC] Initial value
     "ff_gain_stop": 500,  # [DAC] Final value
     "ff_gain_steps": 51,  # number of qubit_spec_delay points to take
 
@@ -1371,8 +1371,8 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 300,        # [MHz]
-    "qubit_freq_stop": 1100,         # [MHz]
+    "qubit_freq_start": 250,        # [MHz]
+    "qubit_freq_stop": 750,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
     "sigma": 0.0250,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 0.2,               # [us], used with "const"
@@ -1381,10 +1381,10 @@ UpdateConfig = {
     "qubit_ch": 1,                   # RFSOC output channel of qubit drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
-    "qubit_spec_delay": 100,          # [us] Delay before qubit pulse
+    "qubit_spec_delay": 5,          # [us] Delay before qubit pulse
 
     # Fast flux pulse parameters
-    "ff_gain": 300,                  # [DAC units] Gain for fast flux pulse
+    "ff_gain": 3000,                  # [DAC units] Gain for fast flux pulse
     "ff_length": 11,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
@@ -1392,10 +1392,10 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "reverse_pulse": False,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
-    "yokoVoltage": -1.5,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 10,               # [us]
-    "qubit_freq_expts": 51,         # number of points
-    "reps": 2000,
+    "yokoVoltage": -1.125,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 1000,               # [us]
+    "qubit_freq_expts": 101,         # number of points
+    "reps": 1000,
     "use_switch": False,
 }
 
@@ -1432,8 +1432,8 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 940,        # [MHz]
-    "qubit_freq_stop": 1010,         # [MHz]
+    "qubit_freq_start": 510,        # [MHz]
+    "qubit_freq_stop": 590,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
     "sigma": 0.05,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 0.05,               # [us], used with "const"
@@ -1444,25 +1444,26 @@ UpdateConfig = {
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": 300,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 50,                  # [us] Total length of positive fast flux pulse
-    "pre_ff_delay": 10,               # [us] Delay before the fast flux pulse
+    "ff_gain": 3000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 990,                  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 5,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "reverse_pulse": False,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
-    "yokoVoltage": -1.475,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 10,               # [us]
-    "qubit_freq_expts": 35,         # number of points
-    "reps": 3000,
+    "yokoVoltage": -1.125,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 5000,               # [us]
+    "qubit_freq_expts": 51,         # number of points
+    "reps": 5000,
     "use_switch": False,
     "marker_pulse": False,       # Bool, do we send a marker qubit pulse at beginning of expt to see in scope
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-    "qubit_spec_delay_start": 0.0,  # [us] Initial value
-    "qubit_spec_delay_stop": 70,      # [us] Final value
-    "qubit_spec_delay_steps": 71,    # number of post_ff_delay points to take
+    "qubit_spec_delay_start": 1.0,  # [us] Initial value
+    "qubit_spec_delay_stop": 1000,      # [us] Final value
+    "qubit_spec_delay_steps": 31,    # number of post_ff_delay points to take
+    "qubit_spec_delay_type": 'log',  # [string] 'linear' or 'log': how to space the points
 }
 
 config = BaseConfig | UpdateConfig
