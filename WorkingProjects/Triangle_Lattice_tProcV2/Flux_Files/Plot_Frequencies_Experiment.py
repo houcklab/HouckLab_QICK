@@ -54,7 +54,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
         cfg = self.cfg
         gains = cfg["gains"]
 
-        freqs = np.array([ff_gains_to_freqs(arr) for arr in tuple(gains)])
+        freqs = np.array([PlotFrequenciesExperiment.ff_gains_to_freqs(arr) for arr in tuple(gains)])
 
 
         # Printing out frequencies
