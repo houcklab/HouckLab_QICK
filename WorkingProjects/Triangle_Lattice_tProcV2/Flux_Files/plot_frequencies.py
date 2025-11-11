@@ -32,7 +32,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
         # diagonals (down-right)
         (1, 4), (3, 6), (5, 8),
         # Added for testing intersection
-        (4,7),
+        # (4,7),
     ]
 
     def __init__(self, *args, **kwargs):
@@ -141,8 +141,8 @@ class PlotFrequenciesExperiment(ExperimentClass):
         for qi in range(Q):
             plt.plot(xs, freqs[:, qi], '-o', label=f'Q{qi + 1}')
             for s in [0, S-1]: # Only label first and last or else they overlap
-                label_offset = -0.1 if s == 0 else 0.1
-                plt.annotate(f'Q{qi + 1}', (xs[s] + label_offset, freqs[s, qi]), fontsize=8,
+                label_offset = -0.13 if s == 0 else 0.13
+                plt.annotate(f'Q{qi + 1}', (xs[s] + label_offset, freqs[s, qi] - 10), fontsize=8,
                              ha='center', va='bottom')
 
         # crossings on last ramp
