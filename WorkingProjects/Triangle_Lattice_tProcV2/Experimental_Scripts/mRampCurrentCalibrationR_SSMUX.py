@@ -15,6 +15,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templ
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import correct_occ
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import fit_double_beamsplitter
 
 
 class RampBeamsplitterBase(SweepExperimentND):
@@ -372,6 +373,66 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         self.y_points = np.linspace(self.cfg['gainStart'], self.cfg['gainStop'], self.cfg['gainNumPoints'],
                                     dtype=int)
         self.ylabel = "Intermediate Jump Gain"
+
+    def analyze(self, data):
+        data_dict = data['data']
+        Z = np.asarray(data_dict[self.z_value], float)  # (R, G, T)
+        gains = np.asarray(data_dict['intermediate_jump_gains'], float)  # (G,)
+        self.fit_params = fit_double_beamsplitter(Z, gains)
+
+        data_dict['fits'] = self.fit_params
+
+    def _display_plot(self, data=None, fig_axs=None):
+        fig, axs = super()._display_plot(data, fig_axs)
+
+        if 'fit_params' in self.__dict__:
+            for r, ax in enumerate(axs):
+                # Fitting plotting
+                # after drawing the heatmap for readout r -> axis = ax
+                fit = self.fit_params
+                g_sorted = fit.get('g_sorted', None)
+                contrast_norm = fit.get('contrast_norm', None)
+                contrast_fit = fit.get('contrast_fit', None)
+
+                # --- Twin x-axis for contrast curves (normalized 0..1) ---
+                axc = ax.twiny()
+                axc.set_xlim(-0.05, 1.05)
+                axc.set_xlabel('contrast (normalized)')
+                axc.tick_params(axis='x', labelsize=8, pad=2)
+
+                if g_sorted is not None and contrast_norm is not None:
+                    # measured contrast (white solid)
+                    c_norm_row = contrast_norm[r]  # (G,)
+                    axc.plot(c_norm_row, g_sorted, color='w', lw=1.8, label='contrast (actual)')
+
+                    # fitted contrast (red dashed) if present
+                    if contrast_fit is not None:
+                        y_fit_row = contrast_fit[r]
+                        if np.isfinite(y_fit_row).any():
+                            axc.plot(y_fit_row, g_sorted, 'r--', lw=1.8, label='contrast (fit)')
+
+                # --- π and zero lines on the heatmap axis ---
+                pi_cands = fit.get('pi_candidates', [[]] * R)[r]
+                zero_cands = fit.get('zero_candidates', [[]] * R)[r]
+
+                first_pi, first_zero = True, True
+                for yy in pi_cands:
+                    ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
+                    ax.annotate(f'π: {yy:.4f}', (20, yy + 100), fontsize=8, color='w',
+                                ha='left', va='bottom')
+
+                for yy in zero_cands:
+                    ax.axhline(yy, color='w', lw=2.0, ls='--', alpha=0.95)
+                    ax.annotate(f'0: {yy:.4f}', (20, yy + 100), fontsize=8, color='w',
+                                ha='left', va='bottom')
+
+                # --- One combined legend from both axes ---
+                h1, l1 = ax.get_legend_handles_labels()
+                h2, l2 = axc.get_legend_handles_labels()
+                if h1 or h2:
+                    legend = ax.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True,
+                                       framealpha=0.8)
+        fig.canvas.draw()
 
 class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_plots):
     def init_sweep_vars(self):
