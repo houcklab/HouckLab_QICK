@@ -26,7 +26,7 @@ def StepPulseArrays(cfg, initial_key, final_key) -> list:
     initial_gains = get_gains(cfg, initial_key)
     final_gains = get_gains(cfg, final_key)
     # print(initial_gains)
-    print("StepPulseArrays:", final_gains)
+    # print("StepPulseArrays:", final_gains)
     return [Compensated_Pulse(fgain, igain, Qubit=j+1) for j, (igain, fgain) in enumerate(zip(initial_gains, final_gains))]
 
 def CubicRampArrays(cfg, initial_key, final_key, ramp_duration, reverse=False) -> list:

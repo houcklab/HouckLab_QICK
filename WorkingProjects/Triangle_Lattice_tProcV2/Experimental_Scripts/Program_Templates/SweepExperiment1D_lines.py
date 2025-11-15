@@ -58,6 +58,7 @@ class SweepExperiment1D_lines(SweepExperimentND):
         return fig, ax
 
     def _update_fig(self, data, fig, axs):
+        # print(self.z_value)
         Z_mat = data['data'][self.z_value]
         lines = axs[-1].lines
         for ro_index in range(len(Z_mat)):

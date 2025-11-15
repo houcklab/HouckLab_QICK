@@ -28,6 +28,9 @@ class FF_gains:
     def __getitem__(self, i):
         return self.arr[i]
 
+    def __setitem__(self, i, val):
+        self.arr[i] = val
+
     def __len__(self):
         return len(self.arr)
 

@@ -21,14 +21,14 @@ calibrate_gain = True
 calibrate_offset = False
 
 
-beamsplitter_point = '1234_correlations_double'
+beamsplitter_point = '1254_correlations'
 
-rungs = ['12','34', '56', '78']
+rungs = ['12', '45']
 
 sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
                       't_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                       'relax_delay': 120,
-                      'gainRange': 2000, 'gainNumPoints': 11,
+                      'gainRange': 3000, 'gainNumPoints': 11,
                       'start': 50, 'step': 8, 'expts': 71}
 
 # sweep_bs_gain_dict = {'reps': 2, 'ramp_time': 10,

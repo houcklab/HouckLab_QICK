@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import FFvsSpec
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 
@@ -21,10 +21,10 @@ Qubit_Parameters = {
                       'FF_Gains': [20000, 20000, 20000, 0, 20000, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
           'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
-    '5': {'Readout': {'Frequency': 7363.56, 'Gain': 4000,
-                      'FF_Gains': [20000, 20000, 20000, 20000, 0, 20000, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
-          'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
-          'Pulse_FF': [0, 0, 0, 0, 0, 0, 0, 0]},
+    '5': {'Readout': {'Frequency': 7363.3, 'Gain': 1057,
+                      'FF_Gains': [-26873, -29001, -25392, -27560, 0, -28060, -25722, -24395], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
+          'Qubit': {'Frequency': 4150, 'sigma': 0.07, 'Gain': 3200},
+          'Pulse_FF': [-26873, -29001, -25392, -27560, 0, -28060, -25722, -24395]},
     '6': {'Readout': {'Frequency': 7441.54, 'Gain': 4000,
                       'FF_Gains': [20000, 20000, 20000, 20000, 20000, 0, 20000, 20000], 'Readout_Time': 3, 'ADC_Offset': 1, 'cavmin': True},
           'Qubit': {'Frequency': 3950, 'sigma': 0.07, 'Gain': 1200},
@@ -83,21 +83,24 @@ FF_gain8_BS = 0
 #                      soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(fig_axs=(fig, [axs[i]]), plotDisp=True, block=False if Q < 8 else True)
 
 
-for Q in [2, 5, 6, 7, 8]:
+for Q in [5]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
 
     Spec_relevant_params = {
-        "qubit_gain": 1000, "SpecSpan":550, "SpecNumPoints": 551,
-        #   "qubit_gain": 1000, "SpecSpan": 200, "SpecNumPoints": 71,
+        "qubit_gain": 100, "SpecSpan":150, "SpecNumPoints": 301,
+          # "qubit_gain": 1000, "SpecSpan": 200, "SpecNumPoints": 71,
         # "qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 71,
         # "qubit_gain": 100, "SpecSpan": 20, "SpecNumPoints": 71,
         'Gauss': False, "sigma": 0.05, "Gauss_gain": 3200,
-        'reps': 14, 'rounds': 14}
+        'relax_delay': 150,
+        'reps': 250, 'rounds': 1}
 
     FF_sweep_spec_relevant_params = {"qubit_FF_index": Q,
-                                "FF_gain_start": -32000, "FF_gain_stop": 32000, "FF_gain_steps": 75}
+                                "FF_gain_start": -1000, "FF_gain_stop": 8000, "FF_gain_steps": 31}
     exec(open("UPDATE_CONFIG.py").read())
 
-    FFvsSpec(path="FF_vs_Spec", cfg=config | Spec_relevant_params | FF_sweep_spec_relevant_params,
+    SpecVsFF(path="FF_vs_Spec", cfg=config | Spec_relevant_params | FF_sweep_spec_relevant_params,
              soc=soc, soccfg=soccfg, outerFolder=outerFolder, prefix=f"Q{Q}").acquire_display_save(plotDisp=True, block=False if Q < 8 else True)
+
+plt.show()

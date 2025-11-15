@@ -13,7 +13,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 Gain_list = []
-for Q in [1,2,3,4,5,6,7,8]:
+for Q in [4,6]:
     Qubit_Readout = [Q]
     Qubit_Pulse = [f'{Q}R']
     # Expt_FF = Pulse_4815_FF
@@ -24,9 +24,9 @@ for Q in [1,2,3,4,5,6,7,8]:
     FF_sweep_Ramsey_relevant_params = {"stop_delay_us": 1,
                                        "expts": 71, "reps": 200,
                                        "qubit_FF_index": int(str(Qubit_Readout[0])[0]),
-                                       "FF_gain_start": Expt_FF[int(str(Qubit_Readout[0])[0]) - 1] - 100,
-                                       "FF_gain_stop": Expt_FF[int(str(Qubit_Readout[0])[0]) - 1] + 100,
-                                       "FF_gain_steps":6,
+                                       "FF_gain_start": Expt_FF[int(str(Qubit_Readout[0])[0]) - 1] - 200,
+                                       "FF_gain_stop": Expt_FF[int(str(Qubit_Readout[0])[0]) - 1] + 200,
+                                       "FF_gain_steps":18,
                                        "relax_delay": 100, 'populations': False,  # "qubit_drive_freq":3950.0
                                        }
 

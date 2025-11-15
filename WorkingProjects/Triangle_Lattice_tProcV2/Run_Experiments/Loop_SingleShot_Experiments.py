@@ -9,6 +9,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
+    SNROpt_wSingleShot
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
@@ -34,11 +36,11 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 
-for Q in [1,2,3,4,5,6,7,8]:
+for Q in [5]:
 # for Q in [3]:
-    Qubit_Readout = [Q]
-    Qubit_Pulse =   [f"{Q}R"]
-    # Qubit_Pulse = [Q]
+    Qubit_Readout = [Q, Q+2]
+    # Qubit_Pulse =   [f"{Q}R"]
+    Qubit_Pulse = [Q]
 
     Expt_FF_subsys = Expt_FF.subsys(Q, det=-10000)
 
@@ -72,7 +74,7 @@ for Q in [1,2,3,4,5,6,7,8]:
     Spec_relevant_params = {
                           # "qubit_gain": 8000, "SpecSpan": 400, "SpecNumPoints": 71,
                           #   "qubit_gain": 4000, "SpecSpan": 200, "SpecNumPoints": 71,
-                             "qubit_gain": 1000, "SpecSpan": 100, "SpecNumPoints": 141,
+                             "qubit_gain": 1000, "SpecSpan": 100, "SpecNumPoints": 101,
                             # "qubit_gain": 199, "SpecSpan": 50, "SpecNumPoints": 71,
                             # "qubit_gain": 10, "SpecSpan": 10, "SpecNumPoints": 71,
                             'Gauss': False, "sigma": 0.03, "Gauss_gain": 6800,
@@ -115,9 +117,14 @@ for Q in [1,2,3,4,5,6,7,8]:
     if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pulse):
         raise ValueError("Qubit optimize sweep index out of range")
 
+    SingleShot_SNROptimize = False
+    SNR_params = {'Shots': 1000,
+                  'gain_start': -2.6, 'gain_stop': 0.5, 'gain_pts': 20,
+                  'freq_start': 7700, 'freq_stop': 8000, 'freq_pts': 20,
+                  'number_of_pulses': 1}
     # These T1 and T2R experiments are done at FFPulses!
     RunT1 = False
-    RunT2 = True
+    RunT2 = False
 
     T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
@@ -137,18 +144,22 @@ for Q in [1,2,3,4,5,6,7,8]:
     #                   "read_length_start":1, "read_length_end":10, "read_length_points":5,
     #                   "trig_time_start":0.1, "trig_time_end":3, "trig_time_points":5}
 
-    Oscillation_Gain = False
-    oscillation_gain_dict = {'qubit_FF_index': 2, 'reps': 300,
-                             'start': 1, 'step': 20, 'expts': 51,
+    Oscillation_Gain = True
+    oscillation_gain_dict = {'qubit_FF_index': Q+2, 'reps': 700,
+                             'start': 1, 'step': 20, 'expts': 71,
                              'gainStart': -6000,
-                             'gainStop': -4000, 'gainNumPoints': 11, 'relax_delay': 100,
+                             'gainStop': -4000, 'gainNumPoints': 11, 'relax_delay': 200,
                              'fit': True}
     Oscillation_Gain_QICK_sweep = True
 
-    center = Ramp_FF[oscillation_gain_dict['qubit_FF_index']-1]
-    center = -13000
-    oscillation_gain_dict['gainStart'] = center - 1000
-    oscillation_gain_dict['gainStop'] = center + 1000
+    try:
+        center = Ramp_FF[oscillation_gain_dict['qubit_FF_index']-1]
+        # center = -13000
+        oscillation_gain_dict['gainStart'] = center - 1000
+        oscillation_gain_dict['gainStop'] = center + 1000
+    except:
+        pass
+
 
     Oscillation_Single = False # uses same dict as gain sweep
 
@@ -250,6 +261,10 @@ for Q in [1,2,3,4,5,6,7,8]:
     if SingleShot_QubitOptimize:
         QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", outerFolder=outerFolder,
                                        cfg=config | SS_params | SS_Q_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
+
+    if SingleShot_SNROptimize:
+        SNROpt_wSingleShot(path="SNR_OptPump", outerFolder=outerFolder,
+                           cfg=config | SNR_params, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     # if SingleShot_ROTimingOptimize:
     #     ROTimingOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,

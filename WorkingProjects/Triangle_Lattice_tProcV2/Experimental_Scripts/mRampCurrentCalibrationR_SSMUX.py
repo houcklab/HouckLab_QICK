@@ -380,10 +380,11 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         gains = np.asarray(data_dict['intermediate_jump_gains'], float)  # (G,)
         self.fit_params = fit_double_beamsplitter(Z, gains)
 
-        data_dict['fits'] = self.fit_params
-
     def _display_plot(self, data=None, fig_axs=None):
         fig, axs = super()._display_plot(data, fig_axs)
+
+        Z = np.asarray(data['data'][self.z_value], float)  # (R, G, T)
+        R, G, T = Z.shape
 
         if 'fit_params' in self.__dict__:
             for r, ax in enumerate(axs):

@@ -102,7 +102,7 @@ class T2RMUX(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, block=True, **kwargs):
+    def display(self, data=None, plotDisp = False, figNum = 1, block=True, ax=None, **kwargs):
         if data is None:
             data = self.data
 
@@ -123,7 +123,13 @@ class T2RMUX(ExperimentClass):
         # ax_q.set_xlabel("Wait time (us)")
         # ax_q.legend()
 
-        fig, ax = plt.subplots(figsize=(7.2, 4.8))
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(7.2, 4.8), num=figNum)
+            plt.suptitle(self.titlename)
+        else:
+            fig = ax.get_figure()
+            ax.set_title(self.titlename)
+
         Contrast = IQ_contrast(avgi, avgq)
         ax.plot(x_pts, Contrast, 'o-', color='blue', label=f'qfreq = {self.cfg["qubit_drive_freq"]}')
         ax.set_ylabel("a.u.")
@@ -142,10 +148,10 @@ class T2RMUX(ExperimentClass):
             ax.plot(x_pts, exp_fit(x_pts, T2, A, y0), color='black',ls='--', label=f'T2 = {T2:.3f} us')
             ax.plot(x_pts, exp_fit(x_pts, T2, -A, y0), color='black', ls='--')
             ax.legend(prop={'size': 14})
+            self.T2 = T2
         except:
             print("No fit found.")
 
-        plt.suptitle(self.titlename)
         plt.title("Read:" + str(self.cfg["Qubit_Readout_List"]))
         plt.savefig(self.iname[:-4] + '.png')
 

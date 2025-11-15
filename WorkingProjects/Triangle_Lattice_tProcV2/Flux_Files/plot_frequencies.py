@@ -178,7 +178,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
 def main():
 
     # Setting gains
-    intermediate_jump_gains = [-13449, None, 8706, None, -5250, None, 19650, None]
+    intermediate_jump_gains = [None, -2040, None, -13730, None, -5300, None, None]
     for i in range(len(intermediate_jump_gains)):
         if intermediate_jump_gains[i] is None:
             intermediate_jump_gains[i] = BS_FF[i]
@@ -188,7 +188,7 @@ def main():
     # gains = [Pulse_4815_FF, Init_FF, Ramp_FF, BS_FF, Readout_1234_FF]
     gains = [readout_gains, Init_FF, Ramp_FF, BS_FF, readout_gains]
     gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
-    gains = [Readout_1234_FF, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
+    # gains = [Readout_1234_FF, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
 
 
     config = {'gains': gains, 'plot': True}

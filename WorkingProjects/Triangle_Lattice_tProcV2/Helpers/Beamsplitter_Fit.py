@@ -83,9 +83,9 @@ def fit_double_beamsplitter(Z, gains):
         contrast_norm[r] = c_norm
 
     fit = {
-        'g_sorted': g_sorted,  # (G,)
-        'contrast_norm': contrast_norm,  # (R, G) normalized measured
-        'contrast_fit': contrast_fit,  # (R, G) fitted values
+        'g_sorted': np.array(g_sorted),  # (G,)
+        'contrast_norm': np.array(contrast_norm),  # (R, G) normalized measured
+        'contrast_fit': np.array(contrast_fit),  # (R, G) fitted values
         'fit_params': fit_params,  # list of [d,w,phi] or None
         'pi_candidates': pi_cands_per_r,  # list[list[float]] per readout
         'zero_candidates': zero_cands_per_r,  # list[list[float]] per readout

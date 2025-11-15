@@ -41,7 +41,23 @@ Qubit_Pulse   = [5]
 # Qubit_Readout = [1,2,3,4,5,6,7,8]
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
+# Qubit_Readout = [5]
+# Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
+# Qubit_Parameters = {
+#     '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1057,
+#                       'FF_Gains': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395], 'Readout_Time': 3,
+#                       'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 4139.0, 'sigma': 0.03, 'Gain': 7001},
+#           'Pulse_FF': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395]},
+# }
+
+Qubit_Parameters |= {
+    '6P': {'Readout': {'Frequency': 7442.1, 'Gain': 1057,
+                      'FF_Gains': Readout_2345_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+          'Qubit': {'Frequency': 4271.6, 'sigma': 0.03, 'Gain': 9914/4},
+          'Pulse_FF': Readout_2345_FF},
+}
 
 t = True
 f = False
@@ -92,7 +108,7 @@ RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"max_gain": 10000, 'relax_delay':100}
 
 
-SingleShot = False
+SingleShot = True
 SS_params = {"Shots": 2000, 'number_of_pulses': 1, 'relax_delay': 200}
 
 SingleShotDecimate = False
@@ -103,14 +119,14 @@ SS_R_params = {"Shots": 500,
 
 SingleShot_QubitOptimize = False
 SS_Q_params = {"Shots": 500,
-               "q_gain_span": 2000, "q_gain_pts": 7, "q_freq_span": 3.0, "q_freq_pts": 7,
+               "q_gain_span": 8000, "q_gain_pts": 7, "q_freq_span": 6.0, "q_freq_pts": 7,
                'number_of_pulses': 1,
                'qubit_sweep_index': -1}
 
 SingleShot_SNROptimize = False
-SNR_params = {'Shots': 500,
-              'gain_start': -3, 'gain_stop':0.5, 'gain_pts': 10,
-              'freq_start': 7900, 'freq_stop': 8000, 'freq_pts': 10,
+SNR_params = {'Shots': 1000,
+              'gain_start': -2, 'gain_stop':0.5, 'gain_pts': 10,
+              'freq_start': 7800, 'freq_stop': 8000, 'freq_pts': 10,
               'number_of_pulses': 1}
 
 # SS_Q_params = {"Shots": 500,
@@ -124,7 +140,7 @@ if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pu
 
 # These T1 and T2R experiments are done at FFPulses!
 RunT1 = True
-RunT2 = True
+RunT2 = False
 
 T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
@@ -144,12 +160,12 @@ T1TLS_params = {"FF_gain_start": -10000, "FF_gain_stop": 0, "FF_gain_steps": 301
 #                   "trig_time_start":0.1, "trig_time_end":3, "trig_time_points":5}
 
 Oscillation_Gain = False
-oscillation_gain_dict = {'qubit_FF_index': 2, 'reps': 200,
-                         'start': 0, 'step': 8, 'expts': 2000,
-                         'gainStart': - 500,
-                         'gainStop': + 500, 'gainNumPoints': 16, 'relax_delay': 200,
+oscillation_gain_dict = {'qubit_FF_index': 6, 'reps': 1000,
+                         'start': 0, 'step': 4, 'expts': 141,
+                         'gainStart': - 9500,
+                         'gainStop':  - 8500, 'gainNumPoints': 9, 'relax_delay': 200,
                          'fit': True}
-Oscillation_Gain_QICK_sweep = True
+Oscillation_Gain_QICK_sweep = False
 
 Oscillation_Single = False # uses same dict as gain sweep
 

@@ -22,7 +22,7 @@ Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
-# Qubit_Pulse = [3]
+# Qubit_Pulse = [2]
 # Qubit_Readout = [3,4]
 
 run_ramp_gain_calibration = False

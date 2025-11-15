@@ -63,15 +63,15 @@ sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 2000,
                         'start': 0, 'step': 8, 'expts': 71}
 
 Beamsplitter1D = False
-Run_CurrentCorrelations = False
+Run_CurrentCorrelations = True
 
-ramp_beamsplitter_1d_dict = {'reps': 3000, 'ramp_time': 1000,
+ramp_beamsplitter_1d_dict = {'reps': 100000, 'ramp_time': 1000,
                              't_offset':
                              [22, 24, 13, 24, 8, 8, 9, 0],
                              'relax_delay': 140,
                              'start': 0, 'step': 8, 'expts': 71,
                              'readout_pair_1': [1,2],
-                             'readout_pair_2': [3,4],
+                             'readout_pair_2': [4,5],
                              }
 
 
@@ -121,18 +121,22 @@ sweep_BS_offset_correlations_dict = {'swept_qubit': 5, 'reps': 1000,
 # --------------------------------
 # Base dict that will be used for all below experiments
 
-Q = 7
+Q = 4
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
-double_jump_base = {'reps': 400, 'ramp_time': 1000,
+double_jump_base = {'reps': 10*400, 'ramp_time': 1000,
                     't_offset':
-                    [22, 24, 13, 24, 8, 8, 9, 0],
+                    # [22, 24, 13, 24, 8, 8, 9, 0],
+                      [22, 24, 13, 20, 8, 9, 9, 0],
                     'relax_delay': 150,
                     'start': 0, 'step': 16, 'expts': 71,
-                    'intermediate_jump_samples': [9, 0, 2, 0, 8, 0, 2, 0],
-                    'intermediate_jump_gains': [-14710, None, 3500, None, -18600, None, -2700, None]}
-                    # 'intermediate_jump_gains': [-13380, None, None, None, None, None, None, None]}
+                    # 1234 BOI
+                    # 'intermediate_jump_samples': [9, 0, 2, 0, 8, 0, 2, 0],
+                    # 'intermediate_jump_gains': [-14710, None, 3500, None, -18600, None, -2700, None]}
+                    # 2345 BOI
+                    'intermediate_jump_samples': [0, 3, 0, 15, 0, 2, 0, 0],
+                    'intermediate_jump_gains': [None, -2040, None, -13730, None, -5300, None, None]}
 
 
 Sweep_DoubleJump_BS_Gain = False
@@ -158,13 +162,14 @@ sweep_intermediate_samples_dict = {
 #                         'samples_start': 30, 'samples_stop': 50,
 #                         'samples_numPoints': 21}
 
-Sweep_DoubleJumpGain = False
-double_jump_gain_dict = {'swept_qubit': Q,
-                        'gainStart':  -11777 - 2000, 'gainStop': -11777 + 2000, 'gainNumPoints': 21}
+Sweep_DoubleJump_IntermediateGain = False
+double_jump_intermediate_gain_dict = {'swept_qubit': Q,
+                        'gainStart':  -11777 - 2000, 'gainStop': -11777 + 2000,
+                         'gainNumPoints': 3 * 21}
 
-center = double_jump_base['intermediate_jump_gains'][double_jump_gain_dict['swept_qubit']-1]
-double_jump_gain_dict['gainStart'] = center - 15000
-double_jump_gain_dict['gainStop'] = center + 15000
+center = double_jump_base['intermediate_jump_gains'][double_jump_intermediate_gain_dict['swept_qubit'] - 1]
+double_jump_intermediate_gain_dict['gainStart'] = center - 1000
+double_jump_intermediate_gain_dict['gainStop'] = center + 1000
 
 
 # double_jump_gain_dict = {'swept_qubit': 4,
@@ -179,12 +184,17 @@ double_jump_gain_dict['gainStop'] = center + 15000
 
 DoubleJump1D = False
 
-DoubleJump_CurrentCorrelations = True
+DoubleJump_CurrentCorrelations = False
 
 double_jump_1d_dict = {'reps': 3000,
                         'start': 0, 'step': 4, 'expts': 141,
                        'readout_pair_1': [1,2],
                        'readout_pair_2': [3,4],}
+
+double_jump_1d_dict = {'reps': 100_000,
+                        'start': 0, 'step': 4, 'expts': 141,
+                       'readout_pair_1': [2,3],
+                       'readout_pair_2': [4,5],}
 
 DoubleJump_Correlations_CleanTiming = False
 # This ends the working section of the file.
@@ -254,9 +264,9 @@ if Sweep_DoubleJump_IntermediateSamples:
     RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
                           cfg=config | double_jump_base | sweep_intermediate_samples_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
-if Sweep_DoubleJumpGain:
+if Sweep_DoubleJump_IntermediateGain:
     RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
-                          cfg=config | double_jump_base | double_jump_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+                        cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 
 if DoubleJump1D:

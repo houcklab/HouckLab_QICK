@@ -107,7 +107,8 @@ class SNROpt_wSingleShot(ExperimentClass):
 
                 #### plotting
                 if idx_gain == 0 and idx_freq ==0:
-
+                    axs[0].set_title(f"Qubit {self.cfg['Qubit_Readout_List']} SNR")
+                    axs[1].set_title(f"Qubit {self.cfg['Qubit_Readout_List']} fidelity")
                     ax_plot_0 = axs[0].imshow(
                         Z_snr,
                         aspect='auto',
@@ -117,7 +118,7 @@ class SNROpt_wSingleShot(ExperimentClass):
                         interpolation='none',
                     )
                     cbar0 = fig.colorbar(ax_plot_0, ax=axs[0], extend='both')
-                    cbar0.set_label('fidelity (%)', rotation=90)
+                    cbar0.set_label('SNR', rotation=90)
 
                     ax_plot_1 = axs[1].imshow(
                         Z_fid * 100,
@@ -170,6 +171,7 @@ class SNROpt_wSingleShot(ExperimentClass):
 
         plt.savefig(self.iname)  #### save the figure
         # plt.show(block=False)
+        synth.close()
         return self.data
 
 
