@@ -2,7 +2,6 @@ import numpy as np
 from qick.asm_v2 import QickSweep1D
 from scipy.optimize import curve_fit
 
-from Archive.q4diamond.Client_modules.Running_Experiments_MUX.MUXSimpleExample import x_pts
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
@@ -145,7 +144,8 @@ class AmplitudeRabiFFMUX(ExperimentClass):
             A_fit, pi_gain_fit, offset_fit, phi_fit = popt
             self.ampl_fit_complex = A_fit
             self.pi_gain_fit_complex = np.abs(pi_gain_fit)
-
+            self.offset_fit_complex = offset_fit
+            self.phi_fit_complex = phi_fit
 
             # Compare both fits:
             resid = y_fit - rabi_fit_func(x_fit, *popt)
@@ -201,7 +201,9 @@ class AmplitudeRabiFFMUX(ExperimentClass):
             if hasattr(self, 'ampl_fit_simple') and self.ampl_fit_simple == self.ampl_fit:
                 plt.plot(gains, fit_func_simple(gains, ampl, pi_gain), '--', color='black')
             elif hasattr(self, 'ampl_fit_complex') and self.ampl_fit_complex == self.ampl_fit:
-                plt.plot(gains, rabi_fit_func(gains, ampl, pi_gain), '--', color='black')
+                offset_fit = self.offset_fit_complex
+                phi_fit = self.phi_fit_complex
+                plt.plot(gains, rabi_fit_func(gains, ampl, pi_gain, offset_fit, phi_fit), '--', color='black')
 
             plt.axvline(pi_gain, color='black', label=f'[complex fit] gain = {int(np.round(pi_gain))}')
         else:
