@@ -118,7 +118,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         sig = IQ_contrast(avgi, avgq)
         avgamp0 = np.abs(sig)
         peak_loc = np.argmax(avgamp0)
-        self.qubitFreq = x_pts[peak_loc]
+        self.qubitFreq_argmax = x_pts[peak_loc]
 
         # Find frequency using lorentzian fitting
         # Fit to Lorentzian (standard for qubit spectroscopy)
@@ -126,24 +126,42 @@ class QubitSpecSliceFFMUX(ExperimentClass):
             return A / (1 + ((f - f0) / gamma) ** 2) + offset
 
         try:
-            contrast = IQ_contrast(avgi, avgq)
-            f0_guess = x_pts[np.argmax(contrast)]
-            gamma_guess = (x_pts[-1] - x_pts[0]) / 10
-            A_guess = np.max(contrast) - np.min(contrast)
-            offset_guess = np.min(contrast)
+            # Perform fit around the argmax window
+            # Local window
+            N = max(10, len(x_pts) // 20)
+            i_min = max(0, peak_loc - N)
+            i_max = min(len(x_pts), peak_loc + N)
+            x_fit = x_pts[i_min:i_max]
+            y_fit = avgamp0[i_min:i_max]
 
-            popt, pcov = curve_fit(lorentzian_spec, x_pts, contrast,
-                                   p0=[f0_guess, gamma_guess, A_guess, offset_guess])
+            # Guesses
+            f0_guess = x_pts[peak_loc]
+            gamma_guess = (x_fit[-1] - x_fit[0]) / 6
+            A_guess = np.max(y_fit) - np.min(y_fit)
+            offset_guess = np.min(y_fit)
+
+            span = x_fit[-1] - x_fit[0]
+            popt, pcov = curve_fit(
+                lorentzian_spec,
+                x_fit,
+                y_fit,
+                p0=[f0_guess, gamma_guess, A_guess, offset_guess],
+                bounds=([x_fit[0], 0.0, 0.0, -np.inf],
+                        [x_fit[-1], span, np.inf, np.inf]),
+            )
+
             self.lorentz_fit = lorentzian_spec(x_pts, *popt)
             self.qubitFreq_lorentz = popt[0]
             self.qubit_linewidth = popt[1]
             self.freq_uncertainty = np.sqrt(pcov[0, 0])
 
             print(f"Lorentzian fit found min with uncertainty {self.freq_uncertainty}.")
+
+            self.qubitFreq = self.qubitFreq_lorentz if self.freq_uncertainty < 0.01 else self.qubitFreq_argmax
         except:
             # Fallback to argmax if fit fails
             self.lorentz_fit = None
-            # self.qubitFreq = self.qubitFreq_argmax
+            self.qubitFreq = self.qubitFreq_argmax
 
     def display(self, data=None, plotDisp = False, figNum = 1, block=True,ax=None, **kwargs):
         if data is None:
@@ -165,9 +183,11 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
         if hasattr(self, 'qubitFreq_lorentz') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
             plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
-            plt.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
-        if hasattr(self, 'qubitFreq'):
-            plt.axvline(self.qubitFreq, color='gray', linestyle=':', label=f"Argmax: {self.qubitFreq:.2f} MHz")
+            chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_lorentz else ""
+            plt.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"{chosen_text}Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
+        if hasattr(self, 'qubitFreq_argmax'):
+            chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_argmax else ""
+            plt.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"{chosen_text}Argmax: {self.qubitFreq_argmax:.2f} MHz")
 
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")

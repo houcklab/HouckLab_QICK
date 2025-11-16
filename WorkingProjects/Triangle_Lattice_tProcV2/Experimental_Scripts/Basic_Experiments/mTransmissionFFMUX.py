@@ -91,7 +91,8 @@ class CavitySpecFFMUX(ExperimentClass):
         # Inverted Lorentzian for transmission dip
         def inv_lorentzian(f, f0, gamma, A, offset):
             return -A / (1 + ((f - f0) / gamma) ** 2) + offset
-        # Sloved background
+
+        # Sloped background
         def inv_lorentzian_bg(f, f0, gamma, A, m, b):
             return -A / (1 + ((f - f0) / gamma) ** 2) + (m * f + b)
 
@@ -109,7 +110,7 @@ class CavitySpecFFMUX(ExperimentClass):
                 inv_lorentzian_bg, fpts, avgamp0,
                 p0=[f0_guess, gamma_guess, A_guess, 0.0, offset_guess]
             )
-            lorentz_fit = inv_lorentzian(fpts, *popt)
+            lorentz_fit = inv_lorentzian_bg(fpts, *popt)
 
             self.lorentz_fit = lorentz_fit
             self.peakFreq_lorentz_min = popt[0] # min frequency
@@ -154,7 +155,7 @@ class CavitySpecFFMUX(ExperimentClass):
             plt.axvline(freq_min, color='black', linestyle='--', label=f"{chosen_text}Lorentz Min: {1e3 * freq_min:.2f} MHz")
         if hasattr(self, 'peakFreq_argmin'):
             freq_argmin = (self.peakFreq_argmin + self.cfg["res_LO"]) / 1e3
-            chosen_text = "[Used] " if self.peakFreq_min == self.peakFreq_argmin and self.peakFreq_min != self.peakFreq_lorentz_min else ""
+            chosen_text = "[Used] " if self.peakFreq_min == self.peakFreq_argmin else ""
             plt.axvline(freq_argmin, color='gray', linestyle=':', label=f"{chosen_text}Argmin: {1e3 * freq_argmin:.2f} MHz")
 
         plt.ylabel("a.u.")
@@ -173,8 +174,3 @@ class CavitySpecFFMUX(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
-
-
-
-
-
