@@ -539,7 +539,7 @@ def run_enhanced_calibration(
                 refined_params["gain_stop"] = int(current_gain + 300)
                 refined_params["span"] = 0.5
 
-                refined_params['shots'] += 200
+                refined_params['Shots'] += 200
 
                 data, fid = calib.run_readout_optimization(refined_params | SS_params, OptReadout_index,
                                                            iteration=iter_num)
@@ -564,7 +564,7 @@ def run_enhanced_calibration(
                 refined_params["q_gain_span"] = 1000
                 refined_params["q_freq_span"] = 2
 
-                refined_params["shots"] += 200
+                refined_params["Shots"] += 200
 
                 data, fid = calib.run_qubit_optimization(refined_params | SS_params, OptQubit_index, iteration=iter_num)
                 final_fidelity = max(final_fidelity, fid)
