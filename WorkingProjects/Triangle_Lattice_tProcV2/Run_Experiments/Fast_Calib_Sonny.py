@@ -457,13 +457,13 @@ def run_enhanced_calibration(
     First_Spec_params = {
         "qubit_gain": 500, "SpecSpan": 100, "SpecNumPoints": 71,
         'Gauss': False, "sigma": 0.07, "Gauss_gain": 3350,
-        'reps': 144, 'rounds': 1
+        'reps': 200, 'rounds': 1
     }
 
     Second_Spec_params = {
         "qubit_gain": 50, "SpecSpan": 10, "SpecNumPoints": 81,
         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
-        'reps': 200, 'rounds': 1
+        'reps': 250, 'rounds': 1
     }
 
     Rabi_params = {
@@ -539,7 +539,7 @@ def run_enhanced_calibration(
                 refined_params["gain_stop"] = int(current_gain + 300)
                 refined_params["span"] = 0.5
 
-                refined_params['reps'] += 200
+                refined_params['shots'] += 200
 
                 data, fid = calib.run_readout_optimization(refined_params | SS_params, OptReadout_index,
                                                            iteration=iter_num)
@@ -564,7 +564,7 @@ def run_enhanced_calibration(
                 refined_params["q_gain_span"] = 1000
                 refined_params["q_freq_span"] = 2
 
-                refined_params["reps"] += 200
+                refined_params["shots"] += 200
 
                 data, fid = calib.run_qubit_optimization(refined_params | SS_params, OptQubit_index, iteration=iter_num)
                 final_fidelity = max(final_fidelity, fid)

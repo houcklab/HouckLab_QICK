@@ -118,7 +118,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         sig = IQ_contrast(avgi, avgq)
         avgamp0 = np.abs(sig)
         peak_loc = np.argmax(avgamp0)
-        self.qubitFreq_argmax = x_pts[peak_loc]
+        self.qubitFreq = x_pts[peak_loc]
 
         # Find frequency using lorentzian fitting
         # Fit to Lorentzian (standard for qubit spectroscopy)
@@ -135,13 +135,15 @@ class QubitSpecSliceFFMUX(ExperimentClass):
             popt, pcov = curve_fit(lorentzian_spec, x_pts, contrast,
                                    p0=[f0_guess, gamma_guess, A_guess, offset_guess])
             self.lorentz_fit = lorentzian_spec(x_pts, *popt)
-            self.qubitFreq = popt[0]
+            self.qubitFreq_lorentz = popt[0]
             self.qubit_linewidth = popt[1]
             self.freq_uncertainty = np.sqrt(pcov[0, 0])
+
+            print(f"Lorentzian fit found min with uncertainty {self.freq_uncertainty}.")
         except:
             # Fallback to argmax if fit fails
             self.lorentz_fit = None
-            self.qubitFreq = self.qubitFreq_argmax
+            # self.qubitFreq = self.qubitFreq_argmax
 
     def display(self, data=None, plotDisp = False, figNum = 1, block=True,ax=None, **kwargs):
         if data is None:
@@ -161,11 +163,11 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
 
-        if hasattr(self, 'qubitFreq') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
+        if hasattr(self, 'qubitFreq_lorentz') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
             plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
-            plt.axvline(self.qubitFreq, color='black', linestyle='--', label=f"Lorentz Max: {self.qubitFreq:.2f} MHz")
-        if hasattr(self, 'qubitFreq_argmax'):
-            plt.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"Argmax: {self.qubitFreq_argmax:.2f} MHz")
+            plt.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
+        if hasattr(self, 'qubitFreq'):
+            plt.axvline(self.qubitFreq, color='gray', linestyle=':', label=f"Argmax: {self.qubitFreq:.2f} MHz")
 
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
