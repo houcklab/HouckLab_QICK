@@ -1,6 +1,7 @@
 
 # from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 # from tqdm.notebook import tqdm
@@ -68,16 +69,44 @@ class CavitySpecFFMUX(ExperimentClass):
         data={'config': self.cfg, 'data': {'results': results, 'fpts':fpts}}
         self.data=data
 
+        # Fit the data
+        self.analyze(data=data)
 
-        #### find the frequency corresponding to the peak
-        sig = data['data']['results'][:,0,0,0] + 1j * data['data']['results'][:,0,0,1]
+        return data
+
+    def analyze(self, data=None, **kwargs):
+
+        # Finding frequency by simple argmin, argmax
+        sig = data['data']['results'][:, 0, 0, 0] + 1j * data['data']['results'][:, 0, 0, 1]
         avgamp0 = np.abs(sig)
         peak_loc = np.argmin(avgamp0)
-        self.peakFreq_min = data['data']['fpts'][peak_loc]
+        self.peakFreq_argmin = data['data']['fpts'][peak_loc]
         peak_loc = np.argmax(avgamp0)
         self.peakFreq_max = data['data']['fpts'][peak_loc]
 
-        return data
+
+        # Lorentzian Fitting Method (noise resistant)
+
+        # Inverted Lorentzian for transmission dip
+        def inv_lorentzian(f, f0, gamma, A, offset):
+            return -A / (1 + ((f - f0) / gamma) ** 2) + offset
+
+        fpts = data['data']['fpts']
+        # Initial guess
+        f0_guess = fpts[np.argmin(avgamp0)]
+        gamma_guess = (fpts[-1] - fpts[0]) / 10  # Linewidth guess
+        A_guess = np.max(avgamp0) - np.min(avgamp0)
+        offset_guess = np.mean(avgamp0)
+
+        popt, pcov = curve_fit(inv_lorentzian, fpts, avgamp0,
+                               p0=[f0_guess, gamma_guess, A_guess, offset_guess])
+        lorentz_fit = inv_lorentzian(fpts, *popt)
+
+        self.lorentz_fit = lorentz_fit
+        self.peakFreq_min = popt[0] # min frequency
+        self.linewidth = popt[1]  # cavity linewidth
+        self.freq_uncertainty = np.sqrt(pcov[0, 0])  # Uncertainty
+
 
     def display(self, data=None, plotDisp = True, figNum = 1, block=True, ax=None, **kwargs):
         if data is None:
@@ -87,7 +116,6 @@ class CavitySpecFFMUX(ExperimentClass):
         avgq = data['data']['results'][:,0,0,1]
         x_pts = (data['data']['fpts'] + self.cfg["res_LO"]) / 1e3  #### put into units of frequency GHz
 
-        freq_min = (self.peakFreq_min + self.cfg["res_LO"])/1e3
         sig = avgi + 1j * avgq
 
         avgamp0 = np.abs(sig)
@@ -99,7 +127,15 @@ class CavitySpecFFMUX(ExperimentClass):
         plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
-        plt.axvline(freq_min, color='black', linestyle='--', label=f"{1e3*freq_min:.1f} MHz")
+
+        if hasattr(self, 'peakFreq_min') and hasattr(self, 'lorentz_fit'):
+            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2, label='Lorentzian Fit')
+            freq_min = (self.peakFreq_min + self.cfg["res_LO"]) / 1e3
+            plt.axvline(freq_min, color='black', linestyle='--', label=f"Lorentz Min: {1e3*freq_min:.1f} MHz")
+        if hasattr(self, 'peakFreq_argmin'):
+            freq_argmin = (self.peakFreq_argmin + self.cfg["res_LO"]) / 1e3
+            plt.axvline(freq_argmin, color='gray', linestyle=':', label=f"Argmin: {1e3 * freq_min:.1f} MHz")
+
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.title(self.titlename)

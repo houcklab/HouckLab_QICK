@@ -450,7 +450,7 @@ def run_enhanced_calibration(
 
     # Define experiment parameters
     Trans_params = {
-        "reps": 200, "TransSpan": 1.5, "TransNumPoints": 81,
+        "reps": 250, "TransSpan": 1.5, "TransNumPoints": 91,
         "readout_length": 2.5, 'cav_relax_delay': 10
     }
 
@@ -463,11 +463,11 @@ def run_enhanced_calibration(
     Second_Spec_params = {
         "qubit_gain": 50, "SpecSpan": 10, "SpecNumPoints": 81,
         'Gauss': False, "sigma": 0.05, "Gauss_gain": 1200,
-        'reps': 144, 'rounds': 1
+        'reps': 200, 'rounds': 1
     }
 
     Rabi_params = {
-        "max_gain": 12000, 'relax_delay': 100
+        "max_gain": 12000, 'relax_delay': 150
     }
 
     if qubit_id in [3, 5]:
@@ -475,7 +475,7 @@ def run_enhanced_calibration(
 
     SS_R_params = {
         "Shots": 500, 'relax_delay': 150,
-        "gain_start": 200, "gain_stop": 1400, "gain_pts": 9,
+        "gain_start": 200, "gain_stop": 1400, "gain_pts": 8,
         "span": 1, "trans_pts": 5, 'number_of_pulses': 1,
         'qubit_sweep_index': OptReadout_index
     }
@@ -492,7 +492,7 @@ def run_enhanced_calibration(
     SS_params = {
         "Shots": 2500,
         'number_of_pulses': 1,
-        'relax_delay': 200
+        'relax_delay': 250
     }
 
     t1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
@@ -539,6 +539,8 @@ def run_enhanced_calibration(
                 refined_params["gain_stop"] = int(current_gain + 300)
                 refined_params["span"] = 0.5
 
+                refined_params['reps'] += 200
+
                 data, fid = calib.run_readout_optimization(refined_params | SS_params, OptReadout_index,
                                                            iteration=iter_num)
                 final_fidelity = fid
@@ -561,6 +563,8 @@ def run_enhanced_calibration(
                 refined_params = SS_Q_params.copy()
                 refined_params["q_gain_span"] = 1000
                 refined_params["q_freq_span"] = 2
+
+                refined_params["reps"] += 200
 
                 data, fid = calib.run_qubit_optimization(refined_params | SS_params, OptQubit_index, iteration=iter_num)
                 final_fidelity = max(final_fidelity, fid)
