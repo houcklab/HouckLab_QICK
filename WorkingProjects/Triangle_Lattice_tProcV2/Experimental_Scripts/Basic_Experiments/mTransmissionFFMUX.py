@@ -52,7 +52,7 @@ class CavitySpecFFMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False):
+    def acquire(self, progress=False, use_lorentzian=False):
         cfg = self.cfg
         fpts = np.linspace(cfg["res_freqs"][0] - cfg["TransSpan"],
                            cfg["res_freqs"][0] + cfg["TransSpan"],
@@ -71,11 +71,11 @@ class CavitySpecFFMUX(ExperimentClass):
         self.data=data
 
         # Fit the data
-        self.analyze(data=data)
+        self.analyze(data=data, use_lorentzian=use_lorentzian)
 
         return data
 
-    def analyze(self, data=None, **kwargs):
+    def analyze(self, data=None, use_lorentzian=False, **kwargs):
         if not data:
             data = self.data
 
@@ -121,7 +121,7 @@ class CavitySpecFFMUX(ExperimentClass):
             print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {0.2 * self.linewidth}).")
 
             # Determining which one to use vased on uncertainty
-            self.peakFreq_min = self.peakFreq_lorentz_min if self.freq_uncertainty < 0.2 * self.linewidth \
+            self.peakFreq_min = self.peakFreq_lorentz_min if use_lorentzian and self.freq_uncertainty < 0.2 * self.linewidth \
                                 else self.peakFreq_argmin
 
         except Exception as e:

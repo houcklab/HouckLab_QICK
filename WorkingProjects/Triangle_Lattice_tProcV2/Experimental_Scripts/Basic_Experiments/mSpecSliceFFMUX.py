@@ -80,7 +80,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False):
+    def acquire(self, progress=False, use_lorentzian=False):
         cfg = self.cfg
 
         self.cfg.setdefault("qubit_length", 100) ### length of CW drive in us
@@ -101,11 +101,11 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         self.data = data
 
         # Fit to find frequency
-        self.analyze(data=data)
+        self.analyze(data=data, use_lorentzian=use_lorentzian)
 
         return data
 
-    def analyze(self, data=None, **kwargs):
+    def analyze(self, data=None, use_lorentzian=False, **kwargs):
         # Find the frequency corresponding to the qubit dip via argmax
         if not data:
             data = self.data
@@ -157,7 +157,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
 
             print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {0.2 * self.qubit_linewidth}).")
 
-            self.qubitFreq = self.qubitFreq_lorentz if self.freq_uncertainty < 0.2 * self.qubit_linewidth \
+            self.qubitFreq = self.qubitFreq_lorentz if use_lorentzian and self.freq_uncertainty < 0.2 * self.qubit_linewidth \
                 else self.qubitFreq_argmax
         except:
             # Fallback to argmax if fit fails

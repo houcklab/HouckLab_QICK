@@ -27,6 +27,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers i
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
+t = True
+f = False
 
 # =============================================================================
 # Calibration Config Thresholds
@@ -38,12 +40,12 @@ class CalibrationConfig:
     # Quality thresholds
     MIN_FIDELITY = 0.85  # Target acceptable single-shot fidelity
     MIN_T1 = 10.0  # Minimum T1 (us)
-    MIN_T2 = 5.0  # Minimum T2 (us)
+    MIN_T2 = 1.0  # Minimum T2 (us)
     MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
     # Could add stark shift?
 
     # Iterative refinement
-    MAX_REFINEMENT_ITERATIONS = 2
+    MAX_REFINEMENT_ITERATIONS = 3
 
 # =============================================================================
 # QUALITY CHECK FUNCTIONS
@@ -178,7 +180,8 @@ class EnhancedCalibration:
             soccfg=self.soccfg,
             outerFolder=self.outerFolder
         )
-        data = expt.acquire_display_save(plotDisp=True, block=False, ax=next(self.iter_axs))
+        data = expt.acquire(use_lorentzian=True)
+        expt.display(plotDisp=True, block=False, ax=next(self.iter_axs))
         data["peakFreq_min"] = expt.peakFreq_min
 
         # Update config
@@ -201,7 +204,8 @@ class EnhancedCalibration:
             soccfg=self.soccfg,
             outerFolder=self.outerFolder
         )
-        data = expt.acquire_display_save(plotDisp=True, block=False, ax=next(self.iter_axs))
+        data = expt.acquire(use_lorentzian=True)
+        expt.display(plotDisp=True, block=False, ax=next(self.iter_axs))
         data["qubitFreq"] = expt.qubitFreq
 
         # Check quality and update
@@ -467,7 +471,7 @@ def run_enhanced_calibration(
     }
 
     Rabi_params = {
-        "max_gain": 12000, 'relax_delay': 150
+        "max_gain": 12000, 'relax_delay': 100
     }
 
     if qubit_id in [3, 5]:
@@ -492,7 +496,7 @@ def run_enhanced_calibration(
     SS_params = {
         "Shots": 2500,
         'number_of_pulses': 1,
-        'relax_delay': 250
+        'relax_delay': 200
     }
 
     t1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
@@ -626,15 +630,15 @@ if __name__ == "__main__":
             OptQubit_index=OptQubit_index,
             num_readout_qubits=len(Qubit_Readout),
             varname_FF=varname_FF,
-            run_transmission=       True,
-            run_coarse_spec=        True,
-            run_fine_spec=          True,
-            run_rabi=               True,
-            run_readout_opt=        True,
-            run_qubit_opt=          True,
-            run_singleshot=         True,
-            run_coherence=          True,
-            enable_refinement=      True  # Enable iterative refinement for low fidelity
+            run_transmission=       t,
+            run_coarse_spec=        t,
+            run_fine_spec=          t,
+            run_rabi=               t,
+            run_readout_opt=        t,
+            run_qubit_opt=          t,
+            run_singleshot=         t,
+            run_coherence=          t,
+            enable_refinement=      t  # Enable iterative refinement for low fidelity
         )
 
         # Collect QubitConfig object
