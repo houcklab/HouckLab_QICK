@@ -6,6 +6,7 @@ import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 # from tqdm.notebook import tqdm
 import time
+import traceback
 from tqdm import tqdm
 import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
@@ -117,14 +118,16 @@ class CavitySpecFFMUX(ExperimentClass):
             self.linewidth = popt[1]  # cavity linewidth
             self.freq_uncertainty = np.sqrt(pcov[0, 0])  # Uncertainty
 
-            print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {self.freq_uncertainty < 0.2 * self.qubit_linewidth}).")
+            print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {0.2 * self.linewidth}).")
 
             # Determining which one to use vased on uncertainty
-            self.peakFreq_min = self.peakFreq_lorentz_min if self.freq_uncertainty < 0.2 * self.qubit_linewidth \
+            self.peakFreq_min = self.peakFreq_lorentz_min if self.freq_uncertainty < 0.2 * self.linewidth \
                                 else self.peakFreq_argmin
 
         except Exception as e:
                 # If fit failed then default back
+                print("Lorentzian fit failed.")
+                traceback.print_exc()
                 self.lorentz_fit = None
                 self.peakFreq_min = self.peakFreq_argmin # Use naive fit
 

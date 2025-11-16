@@ -155,7 +155,7 @@ class QubitSpecSliceFFMUX(ExperimentClass):
             self.qubit_linewidth = popt[1]
             self.freq_uncertainty = np.sqrt(pcov[0, 0])
 
-            print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {self.freq_uncertainty < 0.2 * self.qubit_linewidth}).")
+            print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {0.2 * self.qubit_linewidth}).")
 
             self.qubitFreq = self.qubitFreq_lorentz if self.freq_uncertainty < 0.2 * self.qubit_linewidth \
                 else self.qubitFreq_argmax
