@@ -2,6 +2,7 @@ import numpy as np
 from qick.asm_v2 import QickSweep1D
 from scipy.optimize import curve_fit
 
+from Archive.q4diamond.Client_modules.Running_Experiments_MUX.MUXSimpleExample import x_pts
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
@@ -59,8 +60,11 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
         self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
 
 
-def fit_func(gain, ampl, pi_gain):
+def fit_func_simple(gain, ampl, pi_gain):
     return ampl * np.cos(gain * np.pi / pi_gain)
+
+def rabi_fit_func(gain, A, pi_gain, offset, phi):
+    return offset + A * np.cos(np.pi * gain / pi_gain + phi)
 
 class AmplitudeRabiFFMUX(ExperimentClass):
     """
@@ -91,20 +95,83 @@ class AmplitudeRabiFFMUX(ExperimentClass):
 
 
         # Attempt a fit
-        contrast = IQ_contrast(avgi, avgq)
-
-        try:
-            gain_guess = 1 / frequency_guess(x_pts, contrast) / 2
-            popt, _ = curve_fit(fit_func, x_pts, contrast, p0=[np.max(contrast), gain_guess])
-            self.ampl_fit = popt[0]
-            self.pi_gain_fit = np.abs(popt[1])
-            data['data']['ampl_fit'] = self.ampl_fit
-            data['data']['pi_gain_fit'] = self.pi_gain_fit
-        except:
-            print("Fitting failed")
+        self.analyze(data)
 
         return data
 
+    def analyze(self, data=None, **kwargs):
+        if data is None:
+            data = self.data
+
+        x_pts = data['data']['x_pts']
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
+
+
+        ### Attempt a simple fit
+        contrast = IQ_contrast(avgi, avgq)
+        try:
+            gain_guess = 1 / frequency_guess(x_pts, contrast) / 2
+            popt, _ = curve_fit(fit_func_simple, x_pts, contrast, p0=[np.max(contrast), gain_guess])
+            self.ampl_fit_simple = popt[0]
+            self.pi_gain_fit_simple = np.abs(popt[1])
+        except:
+            print("Simple Fitting failed")
+
+
+
+        ### Attempting more complex fit
+        # initial guesses
+        pi_gain_guess = 1 / frequency_guess(x_pts, contrast) / 2  # your current guess
+        A_guess = 0.5 * (np.max(contrast) - np.min(contrast))
+        offset_guess = np.mean(contrast)
+        phi_guess = 0.0
+
+        # restrict fit to moderate gains (first ~1–1.5 oscillations) - not sure if needed
+        mask = x_pts <= 2 * pi_gain_guess  # don't use crazy-high gains
+        x_fit = x_pts[mask]
+        y_fit = contrast[mask]
+
+        try:
+            # keep pi_gain near the FFT guess (e.g. within a factor of 2)
+            lower = [0.0, 0.5 * pi_gain_guess, -np.inf, -np.pi]
+            upper = [np.inf, 2.0 * pi_gain_guess, np.inf, np.pi]
+            popt, _ = curve_fit(
+                rabi_fit_func, x_fit, y_fit,
+                p0=[A_guess, pi_gain_guess, offset_guess, phi_guess],
+                bounds=(lower, upper),
+            )
+
+            A_fit, pi_gain_fit, offset_fit, phi_fit = popt
+            self.ampl_fit_complex = A_fit
+            self.pi_gain_fit_complex = np.abs(pi_gain_fit)
+
+
+            # Compare both fits:
+            resid = y_fit - rabi_fit_func(x_fit, *popt)
+            R2 = 1 - np.var(resid) / np.var(y_fit)
+            if R2 < 0.8:
+                print("Complex rabi fit looks bad, falling back to simple.")
+                if hasattr(self, 'ampl_fit_simple'):
+                    self.ampl_fit = self.ampl_fit_simple
+                    self.pi_gain_fit = self.pi_gain_fit_simple
+            else:
+                print("Complex rabi fit looks good.")
+                self.ampl_fit = self.ampl_fit_complex
+                self.pi_gain_fit = self.pi_gain_fit_complex
+
+        except Exception as e:
+            print("Complex Fitting failed:", e)
+            # Resort to simple fit if succeeded
+            if hasattr(self, 'ampl_fit_simple'):
+                self.ampl_fit = self.ampl_fit_simple
+                self.pi_gain_fit = self.pi_gain_fit_simple
+
+        if hasattr(self, 'ampl_fit'):
+            data['data']['ampl_fit'] = self.ampl_fit
+            data['data']['pi_gain_fit'] = self.pi_gain_fit
+
+        return data
 
     def display(self, data=None, plotDisp = False, figNum = 1, block=True, ax=None, **kwargs):
         if data is None:
@@ -127,10 +194,16 @@ class AmplitudeRabiFFMUX(ExperimentClass):
             print(pi_gain)
             gains = np.linspace(x_pts[0], x_pts[-1], 61)
             plt.plot(x_pts, contrast, 'o-', color='seagreen', label='IQ contrast')
-            plt.plot(gains, fit_func(gains, ampl, pi_gain), '--', color='black')
             plt.plot(x_pts, avgi - np.mean(avgi), 'o-', label="i", color='orange', alpha=0.5,zorder=0)
             plt.plot(x_pts, avgq - np.mean(avgq), 'o-', label="q", color='blue', alpha=0.5,zorder=0)
-            plt.axvline(pi_gain, color='black', label=f'gain = {int(np.round(pi_gain))}')
+
+            # Plotting fits
+            if hasattr(self, 'ampl_fit_simple') and self.ampl_fit_simple == self.ampl_fit:
+                plt.plot(gains, fit_func_simple(gains, ampl, pi_gain), '--', color='black')
+            elif hasattr(self, 'ampl_fit_complex') and self.ampl_fit_complex == self.ampl_fit:
+                plt.plot(gains, rabi_fit_func(gains, ampl, pi_gain), '--', color='black')
+
+            plt.axvline(pi_gain, color='black', label=f'[complex fit] gain = {int(np.round(pi_gain))}')
         else:
             plt.plot(x_pts, avgi, 'o-', label="i", color='orange')
             plt.plot(x_pts, avgq, 'o-', label="q", color='blue')
