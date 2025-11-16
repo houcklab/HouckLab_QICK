@@ -1,4 +1,5 @@
 
+from scipy.optimize import curve_fit
 
 from qick.asm_v2 import QickSweep1D
 
@@ -99,15 +100,48 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
+        # Fit to find frequency
+        self.analyze(data=data)
 
-        #### find the frequency corresponding to the qubit dip
+        return data
+
+    def analyze(self, data=None, **kwargs):
+        # Find the frequency corresponding to the qubit dip via argmax
+        if not data:
+            data = self.data
+
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
+        x_pts = data['data']['x_pts']
+
         # sig = avgi + 1j * avgq
         sig = IQ_contrast(avgi, avgq)
         avgamp0 = np.abs(sig)
         peak_loc = np.argmax(avgamp0)
-        self.qubitFreq = x_pts[peak_loc]
+        self.qubitFreq_argmax = x_pts[peak_loc]
 
-        return data
+        # Find frequency using lorentzian fitting
+        # Fit to Lorentzian (standard for qubit spectroscopy)
+        def lorentzian_spec(f, f0, gamma, A, offset):
+            return A / (1 + ((f - f0) / gamma) ** 2) + offset
+
+        try:
+            contrast = IQ_contrast(avgi, avgq)
+            f0_guess = x_pts[np.argmax(contrast)]
+            gamma_guess = (x_pts[-1] - x_pts[0]) / 10
+            A_guess = np.max(contrast) - np.min(contrast)
+            offset_guess = np.min(contrast)
+
+            popt, pcov = curve_fit(lorentzian_spec, x_pts, contrast,
+                                   p0=[f0_guess, gamma_guess, A_guess, offset_guess])
+            self.lorentz_fit = lorentzian_spec(x_pts, *popt)
+            self.qubitFreq = popt[0]
+            self.qubit_linewidth = popt[1]
+            self.freq_uncertainty = np.sqrt(pcov[0, 0])
+        except:
+            # Fallback to argmax if fit fails
+            self.lorentz_fit = None
+            self.qubitFreq = self.qubitFreq_argmax
 
     def display(self, data=None, plotDisp = False, figNum = 1, block=True,ax=None, **kwargs):
         if data is None:
@@ -126,7 +160,13 @@ class QubitSpecSliceFFMUX(ExperimentClass):
             plt.sca(ax)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-        plt.axvline(self.qubitFreq, color='black', linestyle='--', label=f"{self.qubitFreq:.1f} MHz")
+
+        if hasattr(self, 'qubitFreq') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
+            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
+            plt.axvline(self.qubitFreq, color='black', linestyle='--', label=f"Lorentz Max: {self.qubitFreq:.2f} MHz")
+        if hasattr(self, 'qubitFreq_argmax'):
+            plt.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"Argmax: {self.qubitFreq_argmax:.2f} MHz")
+
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
         plt.title(self.titlename)

@@ -75,6 +75,8 @@ class CavitySpecFFMUX(ExperimentClass):
         return data
 
     def analyze(self, data=None, **kwargs):
+        if not data:
+            data = self.data
 
         # Finding frequency by simple argmin, argmax
         sig = data['data']['results'][:, 0, 0, 0] + 1j * data['data']['results'][:, 0, 0, 1]
@@ -86,26 +88,31 @@ class CavitySpecFFMUX(ExperimentClass):
 
 
         # Lorentzian Fitting Method (noise resistant)
-
         # Inverted Lorentzian for transmission dip
         def inv_lorentzian(f, f0, gamma, A, offset):
             return -A / (1 + ((f - f0) / gamma) ** 2) + offset
 
-        fpts = data['data']['fpts']
-        # Initial guess
-        f0_guess = fpts[np.argmin(avgamp0)]
-        gamma_guess = (fpts[-1] - fpts[0]) / 10  # Linewidth guess
-        A_guess = np.max(avgamp0) - np.min(avgamp0)
-        offset_guess = np.mean(avgamp0)
+        try:
+            fpts = data['data']['fpts']
+            # Initial guess
+            f0_guess = fpts[np.argmin(avgamp0)]
+            gamma_guess = (fpts[-1] - fpts[0]) / 10  # Linewidth guess
+            A_guess = np.max(avgamp0) - np.min(avgamp0)
+            offset_guess = np.mean(avgamp0)
 
-        popt, pcov = curve_fit(inv_lorentzian, fpts, avgamp0,
-                               p0=[f0_guess, gamma_guess, A_guess, offset_guess])
-        lorentz_fit = inv_lorentzian(fpts, *popt)
+            popt, pcov = curve_fit(inv_lorentzian, fpts, avgamp0,
+                                   p0=[f0_guess, gamma_guess, A_guess, offset_guess])
+            lorentz_fit = inv_lorentzian(fpts, *popt)
 
-        self.lorentz_fit = lorentz_fit
-        self.peakFreq_min = popt[0] # min frequency
-        self.linewidth = popt[1]  # cavity linewidth
-        self.freq_uncertainty = np.sqrt(pcov[0, 0])  # Uncertainty
+            self.lorentz_fit = lorentz_fit
+            self.peakFreq_min = popt[0] # min frequency
+            self.linewidth = popt[1]  # cavity linewidth
+            self.freq_uncertainty = np.sqrt(pcov[0, 0])  # Uncertainty
+
+        except Exception as e:
+            # If fit failed then default back
+            self.lorentz_fit = None
+            self.peakFreq_min = self.peakFreq_argmin # Use naive fit
 
 
     def display(self, data=None, plotDisp = True, figNum = 1, block=True, ax=None, **kwargs):
@@ -128,13 +135,13 @@ class CavitySpecFFMUX(ExperimentClass):
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
 
-        if hasattr(self, 'peakFreq_min') and hasattr(self, 'lorentz_fit'):
-            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2, label='Lorentzian Fit')
+        if hasattr(self, 'peakFreq_min') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
+            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
             freq_min = (self.peakFreq_min + self.cfg["res_LO"]) / 1e3
-            plt.axvline(freq_min, color='black', linestyle='--', label=f"Lorentz Min: {1e3*freq_min:.1f} MHz")
+            plt.axvline(freq_min, color='black', linestyle='--', label=f"Lorentz Min: {1e3 * freq_min:.2f} MHz")
         if hasattr(self, 'peakFreq_argmin'):
             freq_argmin = (self.peakFreq_argmin + self.cfg["res_LO"]) / 1e3
-            plt.axvline(freq_argmin, color='gray', linestyle=':', label=f"Argmin: {1e3 * freq_min:.1f} MHz")
+            plt.axvline(freq_argmin, color='gray', linestyle=':', label=f"Argmin: {1e3 * freq_argmin:.2f} MHz")
 
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
