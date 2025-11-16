@@ -117,10 +117,10 @@ class CavitySpecFFMUX(ExperimentClass):
             self.linewidth = popt[1]  # cavity linewidth
             self.freq_uncertainty = np.sqrt(pcov[0, 0])  # Uncertainty
 
-            print(f"Lorentzian fit found min with uncertainty {self.freq_uncertainty}.")
+            print(f"Lorentzian fit found with uncertainty: {self.freq_uncertainty} (threshold < {self.freq_uncertainty < 0.2 * self.qubit_linewidth}).")
 
             # Determining which one to use vased on uncertainty
-            self.peakFreq_min = self.peakFreq_lorentz_min if self.freq_uncertainty < 0.01 \
+            self.peakFreq_min = self.peakFreq_lorentz_min if self.freq_uncertainty < 0.2 * self.qubit_linewidth \
                                 else self.peakFreq_argmin
 
         except Exception as e:
