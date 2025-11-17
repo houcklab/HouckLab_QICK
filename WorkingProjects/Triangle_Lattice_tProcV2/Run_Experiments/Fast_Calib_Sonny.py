@@ -39,17 +39,22 @@ f = False
 def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, checkers):
     """
     Create a comprehensive summary dashboard after calibrating all qubits
+    Professional academic style with number line visualizations
     """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+    import numpy as np
+    from datetime import datetime
 
     # Extract data from all qubits
     qubit_data = []
     for qconf, add_data, checker in zip(Qubit_configs, additional_qubit_data, checkers):
         qubit_data.append({
-            'qubit_id': qconf.qubit_id,
+            'qubit_id': qconf.Q,
             'qubit_freq': qconf.qubit_freq,
-            'readout_freq': qconf.readout_freq,
+            'resonator_freq': qconf.resonator_freq,
             'qubit_gain': qconf.qubit_gain,
-            'readout_gain': qconf.readout_gain,
+            'resonator_gain': qconf.res_gain,  # Already normalized (0-1)
             'fidelity': add_data['fidelity'],
             'T1': add_data['T1'],
             'T2': add_data['T2'],
@@ -59,327 +64,416 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
             'issue_list': checker.issues
         })
 
-    # Create figure with custom layout
-    fig = plt.figure(figsize=(18, 12))
-    fig.patch.set_facecolor('#F8F9FA')
+    # Create figure with academic layout
+    fig = plt.figure(figsize=(20, 12))
+    fig.patch.set_facecolor('white')
 
-    # Define grid for subplots
-    gs = fig.add_gridspec(4, 3, hspace=0.35, wspace=0.3,
-                          left=0.08, right=0.95, top=0.93, bottom=0.05)
+    # Define grid: main plots on left (2/3), summary on right (1/3)
+    gs = fig.add_gridspec(5, 3, hspace=0.4, wspace=0.4,
+                          left=0.06, right=0.98, top=0.94, bottom=0.05,
+                          width_ratios=[1, 1, 1.2])
 
-    # Main title
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    fig.suptitle(f'Calibration Summary Dashboard - {timestamp}',
-                 fontsize=18, fontweight='bold', y=0.97)
-
-    # ========================================================================
-    # PANEL 1: FREQUENCY MAP (Top Left - spans 2 columns)
-    # ========================================================================
-    ax_freq = fig.add_subplot(gs[0:2, 0:2])
+    # Title
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+    fig.suptitle(f'Quantum Calibration Summary | {timestamp}',
+                 fontsize=16, fontweight='normal', family='serif')
 
     qubit_ids = [q['qubit_id'] for q in qubit_data]
-    qubit_freqs = [q['qubit_freq'] for q in qubit_data]
-    readout_freqs = [q['readout_freq'] for q in qubit_data]
-    fidelities = [q['fidelity'] for q in qubit_data]
+    n_qubits = len(qubit_ids)
 
-    # Create frequency range plot
-    y_positions = np.arange(len(qubit_ids))
-    bar_height = 0.35
+    # Color scheme: academic palette
+    qubit_colors = plt.cm.tab10(np.linspace(0, 0.9, n_qubits))
 
-    # Color code by fidelity
-    def fidelity_color(fid):
-        if fid >= 0.95:
-            return '#06A77D'  # Green
+    def get_status_color(fid, issues):
+        """Determine status color based on fidelity and issues"""
+        if issues > 0:
+            return '#D32F2F'  # Red
+        elif fid >= 0.95:
+            return '#388E3C'  # Green
         elif fid >= 0.90:
-            return '#F18F01'  # Orange
-        elif fid >= 0.85:
-            return '#E85D04'  # Dark orange
+            return '#F57C00'  # Orange
         else:
-            return '#C73E1D'  # Red
-
-    colors = [fidelity_color(f) for f in fidelities]
-
-    # Plot readout frequencies (bottom bars)
-    ax_freq.barh(y_positions - bar_height / 2, readout_freqs, bar_height,
-                 color=colors, alpha=0.6, label='Readout Freq', edgecolor='black', linewidth=1.5)
-
-    # Plot qubit frequencies (top bars)
-    ax_freq.barh(y_positions + bar_height / 2, qubit_freqs, bar_height,
-                 color=colors, alpha=0.9, label='Qubit Freq', edgecolor='black', linewidth=1.5)
-
-    # Annotations
-    for i, (qid, qf, rf, fid) in enumerate(zip(qubit_ids, qubit_freqs, readout_freqs, fidelities)):
-        # Qubit freq label
-        ax_freq.text(qf + 10, y_positions[i] + bar_height / 2, f'{qf:.1f}',
-                     va='center', fontsize=9, fontweight='bold')
-        # Readout freq label
-        ax_freq.text(rf + 10, y_positions[i] - bar_height / 2, f'{rf:.1f}',
-                     va='center', fontsize=9, fontweight='bold')
-        # Fidelity label
-        ax_freq.text(max(qf, rf) + 50, y_positions[i], f'{fid * 100:.1f}%',
-                     va='center', fontsize=10, fontweight='bold',
-                     bbox=dict(boxstyle='round,pad=0.3', facecolor=fidelity_color(fid), alpha=0.3))
-
-    ax_freq.set_yticks(y_positions)
-    ax_freq.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
-    ax_freq.set_xlabel('Frequency (MHz)', fontsize=12, fontweight='bold')
-    ax_freq.set_title('Qubit and Readout Frequency Map', fontsize=13, fontweight='bold', pad=15)
-    ax_freq.legend(loc='lower right', fontsize=10, framealpha=0.95)
-    ax_freq.grid(axis='x', alpha=0.3, linestyle='--')
-    ax_freq.set_axisbelow(True)
-
-    # Add frequency span indicator
-    all_freqs = qubit_freqs + readout_freqs
-    freq_range = max(all_freqs) - min(all_freqs)
-    ax_freq.set_xlim(min(all_freqs) - 0.1 * freq_range, max(all_freqs) + 0.15 * freq_range)
+            return '#D32F2F'  # Red
 
     # ========================================================================
-    # PANEL 2: GAIN COMPARISON (Top Right)
+    # PANEL 1: FREQUENCY NUMBER LINE (Top row, spans 2 columns)
     # ========================================================================
-    ax_gains = fig.add_subplot(gs[0, 2])
+    ax_freq = fig.add_subplot(gs[0, 0:2])
+
+    qubit_freqs = [q['qubit_freq'] for q in qubit_data]
+    resonator_freqs = [q['resonator_freq'] for q in qubit_data]
+
+    # Combine all frequencies to determine range
+    all_freqs = qubit_freqs + resonator_freqs
+    freq_min, freq_max = min(all_freqs), max(all_freqs)
+    freq_range = freq_max - freq_min
+    margin = max(freq_range * 0.15, 50)  # At least 50 MHz margin
+
+    # Draw number line
+    ax_freq.axhline(0, color='black', linewidth=1.5, zorder=1)
+    ax_freq.set_xlim(freq_min - margin, freq_max + margin)
+    ax_freq.set_ylim(-1.5, 2)
+
+    # Plot qubit frequencies (above line)
+    for i, (qid, qf, color) in enumerate(zip(qubit_ids, qubit_freqs, qubit_colors)):
+        ax_freq.scatter(qf, 0.8, s=200, marker='o', color=color,
+                        edgecolor='black', linewidth=1.5, zorder=3, label=f'Q{qid}')
+        ax_freq.plot([qf, qf], [0, 0.8], color=color, linewidth=1.5,
+                     linestyle='--', alpha=0.5, zorder=2)
+        ax_freq.text(qf, 1.1, f'Q{qid}\n{qf:.1f}', ha='center', va='bottom',
+                     fontsize=9, fontweight='bold')
+
+    # Plot resonator frequencies (below line)
+    for i, (qid, rf, color) in enumerate(zip(qubit_ids, resonator_freqs, qubit_colors)):
+        ax_freq.scatter(rf, -0.8, s=200, marker='s', color=color,
+                        edgecolor='black', linewidth=1.5, zorder=3)
+        ax_freq.plot([rf, rf], [0, -0.8], color=color, linewidth=1.5,
+                     linestyle='--', alpha=0.5, zorder=2)
+        ax_freq.text(rf, -1.1, f'{rf:.1f}\nR{qid}', ha='center', va='top',
+                     fontsize=9, fontweight='bold')
+
+    ax_freq.set_xlabel('Frequency (MHz)', fontsize=11, fontweight='bold')
+    ax_freq.set_title('Frequency Distribution', fontsize=12, fontweight='bold', pad=10)
+    ax_freq.set_yticks([])
+    ax_freq.spines['left'].set_visible(False)
+    ax_freq.spines['right'].set_visible(False)
+    ax_freq.spines['top'].set_visible(False)
+
+    # Add legend for symbols
+    qubit_patch = mpatches.Patch(color='gray', label='○ Qubit')
+    res_patch = mpatches.Patch(color='gray', label='□ Resonator')
+    ax_freq.legend(handles=[qubit_patch, res_patch], loc='upper left',
+                   fontsize=9, frameon=True, edgecolor='black')
+
+    # ========================================================================
+    # PANEL 2: GAIN NUMBER LINE (Second row, spans 2 columns)
+    # ========================================================================
+    ax_gains = fig.add_subplot(gs[1, 0:2])
 
     qubit_gains = [q['qubit_gain'] for q in qubit_data]
-    readout_gains = [q['readout_gain'] * 32766 for q in qubit_data]  # Convert to absolute
+    resonator_gains = [q['resonator_gain'] for q in qubit_data]  # Keep as 0-1
 
-    x = np.arange(len(qubit_ids))
-    width = 0.35
+    # Separate scales for qubit (large) and resonator (small) gains
+    # We'll normalize and show them on the same axis with dual labels
 
-    bars1 = ax_gains.bar(x - width / 2, qubit_gains, width, label='Qubit Gain',
-                         color='#457B9D', alpha=0.8, edgecolor='black', linewidth=1)
-    bars2 = ax_gains.bar(x + width / 2, readout_gains, width, label='Readout Gain',
-                         color='#E63946', alpha=0.8, edgecolor='black', linewidth=1)
+    # Draw number line
+    ax_gains.axhline(0, color='black', linewidth=1.5, zorder=1)
 
-    # Add value labels on bars
-    for bars in [bars1, bars2]:
-        for bar in bars:
-            height = bar.get_height()
-            ax_gains.text(bar.get_x() + bar.get_width() / 2., height,
-                          f'{int(height)}', ha='center', va='bottom', fontsize=8, fontweight='bold')
+    # Find max qubit gain for scaling
+    max_q_gain = max(qubit_gains)
+    gain_margin = max_q_gain * 0.15
+    ax_gains.set_xlim(-gain_margin, max_q_gain + gain_margin)
+    ax_gains.set_ylim(-1.5, 2)
 
-    ax_gains.set_xlabel('Qubit', fontsize=11, fontweight='bold')
-    ax_gains.set_ylabel('Gain (a.u.)', fontsize=11, fontweight='bold')
-    ax_gains.set_title('Pulse Gains', fontsize=12, fontweight='bold', pad=10)
-    ax_gains.set_xticks(x)
-    ax_gains.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=9, fontweight='bold')
-    ax_gains.legend(fontsize=9, framealpha=0.95)
-    ax_gains.grid(axis='y', alpha=0.3, linestyle='--')
-    ax_gains.set_axisbelow(True)
+    # Plot qubit gains (above line)
+    for i, (qid, qg, color) in enumerate(zip(qubit_ids, qubit_gains, qubit_colors)):
+        ax_gains.scatter(qg, 0.8, s=200, marker='o', color=color,
+                         edgecolor='black', linewidth=1.5, zorder=3)
+        ax_gains.plot([qg, qg], [0, 0.8], color=color, linewidth=1.5,
+                      linestyle='--', alpha=0.5, zorder=2)
+        ax_gains.text(qg, 1.1, f'Q{qid}\n{int(qg)}', ha='center', va='bottom',
+                      fontsize=9, fontweight='bold')
+
+    # Plot resonator gains (below line) - scale to same axis
+    # Convert 0-1 scale to match qubit gain axis
+    scaled_res_gains = [rg * max_q_gain for rg in resonator_gains]
+    for i, (qid, rg_scaled, rg_actual, color) in enumerate(zip(qubit_ids, scaled_res_gains,
+                                                               resonator_gains, qubit_colors)):
+        ax_gains.scatter(rg_scaled, -0.8, s=200, marker='s', color=color,
+                         edgecolor='black', linewidth=1.5, zorder=3)
+        ax_gains.plot([rg_scaled, rg_scaled], [0, -0.8], color=color, linewidth=1.5,
+                      linestyle='--', alpha=0.5, zorder=2)
+        ax_gains.text(rg_scaled, -1.1, f'{rg_actual:.3f}\nR{qid}', ha='center', va='top',
+                      fontsize=9, fontweight='bold')
+
+    ax_gains.set_xlabel('Qubit Gain (a.u.) | Resonator Gain (normalized)',
+                        fontsize=11, fontweight='bold')
+    ax_gains.set_title('Pulse Gain Distribution', fontsize=12, fontweight='bold', pad=10)
+    ax_gains.set_yticks([])
+    ax_gains.spines['left'].set_visible(False)
+    ax_gains.spines['right'].set_visible(False)
+    ax_gains.spines['top'].set_visible(False)
+
+    # Add legend
+    qubit_patch = mpatches.Patch(color='gray', label='○ Qubit (a.u.)')
+    res_patch = mpatches.Patch(color='gray', label='□ Resonator (0-1)')
+    ax_gains.legend(handles=[qubit_patch, res_patch], loc='upper left',
+                    fontsize=9, frameon=True, edgecolor='black')
 
     # ========================================================================
-    # PANEL 3: FIDELITY COMPARISON (Middle Right)
+    # PANEL 3: FIDELITY (Third row, left)
     # ========================================================================
-    ax_fid = fig.add_subplot(gs[1, 2])
+    ax_fid = fig.add_subplot(gs[2, 0])
 
-    bars = ax_fid.barh(y_positions, [f * 100 for f in fidelities],
-                       color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    fidelities = [q['fidelity'] for q in qubit_data]
+    x_pos = np.arange(n_qubits)
+
+    bars = ax_fid.bar(x_pos, [f * 100 for f in fidelities],
+                      color=qubit_colors, alpha=0.7, edgecolor='black', linewidth=1)
 
     # Add value labels
     for i, (bar, fid) in enumerate(zip(bars, fidelities)):
-        width = bar.get_width()
-        ax_fid.text(width + 0.5, bar.get_y() + bar.get_height() / 2,
-                    f'{fid * 100:.2f}%', va='center', fontsize=10, fontweight='bold')
+        height = bar.get_height()
+        ax_fid.text(bar.get_x() + bar.get_width() / 2., height + 0.5,
+                    f'{fid * 100:.1f}%', ha='center', va='bottom', fontsize=9)
 
-    ax_fid.set_yticks(y_positions)
-    ax_fid.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
-    ax_fid.set_xlabel('Single-Shot Fidelity (%)', fontsize=11, fontweight='bold')
-    ax_fid.set_title('Readout Fidelity', fontsize=12, fontweight='bold', pad=10)
-    ax_fid.axvline(95, color='green', linestyle='--', linewidth=2, alpha=0.5, label='95% Target')
-    ax_fid.axvline(90, color='orange', linestyle='--', linewidth=2, alpha=0.5, label='90% Target')
-    ax_fid.legend(fontsize=8, framealpha=0.95)
-    ax_fid.grid(axis='x', alpha=0.3, linestyle='--')
+    ax_fid.axhline(95, color='#388E3C', linestyle='--', linewidth=1.5,
+                   alpha=0.5, label='95% target')
+    ax_fid.axhline(90, color='#F57C00', linestyle='--', linewidth=1.5,
+                   alpha=0.5, label='90% target')
+
+    ax_fid.set_xticks(x_pos)
+    ax_fid.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=10)
+    ax_fid.set_ylabel('Fidelity (%)', fontsize=10, fontweight='bold')
+    ax_fid.set_title('Single-Shot Readout Fidelity', fontsize=11, fontweight='bold')
+    ax_fid.set_ylim(80, 100)
+    ax_fid.legend(fontsize=8, loc='lower right', frameon=True, edgecolor='black')
+    ax_fid.grid(axis='y', alpha=0.3, linestyle=':')
     ax_fid.set_axisbelow(True)
-    ax_fid.set_xlim(80, 100)
 
     # ========================================================================
-    # PANEL 4: COHERENCE TIMES (Middle Left)
+    # PANEL 4: COHERENCE TIMES (Third row, center)
     # ========================================================================
-    ax_coherence = fig.add_subplot(gs[2, 0])
+    ax_coh = fig.add_subplot(gs[2, 1])
 
     T1_values = [q['T1'] if q['T1'] else 0 for q in qubit_data]
     T2_values = [q['T2'] if q['T2'] else 0 for q in qubit_data]
 
-    x = np.arange(len(qubit_ids))
+    x_pos = np.arange(n_qubits)
     width = 0.35
 
-    bars1 = ax_coherence.bar(x - width / 2, T1_values, width, label='T₁',
-                             color='#06A77D', alpha=0.8, edgecolor='black', linewidth=1)
-    bars2 = ax_coherence.bar(x + width / 2, T2_values, width, label='T₂',
-                             color='#2E86AB', alpha=0.8, edgecolor='black', linewidth=1)
+    bars1 = ax_coh.bar(x_pos - width / 2, T1_values, width, label='T₁',
+                       color='#1976D2', alpha=0.7, edgecolor='black', linewidth=1)
+    bars2 = ax_coh.bar(x_pos + width / 2, T2_values, width, label='T₂',
+                       color='#7B1FA2', alpha=0.7, edgecolor='black', linewidth=1)
 
     # Add value labels
     for bars in [bars1, bars2]:
         for bar in bars:
             height = bar.get_height()
             if height > 0:
-                ax_coherence.text(bar.get_x() + bar.get_width() / 2., height,
-                                  f'{height:.1f}', ha='center', va='bottom',
-                                  fontsize=8, fontweight='bold')
+                ax_coh.text(bar.get_x() + bar.get_width() / 2., height + 0.5,
+                            f'{height:.1f}', ha='center', va='bottom', fontsize=8)
 
-    ax_coherence.set_xlabel('Qubit', fontsize=11, fontweight='bold')
-    ax_coherence.set_ylabel('Time (μs)', fontsize=11, fontweight='bold')
-    ax_coherence.set_title('Coherence Times', fontsize=12, fontweight='bold', pad=10)
-    ax_coherence.set_xticks(x)
-    ax_coherence.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=9, fontweight='bold')
-    ax_coherence.legend(fontsize=10, framealpha=0.95)
-    ax_coherence.grid(axis='y', alpha=0.3, linestyle='--')
-    ax_coherence.set_axisbelow(True)
+    ax_coh.set_xticks(x_pos)
+    ax_coh.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=10)
+    ax_coh.set_ylabel('Time (μs)', fontsize=10, fontweight='bold')
+    ax_coh.set_title('Coherence Times', fontsize=11, fontweight='bold')
+    ax_coh.legend(fontsize=9, frameon=True, edgecolor='black')
+    ax_coh.grid(axis='y', alpha=0.3, linestyle=':')
+    ax_coh.set_axisbelow(True)
 
     # ========================================================================
-    # PANEL 5: FREQUENCY DETUNINGS (Middle Center)
+    # PANEL 5: FREQUENCY DETUNINGS (Fourth row, left)
     # ========================================================================
-    ax_detuning = fig.add_subplot(gs[2, 1])
+    ax_det = fig.add_subplot(gs[3, 0])
 
-    # Calculate nearest-neighbor detunings
-    if len(qubit_freqs) > 1:
+    if n_qubits > 1:
+        # Calculate all pairwise detunings (not just nearest neighbor)
         sorted_qubits = sorted(zip(qubit_ids, qubit_freqs), key=lambda x: x[1])
         detunings = []
         labels = []
+
+        # Just nearest neighbors for clarity
         for i in range(len(sorted_qubits) - 1):
             q1_id, q1_freq = sorted_qubits[i]
             q2_id, q2_freq = sorted_qubits[i + 1]
             detuning = abs(q2_freq - q1_freq)
             detunings.append(detuning)
-            labels.append(f'Q{q1_id}-Q{q2_id}')
+            labels.append(f'Q{q1_id}–Q{q2_id}')
 
-        # Color code: green if >50 MHz, orange if 20-50, red if <20
-        colors_det = ['#06A77D' if d > 50 else '#F18F01' if d > 20 else '#C73E1D'
+        y_pos = np.arange(len(detunings))
+        colors_det = ['#388E3C' if d > 50 else '#F57C00' if d > 20 else '#D32F2F'
                       for d in detunings]
 
-        bars = ax_detuning.barh(range(len(detunings)), detunings,
-                                color=colors_det, alpha=0.8, edgecolor='black', linewidth=1.5)
+        bars = ax_det.barh(y_pos, detunings, color=colors_det, alpha=0.7,
+                           edgecolor='black', linewidth=1)
 
         # Add value labels
         for i, (bar, det) in enumerate(zip(bars, detunings)):
             width = bar.get_width()
-            ax_detuning.text(width + 2, bar.get_y() + bar.get_height() / 2,
-                             f'{det:.1f} MHz', va='center', fontsize=9, fontweight='bold')
+            ax_det.text(width + 1, bar.get_y() + bar.get_height() / 2,
+                        f'{det:.1f}', va='center', fontsize=9)
 
-        ax_detuning.set_yticks(range(len(labels)))
-        ax_detuning.set_yticklabels(labels, fontsize=10, fontweight='bold')
-        ax_detuning.set_xlabel('Detuning (MHz)', fontsize=11, fontweight='bold')
-        ax_detuning.set_title('Nearest-Neighbor Detunings', fontsize=12, fontweight='bold', pad=10)
-        ax_detuning.grid(axis='x', alpha=0.3, linestyle='--')
-        ax_detuning.set_axisbelow(True)
-
-        # Add reference lines
-        ax_detuning.axvline(50, color='green', linestyle='--', linewidth=1.5, alpha=0.4)
-        ax_detuning.axvline(20, color='orange', linestyle='--', linewidth=1.5, alpha=0.4)
+        ax_det.set_yticks(y_pos)
+        ax_det.set_yticklabels(labels, fontsize=9)
+        ax_det.set_xlabel('Detuning (MHz)', fontsize=10, fontweight='bold')
+        ax_det.set_title('Nearest-Neighbor Detunings', fontsize=11, fontweight='bold')
+        ax_det.axvline(50, color='#388E3C', linestyle='--', linewidth=1, alpha=0.4)
+        ax_det.axvline(20, color='#F57C00', linestyle='--', linewidth=1, alpha=0.4)
+        ax_det.grid(axis='x', alpha=0.3, linestyle=':')
+        ax_det.set_axisbelow(True)
     else:
-        ax_detuning.text(0.5, 0.5, 'Single Qubit\n(No Detunings)',
-                         ha='center', va='center', fontsize=12, transform=ax_detuning.transAxes)
-        ax_detuning.axis('off')
+        ax_det.text(0.5, 0.5, 'Single Qubit\n(No Detunings)',
+                    ha='center', va='center', fontsize=11,
+                    transform=ax_det.transAxes, style='italic')
+        ax_det.set_xticks([])
+        ax_det.set_yticks([])
+        for spine in ax_det.spines.values():
+            spine.set_visible(False)
 
     # ========================================================================
-    # PANEL 6: QUALITY SCORE (Middle Right)
+    # PANEL 6: QUBIT FREQUENCY SPAN (Fourth row, center)
     # ========================================================================
-    ax_quality = fig.add_subplot(gs[2, 2])
+    ax_span = fig.add_subplot(gs[3, 1])
 
-    # Calculate quality score for each qubit
-    def calculate_quality_score(q):
-        score = 0
-        # Fidelity (40 points max)
-        score += min(q['fidelity'] * 40, 40)
-        # T1 (20 points max - cap at 50us = 20 points)
-        if q['T1']:
-            score += min(q['T1'] / 50 * 20, 20)
-        # T2 (20 points max - cap at 25us = 20 points)
-        if q['T2']:
-            score += min(q['T2'] / 25 * 20, 20)
-        # Penalties
-        score -= q['warnings'] * 2
-        score -= q['issues'] * 5
-        return max(score, 0)
+    if n_qubits > 1:
+        qubit_span = max(qubit_freqs) - min(qubit_freqs)
+        res_span = max(resonator_freqs) - min(resonator_freqs)
 
-    quality_scores = [calculate_quality_score(q) for q in qubit_data]
+        data_to_plot = [qubit_span, res_span]
+        labels_span = ['Qubit\nSpan', 'Resonator\nSpan']
+        colors_span = ['#1976D2', '#E53935']
 
-    # Color code
-    colors_qual = ['#06A77D' if s >= 70 else '#F18F01' if s >= 50 else '#C73E1D'
-                   for s in quality_scores]
+        bars = ax_span.bar(range(2), data_to_plot, color=colors_span,
+                           alpha=0.7, edgecolor='black', linewidth=1)
 
-    bars = ax_quality.barh(y_positions, quality_scores,
-                           color=colors_qual, alpha=0.8, edgecolor='black', linewidth=1.5)
+        for bar, val in zip(bars, data_to_plot):
+            height = bar.get_height()
+            ax_span.text(bar.get_x() + bar.get_width() / 2., height + 2,
+                         f'{val:.1f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Add value labels and grade
-    for i, (bar, score) in enumerate(zip(bars, quality_scores)):
-        width = bar.get_width()
-        grade = 'A' if score >= 80 else 'B' if score >= 70 else 'C' if score >= 50 else 'D'
-        ax_quality.text(width + 1, bar.get_y() + bar.get_height() / 2,
-                        f'{score:.0f} ({grade})', va='center', fontsize=10, fontweight='bold')
-
-    ax_quality.set_yticks(y_positions)
-    ax_quality.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
-    ax_quality.set_xlabel('Quality Score', fontsize=11, fontweight='bold')
-    ax_quality.set_title('Overall Quality Rating', fontsize=12, fontweight='bold', pad=10)
-    ax_quality.grid(axis='x', alpha=0.3, linestyle='--')
-    ax_quality.set_axisbelow(True)
-    ax_quality.set_xlim(0, 100)
-
-    # Add grade boundaries
-    for val, label, color in [(80, 'A', 'green'), (70, 'B', 'orange'), (50, 'C', 'red')]:
-        ax_quality.axvline(val, color=color, linestyle='--', linewidth=1, alpha=0.3)
+        ax_span.set_xticks(range(2))
+        ax_span.set_xticklabels(labels_span, fontsize=10)
+        ax_span.set_ylabel('Frequency Span (MHz)', fontsize=10, fontweight='bold')
+        ax_span.set_title('Frequency Distribution Span', fontsize=11, fontweight='bold')
+        ax_span.grid(axis='y', alpha=0.3, linestyle=':')
+        ax_span.set_axisbelow(True)
+    else:
+        ax_span.text(0.5, 0.5, 'Single Qubit\n(No Span)',
+                     ha='center', va='center', fontsize=11,
+                     transform=ax_span.transAxes, style='italic')
+        ax_span.set_xticks([])
+        ax_span.set_yticks([])
+        for spine in ax_span.spines.values():
+            spine.set_visible(False)
 
     # ========================================================================
-    # PANEL 7: TEXT SUMMARY (Bottom - spans all columns)
+    # RIGHT COLUMN: DETAILED SUMMARY (spans all rows)
     # ========================================================================
-    ax_summary = fig.add_subplot(gs[3, :])
+    ax_summary = fig.add_subplot(gs[:, 2])
     ax_summary.axis('off')
 
-    # Compile summary text
+    # Build detailed summary text
     summary_lines = []
-    summary_lines.append("╔" + "═" * 150 + "╗")
-    summary_lines.append("║" + " " * 50 + "DETAILED CALIBRATION SUMMARY" + " " * 72 + "║")
-    summary_lines.append("╠" + "═" * 150 + "╣")
+    summary_lines.append("=" * 65)
+    summary_lines.append("         CALIBRATION SUMMARY REPORT")
+    summary_lines.append("=" * 65)
+    summary_lines.append("")
 
     for i, (q, checker) in enumerate(zip(qubit_data, checkers)):
         qid = q['qubit_id']
-        status_symbol = "✓" if q['issues'] == 0 else "⚠" if q['issues'] <= 1 else "✗"
 
-        line1 = f"║ QUBIT {qid} {status_symbol}  │ "
-        line1 += f"Freq: {q['qubit_freq']:>7.2f} MHz  │ "
-        line1 += f"Readout: {q['readout_freq']:>7.2f} MHz  │ "
-        line1 += f"Fidelity: {q['fidelity'] * 100:>5.2f}%  │ "
-        line1 += f"T₁: {q['T1']:>5.1f}μs  │ " if q['T1'] else f"T₁: {'N/A':>5}  │ "
-        line1 += f"T₂: {q['T2']:>5.1f}μs" if q['T2'] else f"T₂: {'N/A':>5}"
-        line1 += " " * (150 - len(line1)) + "║"
-        summary_lines.append(line1)
+        # Status indicator
+        if q['issues'] > 0:
+            status = "✗ ISSUES"
+            color_code = '▓'  # Dark block
+        elif q['warnings'] > 0:
+            status = "⚠ WARNINGS"
+            color_code = '▒'  # Medium block
+        else:
+            status = "✓ PASSED"
+            color_code = '░'  # Light block
 
-        line2 = f"║          │ "
-        line2 += f"Q Gain: {q['qubit_gain']:>5.0f}  │ "
-        line2 += f"RO Gain: {q['readout_gain'] * 32766:>5.0f}  │ "
-        line2 += f"Warnings: {q['warnings']:>2}  │ "
-        line2 += f"Issues: {q['issues']:>2}"
-        line2 += " " * (150 - len(line2)) + "║"
-        summary_lines.append(line2)
+        summary_lines.append(f"{color_code * 3} QUBIT {qid} — {status} {color_code * 3}")
+        summary_lines.append("-" * 65)
 
-        # Add warnings/issues if any
+        # Core parameters
+        summary_lines.append(f"  Qubit Frequency:      {q['qubit_freq']:>8.2f} MHz")
+        summary_lines.append(f"  Resonator Frequency:  {q['resonator_freq']:>8.2f} MHz")
+        summary_lines.append(f"  Qubit Gain:           {q['qubit_gain']:>8.0f} a.u.")
+        summary_lines.append(f"  Resonator Gain:       {q['resonator_gain']:>8.4f} (norm.)")
+        summary_lines.append("")
+
+        # Performance metrics
+        summary_lines.append(f"  Readout Fidelity:     {q['fidelity'] * 100:>8.2f} %")
+        if q['T1']:
+            summary_lines.append(f"  T₁ Coherence:         {q['T1']:>8.1f} μs")
+        else:
+            summary_lines.append(f"  T₁ Coherence:         {'N/A':>8}")
+        if q['T2']:
+            summary_lines.append(f"  T₂ Coherence:         {q['T2']:>8.1f} μs")
+        else:
+            summary_lines.append(f"  T₂ Coherence:         {'N/A':>8}")
+        summary_lines.append("")
+
+        # Quality assessment
+        summary_lines.append(f"  Warnings:             {q['warnings']:>8}")
+        summary_lines.append(f"  Critical Issues:      {q['issues']:>8}")
+
+        # List specific warnings/issues
         if q['warning_list']:
+            summary_lines.append("")
+            summary_lines.append("  ⚠ Warnings:")
             for warn in q['warning_list']:
-                warn_line = f"║    ⚠ {warn}"
-                warn_line += " " * (150 - len(warn_line)) + "║"
-                summary_lines.append(warn_line)
+                # Wrap long warnings
+                if len(warn) > 55:
+                    words = warn.split()
+                    line = "    • "
+                    for word in words:
+                        if len(line) + len(word) + 1 > 63:
+                            summary_lines.append(line)
+                            line = "      " + word
+                        else:
+                            line += word + " "
+                    if line.strip():
+                        summary_lines.append(line.rstrip())
+                else:
+                    summary_lines.append(f"    • {warn}")
 
         if q['issue_list']:
+            summary_lines.append("")
+            summary_lines.append("  ✗ Critical Issues:")
             for issue in q['issue_list']:
-                issue_line = f"║    ✗ {issue}"
-                issue_line += " " * (150 - len(issue_line)) + "║"
-                summary_lines.append(issue_line)
+                # Wrap long issues
+                if len(issue) > 55:
+                    words = issue.split()
+                    line = "    • "
+                    for word in words:
+                        if len(line) + len(word) + 1 > 63:
+                            summary_lines.append(line)
+                            line = "      " + word
+                        else:
+                            line += word + " "
+                    if line.strip():
+                        summary_lines.append(line.rstrip())
+                else:
+                    summary_lines.append(f"    • {issue}")
 
+        summary_lines.append("")
         if i < len(qubit_data) - 1:
-            summary_lines.append("╠" + "─" * 150 + "╣")
+            summary_lines.append("")
 
-    summary_lines.append("╚" + "═" * 150 + "╝")
+    summary_lines.append("=" * 65)
+
+    # Overall statistics
+    total_warnings = sum(q['warnings'] for q in qubit_data)
+    total_issues = sum(q['issues'] for q in qubit_data)
+    avg_fidelity = np.mean(fidelities) * 100
+
+    summary_lines.append("OVERALL STATISTICS")
+    summary_lines.append("-" * 65)
+    summary_lines.append(f"  Total Qubits:         {n_qubits:>8}")
+    summary_lines.append(f"  Average Fidelity:     {avg_fidelity:>8.2f} %")
+    summary_lines.append(f"  Total Warnings:       {total_warnings:>8}")
+    summary_lines.append(f"  Total Issues:         {total_issues:>8}")
+    summary_lines.append("=" * 65)
 
     summary_text = "\n".join(summary_lines)
 
-    # Determine overall background color
-    total_issues = sum(q['issues'] for q in qubit_data)
-    bg_color = '#E8F5E9' if total_issues == 0 else '#FFF3E0' if total_issues <= 2 else '#FFEBEE'
+    # Determine background color
+    if total_issues == 0 and total_warnings == 0:
+        bg_color = '#E8F5E9'  # Light green
+    elif total_issues == 0:
+        bg_color = '#FFF3E0'  # Light orange
+    else:
+        bg_color = '#FFEBEE'  # Light red
 
-    ax_summary.text(0.5, 0.5, summary_text,
+    ax_summary.text(0.05, 0.98, summary_text,
                     fontsize=8, fontfamily='monospace',
-                    verticalalignment='center', horizontalalignment='center',
-                    bbox=dict(boxstyle='round,pad=1', facecolor=bg_color,
-                              alpha=0.8, edgecolor='gray', linewidth=2),
+                    verticalalignment='top', horizontalalignment='left',
+                    bbox=dict(boxstyle='round,pad=0.8', facecolor=bg_color,
+                              alpha=0.6, edgecolor='black', linewidth=1.5),
                     transform=ax_summary.transAxes)
 
     return fig
@@ -511,7 +605,7 @@ class EnhancedCalibration:
 
         self.fig, self.axs = plt.subplots(
             nrows, ncols,
-            figsize=(5 * ncols, 4 * nrows),
+            figsize=(15, 8),
             tight_layout=True
         )
 
@@ -813,8 +907,7 @@ def run_enhanced_calibration(
         run_readout_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
         run_qubit_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
         run_coherence,
-        run_singleshot,
-        enable_refinement
+        run_singleshot
     ])
 
     calib.setup_plot(max_num_steps)
@@ -982,17 +1075,19 @@ class CalibrationConfig:
     """Centralized calibration configuration and thresholds"""
 
     # Quality thresholds
-    MIN_FIDELITY = 0.85  # Target acceptable single-shot fidelity
+    MIN_FIDELITY = 0.80  # Target acceptable single-shot fidelity
     MIN_T1 = 10.0  # Minimum T1 (us)
     MIN_T2 = 1.0  # Minimum T2 (us)
     MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
     # Could add stark shift?
-    MAX_REFINEMENT_ITERATIONS = 3 # Iterative refinement
+    MAX_REFINEMENT_ITERATIONS = 1 # Iterative refinement
 
 
-def main():
+if __name__ == "__main__":
 
+    ##################################
     ##### Calibration Parameters #####
+    ##################################
     qubits_to_calibrate = [4]
     varname_FF = 'Readout_1234_FF'
 
@@ -1007,7 +1102,9 @@ def main():
     enable_refinement = t
 
     print_summary = t
-    #################################
+    ##################################
+    ##################################
+    ##################################
 
     Qubit_configs = []  # Saves all final qubit configurations
     checkers_list = []  # Store all QualityChecker objects used
@@ -1078,6 +1175,3 @@ def main():
             print(qconf)
 
     plt.show()
-
-if __name__ == "__main__":
-    main()
