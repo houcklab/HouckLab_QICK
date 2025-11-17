@@ -7,6 +7,7 @@ Improvements over original Fast_calib.py:
 - Optional T1/T2 coherence checks
 - Iterative refinement for low fidelity results
 """
+import math
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -30,22 +31,358 @@ from qubit_parameter_files.Qubit_Parameters_Master import *
 t = True
 f = False
 
-# =============================================================================
-# Calibration Config Thresholds
-# =============================================================================
 
-class CalibrationConfig:
-    """Centralized calibration configuration and thresholds"""
+# ========================================================================
+# Calibration Summary
+# ========================================================================
 
-    # Quality thresholds
-    MIN_FIDELITY = 0.85  # Target acceptable single-shot fidelity
-    MIN_T1 = 10.0  # Minimum T1 (us)
-    MIN_T2 = 1.0  # Minimum T2 (us)
-    MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
-    # Could add stark shift?
+def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, checkers):
+    """
+    Create a comprehensive summary dashboard after calibrating all qubits
+    """
 
-    # Iterative refinement
-    MAX_REFINEMENT_ITERATIONS = 3
+    # Extract data from all qubits
+    qubit_data = []
+    for qconf, add_data, checker in zip(Qubit_configs, additional_qubit_data, checkers):
+        qubit_data.append({
+            'qubit_id': qconf.qubit_id,
+            'qubit_freq': qconf.qubit_freq,
+            'readout_freq': qconf.readout_freq,
+            'qubit_gain': qconf.qubit_gain,
+            'readout_gain': qconf.readout_gain,
+            'fidelity': add_data['fidelity'],
+            'T1': add_data['T1'],
+            'T2': add_data['T2'],
+            'warnings': len(checker.warnings),
+            'issues': len(checker.issues),
+            'warning_list': checker.warnings,
+            'issue_list': checker.issues
+        })
+
+    # Create figure with custom layout
+    fig = plt.figure(figsize=(18, 12))
+    fig.patch.set_facecolor('#F8F9FA')
+
+    # Define grid for subplots
+    gs = fig.add_gridspec(4, 3, hspace=0.35, wspace=0.3,
+                          left=0.08, right=0.95, top=0.93, bottom=0.05)
+
+    # Main title
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    fig.suptitle(f'Calibration Summary Dashboard - {timestamp}',
+                 fontsize=18, fontweight='bold', y=0.97)
+
+    # ========================================================================
+    # PANEL 1: FREQUENCY MAP (Top Left - spans 2 columns)
+    # ========================================================================
+    ax_freq = fig.add_subplot(gs[0:2, 0:2])
+
+    qubit_ids = [q['qubit_id'] for q in qubit_data]
+    qubit_freqs = [q['qubit_freq'] for q in qubit_data]
+    readout_freqs = [q['readout_freq'] for q in qubit_data]
+    fidelities = [q['fidelity'] for q in qubit_data]
+
+    # Create frequency range plot
+    y_positions = np.arange(len(qubit_ids))
+    bar_height = 0.35
+
+    # Color code by fidelity
+    def fidelity_color(fid):
+        if fid >= 0.95:
+            return '#06A77D'  # Green
+        elif fid >= 0.90:
+            return '#F18F01'  # Orange
+        elif fid >= 0.85:
+            return '#E85D04'  # Dark orange
+        else:
+            return '#C73E1D'  # Red
+
+    colors = [fidelity_color(f) for f in fidelities]
+
+    # Plot readout frequencies (bottom bars)
+    ax_freq.barh(y_positions - bar_height / 2, readout_freqs, bar_height,
+                 color=colors, alpha=0.6, label='Readout Freq', edgecolor='black', linewidth=1.5)
+
+    # Plot qubit frequencies (top bars)
+    ax_freq.barh(y_positions + bar_height / 2, qubit_freqs, bar_height,
+                 color=colors, alpha=0.9, label='Qubit Freq', edgecolor='black', linewidth=1.5)
+
+    # Annotations
+    for i, (qid, qf, rf, fid) in enumerate(zip(qubit_ids, qubit_freqs, readout_freqs, fidelities)):
+        # Qubit freq label
+        ax_freq.text(qf + 10, y_positions[i] + bar_height / 2, f'{qf:.1f}',
+                     va='center', fontsize=9, fontweight='bold')
+        # Readout freq label
+        ax_freq.text(rf + 10, y_positions[i] - bar_height / 2, f'{rf:.1f}',
+                     va='center', fontsize=9, fontweight='bold')
+        # Fidelity label
+        ax_freq.text(max(qf, rf) + 50, y_positions[i], f'{fid * 100:.1f}%',
+                     va='center', fontsize=10, fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor=fidelity_color(fid), alpha=0.3))
+
+    ax_freq.set_yticks(y_positions)
+    ax_freq.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
+    ax_freq.set_xlabel('Frequency (MHz)', fontsize=12, fontweight='bold')
+    ax_freq.set_title('Qubit and Readout Frequency Map', fontsize=13, fontweight='bold', pad=15)
+    ax_freq.legend(loc='lower right', fontsize=10, framealpha=0.95)
+    ax_freq.grid(axis='x', alpha=0.3, linestyle='--')
+    ax_freq.set_axisbelow(True)
+
+    # Add frequency span indicator
+    all_freqs = qubit_freqs + readout_freqs
+    freq_range = max(all_freqs) - min(all_freqs)
+    ax_freq.set_xlim(min(all_freqs) - 0.1 * freq_range, max(all_freqs) + 0.15 * freq_range)
+
+    # ========================================================================
+    # PANEL 2: GAIN COMPARISON (Top Right)
+    # ========================================================================
+    ax_gains = fig.add_subplot(gs[0, 2])
+
+    qubit_gains = [q['qubit_gain'] for q in qubit_data]
+    readout_gains = [q['readout_gain'] * 32766 for q in qubit_data]  # Convert to absolute
+
+    x = np.arange(len(qubit_ids))
+    width = 0.35
+
+    bars1 = ax_gains.bar(x - width / 2, qubit_gains, width, label='Qubit Gain',
+                         color='#457B9D', alpha=0.8, edgecolor='black', linewidth=1)
+    bars2 = ax_gains.bar(x + width / 2, readout_gains, width, label='Readout Gain',
+                         color='#E63946', alpha=0.8, edgecolor='black', linewidth=1)
+
+    # Add value labels on bars
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax_gains.text(bar.get_x() + bar.get_width() / 2., height,
+                          f'{int(height)}', ha='center', va='bottom', fontsize=8, fontweight='bold')
+
+    ax_gains.set_xlabel('Qubit', fontsize=11, fontweight='bold')
+    ax_gains.set_ylabel('Gain (a.u.)', fontsize=11, fontweight='bold')
+    ax_gains.set_title('Pulse Gains', fontsize=12, fontweight='bold', pad=10)
+    ax_gains.set_xticks(x)
+    ax_gains.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=9, fontweight='bold')
+    ax_gains.legend(fontsize=9, framealpha=0.95)
+    ax_gains.grid(axis='y', alpha=0.3, linestyle='--')
+    ax_gains.set_axisbelow(True)
+
+    # ========================================================================
+    # PANEL 3: FIDELITY COMPARISON (Middle Right)
+    # ========================================================================
+    ax_fid = fig.add_subplot(gs[1, 2])
+
+    bars = ax_fid.barh(y_positions, [f * 100 for f in fidelities],
+                       color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+
+    # Add value labels
+    for i, (bar, fid) in enumerate(zip(bars, fidelities)):
+        width = bar.get_width()
+        ax_fid.text(width + 0.5, bar.get_y() + bar.get_height() / 2,
+                    f'{fid * 100:.2f}%', va='center', fontsize=10, fontweight='bold')
+
+    ax_fid.set_yticks(y_positions)
+    ax_fid.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
+    ax_fid.set_xlabel('Single-Shot Fidelity (%)', fontsize=11, fontweight='bold')
+    ax_fid.set_title('Readout Fidelity', fontsize=12, fontweight='bold', pad=10)
+    ax_fid.axvline(95, color='green', linestyle='--', linewidth=2, alpha=0.5, label='95% Target')
+    ax_fid.axvline(90, color='orange', linestyle='--', linewidth=2, alpha=0.5, label='90% Target')
+    ax_fid.legend(fontsize=8, framealpha=0.95)
+    ax_fid.grid(axis='x', alpha=0.3, linestyle='--')
+    ax_fid.set_axisbelow(True)
+    ax_fid.set_xlim(80, 100)
+
+    # ========================================================================
+    # PANEL 4: COHERENCE TIMES (Middle Left)
+    # ========================================================================
+    ax_coherence = fig.add_subplot(gs[2, 0])
+
+    T1_values = [q['T1'] if q['T1'] else 0 for q in qubit_data]
+    T2_values = [q['T2'] if q['T2'] else 0 for q in qubit_data]
+
+    x = np.arange(len(qubit_ids))
+    width = 0.35
+
+    bars1 = ax_coherence.bar(x - width / 2, T1_values, width, label='T₁',
+                             color='#06A77D', alpha=0.8, edgecolor='black', linewidth=1)
+    bars2 = ax_coherence.bar(x + width / 2, T2_values, width, label='T₂',
+                             color='#2E86AB', alpha=0.8, edgecolor='black', linewidth=1)
+
+    # Add value labels
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax_coherence.text(bar.get_x() + bar.get_width() / 2., height,
+                                  f'{height:.1f}', ha='center', va='bottom',
+                                  fontsize=8, fontweight='bold')
+
+    ax_coherence.set_xlabel('Qubit', fontsize=11, fontweight='bold')
+    ax_coherence.set_ylabel('Time (μs)', fontsize=11, fontweight='bold')
+    ax_coherence.set_title('Coherence Times', fontsize=12, fontweight='bold', pad=10)
+    ax_coherence.set_xticks(x)
+    ax_coherence.set_xticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=9, fontweight='bold')
+    ax_coherence.legend(fontsize=10, framealpha=0.95)
+    ax_coherence.grid(axis='y', alpha=0.3, linestyle='--')
+    ax_coherence.set_axisbelow(True)
+
+    # ========================================================================
+    # PANEL 5: FREQUENCY DETUNINGS (Middle Center)
+    # ========================================================================
+    ax_detuning = fig.add_subplot(gs[2, 1])
+
+    # Calculate nearest-neighbor detunings
+    if len(qubit_freqs) > 1:
+        sorted_qubits = sorted(zip(qubit_ids, qubit_freqs), key=lambda x: x[1])
+        detunings = []
+        labels = []
+        for i in range(len(sorted_qubits) - 1):
+            q1_id, q1_freq = sorted_qubits[i]
+            q2_id, q2_freq = sorted_qubits[i + 1]
+            detuning = abs(q2_freq - q1_freq)
+            detunings.append(detuning)
+            labels.append(f'Q{q1_id}-Q{q2_id}')
+
+        # Color code: green if >50 MHz, orange if 20-50, red if <20
+        colors_det = ['#06A77D' if d > 50 else '#F18F01' if d > 20 else '#C73E1D'
+                      for d in detunings]
+
+        bars = ax_detuning.barh(range(len(detunings)), detunings,
+                                color=colors_det, alpha=0.8, edgecolor='black', linewidth=1.5)
+
+        # Add value labels
+        for i, (bar, det) in enumerate(zip(bars, detunings)):
+            width = bar.get_width()
+            ax_detuning.text(width + 2, bar.get_y() + bar.get_height() / 2,
+                             f'{det:.1f} MHz', va='center', fontsize=9, fontweight='bold')
+
+        ax_detuning.set_yticks(range(len(labels)))
+        ax_detuning.set_yticklabels(labels, fontsize=10, fontweight='bold')
+        ax_detuning.set_xlabel('Detuning (MHz)', fontsize=11, fontweight='bold')
+        ax_detuning.set_title('Nearest-Neighbor Detunings', fontsize=12, fontweight='bold', pad=10)
+        ax_detuning.grid(axis='x', alpha=0.3, linestyle='--')
+        ax_detuning.set_axisbelow(True)
+
+        # Add reference lines
+        ax_detuning.axvline(50, color='green', linestyle='--', linewidth=1.5, alpha=0.4)
+        ax_detuning.axvline(20, color='orange', linestyle='--', linewidth=1.5, alpha=0.4)
+    else:
+        ax_detuning.text(0.5, 0.5, 'Single Qubit\n(No Detunings)',
+                         ha='center', va='center', fontsize=12, transform=ax_detuning.transAxes)
+        ax_detuning.axis('off')
+
+    # ========================================================================
+    # PANEL 6: QUALITY SCORE (Middle Right)
+    # ========================================================================
+    ax_quality = fig.add_subplot(gs[2, 2])
+
+    # Calculate quality score for each qubit
+    def calculate_quality_score(q):
+        score = 0
+        # Fidelity (40 points max)
+        score += min(q['fidelity'] * 40, 40)
+        # T1 (20 points max - cap at 50us = 20 points)
+        if q['T1']:
+            score += min(q['T1'] / 50 * 20, 20)
+        # T2 (20 points max - cap at 25us = 20 points)
+        if q['T2']:
+            score += min(q['T2'] / 25 * 20, 20)
+        # Penalties
+        score -= q['warnings'] * 2
+        score -= q['issues'] * 5
+        return max(score, 0)
+
+    quality_scores = [calculate_quality_score(q) for q in qubit_data]
+
+    # Color code
+    colors_qual = ['#06A77D' if s >= 70 else '#F18F01' if s >= 50 else '#C73E1D'
+                   for s in quality_scores]
+
+    bars = ax_quality.barh(y_positions, quality_scores,
+                           color=colors_qual, alpha=0.8, edgecolor='black', linewidth=1.5)
+
+    # Add value labels and grade
+    for i, (bar, score) in enumerate(zip(bars, quality_scores)):
+        width = bar.get_width()
+        grade = 'A' if score >= 80 else 'B' if score >= 70 else 'C' if score >= 50 else 'D'
+        ax_quality.text(width + 1, bar.get_y() + bar.get_height() / 2,
+                        f'{score:.0f} ({grade})', va='center', fontsize=10, fontweight='bold')
+
+    ax_quality.set_yticks(y_positions)
+    ax_quality.set_yticklabels([f'Q{qid}' for qid in qubit_ids], fontsize=11, fontweight='bold')
+    ax_quality.set_xlabel('Quality Score', fontsize=11, fontweight='bold')
+    ax_quality.set_title('Overall Quality Rating', fontsize=12, fontweight='bold', pad=10)
+    ax_quality.grid(axis='x', alpha=0.3, linestyle='--')
+    ax_quality.set_axisbelow(True)
+    ax_quality.set_xlim(0, 100)
+
+    # Add grade boundaries
+    for val, label, color in [(80, 'A', 'green'), (70, 'B', 'orange'), (50, 'C', 'red')]:
+        ax_quality.axvline(val, color=color, linestyle='--', linewidth=1, alpha=0.3)
+
+    # ========================================================================
+    # PANEL 7: TEXT SUMMARY (Bottom - spans all columns)
+    # ========================================================================
+    ax_summary = fig.add_subplot(gs[3, :])
+    ax_summary.axis('off')
+
+    # Compile summary text
+    summary_lines = []
+    summary_lines.append("╔" + "═" * 150 + "╗")
+    summary_lines.append("║" + " " * 50 + "DETAILED CALIBRATION SUMMARY" + " " * 72 + "║")
+    summary_lines.append("╠" + "═" * 150 + "╣")
+
+    for i, (q, checker) in enumerate(zip(qubit_data, checkers)):
+        qid = q['qubit_id']
+        status_symbol = "✓" if q['issues'] == 0 else "⚠" if q['issues'] <= 1 else "✗"
+
+        line1 = f"║ QUBIT {qid} {status_symbol}  │ "
+        line1 += f"Freq: {q['qubit_freq']:>7.2f} MHz  │ "
+        line1 += f"Readout: {q['readout_freq']:>7.2f} MHz  │ "
+        line1 += f"Fidelity: {q['fidelity'] * 100:>5.2f}%  │ "
+        line1 += f"T₁: {q['T1']:>5.1f}μs  │ " if q['T1'] else f"T₁: {'N/A':>5}  │ "
+        line1 += f"T₂: {q['T2']:>5.1f}μs" if q['T2'] else f"T₂: {'N/A':>5}"
+        line1 += " " * (150 - len(line1)) + "║"
+        summary_lines.append(line1)
+
+        line2 = f"║          │ "
+        line2 += f"Q Gain: {q['qubit_gain']:>5.0f}  │ "
+        line2 += f"RO Gain: {q['readout_gain'] * 32766:>5.0f}  │ "
+        line2 += f"Warnings: {q['warnings']:>2}  │ "
+        line2 += f"Issues: {q['issues']:>2}"
+        line2 += " " * (150 - len(line2)) + "║"
+        summary_lines.append(line2)
+
+        # Add warnings/issues if any
+        if q['warning_list']:
+            for warn in q['warning_list']:
+                warn_line = f"║    ⚠ {warn}"
+                warn_line += " " * (150 - len(warn_line)) + "║"
+                summary_lines.append(warn_line)
+
+        if q['issue_list']:
+            for issue in q['issue_list']:
+                issue_line = f"║    ✗ {issue}"
+                issue_line += " " * (150 - len(issue_line)) + "║"
+                summary_lines.append(issue_line)
+
+        if i < len(qubit_data) - 1:
+            summary_lines.append("╠" + "─" * 150 + "╣")
+
+    summary_lines.append("╚" + "═" * 150 + "╝")
+
+    summary_text = "\n".join(summary_lines)
+
+    # Determine overall background color
+    total_issues = sum(q['issues'] for q in qubit_data)
+    bg_color = '#E8F5E9' if total_issues == 0 else '#FFF3E0' if total_issues <= 2 else '#FFEBEE'
+
+    ax_summary.text(0.5, 0.5, summary_text,
+                    fontsize=8, fontfamily='monospace',
+                    verticalalignment='center', horizontalalignment='center',
+                    bbox=dict(boxstyle='round,pad=1', facecolor=bg_color,
+                              alpha=0.8, edgecolor='gray', linewidth=2),
+                    transform=ax_summary.transAxes)
+
+    return fig
 
 # =============================================================================
 # QUALITY CHECK FUNCTIONS
@@ -163,12 +500,36 @@ class EnhancedCalibration:
         self.OptQubit_index = None
         self.varname_FF = None
 
+    def set_final_fidelity(self, fidelity):
+        self.final_fidelity = fidelity
+
     def setup_plot(self, num_steps=6):
-        """Set up figure for displaying results"""
-        self.fig, self.axs = plt.subplots(4, 3, figsize=(15, 8), tight_layout=True)
-        self.fig.suptitle(f"Qubit_{self.qubit_id}_Calibration_{datetime.now().strftime('%Y_%m_%d_%H_%M')}",
-                          fontsize=14)
-        self.iter_axs = iter(self.axs.flatten())
+        """Set up figure for displaying results."""
+        # Decide grid size
+        ncols = min(3, num_steps)
+        nrows = math.ceil(num_steps / ncols)
+
+        self.fig, self.axs = plt.subplots(
+            nrows, ncols,
+            figsize=(5 * ncols, 4 * nrows),
+            tight_layout=True
+        )
+
+        self.fig.suptitle(
+            f"Qubit_{self.qubit_id}_Calibration_{datetime.now().strftime('%Y_%m_%d_%H_%M')}",
+            fontsize=14
+        )
+
+        # Make sure we always have a flat iterable of axes
+        axs_flat = np.atleast_1d(self.axs).ravel()
+
+        # Hide any unused axes (if grid bigger than num_steps)
+        for ax in axs_flat[num_steps:]:
+            ax.set_visible(False)
+
+        # Iterator over only the axes we actually use
+        self.iter_axs = iter(axs_flat[:num_steps])
+
         return self.fig, self.axs
 
     def run_transmission(self, params):
@@ -371,7 +732,8 @@ class EnhancedCalibration:
 
             t1 = t1_expt.T1
             t2 = t2_expt.T2
-
+            self.T1 = t1
+            self.T2 = t2
             self.checker.check_coherence(t1, t2)
 
             print(f"T1/T2 Step:")
@@ -397,9 +759,13 @@ class EnhancedCalibration:
                 self.OptQubit_index,
                 self.varname_FF
             )
-            return qubit_config
-        return None
-
+            additional_data = {
+                "fidelity": getattr(self, 'final_fidelity', 0),
+                "T1": getattr(self, 'T1', None),
+                "T2": getattr(self, 'T2', None),
+            }
+            return qubit_config, additional_data
+        return None, None
 
 # =============================================================================
 # MAIN CALIBRATION WORKFLOW
@@ -418,8 +784,8 @@ def run_enhanced_calibration(
         run_rabi=True,
         run_readout_opt=True,
         run_qubit_opt=True,
-        run_singleshot=True,
         run_coherence=False,
+        run_singleshot=True,
         enable_refinement=True
 ):
     """
@@ -438,7 +804,20 @@ def run_enhanced_calibration(
     print(f"\nCalibrating Qubit {qubit_id}...")
 
     calib = EnhancedCalibration(soc, soccfg, config, outerFolder, qubit_id)
-    calib.setup_plot()
+
+    max_num_steps = sum([
+        run_transmission,
+        run_coarse_spec,
+        run_fine_spec,
+        run_rabi,
+        run_readout_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
+        run_qubit_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
+        run_coherence,
+        run_singleshot,
+        enable_refinement
+    ])
+
+    calib.setup_plot(max_num_steps)
 
     # Store QubitConfig parameters
     calib.OptReadout_index = OptReadout_index
@@ -588,16 +967,51 @@ def run_enhanced_calibration(
     print(f"\nCalibration complete - Qubit {qubit_id}")
     print(f"Total time: {elapsed_time / 60:.1f} minutes")
     print(f"Final fidelity: {final_fidelity:.3f}")
+    calib.set_final_fidelity(final_fidelity)
 
-    qubit_config = calib.finalize()
+    qubit_config, additional_data = calib.finalize()
 
-    return config, calib.checker, qubit_config
+    return config, calib.checker, qubit_config, additional_data
 
-if __name__ == "__main__":
 
+# =============================================================================
+# Calibration Config Thresholds
+# =============================================================================
+
+class CalibrationConfig:
+    """Centralized calibration configuration and thresholds"""
+
+    # Quality thresholds
+    MIN_FIDELITY = 0.85  # Target acceptable single-shot fidelity
+    MIN_T1 = 10.0  # Minimum T1 (us)
+    MIN_T2 = 1.0  # Minimum T2 (us)
+    MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
+    # Could add stark shift?
+    MAX_REFINEMENT_ITERATIONS = 3 # Iterative refinement
+
+
+def main():
+
+    ##### Calibration Parameters #####
     qubits_to_calibrate = [4]
-    Qubit_configs = []
     varname_FF = 'Readout_1234_FF'
+
+    run_transmission = t
+    run_coarse_spec = t
+    run_fine_spec = t
+    run_rabi = t
+    run_readout_opt = t
+    run_qubit_opt = t
+    run_coherence = t
+    run_singleshot = t
+    enable_refinement = t
+
+    print_summary = t
+    #################################
+
+    Qubit_configs = []  # Saves all final qubit configurations
+    checkers_list = []  # Store all QualityChecker objects used
+    additional_qubit_data = [] # Store additional qubit data such as T1/T2
 
     for Q in qubits_to_calibrate:
         # Set up qubit-specific parameters
@@ -620,7 +1034,7 @@ if __name__ == "__main__":
         exec(open("UPDATE_CONFIG.py").read())
 
         # Run calibration
-        config, checker, qubit_config = run_enhanced_calibration(
+        config, checker, qubit_config, additional_data = run_enhanced_calibration(
             soc=soc,
             soccfg=soccfg,
             config=config,
@@ -630,26 +1044,40 @@ if __name__ == "__main__":
             OptQubit_index=OptQubit_index,
             num_readout_qubits=len(Qubit_Readout),
             varname_FF=varname_FF,
-            run_transmission=       t,
-            run_coarse_spec=        t,
-            run_fine_spec=          t,
-            run_rabi=               t,
-            run_readout_opt=        t,
-            run_qubit_opt=          t,
-            run_singleshot=         t,
-            run_coherence=          t,
-            enable_refinement=      t  # Enable iterative refinement for low fidelity
+            run_transmission=run_transmission,
+            run_coarse_spec=run_coarse_spec,
+            run_fine_spec=run_fine_spec,
+            run_rabi=run_rabi,
+            run_readout_opt=run_readout_opt,
+            run_qubit_opt=run_qubit_opt,
+            run_coherence=run_coherence,
+            run_singleshot=run_singleshot,
+            enable_refinement=enable_refinement  # Enable iterative refinement for low fidelity
         )
 
         # Collect QubitConfig object
         if qubit_config is not None:
             Qubit_configs.append(qubit_config)
+            checkers_list.append(checker)
+            additional_qubit_data.append(additional_data)
 
     print("=" * 17)
     print(f"FINAL QUBIT PARAMETERS")
     print("=" * 17)
-    # Print all calibrated qubit configs (same format as original Fast_calib.py)
-    for qconf in Qubit_configs:
-        print(qconf)
+
+    if print_summary and len(Qubit_configs) > 0:
+        # Print the final summary
+        summary_fig = create_calibration_summary_dashboard(
+            Qubit_configs,
+            additional_qubit_data,
+            checkers_list,
+        )
+
+        # Print all calibrated qubit configs (same format as original Fast_calib.py)
+        for qconf in Qubit_configs:
+            print(qconf)
 
     plt.show()
+
+if __name__ == "__main__":
+    main()
