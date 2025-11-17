@@ -595,7 +595,7 @@ def run_enhanced_calibration(
 
 if __name__ == "__main__":
 
-    qubits_to_calibrate = [4]
+    qubits_to_calibrate = [6]
     Qubit_configs = []
     varname_FF = 'Readout_1234_FF'
 
