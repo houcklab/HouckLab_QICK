@@ -17,13 +17,21 @@ from .BS_Mux8_4578_Readout_Josh import BS4578_Readout_Josh
 # 8Q Pi Flux parameters
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = FF_gains([-8743, -9351, -6203, -8539, -7419, -7685, -5443, -8311])
+Expt_FF = FF_gains([-8832, -9320, -6288, -8673, -7472, -7893, -5427, -8377])
+
+# disordered
+# Expt_FF = FF_gains([-8332, -9820, -6088, -8973, -7072, -8393, -5027, -8877])
+
+# manual
+# Expt_FF = FF_gains([-8743, -9251, -6203, -8739, -7319, -7785, -5443, -8311])
+
+# Expt_FF = FF_gains([-8743, -9251, -6303, -8639, -7419, -7885, -5443, -8311])
 
 # for measuring rung coupling
-Expt_FF = FF_gains([-8743, -9474, -6144, -8506, -7411, -7689, -5644, -8428])
+# Expt_FF = FF_gains([-8743, -9474, -6144, -8506, -7411, -7689, -5644, -8428])
 
 # for measuring leg coupling
-Expt_FF = FF_gains([-8743, -9474, -6144, -8506, -7411, -7740, -5397, -8231])
+# Expt_FF = FF_gains([-8743, -9474, -6144, -8506, -7411, -7740, -5397, -8231])
 
 
 # Start of ramp, after pulse
@@ -148,7 +156,7 @@ ramp_params = {
     # (3600.0, 3600.0, 4300.0, 4300.0, 3700.0, 3700.0, 4100.0, 4100.0)
     '1234_correlations': {'BS': {'BS_FF': [-18629, -19389, 13852, 11543, -12362, -13248, 6521, 2214]}},
 
-    '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, -12501, -13248, 6380, 2214]}},
+    '1234_correlations_double': {'BS': {'BS_FF': [-18587, -19389, 13881, 11543, -12337, -13248, 6544, 2214]}},
     # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
 
 
@@ -171,35 +179,41 @@ ramp_params = {
     # (4400.0, 4400.0, 3496.5, 4000.0, 4000.0, 3534.5, 3460.3, 3522.7)
     '1254_correlations': {'BS': {'BS_FF': [22268, 21904, -25392, -2490, -1488, -28060, -25722, -24395]}},
 
-    '1267_correlations': {'BS': {'BS_FF': [22665, 21904, -25392, -28060, -25722, -2245, 500, -24395]}},
+    # (4350.0, 4350.0, 3457.4, 3499.9, 3495.6, 4250.0, 4250.0, 3503.2)
+    '1267_correlations': {'BS': {'BS_FF': [19890, 20033, -25392, -27560, -25700, 14165, 16575, -24395]}},
+
 
     # (3535.3, 4380.0, 4380.0, 3540.1, 4000.0, 4000.0, 3460.3, 3522.7)
-    '2356_correlations': {'BS': {'BS_FF': [-26873, 20755, 21495, -27560, -1370, -1233, -25722, -24395]}},
-    '2378_correlations': {'BS': {'BS_FF': [-26873, 20610, 21495, -27560, -25722, -24395, 10069, 5000]}},
+    '2356_correlations': {'BS': {'BS_FF': [-26873, 17380, 21495, -27560, -1325, -1233, -25722, -24395]}},
+
+    '2378_correlations': {'BS': {'BS_FF': [-26873, 17112, 21495, -27560, -25722, -24395, 10170, 5000]}},
 
 
 
 
     # (3535.3, 3527.2, 4380.0, 4380.0, 3534.4, 4000.0, 4000.0, 3522.7)
-    '3467_correlations': {'BS': {'BS_FF': [-26873, -29001, 21495, 16460, -25700, -1123, 1383, -24395]}},
+    '3467_correlations': {'BS': {'BS_FF': [-26873, -29001, 21187, 16460, -25700, -410, 1383, -24395]}},
 
     # (3535.3, 4200.0, 4200.0, 3900.0, 3900.0, 4200.0, 3600.0, 3600.0)
     '4578_correlations_Josh': {'BS':{'BS_FF': [-26873, 7050, 7799, -6188, -5192, 8140, -13491, -16604]}},
 
     # (4415.2, 4424.4, 4389.6, 4000.0, 4000.0, 4392.0, 3600.0, 3600.0)
-    '4578_correlations': {'BS': {'BS_FF': [26873, 29001, 25392, -2530, -1488, 28060, -13418, -16604]}},
+    '4578_correlations': {'BS': {'BS_FF': [26873, 29001, 25392, -2519, -1488, 28060, -13385, -16604]}},
 }
 
 
 
 readout_params = BS1234_Readout
-readout_params = BS2345_Readout
-readout_params = BS1254_Readout
+# readout_params = BS2345_Readout
+# readout_params = BS1254_Readout
+# readout_params = BS1267_Readout
+# readout_params = BS2356_Readout
 # readout_params = BS2378_Readout
 # readout_params = BS3467_Readout
 # readout_params = BS4578_Readout
 
 # readout_params = BS2345_Readout
+
 
 Ramp_state = '8Q_4815'
 # Ramp_state = '8Q_4815_lowest_state'
@@ -207,12 +221,16 @@ Ramp_state = '8Q_4815'
 # Ramp_state = '45'
 
 # beamsplitter_point = '2345_correlations_double'
-# beamsplitter_point = '1234_correlations_double'
+beamsplitter_point = '1234_correlations_double'
 # beamsplitter_point = '2356_correlations_double'
 # beamsplitter_point = '4578_correlations'
-beamsplitter_point = '1234_correlations'
-beamsplitter_point = '2345_correlations'
-beamsplitter_point = '1254_correlations'
+# beamsplitter_point = '1234_correlations'
+# beamsplitter_point = '2345_correlations'
+# beamsplitter_point = '1254_correlations'
+# beamsplitter_point = '1267_correlations'
+# beamsplitter_point = '2356_correlations'
+# beamsplitter_point = '2378_correlations'
+# beamsplitter_point = '4578_correlations'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d

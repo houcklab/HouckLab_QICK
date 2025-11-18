@@ -44,9 +44,11 @@ def fit_double_beamsplitter(Z, gains):
 
         # Fit to the normalized contrast
         try:
-            popt, _ = curve_fit(model, g_sorted, c_norm_extra, p0=p0, bounds=bounds, maxfev=20000)
+            popt, pcov = curve_fit(model, g_sorted, c_norm_extra, p0=p0, bounds=bounds, maxfev=20000)
             fit_params[r] = popt
             contrast_fit[r] = model(g_sorted, *popt)
+
+            perr = np.sqrt(np.diag(pcov))
         except Exception:
             # Fit failed → fall back to one empirical max/min so you still see lines
             fit_params[r] = None

@@ -32,7 +32,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
         # diagonals (down-right)
         (1, 4), (3, 6), (5, 8),
         # Added for testing intersection
-        # (4,7),
+        # (1,5),
     ]
 
     def __init__(self, *args, **kwargs):
@@ -178,17 +178,15 @@ class PlotFrequenciesExperiment(ExperimentClass):
 def main():
 
     # Setting gains
-    intermediate_jump_gains = [None, -2040, None, -13730, None, -5300, None, None]
+    intermediate_jump_gains = [-14710, None, 3500, None, -18600, None, -2700, None]
     for i in range(len(intermediate_jump_gains)):
         if intermediate_jump_gains[i] is None:
             intermediate_jump_gains[i] = BS_FF[i]
 
     readout_gains = readout_params['1']['Readout']['FF_Gains']
 
-    # gains = [Pulse_4815_FF, Init_FF, Ramp_FF, BS_FF, Readout_1234_FF]
-    gains = [readout_gains, Init_FF, Ramp_FF, BS_FF, readout_gains]
     gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
-    # gains = [Readout_1234_FF, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
+    gains = [readout_gains, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
 
 
     config = {'gains': gains, 'plot': True}

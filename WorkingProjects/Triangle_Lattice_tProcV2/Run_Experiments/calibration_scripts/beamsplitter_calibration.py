@@ -18,12 +18,18 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_fi
 
 
 calibrate_gain = True
-calibrate_offset = False
+calibrate_offset = True
 
 
 beamsplitter_point = '1254_correlations'
+beamsplitter_point = '1267_correlations'
+beamsplitter_point = '2356_correlations'
+beamsplitter_point = '2378_correlations'
+beamsplitter_point = '3467_correlations'
+beamsplitter_point = '4578_correlations'
 
-rungs = ['12', '45']
+rungs = ['34','67']
+rungs = ['45', '78']
 
 sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
                       't_offset': [2, 1, 6, 9, 8, -1, 1, -2],
@@ -37,11 +43,17 @@ sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
 #                       'gainStart': None, 'gainStop': None, 'gainNumPoints': 11,
 #                       'start': 50, 'step': 8, 'expts': 71}
 
-sweep_bs_offset_dict = {'reps': 200, 'ramp_time': 2000,
-                        't_offset': [22, 24, 13, 24, 8, 8, 9, 0],
+sweep_bs_offset_dict = {'reps': 200, 'ramp_time': 1000,
+                        't_offset': [23, 25, 14, 25, 9, 9, 9, 0],
                         'relax_delay': 100,
                         'offsetStart': 0, 'offsetStop': 40, 'offsetNumPoints': 41,
                         'start': 0, 'step': 8, 'expts': 71}
+
+sweep_bs_offset_dict = {'reps': 200, 'ramp_time': 1000,
+                        't_offset': [23, 25, 14, 25, 9, 9, 9, 0],
+                        'relax_delay': 100,
+                        'offsetStart': 0, 'offsetStop': 40, 'offsetNumPoints': 41,
+                        'start': 0, 'step': 1, 'expts': 71}
 
 ###############################
 

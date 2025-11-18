@@ -36,11 +36,11 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 
-for Q in [5]:
+for Q in [1,2,3,4,5,6,7,8]:
 # for Q in [3]:
-    Qubit_Readout = [Q, Q+2]
-    # Qubit_Pulse =   [f"{Q}R"]
-    Qubit_Pulse = [Q]
+    Qubit_Readout = [Q]
+    Qubit_Pulse =   [f"{Q}R"]
+    # Qubit_Pulse = [Q]
 
     Expt_FF_subsys = Expt_FF.subsys(Q, det=-10000)
 
@@ -123,8 +123,8 @@ for Q in [5]:
                   'freq_start': 7700, 'freq_stop': 8000, 'freq_pts': 20,
                   'number_of_pulses': 1}
     # These T1 and T2R experiments are done at FFPulses!
-    RunT1 = False
-    RunT2 = False
+    RunT1 = True
+    RunT2 = True
 
     T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
 
@@ -144,7 +144,7 @@ for Q in [5]:
     #                   "read_length_start":1, "read_length_end":10, "read_length_points":5,
     #                   "trig_time_start":0.1, "trig_time_end":3, "trig_time_points":5}
 
-    Oscillation_Gain = True
+    Oscillation_Gain = False
     oscillation_gain_dict = {'qubit_FF_index': Q+2, 'reps': 700,
                              'start': 1, 'step': 20, 'expts': 71,
                              'gainStart': -6000,

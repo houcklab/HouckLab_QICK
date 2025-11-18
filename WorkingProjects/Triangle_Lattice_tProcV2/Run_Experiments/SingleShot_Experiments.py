@@ -104,11 +104,11 @@ Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 60*60}
 Run_Spec_vs_Qblox = False
 Spec_v_Qblox_params = {"Qblox_start": 0.4, "Qblox_stop": 1.2, "Qblox_steps": 6, "DAC": 9}
 
-RunAmplitudeRabi = False
-Amplitude_Rabi_params = {"max_gain": 10000, 'relax_delay':100}
+RunAmplitudeRabi = True
+Amplitude_Rabi_params = {"max_gain": 12000, 'relax_delay':100}
 
 
-SingleShot = True
+SingleShot = False
 SS_params = {"Shots": 2000, 'number_of_pulses': 1, 'relax_delay': 200}
 
 SingleShotDecimate = False
@@ -139,7 +139,7 @@ if SingleShot_QubitOptimize and SS_Q_params['qubit_sweep_index'] >= len(Qubit_Pu
     raise ValueError("Qubit optimize sweep index out of range")
 
 # These T1 and T2R experiments are done at FFPulses!
-RunT1 = True
+RunT1 = False
 RunT2 = False
 
 T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}

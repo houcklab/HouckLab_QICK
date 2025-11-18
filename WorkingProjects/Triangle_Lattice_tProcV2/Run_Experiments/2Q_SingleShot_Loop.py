@@ -21,9 +21,9 @@ Adjacency = {
 def are_adjacent(qpair):
     return qpair[1] in Adjacency[qpair[0]]
 
-skip_uncoupled_qubits = False
+skip_uncoupled_qubits = True
 # List of lists: every combination of 2 qubits in each sublist will be checked
-for Q_list in [[5,7]]:
+for Q_list in [[1,2,3,4,5,6,7,8]]:
     for Qpair in itertools.combinations(Q_list, 2):
         if skip_uncoupled_qubits and not are_adjacent(Qpair):
             continue
@@ -37,7 +37,7 @@ for Q_list in [[5,7]]:
         OptQubit_index = 1
 
         SS_2Q_params = {"Shots": 2000, 'number_of_pulses': 1, 'relax_delay': 200,
-                        'second_qubit_freq': 3966.8, 'second_qubit_gain': 5749}
+                        'second_qubit_freq': None, 'second_qubit_gain': None}
 
         SS_Q_params = {"Shots": 500, 'relax_delay': 150,
                        "q_gain_span": 2 * 1000, "q_gain_pts": 2 + 5,

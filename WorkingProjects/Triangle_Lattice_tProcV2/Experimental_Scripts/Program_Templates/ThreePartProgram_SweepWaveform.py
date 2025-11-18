@@ -12,7 +12,7 @@ class ThreePartProgram_SweepOneFF(SweepWaveformAveragerProgram):
     def _body(self, cfg):
         # 1: FFPulses
         # self.delay_auto()
-        FFDelayTime = 10
+        FFDelayTime = 9
         self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.qubit_length_us + 1.01 + FFDelayTime)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 + FFDelayTime if i==0 else 'auto'

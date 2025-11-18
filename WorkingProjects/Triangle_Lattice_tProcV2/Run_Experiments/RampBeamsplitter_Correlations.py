@@ -63,15 +63,15 @@ sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 2000,
                         'start': 0, 'step': 8, 'expts': 71}
 
 Beamsplitter1D = False
-Run_CurrentCorrelations = True
+Run_CurrentCorrelations = False
 
 ramp_beamsplitter_1d_dict = {'reps': 100000, 'ramp_time': 1000,
                              't_offset':
-                             [22, 24, 13, 24, 8, 8, 9, 0],
-                             'relax_delay': 140,
+                             [23, 25, 14, 20, 9, 7, 7, 0],
+                             'relax_delay': 180,
                              'start': 0, 'step': 8, 'expts': 71,
-                             'readout_pair_1': [1,2],
-                             'readout_pair_2': [4,5],
+                             'readout_pair_1': [4,5],
+                             'readout_pair_2': [7,8],
                              }
 
 
@@ -121,22 +121,22 @@ sweep_BS_offset_correlations_dict = {'swept_qubit': 5, 'reps': 1000,
 # --------------------------------
 # Base dict that will be used for all below experiments
 
-Q = 4
+Q = 1
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
-double_jump_base = {'reps': 10*400, 'ramp_time': 1000,
+double_jump_base = {'reps': 400, 'ramp_time': 1000,
                     't_offset':
                     # [22, 24, 13, 24, 8, 8, 9, 0],
                       [22, 24, 13, 20, 8, 9, 9, 0],
                     'relax_delay': 150,
                     'start': 0, 'step': 16, 'expts': 71,
                     # 1234 BOI
-                    # 'intermediate_jump_samples': [9, 0, 2, 0, 8, 0, 2, 0],
-                    # 'intermediate_jump_gains': [-14710, None, 3500, None, -18600, None, -2700, None]}
+                    'intermediate_jump_samples': [9, 0, 3, 0, 4, 0, 2, 0],
+                    'intermediate_jump_gains': [-14300, None, 4490, None, -20347, None, -2370, None]}
                     # 2345 BOI
-                    'intermediate_jump_samples': [0, 3, 0, 15, 0, 2, 0, 0],
-                    'intermediate_jump_gains': [None, -2040, None, -13730, None, -5300, None, None]}
+                    # 'intermediate_jump_samples': [0, 3, 0, 15, 0, 2, 0, 0],
+                    # 'intermediate_jump_gains': [None, -2040, None, -13730, None, -5300, None, None]}
 
 
 Sweep_DoubleJump_BS_Gain = False
@@ -184,17 +184,17 @@ double_jump_intermediate_gain_dict['gainStop'] = center + 1000
 
 DoubleJump1D = False
 
-DoubleJump_CurrentCorrelations = False
+DoubleJump_CurrentCorrelations = True
 
-double_jump_1d_dict = {'reps': 3000,
-                        'start': 0, 'step': 4, 'expts': 141,
-                       'readout_pair_1': [1,2],
-                       'readout_pair_2': [3,4],}
 
 double_jump_1d_dict = {'reps': 100_000,
-                        'start': 0, 'step': 4, 'expts': 141,
-                       'readout_pair_1': [2,3],
-                       'readout_pair_2': [4,5],}
+                        'start': 0, 'step': 8, 'expts': 71,
+                       'readout_pair_1': [1,2],
+                       'readout_pair_2': [3,4],}
+# double_jump_1d_dict = {'reps': 100000,
+#                         'start': 0, 'step': 4, 'expts': 141,
+#                        'readout_pair_1': [2,3],
+#                        'readout_pair_2': [4,5],}
 
 DoubleJump_Correlations_CleanTiming = False
 # This ends the working section of the file.

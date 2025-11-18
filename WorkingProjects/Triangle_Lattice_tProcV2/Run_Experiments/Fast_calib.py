@@ -36,7 +36,7 @@ Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','5_4Q_readout']
 Qubit_configs = []
 
 ### !!! ###
-varname_FF = 'Readout_1234_FF'
+
 
 # Readout_2345_FF = np.array([-12000, 4000, 17468, -7500, -14000, 12000, 0, -18000])
 # New_readout_FF = np.array([11035, 3643, 17468, -7290, -9683, -2912, 3665, 6214])
@@ -60,7 +60,8 @@ varname_FF = 'Readout_1234_FF'
 #           'Pulse_FF': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395]},
 # }
 
-for Q in [6]:
+varname_FF = 'Readout_1234_FF'
+for Q in [1,2,3,4,5,6,7,8]:
     # Qubit_Readout = [1,2,3,4,5,6,7,8]
     Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
@@ -80,11 +81,11 @@ for Q in [6]:
 
     print(f'OptQubit_index = {OptQubit_index}')
 
-    RunTransmissionSweep =       t
-    RunFirst2ToneSpec =          t
-    RunSecond2ToneSpec =         t
-    RunAmplitudeRabi =           t
-    SingleShot_ReadoutOptimize = t
+    RunTransmissionSweep =       f
+    RunFirst2ToneSpec =          f
+    RunSecond2ToneSpec =         f
+    RunAmplitudeRabi =           f
+    SingleShot_ReadoutOptimize = f
     SingleShot_QubitOptimize =   t
     SingleShot =                 t
 

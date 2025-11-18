@@ -98,7 +98,7 @@ class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
         for j, (expt, bs, readout) in enumerate(zip(gain_expt, gain_bs, gain_readout)):
             arr = np.concatenate((np.full(t_offset[j], expt), np.full(self.cfg['expt_samples2'], bs)))
             arr = Compensate(arr - expt, expt, j+1)
-            arr = np.concatenate((arr, np.full(16*5-t_offset[j], readout)))
+            arr = np.concatenate((arr, np.full(16*2-t_offset[j], readout)))
             IQArray.append(arr)
         self.cfg["IDataArray2"] = IQArray
         print([len(arr) for arr in IQArray])

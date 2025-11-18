@@ -28,15 +28,18 @@ def fit_chevron(gains, times, pop_matrix, b_guess=1.36055267e-04, return_fit_poi
             p0 = [frequency_guess(times, exp), np.max(exp) - np.min(exp), exp[0], times[-1], 1e-3]
             cos_params, _ = curve_fit(cosfit, times, exp, p0, maxfev=int(1e9))
 
+
             freq_list.append(cos_params[0])
             fit_gains_list.append(gains[i])
         except RuntimeError:
             pass
 
     p0 = [fit_gains_list[np.argmin(freq_list)], b_guess, np.min(freq_list)/2]
-    freq_param, _ = curve_fit(freqfit, fit_gains_list, freq_list, p0=p0)
+    freq_param, pcov = curve_fit(freqfit, fit_gains_list, freq_list, p0=p0)
+
+    perr = np.sqrt(np.diag(pcov))
 
     if return_fit_points:
-        return freq_param, freq_list, fit_gains_list
+        return freq_param, pcov, perr, freq_list, fit_gains_list
     else:
         return freq_param

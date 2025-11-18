@@ -55,7 +55,9 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
         data_dict = data['data']
         Z, time = data_dict['population_corrected'], data_dict['expt_samples']
         gains = data_dict.get('Gain_Expt', data_dict.get('Gain_BS'))
-        self.freq_param_list = []
+        self.popt_list = []
+        self.pcov_list = []
+        self.perr_list = []
         self.fit_freqs = [None] * len(Z)
         self.fit_gains = [None] * len(Z)
         time = time * 0.291e-3 # Convert to us
@@ -63,34 +65,39 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
         for ro_ind in range(len(Z)):
             try:
                 pop_matrix = Z[ro_ind]
-                freq_param, fit_freqs, fit_gains = fit_chevron(gains, time, pop_matrix, return_fit_points=True)
-                self.freq_param_list.append(freq_param)
+                popt, pcov, perr, fit_freqs, fit_gains = fit_chevron(gains, time, pop_matrix, return_fit_points=True)
+                self.popt_list.append(popt)
+                self.pcov_list.append(pcov)
+                self.perr_list.append(perr)
                 self.fit_freqs[ro_ind] = np.array(fit_freqs)
                 self.fit_gains[ro_ind] = np.array(fit_gains)
             except RuntimeError:
                 pass
 
-        data_dict['freq_param_list'] = self.freq_param_list
+        data_dict['popt_list'] = self.popt_list
+        data_dict['pcov_list'] = self.pcov_list
+        data_dict['perr_list'] = self.perr_list
         data_dict['fit_freqs'] = self.fit_freqs
         data_dict['fit_gains'] = self.fit_gains
 
     def _display_plot(self, data=None, fig_axs=None):
         fig, axs = super()._display_plot(data, fig_axs)
 
-        if 'freq_param_list' in self.__dict__:
+        if 'popt_list' in self.__dict__:
             gains = data['data'].get('Gain_Expt', data['data'].get('Gain_BS'))
             gain_step = gains[1] - gains[0]
             gain_linspace = np.linspace(gains[0]-gain_step/2, gains[-1]+gain_step/2, 80)
             for ro_ind in range(len(axs)):
                 # Plot the first cycle
-                freq_param = self.freq_param_list[ro_ind]
-                if self.cfg.get('fit', True) and freq_param is not None:
+                popt = self.popt_list[ro_ind]
+                perr = self.perr_list[ro_ind]
+                if self.cfg.get('fit', True) and popt is not None:
                     axs[ro_ind].scatter(1/self.fit_freqs[ro_ind] / 0.291e-3, self.fit_gains[ro_ind], color='r', marker='o', s=150)
-                    axs[ro_ind].plot(1/freqfit(gain_linspace, *freq_param) / 0.291e-3, gain_linspace,
-                                     color='r', ls=':', zorder=1, lw=5, label = f'g = {freq_param[2]:.2f} MHz')
+                    axs[ro_ind].plot(1/freqfit(gain_linspace, *popt) / 0.291e-3, gain_linspace,
+                                     color='r', ls=':', zorder=1, lw=5, label = f'g = {popt[2]:.2f} $\pm {perr[2]:.2f}$  MHz')
                     fig.canvas.draw()
                     axs[ro_ind].autoscale(False)
-                    axs[ro_ind].axhline(freq_param[0], color='r', label=f'FF Gain = {freq_param[0]:.1f}', zorder=1, lw=5)
+                    axs[ro_ind].axhline(popt[0], color='r', label=f'FF Gain = {popt[0]:.1f}', zorder=1, lw=5)
                     axs[ro_ind].legend(prop={'size': 14})
 
 
