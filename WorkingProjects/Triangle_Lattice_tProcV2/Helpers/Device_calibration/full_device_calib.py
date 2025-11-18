@@ -225,71 +225,90 @@ def dress_system(qubit_freqs, beta_matrix=None, g_matrix=None,  plot=True):
         plot_dressed_system(new_qubit_freqs, new_g_matrix)
         
     return new_qubit_freqs, new_g_matrix
-    
-def plot_dressed_system(qubit_freqs, g_matrix):
-    '''Hardcoded for our 8 qubit system
-    Args: qubit_freqs (8,), g_matrix (8,8)'''
-    fig, ax = plt.subplots(figsize=(8,5)) # note we must use plt.subplots, not plt.subplot
+
+def plot_dressed_system(qubit_freqs, g_matrix, ax=None):
+    """Hardcoded for our 8 qubit system.
+
+    Args:
+        qubit_freqs: (8,) array of dressed qubit frequencies
+        g_matrix:    (8, 8) effective coupling strengths
+        ax:          optional matplotlib Axes to draw into. If None, a new
+                     figure+axes are created and returned.
+    """
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 5))  # standalone usage
+        created_fig = True
+    else:
+        fig = ax.figure
 
     QUBIT_SPACING_X = 0.25
     QUBIT_OFFSET_Y = -0.25 / np.sqrt(2)
-    QUBIT_OFFSET_X = QUBIT_SPACING_X/2
+    QUBIT_OFFSET_X = QUBIT_SPACING_X / 2
     Q1_ORIGIN = np.array((0.225, 0.4))
-    
-    TOP = [Q1_ORIGIN + (j*QUBIT_SPACING_X,                               0) for j in range(4)]
-    BOT = [Q1_ORIGIN + (j*QUBIT_SPACING_X + QUBIT_OFFSET_X, QUBIT_OFFSET_Y) for j in range(4)]
+
+    TOP = [Q1_ORIGIN + (j * QUBIT_SPACING_X, 0) for j in range(4)]
+    BOT = [
+        Q1_ORIGIN + (j * QUBIT_SPACING_X + QUBIT_OFFSET_X, QUBIT_OFFSET_Y)
+        for j in range(4)
+    ]
 
     # Ordered in [Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8]
-    coords = [(TOP+BOT)[j] for j in (0, 4, 1, 5, 2, 6, 3, 7)]
-
+    coords = [(TOP + BOT)[j] for j in (0, 4, 1, 5, 2, 6, 3, 7)]
 
     for j, coord in enumerate(coords):
-        
+
         if j < 8:
             # Qubit: Red circle
-            patch = plt.Circle(coord, 0.04, edgecolor='maroon', facecolor='indianred',zorder=10, lw=2)
+            patch = plt.Circle(coord, 0.04, edgecolor='maroon', facecolor='indianred', zorder=10, lw=2)
+            ax.text(coord[0], coord[1], f"Q{j+1}", ha='center', va='center', fontsize=8, color='white', zorder=11
+            )
         else:
             # Coupler: Blue triangle
-            patch = patches.RegularPolygon(coord, 3, radius=0.04, edgecolor='darkblue', facecolor='cornflowerblue', zorder=10,lw=2)
+            patch = patches.RegularPolygon(coord, 3, radius=0.04, edgecolor='darkblue', facecolor='cornflowerblue',
+                                           zorder=10, lw=2)
         ax.add_patch(patch)
-        if j < 8 :
+        if j < 8:
             fc, ec = "pink", "maroon"
         else:
             fc, ec = "lightblue", "steelblue"
         # Qubit/coupler frequency box
-        ax.annotate(np.round(qubit_freqs[j],1), coord + (-0.04,(-1)**(j)*0.09 - 0.007),
-                   bbox=dict(boxstyle="round,pad=0.4",
-                      fc=fc, ec=ec, lw=2),zorder=11)
-        
-    for i, j in zip(*np.nonzero(g_matrix[:8,:8])):
-        if i < j: # Symmetric matrix, so skip repeats
-            g = g_matrix[i,j]
+        ax.annotate(np.round(qubit_freqs[j], 1), coord + (-0.04, (-1) ** (j) * 0.09 - 0.007),
+                    bbox=dict(boxstyle="round,pad=0.4",
+                              fc=fc, ec=ec, lw=2), zorder=11)
+
+    for i, j in zip(*np.nonzero(g_matrix[:8, :8])):
+        if i < j:  # Symmetric matrix, so skip repeats
+            g = g_matrix[i, j]
             location = (coords[i] + coords[j]) / 2
-            
+
             # Coupling > 3 MHz (all neighbor couplings)
             path = patches.ConnectionPatch(xyA=coords[i], coordsA=ax.transData, xyB=coords[j], lw=1)
             ax.add_patch(path)
-            
-            ax.annotate(np.round(g,1), location + (-0.01, 0),
-               bbox=dict(boxstyle="round,pad=0.4",
-                  fc="xkcd:pale turquoise" if g > 0 else "xkcd:pale lavender", ec="xkcd:sea" if g > 0 else "xkcd:periwinkle", lw=2))
+
+            ax.annotate(np.round(g, 1), location + (-0.01, 0),
+                        bbox=dict(boxstyle="round,pad=0.4",
+                                  fc="xkcd:pale turquoise" if g > 0 else "xkcd:pale lavender",
+                                  ec="xkcd:sea" if g > 0 else "xkcd:periwinkle", lw=2))
 
     # 0 or Pi fluxes
-    for i,j,k in [np.array([0,1,2]) + j for j in range(6)]:
-        a, b, c = [coords[x] for x in (i,j,k)]
+    for i, j, k in [np.array([0, 1, 2]) + j for j in range(6)]:
+        a, b, c = [coords[x] for x in (i, j, k)]
 
-        flux = 0 if g_matrix[i,k] > 0 else 1
-        
-        tri = patches.Polygon([a,b,c], facecolor='lightcyan' if flux == 0 else 'lightpink', alpha=0.5, zorder=0)
-        center = (a + b + c)/3
+        flux = 0 if g_matrix[i, k] > 0 else 1
 
-        
+        tri = patches.Polygon([a, b, c], facecolor='lightcyan' if flux == 0 else 'lightpink', alpha=0.5, zorder=0)
+        center = (a + b + c) / 3
+
         ax.annotate(0 if flux == 0 else r'$\pi$', center, size=14)
         # ax.annotate(r'$\pi$', center, size=14)
         ax.add_patch(tri)
-        
-
 
     ax.axis("equal")
     ax.axis("off")
-    plt.show(block=False)
+
+    if created_fig:
+        fig.tight_layout()
+
+    return ax
+

@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
-from Import_Functions_Transmon import *
-from Initialize_Qubit_Information import flux_sign, model_mapping
-from Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Import_Functions_Transmon import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Initialize_Qubit_Information import flux_sign, model_mapping
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
 
 
 class CalculateFFExperiment(ExperimentClass):
@@ -114,13 +114,14 @@ class CalculateFFExperiment(ExperimentClass):
             'suffix': suffix,
         }
 
+        self.data = data
         # Plotting if specified
         if plot_effective_system:
             self.display(data)
 
         return data
 
-    def display(self, data: Dict[str, Any], **kwargs) -> None:
+    def display(self, data: Dict[str, Any]=None, plotDisplay=True, ax=None, **kwargs) -> None:
         """
         `dress_system(..., plot=True)` already plotted, we simply call plt.show().
         """
@@ -131,9 +132,11 @@ class CalculateFFExperiment(ExperimentClass):
 
         dressed_freqs = data['dressed_freqs']
         g_matrix = data['g_matrix']
-        full_device_calib.plot_dressed_system(dressed_freqs, g_matrix)
-        plt.show()
-        plt.pause(0.1)
+        full_device_calib.plot_dressed_system(dressed_freqs, g_matrix, ax)
+
+        if plotDisplay:
+            plt.show()
+            plt.pause(0.1)
 
     def save_data(self, data: Dict[str, Any]) -> None:
         pass

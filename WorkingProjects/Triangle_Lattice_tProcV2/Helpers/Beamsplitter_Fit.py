@@ -32,7 +32,7 @@ def fit_double_beamsplitter(Z, gains):
     contrast_norm = np.full_like(contrast_sorted, np.nan, dtype=float)  # (R, G)
     contrast_fit = np.full_like(contrast_sorted, np.nan, dtype=float)  # (R, G)
     fit_params = [None] * R
-    pi_cands_per_r, zero_cands_per_r = [], []
+    pi_cands_per_r, zero_cands_per_r, perr_r = [], [], []
 
     for r in range(R):
         c = contrast_sorted[r]  # (G,)
@@ -47,7 +47,6 @@ def fit_double_beamsplitter(Z, gains):
             popt, pcov = curve_fit(model, g_sorted, c_norm_extra, p0=p0, bounds=bounds, maxfev=20000)
             fit_params[r] = popt
             contrast_fit[r] = model(g_sorted, *popt)
-
             perr = np.sqrt(np.diag(pcov))
         except Exception:
             # Fit failed → fall back to one empirical max/min so you still see lines
@@ -83,6 +82,7 @@ def fit_double_beamsplitter(Z, gains):
         pi_cands_per_r.append(pi_cands)
         zero_cands_per_r.append(zero_cands)
         contrast_norm[r] = c_norm
+        perr_r.append(perr)
 
     fit = {
         'g_sorted': np.array(g_sorted),  # (G,)
@@ -91,5 +91,6 @@ def fit_double_beamsplitter(Z, gains):
         'fit_params': fit_params,  # list of [d,w,phi] or None
         'pi_candidates': pi_cands_per_r,  # list[list[float]] per readout
         'zero_candidates': zero_cands_per_r,  # list[list[float]] per readout
+        'perrors': np.array(perr_r),
     }
     return fit
