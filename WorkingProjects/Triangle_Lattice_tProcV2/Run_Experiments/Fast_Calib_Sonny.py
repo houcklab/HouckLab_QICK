@@ -11,6 +11,7 @@ import math
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import json
 import time
 from datetime import datetime
@@ -23,6 +24,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Calculate_FF import CalculateFFExperiment
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
@@ -46,10 +48,6 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
     - Row 2: Fidelity (horizontal bar plot), Coherence times bar plot
     - Row 3: Text summary spanning both columns
     """
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from datetime import datetime
-    import matplotlib.gridspec as gridspec
 
     # -------------------------
     # Collect data
@@ -95,27 +93,27 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
     # -------------------------
     # Figure + gridspec
     # -------------------------
-    fig = plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(15, 8))
     fig.suptitle(
         f"Calibration_Summary_{datetime.now().strftime('%Y_%m_%d_%H_%M')}",
         y=0.95,
     )
 
-    # Slightly taller first two rows now; tighter spacing
     gs = gridspec.GridSpec(
         4, 2, figure=fig,
-        height_ratios=[1.0, 1.0, 2.0, 3.0],
-        hspace=0.7,  # tighter than before
-        wspace=0.15   # also slightly tighter
+        height_ratios=[5.0, 1.5, 1.5, 2.5],
+        hspace=0.6,
+        wspace=0.10,
     )
 
-    ax_qfreq = fig.add_subplot(gs[0, 0])
-    ax_rfreq = fig.add_subplot(gs[0, 1])
-    ax_qgain = fig.add_subplot(gs[1, 0])
-    ax_rgain = fig.add_subplot(gs[1, 1])
-    ax_fid   = fig.add_subplot(gs[2, 0])
-    ax_coh   = fig.add_subplot(gs[2, 1])
-    ax_sum   = fig.add_subplot(gs[3, :])
+    ax_ff = fig.add_subplot(gs[0, 0])
+    ax_fid = fig.add_subplot(gs[0, 1])
+    ax_qfreq = fig.add_subplot(gs[1, 0])
+    ax_qgain = fig.add_subplot(gs[1, 1])
+    ax_rfreq = fig.add_subplot(gs[2, 0])
+    ax_rgain = fig.add_subplot(gs[2, 1])
+    ax_coh = fig.add_subplot(gs[3, 0])
+    ax_sum = fig.add_subplot(gs[3, 1])
 
     # =========================================================
     # Helper: number line plotting (slightly taller)
@@ -136,8 +134,8 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
             ax.plot(v, -0.4, marker="o", color="C0", linestyle="none")
             ax.text(v, 0, lab, ha="center", va="bottom", fontsize=8)
 
-        ax.set_xlabel(xlabel)
-        ax.set_title(title, pad=2)
+        ax.set_xlabel(xlabel, fontsize=8)
+        ax.set_title(title, pad=2, fontsize=10)
 
     # =========================================================
     # 1) Qubit and resonator frequencies (separate, thin)
@@ -190,7 +188,7 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
     ax_fid.barh(y_pos, fid_percent, color="C0")
     ax_fid.set_yticks(y_pos)
     ax_fid.set_yticklabels([f"Q{qid}" for qid in qubit_ids])
-    ax_fid.set_xlabel("Fidelity (%)")
+    ax_fid.set_xlabel("Fidelity (%)", fontsize=8)
     ax_fid.set_title("Readout Fidelity", pad=2)
 
     # Dotted vertical line at 80%
@@ -218,14 +216,48 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
     # =========================================================
     x = np.arange(n_qubits)
     width = 0.35
-    ax_coh.bar(x - width / 2, T1_values, width, label="T1", color="C0")
-    ax_coh.bar(x + width / 2, T2_values, width, label="T2", color="C1")
+    bars_T1 = ax_coh.bar(x - width / 2, T1_values, width, label="T1", color="C0")
+    bars_T2 = ax_coh.bar(x + width / 2, T2_values, width, label="T2", color="C2")
+    for bar in bars_T1: ax_coh.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{bar.get_height():.1f}",
+                                    ha="center", va="bottom", fontsize=8)
+    for bar in bars_T2: ax_coh.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f"{bar.get_height():.1f}",
+                                    ha="center", va="bottom", fontsize=8)
 
     ax_coh.set_xticks(x)
-    ax_coh.set_xticklabels([f"Q{qid}" for qid in qubit_ids])
-    ax_coh.set_ylabel("Time (µs)")
+    ax_coh.set_xticklabels([f"Q{qid}" for qid in qubit_ids], fontsize=8)
+    ax_coh.set_ylabel("Time (µs)", fontsize=8)
+    ax_coh.margins(y=0.2)  # 20% empty space above bars
     ax_coh.set_title("Coherence Times", pad=2)
     ax_coh.legend()
+
+    # =========================================================
+    # 4) Calib_FF Plot
+    # =========================================================
+    # TODO: The default should be from Qubit Parameters
+    ff_qubit_freqs = {
+        'Q1': 3800,
+        'Q2': 3800,
+        'Q3': 3800,
+        'Q4': 3800,
+        'Q5': 3800,
+        'Q6': 3800,
+        'Q7': 3800,
+        'Q8': 3800,
+    }
+
+    for q in qubit_data:
+        qid = int(q["qubit_id"])  # assuming Q is 1..8
+        ff_qubit_freqs[f"Q{qid}"] = float(q["qubit_freq"])
+
+    calib_FF_config = {
+        'plot_effective_system': False, # Not autoplot
+        'suffix': 'BS',
+        'frequencies': ff_qubit_freqs,
+    }
+
+    expt = CalculateFFExperiment(path='', prefix='CalculateFF', soc=None, soccfg=None, cfg=calib_FF_config)
+    expt.acquire()
+    expt.display(plotDisplay=False, ax=ax_ff)
 
     # =========================================================
     # 5) Summary text (spans both columns)
@@ -278,7 +310,7 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
         transform=ax_sum.transAxes,
         va="top",
         ha="left",
-        fontsize=9,
+        fontsize=7,
     )
 
     return fig
@@ -339,8 +371,6 @@ class QualityChecker:
         if fidelity < CalibrationConfig.MIN_FIDELITY:
             self.issues.append(f"Single-shot fidelity too low: {fidelity:.3f} < {CalibrationConfig.MIN_FIDELITY}")
             return False
-        elif fidelity < 0.90:
-            self.warnings.append(f"Single-shot fidelity marginal: {fidelity:.3f}")
 
         return True
 
@@ -880,15 +910,17 @@ class CalibrationConfig:
     """Centralized calibration configuration and thresholds"""
 
     # Quality thresholds
-    MIN_FIDELITY = 0.80  # Target acceptable single-shot fidelity
-    MIN_T1 = 10.0  # Minimum T1 (us)
-    MIN_T2 = 1.0  # Minimum T2 (us)
+    MIN_FIDELITY = 0.78  # Target acceptable single-shot fidelity
+    MIN_T1 = 12.0  # Minimum T1 (us)
+    MIN_T2 = 2.0  # Minimum T2 (us)
     MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
     # Could add stark shift?
     MAX_REFINEMENT_ITERATIONS = 1 # Iterative refinement
 
 
 if __name__ == "__main__":
+
+    # test_calibration_dashboard(n_qubits=4)
 
     ##################################
     ##### Calibration Parameters #####
@@ -969,14 +1001,18 @@ if __name__ == "__main__":
 
     if print_summary and len(Qubit_configs) > 0:
         # Print the final summary
-        summary_fig = create_calibration_summary_dashboard(
-            Qubit_configs,
-            additional_qubit_data,
-            checkers_list,
-        )
+
+        if len(Qubit_configs) > 1:
+            summary_fig = create_calibration_summary_dashboard(
+                Qubit_configs,
+                additional_qubit_data,
+                checkers_list,
+            )
 
         # Print all calibrated qubit configs (same format as original Fast_calib.py)
         for qconf in Qubit_configs:
             print(qconf)
 
+
     plt.show()
+    plt.pause(0.1)

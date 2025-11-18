@@ -1,5 +1,5 @@
-from Import_Functions_Transmon import *
-from Initialize_Qubit_Information import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Import_Functions_Transmon import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Initialize_Qubit_Information import *
 
 import matplotlib.pyplot as plt
 

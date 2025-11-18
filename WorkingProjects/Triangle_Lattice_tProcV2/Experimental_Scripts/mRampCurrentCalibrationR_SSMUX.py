@@ -379,6 +379,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         Z = np.asarray(data_dict[self.z_value], float)  # (R, G, T)
         gains = np.asarray(data_dict['intermediate_jump_gains'], float)  # (G,)
         self.fit_params = fit_double_beamsplitter(Z, gains)
+        data_dict.update(self.fit_params)
 
     def _display_plot(self, data=None, fig_axs=None):
         fig, axs = super()._display_plot(data, fig_axs)
