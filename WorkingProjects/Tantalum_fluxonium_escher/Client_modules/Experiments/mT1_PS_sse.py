@@ -118,13 +118,15 @@ class LoopbackProgramT1_PS_sse(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0] / self.us2cycles(self.cfg['read_length'], ro_ch=0)
-        shots_q0 = self.dq_buf[0] / self.us2cycles(self.cfg['read_length'], ro_ch=0)
-
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        i_0 = shots_i0[0]
+        i_1 = shots_i1[0]
+        q_0 = shots_q0[0]
+        q_1 = shots_q1[0]
 
         return i_0, i_1, q_0, q_1
 
