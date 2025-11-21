@@ -398,8 +398,10 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
                 # after drawing the heatmap for readout r -> axis = ax
                 fit = self.fit_params
                 g_sorted = fit.get('g_sorted', None)
+                g_dense = fit.get('g_dense', None)
                 contrast_norm = fit.get('contrast_norm', None)
                 contrast_fit = fit.get('contrast_fit', None)
+                contrast_fit_dense = fit.get('contrast_fit_dense', None)
 
                 # --- Twin x-axis for contrast curves (normalized 0..1) ---
                 axc = ax.twiny()
@@ -412,13 +414,18 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
                     c_norm_row = contrast_norm[r]  # (G,)
                     axc.plot(c_norm_row, g_sorted, color='w', lw=1.8, label='contrast (actual)')
 
-                    # fitted contrast (red dashed) if present
-                    if contrast_fit is not None:
+                    # fitted contrast (red dashed) if present (prefer dense version)
+                    if contrast_fit_dense is not None and g_dense is not None:
+                        y_fit_smooth = contrast_fit_dense[r]
+                        if np.isfinite(y_fit_smooth).any():
+                            axc.plot(y_fit_smooth, g_dense, 'r--', lw=1.8, label='contrast (fit)')
+                    elif contrast_fit is not None:
+                        # fallback: fit only on original points
                         y_fit_row = contrast_fit[r]
                         if np.isfinite(y_fit_row).any():
                             axc.plot(y_fit_row, g_sorted, 'r--', lw=1.8, label='contrast (fit)')
 
-                # --- π and zero lines on the heatmap axis ---
+                # --- pi and zero lines on the heatmap axis ---
                 pi_cands = fit.get('pi_candidates', [[]] * R)[r]
                 zero_cands = fit.get('zero_candidates', [[]] * R)[r]
 
