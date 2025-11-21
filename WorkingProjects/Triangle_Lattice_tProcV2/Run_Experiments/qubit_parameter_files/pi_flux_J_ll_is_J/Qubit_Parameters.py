@@ -203,14 +203,14 @@ ramp_params = {
 
 
 
-readout_params = BS1234_Readout
+# readout_params = BS1234_Readout
 # readout_params = BS2345_Readout
 # readout_params = BS1254_Readout
 # readout_params = BS1267_Readout
 # readout_params = BS2356_Readout
 # readout_params = BS2378_Readout
 # readout_params = BS3467_Readout
-# readout_params = BS4578_Readout
+readout_params = BS4578_Readout
 
 # readout_params = BS2345_Readout
 
@@ -224,13 +224,13 @@ Ramp_state = '8Q_4815'
 # beamsplitter_point = '1234_correlations_double'
 # beamsplitter_point = '2356_correlations_double'
 # beamsplitter_point = '4578_correlations'
-beamsplitter_point = '1234_correlations'
+# beamsplitter_point = '1234_correlations'
 # beamsplitter_point = '2345_correlations'
 # beamsplitter_point = '1254_correlations'
 # beamsplitter_point = '1267_correlations'
 # beamsplitter_point = '2356_correlations'
 # beamsplitter_point = '2378_correlations'
-# beamsplitter_point = '4578_correlations'
+beamsplitter_point = '4578_correlations'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d
@@ -244,6 +244,7 @@ Qubit_Parameters = Qps.d
 Init_FF = Qubit_Parameters[Ramp_state]['Ramp']['Init_FF']
 Ramp_FF = Qubit_Parameters[Ramp_state]['Ramp']['Expt_FF']
 
+# Ramp_FF[5] = -9089
 
 BS_FF = Qubit_Parameters[beamsplitter_point]['BS']['BS_FF']
 # BS_FF = Readout_1234_FF

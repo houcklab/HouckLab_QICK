@@ -100,6 +100,7 @@ class PlotFrequenciesExperiment(ExperimentClass):
 
         for qi in range(num_qubits):
             plt.plot(freqs[:, qi], '-o', label=f'Q{qi+1}')
+
         plt.xlabel('experimental section index')
         plt.ylabel('Frequency (MHz)')
         plt.legend()
@@ -164,6 +165,9 @@ class PlotFrequenciesExperiment(ExperimentClass):
                          ha='center', va='center', fontweight='bold', zorder=6)
 
         plt.xticks(xs)
+        # print(self.cfg['labels'])
+        if 'labels' in self.cfg:
+            plt.xticks(xs, self.cfg['labels'])
         plt.xlabel('experimental section index')
         plt.ylabel('Frequency (MHz)')
         plt.legend()
@@ -178,7 +182,14 @@ class PlotFrequenciesExperiment(ExperimentClass):
 def main():
 
     # Setting gains
-    intermediate_jump_gains = [-14710, None, 3500, None, -18600, None, -2700, None]
+
+    # single jump
+    # intermediate_jump_gains = [None] * 8
+    # 1234 BOI
+    # intermediate_jump_gains = [-14300, None, 4490, None, -20347, None, -2370, None]
+    # 2345 BOI
+    intermediate_jump_gains = [None, -2040, None, -13730, None, -7300, None, None]
+
     for i in range(len(intermediate_jump_gains)):
         if intermediate_jump_gains[i] is None:
             intermediate_jump_gains[i] = BS_FF[i]
@@ -187,9 +198,9 @@ def main():
 
     gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
     gains = [readout_gains, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
+    labels = ['RO', 'Init', 'Expt', 'Double', 'BS', 'RO']
 
-
-    config = {'gains': gains, 'plot': True}
+    config = {'gains': gains, 'labels':labels, 'plot': True}
     expt = PlotFrequenciesExperiment(path='', prefix='PlotFrequencies', soc=None, soccfg=None, cfg=config)
     expt.acquire() # Also performs plotting if "plot" True
 

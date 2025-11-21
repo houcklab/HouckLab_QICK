@@ -5,6 +5,7 @@ file to create basic initialization of things used for RFSOC This will include:
 - defining spirack and D5aModule
 - defining the basic config dict that will state the channels used for all subsequent code
 """
+from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy, soc, soccfg
 
 import os
 import platform

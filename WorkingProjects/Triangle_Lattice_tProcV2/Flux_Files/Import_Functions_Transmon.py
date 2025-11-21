@@ -112,7 +112,7 @@ def create_qubit_function(_popt):
 
 def create_qubit_inverse_function(qubit_function):
     def find_root(f, __qubit_function):
-        bracket = (0, 0.5)
+        bracket = (0, 0.5) # Increase this range due to some allowable qubit freqs failing
 
         if isinstance(f, (list, np.ndarray)):
             fluxes = np.empty(len(f))

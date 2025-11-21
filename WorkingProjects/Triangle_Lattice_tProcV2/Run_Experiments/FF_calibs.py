@@ -1,3 +1,7 @@
+'''
+File for doing qubit spec sweeps over FF gain -> calibrate flux quantum and flux offset in RFSoC gain
+'''
+
 from matplotlib import pyplot as plt
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF

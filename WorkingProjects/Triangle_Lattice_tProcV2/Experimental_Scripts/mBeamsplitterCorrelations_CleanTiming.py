@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+import math
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
@@ -41,6 +42,7 @@ class RampBeamsplitterPopulationVsTime(SweepExperiment1D_plots):
         print("Actual offsets:", t_offset)
 
         assert ((t_offset >= 0).all())
+        ff_ro_pad = math.ceil(max(t_offset) / 16) * 16
 
         # Ramp
         Ramps = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
@@ -55,14 +57,14 @@ class RampBeamsplitterPopulationVsTime(SweepExperiment1D_plots):
             arr = np.concatenate((Ramps[j], np.full(t_offset[j], expt), np.full(bs_length, bs)))
 
             print(self.cfg['expt_samples'])
-            arr = np.concatenate((arr[:self.cfg['expt_samples']], np.full(16 * 5 - t_offset[j], readout)))
+            # arr = np.concatenate((arr, np.full(ff_ro_pad - t_offset[j], readout)))
 
 
             arr = Compensate(arr - pulse, pulse, j+1)
             IQArray.append(arr)
         self.cfg["IDataArray"] = IQArray
         print([len(arr) for arr in IQArray])
-        self.cfg['expt_samples'] = self.cfg['expt_samples'] + 16 * 5
+        self.cfg['expt_samples'] = self.cfg['expt_samples']# + ff_ro_pad
 
 class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
     def init_sweep_vars(self):
@@ -83,9 +85,11 @@ class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
             raise TypeError('t_offset must be an int or array like of ints')
 
         t_offset -= np.min(t_offset)
-        print("Actual offsets:", t_offset)
+        # print("Actual offsets:", t_offset)
 
         assert ((t_offset >= 0).all())
+        ff_ro_pad = math.ceil(max(t_offset) / 16) * 16
+        # print("RampBeamsplitterCleanTiming: ff_ro_pad =", ff_ro_pad)
 
         # Ramp
         self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg,'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
@@ -96,12 +100,12 @@ class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
         gain_readout = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Readout')
         IQArray = []
         for j, (expt, bs, readout) in enumerate(zip(gain_expt, gain_bs, gain_readout)):
-            arr = np.concatenate((np.full(t_offset[j], expt), np.full(self.cfg['expt_samples2'], bs)))
+            arr = np.concatenate([np.full(t_offset[j], expt), np.full(self.cfg['expt_samples2'], bs),np.full(ff_ro_pad-t_offset[j], readout)])
             arr = Compensate(arr - expt, expt, j+1)
-            arr = np.concatenate((arr, np.full(16*2-t_offset[j], readout)))
+            # arr = np.concatenate((arr, ))
             IQArray.append(arr)
         self.cfg["IDataArray2"] = IQArray
-        print([len(arr) for arr in IQArray])
+        # print([len(arr) for arr in IQArray])
         self.cfg['expt_samples2'] = len(IQArray[0])
 
 class CleanTimingCorrelations(RampBeamsplitterCleanTiming, RampCurrentCorrelationsR):

@@ -1,5 +1,6 @@
 import os
 import json
+import traceback
 from typing import Any, Dict, List, Tuple, Optional
 
 import numpy as np
@@ -144,9 +145,13 @@ class CalculateFFExperiment(ExperimentClass):
 
 def main():
 
+    # TODO: I have noticed an issue (with both the old and current versions of Calculate_FF:
+    # For high frequencies of Qubit 3, (>4323), the rootfinding code will throw an error.
+    # It doesnt seem like it thinks those frequencies are allowable for Q3.
+
     # Frequencies
     frequencies = {
-        'Q1': 3700,
+        'Q1': 3560,
         'Q2': 4350,
         'Q3': -0.5,
         'Q4': -0.5,
@@ -155,6 +160,7 @@ def main():
         'Q7': 4250,
         'Q8': -0.5,
     }
+
 
     cfg = {
         'plot_effective_system': True,

@@ -12,4 +12,4 @@ Wrapper file to switch between different qubit parameters
 
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.zero_flux_J_ll_is_J.Qubit_Parameters import *
+from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.pi_flux_J_ll_is_J.Qubit_Parameters import *

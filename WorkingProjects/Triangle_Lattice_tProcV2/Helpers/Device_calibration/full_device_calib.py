@@ -261,7 +261,7 @@ def plot_dressed_system(qubit_freqs, g_matrix, ax=None):
         if j < 8:
             # Qubit: Red circle
             patch = plt.Circle(coord, 0.04, edgecolor='maroon', facecolor='indianred', zorder=10, lw=2)
-            ax.text(coord[0], coord[1], f"Q{j+1}", ha='center', va='center', fontsize=8, color='white', zorder=11
+            ax.text(coord[0], coord[1], f"Q{j+1}", ha='center', va='center', fontsize=10, color='white', zorder=11
             )
         else:
             # Coupler: Blue triangle

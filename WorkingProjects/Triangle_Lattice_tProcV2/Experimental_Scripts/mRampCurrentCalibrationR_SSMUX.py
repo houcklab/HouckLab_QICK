@@ -53,6 +53,11 @@ class RampBeamsplitterBase(SweepExperimentND):
             self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
                                             constant_values=FFExpts[i])
 
+    def analyze(self, data, **kwargs):
+        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset -= np.min(t_offset)
+        self.data['data']['all_t_offset'] = t_offset
+
 class RampBeamsplitterOffsetR(RampBeamsplitterBase, SweepExperiment2D_plots):
     def init_sweep_vars(self):
         super().init_sweep_vars()

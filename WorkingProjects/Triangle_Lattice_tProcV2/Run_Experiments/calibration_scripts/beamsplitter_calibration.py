@@ -27,9 +27,10 @@ beamsplitter_point = '2356_correlations'
 beamsplitter_point = '2378_correlations'
 beamsplitter_point = '3467_correlations'
 beamsplitter_point = '4578_correlations'
+# beamsplitter_point = '2345_correlations'
 
-rungs = ['34','67']
-rungs = ['45', '78']
+# rungs = ['34','67']
+rungs = ['78']
 
 sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
                       't_offset': [2, 1, 6, 9, 8, -1, 1, -2],
@@ -135,8 +136,8 @@ def calibrate_rung_gains(BS_FF, rungs):
                               cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
-        center_gain_1 = data['data']['freq_param_list'][0][0]
-        center_gain_2 = data['data']['freq_param_list'][1][0]
+        center_gain_1 = data['data']['popt_list'][0][0]
+        center_gain_2 = data['data']['popt_list'][1][0]
 
         center_gains_1.append(center_gain_1)
         center_gains_2.append(center_gain_2)
