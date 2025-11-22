@@ -113,10 +113,11 @@ class T1MUX(ExperimentClass):
 
         if ax is None:
             fig, ax = plt.subplots(figsize=(7.2, 4.8), num=figNum)
+            ax.set_title("Read:" + str(self.cfg["Qubit_Readout_List"]))
             plt.suptitle(self.titlename)
         else:
             fig = ax.get_figure()
-            ax.set_title(self.titlename)
+            ax.set_title(self.titlename + " Read:" + str(self.cfg["Qubit_Readout_List"]))
 
         Contrast = IQ_contrast(avgi, avgq)
 
@@ -138,12 +139,11 @@ class T1MUX(ExperimentClass):
             ax.plot(x_pts, Contrast, 'o-', color='blue')
             print("No fit found.")
 
-        plt.title("Read:" + str(self.cfg["Qubit_Readout_List"]))
         plt.savefig(self.iname[:-4] + '.png')
 
         if plotDisp:
             plt.show(block=block)
-            plt.pause(0.1)
+            plt.pause(0.01)
         else:
             fig.clf(True)
             plt.close(fig)

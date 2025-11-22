@@ -39,8 +39,8 @@ from qubit_parameter_files.Qubit_Parameters_Master import *
 for Q in [1,2,3,4,5,6,7,8]:
 # for Q in [3]:
     Qubit_Readout = [Q]
-    Qubit_Pulse =   [f"{Q}R"]
-    # Qubit_Pulse = [Q]
+    # Qubit_Pulse =   [f"{Q}R"]
+    Qubit_Pulse = [Q]
 
     Expt_FF_subsys = Expt_FF.subsys(Q, det=-10000)
 

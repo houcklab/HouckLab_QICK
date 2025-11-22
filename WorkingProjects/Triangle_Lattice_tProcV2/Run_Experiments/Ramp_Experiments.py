@@ -56,7 +56,7 @@ ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'durat
 # can plot populations during and after ramp
 run_ramp_population_over_time = False
 run_ramp_population_over_time_shots = False
-population_vs_delay_dict = {'ramp_duration' : 1500, 'ramp_shape': 'cubic',
+population_vs_delay_dict = {'ramp_duration' : 1000, 'ramp_shape': 'cubic',
                             'time_start': 0, 'time_end' : 1500, 'time_num_points' : 21, 'reps': 1000,
                             'relax_delay':200, 'time_to_show_shots_samples': 0}
 
@@ -78,7 +78,7 @@ run_ramp_population_shots = False
 ramp_population_shots_dict = {'reps': 5000, 'ramp_duration': 1000, 'relax_delay': 200}
 
 run_ramp_density_correlations = False
-ramp_density_correlations_dict = {'reps': 1000000, 'ramp_duration': 1000, 'relax_delay': 200,
+ramp_density_correlations_dict = {'reps': 1_000_000, 'ramp_duration': 1000, 'relax_delay': 200,
                                   'pairs':[[1,2,3,4],[1,2,4,5],[1,2,5,6],[1,2,6,7],[1,2,7,8],
                                             [2,3,4,5],[2,3,5,6],[2,3,6,7],
                                             [3,4,5,6],
@@ -160,7 +160,7 @@ current_correlation_measurement_dict = {'reps': 1000,
                                         'ramp_time': 3000, 'relax_delay': 200,
                                         'beamsplitter_time': 75}
 
-ramp_current_calibration_time = True
+ramp_current_calibration_time = False
 ramp_current_calibration_time_dict =  {'reps': 1000,
                                        't_offset':  [23, 25, 14, 20, 9, 7, 7, 0],
                                        'ramp_time': 1000, 'relax_delay': 200,

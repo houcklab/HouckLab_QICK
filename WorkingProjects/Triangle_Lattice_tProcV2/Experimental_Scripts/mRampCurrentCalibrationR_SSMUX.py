@@ -53,16 +53,13 @@ class RampBeamsplitterBase(SweepExperimentND):
             self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
                                             constant_values=FFExpts[i])
 
-    def analyze(self, data, **kwargs):
-        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
-        t_offset -= np.min(t_offset)
-        self.data['data']['all_t_offset'] = t_offset
+
 
 class RampBeamsplitterOffsetR(RampBeamsplitterBase, SweepExperiment2D_plots):
     def init_sweep_vars(self):
         super().init_sweep_vars()
         self.y_key = ("t_offset", self.cfg["swept_qubit"]-1)
-        self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'], dtype=int)
+        self.y_points = np.arange(self.cfg['offsetStart'], self.cfg['offsetStop']+ self.cfg['offsetStep'], self.cfg['offsetStep'], dtype=int)
         self.ylabel= f"Offset time of Qubit {self.cfg["swept_qubit"]} (4.65/16 ns)"
 
 class RampBeamsplitterGainR(RampBeamsplitterBase, GainSweepOscillationsR):
@@ -78,8 +75,10 @@ class RampBeamsplitterR1D(RampBeamsplitterBase, SweepExperiment1D_lines):
 
     # def debug(self, prog):
     #     print(prog)
-
-
+    def analyze(self, data, **kwargs):
+        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset -= np.min(t_offset)
+        self.data['data']['all_t_offset'] = t_offset
 
 
 class RampCurrentCorrelationsR(RampBeamsplitterR1D):
@@ -466,7 +465,11 @@ class RampDoubleJump_BS_GainR(RampDoubleJumpBase, GainSweepOscillationsR):
 
 
 class RampDoubleJumpR1D(RampDoubleJumpBase, SweepExperiment1D_lines):
-    pass
+    def analyze(self, data, **kwargs):
+        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset -= np.min(t_offset)
+        self.data['data']['all_t_offset'] = t_offset
+
 
 class RampDoubleJumpCorrelations(RampDoubleJumpBase, RampCurrentCorrelationsR):
     def init_sweep_vars(self):

@@ -262,7 +262,7 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
         expt.acquire()
         expt.display(plotDisplay=False, ax=ax_ff)
     except Exception as e:
-        ax_ff.text(0.5, 0.5, f"Calculate FF Failed {e}",
+        ax_ff.text(0.5, 0.5, f"Calculate FF Failed {e}. (Culprit usually Q3 frequency too high >4323)",
                    ha='center', va='center',
                    transform=ax_ff.transAxes)
         print(f"Calculate FF Failed: {e}")
@@ -752,7 +752,7 @@ def run_enhanced_calibration(
         run_rabi,
         run_readout_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
         run_qubit_opt * CalibrationConfig.MAX_REFINEMENT_ITERATIONS,
-        run_coherence
+        run_coherence * 2
     ])
 
     calib.setup_plot(max_num_steps)
@@ -923,7 +923,7 @@ class CalibrationConfig:
     MIN_FIDELITY = 0.78  # Target acceptable single-shot fidelity
     MIN_T1 = 12.0  # Minimum T1 (us)
     MIN_T2 = 2.0  # Minimum T2 (us)
-    MAX_FREQ_DRIFT = 10.0  # Maximum frequency drift from nominal (MHz)
+    MAX_FREQ_DRIFT = 20.0  # Maximum frequency drift from target/nominal (MHz)
     # Could add stark shift?
     MAX_REFINEMENT_ITERATIONS = 1 # Iterative refinement
 
@@ -1005,10 +1005,6 @@ if __name__ == "__main__":
             checkers_list.append(checker)
             additional_qubit_data.append(additional_data)
 
-    print("=" * 17)
-    print(f"FINAL QUBIT PARAMETERS")
-    print("=" * 17)
-
     if print_summary and len(Qubit_configs) > 0:
         # Print the final summary
 
@@ -1019,6 +1015,9 @@ if __name__ == "__main__":
                 checkers_list,
             )
 
+        print("=" * 17)
+        print(f"FINAL QUBIT PARAMETERS")
+        print("=" * 17)
         # Print all calibrated qubit configs (same format as original Fast_calib.py)
         for qconf in Qubit_configs:
             print(qconf)

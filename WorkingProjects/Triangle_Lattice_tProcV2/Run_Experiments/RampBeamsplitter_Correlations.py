@@ -26,7 +26,7 @@ Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
 
-Q = 7
+Q = 3
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
@@ -59,7 +59,7 @@ Sweep_BeamsplitterOffset = False
 sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 1000,
                         't_offset': [24,26,15,26,10,10,9,0],
                         'relax_delay': 100,
-                        'offsetStart': -15, 'offsetStop': 30,
+                        'offsetStart': 0, 'offsetStop': 30,
                         'offsetStep': 1,
                         'start': 0, 'step': 8, 'expts': 71}
 
@@ -68,11 +68,11 @@ Run_CurrentCorrelations = True
 
 ramp_beamsplitter_1d_dict = {'reps': 100000, 'ramp_time': 1000,
                              't_offset':
-                             [23, 25, 14, 23, 9, 7, 7, 0],
+                             [22, 25, 14, 23, 7, 7, 8, 0],
                              'relax_delay': 180,
                              'start': 0, 'step': 8, 'expts': 71,
-                             'readout_pair_1': [4,5],
-                             'readout_pair_2': [7,8],
+                             'readout_pair_1': [1,2],
+                             'readout_pair_2': [3,4],
                              }
 
 

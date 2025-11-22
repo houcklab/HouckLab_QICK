@@ -23,7 +23,7 @@ def are_adjacent(qpair):
 
 skip_uncoupled_qubits = False
 # List of lists: every combination of 2 qubits in each sublist will be checked
-for Q_list in [[7,Q] for Q in range(1,2)]:
+for Q_list in [[4,Q] for Q in range(1,9)]:
     for Qpair in itertools.combinations(Q_list, 2):
         if skip_uncoupled_qubits and not are_adjacent(Qpair):
             continue

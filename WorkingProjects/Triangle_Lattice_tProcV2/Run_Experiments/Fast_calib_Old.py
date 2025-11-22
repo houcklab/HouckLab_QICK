@@ -61,11 +61,11 @@ Qubit_configs = []
 # }
 
 varname_FF = 'Readout_1234_FF'
-for Q in [1,2,3,4,5,6,7,8]:
+for Q in [5]:
     # Qubit_Readout = [1,2,3,4,5,6,7,8]
     Qubit_Readout = [Q]
-    Qubit_Pulse = [Q]
-    # Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+    # Qubit_Pulse = [Q]
+    Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
     # Qubit_Pulse = [f'{Q}L']
     # Qubit_Pulse = [f'{Q}R-']
@@ -81,11 +81,11 @@ for Q in [1,2,3,4,5,6,7,8]:
 
     print(f'OptQubit_index = {OptQubit_index}')
 
-    RunTransmissionSweep =       t
-    RunFirst2ToneSpec =          t
-    RunSecond2ToneSpec =         t
-    RunAmplitudeRabi =           t
-    SingleShot_ReadoutOptimize = t
+    RunTransmissionSweep =       f
+    RunFirst2ToneSpec =          f
+    RunSecond2ToneSpec =         f
+    RunAmplitudeRabi =           f
+    SingleShot_ReadoutOptimize = f
     SingleShot_QubitOptimize =   t
     SingleShot =                 f
 

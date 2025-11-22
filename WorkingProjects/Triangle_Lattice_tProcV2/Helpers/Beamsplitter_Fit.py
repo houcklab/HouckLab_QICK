@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 
-def fit_double_beamsplitter(self, Z, gains, debug_fft=False):
+def fit_double_beamsplitter(Z, gains, debug_fft=False):
     """
     Compute contrast(gain), fit to sqrt(cos^2(w x + phi) + d^2 sin^2(w x + phi)),
     and store all the fit parameters, candidates, and error.
@@ -265,6 +265,12 @@ def fit_double_beamsplitter(self, Z, gains, debug_fft=False):
         pi_cands_per_r.append(pi_cands)
         zero_cands_per_r.append(zero_cands)
 
+    from numpy import nan
+
+    def make_homogenous_nan(lst):
+        max_len = max(len(x) for x in lst) if lst else 0
+        return np.array([x + [nan] * (max_len - len(x)) for x in lst])
+
     fit = {
         "g_sorted": np.array(g_sorted),  # (G,)
         "g_dense": np.array(g_dense),  # (N_dense,)
@@ -272,8 +278,8 @@ def fit_double_beamsplitter(self, Z, gains, debug_fft=False):
         "contrast_fit": np.array(contrast_fit),  # (R, G) model on orig grid
         "contrast_fit_dense": np.array(contrast_fit_dense),  # (R, N_dense) smooth
         "fit_params": fit_params,  # list of [d,w,phi] or None
-        "pi_candidates": pi_cands_per_r,
-        "zero_candidates": zero_cands_per_r,
+        "pi_candidates": make_homogenous_nan(pi_cands_per_r),
+        "zero_candidates": make_homogenous_nan(zero_cands_per_r),
         "perrors": np.array(perr_r),
     }
 

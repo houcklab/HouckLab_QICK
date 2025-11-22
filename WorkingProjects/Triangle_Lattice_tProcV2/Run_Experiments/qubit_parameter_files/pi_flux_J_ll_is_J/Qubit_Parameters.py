@@ -17,7 +17,7 @@ from .BS_Mux8_4578_Readout_Josh import BS4578_Readout_Josh
 # 8Q Pi Flux parameters
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = FF_gains([-8832, -9320, -6288, -8673, -7472, -7893, -5427, -8377])
+Expt_FF = FF_gains([-9229, -9844, -7224, -9723, -8466, -8893, -6038, -7827])
 
 # disordered
 # Expt_FF = FF_gains([-8332, -9820, -6088, -8973, -7072, -8393, -5027, -8877])
@@ -92,19 +92,19 @@ drive_params = {
 
     '1_4Q_readout': {'Readout': {'Frequency': 7121.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3924.7, 'sigma': 0.03, 'Gain': 5066},
+                     'Qubit': {'Frequency': 3937.4, 'sigma': 0.03, 'Gain': 5156},
                      'Pulse_FF': Readout_1234_FF},
     '4_4Q_readout': {'Readout': {'Frequency': 7568.4, 'Gain': 1228,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4145.7, 'sigma': 0.03, 'Gain': 6890},
+                     'Qubit': {'Frequency': 4186.8, 'sigma': 0.03, 'Gain': 6344},
                      'Pulse_FF': Readout_1234_FF},
     '8_4Q_readout': {'Readout': {'Frequency': 7309.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4085.3, 'sigma': 0.03, 'Gain': 5483},
+                     'Qubit': {'Frequency': 4028.4, 'sigma': 0.03, 'Gain': 6877},
                      'Pulse_FF': Readout_1234_FF},
     '5_4Q_readout': {'Readout': {'Frequency': 7364.1, 'Gain': 1400,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3802.0, 'sigma': 0.03, 'Gain': 7999},
+                     'Qubit': {'Frequency': 3829.4, 'sigma': 0.03, 'Gain': 12660},
                      'Pulse_FF': Readout_1234_FF},
 }
 
@@ -154,7 +154,7 @@ ramp_params = {
 
 
     # (3600.0, 3600.0, 4300.0, 4300.0, 3700.0, 3700.0, 4100.0, 4100.0)
-    '1234_correlations': {'BS': {'BS_FF': [-18629, -19389, 13852, 11543, -12362, -13248, 6521, 2214]}},
+    '1234_correlations': {'BS': {'BS_FF': [-18506, -19389, 13734, 11543, -12458, -13248, 5164, 2214]}},
 
     '1234_correlations_double': {'BS': {'BS_FF': [-18587, -19389, 13881, 11543, -12337, -13248, 6544, 2214]}},
     # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
@@ -203,14 +203,14 @@ ramp_params = {
 
 
 
-# readout_params = BS1234_Readout
+readout_params = BS1234_Readout
 # readout_params = BS2345_Readout
 # readout_params = BS1254_Readout
 # readout_params = BS1267_Readout
 # readout_params = BS2356_Readout
 # readout_params = BS2378_Readout
 # readout_params = BS3467_Readout
-readout_params = BS4578_Readout
+# readout_params = BS4578_Readout
 
 # readout_params = BS2345_Readout
 
@@ -218,19 +218,19 @@ readout_params = BS4578_Readout
 Ramp_state = '8Q_4815'
 # Ramp_state = '8Q_4815_lowest_state'
 
-# Ramp_state = '45'
+# Ramp_state = '34'
 
 # beamsplitter_point = '2345_correlations_double'
 # beamsplitter_point = '1234_correlations_double'
 # beamsplitter_point = '2356_correlations_double'
 # beamsplitter_point = '4578_correlations'
-# beamsplitter_point = '1234_correlations'
+beamsplitter_point = '1234_correlations'
 # beamsplitter_point = '2345_correlations'
 # beamsplitter_point = '1254_correlations'
 # beamsplitter_point = '1267_correlations'
 # beamsplitter_point = '2356_correlations'
 # beamsplitter_point = '2378_correlations'
-beamsplitter_point = '4578_correlations'
+# beamsplitter_point = '4578_correlations'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d

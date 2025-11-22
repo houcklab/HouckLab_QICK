@@ -3,7 +3,7 @@ import numpy as np
 
 
 # (3950.0, 3700.0, 4380.0, 4150.0, 3550.0, 3800.0, 4300.0, 4050.0)
-Readout_1234_FF = np.array([-4000, -17218, 25392, 5500, -7419, -13000, 19191, 1800]) #
+Readout_1234_FF = np.array([-4000, -17218, 25392, 5500, -7419, -13000, 19191, 0]) #
 
 
 
@@ -18,37 +18,37 @@ Readout_1234_FF = np.array(Readout_1234_FF)
 
 
 BS1234_Readout = {
-    '1': {'Readout': {'Frequency': 7121.4, 'Gain': 714,
+    '1': {'Readout': {'Frequency': 7121.1, 'Gain': 714,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3925.7, 'sigma': 0.03, 'Gain': 5732},
+          'Qubit': {'Frequency': 3938.3, 'sigma': 0.03, 'Gain': 4852},
           'Pulse_FF': Readout_1234_FF},
     '2': {'Readout': {'Frequency': 7077.0, 'Gain': 1100,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3626.5, 'sigma': 0.03, 'Gain': 4650},
+          'Qubit': {'Frequency': 3638.4, 'sigma': 0.03, 'Gain': 5386},
           'Pulse_FF': Readout_1234_FF},
-    '3': {'Readout': {'Frequency': 7511.6, 'Gain': 714,
+    '3': {'Readout': {'Frequency': 7511.4, 'Gain': 1100,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4340.2, 'sigma': 0.03, 'Gain': 12196},
+          'Qubit': {'Frequency': 4394.6, 'sigma': 0.03, 'Gain': 11386},
           'Pulse_FF': Readout_1234_FF},
-    '4': {'Readout': {'Frequency': 7568.4, 'Gain': 1400,
+    '4': {'Readout': {'Frequency': 7568.1, 'Gain': 1100,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4144.7, 'sigma': 0.03, 'Gain': 6556},
+          'Qubit': {'Frequency': 4186.0, 'sigma': 0.03, 'Gain': 6935},
           'Pulse_FF': Readout_1234_FF},
-    '5': {'Readout': {'Frequency': 7362.9, 'Gain': 1000,
+    '5': {'Readout': {'Frequency': 7362.9, 'Gain': 1100,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3802.0, 'sigma': 0.03, 'Gain': 7999},
+          'Qubit': {'Frequency': 3829.4, 'sigma': 0.03, 'Gain': 13266},
           'Pulse_FF': Readout_1234_FF},
-    '6': {'Readout': {'Frequency': 7441.0, 'Gain': 820,
+    '6': {'Readout': {'Frequency': 7441.0, 'Gain': 1228,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 3683.6, 'sigma': 0.03, 'Gain': 5633},
+          'Qubit': {'Frequency': 3705.3, 'sigma': 0.03, 'Gain': 7424},
           'Pulse_FF': Readout_1234_FF},
-    '7': {'Readout': {'Frequency': 7254.3, 'Gain': 1400,
+    '7': {'Readout': {'Frequency': 7254.3, 'Gain': 885,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4277.3, 'sigma': 0.03, 'Gain': 4907},
+          'Qubit': {'Frequency': 4303.0, 'sigma': 0.03, 'Gain': 5993},
           'Pulse_FF': Readout_1234_FF},
-    '8': {'Readout': {'Frequency': 7309.4, 'Gain': 1057,
+    '8': {'Readout': {'Frequency': 7308.9, 'Gain': 885,
                       'FF_Gains': Readout_1234_FF, 'Readout_Time': 2.5, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4085.3, 'sigma': 0.03, 'Gain': 5150},
+          'Qubit': {'Frequency': 4028.6, 'sigma': 0.03, 'Gain': 7265},
           'Pulse_FF': Readout_1234_FF},
 }
 
