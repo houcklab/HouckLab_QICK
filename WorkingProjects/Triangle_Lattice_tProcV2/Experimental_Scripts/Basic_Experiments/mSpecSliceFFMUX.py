@@ -74,7 +74,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
 
 class QubitSpecSliceFFMUX(ExperimentClass):
     """
-    Basic spec experiement that takes a single slice of data
+    Basic spec experiment that takes a single slice of data
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):

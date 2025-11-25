@@ -175,6 +175,8 @@ class RampCurrentCorrelationsR(RampBeamsplitterR1D):
 
         return fig, ax
 
+class SweepBeamsplitterPointSwaps(RampBeamsplitterBase):
+    pass
 
 class SweepRampLengthCorrelations(RampCurrentCorrelationsR, SweepExperiment2D_plots):
     def init_sweep_vars(self):
@@ -469,6 +471,7 @@ class RampDoubleJumpR1D(RampDoubleJumpBase, SweepExperiment1D_lines):
         t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
         t_offset -= np.min(t_offset)
         self.data['data']['all_t_offset'] = t_offset
+        self.data['data']['all_intermediate_samples'] = self.cfg['intermediate_jump_samples']
 
 
 class RampDoubleJumpCorrelations(RampDoubleJumpBase, RampCurrentCorrelationsR):

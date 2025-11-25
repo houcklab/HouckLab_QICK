@@ -26,7 +26,7 @@ Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
 
-Q = 3
+Q = 7
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
@@ -54,21 +54,25 @@ sweep_bs_gain_dict['gainStop'] = center + 1000
 
 
 
+# "good" offsets = [22, 24, 13, 24, 8, 8, 9, 0]
 Sweep_BeamsplitterOffset = False
 # Think about how t_offset will cause some qubits to stay at FF_BS for longer than others
-sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 1000,
-                        't_offset': [24,26,15,26,10,10,9,0],
+sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 5*200, 'ramp_time': 1000,
+                        't_offset': [22, 24, 13, 24, 8, 8, 9, 0],
                         'relax_delay': 100,
-                        'offsetStart': 0, 'offsetStop': 30,
+                        'offsetStart': 0, 'offsetStop': 15,
                         'offsetStep': 1,
                         'start': 0, 'step': 8, 'expts': 71}
+
+
+# Qubit_Pulse = [3,1]
 
 Beamsplitter1D = False
 Run_CurrentCorrelations = True
 
-ramp_beamsplitter_1d_dict = {'reps': 100000, 'ramp_time': 1000,
+ramp_beamsplitter_1d_dict = {'reps': 10000, 'ramp_time': 1000,
                              't_offset':
-                             [22, 25, 14, 23, 7, 7, 8, 0],
+                             np.array([21, 24, 13, 24, 8, 8, 9, 0]),
                              'relax_delay': 180,
                              'start': 0, 'step': 8, 'expts': 71,
                              'readout_pair_1': [1,2],
@@ -93,7 +97,7 @@ Run_CurrentCorrelations_CleanTiming = False
 
 Run_RampBeamsplitterVsTime = False
 ramp_beamsplitter_vs_time_dict = {'reps': 1000, 'ramp_time': 1000,
-                             't_offset': [23, 25, 14, 19, 9, 7, 7, 0],
+                             't_offset': [22, 24, 13, 24, 8, 8, 9, 0],
                              'relax_delay': 100,
                              'start': 0, 'stop': 1500,
                              'ramp_expts': 101, 'BS_expts': 101,
@@ -128,7 +132,7 @@ Q = 1
 
 double_jump_base = {'reps': 400, 'ramp_time': 1000,
                     't_offset':
-                    # [22, 24, 13, 24, 8, 8, 9, 0],
+                    # [22, 24, 13, 24, 8, 8, 9, 0], #  good values
                       [22, 25, 13, 22, 8, 9, 9, 0],
                     'relax_delay': 150,
                     'start': 0, 'step': 16, 'expts': 71,

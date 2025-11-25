@@ -52,12 +52,12 @@ Qubit_Pulse   = [5]
 #           'Pulse_FF': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395]},
 # }
 
-Qubit_Parameters |= {
-    '6P': {'Readout': {'Frequency': 7442.1, 'Gain': 1057,
-                      'FF_Gains': Readout_2345_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-          'Qubit': {'Frequency': 4271.6, 'sigma': 0.03, 'Gain': 9914/4},
-          'Pulse_FF': Readout_2345_FF},
-}
+# Qubit_Parameters |= {
+#     '6P': {'Readout': {'Frequency': 7442.1, 'Gain': 1057,
+#                       'FF_Gains': Readout_2345_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+#           'Qubit': {'Frequency': 4271.6, 'sigma': 0.03, 'Gain': 9914/4},
+#           'Pulse_FF': Readout_2345_FF},
+# }
 
 t = True
 f = False
@@ -104,11 +104,11 @@ Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 60*60}
 Run_Spec_vs_Qblox = False
 Spec_v_Qblox_params = {"Qblox_start": 0.4, "Qblox_stop": 1.2, "Qblox_steps": 6, "DAC": 9}
 
-RunAmplitudeRabi = True
-Amplitude_Rabi_params = {"max_gain": 12000, 'relax_delay':100}
+RunAmplitudeRabi = False
+Amplitude_Rabi_params = {"max_gain": 2*12000, 'relax_delay':100}
 
 
-SingleShot = False
+SingleShot = True
 SS_params = {"Shots": 2000, 'number_of_pulses': 1, 'relax_delay': 200}
 
 SingleShotDecimate = False

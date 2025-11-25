@@ -154,7 +154,11 @@ ramp_params = {
 
 
     # (3600.0, 3600.0, 4300.0, 4300.0, 3700.0, 3700.0, 4100.0, 4100.0)
-    '1234_correlations': {'BS': {'BS_FF': [-18506, -19389, 13734, 11543, -12458, -13248, 5164, 2214]}},
+    '1234_correlations_old': {'BS': {'BS_FF': [-18506, -19389, 13734, 11543, -12458, -13248, 5164, 2214]}},
+
+    # (3600.0, 3600.0, 4200.0, 4200.0, 3700.0, 3700.0, 4100.0, 4100.0)
+    '1234_correlations': {'BS': {'BS_FF': [-18506, -19389, 8309, 6543, -12458, -13248, 5164, 2214]}},
+
 
     '1234_correlations_double': {'BS': {'BS_FF': [-18587, -19389, 13881, 11543, -12337, -13248, 6544, 2214]}},
     # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
@@ -218,7 +222,7 @@ readout_params = BS1234_Readout
 Ramp_state = '8Q_4815'
 # Ramp_state = '8Q_4815_lowest_state'
 
-# Ramp_state = '34'
+# Ramp_state = '56'
 
 # beamsplitter_point = '2345_correlations_double'
 # beamsplitter_point = '1234_correlations_double'

@@ -184,11 +184,11 @@ def main():
     # Setting gains
 
     # single jump
-    # intermediate_jump_gains = [None] * 8
+    intermediate_jump_gains = [None] * 8
     # 1234 BOI
     # intermediate_jump_gains = [-14300, None, 4490, None, -20347, None, -2370, None]
     # 2345 BOI
-    intermediate_jump_gains = [None, -2040, None, -13730, None, -7300, None, None]
+    # intermediate_jump_gains = [None, -2040, None, -13730, None, -7300, None, None]
 
     for i in range(len(intermediate_jump_gains)):
         if intermediate_jump_gains[i] is None:
@@ -196,7 +196,7 @@ def main():
 
     readout_gains = readout_params['1']['Readout']['FF_Gains']
 
-    gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
+    # gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
     gains = [readout_gains, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
     labels = ['RO', 'Init', 'Expt', 'Double', 'BS', 'RO']
 

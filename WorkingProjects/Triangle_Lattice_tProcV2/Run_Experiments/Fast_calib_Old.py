@@ -35,37 +35,12 @@ Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','5_4Q_readout']
 
 Qubit_configs = []
 
-### !!! ###
-
-
-# Readout_2345_FF = np.array([-12000, 4000, 17468, -7500, -14000, 12000, 0, -18000])
-# New_readout_FF = np.array([11035, 3643, 17468, -7290, -9683, -2912, 3665, 6214])
-# # (4280.0, 4130.0, 4350.0, 3880.0, 3780.0, 3960.0, 4055.0, 4205.0)
-# Qubit_Parameters = {
-#     '4': {'Readout': {'Frequency': 7567.9, 'Gain': 1400,
-#                       'FF_Gains': Readout_2345_FF, 'Readout_Time': 2.5, 'ADC_Offset': 1},
-#           'Qubit': {'Frequency': 3870.3, 'sigma': 0.010, 'Gain':30000},
-#           'Pulse_FF': Readout_2345_FF},
-#     # '5': {'Readout': {'Frequency': 7362.5, 'Gain': 350,
-#     #                   'FF_Gains': Readout_2345_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-#     #       'Qubit': {'Frequency': 3680.1, 'sigma': 0.015, 'Gain': 23333},
-#     #       'Pulse_FF': Readout_2345_FF},
-#     # '5': {'Readout': {'Frequency': 7362.6, 'Gain': 675,
-#     #                   'FF_Gains': New_readout_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-#     #       'Qubit': {'Frequency': 3783.2, 'sigma': 0.03, 'Gain': 8572},
-#     #       'Pulse_FF': New_readout_FF},
-#     '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1057,
-#                       'FF_Gains': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395], 'Readout_Time': 3, 'ADC_Offset': 1},
-#           'Qubit': {'Frequency': 4139.0, 'sigma': 0.03, 'Gain': 7001},
-#           'Pulse_FF': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395]},
-# }
-
-varname_FF = 'Readout_1234_FF'
-for Q in [5]:
+varname_FF = 'Readout_2345_FF'
+for Q in [1,2,3,4,5,6,7,8]:
     # Qubit_Readout = [1,2,3,4,5,6,7,8]
     Qubit_Readout = [Q]
-    # Qubit_Pulse = [Q]
-    Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+    Qubit_Pulse = [Q]
+    # Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
     # Qubit_Pulse = [f'{Q}L']
     # Qubit_Pulse = [f'{Q}R-']
@@ -81,13 +56,13 @@ for Q in [5]:
 
     print(f'OptQubit_index = {OptQubit_index}')
 
-    RunTransmissionSweep =       f
-    RunFirst2ToneSpec =          f
-    RunSecond2ToneSpec =         f
-    RunAmplitudeRabi =           f
+    RunTransmissionSweep =       t
+    RunFirst2ToneSpec =          t
+    RunSecond2ToneSpec =         t
+    RunAmplitudeRabi =           t
     SingleShot_ReadoutOptimize = f
-    SingleShot_QubitOptimize =   t
-    SingleShot =                 f
+    SingleShot_QubitOptimize =   f
+    SingleShot =                 t
 
 
     Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,

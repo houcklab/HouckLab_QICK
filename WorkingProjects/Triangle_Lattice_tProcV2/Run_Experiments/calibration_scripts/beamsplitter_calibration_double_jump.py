@@ -23,35 +23,36 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
 
 
 calibrate_gain = False
-calibrate_intermediate_offset = False
-calibrate_intermediate_gain = True
+calibrate_intermediate_offset = True
+calibrate_intermediate_gain = False
 
 
 
-beamsplitter_point = '2345_correlations_double'
+beamsplitter_point = '1234_correlations'
 
-# rungs = ['12', '34', '56', '78']
-rungs = ['23', '45', '67']
+rungs = ['56', '78']
+# rungs = ['23', '45', '67']
 
 double_jump_base = {'reps': 400, 'ramp_time': 1000,
                     't_offset':
                     # [22, 24, 13, 24, 8, 8, 9, 0],
-                      [22, 25, 13, 22, 8, 9, 9, 0],
+                      np.array([21, 24, 13, 24, 8, 8, 9, 0]) - # default values
+                                [1,1,1,1,1,1,1,0] - # 78 offset correction
+                                [1,0,1,0,1,0,1,0], # so that double jump gives 0 instead of 2pi
                     'relax_delay': 150,
                     'start': 0, 'step': 16, 'expts': 71,
                     # 1234 BOI
-                    # 'intermediate_jump_samples': [9, 0, 3, 0, 4, 0, 2, 0],
-                    # 'intermediate_jump_gains': [-14300, None, 4490, None, -20347, None, -2370, None]}
+                    'intermediate_jump_samples': [9, 0, 3, 0, 4, 0, 2, 0],
+                    'intermediate_jump_gains': [-14300, None, 1000, None, -20347, None, -2370, None]}
                     # 2345 BOI
-                    'intermediate_jump_samples': [0, 3, 0, 12, 0, 2, 0, 0],
-                    'intermediate_jump_gains': [None, -2040, None, -13730, None, -7300, None, None]}
+                    # 'intermediate_jump_samples': [0, 3, 0, 12, 0, 2, 0, 0],
+                    # 'intermediate_jump_gains': [None, -2040, None, -13730, None, -7300, None, None]}
 
 
 double_jump_BS_gain_dict = {'t_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                             'gainRange': 3000, 'gainNumPoints': 11}
 
-double_jump_intermediate_offset_dict = {'offsetStart': 0, 'offsetStop': 40, 'offsetNumPoints': 41,
-                                        'samples_start': 0, 'samples_stop': 30, 'samples_numPoints': 31}
+double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 10, 'samples_numPoints': 11}
 
 
 double_jump_intermediate_gain_dict = {'gainRange': 20000, 'gainNumPoints': 11}
@@ -293,7 +294,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
 
         # optimal offsets
-        optimal_offsets = 0
+        optimal_offsets = [0]*8
 
     return swept_qubits, optimal_offsets
 
@@ -358,7 +359,7 @@ if calibrate_intermediate_offset:
     swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
 
     for i in range(len(swept_qubits)):
-        double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i][0]
+        double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i]#[0]
 
 if calibrate_intermediate_gain:
     calibrate_rung_intermediate_gains(BS_FF, rungs)
