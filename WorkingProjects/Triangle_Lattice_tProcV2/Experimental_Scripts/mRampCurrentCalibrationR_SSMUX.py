@@ -15,7 +15,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templ
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import correct_occ
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import fit_double_beamsplitter
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import fit_double_beamsplitter, \
+    fit_beamsplitter_offset
 
 
 class RampBeamsplitterBase(SweepExperimentND):
@@ -386,6 +387,9 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         data_dict.update(self.fit_params)
 
     def _display_plot(self, data=None, fig_axs=None):
+        if data is None:
+            data = self.data
+
         fig, axs = super()._display_plot(data, fig_axs)
 
         Z = np.asarray(data['data'][self.z_value], float)  # (R, G, T)
@@ -443,7 +447,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
                 h1, l1 = ax.get_legend_handles_labels()
                 h2, l2 = axc.get_legend_handles_labels()
                 if h1 or h2:
-                    legend = ax.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True,
+                    legend = axc.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True,
                                        framealpha=0.8)
         fig.canvas.draw()
 
@@ -454,6 +458,107 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         self.y_points = np.linspace(self.cfg['samples_start'], self.cfg['samples_stop'], self.cfg['samples_numPoints'],
                                     dtype=int)
         self.ylabel = "Intermediate Jump Samples (4.65/16 ns)"
+
+    def analyze(self, data):
+        data_dict = data['data']
+        Z = np.asarray(data_dict[self.z_value], float)  # (R, O, T)
+        offsets = np.asarray(data_dict.get('t_offset', None), float)  # (O,)  # (O,)
+        wait_times = np.asarray(data_dict['expt_samples'], float)  # (T,)
+
+        self.fit_params = self.fit_beamsplitter_offset(Z, offsets, wait_times, debug=True)
+        data_dict.update(self.fit_params)
+
+    def _display_plot(self, data=None, fig_axs=None):
+        if data is None:
+            data = self.data
+
+        fig, axs = super()._display_plot(data, fig_axs)
+
+        dct = data.get('data', data)
+
+        x = np.asarray(dct['expt_samples'], float)  # wait time axis (T,)
+        y = np.asarray(dct.get('t_offset', None), float)  # (O,)  # offset time axis (O,)
+        Z = np.asarray(dct[self.z_value], float)  # (R, O, T)
+        R, O, T = Z.shape
+
+        if 'fit_params' in self.__dict__:
+            for r, ax in enumerate(axs):
+
+                # Fitting results
+                fit = self.fit_params
+                offset_sorted = fit.get('offset_sorted', None)
+                offset_dense = fit.get('offset_dense', None)
+                contrast_norm = fit.get('contrast_norm', None)
+                contrast_fit_dense = fit.get('contrast_fit_dense', None)
+
+                # --- Twin x-axis for contrast curves (normalized 0..1) ---
+                axc = ax.twiny()
+                axc.set_xlim(-0.05, 1.05)
+                axc.set_xlabel('contrast (normalized)')
+                axc.tick_params(axis='x', labelsize=8, pad=2)
+
+                if offset_sorted is not None and contrast_norm is not None:
+                    c_norm_row = contrast_norm[r]
+                    if c_norm_row is not None and np.isfinite(c_norm_row).any() and np.isfinite(offset_sorted).all():
+                        axc.plot(c_norm_row, offset_sorted, color='w', lw=1.8, alpha=0.8, label='contrast (actual)')
+
+                    if contrast_fit_dense is not None and offset_dense is not None:
+                        y_fit_smooth = contrast_fit_dense[r]
+                        if y_fit_smooth is not None and np.isfinite(y_fit_smooth).any() and np.isfinite(offset_dense).all():
+                            axc.plot(y_fit_smooth, offset_dense, 'r--', lw=1.8, label='contrast (fit)')
+
+                # --- Show which wait time slice was used ---
+                best_wait_idx_list = fit.get('best_wait_idx', [])
+                if best_wait_idx_list and r < len(best_wait_idx_list):
+                    best_wait_idx = best_wait_idx_list[r]
+                    if best_wait_idx is not None and 0 <= best_wait_idx < len(x):
+                        wait_time_used = x[best_wait_idx]
+                        ax.axvline(wait_time_used, color='magenta', lw=2.0, ls=':', alpha=0.8)
+
+                # --- Mark the zero point ---
+                zero_point_offsets = fit.get('zero_point_offsets', [])
+                zero_point_waits = fit.get('zero_point_waits', [])
+                if zero_point_offsets and r < len(zero_point_offsets):
+                    zero_offset = zero_point_offsets[r]
+                    zero_wait = zero_point_waits[r]
+                    if zero_offset is not None and zero_wait is not None:
+                        # Only plot if zero point is within the visible offset range
+                        if y.min() <= zero_offset <= y.max():
+                            ax.plot(zero_wait, zero_offset, 'o', color='red', markersize=10,
+                                    markeredgecolor='white', markeredgewidth=2,
+                                    label='zero point', zorder=10)
+
+                # --- 2π, π, and π/2 lines ---
+                twopi_cands = fit.get('twopi_candidates', [[]] * R)[r]
+                pi_cands = fit.get('pi_candidates', [[]] * R)[r]
+                pihalf_cands = fit.get('pihalf_candidates', [[]] * R)[r]
+
+                for yy in twopi_cands:
+                    ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
+                    ax.annotate(f'2π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='w', ha='left', va='bottom',
+                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+
+                for yy in pi_cands:
+                    ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
+                    ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='cyan', ha='left', va='bottom',
+                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+
+                for yy in pihalf_cands:
+                    ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
+                    ax.annotate(f'π/2: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='yellow', ha='left', va='bottom',
+                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+
+                # --- Legend ---
+                h1, l1 = ax.get_legend_handles_labels()
+                h2, l2 = axc.get_legend_handles_labels()
+                if h1 or h2:
+                    legend = axc.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8,
+                                        frameon=True, framealpha=0.8)
+
+        fig.canvas.draw()
 
 class RampDoubleJump_BS_GainR(RampDoubleJumpBase, GainSweepOscillationsR):
     def init_sweep_vars(self):

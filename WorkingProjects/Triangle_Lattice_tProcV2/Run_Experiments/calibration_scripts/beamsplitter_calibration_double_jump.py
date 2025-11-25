@@ -32,6 +32,7 @@ beamsplitter_point = '2345_correlations_double'
 
 # rungs = ['12', '34', '56', '78']
 rungs = ['23', '45', '67']
+offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2
 
 double_jump_base = {'reps': 400, 'ramp_time': 1000,
                     't_offset':
@@ -145,12 +146,98 @@ def calibrate_rung_gains(BS_FF, rungs):
 
     return swept_qubits, center_gains
 
+def calibrate_rung_intermediate_offset(BS_FF, rungs):
+
+    print(f'BS_FF {BS_FF}')
+
+    swept_qubits = []
+    optimal_offsets = []
+
+    for i in range(len(rungs)):
+        rung = rungs[i]
+
+        # redefine ramp initial and final point
+
+        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
+        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
+
+        q1 = int(rung[0])
+        q2 = int(rung[1])
+
+        assert(abs(q1 - q2) == 1)
+
+        Qubit_Pulse = [q1]
+        Qubit_Readout = [q1, q2]
+
+
+        double_jump_intermediate_offset_dict['swept_qubit'] = q1
+        swept_qubits.append(double_jump_intermediate_offset_dict['swept_qubit'])
+
+
+        FF_gain1_expt = Ramp_FF[0]  # resonance
+        FF_gain2_expt = Ramp_FF[1]  # resonance
+        FF_gain3_expt = Ramp_FF[2]  # resonance
+        FF_gain4_expt = Ramp_FF[3]  # resonance
+        FF_gain5_expt = Ramp_FF[4]  # resonance
+        FF_gain6_expt = Ramp_FF[5]  # resonance
+        FF_gain7_expt = Ramp_FF[6]  # resonance
+        FF_gain8_expt = Ramp_FF[7]  # resonance
+
+        FF_gain1_BS = BS_FF[0]
+        FF_gain2_BS = BS_FF[1]
+        FF_gain3_BS = BS_FF[2]
+        FF_gain4_BS = BS_FF[3]
+        FF_gain5_BS = BS_FF[4]
+        FF_gain6_BS = BS_FF[5]
+        FF_gain7_BS = BS_FF[6]
+        FF_gain8_BS = BS_FF[7]
+
+        # ----------------------------------------
+
+        # Translation of Qubit_Parameters dict to resonator and qubit parameters.
+        # Nothing defined here should be changed in an Experiment unless it is one of the swept variables.
+        # Update FF_Qubits dict
+        namespace = globals() | locals()
+
+        config = update_config(**namespace)
+        # This ends the translation of the Qubit_Parameters dict
+        # --------------------------------------------------
+
+        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'ramp_initial_gain']:
+            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
+
+
+        exec(open("../CALIBRATE_SINGLESHOT_READOUTS.py").read())
+
+        experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
+                                cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
+        data = experiment.acquire_display_save(plotDisp=True, block=False)
+
+        # extract optimal offsets at chosen pi point
+        chosen_pi_point_key = 'pihalf_candidates' # default
+        if offset_pi_coeff_choice == 1:
+            chosen_pi_point_key = 'pi_candidates'
+        elif offset_pi_coeff_choice == 2:
+            chosen_pi_point_key = 'twopi_candidates'
+        elif offset_pi_coeff_choice == 0.5:
+            chosen_pi_point_key = 'pihalf_candidates'
+        else:
+            print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
+
+        offset_candidates = data['data'][chosen_pi_point_key]
+        print(offset_candidates)
+
+        # optimal offsets
+        optimal_offsets.append(offset_candidates)
+
+    return swept_qubits, optimal_offsets
 
 def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
     print(f'BS_FF {BS_FF}')
 
     swept_qubits = []
+    optimal_gains = []
 
     for i in range(len(rungs)):
         rung = rungs[i]
@@ -217,85 +304,11 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
                               cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
+        # Get fitted gains
+        zero_candidates = data['data']['zero_candidates']
+        optimal_gains.append(zero_candidates)
 
-    return swept_qubits
-
-
-
-def calibrate_rung_intermediate_offset(BS_FF, rungs):
-
-    print(f'BS_FF {BS_FF}')
-
-    swept_qubits = []
-
-    for i in range(len(rungs)):
-        rung = rungs[i]
-
-        # redefine ramp initial and final point
-
-        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
-        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
-
-        q1 = int(rung[0])
-        q2 = int(rung[1])
-
-        assert(abs(q1 - q2) == 1)
-
-        Qubit_Pulse = [q1]
-        Qubit_Readout = [q1, q2]
-
-
-        double_jump_intermediate_offset_dict['swept_qubit'] = q1
-        swept_qubits.append(double_jump_intermediate_offset_dict['swept_qubit'])
-
-
-        FF_gain1_expt = Ramp_FF[0]  # resonance
-        FF_gain2_expt = Ramp_FF[1]  # resonance
-        FF_gain3_expt = Ramp_FF[2]  # resonance
-        FF_gain4_expt = Ramp_FF[3]  # resonance
-        FF_gain5_expt = Ramp_FF[4]  # resonance
-        FF_gain6_expt = Ramp_FF[5]  # resonance
-        FF_gain7_expt = Ramp_FF[6]  # resonance
-        FF_gain8_expt = Ramp_FF[7]  # resonance
-
-        FF_gain1_BS = BS_FF[0]
-        FF_gain2_BS = BS_FF[1]
-        FF_gain3_BS = BS_FF[2]
-        FF_gain4_BS = BS_FF[3]
-        FF_gain5_BS = BS_FF[4]
-        FF_gain6_BS = BS_FF[5]
-        FF_gain7_BS = BS_FF[6]
-        FF_gain8_BS = BS_FF[7]
-
-        # ----------------------------------------
-
-        # Translation of Qubit_Parameters dict to resonator and qubit parameters.
-        # Nothing defined here should be changed in an Experiment unless it is one of the swept variables.
-        # Update FF_Qubits dict
-        namespace = globals() | locals()
-
-        config = update_config(**namespace)
-        # This ends the translation of the Qubit_Parameters dict
-        # --------------------------------------------------
-
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'ramp_initial_gain']:
-            print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
-
-
-        exec(open("../CALIBRATE_SINGLESHOT_READOUTS.py").read())
-
-        experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
-                                cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
-        data = experiment.acquire_display_save(plotDisp=True, block=False)
-
-        # extract popt like this
-        # data['data']['popt_list']
-
-
-        # optimal offsets
-        optimal_offsets = 0
-
-    return swept_qubits, optimal_offsets
+    return swept_qubits, optimal_gains
 
 
 
@@ -357,10 +370,22 @@ if calibrate_intermediate_offset:
 
     swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
 
+    print(f"Found optimal offsets: {offsets}")
+
     for i in range(len(swept_qubits)):
         double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i][0]
 
+    print(f"Set intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
+
 if calibrate_intermediate_gain:
-    calibrate_rung_intermediate_gains(BS_FF, rungs)
+    swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs)
+
+    print(f"Found optimal gains: {gains}")
+
+    for i in range(len(swept_qubits)):
+        double_jump_base['intermediate_jump_gains'][swept_qubits[i]] = offsets[i][0]
+
+    print(f"Set intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
+
 
 plt.show(block=True)
