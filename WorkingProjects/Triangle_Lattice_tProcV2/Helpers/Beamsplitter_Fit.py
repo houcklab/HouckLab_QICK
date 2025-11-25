@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.ndimage import gaussian_filter1d
+from scipy.signal import argrelmin, argrelmax
 
 def fit_double_beamsplitter(Z, gains, debug_fft=False):
     """
@@ -280,6 +282,246 @@ def fit_double_beamsplitter(Z, gains, debug_fft=False):
         "fit_params": fit_params,  # list of [d,w,phi] or None
         "pi_candidates": make_homogenous_nan(pi_cands_per_r),
         "zero_candidates": make_homogenous_nan(zero_cands_per_r),
+        "perrors": np.array(perr_r),
+    }
+
+    return fit
+
+
+def fit_beamsplitter_offset(Z, offsets, wait_times, debug=False):
+    """
+    Fit beamsplitter offset data:
+    1. Find first column with good oscillations
+    2. For readout 0: use first dark blot center as zero
+       For readout 1: use first bright blot center as zero
+    3. Fit sine function
+    4. Extract π/2, π, 2π points after zero
+    """
+    R, O, T = Z.shape
+
+    # Handle offsets - ensure it's an array
+    if np.ndim(offsets) == 0:
+        offsets = np.array([offsets])
+
+    if O < 2:
+        print(f"Warning: Need at least 2 offset points for fitting, got {O}")
+        return {
+            "offset_sorted": offsets,
+            "error": "Insufficient offset points"
+        }
+
+    # Sort offsets
+    order = np.argsort(offsets)
+    offset_sorted = offsets[order]
+    o0, o1 = float(offset_sorted[0]), float(offset_sorted[-1])
+    span = max(o1 - o0, 1.0)
+
+    # Create dense grid for smooth plotting
+    offset_dense = np.linspace(o0, o1, 500)
+
+    # Sine model with exponential decay envelope for dephasing
+    def sine_model(x, A, w, phi, offset, gamma):
+        return A * np.exp(-gamma * (x - o0)) * np.sin(w * x + phi) + offset
+
+    # Storage for results
+    fit_params = [None] * R
+    contrast_norm = [None] * R
+    contrast_fit_dense = [None] * R
+    best_wait_idx_per_r = []
+    zero_point_offsets = []
+    zero_point_waits = []
+    twopi_cands_per_r = []
+    pi_cands_per_r = []
+    pihalf_cands_per_r = []
+    perr_r = []
+
+    # Find the first column with good oscillations (shared across readouts)
+    # Use average contrast across readouts to find best column
+    avg_contrasts = np.zeros(T)
+    for r in range(R):
+        Z_r = Z[r, order, :][:]  # Manually skip first rows since those usually bad
+        contrasts = np.max(Z_r, axis=0) - np.min(Z_r, axis=0)
+        avg_contrasts += contrasts
+    avg_contrasts /= R
+
+    # Find first column with significant contrast
+    # Look for first column that has contrast > XX% of max contrast
+    max_contrast = np.max(avg_contrasts)
+    threshold = 0.85 * max_contrast
+
+    first_col_idx = None
+    for t in range(T):
+        if avg_contrasts[t] >= threshold:
+            first_col_idx = t
+            break
+
+    if first_col_idx is None:
+        # Fallback: use column with max contrast
+        first_col_idx = int(np.argmax(avg_contrasts))
+
+    if debug:
+        print(f"\nFirst column with oscillations: index {first_col_idx}, wait time {wait_times[first_col_idx]:.2f}")
+
+    # Process each readout
+    for r in range(R):
+        Z_r = Z[r, order, :]  # (O, T) - reordered by offset
+
+        # Use the first column with oscillations
+        best_wait_idx = first_col_idx
+        best_wait_idx_per_r.append(best_wait_idx)
+
+        # Extract the column data
+        column_data = Z_r[:, best_wait_idx]  # (O,)
+
+        # Normalize to [0, 1]
+        cmin, cmax = float(np.min(column_data)), float(np.max(column_data))
+        if cmax - cmin <= 0:
+            # Degenerate trace
+            fit_params[r] = None
+            contrast_norm[r] = np.zeros_like(column_data, dtype=float)
+            contrast_fit_dense[r] = np.full_like(offset_dense, np.nan, dtype=float)
+            zero_point_offsets.append(None)
+            zero_point_waits.append(None)
+            twopi_cands_per_r.append([])
+            pi_cands_per_r.append([])
+            pihalf_cands_per_r.append([])
+            perr_r.append(np.array([np.nan, np.nan, np.nan, np.nan, np.nan]))
+            continue
+
+        c_norm = (column_data - cmin) / (cmax - cmin)
+        contrast_norm[r] = c_norm
+
+        # Initial guesses for sine fit
+        A_guess = 1
+        offset_guess = 0.5
+        gamma_guess = 0.01  # Small decay rate
+
+        # Estimate frequency by counting oscillations (peaks/valleys)
+        smoothed_for_freq = gaussian_filter1d(c_norm, sigma=2.0) if len(c_norm) > 5 else c_norm
+        order_freq = max(2, len(c_norm) // 15)
+        n_minima = len(argrelmin(smoothed_for_freq, order=order_freq)[0])
+        n_maxima = len(argrelmax(smoothed_for_freq, order=order_freq)[0])
+        n_extrema = n_minima + n_maxima
+
+        # Number of periods ≈ number of extrema / 2
+        n_periods = max(1, n_extrema / 2.0)
+        w_guess = 2 * np.pi * n_periods / span
+
+        if debug and r == 0:
+            print(f"  Frequency estimate: {n_extrema} extrema -> {n_periods:.1f} periods -> w={w_guess:.4f}")
+
+        # Phase guess: assume first minimum is near the start
+        phi_guess = -np.pi / 2 - w_guess * o0
+
+        # Multiple initial guesses
+        w_candidates = [w_guess * 0.5, w_guess, w_guess * 1.5, w_guess * 2]
+        phi_candidates = [phi_guess, phi_guess + np.pi / 4, phi_guess - np.pi / 4, 0, -np.pi / 2]
+        gamma_candidates = [0.0, 0.001, 0.01, 0.05]  # Different decay rates
+
+        # Bounds: (A, w, phi, offset, gamma)
+        # gamma >= 0 (no negative decay), upper bound allows strong decay
+        bounds = ([0, 0, -10 * np.pi, -1, 0], [2, np.inf, 10 * np.pi, 2, 1.0])
+
+        best_popt = None
+        best_pcov = None
+        best_resid = np.inf
+
+        for w0 in w_candidates:
+            for phi0 in phi_candidates:
+                for gamma0 in gamma_candidates:
+                    p0 = [A_guess, w0, phi0, offset_guess, gamma0]
+                    try:
+                        popt, pcov = curve_fit(sine_model, offset_sorted, c_norm,
+                                               p0=p0, bounds=bounds, maxfev=20000)
+                        y_model = sine_model(offset_sorted, *popt)
+                        resid = np.sum((y_model - c_norm) ** 2)
+                        if resid < best_resid and np.isfinite(resid):
+                            best_resid = resid
+                            best_popt = popt
+                            best_pcov = pcov
+                    except Exception:
+                        continue
+
+        if best_popt is None:
+            # Fit failed
+            fit_params[r] = None
+            contrast_fit_dense[r] = np.full_like(offset_dense, np.nan, dtype=float)
+            zero_point_offsets.append(None)
+            zero_point_waits.append(None)
+            twopi_cands_per_r.append([])
+            pi_cands_per_r.append([])
+            pihalf_cands_per_r.append([])
+            perr_r.append(np.array([np.nan, np.nan, np.nan, np.nan, np.nan]))
+            continue
+
+        # Successful fit
+        fit_params[r] = best_popt
+        contrast_fit_dense[r] = sine_model(offset_dense, *best_popt)
+
+        perr = np.sqrt(np.diag(best_pcov)) if best_pcov is not None else np.array(
+            [np.nan, np.nan, np.nan, np.nan, np.nan]
+        )
+        perr_r.append(perr)
+
+        A, w, phi, offset_param, gamma = best_popt
+
+        if debug:
+            print(f"\nReadout {r}:")
+            print(
+                f"  Fit params: A={A:.4f}, w={w:.4f}, phi={phi:.4f}, offset={offset_param:.4f}, gamma={gamma:.4f}")
+
+        # Simple approach: use origin as t=0
+        zero_offset = o0
+        zero_wait = wait_times[best_wait_idx]
+        zero_point_offsets.append(zero_offset)
+        zero_point_waits.append(zero_wait)
+
+        # Calculate phase at origin
+        phase_at_zero = w * zero_offset + phi
+
+        # Find π/2, π, and 2π by adding phase increments
+        def find_offset_at_phase(target_phase):
+            """Find offset where phase equals target_phase"""
+            if w <= 0:
+                return None
+            offset = (target_phase - phi) / w
+            if o0 <= offset <= o1:
+                return float(offset)
+            return None
+
+        pihalf_offset = find_offset_at_phase(phase_at_zero + np.pi / 2)
+        pi_offset = find_offset_at_phase(phase_at_zero + np.pi)
+        twopi_offset = find_offset_at_phase(phase_at_zero + 2 * np.pi)
+
+        if debug:
+            print(f"  Zero point (origin): offset={zero_offset:.2f}")
+            if pihalf_offset:
+                print(f"  π/2 point: offset={pihalf_offset:.2f}")
+            if pi_offset:
+                print(f"  π point: offset={pi_offset:.2f}")
+            if twopi_offset:
+                print(f"  2π point: offset={twopi_offset:.2f}")
+
+        pihalf_cands = [pihalf_offset] if pihalf_offset is not None else []
+        pi_cands = [pi_offset] if pi_offset is not None else []
+        twopi_cands = [twopi_offset] if twopi_offset is not None else []
+
+        pihalf_cands_per_r.append(pihalf_cands)
+        pi_cands_per_r.append(pi_cands)
+        twopi_cands_per_r.append(twopi_cands)
+
+    fit = {
+        "offset_sorted": offset_sorted,
+        "offset_dense": offset_dense,
+        "best_wait_idx": best_wait_idx_per_r,
+        "zero_point_offsets": zero_point_offsets,
+        "zero_point_waits": zero_point_waits,
+        "contrast_norm": contrast_norm,
+        "contrast_fit_dense": contrast_fit_dense,
+        "fit_params": fit_params,
+        "twopi_candidates": twopi_cands_per_r,
+        "pi_candidates": pi_cands_per_r,
+        "pihalf_candidates": pihalf_cands_per_r,
         "perrors": np.array(perr_r),
     }
 
