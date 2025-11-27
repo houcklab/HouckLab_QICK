@@ -4,8 +4,9 @@ import numpy as np
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers import FF_gains, QubitParams
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
+
 from .BS_Mux8_1234_Readout import BS1234_Readout, Readout_1234_FF
-from .BS_Mux8_1254_Readout import BS1254_Readout, Readout_1254_FF
+from .BS_Mux8_1245_Readout import BS1245_Readout, Readout_1245_FF
 from .BS_Mux8_1267_Readout import BS1267_Readout
 from .BS_Mux8_2356_Readout import BS2356_Readout, Readout_2356_FF
 from .BS_Mux8_2345_Readout import BS2345_Readout, Readout_2345_FF
@@ -17,8 +18,10 @@ from .BS_Mux8_4578_Readout_Josh import BS4578_Readout_Josh
 # 8Q Pi Flux parameters
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = FF_gains([-9229, -9844, -7224, -9723, -8466, -8893, -6038, -7827])
+Expt_FF = FF_gains([-9229, -9844, -7224, -9723, -8466, -8893, -6046, -7816])
 
+#disordered
+# Expt_FF = Expt_FF.add(Q2=125, Q4=125, Q6=125, Q8=125)
 # disordered
 # Expt_FF = FF_gains([-8332, -9820, -6088, -8973, -7072, -8393, -5027, -8877])
 
@@ -133,15 +136,34 @@ ramp_params = {
     '78': {'Ramp': {'Init_FF': Expt_FF + [-12000, -12000, -12000, -12000, -12000, -12000, 0, -5000],
                     'Expt_FF': Expt_FF + [-12000, -12000, -12000, -12000, -12000, -12000, 0, 0]}},
 
+
+
     '68': {'Ramp': {'Init_FF': None,
                         'Expt_FF': Expt_FF + [8000, 8000,-8000, 8000, 8000, 0, 8000, 0]}},
     '57': {'Ramp': {'Init_FF': None,
                         'Expt_FF': Expt_FF + [8000, 8000, 8000, 8000, 0, 8000, 0, 8000]}},
+    # disordered states for larger base contrast
+    '12_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(1,2,det=-12000).add(Q2=-5000),
+                       'Expt_FF': Expt_FF.subsys(1,2,det=-12000).add(Q2=-125)}},
+    '23_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(2,3,det=-12000).add(Q3=-5000),
+                       'Expt_FF': Expt_FF.subsys(2,3,det=-12000).add(Q3=-125)}},
+    '34_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(3,4,det=-12000).add(Q4=-5000),
+                       'Expt_FF': Expt_FF.subsys(3,4,det=-12000).add(Q4=-150)}},
+    '45_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(4,5,det=-12000).add(Q5=-5000),
+                       'Expt_FF': Expt_FF.subsys(4,5,det=-12000).add(Q5=-125)}},
+    '56_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(5,6,det=-12000).add(Q6=-5000),
+                       'Expt_FF': Expt_FF.subsys(5,6,det=-12000).add(Q6=-125)}},
+    '67_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(6,7,det=-12000).add(Q7=-5000),
+                       'Expt_FF': Expt_FF.subsys(6,7,det=-12000).add(Q7=-125)}},
+    '78_dis': {'Ramp':{'Init_FF': Expt_FF.subsys(7,8,det=-12000).add(Q8=-5000),
+                       'Expt_FF': Expt_FF.subsys(7,8,det=-12000).add(Q8=-125)}},
 
     '1234': {'Ramp': {'Init_FF': None,
                         'Expt_FF': Expt_FF + [0, 0, 0, 0, 8000, 8000, 8000, 8000]}},
-
-
+    '1234_dis': {'Ramp': {'Init_FF': Init_4815_FF,
+                 'Expt_FF':Expt_FF.add(Q2=125, Q4=125, Q6=125, Q8=125)},},
+    '2345_dis': {'Ramp': {'Init_FF': Init_4815_FF,
+                 'Expt_FF':Expt_FF.add(Q2=125, Q4=250, Q6=125)}},
 
     '8Q_1854': {'Ramp':{'Init_FF': None,
                        'Expt_FF': Expt_FF}},
@@ -157,20 +179,35 @@ ramp_params = {
     '1234_correlations_old': {'BS': {'BS_FF': [-18506, -19389, 13734, 11543, -12458, -13248, 5164, 2214]}},
 
     # (3600.0, 3600.0, 4200.0, 4200.0, 3700.0, 3700.0, 4100.0, 4100.0)
-    '1234_correlations': {'BS': {'BS_FF': [-18506, -19389, 8309, 6543, -12458, -13248, 5164, 2214]}},
+    '1234_correlations': {'BS': {'BS_FF': [-18526, -19389, 8323, 6543, -12467, -13248, 5141, 2214]},
+                          't_offset': np.array([21, 24, 13, 24, 8, 8, 9, 0]) # default values
+                                                -[2,2,2,2,2,0,0,0] # 56 offset correction
+                                                -[1,1,1,1,1,1,1,0] # 78 offset correction
+                                                -[1,0,1,0,0,0,1,0], # so that double jump gives 0 instead of 2pi},
+                          },
 
 
     '1234_correlations_double': {'BS': {'BS_FF': [-18587, -19389, 13881, 11543, -12337, -13248, 6544, 2214]}},
     # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
-
+    '1234_intermediate': {'IJ':{'samples':[4, 0, 1, 0, 0, 0, 1, 0],
+                                'gains':[-15530, None, -9058, None, None, None, -5000, None]}},
+                                #'gains':[-14300, None, 1000, None, -20347, None, -2370, None]}},
 
 
 
 
     # (3535.3, 4300.0, 4300.0, 3650.0, 3650.0, 4200.0, 4200.0, 3522.7)
-    '2345_correlations': {'BS': {'BS_FF': [-26873, 11534, 13421, -17064, -15217, 9000, 10782, -24395]}},
+    '2345_correlations': {'BS': {'BS_FF': [-26873, 13458, 13421, -17041, -15217, 8332, 10782, -24395]},
+                          't_offset': np.array([22, 24, 13, 24, 8, 8, 9, 0])
+                                                - [0,0,0,0,0,0,0,0] # correct 4-5
+                                                + [1,1,0,0,0,0,0,0] # correct 2-3
+                                      - [0, 1, 0, 0, 0, 1, 0, 0],  # so that double jump gives 0 instead of 2pi}
+                          },
 
-    '2345_correlations_double': {'BS': {'BS_FF': [-26873, 11534, 13421, -17064, -15217, 9000, 10782, -24395]}},
+    '2345_correlations_double': {'BS': {'BS_FF': [-26873, 13458, 13421, -17064, -15217, 9000, 10782, -24395]}},
+
+    '2345_intermediate': {'IJ':{'samples':[0, 1, 0, 0, 0, 2, 0, 0],
+                                'gains':[None, -5220, None, None, None, -4130, None, None]}},
 
     '2345_correlations_67_check': {'BS': {'BS_FF': [-26873, 13399, 13421, -17240, -15217, 1757, 4782, -24395]}},
 
@@ -181,7 +218,8 @@ ramp_params = {
     # '2345_correlations': {'BS': {'BS_FF': [-26873, 12831, 13421, -17006, -15217, -3268, -590, -24395]}},
 
     # (4400.0, 4400.0, 3496.5, 4000.0, 4000.0, 3534.5, 3460.3, 3522.7)
-    '1254_correlations': {'BS': {'BS_FF': [22268, 21904, -25392, -2490, -1488, -28060, -25722, -24395]}},
+    '1245_correlations': {'BS': {'BS_FF': [22268, 21904, -25392, -2473, -1488, -28060, -25722, -24395]},
+                                 't_offset': np.array([22, 24, 13, 24, 8, 8, 9, 0])},
 
     # (4350.0, 4350.0, 3457.4, 3499.9, 3495.6, 4250.0, 4250.0, 3503.2)
     '1267_correlations': {'BS': {'BS_FF': [19890, 20033, -25392, -27560, -25700, 14165, 16575, -24395]}},
@@ -203,13 +241,16 @@ ramp_params = {
 
     # (4415.2, 4424.4, 4389.6, 4000.0, 4000.0, 4392.0, 3600.0, 3600.0)
     '4578_correlations': {'BS': {'BS_FF': [26873, 29001, 25392, -2609, -1488, 28060, -13600, -16604]}},
+
+    'single_jump':{'IJ':{'samples':[None]*8,'gains':[None]*8}},
+
 }
 
 
 
-readout_params = BS1234_Readout
+# readout_params = BS1234_Readout
 # readout_params = BS2345_Readout
-# readout_params = BS1254_Readout
+readout_params = BS1245_Readout
 # readout_params = BS1267_Readout
 # readout_params = BS2356_Readout
 # readout_params = BS2378_Readout
@@ -222,19 +263,22 @@ readout_params = BS1234_Readout
 Ramp_state = '8Q_4815'
 # Ramp_state = '8Q_4815_lowest_state'
 
-# Ramp_state = '56'
+# Ramp_state = '2345_dis'
 
 # beamsplitter_point = '2345_correlations_double'
 # beamsplitter_point = '1234_correlations_double'
 # beamsplitter_point = '2356_correlations_double'
 # beamsplitter_point = '4578_correlations'
-beamsplitter_point = '1234_correlations'
+# beamsplitter_point = '2345_correlations'
 # beamsplitter_point = '2345_correlations'
 # beamsplitter_point = '1254_correlations'
 # beamsplitter_point = '1267_correlations'
 # beamsplitter_point = '2356_correlations'
 # beamsplitter_point = '2378_correlations'
 # beamsplitter_point = '4578_correlations'
+beamsplitter_point = '1245_correlations'
+
+ijump_point = 'single_jump'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d
@@ -276,7 +320,8 @@ FF_gain6_BS = BS_FF[5]
 FF_gain7_BS = BS_FF[6]
 FF_gain8_BS = BS_FF[7]
 
-gains = [Readout_1254_FF, Init_FF, Ramp_FF, BS_FF, Readout_1254_FF]
+Readout_FF = readout_params['1']['Readout']['FF_Gains']
+gains = [Readout_FF, Init_FF, Ramp_FF, BS_FF, Readout_FF]
 labels = ['pulse', 'init', 'ramp', 'beamsplitter', 'readout']
 for label, gain in zip(labels, gains):
     print(label, gain[3])

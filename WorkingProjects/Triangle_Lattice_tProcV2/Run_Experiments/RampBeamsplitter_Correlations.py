@@ -26,7 +26,7 @@ Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
 
-Q = 7
+Q = 4
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
@@ -57,38 +57,29 @@ sweep_bs_gain_dict['gainStop'] = center + 1000
 # "good" offsets = [22, 24, 13, 24, 8, 8, 9, 0]
 Sweep_BeamsplitterOffset = False
 # Think about how t_offset will cause some qubits to stay at FF_BS for longer than others
-sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 5*200, 'ramp_time': 1000,
-                        't_offset': [22, 24, 13, 24, 8, 8, 9, 0],
-                        'relax_delay': 100,
-                        'offsetStart': 0, 'offsetStop': 15,
+sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 25*200, 'ramp_time': 1000,
+                        't_offset': Qubit_Parameters[beamsplitter_point]['t_offset'],
+                        'relax_delay': 180,
+                        'offsetStart': 10, 'offsetStop': 30,
                         'offsetStep': 1,
-                        'start': 0, 'step': 8, 'expts': 71}
+                        'start': 0, 'step': 12, 'expts': 71}
 
 
 # Qubit_Pulse = [3,1]
 
 Beamsplitter1D = False
-Run_CurrentCorrelations = True
+Run_CurrentCorrelations = False
 
 ramp_beamsplitter_1d_dict = {'reps': 10000, 'ramp_time': 1000,
                              't_offset':
-                             np.array([21, 24, 13, 24, 8, 8, 9, 0]),
+                             # np.array([22, 24, 13, 24, 8, 8, 9, 0])
+                              Qubit_Parameters[beamsplitter_point]['t_offset'],
                              'relax_delay': 180,
                              'start': 0, 'step': 8, 'expts': 71,
-                             'readout_pair_1': [1,2],
-                             'readout_pair_2': [3,4],
+                             'readout_pair_1': [2,3],
+                             'readout_pair_2': [4,5],
                              }
 
-
-# ramp_beamsplitter_1d_dict = {'reps': 3000, 'ramp_time': 1000,
-#                              't_offset':
-#                              # [21, 23, 12, 23, 7, 7, 8, 0],
-#                              [28, 30, 19, 30, 7, 7, 8, 0],
-#                              'relax_delay': 140,
-#                              'start': 0, 'step': 8, 'expts': 71,
-#                              'readout_pair_1': [4,5],
-#                              'readout_pair_2': [7,8],
-#                              }
 
 
 
@@ -118,30 +109,25 @@ sweep_BS_gain_correlations_dict['gainStart'] = center - 1000
 sweep_BS_gain_correlations_dict['gainStop'] = center + 1000
 
 
-sweep_BS_offset_correlations = False
-sweep_BS_offset_correlations_dict = {'swept_qubit': 5, 'reps': 1000,
-                                     'offsetStart': 0, 'offsetStop': 22, 'offsetNumPoints': 3,
-                                     'gainNumPoints': 11}
+sweep_BS_offset_correlations = True
+sweep_BS_offset_correlations_dict = {'swept_qubit': 4, 'reps': 1000,
+                                     'offsetStart': 15, 'offsetStop': 30, 'offsetStep': 1,}
 
 # --------------------------------
 # Base dict that will be used for all below experiments
 
-Q = 1
+Q = 6
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q, Q+1]
 
 double_jump_base = {'reps': 400, 'ramp_time': 1000,
                     't_offset':
-                    # [22, 24, 13, 24, 8, 8, 9, 0], #  good values
-                      [22, 25, 13, 22, 8, 9, 9, 0],
-                    'relax_delay': 150,
+                    # [22, 24, 13, 24, 8, 8, 9, 0],
+                        Qubit_Parameters[beamsplitter_point]['t_offset'],
+                    'relax_delay': 180,
                     'start': 0, 'step': 16, 'expts': 71,
-                    # 1234 BOI
-                    # 'intermediate_jump_samples': [9, 0, 3, 0, 4, 0, 2, 0],
-                    # 'intermediate_jump_gains': [-14300, None, 4490, None, -20347, None, -2370, None]}
-                    # 2345 BOI
-                    'intermediate_jump_samples': [0, 3, 0, 12, 0, 2, 0, 0],
-                    'intermediate_jump_gains': [None, -2040, None, -13730, None, -7300, None, None]}
+                    'intermediate_jump_samples': Qubit_Parameters[ijump_point]['IJ']['samples'],
+                    'intermediate_jump_gains': Qubit_Parameters[ijump_point]['IJ']['gains'],}
 
 Sweep_DoubleJump_BS_Gain = False
 double_jump_BS_gain_dict = {'swept_qubit': Q,
@@ -192,14 +178,14 @@ DoubleJump1D = False
 DoubleJump_CurrentCorrelations = False
 
 
-double_jump_1d_dict = {'reps': 400,
+double_jump_1d_dict = {'reps': 100_000,
                         'start': 0, 'step': 8, 'expts': 71,
                        'readout_pair_1': [2,3],
                        'readout_pair_2': [4,5],}
-double_jump_1d_dict = {'reps': 100000,
-                        'start': 0, 'step': 8, 'expts': 71,
-                       'readout_pair_1': [2,3],
-                       'readout_pair_2': [4,5],}
+# double_jump_1d_dict = {'reps': 100000,
+#                         'start': 0, 'step': 8, 'expts': 71,
+#                        'readout_pair_1': [2,3],
+#                        'readout_pair_2': [4,5],}
 
 DoubleJump_Correlations_CleanTiming = False
 # This ends the working section of the file.

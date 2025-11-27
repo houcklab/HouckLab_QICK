@@ -22,39 +22,36 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
     RampDoubleJump_BS_GainR, RampCorrelations_Sweep_BS_Gain, RampCorrelations_Sweep_BS_Offset
 
 
-calibrate_gain = False
-calibrate_intermediate_offset = True
-calibrate_intermediate_gain = False
+calibrate_gain                  = True
+calibrate_intermediate_offset   = False
+calibrate_intermediate_gain     = False
 
 
 
 beamsplitter_point = '1234_correlations'
+ijump_point        = '1234_intermediate'
 
-rungs = ['56', '78']
-# rungs = ['23', '45', '67']
-# rungs = ['12', '34', '56', '78']
-offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2
+# rungs = ['34_dis', '78_dis']
+# rungs = ['23_dis', '45_dis', '67_dis']
+# rungs = ['23_dis', '67_dis']
+rungs = ['12', '34', '56', '78']
 
-double_jump_base = {'reps': 400, 'ramp_time': 1000,
+
+offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
+
+double_jump_base = {'reps': 200, 'ramp_time': 1000,
                     't_offset':
-                    # [22, 24, 13, 24, 8, 8, 9, 0],
-                      np.array([21, 24, 13, 24, 8, 8, 9, 0]) - # default values
-                                [1,1,1,1,1,1,1,0] - # 78 offset correction
-                                [1,0,1,0,1,0,1,0], # so that double jump gives 0 instead of 2pi
-                    'relax_delay': 150,
+                    # [21, 24, 13, 24, 8, 8, 9, 0],
+                    Qubit_Parameters[beamsplitter_point]['t_offset'],
+                    'relax_delay': 180,
                     'start': 0, 'step': 16, 'expts': 71,
-                    # 1234 BOI
-                    'intermediate_jump_samples': [9, 0, 3, 0, 4, 0, 2, 0],
-                    'intermediate_jump_gains': [-14300, None, 1000, None, -20347, None, -2370, None]}
-                    # 2345 BOI
-                    # 'intermediate_jump_samples': [0, 3, 0, 12, 0, 2, 0, 0],
-                    # 'intermediate_jump_gains': [None, -2040, None, -13730, None, -7300, None, None]}
-
+                    'intermediate_jump_samples': Qubit_Parameters[ijump_point]['IJ']['samples'],
+                    'intermediate_jump_gains': Qubit_Parameters[ijump_point]['IJ']['gains'],}
 
 double_jump_BS_gain_dict = {'t_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                             'gainRange': 3000, 'gainNumPoints': 11}
 
-double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 10, 'samples_numPoints': 11}
+double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 4, 'samples_step': 1}
 
 
 double_jump_intermediate_gain_dict = {'gainRange': 20000, 'gainNumPoints': 11}
@@ -215,22 +212,24 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
                                 cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
-        # extract optimal offsets at chosen pi point
-        chosen_pi_point_key = 'pihalf_candidates' # default
-        if offset_pi_coeff_choice == 1:
-            chosen_pi_point_key = 'pi_candidates'
-        elif offset_pi_coeff_choice == 2:
-            chosen_pi_point_key = 'twopi_candidates'
-        elif offset_pi_coeff_choice == 0.5:
-            chosen_pi_point_key = 'pihalf_candidates'
-        else:
-            print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
 
-        offset_candidates = data['data'][chosen_pi_point_key]
-        print(offset_candidates)
+        if hasattr(experiment, 'fit_params'):
+            # extract optimal offsets at chosen pi point
+            chosen_pi_point_key = 'pihalf_candidates' # default
+            if offset_pi_coeff_choice == 1:
+                chosen_pi_point_key = 'pi_candidates'
+            elif offset_pi_coeff_choice == 2:
+                chosen_pi_point_key = 'twopi_candidates'
+            elif offset_pi_coeff_choice == 0.5:
+                chosen_pi_point_key = 'pihalf_candidates'
+            else:
+                print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
 
-        # optimal offsets
-        optimal_offsets.append(offset_candidates)
+            offset_candidates = data['data'][chosen_pi_point_key]
+            print(f"  Found {chosen_pi_point_key} offset for qubit {q1}: {offset_candidates[0]}")
+
+            # optimal offsets - append only the candidate from the first graph
+            optimal_offsets.append(offset_candidates[0])
 
     return swept_qubits, optimal_offsets
 
@@ -264,7 +263,6 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
         center = double_jump_base['intermediate_jump_gains'][q1-1]
         double_jump_intermediate_gain_dict['gainStart'] = center - double_jump_intermediate_gain_dict['gainRange']//2
         double_jump_intermediate_gain_dict['gainStop'] = center + double_jump_intermediate_gain_dict['gainRange']//2
-
 
 
         FF_gain1_expt = Ramp_FF[0]  # resonance
@@ -306,9 +304,12 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
                               cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
-        # Get fitted gains
-        zero_candidates = data['data']['zero_candidates']
-        optimal_gains.append(zero_candidates)
+
+        if hasattr(experiment, 'fit_params'):
+            # Get fitted gains
+            zero_candidates = data['data']['zero_candidates']
+            print(f'  Found zero points for qubit {q1}: {zero_candidates[0]}')
+            optimal_gains.append(zero_candidates[0]) # only append point for the first plot that is q1
 
     return swept_qubits, optimal_gains
 
@@ -372,22 +373,24 @@ if calibrate_intermediate_offset:
 
     swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
 
-    print(f"Found optimal offsets: {offsets}")
-
-    for i in range(len(swept_qubits)):
-        double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i][0]
-
-    print(f"Set intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
+    # print(f"Found optimal offsets: {zip(swept_qubits, offsets)}")
+    #
+    # for i in range(len(swept_qubits)):
+    #     if len(offsets[i]) > 0:
+    #         double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i][0] # This always takes the first candidate (shortest offset time)
+    #
+    # print(f"Set intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
 
 if calibrate_intermediate_gain:
     swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs)
 
-    print(f"Found optimal gains: {gains}")
-
-    for i in range(len(swept_qubits)):
-        double_jump_base['intermediate_jump_gains'][swept_qubits[i]] = offsets[i][0]
-
-    print(f"Set intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
+    # print(f"Found optimal gains: {zip(swept_qubits, gains)}")
+    #
+    # for i in range(len(swept_qubits)):
+    #     if len(offsets[i]) > 0:
+    #         double_jump_base['intermediate_jump_gains'][swept_qubits[i]] = gains[i][0]# This always takes the first candidate (shortest offset time)
+    #
+    # print(f"Set intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
 
 
 plt.show(block=True)

@@ -49,7 +49,12 @@ class MakeFile(h5py.File):
         #     self.create_dataset(key, shape=data.shape,
         #                         maxshape=tuple([None] * len(data.shape)),
         #                         dtype=str(data.astype(np.float64).dtype))
-        self[key][...] = data
+
+        try:
+            self[key][...] = data
+        except:
+            print(f'failed adding {key}: {data}')
+            raise
 
 
 class NpEncoder(json.JSONEncoder):

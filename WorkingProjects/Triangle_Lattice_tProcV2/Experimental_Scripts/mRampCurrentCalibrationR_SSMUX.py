@@ -33,7 +33,7 @@ class RampBeamsplitterBase(SweepExperimentND):
 
     def set_up_instance(self):
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
 
         t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
@@ -105,10 +105,10 @@ class RampCurrentCorrelationsR(RampBeamsplitterR1D):
             data_dict['nn_correlations'] = np.full_like(data_dict['population'][0], np.nan)
 
         shots_matrices = [data_dict['population_shots'][ro_ind][*sweep_indices] for ro_ind in range(len(readout_list))]
-        q1 = shots_matrices[readout_list.index(self.readout_pair_1[0])]
-        q2 = shots_matrices[readout_list.index(self.readout_pair_1[1])]
-        q3 = shots_matrices[readout_list.index(self.readout_pair_2[0])]
-        q4 = shots_matrices[readout_list.index(self.readout_pair_2[1])]
+        q1 = shots_matrices[readout_list.index(self.cfg['readout_pair_1'][0])]
+        q2 = shots_matrices[readout_list.index(self.cfg['readout_pair_1'][1])]
+        q3 = shots_matrices[readout_list.index(self.cfg['readout_pair_2'][0])]
+        q4 = shots_matrices[readout_list.index(self.cfg['readout_pair_2'][1])]
 
         self.nn_correlations = CorrelationAnalysis.get_nn_correlations(q1, q2, q3, q4)
         data_dict['nn_correlations'][*sweep_indices] = self.nn_correlations
@@ -313,7 +313,7 @@ class RampCorrelations_Sweep_BS_Offset(RampCorrelations_Sweep_Base, SweepExperim
     def init_sweep_vars(self):
         super().init_sweep_vars()
         self.y_key = ("t_offset", self.cfg["swept_qubit"] - 1)
-        self.y_points = np.linspace(self.cfg['offsetStart'], self.cfg['offsetStop'], self.cfg['offsetNumPoints'],
+        self.y_points = np.arange(self.cfg['offsetStart'], self.cfg['offsetStop']+self.cfg['offsetStep'], self.cfg['offsetStep'],
                                     dtype=int)
         self.ylabel = f"Offset time of Qubit {self.cfg["swept_qubit"]} (4.65/16 ns)"
 
@@ -335,7 +335,9 @@ class RampDoubleJumpBase(RampBeamsplitterBase):
 
     def set_up_instance(self):
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['expt_samples1'])
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['expt_samples1'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain',
+                                                                           'Gain_Expt', self.cfg['expt_samples1'])
 
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
         # Add first jump
@@ -437,12 +439,12 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
                 first_pi, first_zero = True, True
                 for yy in pi_cands:
                     ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
-                    ax.annotate(f'π: {yy:.4f}', (20, yy + 100), fontsize=8, color='w',
+                    ax.annotate(f'π: {yy:.4f}', (20, yy + 100), fontsize=16, color='w',
                                 ha='left', va='bottom')
 
                 for yy in zero_cands:
                     ax.axhline(yy, color='w', lw=2.0, ls='--', alpha=0.95)
-                    ax.annotate(f'0: {yy:.4f}', (20, yy + 100), fontsize=8, color='w',
+                    ax.annotate(f'0: {yy:.4f}', (20, yy + 100), fontsize=16, color='w',
                                 ha='left', va='bottom')
 
                 # --- One combined legend from both axes ---
@@ -457,7 +459,7 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
     def init_sweep_vars(self):
         RampDoubleJumpBase.init_sweep_vars(self)
         self.y_key = ("intermediate_jump_samples", self.cfg["swept_qubit"] - 1)
-        self.y_points = np.linspace(self.cfg['samples_start'], self.cfg['samples_stop'], self.cfg['samples_numPoints'],
+        self.y_points = np.arange(self.cfg['samples_start'], self.cfg['samples_stop']+self.cfg['samples_step'], self.cfg['samples_step'],
                                     dtype=int)
         self.ylabel = "Intermediate Jump Samples (4.65/16 ns)"
 
@@ -467,7 +469,7 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         offsets = np.asarray(data_dict.get('t_offset', None), float)  # (O,)  # (O,)
         wait_times = np.asarray(data_dict['expt_samples'], float)  # (T,)
 
-        self.fit_params = self.fit_beamsplitter_offset(Z, offsets, wait_times, debug=True)
+        self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times, debug=True)
         data_dict.update(self.fit_params)
 
     def _display_plot(self, data=None, fig_axs=None):
@@ -510,17 +512,17 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
                             axc.plot(y_fit_smooth, offset_dense, 'r--', lw=1.8, label='contrast (fit)')
 
                 # --- Show which wait time slice was used ---
-                best_wait_idx_list = fit.get('best_wait_idx', [])
-                if best_wait_idx_list and r < len(best_wait_idx_list):
+                best_wait_idx_list = fit.get('best_wait_idx', None)
+                if best_wait_idx_list is not None and r < len(best_wait_idx_list):
                     best_wait_idx = best_wait_idx_list[r]
                     if best_wait_idx is not None and 0 <= best_wait_idx < len(x):
                         wait_time_used = x[best_wait_idx]
                         ax.axvline(wait_time_used, color='magenta', lw=2.0, ls=':', alpha=0.8)
 
                 # --- Mark the zero point ---
-                zero_point_offsets = fit.get('zero_point_offsets', [])
-                zero_point_waits = fit.get('zero_point_waits', [])
-                if zero_point_offsets and r < len(zero_point_offsets):
+                zero_point_offsets = fit.get('zero_point_offsets', None)
+                zero_point_waits = fit.get('zero_point_waits', None)
+                if zero_point_offsets is not None and r < len(zero_point_offsets):
                     zero_offset = zero_point_offsets[r]
                     zero_wait = zero_point_waits[r]
                     if zero_offset is not None and zero_wait is not None:
@@ -535,22 +537,24 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
                 pi_cands = fit.get('pi_candidates', [[]] * R)[r]
                 pihalf_cands = fit.get('pihalf_candidates', [[]] * R)[r]
 
+                print(twopi_cands)
+
                 for yy in twopi_cands:
                     ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'2π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='w', ha='left', va='bottom',
+                                fontsize=16, color='w', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
                 for yy in pi_cands:
                     ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='cyan', ha='left', va='bottom',
+                                fontsize=16, color='cyan', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
                 for yy in pihalf_cands:
                     ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
                     ax.annotate(f'π/2: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='yellow', ha='left', va='bottom',
+                                fontsize=16, color='yellow', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
                 # --- Legend ---

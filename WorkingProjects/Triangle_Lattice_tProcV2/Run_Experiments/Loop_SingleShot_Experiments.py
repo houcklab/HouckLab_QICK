@@ -36,7 +36,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
 
-for Q in [1,2,3,4,5,6,7,8]:
+for Q in [5]:
 # for Q in [3]:
     Qubit_Readout = [Q]
     # Qubit_Pulse =   [f"{Q}R"]

@@ -35,10 +35,10 @@ Qubit_Pulse = ['1_4Q_readout','4_4Q_readout','8_4Q_readout','5_4Q_readout']
 
 Qubit_configs = []
 
-varname_FF = 'Readout_2345_FF'
-for Q in [1,2,3,4,5,6,7,8]:
-    # Qubit_Readout = [1,2,3,4,5,6,7,8]
-    Qubit_Readout = [Q]
+varname_FF = 'Readout_1245_FF'
+for Q in [6]:
+    Qubit_Readout = [1,2,3,4,5,6,7,8]
+    # Qubit_Readout = [Q]
     Qubit_Pulse = [Q]
     # Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
@@ -56,11 +56,11 @@ for Q in [1,2,3,4,5,6,7,8]:
 
     print(f'OptQubit_index = {OptQubit_index}')
 
-    RunTransmissionSweep =       t
-    RunFirst2ToneSpec =          t
-    RunSecond2ToneSpec =         t
-    RunAmplitudeRabi =           t
-    SingleShot_ReadoutOptimize = f
+    RunTransmissionSweep =       f
+    RunFirst2ToneSpec =          f
+    RunSecond2ToneSpec =         f
+    RunAmplitudeRabi =           f
+    SingleShot_ReadoutOptimize = t
     SingleShot_QubitOptimize =   f
     SingleShot =                 t
 
@@ -84,13 +84,13 @@ for Q in [1,2,3,4,5,6,7,8]:
         Amplitude_Rabi_params['max_gain'] *= 1.4
 
 
-    SS_R_params = {"Shots": 500, 'relax_delay':150,
+    SS_R_params = {"Shots": 400, 'relax_delay':150,
                    "gain_start": 200, "gain_stop": 1400, "gain_pts": 8,
                    "span": 1, "trans_pts": 5, 'number_of_pulses': 1,
                    'qubit_sweep_index':OptReadout_index}
 
 
-    SS_Q_params = {"Shots": 500, 'relax_delay':150,
+    SS_Q_params = {"Shots": 400, 'relax_delay':150,
                    "q_gain_span": 2*1000, "q_gain_pts": (2+5),
                    "q_freq_span": 2*3, "q_freq_pts": 7,
                    'number_of_pulses': 1,

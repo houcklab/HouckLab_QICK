@@ -184,7 +184,7 @@ def main():
     # Setting gains
 
     # single jump
-    intermediate_jump_gains = [None] * 8
+    intermediate_jump_gains = Qubit_Parameters[ijump_point]['IJ']['gains']
     # 1234 BOI
     # intermediate_jump_gains = [-14300, None, 4490, None, -20347, None, -2370, None]
     # 2345 BOI

@@ -108,7 +108,7 @@ RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"max_gain": 2*12000, 'relax_delay':100}
 
 
-SingleShot = True
+SingleShot = False
 SS_params = {"Shots": 2000, 'number_of_pulses': 1, 'relax_delay': 200}
 
 SingleShotDecimate = False
@@ -149,8 +149,8 @@ T2R_params = {"stop_delay_us": 5, "expts": 125, "reps": 300,
 
 
 
-RunT1_TLS = False
-T1TLS_params = {"FF_gain_start": -10000, "FF_gain_stop": 0, "FF_gain_steps": 301,
+RunT1_TLS = True
+T1TLS_params = {"FF_gain_start": -20000, "FF_gain_stop": -8000, "FF_gain_steps": 101,
                     "stop_delay_us": 10, "expts": 5, "reps": 300,
                     'qubitIndex': int(str(Qubit_Pulse[0])[0])}
 

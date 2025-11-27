@@ -1,4 +1,5 @@
 import numpy as np
+from numpy import nan
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import argrelmin, argrelmax
@@ -77,7 +78,7 @@ def fit_double_beamsplitter(Z, gains, debug_fft=False):
     g_dense = np.linspace(g0, g1, N_dense)
     contrast_fit_dense = np.full((R, N_dense), np.nan, dtype=float)  # (R, N_dense)
 
-    fit_params = [None] * R
+    fit_params = [nan] * R
     pi_cands_per_r, zero_cands_per_r, perr_r = [], [], []
 
     # Densification settings
@@ -116,7 +117,7 @@ def fit_double_beamsplitter(Z, gains, debug_fft=False):
         cmin, cmax = float(np.min(c)), float(np.max(c))
         if cmax - cmin <= 0:
             # Degenerate trace – nothing to fit
-            fit_params[r] = None
+            fit_params[r] = nan
             contrast_fit[r] = np.full_like(c, np.nan, dtype=float)
             contrast_norm[r] = np.zeros_like(c, dtype=float)
             pi_cands_per_r.append([])
@@ -175,7 +176,7 @@ def fit_double_beamsplitter(Z, gains, debug_fft=False):
 
         if best_popt is None:
             # All fits failed: fall back to simple max/min indicators
-            fit_params[r] = None
+            fit_params[r] = nan
             contrast_fit[r] = np.full_like(c_norm, np.nan, dtype=float)
 
             idx_max = int(np.argmax(c_norm))
@@ -267,8 +268,6 @@ def fit_double_beamsplitter(Z, gains, debug_fft=False):
         pi_cands_per_r.append(pi_cands)
         zero_cands_per_r.append(zero_cands)
 
-    from numpy import nan
-
     def make_homogenous_nan(lst):
         max_len = max(len(x) for x in lst) if lst else 0
         return np.array([x + [nan] * (max_len - len(x)) for x in lst])
@@ -324,9 +323,9 @@ def fit_beamsplitter_offset(Z, offsets, wait_times, debug=False):
         return A * np.exp(-gamma * (x - o0)) * np.sin(w * x + phi) + offset
 
     # Storage for results
-    fit_params = [None] * R
-    contrast_norm = [None] * R
-    contrast_fit_dense = [None] * R
+    fit_params = [nan] * R
+    contrast_norm = [nan] * R
+    contrast_fit_dense = [nan] * R
     best_wait_idx_per_r = []
     zero_point_offsets = []
     zero_point_waits = []
@@ -377,11 +376,11 @@ def fit_beamsplitter_offset(Z, offsets, wait_times, debug=False):
         cmin, cmax = float(np.min(column_data)), float(np.max(column_data))
         if cmax - cmin <= 0:
             # Degenerate trace
-            fit_params[r] = None
+            fit_params[r] = nan
             contrast_norm[r] = np.zeros_like(column_data, dtype=float)
             contrast_fit_dense[r] = np.full_like(offset_dense, np.nan, dtype=float)
-            zero_point_offsets.append(None)
-            zero_point_waits.append(None)
+            zero_point_offsets.append(nan)
+            zero_point_waits.append(nan)
             twopi_cands_per_r.append([])
             pi_cands_per_r.append([])
             pihalf_cands_per_r.append([])
@@ -444,10 +443,10 @@ def fit_beamsplitter_offset(Z, offsets, wait_times, debug=False):
 
         if best_popt is None:
             # Fit failed
-            fit_params[r] = None
+            fit_params[r] = nan
             contrast_fit_dense[r] = np.full_like(offset_dense, np.nan, dtype=float)
-            zero_point_offsets.append(None)
-            zero_point_waits.append(None)
+            zero_point_offsets.append(nan)
+            zero_point_waits.append(nan)
             twopi_cands_per_r.append([])
             pi_cands_per_r.append([])
             pihalf_cands_per_r.append([])
@@ -510,21 +509,26 @@ def fit_beamsplitter_offset(Z, offsets, wait_times, debug=False):
         pi_cands_per_r.append(pi_cands)
         twopi_cands_per_r.append(twopi_cands)
 
+    def make_homogenous_nan(lst):
+        max_len = max(len(x) for x in lst) if lst else 0
+        return np.array([x + [nan] * (max_len - len(x)) for x in lst])
+
     fit = {
-        "offset_sorted": offset_sorted,
-        "offset_dense": offset_dense,
-        "best_wait_idx": best_wait_idx_per_r,
-        "zero_point_offsets": zero_point_offsets,
-        "zero_point_waits": zero_point_waits,
-        "contrast_norm": contrast_norm,
-        "contrast_fit_dense": contrast_fit_dense,
-        "fit_params": fit_params,
-        "twopi_candidates": twopi_cands_per_r,
-        "pi_candidates": pi_cands_per_r,
-        "pihalf_candidates": pihalf_cands_per_r,
-        "perrors": np.array(perr_r),
+        "offset_sorted":  np.array(offset_sorted),  # (O,)
+        "offset_dense":  np.array(offset_dense),  # (N_dense,)
+        "best_wait_idx": np.array(best_wait_idx_per_r, dtype=int),  # (R,)
+        "zero_point_offsets":  np.array(zero_point_offsets),  # (R,)
+        "zero_point_waits":  np.array(zero_point_waits),  # (R,)
+        "contrast_norm": np.array(contrast_norm),  # (R, O)
+        "contrast_fit_dense": np.array(contrast_fit_dense),  # (R, N_dense)
+        "fit_params": fit_params,  # (R, 5) with NaN rows where fit failed
+        "twopi_candidates": make_homogenous_nan(twopi_cands_per_r),  # (R,)
+        "pi_candidates": make_homogenous_nan(pi_cands_per_r),  # (R,)
+        "pihalf_candidates": make_homogenous_nan(pihalf_cands_per_r),  # (R,)
+        "perrors": np.array(perr_r),  # (R, 5)
     }
 
     return fit
+
 
 
