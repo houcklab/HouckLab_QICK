@@ -16,7 +16,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templ
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import correct_occ
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import fit_double_beamsplitter, \
-    fit_beamsplitter_offset
+    fit_beamsplitter_offset, reconstruct_double_beamsplitter_fit, reconstruct_beamsplitter_offset_fit
 
 
 class RampBeamsplitterBase(SweepExperimentND):
@@ -393,66 +393,52 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
     def _display_plot(self, data=None, fig_axs=None):
         if data is None:
             data = self.data
+        dct = data.get('data', data)
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        Z = np.asarray(data['data'][self.z_value], float)  # (R, G, T)
+        x = np.asarray(dct['expt_samples'], float)
+        y = np.asarray(dct.get("intermediate_jump_gains", dct.get("Gain_BS", None)), float)
+        Z = np.asarray(dct[self.z_value], float)
         R, G, T = Z.shape
 
-        if 'fit_params' in self.__dict__:
-            for r, ax in enumerate(axs):
-                # Fitting plotting
-                # after drawing the heatmap for readout r -> axis = ax
-                fit = self.fit_params
-                g_sorted = fit.get('g_sorted', None)
-                g_dense = fit.get('g_dense', None)
-                contrast_norm = fit.get('contrast_norm', None)
-                contrast_fit = fit.get('contrast_fit', None)
-                contrast_fit_dense = fit.get('contrast_fit_dense', None)
+        if 'popt' in dct:
+            # Load saved fit data
+            popt = dct.get('popt', np.full((R, 3), np.nan))
+            g_sorted = dct.get('g_sorted', y)
 
-                # --- Twin x-axis for contrast curves (normalized 0..1) ---
+            # Reconstruct everything
+            fit = reconstruct_double_beamsplitter_fit(popt, g_sorted, y, Z)
+
+            for r, ax in enumerate(axs):
+                # Twin axis for contrast
                 axc = ax.twiny()
                 axc.set_xlim(-0.05, 1.05)
                 axc.set_xlabel('contrast (normalized)')
                 axc.tick_params(axis='x', labelsize=8, pad=2)
 
-                if g_sorted is not None and contrast_norm is not None:
-                    # measured contrast (white solid)
-                    c_norm_row = contrast_norm[r]  # (G,)
-                    axc.plot(c_norm_row, g_sorted, color='w', lw=1.8, label='contrast (actual)')
+                if fit['contrast_norm'][r] is not None:
+                    axc.plot(fit['contrast_norm'][r], g_sorted, 'w', lw=1.8, label='contrast')
+                    if fit['contrast_fit_dense'][r] is not None:
+                        axc.plot(fit['contrast_fit_dense'][r], fit['g_dense'], 'r--', lw=1.8, label='fit')
 
-                    # fitted contrast (red dashed) if present (prefer dense version)
-                    if contrast_fit_dense is not None and g_dense is not None:
-                        y_fit_smooth = contrast_fit_dense[r]
-                        if np.isfinite(y_fit_smooth).any():
-                            axc.plot(y_fit_smooth, g_dense, 'r--', lw=1.8, label='contrast (fit)')
-                    elif contrast_fit is not None:
-                        # fallback: fit only on original points
-                        y_fit_row = contrast_fit[r]
-                        if np.isfinite(y_fit_row).any():
-                            axc.plot(y_fit_row, g_sorted, 'r--', lw=1.8, label='contrast (fit)')
+                # Phase lines
+                for yy in fit['pi'][r]:
+                    ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
+                    ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='cyan', ha='left', va='bottom',
+                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+                for yy in fit['zero'][r]:
+                    ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
+                    ax.annotate(f'0: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='yellow', ha='left', va='bottom',
+                                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
-                # --- pi and zero lines on the heatmap axis ---
-                pi_cands = fit.get('pi_candidates', [[]] * R)[r]
-                zero_cands = fit.get('zero_candidates', [[]] * R)[r]
-
-                first_pi, first_zero = True, True
-                for yy in pi_cands:
-                    ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
-                    ax.annotate(f'π: {yy:.4f}', (20, yy + 100), fontsize=16, color='w',
-                                ha='left', va='bottom')
-
-                for yy in zero_cands:
-                    ax.axhline(yy, color='w', lw=2.0, ls='--', alpha=0.95)
-                    ax.annotate(f'0: {yy:.4f}', (20, yy + 100), fontsize=16, color='w',
-                                ha='left', va='bottom')
-
-                # --- One combined legend from both axes ---
                 h1, l1 = ax.get_legend_handles_labels()
                 h2, l2 = axc.get_legend_handles_labels()
                 if h1 or h2:
-                    legend = axc.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True,
-                                       framealpha=0.8)
+                    ax.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True, framealpha=0.8)
+
         fig.canvas.draw()
 
 class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_plots):
@@ -475,94 +461,69 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
     def _display_plot(self, data=None, fig_axs=None):
         if data is None:
             data = self.data
+        dct = data.get('data', data)
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        dct = data.get('data', data)
-
-        x = np.asarray(dct['expt_samples'], float)  # wait time axis (T,)
-        y = np.asarray(dct.get('t_offset', None), float)  # (O,)  # offset time axis (O,)
-        Z = np.asarray(dct[self.z_value], float)  # (R, O, T)
+        x = np.asarray(dct['expt_samples'], float)
+        y = np.asarray(dct.get('t_offset', None), float)
+        Z = np.asarray(dct[self.z_value], float)
         R, O, T = Z.shape
 
-        if 'fit_params' in self.__dict__:
+        if 'popt' in dct:
+            # Load saved fit data
+            popt = dct.get('popt', np.full((R, 5), np.nan))
+            offset_sorted = dct.get('offset_sorted', y)
+            best_wait_idx = dct.get('best_wait_idx', np.zeros(R, dtype=int))
+
+            # Reconstruct everything
+            fit = reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, x, y, Z)
+
             for r, ax in enumerate(axs):
 
-                # Fitting results
-                fit = self.fit_params
-                offset_sorted = fit.get('offset_sorted', None)
-                offset_dense = fit.get('offset_dense', None)
-                contrast_norm = fit.get('contrast_norm', None)
-                contrast_fit_dense = fit.get('contrast_fit_dense', None)
-
-                # --- Twin x-axis for contrast curves (normalized 0..1) ---
+                # Twin axis for contrast
                 axc = ax.twiny()
                 axc.set_xlim(-0.05, 1.05)
                 axc.set_xlabel('contrast (normalized)')
                 axc.tick_params(axis='x', labelsize=8, pad=2)
 
-                if offset_sorted is not None and contrast_norm is not None:
-                    c_norm_row = contrast_norm[r]
-                    if c_norm_row is not None and np.isfinite(c_norm_row).any() and np.isfinite(offset_sorted).all():
-                        axc.plot(c_norm_row, offset_sorted, color='w', lw=1.8, alpha=0.8, label='contrast (actual)')
+                if fit['contrast_norm'][r] is not None:
+                    axc.plot(fit['contrast_norm'][r], offset_sorted, 'w', lw=1.8, label='contrast')
+                    if fit['contrast_fit_dense'][r] is not None:
+                        axc.plot(fit['contrast_fit_dense'][r], fit['offset_dense'], 'r--', lw=1.8, label='fit')
 
-                    if contrast_fit_dense is not None and offset_dense is not None:
-                        y_fit_smooth = contrast_fit_dense[r]
-                        if y_fit_smooth is not None and np.isfinite(y_fit_smooth).any() and np.isfinite(offset_dense).all():
-                            axc.plot(y_fit_smooth, offset_dense, 'r--', lw=1.8, label='contrast (fit)')
+                # Slice line
+                wait_time = x[best_wait_idx[r]]
+                ax.axvline(wait_time, color='magenta', lw=2.0, ls=':', alpha=0.8, label=f'slice: {wait_time:.1f}')
 
-                # --- Show which wait time slice was used ---
-                best_wait_idx_list = fit.get('best_wait_idx', None)
-                if best_wait_idx_list is not None and r < len(best_wait_idx_list):
-                    best_wait_idx = best_wait_idx_list[r]
-                    if best_wait_idx is not None and 0 <= best_wait_idx < len(x):
-                        wait_time_used = x[best_wait_idx]
-                        ax.axvline(wait_time_used, color='magenta', lw=2.0, ls=':', alpha=0.8)
+                # Zero point
+                if fit['zero_offsets'][r] is not None:
+                    zero_y = fit['zero_offsets'][r]
+                    if y.min() <= zero_y <= y.max():
+                        ax.plot(fit['zero_waits'][r], zero_y, 'o', color='red', markersize=10,
+                                markeredgecolor='white', markeredgewidth=2, label='zero', zorder=10)
 
-                # --- Mark the zero point ---
-                zero_point_offsets = fit.get('zero_point_offsets', None)
-                zero_point_waits = fit.get('zero_point_waits', None)
-                if zero_point_offsets is not None and r < len(zero_point_offsets):
-                    zero_offset = zero_point_offsets[r]
-                    zero_wait = zero_point_waits[r]
-                    if zero_offset is not None and zero_wait is not None:
-                        # Only plot if zero point is within the visible offset range
-                        if y.min() <= zero_offset <= y.max():
-                            ax.plot(zero_wait, zero_offset, 'o', color='red', markersize=10,
-                                    markeredgecolor='white', markeredgewidth=2,
-                                    label='zero point', zorder=10)
-
-                # --- 2π, π, and π/2 lines ---
-                twopi_cands = fit.get('twopi_candidates', [[]] * R)[r]
-                pi_cands = fit.get('pi_candidates', [[]] * R)[r]
-                pihalf_cands = fit.get('pihalf_candidates', [[]] * R)[r]
-
-                print(twopi_cands)
-
-                for yy in twopi_cands:
+                # Phase lines
+                for yy in fit['twopi'][r]:
                     ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'2π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=16, color='w', ha='left', va='bottom',
+                                fontsize=9, color='w', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
-
-                for yy in pi_cands:
+                for yy in fit['pi'][r]:
                     ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=16, color='cyan', ha='left', va='bottom',
+                                fontsize=9, color='cyan', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
-
-                for yy in pihalf_cands:
+                for yy in fit['pihalf'][r]:
                     ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
                     ax.annotate(f'π/2: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=16, color='yellow', ha='left', va='bottom',
+                                fontsize=9, color='yellow', ha='left', va='bottom',
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
-                # --- Legend ---
                 h1, l1 = ax.get_legend_handles_labels()
                 h2, l2 = axc.get_legend_handles_labels()
                 if h1 or h2:
-                    legend = axc.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8,
-                                        frameon=True, framealpha=0.8)
+                    ax.legend(h1 + h2, l1 + l2, loc='upper right', fontsize=8, frameon=True, framealpha=0.8)
 
         fig.canvas.draw()
 

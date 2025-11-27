@@ -11,6 +11,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import reconstruct_double_beamsplitter_fit, \
+    reconstruct_beamsplitter_offset_fit
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.UPDATE_CONFIG_function import update_config
 
@@ -212,20 +214,30 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
                                 cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
+        if 'popt' in data['data']:
 
-        if hasattr(experiment, 'fit_params'):
+            y = np.asarray(data['data']['t_offset'], float)
+            Z = np.asarray(data['data'][experiment.z_value], float)
+            R, O, T = Z.shape
+
+            popt = data['data']['popt']
+            offset_sorted = data['data']['offset_sorted']
+            best_wait_idx = data['data']['best_wait_idx']
+
+            fit = reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, x, y, Z)
+
             # extract optimal offsets at chosen pi point
-            chosen_pi_point_key = 'pihalf_candidates' # default
+            chosen_pi_point_key = 'pihalf' # default
             if offset_pi_coeff_choice == 1:
-                chosen_pi_point_key = 'pi_candidates'
+                chosen_pi_point_key = 'pi'
             elif offset_pi_coeff_choice == 2:
-                chosen_pi_point_key = 'twopi_candidates'
+                chosen_pi_point_key = 'twopi'
             elif offset_pi_coeff_choice == 0.5:
-                chosen_pi_point_key = 'pihalf_candidates'
+                chosen_pi_point_key = 'pihalf'
             else:
                 print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
 
-            offset_candidates = data['data'][chosen_pi_point_key]
+            offset_candidates = fit[chosen_pi_point_key]
             print(f"  Found {chosen_pi_point_key} offset for qubit {q1}: {offset_candidates[0]}")
 
             # optimal offsets - append only the candidate from the first graph
@@ -305,9 +317,17 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
 
-        if hasattr(experiment, 'fit_params'):
+        if 'popt' in data['data']:
+            y = np.asarray(data['data']["intermediate_jump_gains"], float)
+            Z = np.asarray(data['data'][experiment.z_value], float)
+            R, G, T = Z.shape
+            popt = data['data']['popt']
+            g_sorted = data['data']['g_sorted']
+
+            fit = reconstruct_double_beamsplitter_fit(popt, g_sorted, y, Z)
+
             # Get fitted gains
-            zero_candidates = data['data']['zero_candidates']
+            zero_candidates = fit['zero']
             print(f'  Found zero points for qubit {q1}: {zero_candidates[0]}')
             optimal_gains.append(zero_candidates[0]) # only append point for the first plot that is q1
 
