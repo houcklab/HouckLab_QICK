@@ -4,7 +4,7 @@ import matplotlib.gridspec as gridspec
 
 import numpy as np
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest import FFRampHoldTest
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest_wPulsePreDist import FFRampHoldTest
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
 import scipy.optimize as opt
 
@@ -12,7 +12,7 @@ import scipy.optimize as opt
 @author: Parth Jatakia
 '''
 
-class FFSingleShotSSE(ExperimentClass):
+class FFSingleShot_wPPD(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None,
                  progress=None, fast_analysis=False, disp_image = True):
@@ -30,9 +30,9 @@ class FFSingleShotSSE(ExperimentClass):
         self.mesh_grid = 0
         self.progress = progress
 
-    def acquire(self):
+    def acquire(self, plot_predist = False):
         # pull the data from the single shots
-        prog = FFRampHoldTest(self.soccfg, self.cfg)
+        prog = FFRampHoldTest(self.soccfg, self.cfg, save_loc = self.path_wDate + "_ff_predist.png", plot_debug = plot_predist )
         i_0,  shots_i, q_0, shots_q = prog.acquire(self.soc, load_pulses=True, progress=self.progress)
         data = {'config': self.cfg, 'data': {'i_arr': shots_i, 'q_arr': shots_q, "i_0": i_0, "q_0": q_0}}
         self.data = data
@@ -58,14 +58,10 @@ class FFSingleShotSSE(ExperimentClass):
             qubit_freq_mat = None
 
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
-                                           name = self.datetimestring + "final", fast = self.fast_analysis,
-                                           disp_image = self.disp_image, qubit_freq_mat= qubit_freq_mat, centers=centers, i_0_arr=i_0, q_0_arr=q_0)
+                                           name=self.datetimestring + "final", fast=self.fast_analysis,
+                                           disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat, centers=centers,
+                                           i_0_arr=i_0, q_0_arr=q_0)
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
-
-        # self.analysis_init = SingleShotAnalysis(i_0, q_0, cen_num=cen_num, outerFolder=self.path_only,
-        #                                    name=self.datetimestring + "init", num_bins=151, fast=True,
-        #                                    disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat)
-        # self.analysis_init.estimate_populations()
 
         if 'keys' in self.cfg.keys():
             # Calculating the distinctness of cluster

@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
 
 
-class FFSpecSlice_wPPD(NDAveragerProgram):
+class FFSpecSlice_wPPD_studyzeroing(NDAveragerProgram):
     def __init__(self, soccfg, cfg, plot_debug = False):
         self.plot_debug = plot_debug
         super().__init__(soccfg, cfg)
@@ -47,7 +47,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             seg_play[i] = np.mean(seg[i*points_per_play_step:(i+1)*points_per_play_step])
         return seg_play
 
-    def play_ff_pulse(self, seg1 = None, seg2 = None, seg3 = None, dt_pulseplay = 5, case = 1):
+    def play_ff_pulse(self, seg1 = None, seg2 = None, seg3 = None, dt_pulseplay = 5, case = 1, amps = None, length = None):
         """
         Plays the fast flux pulse according to the specified configuration.
 
@@ -62,6 +62,8 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             case (int, optional): The case number determining the pulse sequence.
                                   Case 1: Qubit tone is played before the fast flux pulse.
                                   Case 2 or 3: Fast flux pulse is played with the specified segments. Default is 1.
+            amps (list, optional): Used for zeroing pulse pre-distortion. Default is None.
+            length (float, optional): Used for zeroing pulse pre-distortion. Default is None.
 
         Returns:
             None
@@ -74,6 +76,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         if case == 1:
             # Nothing to play technically
             pass
+
 
         if case == 2 or case == 3:
             # Play the ff pulse
@@ -118,45 +121,22 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
                     self.safe_regwi(ff_ch_rp, ff_gain_reg, int(seg3[i]))
                     self.pulse(ch=self.cfg["ff_ch"])
 
-    def play_ff_zeroing_pulse(self, amps = None, length = None):
-        """
-        Plays the fast flux zeroing pulse based on the provided amplitudes and length.
-
-        This method plays a zeroing pulse for the fast flux channel. The zeroing pulse is used to
-        counteract any residual effects of the fast flux pulse. The pulse is played in segments, with each segment
-        having a specified amplitude and duration.
-
-        Parameters:
-            amps (list or numpy array, optional): A list of amplitudes for the zeroing pulse segments. Each amplitude
-                                                  corresponds to a segment of the pulse. Default is None.
-            length (float, optional): The duration (in microseconds) of each segment of the zeroing pulse. If not
-                                      provided, the method does not play the pulse. Default is None.
-
-        Returns:
-            None
-        """
-        # Get the gain register for the ff channel
-        ff_ch_rp = self.ch_page(self.cfg["ff_ch"])
-        ff_gain_reg = self.sreg(self.cfg["ff_ch"], "gain")
-
-        if self.cfg.get('zeroing_pulse', False) and amps is not None and length is not None:
-            # Play the zeroing pulse
-            ts = self.get_timestamp(gen_ch=self.cfg['ff_ch'])
-            length = max(length, 0.05)
-            max_length = min(self.us2cycles(1, gen_ch=self.cfg['ff_ch']),
-                             self.us2cycles(length, gen_ch=self.cfg['ff_ch']))
-            for i in range(len(amps)):
-                if i == 0:
-                    self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, stdysel='last',
-                                             gain=int(amps[i]), length=max_length)
-                    self.pulse(ch=self.cfg["ff_ch"], t=ts)
-                else:
-                    self.safe_regwi(ff_ch_rp, ff_gain_reg, int(amps[i]))
-                    self.pulse(ch=self.cfg["ff_ch"], t=ts)
-                ts = ts + self.us2cycles(length)
-            self.safe_regwi(ff_ch_rp, ff_gain_reg, int(0))
-            self.pulse(ch=self.cfg["ff_ch"], t=ts)
-
+            if self.cfg.get('zeroing_pulse', False) and amps is not None and length is not None:
+                # Play the zeroing pulse
+                ts = self.get_timestamp(gen_ch=self.cfg['ff_ch'])
+                length = max(length, 0.05)
+                max_length = min(self.us2cycles(1, gen_ch=self.cfg['ff_ch']), self.us2cycles(length, gen_ch=self.cfg['ff_ch']))
+                for i in range(len(amps)):
+                    if i == 0 :
+                        self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, stdysel='last',
+                                                 gain=int(amps[i]), length=max_length)
+                        self.pulse(ch=self.cfg["ff_ch"], t = ts)
+                    else:
+                        self.safe_regwi(ff_ch_rp, ff_gain_reg, int(amps[i]))
+                        self.pulse(ch=self.cfg["ff_ch"], t = ts)
+                    ts = ts + self.us2cycles(length)
+                self.safe_regwi(ff_ch_rp, ff_gain_reg, int(0))
+                self.pulse(ch=self.cfg["ff_ch"], t=ts)
 
     def build_ff_pulse(self, dt_pulsedef = 0.25, dt_pulseplay = 5):
         """
@@ -169,8 +149,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         3. Post-FF delay
 
         The pulse is constructed using small-time steps where the amplitude is constant. The method also handles
-        pre-distortion of the waveform if enabled in the configuration. The method then also computes the zeroing pulses
-        required.
+        pre-distortion of the waveform if enabled in the configuration.
 
         Parameters:
             dt_pulsedef (float, optional): Time step in microseconds for building the pulse. Default is 0.25.
@@ -205,122 +184,50 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
                                                       tau4 = self.cfg.get("tau4", 1076.0),
                                                       x_val = dt_pulsedef)
 
-        # Case 1 : if the qubit tone is played before the fast flux pulse
-        if self.cfg["qubit_spec_delay"] + self.qubit_pulse_length < self.cfg["pre_ff_delay"]:
-            self.case = 1
-            # No need to play the fast flux pulse yet and the pulse shape ends after the end of readout
-            total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg["pre_meas_delay"] + self.cfg['read_length'] # in us
-            pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
-            waveform = pb.waveform()
-            if self.cfg.get("pulse_pre_dist", False):
-                waveform = model.predistort(waveform)
-            # Save it as an object attribute
-            self.seg1_play = None
-            self.seg2_play = None
-            self.seg3_play = None
+        self.case = 3
 
-        # Case 2 : if the qubit tone is played during the fast flux pulse
-        elif (self.cfg["qubit_spec_delay"] + self.qubit_pulse_length >= self.cfg["pre_ff_delay"]  and
-              self.cfg["qubit_spec_delay"] <= self.cfg["pre_ff_delay"] + self.cfg["ff_length"] + 2*self.cfg['ff_ramp_length']):
+        # Play the full fast flux pulse ant the pulse shape plays after the end of readout
+        total_time = self.cfg["pre_ff_delay"] + 2*self.cfg["ff_ramp_length"] + self.cfg["ff_length"] + self.cfg["pre_meas_delay"] + self.cfg['read_length']
+        pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
+        pb.add_trapezoid(start = self.cfg["pre_ff_delay"], rise = self.cfg["ff_ramp_length"],
+                            flat = self.cfg["ff_length"] ,
+                            fall = self.cfg["ff_ramp_length"], amp = self.cfg["ff_gain"])
+        waveform = pb.waveform()
+        if self.cfg.get("pulse_pre_dist", False):
+            waveform = model.predistort(waveform)
 
-            self.case = 2
+        seg1_end = int(self.cfg["pre_ff_delay"]/dt_pulsedef) + 1
+        seg2_beg = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"])/dt_pulsedef) + 1
+        seg2_end = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"] + self.cfg["ff_length"])/dt_pulsedef) + 1
+        seg3_beg = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"] + self.cfg["ff_length"] + self.cfg["ff_ramp_length"])/dt_pulsedef) + 1
+        seg1 = waveform[0:seg1_end]
+        seg2 = waveform[seg2_beg:seg2_end]
+        seg3 = waveform[seg3_beg:]
 
-            # Play fast flux pulse only till the qubit pulse is done and pulse shape plays after the end of readout
-            total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg["pre_meas_delay"] + self.cfg['read_length']
-            pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
-            # Some comments on the flat : It is set such that we dont need to play the full ff pulse if the qubit
-            # pulse ends before that. If the qubit pulse is happening while the ff is being ramped up then we let the
-            # ramping get finished, and we ramp down but the flat is zero A padding is added after the qubit pulse so
-            # that the aliasing of the ff pulse does not create any timing issue.
-            pb.add_trapezoid(start = self.cfg["pre_ff_delay"], rise = self.cfg["ff_ramp_length"],
-                             flat = max(min(self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"]), self.cfg["ff_length"]),0),
-                             fall = self.cfg["ff_ramp_length"], amp = self.cfg["ff_gain"])
-            waveform = pb.waveform()
+        # Play the full ff pulse
+        seg1_play = self.create_avg_segs(seg1, dt_pulsedef, dt_pulseplay)
+        seg2_play = self.create_avg_segs(seg2, dt_pulsedef, dt_pulseplay)
+        seg3_play = self.create_avg_segs(seg3, dt_pulsedef, dt_pulseplay)
 
-            # Pre distort the waveform
-            if self.cfg.get("pulse_pre_dist", False):
-                waveform = model.predistort(waveform)
+        # Add one more seg to seg3_pplay with value zero
+        seg3_play = np.append(seg3_play, 0)
 
-            seg1_end = int(self.cfg["pre_ff_delay"]/dt_pulsedef)
-            seg2_beg = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"])/dt_pulsedef)
-            seg2_end = int((max(min(self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"]), self.cfg["ff_length"]),0) + self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"] )/dt_pulsedef)
-            seg3_beg = int((max(min(self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"]), self.cfg["ff_length"]),0) + self.cfg["pre_ff_delay"] + 2*self.cfg["ff_ramp_length"])/dt_pulsedef)
-            seg1 = waveform[0:seg1_end]
-            seg2 = waveform[seg2_beg:seg2_end]
-            seg3 = waveform[seg3_beg:]
+        # Save it as an object attribute
+        self.seg1_play = seg1_play
+        self.seg2_play = seg2_play
+        self.seg3_play = seg3_play
 
-            # Creating the play segments
-            seg1_play = self.create_avg_segs(seg1, dt_pulsedef, dt_pulseplay)
-            seg2_play = self.create_avg_segs(seg2, dt_pulsedef, dt_pulseplay)
-            seg3_play = self.create_avg_segs(seg3, dt_pulsedef, dt_pulseplay)
+        # Adding one more seg to seg3_pplay with value zero
+        seg3_play = np.append(seg3_play, 0)
 
-            # Add one more seg to seg3_pplay with value zero
-            # seg3_play = np.append(seg3_play, 0)
+        # Define the ff pulses
+        self.cfg["ff_ramp_start"] = int(seg1_play[-1])
+        self.cfg['ff_ramp_stop'] = int(seg2_play[0])
+        PulseFunctions.create_ff_ramp(self, reversed=False)
+        self.cfg["ff_ramp_stop"] = int(seg2_play[-1])
+        self.cfg['ff_ramp_start'] = int(seg3_play[0])
+        PulseFunctions.create_ff_ramp(self, reversed=True)
 
-            # Save it as an object attribute
-            self.seg1_play = seg1_play
-            self.seg2_play = seg2_play
-            self.seg3_play = seg3_play
-
-            # Define the ff pulses
-            self.cfg["ff_ramp_start"] = int(seg1_play[-1]) if len(seg1_play) >0 else 0
-            self.cfg['ff_ramp_stop'] = int(seg2_play[0]) if len(seg2_play) >0 else self.cfg["ff_gain"]
-            PulseFunctions.create_ff_ramp(self, reversed=False)
-            self.cfg["ff_ramp_stop"] = int(seg2_play[-1]) if len(seg2_play) >0 else self.cfg["ff_gain"]
-            self.cfg['ff_ramp_start'] = int(seg3_play[0]) if len(seg3_play) >0 else 0
-            PulseFunctions.create_ff_ramp(self, reversed=True)
-
-        # Case 3 : if the qubit tone is played after the fast flux pulse
-        elif self.cfg["qubit_spec_delay"] > self.cfg["pre_ff_delay"] + self.cfg["ff_length"] + 2*self.cfg['ff_ramp_length']:
-            self.case = 3
-
-            # Play the full fast flux pulse ant the pulse shape plays after the end of readout
-            total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg["pre_meas_delay"] + self.cfg['read_length']
-            pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
-            pb.add_trapezoid(start = self.cfg["pre_ff_delay"], rise = self.cfg["ff_ramp_length"],
-                                flat = self.cfg["ff_length"] ,
-                                fall = self.cfg["ff_ramp_length"], amp = self.cfg["ff_gain"])
-            waveform = pb.waveform()
-            if self.cfg.get("pulse_pre_dist", False):
-                waveform = model.predistort(waveform)
-
-            seg1_end = int(self.cfg["pre_ff_delay"]/dt_pulsedef) + 1
-            seg2_beg = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"])/dt_pulsedef) + 1
-            seg2_end = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"] + self.cfg["ff_length"])/dt_pulsedef) + 1
-            seg3_beg = int((self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"] + self.cfg["ff_length"] + self.cfg["ff_ramp_length"])/dt_pulsedef) + 1
-            seg1 = waveform[0:seg1_end]
-            seg2 = waveform[seg2_beg:seg2_end]
-            seg3 = waveform[seg3_beg:]
-
-            # Play the full ff pulse
-            seg1_play = self.create_avg_segs(seg1, dt_pulsedef, dt_pulseplay)
-            seg2_play = self.create_avg_segs(seg2, dt_pulsedef, dt_pulseplay)
-            seg3_play = self.create_avg_segs(seg3, dt_pulsedef, dt_pulseplay)
-
-            # Add one more seg to seg3_pplay with value zero
-            # seg3_play = np.append(seg3_play, 0)
-
-            # Save it as an object attribute
-            self.seg1_play = seg1_play
-            self.seg2_play = seg2_play
-            self.seg3_play = seg3_play
-
-            # Adding one more seg to seg3_pplay with value zero
-            seg3_play = np.append(seg3_play, 0)
-
-            # Define the ff pulses
-            self.cfg["ff_ramp_start"] = int(seg1_play[-1])
-            self.cfg['ff_ramp_stop'] = int(seg2_play[0])
-            PulseFunctions.create_ff_ramp(self, reversed=False)
-            self.cfg["ff_ramp_stop"] = int(seg2_play[-1])
-            self.cfg['ff_ramp_start'] = int(seg3_play[0])
-            PulseFunctions.create_ff_ramp(self, reversed=True)
-
-        else:
-            raise Exception(f"Weird timing issue with the qubit and fast flux pulse.The timings are as follows "
-                            f"- qubit_spec_delay : {self.cfg['qubit_spec_delay']} us, qubit pulse length : "
-                            f"{self.qubit_pulse_length} us, pre_ff_delay : {self.cfg['pre_ff_delay']} us, ff_length :"
-                            f" {self.cfg['ff_length']} us")
 
         if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
             x_pulse = waveform
@@ -416,28 +323,23 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         # by the documentation)
         self.sync_all(self.us2cycles(10))
 
-        # play qubit spec pulse
-        self.pulse(ch=self.cfg["qubit_ch"], t=qubit_spec_delay_cycles)
-
-        # Measure the qubit
-        # BEFORE RUNNING THIS MAKE SURE YOU HAVE CORRECTED THE BUG IN THE MEASURE QICK COMMAND
-        # WHERE THE TRIGGER DOES NOT PLAY AT TIME T
-        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     t=read_after_cycle, wait=False)
+        # # play qubit spec pulse
+        # self.pulse(ch=self.cfg["qubit_ch"], t=qubit_spec_delay_cycles)
 
         # Play ff pulse ( Code it after the measure and qubit tone so that the RFSOC plays all pulses correctly. What
         # I have noticed is that in the other case the measure pulse is delayed dependent on how many pulses are
         # there in the RFSOC
         self.play_ff_pulse(seg1=self.seg1_play, seg2=self.seg2_play, seg3=self.seg3_play,
-                           dt_pulseplay=self.cfg.get('dt_pulseplay', 5), case=self.case)
+                           dt_pulseplay=self.cfg.get('dt_pulseplay', 5), case=self.case, amps = getattr(self, 'amps', None), length = getattr(self, 'length', None))
 
         self.sync_all(self.us2cycles(1))
+        self.pulse(ch=self.cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(1))
+        # Measure the qubit
+        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
+                     t=0, wait=True, syncdelay=self.us2cycles(self.cfg['relax_delay']))
 
-        # Play zeroing pulse if applicable
-        if self.cfg.get('zeroing_pulse', False):
-            self.play_ff_zeroing_pulse(amps = getattr(self, 'amps', None), length = getattr(self, 'length', None))
 
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
 # ====================================================== #
     # Template config dictionary, used in GUI for initial values
@@ -480,19 +382,20 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
 
 # ====================================================== #
 
-class FFSpecSlice_Experiment_wPPD(ExperimentClass):
+class FFSpecSlice_Experiment_wPPD_studyzeroing(ExperimentClass):
     """
     Perform qubit spectroscopy during a fast flux pulse.
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):
+
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress=False, debug=False, plot_debug = False):
         self.soc.reset_gens()
-        prog = FFSpecSlice_wPPD(self.soccfg, self.cfg, plot_debug=plot_debug)
+        prog = FFSpecSlice_wPPD_studyzeroing(self.soccfg, self.cfg, plot_debug=plot_debug)
 
         if 'pre_meas_delay' not in self.cfg:
             self.cfg['pre_meas_delay'] = 2

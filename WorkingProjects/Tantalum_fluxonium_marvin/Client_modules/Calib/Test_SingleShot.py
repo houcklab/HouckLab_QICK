@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.1235,#1.6,
+    "yokoVoltage": -0.1205,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 80,  # us
-    "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6671.61,#509,#7391.96,#7392.36,#957,
+    "read_length": 30,  # us
+    "read_pulse_gain": 9000,  # [DAC units]
+    "read_pulse_freq": 6671.25,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -59,16 +59,16 @@ UpdateConfig = {
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 30000,
+    "qubit_gain": 15000,
     "qubit_length": 1,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 1125,
-    "relax_delay": 10,
+    "qubit_freq": 1010,
+    "relax_delay": 1000,
     'qubit_mode_periodic' : False,
 
     # define shots
-    "shots": 50000,  ### this gets turned into "reps"
+    "shots": 10000,  ### this gets turned into "reps"
     "cen_num": 2,
     "keys": ['kl'],
     # Added for switch
@@ -277,26 +277,26 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.1235,
-    'yokoVoltage_freqPoint': -0.1235,
+    "yokoVoltage": -0.1205,
+    'yokoVoltage_freqPoint': -0.1285,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 60,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 6671.61,
+    "read_length": 35,
+    "read_pulse_gain": 11000,
+    "read_pulse_freq": 6671.25,
 
     # Qubit Tone
-    "qubit_freq_start": 1050,
-    "qubit_freq_stop": 1200,
-    "RabiNumPoints": 31,
+    "qubit_freq_start": 900,
+    "qubit_freq_stop": 1100,
+    "RabiNumPoints": 41,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
     'qubit_length': 0.5,
     "relax_delay": 10,
-    "initialize_qubit_gain" : 20000,
-    "qubit_freq_base": 1125,
+    "initialize_qubit_gain" : 30000,
+    "qubit_freq_base": 1010,
 
     # amplitude rabi parameters
     "qubit_gain_start": 1000,
@@ -305,7 +305,7 @@ UpdateConfig = {
 
     # define number of clusters to use
     "cen_num": 2,
-    "shots": 6000,
+    "shots": 10000,
     "use_switch": False,
     'initialize_pulse': True,
     'fridge_temp': 10,
@@ -429,20 +429,20 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.12,
+    "yokoVoltage": -0.1205,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 20,  # us
-    "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6671.58,
+    "read_length": 25,  # us
+    "read_pulse_gain": 11000,  # [DAC units]
+    "read_pulse_freq": 6671.25,
     "mode_periodic" : False,
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_ge_gain": 6000,
+    "qubit_ge_gain": 15000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 942,
+    "qubit_ge_freq": 1010,
     "qubit_ef_freq": 110,
     "apply_ge": True,
     "apply_ef": False,
@@ -453,7 +453,7 @@ UpdateConfig = {
     # Experiment
     "cen_num": 2,
     "keys": ['kl'],           # Possible keys ["mahalanobis", "bhattacharyya", "kl", "hellinger"]
-    "shots": 10000,
+    "shots": 30000,
     "use_switch": False,
 
 }
@@ -480,17 +480,17 @@ inst_singleshotopt.save_config()
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.6, config["read_pulse_freq"]+ 0.1 ),
     'read_length': (10, 70),
-    'read_pulse_gain': (4000, 8000)
+    'read_pulse_gain': (4000, 20000)
 }
 step_size = {
     "read_pulse_freq" : 0.02,
     'read_length': 10,
     'read_pulse_gain': 1000,
 }
-keys = [ "read_pulse_freq", "read_pulse_gain"]
+keys = ["read_pulse_gain"]
 
 
-config["shots"] = 15000
+config["shots"] = 40000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_WTF", outerFolder=outerFolder, cfg=config,
                                        soc=soc, soccfg=soccfg, fast_analysis=True)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )

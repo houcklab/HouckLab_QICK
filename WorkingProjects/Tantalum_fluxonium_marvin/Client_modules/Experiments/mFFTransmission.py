@@ -38,8 +38,8 @@ class mFFTransmission(NDAveragerProgram):
 
         # Define the fast flux ramp. For now, just linear ramp is supported
         if self.cfg["ff_ramp_style"] == "linear":
-            PulseFunctions.create_ff_ramp(self, reversed = False)
-            PulseFunctions.create_ff_ramp(self, reversed = True)
+            PulseFunctions.create_ff_ramp(self, reversed=False)
+            PulseFunctions.create_ff_ramp(self, reversed=True)
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
