@@ -33,17 +33,17 @@ class RampBeamsplitterBase(SweepExperimentND):
 
     def set_up_instance(self):
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
 
-        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
         if isinstance(t_offset, int):
             # this won't do anything because we are offsetting every channel relative to the channel with the least offset
             t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
         elif not isinstance(t_offset, (list, np.ndarray, tuple)):
             raise TypeError('t_offset must be an int or array like of ints')
 
-
+        # print(t_offset)
         t_offset -= np.min(t_offset)
         print("Actual offsets:", t_offset)
 
@@ -77,7 +77,7 @@ class RampBeamsplitterR1D(RampBeamsplitterBase, SweepExperiment1D_lines):
     # def debug(self, prog):
     #     print(prog)
     def analyze(self, data, **kwargs):
-        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
         t_offset -= np.min(t_offset)
         self.data['data']['all_t_offset'] = t_offset
 
@@ -363,7 +363,7 @@ class RampDoubleJumpBase(RampBeamsplitterBase):
 
         for i in range(len(self.cfg["IDataArray2"])):
             self.cfg["IDataArray2"][i] = np.pad(self.cfg["IDataArray2"][i], (t_offset[i], 0), mode='constant',
-                                            constant_values=self.cfg["IDataArray1"][i][self.cfg['expt_samples1']-1])
+                                            constant_values=gains_expt[i])
 
         if not self.plotted_jumps:
             fig, ax = plt.subplots()
@@ -386,7 +386,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
     def analyze(self, data):
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)  # (R, G, T)
-        gains = np.asarray(data_dict['intermediate_jump_gains'], float)  # (G,)
+        gains = np.asarray(data_dict[SweepHelpers.key_savename(self.y_key)], float)  # (G,)
         self.fit_params = fit_double_beamsplitter(Z, gains)
         data_dict.update(self.fit_params)
 
@@ -397,8 +397,8 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        x = np.asarray(dct['expt_samples'], float)
-        y = np.asarray(dct.get("intermediate_jump_gains", dct.get("Gain_BS", None)), float)
+        x = np.asarray(dct[self.loop_names[0]], float)
+        y = np.asarray(dct.get(SweepHelpers.key_savename(self.y_key)), float)
         Z = np.asarray(dct[self.z_value], float)
         R, G, T = Z.shape
 
@@ -452,10 +452,10 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
     def analyze(self, data):
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)  # (R, O, T)
-        offsets = np.asarray(data_dict.get('t_offset', None), float)  # (O,)  # (O,)
-        wait_times = np.asarray(data_dict['expt_samples'], float)  # (T,)
+        offsets = np.asarray(data_dict.get(SweepHelpers.key_savename(self.y_key), None), float)  # (O,)  # (O,)
+        wait_times = np.asarray(data_dict[self.loop_names[0]], float)  # (T,)
 
-        self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times, debug=True)
+        self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times)
         data_dict.update(self.fit_params)
 
     def _display_plot(self, data=None, fig_axs=None):
@@ -465,8 +465,8 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        x = np.asarray(dct['expt_samples'], float)
-        y = np.asarray(dct.get('t_offset', None), float)
+        x = np.asarray(dct[self.loop_names[0]], float)
+        y = np.asarray(dct.get(SweepHelpers.key_savename(self.y_key), None), float)
         Z = np.asarray(dct[self.z_value], float)
         R, O, T = Z.shape
 
@@ -538,7 +538,7 @@ class RampDoubleJump_BS_GainR(RampDoubleJumpBase, GainSweepOscillationsR):
 
 class RampDoubleJumpR1D(RampDoubleJumpBase, SweepExperiment1D_lines):
     def analyze(self, data, **kwargs):
-        t_offset = np.asarray(self.cfg['t_offset'], dtype=int)
+        t_offset = np.array(self.cfg['t_offset'], dtype=int)
         t_offset -= np.min(t_offset)
         self.data['data']['all_t_offset'] = t_offset
         self.data['data']['all_intermediate_samples'] = self.cfg['intermediate_jump_samples']

@@ -262,7 +262,7 @@ def create_calibration_summary_dashboard(Qubit_configs, additional_qubit_data, c
         expt.acquire()
         expt.display(plotDisplay=False, ax=ax_ff)
     except Exception as e:
-        ax_ff.text(0.5, 0.5, f"Calculate FF Failed {e}. (Culprit usually Q3 frequency too high >4323)",
+        ax_ff.text(0.5, 0.5, f"Calculate FF Failed {e}.",
                    ha='center', va='center',
                    transform=ax_ff.transAxes)
         print(f"Calculate FF Failed: {e}")
@@ -795,14 +795,14 @@ def run_enhanced_calibration(
         Rabi_params['max_gain'] *= 1.4
 
     SS_R_params = {
-        "Shots": 200, 'relax_delay': 150,
+        "Shots": 400, 'relax_delay': 150,
         "gain_start": 200, "gain_stop": 1400, "gain_pts": 8,
         "span": 1, "trans_pts": 5, 'number_of_pulses': 1,
         'qubit_sweep_index': OptReadout_index
     }
 
     SS_Q_params = {
-        "Shots": 200, 'relax_delay': 150,
+        "Shots": 400, 'relax_delay': 150,
         "q_gain_span": 2 * 1000, "q_gain_pts": 7,
         "q_freq_span": 2 * 3, "q_freq_pts": 7,
         'number_of_pulses': 1,
@@ -934,7 +934,7 @@ if __name__ == "__main__":
     ##### Calibration Parameters #####
     ##################################
     qubits_to_calibrate = [1,2,3,4,5,6,7,8]
-    varname_FF          = 'Readout_1234_FF'
+    varname_FF          = 'Readout_1245_FF'
 
     run_transmission    = t
     run_coarse_spec     = t
@@ -946,7 +946,7 @@ if __name__ == "__main__":
     run_singleshot      = t
 
     enable_refinement   = f
-    print_summary       = t
+    print_summary       = f
 
     CalibrationConfig.MAX_REFINEMENT_ITERATIONS = 1 # 1 is default
     ##################################

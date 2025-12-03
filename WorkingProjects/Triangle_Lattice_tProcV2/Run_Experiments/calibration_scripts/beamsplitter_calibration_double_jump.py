@@ -13,6 +13,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experim
     SingleShotFFMUX
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Beamsplitter_Fit import reconstruct_double_beamsplitter_fit, \
     reconstruct_beamsplitter_offset_fit
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.UPDATE_CONFIG_function import update_config
 
@@ -25,19 +26,20 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
 
 
 calibrate_gain                  = True
-calibrate_intermediate_offset   = False
-calibrate_intermediate_gain     = False
+calibrate_intermediate_offset   = True
+calibrate_intermediate_gain     = True
 
 
 
-beamsplitter_point = '1234_correlations'
+# beamsplitter_point = '1234_correlations'
 ijump_point        = '1234_intermediate'
+beamsplitter_point = '1245_correlations'
 
 # rungs = ['34_dis', '78_dis']
 # rungs = ['23_dis', '45_dis', '67_dis']
 # rungs = ['23_dis', '67_dis']
-rungs = ['12', '34', '56', '78']
-
+# rungs = ['12', '34', '56', '78']
+rungs = ['12_dis', '45_dis']
 
 offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
 
@@ -53,10 +55,10 @@ double_jump_base = {'reps': 200, 'ramp_time': 1000,
 double_jump_BS_gain_dict = {'t_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                             'gainRange': 3000, 'gainNumPoints': 11}
 
-double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 4, 'samples_step': 1}
+double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 40, 'samples_step': 1}
 
 
-double_jump_intermediate_gain_dict = {'gainRange': 20000, 'gainNumPoints': 11}
+double_jump_intermediate_gain_dict = {'gainRange': 20000, 'gainNumPoints': 25}
 
 ###############################
 
@@ -216,7 +218,8 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
         if 'popt' in data['data']:
 
-            y = np.asarray(data['data']['t_offset'], float)
+            x = np.asarray(data['data'][experiment.loop_names[0]], float)
+            y = np.asarray(data['data'][SweepHelpers.key_savename(experiment.y_key)], float)
             Z = np.asarray(data['data'][experiment.z_value], float)
             R, O, T = Z.shape
 
@@ -224,7 +227,10 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
             offset_sorted = data['data']['offset_sorted']
             best_wait_idx = data['data']['best_wait_idx']
 
+            print("fFit offset params: {x, y, z}")
+
             fit = reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, x, y, Z)
+            print(f'offset fit popt: {popt}')
 
             # extract optimal offsets at chosen pi point
             chosen_pi_point_key = 'pihalf' # default
@@ -238,10 +244,14 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
                 print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
 
             offset_candidates = fit[chosen_pi_point_key]
-            print(f"  Found {chosen_pi_point_key} offset for qubit {q1}: {offset_candidates[0]}")
 
-            # optimal offsets - append only the candidate from the first graph
-            optimal_offsets.append(offset_candidates[0])
+            if len(offset_candidates) == 0 or len(offset_candidates[0]) == 0:
+                print(f"No offset {chosen_pi_point_key} candidates found for qubit {q1}")
+            else:
+                print(f"  Found {chosen_pi_point_key} offset for qubit {q1}: {offset_candidates[0]}")
+                optimal_offsets.append(offset_candidates[0])
+        else:
+            print(f"No offset fitting achieved for qubit {q1}")
 
     return swept_qubits, optimal_offsets
 
@@ -318,7 +328,7 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
 
         if 'popt' in data['data']:
-            y = np.asarray(data['data']["intermediate_jump_gains"], float)
+            y = np.asarray(data['data'][SweepHelpers.key_savename(experiment.y_key)], float)
             Z = np.asarray(data['data'][experiment.z_value], float)
             R, G, T = Z.shape
             popt = data['data']['popt']
@@ -326,10 +336,18 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
             fit = reconstruct_double_beamsplitter_fit(popt, g_sorted, y, Z)
 
+            print(f"Gain fit: {popt}")
+
             # Get fitted gains
             zero_candidates = fit['zero']
-            print(f'  Found zero points for qubit {q1}: {zero_candidates[0]}')
-            optimal_gains.append(zero_candidates[0]) # only append point for the first plot that is q1
+
+            if len(zero_candidates) == 0 or len(zero_candidates[0]) == 0:
+                print(f'No zero candidates for qubit {q1}')
+            else:
+                print(f'  Found zero points for qubit {q1}: {zero_candidates[0]}')
+                optimal_gains.append(zero_candidates[0]) # only append point for the first plot that is q1
+        else:
+            print(f'  No gain fitting achieved for qubit {q1}')
 
     return swept_qubits, optimal_gains
 
@@ -379,7 +397,6 @@ if calibrate_gain:
     # update BS gains
     BS_FF = new_gains
 
-
     print(f'old gains: {list(old_gains)}')
     print(f'new gains:')
 
@@ -393,24 +410,44 @@ if calibrate_intermediate_offset:
 
     swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
 
-    # print(f"Found optimal offsets: {zip(swept_qubits, offsets)}")
-    #
-    # for i in range(len(swept_qubits)):
-    #     if len(offsets[i]) > 0:
-    #         double_jump_base['intermediate_jump_samples'][swept_qubits[i]] = offsets[i][0] # This always takes the first candidate (shortest offset time)
-    #
-    # print(f"Set intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
+    if any(offset for offset in offsets):
+        print(f"Found optimal offsets: {list(zip(swept_qubits, offsets))}")
+
+        for i in range(len(swept_qubits)):
+            if len(offsets[i]) > 0:
+                double_jump_base['intermediate_jump_samples'][swept_qubits[i] - 1] = int(np.round(offsets[i][0])) # This always takes the first candidate (shortest offset time)
+
+        print(f"Set intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
+    else:
+        print(f"No intermediate jump offsets fit.")
+
 
 if calibrate_intermediate_gain:
     swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs)
 
-    # print(f"Found optimal gains: {zip(swept_qubits, gains)}")
-    #
-    # for i in range(len(swept_qubits)):
-    #     if len(offsets[i]) > 0:
-    #         double_jump_base['intermediate_jump_gains'][swept_qubits[i]] = gains[i][0]# This always takes the first candidate (shortest offset time)
-    #
-    # print(f"Set intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
+    if any(offset for offset in gains):
+        print(f"Found optimal gains: {list(zip(swept_qubits, gains))}")
+
+        for i in range(len(swept_qubits)):
+            if len(gains[i]) > 0:
+                double_jump_base['intermediate_jump_gains'][swept_qubits[i] - 1] = int(np.round(gains[i][0])) # This always takes the first candidate (shortest offset time)
+
+        print(f"Set intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
+    else:
+        print(f"No intermediate jump gains fit.")
+
+
+# Final Print Summary section for easy viewing
+print("#" * 18)
+if calibrate_gain:
+    print("Calibrated Gains:")
+    print(f"\t'{beamsplitter_point}': {{'BS':{{'BS_FF': {list([int(x) for x in BS_FF])}}}}}")
+if calibrate_intermediate_offset:
+    print("Calibrated Intermediate Offsets:")
+    print(f"\tFinal intermediate jump offsets: {double_jump_base['intermediate_jump_samples']}")
+if calibrate_intermediate_gain:
+    print("Calibrated Intermediate Gains:")
+    print(f"\tFinal intermediate jump gains: {double_jump_base['intermediate_jump_gains']}")
 
 
 plt.show(block=True)
