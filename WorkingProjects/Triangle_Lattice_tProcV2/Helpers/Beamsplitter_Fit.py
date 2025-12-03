@@ -66,71 +66,97 @@ def reconstruct_double_beamsplitter_fit(popt, g_sorted, gains_unsorted, Z):
     }
 
 def fit_double_beamsplitter(Z, gains):
-        """Fit double beamsplitter to sqrt(cos^2 + d^2 sin^2)."""
-        R, G, T = Z.shape
+    """Fit double beamsplitter to sqrt(cos^2 + d^2 sin^2)."""
+    R, G, T = Z.shape
 
-        if np.ndim(gains) == 0:
-            gains = np.array([gains])
-        if G < 2:
-            return {'popt': np.full((R, 3), np.nan), 'g_sorted': gains}
-
-        order = np.argsort(gains)
-        g_sorted = gains[order]
-        g0, g1 = float(g_sorted[0]), float(g_sorted[-1])
-        span = max(g1 - g0, 1.0)
-
-        def model(x, dpar, w, phi):
-            return np.sqrt(np.cos(w * x + phi) ** 2 + (dpar ** 2) * np.sin(w * x + phi) ** 2)
-
-        popt_array = np.full((R, 3), np.nan)
-
-        for r in range(R):
-            Z_r = Z[r, order, :]
-            contrast = np.max(Z_r, axis=1) - np.min(Z_r, axis=1)
-
-            cmin, cmax = float(np.min(contrast)), float(np.max(contrast))
-            if cmax - cmin <= 0:
-                continue
-
-            c_norm = (contrast - cmin) / (cmax - cmin)
-
-            # Densify if needed
-            if G < 15:
-                g_dense = np.concatenate([g_sorted, (g_sorted[:-1] + g_sorted[1:]) / 2])
-                c_dense = np.concatenate([c_norm, (c_norm[:-1] + c_norm[1:]) / 2])
-                order_dense = np.argsort(g_dense)
-                g_fit, c_fit = g_dense[order_dense], c_dense[order_dense]
-            else:
-                g_fit, c_fit = g_sorted, c_norm
-
-            # Estimate frequency from FFT
-            fft = np.fft.rfft(c_fit - np.mean(c_fit))
-            freqs = np.fft.rfftfreq(len(c_fit), d=np.mean(np.diff(g_fit)))
-            w_guess = 2 * np.pi * freqs[np.argmax(np.abs(fft[1:])) + 1]
-
-            # Multi-start fit
-            bounds = ([0, 0, -10 * np.pi], [1, np.inf, 10 * np.pi])
-            best_popt, best_resid = None, np.inf
-
-            for d0 in [0.1, 0.5, 0.9]:
-                for w0 in [w_guess * f for f in [0.5, 1, 1.5, 2]]:
-                    for phi0 in [0, np.pi / 4, np.pi / 2, -np.pi / 2]:
-                        try:
-                            p0 = [d0, w0, phi0]
-                            popt, _ = curve_fit(model, g_fit, c_fit, p0=p0, bounds=bounds, maxfev=20000)
-                            resid = np.sum((model(g_fit, *popt) - c_fit) ** 2)
-                            if resid < best_resid:
-                                best_resid, best_popt = resid, popt
-                        except:
-                            continue
-
-            if best_popt is not None:
-                popt_array[r] = best_popt
-
+    # Normalize gains input
+    if np.ndim(gains) == 0:
+        gains = np.array([gains])
+    if G < 2:
         return {
-            'popt': popt_array,
-            'g_sorted': g_sorted
+            'popt': np.full((R, 3), np.nan),
+            'pcov': np.full((R, 3, 3), np.nan),
+            'g_sorted': gains
         }
+
+    # Sort gains
+    order = np.argsort(gains)
+    g_sorted = gains[order]
+    g0, g1 = float(g_sorted[0]), float(g_sorted[-1])
+    span = max(g1 - g0, 1.0)
+
+    # Model
+    def model(x, dpar, w, phi):
+        return np.sqrt(
+            np.cos(w * x + phi)**2 +
+            (dpar**2) * np.sin(w * x + phi)**2
+        )
+
+    # Allocate result arrays
+    popt_array = np.full((R, 3), np.nan)
+    pcov_array = np.full((R, 3, 3), np.nan)
+
+    # Loop over readouts
+    for r in range(R):
+        Z_r = Z[r, order, :]
+        contrast = np.max(Z_r, axis=1) - np.min(Z_r, axis=1)
+
+        cmin, cmax = float(np.min(contrast)), float(np.max(contrast))
+        if cmax - cmin <= 0:
+            continue
+
+        c_norm = (contrast - cmin) / (cmax - cmin)
+
+        # Densify if needed
+        if G < 15:
+            g_dense = np.concatenate([g_sorted, (g_sorted[:-1] + g_sorted[1:]) / 2])
+            c_dense = np.concatenate([c_norm, (c_norm[:-1] + c_norm[1:]) / 2])
+            order_dense = np.argsort(g_dense)
+            g_fit = g_dense[order_dense]
+            c_fit = c_dense[order_dense]
+        else:
+            g_fit, c_fit = g_sorted, c_norm
+
+        # FFT guess for w
+        fft = np.fft.rfft(c_fit - np.mean(c_fit))
+        freqs = np.fft.rfftfreq(len(c_fit), d=np.mean(np.diff(g_fit)))
+        w_guess = 2 * np.pi * freqs[np.argmax(np.abs(fft[1:])) + 1]
+
+        # Multi-start
+        bounds = ([0, 0, -10 * np.pi], [1, np.inf, 10 * np.pi])
+        best_popt, best_pcov = None, None
+        best_resid = np.inf
+
+        for d0 in [0.1, 0.5, 0.9]:
+            for w0 in [w_guess * f for f in [0.5, 1, 1.5, 2]]:
+                for phi0 in [0, np.pi/4, np.pi/2, -np.pi/2]:
+                    try:
+                        p0 = [d0, w0, phi0]
+                        popt, pcov = curve_fit(
+                            model, g_fit, c_fit,
+                            p0=p0, bounds=bounds, maxfev=20000
+                        )
+
+                        resid = np.sum((model(g_fit, *popt) - c_fit)**2)
+
+                        if resid < best_resid:
+                            best_resid = resid
+                            best_popt = popt
+                            best_pcov = pcov
+
+                    except:
+                        continue
+
+        # Save best result
+        if best_popt is not None:
+            popt_array[r] = best_popt
+            pcov_array[r] = best_pcov
+
+    return {
+        'popt': popt_array,
+        'pcov': pcov_array,
+        'g_sorted': g_sorted
+    }
 
 def reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, wait_times, offsets_unsorted, Z):
     """Reconstruct all fit data from minimal saved parameters (simple: origin as zero)."""
@@ -209,7 +235,12 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
     if np.ndim(offsets) == 0:
         offsets = np.array([offsets])
     if O < 2:
-        return {'popt': np.full((R, 5), np.nan), 'offset_sorted': offsets, 'best_wait_idx': np.zeros(R, dtype=int)}
+        return {
+            'popt': np.full((R, 5), np.nan),
+            'pcov': np.full((R, 5, 5), np.nan),
+            'offset_sorted': offsets,
+            'best_wait_idx': np.zeros(R, dtype=int)
+        }
 
     order = np.argsort(offsets)
     offset_sorted = offsets[order]
@@ -220,12 +251,18 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
         return A * np.exp(-gamma * (x - o0)) * np.sin(w * x + phi) + offset
 
     # Find first column with oscillations
-    avg_contrasts = np.mean([np.max(Z[r, order, :], axis=0) - np.min(Z[r, order, :], axis=0) for r in range(R)],
-                            axis=0)
+    avg_contrasts = np.mean(
+        [np.max(Z[r, order, :], axis=0) - np.min(Z[r, order, :], axis=0) for r in range(R)],
+        axis=0
+    )
     threshold = 0.85 * np.max(avg_contrasts)
-    first_col_idx = next((t for t in range(T) if avg_contrasts[t] >= threshold), int(np.argmax(avg_contrasts)))
+    first_col_idx = next(
+        (t for t in range(T) if avg_contrasts[t] >= threshold),
+        int(np.argmax(avg_contrasts))
+    )
 
     popt_array = np.full((R, 5), np.nan)
+    pcov_array = np.full((R, 5, 5), np.nan)
     best_wait_idx_array = np.full(R, first_col_idx, dtype=int)
 
     for r in range(R):
@@ -241,31 +278,47 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
         # Estimate frequency
         smoothed = gaussian_filter1d(c_norm, sigma=2.0) if len(c_norm) > 5 else c_norm
         order_freq = max(2, len(c_norm) // 15)
-        n_extrema = len(argrelmin(smoothed, order=order_freq)[0]) + len(argrelmax(smoothed, order=order_freq)[0])
+        n_extrema = (
+            len(argrelmin(smoothed, order=order_freq)[0]) +
+            len(argrelmax(smoothed, order=order_freq)[0])
+        )
         n_periods = max(1, n_extrema / 2.0)
         w_guess = 2 * np.pi * n_periods / span
 
         # Multi-start fit
-        bounds = ([0, 0, -10 * np.pi, -1, 0], [2, np.inf, 10 * np.pi, 2, 1.0])
-        best_popt, best_resid = None, np.inf
+        bounds = ([0, 0, -10 * np.pi, -1, 0],
+                  [2, np.inf, 10 * np.pi, 2, 1.0])
+        best_popt, best_pcov = None, None
+        best_resid = np.inf
 
         for w0 in [w_guess * f for f in [0.5, 1, 1.5, 2]]:
             for phi0 in [-np.pi / 2 - w_guess * o0, 0, -np.pi / 2]:
                 for gamma0 in [0.0, 0.01]:
                     try:
                         p0 = [0.5, w0, phi0, 0.5, gamma0]
-                        popt, _ = curve_fit(sine_model, offset_sorted, c_norm, p0=p0, bounds=bounds, maxfev=20000)
+                        popt, pcov = curve_fit(
+                            sine_model,
+                            offset_sorted,
+                            c_norm,
+                            p0=p0,
+                            bounds=bounds,
+                            maxfev=20000
+                        )
                         resid = np.sum((sine_model(offset_sorted, *popt) - c_norm) ** 2)
                         if resid < best_resid:
-                            best_resid, best_popt = resid, popt
+                            best_resid = resid
+                            best_popt = popt
+                            best_pcov = pcov
                     except:
                         continue
 
         if best_popt is not None:
             popt_array[r] = best_popt
+            pcov_array[r] = best_pcov
 
     return {
         'popt': popt_array,
+        'pcov': pcov_array,
         'offset_sorted': offset_sorted,
         'best_wait_idx': best_wait_idx_array
     }

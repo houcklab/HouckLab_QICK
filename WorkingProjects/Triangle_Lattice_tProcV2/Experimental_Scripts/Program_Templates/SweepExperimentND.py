@@ -52,7 +52,7 @@ class SweepExperimentND(ExperimentClass):
         pass
 
 
-    def _display_plot(self, data, fig, axs):
+    def _display_plot(self, data, fig, axs, plot_fit):
         print("Display not implemented for this experiment: did you mean to inherit one of the plotting classes?")
     
     def _update_fig(self, data, fig, axs):
@@ -263,7 +263,7 @@ class SweepExperimentND(ExperimentClass):
         # plt.show(block=True)
         pass
 
-    def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):
+    def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None, plot_fit=False):
         readout_list = data["data"]["Qubit_Readout_List"]
 
         # Create a new figure if you did not pass in your own fig and axs.
@@ -274,7 +274,7 @@ class SweepExperimentND(ExperimentClass):
         
         # Run the corresponding display code
         if plotDisp or plotSave:
-            self._display_plot(data, fig_axs = (fig, axs))
+            self._display_plot(data, fig_axs = (fig, axs), plot_fit = plot_fit)
 
         if plotSave:
             plt.savefig(self.iname[:-4] + '.png')

@@ -149,7 +149,7 @@ def calibrate_rung_gains(BS_FF, rungs):
 
     return swept_qubits, center_gains
 
-def calibrate_rung_intermediate_offset(BS_FF, rungs):
+def calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=False):
 
     print(f'BS_FF {BS_FF}')
 
@@ -214,7 +214,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
         experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
                                 cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
-        data = experiment.acquire_display_save(plotDisp=True, block=False)
+        data = experiment.acquire_display_save(plotDisp=True, block=False, plot_fit=plot_fit)
 
         if 'popt' in data['data']:
 
@@ -255,7 +255,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
     return swept_qubits, optimal_offsets
 
-def calibrate_rung_intermediate_gains(BS_FF, rungs):
+def calibrate_rung_intermediate_gains(BS_FF, rungs,  plot_fit=False):
 
     print(f'BS_FF {BS_FF}')
 
@@ -324,7 +324,7 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
         experiment = RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
                               cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg)
-        data = experiment.acquire_display_save(plotDisp=True, block=False)
+        data = experiment.acquire_display_save(plotDisp=True, block=False, plot_fit=False)
 
 
         if 'popt' in data['data']:
@@ -408,7 +408,7 @@ if calibrate_gain:
 
 if calibrate_intermediate_offset:
 
-    swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
+    swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=True)
 
     if any(offset for offset in offsets):
         print(f"Found optimal offsets: {list(zip(swept_qubits, offsets))}")
@@ -423,7 +423,7 @@ if calibrate_intermediate_offset:
 
 
 if calibrate_intermediate_gain:
-    swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs)
+    swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs, plot_fit=True)
 
     if any(offset for offset in gains):
         print(f"Found optimal gains: {list(zip(swept_qubits, gains))}")

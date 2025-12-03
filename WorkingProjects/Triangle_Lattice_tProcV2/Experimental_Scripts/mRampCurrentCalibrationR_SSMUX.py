@@ -390,7 +390,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         self.fit_params = fit_double_beamsplitter(Z, gains)
         data_dict.update(self.fit_params)
 
-    def _display_plot(self, data=None, fig_axs=None):
+    def _display_plot(self, data=None, fig_axs=None, plot_fit=False):
         if data is None:
             data = self.data
         dct = data.get('data', data)
@@ -402,7 +402,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         Z = np.asarray(dct[self.z_value], float)
         R, G, T = Z.shape
 
-        if 'popt' in dct:
+        if 'popt' in dct and plot_fit:
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 3), np.nan))
             g_sorted = dct.get('g_sorted', y)
@@ -458,7 +458,7 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times)
         data_dict.update(self.fit_params)
 
-    def _display_plot(self, data=None, fig_axs=None):
+    def _display_plot(self, data=None, fig_axs=None, plot_fit=False):
         if data is None:
             data = self.data
         dct = data.get('data', data)
@@ -470,7 +470,7 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         Z = np.asarray(dct[self.z_value], float)
         R, O, T = Z.shape
 
-        if 'popt' in dct:
+        if 'popt' in dct and plot_fit:
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 5), np.nan))
             offset_sorted = dct.get('offset_sorted', y)
