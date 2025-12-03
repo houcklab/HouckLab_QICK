@@ -217,14 +217,14 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.1202,
-    "yokoVoltage_freqPoint": -0.1202,
+    "yokoVoltage": -0.148,
+    "yokoVoltage_freqPoint": -0.148,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 35,
-    "read_pulse_gain": 10000,
-    "read_pulse_freq": 6671.25,
+    "read_length": 25,
+    "read_pulse_gain": 5500,
+    "read_pulse_freq": 6671.49,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
@@ -232,10 +232,10 @@ UpdateConfig = {
     "qubit_length": 4,
     "sigma": 0.02,
     "flat_top_length": 4,
-    "qubit_freq": 1024,
+    "qubit_freq": 2120,
 
     # Experiment
-    "shots": 500000,
+    "shots": 2000000,
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
@@ -253,27 +253,29 @@ inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFold
                    soc=soc, soccfg=soccfg)
 
 data_QNDmeas = inst_qnd.acquire()
-data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.995)
+data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.99)
 inst_qnd.save_data(data_QNDmeas)
 inst_qnd.save_config()
 inst_qnd.display(data_QNDmeas, plotDisp=True)
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2 ),
-    'read_length': (20, 40),
-    'read_pulse_gain': (8000, 9000)
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.1 , config["read_pulse_freq"] + 0.1  ),
+    'read_length': (10, 50),
+    'read_pulse_gain': (4000, 8000)
 }
 step_size = {
-    "read_pulse_freq" : 0.04,
+    "read_pulse_freq" : 0.025,
     'read_length': 5,
-    'read_pulse_gain': 200,
+    'read_pulse_gain': 500,
 }
-keys = ["read_length", "read_pulse_gain"]
+keys = ["read_pulse_gain", "read_length"]
 config["shots"] = 200000
+soc.reset_gens()
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True, confidence_selection = 0.95)
 inst_qndopt.brute_search_result_display(display = True)
+
 
 #%%
 # TITLE : Sweep Flux
@@ -285,8 +287,8 @@ UpdateConfig = {
     # cavity
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 10000,
-    "read_pulse_freq": 6671.25,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6670.47,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
@@ -294,7 +296,7 @@ UpdateConfig = {
     "qubit_length": 4,
     "sigma": 0.02,
     "flat_top_length":1,
-    "qubit_freq": 1010,
+    "qubit_freq": 1960,
 
     # Experiment
     "shots": 100000,
@@ -312,8 +314,8 @@ UpdateConfig = {
     # cavity
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 10000,
-    "read_pulse_freq": 6671.25,  # 6253.8,
+    "read_pulse_gain": 3000,
+    "read_pulse_freq": 6670.47,  # 6253.8,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",  # Constant pulse
@@ -323,8 +325,8 @@ UpdateConfig = {
     "qubit_length": 0.5,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 800,
-    "qubit_freq_stop": 1200,
+    "qubit_freq_start": 1800,
+    "qubit_freq_stop": 2200,
     "SpecNumPoints": 101,  # Number of points
     'spec_reps': 4000,  # Number of repetition
     "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
@@ -338,11 +340,11 @@ UpdateConfig = {
 }
 config_spec = BaseConfig | UpdateConfig
 
-yoko_range = np.linspace(-0.1205, -0.1195, 21)
+yoko_range = np.linspace(-0.14, -0.15, 51)
 qnd_list = []
 qnd0_list = []
 qnd1_list = []
-outerFolderQND = outerFolder + "QND_Flux_Sweep2\\"
+outerFolderQND = outerFolder + "QND_Flux_Sweep3\\"
 for i in range(yoko_range.size):
     # Set yoko
     yoko1.SetVoltage(yoko_range[i])

@@ -18,6 +18,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFF_T1
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSingleShot_wPulsePreDist import FFSingleShot_wPPD
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFTransmission_wPulsePreDist import FFTransmission
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFPopulateProbe_wPulsePreDist import FFPopulateProbe
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFStarkShift_wPulsePreDist import FFStarkShift_Experiment_wPPD
 
 # Define the saving path
 outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\" # end in \\
@@ -191,18 +192,18 @@ UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
     "read_length": 25,                # [us]
-    "read_pulse_gain": 9500,         # [DAC units]
-    "read_pulse_freq": 6671.25,     # [MHz]
+    "read_pulse_gain": 5500,         # [DAC units]
+    "read_pulse_freq": 6671.49,     # [MHz]
     "ro_mode_periodic" : False,
 
     # Qubit spec parameters
-    "qubit_freq_start": 950,        # [MHz]
-    "qubit_freq_stop": 1100,         # [MHz]
+    "qubit_freq_start": 1000,        # [MHz]
+    "qubit_freq_stop": 3000,         # [MHz]
     "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.50,                  # [us], used with "arb" and "flat_top"
-    "qubit_length": 0.5,               # [us], used with "const"
+    "qubit_length": 1,               # [us], used with "const"
     "flat_top_length": 10,        # [us], used with "flat_top"
-    "qubit_gain": 25000,             # [DAC units]
+    "qubit_gain": 20000,             # [DAC units]
     "qubit_ch": 1,                   # RFSOC output channel of qubit drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
@@ -211,7 +212,7 @@ UpdateConfig = {
 
     # Fast flux pulse parameters
     "ff_gain": 10000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 10000,                  # [us] Total length of positive fast flux pulse
+    "ff_length": 20,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "ramp",
     "ff_ramp_length" : 0.05,
@@ -219,22 +220,22 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "pre_meas_delay": 2,
 
-    "yokoVoltage": -0.1202,           # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -0.148,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 20,               # [us]
-    "qubit_freq_expts": 31,         # number of points
-    "reps": 500,
+    "qubit_freq_expts": 301,         # number of points
+    "reps": 1000,
     "pulse_pre_dist": True,
     "use_switch": False,
     'negative_pulse': False,
-    'dt_pulseplay': 5,
+    'dt_pulseplay': 0.2,
     "zeroing_pulse": True,
     'dt_pulsedef': 0.01,
     "zeroing_a_max": 30000,
 
     # Sweep through the dac values for ff
-    "ff_gain_start": 0,
-    "ff_gain_stop": -25000,
-    "ff_gain_num_points": 3,
+    "ff_gain_start": -5000,
+    "ff_gain_stop": 5000,
+    "ff_gain_num_points": 11,
 }
 config = BaseConfig | UpdateConfig
 yoko1.SetVoltage(config["yokoVoltage"])
@@ -580,6 +581,75 @@ data_ffpopprob = inst_FFPopulateProbe.process()
 inst_FFPopulateProbe.save_data(data_ffpopprob)
 inst_FFPopulateProbe.save_config()
 print(f"Temperature is {data_ffpopprob['data']['mean_temp'][1,0]} mK")
+
+#%%
+# TITLE :  Stark shift slice with Pulse Predistortion
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 25,  # [us]
+    "read_pulse_gain": 5500,  # 5600,  # [DAC units]
+    "read_pulse_freq": 6671.49,  # [MHz]
+
+    # Fast flux pulse parameters
+    "ff_ramp_style": "linear",  # one of ["linear"]
+    "ff_ramp_start": 0,  # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+    "ff_ramp_stop": 4000,  # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+    "ff_hold": 20,  # [us] Delay between fast flux ramps
+    "ff_ch": 6,  # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+    "ff_ramp_length": 0.02,  # [us] Half-length of ramp to use when sweeping gain
+
+    # Optional qubit pulse before measurement, intende0 as pi/2 to populate both blobs
+    "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
+    "qubit_freq": 2120,  # [MHz] Frequency of qubit pulse
+    "sigma": 0.5,
+    "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
+    "qubit_length": 8,  # [us], used with "const"
+    "qubit_gain": 3000,  # [DAC units]
+
+    # Populate Pulse Details
+    "pop_pulse_length": 30,  # [us]
+    "pop_pulse_gain": 0,  # [DAC units]
+    "pop_pulse_freq": 6671.49,  # [MHz]
+    'pop_relax_delay' : 50,
+
+    # Qubit frequency sweep
+    "qubit_freq_start": 1850,  # [MHz]
+    "qubit_freq_stop": 1950,  # [MHz]
+    "qubit_freq_expts": 51,  # number of points
+
+    # General parameters
+    "yokoVoltage": -0.148,  # [V] Yoko voltage for magnet offset of flux
+    "relax_delay_2": 200,  # [us] Relax delay after second readout
+    "reps": 3000,
+    "pulse_pre_dist": True,
+    'dt_pulseplay': 0.5,  # This should be proportional to the qubit spec delay definitions
+    "zeroing_pulse": True,
+    'dt_pulsedef': 0.01,
+    "zeroing_a_max": 30000,
+}
+config = BaseConfig | UpdateConfig
+yoko1.SetVoltage(config["yokoVoltage"])
+soc.reset_gens()
+#%%
+inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config,soc=soc,soccfg=soccfg,
+                                            outerFolder = outerFolder, progress = True)
+data_ffstark = inst_ffstark.acquire(progress = True, plot_debug=False)
+inst_ffstark.display(data_ffstark, plot_disp=True)
+inst_ffstark.save_data(data_ffstark)
+inst_ffstark.save_config()
+print(inst_ffstark.qubit_peak_freq)
+plt.show()
+#%%
+# TITLE : Stark shift vs pop gain
+inst_ffstark_popgain = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config,soc=soc,soccfg=soccfg,
+                                            outerFolder = outerFolder, progress = True)
+sweep_key = 'pop_pulse_gain'
+sweep_values = np.linspace(0,5000, 3, dtype = int)
+data_ffstark_popgain = inst_ffstark_popgain.acquire_2d(sweep_key=sweep_key, sweep_values=sweep_values)
+inst_ffstark_popgain.save_data(data_ffstark_popgain)
+inst_ffstark_popgain.save_config()
 
 #%%
 # TITLE : Sweeping flux

@@ -43,13 +43,13 @@ soc, soccfg = makeProxy()
 # TITLE: Basic Single Shot Experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.1205,#1.6,
+    "yokoVoltage": -0.144,#1.6,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 30,  # us
-    "read_pulse_gain": 9000,  # [DAC units]
-    "read_pulse_freq": 6671.25,#509,#7391.96,#7392.36,#957,
+    "read_pulse_gain": 6000,  # [DAC units]
+    "read_pulse_freq": 6671.49,#509,#7391.96,#7392.36,#957,
     "mode_periodic": False,
 
     # MIST
@@ -59,12 +59,12 @@ UpdateConfig = {
 
     # qubit spec
     "qubit_pulse_style": "const",
-    "qubit_gain": 15000,
-    "qubit_length": 1,  ###us, this is used if pulse style is const
+    "qubit_gain": 20000,
+    "qubit_length": 2,  ###us, this is used if pulse style is const
     "sigma": 1,  ### units us
     "flat_top_length": 5,  ### in us
-    "qubit_freq": 1010,
-    "relax_delay": 1000,
+    "qubit_freq": 1960,
+    "relax_delay": 30,
     'qubit_mode_periodic' : False,
 
     # define shots
@@ -79,7 +79,7 @@ config = BaseConfig | UpdateConfig
 
 yoko1.SetVoltage(config["yokoVoltage"])
 #%% Basic Single Shot
-# plt.close('all')
+plt.close('all')
 scan_time = (config["relax_delay"] * config["shots"] * 2) * 1e-6 / 60
 
 print('estimated time: ' + str(round(scan_time, 2)) + ' minutes')
@@ -429,20 +429,20 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
 # TITLE: Single Shot Optimize
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -0.1205,
+    "yokoVoltage": -0.148,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 25,  # us
-    "read_pulse_gain": 11000,  # [DAC units]
-    "read_pulse_freq": 6671.25,
+    "read_length": 30,  # us
+    "read_pulse_gain": 5500,  # [DAC units]
+    "read_pulse_freq": 6671.49,
     "mode_periodic" : False,
 
     # qubit spec
     "qubit_pulse_style": "const",
     "qubit_ge_gain": 15000,
     "qubit_ef_gain": 1,
-    "qubit_ge_freq": 1010,
+    "qubit_ge_freq": 2120,
     "qubit_ef_freq": 110,
     "apply_ge": True,
     "apply_ef": False,
@@ -478,16 +478,16 @@ inst_singleshotopt.save_config()
 # TITLE Running automatic optimization
 # config["read_pulse_freq"] = 6248.5
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.6, config["read_pulse_freq"]+ 0.1 ),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 1.1, config["read_pulse_freq"]+ 0.2 ),
     'read_length': (10, 70),
     'read_pulse_gain': (4000, 20000)
 }
 step_size = {
-    "read_pulse_freq" : 0.02,
+    "read_pulse_freq" : 0.05,
     'read_length': 10,
     'read_pulse_gain': 1000,
 }
-keys = ["read_pulse_gain"]
+keys = ["read_pulse_freq"]
 
 
 config["shots"] = 40000

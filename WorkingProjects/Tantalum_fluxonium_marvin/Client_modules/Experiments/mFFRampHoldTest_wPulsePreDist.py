@@ -311,9 +311,8 @@ class FFRampHoldTest(NDAveragerProgram):
         # Declare channels
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["ff_ch"], nqz=self.cfg["ff_nqz"])  # Fast flux
-        if self.cfg["qubit_pulse"]:  # Optional qubit pulse
-            self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
-            PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq"])
+        self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
+        PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq"])
 
         # Declare readout
         for ch in self.cfg["ro_chs"]:

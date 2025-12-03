@@ -9,13 +9,13 @@ import sys
 import matplotlib
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
-from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
 
 
-class FFRampHoldPopTest(NDAveragerProgram):
+class mFFStarkShift(NDAveragerProgram):
     def __init__(self, soccfg, cfg, save_loc=None, plot_debug=True):
         self.plot_debug = plot_debug
         self.save_loc = save_loc
@@ -204,16 +204,14 @@ class FFRampHoldPopTest(NDAveragerProgram):
                                                       tau4 = self.cfg.get("tau4", 1076.0),
                                                       x_val = dt_pulsedef)
 
-        total_time = (self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
-                      + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"] + self.cfg[
-                          'pop_pulse_length'] + self.cfg['pop_relax_delay']
+        total_time = (self.cfg["ff_ramp_length"] + self.cfg["ff_hold"] + self.cfg[
+                          'pop_pulse_length'] + self.cfg['pop_relax_delay'] + self.cfg["qubit_length"]
                       + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + 3*dt_pulseplay)  # in us
         pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
         pb.add_trapezoid(
-            start=self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"] + self.cfg[
-                'relax_delay_1'],
+            start=0,
             rise=self.cfg["ff_ramp_length"],
-            flat=self.cfg["ff_hold"] + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay'],
+            flat=self.cfg["ff_hold"] + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay'] + self.cfg["qubit_length"] + dt_pulseplay,
             fall=self.cfg["ff_ramp_length"], amp=self.cfg["ff_gain"])
         waveform = pb.waveform()
 
@@ -221,17 +219,14 @@ class FFRampHoldPopTest(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             waveform = model.predistort(waveform)
 
-        seg1_end = int((self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
-                        + self.cfg['relax_delay_1']) / dt_pulsedef) + 1
-        seg2_beg = int((self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
-                        + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"]) / dt_pulsedef) + 1
-        seg2_end = int((self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
-                        + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
-                        + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay']) / dt_pulsedef) + 1
-        seg3_beg = int((self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
-                        + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
+        seg1_end = 0
+        seg2_beg = int((self.cfg["ff_ramp_length"]) / dt_pulsedef) + 1
+        seg2_end = int((self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
                         + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay']
-                        + self.cfg["ff_ramp_length"]) / dt_pulsedef) + 1
+                        + self.cfg["qubit_length"] ) / dt_pulsedef) + 1
+        seg3_beg = int((self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
+                        + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay']
+                        + self.cfg["qubit_length"] + self.cfg['ff_ramp_length']) / dt_pulsedef) + 1
         seg1 = waveform[0:seg1_end]
         seg2 = waveform[seg2_beg:seg2_end]
         seg3 = waveform[seg3_beg:]
@@ -254,7 +249,7 @@ class FFRampHoldPopTest(NDAveragerProgram):
         # seg3_play = np.append(seg3_play, 0)
 
         # Define the ff pulses
-        self.cfg["ff_ramp_start"] = int(seg1_play[-1])
+        self.cfg["ff_ramp_start"] = 0
         self.cfg['ff_ramp_stop'] = int(seg2_play[0])
         PulseFunctions.create_ff_ramp(self, reversed=False)
         self.cfg["ff_ramp_stop"] = int(seg2_play[-1])
@@ -323,7 +318,13 @@ class FFRampHoldPopTest(NDAveragerProgram):
         self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
         self.declare_gen(ch=self.cfg["ff_ch"], nqz=self.cfg["ff_nqz"])  # Fast flux
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
-        PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq"])
+
+        # Create the sweep over qubit frequency
+        qubit_freq_reg = self.get_gen_reg(self.cfg["qubit_ch"], "freq")
+        self.add_sweep(QickSweep(self, qubit_freq_reg, self.cfg["qubit_freq_start"],
+                                 self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"]))
+
+        self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq_start"])
 
         # Declare readout
         for ch in self.cfg["ro_chs"]:
@@ -350,24 +351,16 @@ class FFRampHoldPopTest(NDAveragerProgram):
 
     def body(self):
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
-        read1_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"])
-        read2_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"]
-                                             + self.cfg["read_length"] + self.cfg['relax_delay_1']
-                                             + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
-                                             + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay']
-                                             + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'])
-        pop_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"]
-                                           + self.cfg["read_length"] + self.cfg['relax_delay_1']
-                                           + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"])
 
-        self.pulse(ch=self.cfg["qubit_ch"], t=0)
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"],
-                                 freq=self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
-                                                    ro_ch=self.cfg["ro_chs"][0]), phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["ro_chs"][0]))
-        self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     t=read1_length_cycles, wait=False, syncdelay=None)
+        pop_length_cycles = self.us2cycles(self.cfg["ff_ramp_length"] + self.cfg["ff_hold"])
+        qubit_cycles = self.us2cycles(self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
+                                      + self.cfg['pop_pulse_length'])
+        read_length_cycles = self.us2cycles( self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
+                                             + self.cfg['pop_pulse_length'] + self.cfg['pop_relax_delay']
+                                             + self.cfg["qubit_length"]
+                                             + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'])
+
+        self.pulse(ch=self.cfg["qubit_ch"], t=qubit_cycles)
 
         # Play the populating pulse
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"],
@@ -384,7 +377,7 @@ class FFRampHoldPopTest(NDAveragerProgram):
                                  gain=self.cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["ro_chs"][0]))
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
-                     t=read2_length_cycles, wait=False, syncdelay=None)
+                     t=read_length_cycles, wait=False, syncdelay=None)
 
         # Play the fast flux pulse
         self.play_ff_pulse(self.seg1_play, self.seg2_play, self.seg3_play, dt_pulseplay=self.cfg.get('dt_pulseplay', 5))
@@ -397,87 +390,269 @@ class FFRampHoldPopTest(NDAveragerProgram):
 
         self.sync_all(self.us2cycles(self.cfg["relax_delay_2"]))
 
-    # Override acquire such that we can collect the single-shot data
-    def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=None,
-                save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+class FFStarkShift_Experiment_wPPD(ExperimentClass):
+    """
+    Perform qubit spectroscopy during a fast flux pulse.
+    """
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress)  # qick update, debug=debug)
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
+                 progress=None, short_directory_names = False):
 
-        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        data = self.get_raw()
-        shots_i0 = np.array(data)[0, :, 0, 0] / length
-        shots_q0 = np.array(data)[0, :, 0, 1] / length
-        shots_i1 = np.array(data)[0, :, 1, 0] / length
-        shots_q1 = np.array(data)[0, :, 1, 1] / length
-        i_0 = shots_i0
-        i_1 = shots_i1
-        q_0 = shots_q0
-        q_1 = shots_q1
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
+                         config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
-        return i_0, i_1, q_0, q_1
+    def acquire(self, progress=False, debug=False, plot_debug = False):
+        self.soc.reset_gens()
+        prog = mFFStarkShift(self.soccfg, self.cfg, save_loc=self.path_wDate + "_ff_predist.png", plot_debug=plot_debug)
 
+        if 'pre_meas_delay' not in self.cfg:
+            self.cfg['pre_meas_delay'] = 2
 
-if __name__ == '__main__':
-    from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
+        # Collect the data
+        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
+                                         readouts_per_experiment=1, save_experiments=None,
+                                         start_src="internal", progress=progress)
 
-    print("Running the Ramp - Hold - DeRamp Test")
-    soc, soccfg = makeProxy()
-    soc.reset_gens()
+        self.qubit_freqs = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"],
+                                       self.cfg["qubit_freq_expts"])
 
-    SwitchConfig = {
-        "trig_buffer_start": 0.05,  # 0.035, # in us
-        "trig_buffer_end": 0.04,  # 0.024, # in us
-        "trig_delay": 0.07,  # in us
-    }
+        sig  = avgi[0][0] + 1j * avgq[0][0]
+        mag = np.abs(sig)
 
-    BaseConfig = BaseConfig | SwitchConfig
+        # Fit mag with a lorentzian to find peak frequency
+        try:
+            from scipy.optimize import curve_fit
 
-    outerFolder = r"Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
+            def lorentzian(x, x0, gamma, a, b):
+                return a * gamma ** 2 / ((x - x0) ** 2 + gamma ** 2) + b
+            p0 = [self.qubit_freqs[np.argmax(mag)], ( self.qubit_freqs[-1] -  self.qubit_freqs[0])/4, max(mag)-min(mag), min(mag)]
+            # print(p0)
+            popt, _ = curve_fit(lorentzian, self.qubit_freqs, mag,
+                                p0=p0)
+            self.qubit_peak_freq = popt[0]  # x0 is the peak frequency
+            self.popt = popt
+        except Exception as e:
+            print(f"Failed to fit with Lorentzian: {e}")
+            self.popt = None
+            self.qubit_peak_freq = self.qubit_freqs[np.argmax(mag)]
 
-    UpdateConfig = {
-        # Readout section
-        "read_pulse_style": "const",  # --Fixed
-        "read_length": 20,  # [us]
-        "read_pulse_gain": 30000,  # 5600,  # [DAC units]
-        "read_pulse_freq": 6671.71,  # [MHz]
+        # self.qubit_peak_freq = self.qubit_freqs[np.argmax(mag)]
 
-        # Fast flux pulse parameters
-        "ff_ramp_style": "linear",  # one of ["linear"]
-        "ff_ramp_start": 0,  # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-        "ff_ramp_stop": -32000,  # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-        "ff_hold": 50,  # [us] Delay between fast flux ramps
-        "ff_ch": 6,  # RFSOC output channel of fast flux drive
-        "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
-        "ff_ramp_length": 2,  # [us] Half-length of ramp to use when sweeping gain
+        data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq, 'mag': mag, 'qubit_peak_freq': self.qubit_peak_freq}}
+        self.data = data
 
-        # Optional qubit pulse before measurement, intende0 as pi/2 to populate both blobs
-        "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
-        "qubit_freq": 512,  # [MHz] Frequency of qubit pulse
-        "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
-        "sigma": 0.50,  # [us], used with "arb" and "flat_top"
-        "qubit_length": 0.5,  # [us], used with "const"
-        "flat_top_length": 1,  # [us], used with "flat_top"
-        "qubit_gain": 1000,  # [DAC units]
+        return data
 
-        # Ramp sweep parameters
-        "yokoVoltage": -0.115,  # [V] Yoko voltage for magnet offset of flux
-        "relax_delay_1": 0.1,  # - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
-        "relax_delay_2": 10 - BaseConfig["adc_trig_offset"],  # [us] Relax delay after second readout
+    def display(self, data=None, plot_disp = False, fig_num = 1, **kwargs):
 
-        # General parameters
-        "reps": 100,
-    }
+        if data is None:
+            data = self.data
 
-    config = BaseConfig | UpdateConfig
+        x_pts = data['data']['x_pts']
+        avgi = data['data']['avgi']
+        avgq = data['data']['avgq']
+        sig  = avgi[0][0] + 1j * avgq[0][0]
+        avgsig = np.abs(sig)
+        avgphase = np.angle(sig, deg=True)
+        while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
+            fig_num += 1
+        fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
 
-    prog = FFRampHoldPopTest(soccfg, config)
+        ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
+        axs[0].set_ylabel("deg")
+        axs[0].set_xlabel("Qubit Frequency (GHz)")
+        axs[0].legend()
 
-    try:
-        a, b, c, d = prog.acquire(soc, threshold=None, angle=None, load_pulses=True, save_experiments=None,
-                                  start_src="internal", progress=True)
-    except Exception:
-        print("Pyro traceback:")
-        print("".join(Pyro4.util.getPyroTraceback()))
+        ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
+        # Check if fit was done
+        if self.popt is not None:
+            fit_y = self.popt[2] * self.popt[1] ** 2 / ((x_pts - self.popt[0]) ** 2 + self.popt[1] ** 2) + self.popt[3]
+            axs[1].plot(x_pts, fit_y, 'r--', label="Lorentzian Fit")
+        axs[1].set_ylabel("ADC units")
+        axs[1].set_xlabel("Qubit Frequency (GHz)")
+        axs[1].legend()
 
-    print(a.shape)
+        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
+        axs[2].set_ylabel("ADC units")
+        axs[2].set_xlabel("Qubit Frequency (GHz)")
+        axs[2].legend()
+
+        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
+        axs[3].set_ylabel("ADC units")
+        axs[3].set_xlabel("Qubit Frequency (GHz)")
+        axs[3].legend()
+
+        plt.tight_layout()
+        fig.subplots_adjust(top=0.95)
+        plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
+
+        plt.savefig(self.iname)
+
+        if plot_disp:
+            plt.show(block=False)
+            plt.pause(2)
+
+        else:
+            fig.clf(True)
+            plt.close(fig)
+
+    def acquire_2d(self,
+                   sweep_key: str,
+                   sweep_values,
+                   live_plot: bool = True,
+                   plot_what: str = "mag",  # "mag", "I", or "Q" for the live image
+                   progress: bool = False,
+                   debug: bool = False):
+        """
+        Sweep stark shift vs. qubit frequency and one extra config parameter.
+
+        Parameters
+        ----------
+        sweep_key : str
+            Name of the key in self.cfg to vary (e.g., "ff_amp", "read_pulse_gain", etc.).
+        sweep_values : array-like
+            Values to assign to self.cfg[sweep_key] for each outer slice.
+        live_plot : bool
+            If True, draws/updates a live 2D image after each slice.
+        plot_what : {"mag","I","Q"}
+            Which quantity to visualize live. Data always saved for all three.
+        progress : bool
+            Passed through to `acquire()` per slice.
+        debug : bool
+            Passed through to `acquire()` per slice.
+
+        Returns
+        -------
+        data2d : dict
+            {
+              "config": <final cfg snapshot>,
+              "axes": {
+                  "sweep_key": <name>,
+                  "sweep_values": np.array([...]),
+                  "fpts": np.array([...]),  # in MHz (as in acquire)
+                  "x_ghz": np.array([...])  # GHz axis used in plots
+              },
+              "data": {
+                  "I": 2D np.array [n_slices, n_freq],
+                  "Q": 2D np.array [n_slices, n_freq],
+                  "mag": 2D np.array [n_slices, n_freq],
+                  "peak_freqs": 1D np.array [n_slices],  # MHz
+              }
+            }
+        """
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import time
+
+        # Validate plot_what
+        plot_what = plot_what.lower()
+        if plot_what not in ("mag", "i", "q"):
+            plot_what = "mag"
+
+        # Preserve original value to restore at the end
+        _had_key = sweep_key in self.cfg
+        _orig_val = self.cfg.get(sweep_key, None)
+
+        sweep_values = np.array(list(sweep_values))
+        n_slices = len(sweep_values)
+
+        # Run the first slice to discover frequency grid size and set up arrays/plot.
+        self.cfg[sweep_key] = sweep_values[0]
+        first = self.acquire(progress=progress, debug=debug)
+        fpts = np.array(first["data"]["x_pts"])                      # MHz
+        x_ghz = fpts / 1000.0                                   # GHz
+        n_freq = fpts.size
+
+        # Allocate 2D arrays
+        I2d   = np.zeros((n_slices, n_freq), dtype=float)
+        Q2d   = np.zeros((n_slices, n_freq), dtype=float)
+        Mag2d = np.zeros((n_slices, n_freq), dtype=float)
+        peaks = np.zeros((n_slices,), dtype=float)
+
+        # Fill row 0 from the first slice
+        I2d[0, :]   = np.array(first["data"]["avgi"])
+        Q2d[0, :]   = np.array(first["data"]["avgq"])
+        Mag2d[0, :] = np.array(first["data"]["mag"])
+        peaks[0]    = float(first["data"]["qubit_peak_freq"])
+
+        # Set up live plot
+        fig, ax, im, cbar = None, None, None, None
+        if live_plot:
+            plt.ion()
+            fig, ax = plt.subplots()
+            ax.set_xlabel("Cavity Frequency (GHz)")
+            ax.set_ylabel(sweep_key)
+            # ax.set_yticks(np.arange(n_slices))
+            # ax.set_yticklabels([f"{v}" for v in sweep_values])
+            ax.set_title(f"Live stark shift vs qubit freq × {sweep_key}  (Averages={self.cfg.get('reps','?')})")
+
+            def _pick_field():
+                return {"mag": Mag2d, "i": I2d, "q": Q2d}[plot_what]
+
+            data_for_plot = _pick_field()
+            # Use extent so the x-axis is in GHz and y is slice index (we label ticks with sweep_values)
+            im = ax.imshow(data_for_plot,
+                           aspect="auto",
+                           origin="lower",
+                           extent=(x_ghz.min(), x_ghz.max(), sweep_values[0], sweep_values[-1]),)
+            cbar = fig.colorbar(im, ax=ax, label={"mag": "|IQ| (a.u.)", "i": "I (a.u.)", "q": "Q (a.u.)"}[plot_what])
+            fig.tight_layout()
+            fig.canvas.draw(); fig.canvas.flush_events()
+
+        # Process remaining slices
+        for i in range(1, n_slices):
+            self.cfg[sweep_key] = sweep_values[i]
+            d = self.acquire(progress=progress, debug=debug)
+
+            I2d[i, :]   = np.array(d["data"]["avgi"])
+            Q2d[i, :]   = np.array(d["data"]["avgq"])
+            Mag2d[i, :] = np.array(d["data"]["mag"])
+            peaks[i]    = float(d["data"]["qubit_peak_freq"])
+
+            if live_plot:
+                # Update the displayed matrix only up to the current row (optional but visually clearer)
+                if plot_what == "mag":
+                    current = Mag2d.copy()
+                elif plot_what == "i":
+                    current = I2d.copy()
+                else:
+                    current = Q2d.copy()
+
+                # Optionally mask unfilled rows to keep color scale sane
+                if i < n_slices - 1:
+                    current[i+1:, :] = np.nan
+
+                im.set_data(current)
+                # Autoscale color limits on the filled portion to keep contrast decent
+                finite_vals = current[np.isfinite(current)]
+                if finite_vals.size:
+                    im.set_clim(np.nanpercentile(finite_vals, 2), np.nanpercentile(finite_vals, 98))
+                fig.canvas.draw(); fig.canvas.flush_events()
+                time.sleep(0.02)
+
+        # Build return object (and stash on self)
+        data2d = {
+            "config": dict(self.cfg),
+            "data": {
+                # "sweep_key": sweep_key,
+                "sweep_values": sweep_values,
+                "fpts": fpts,
+                "I": I2d,
+                "Q": Q2d,
+                "mag": Mag2d,
+                "peak_freqs": peaks
+            }
+        }
+        self.data2d = data2d
+
+        # Restore original cfg value for cleanliness
+        if _had_key:
+            self.cfg[sweep_key] = _orig_val
+        else:
+            self.cfg.pop(sweep_key, None)
+
+        return data2d
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        super().save_data(data=data['data'])

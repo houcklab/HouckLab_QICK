@@ -180,12 +180,26 @@ class QNDmeas(ExperimentClass):
             confidence_selection = 0.99
 
         # Calculate the probability
-        (state0_probs, state0_probs_err, state0_num,
-         state1_probs, state1_probs_err, state1_num,
-         i0_shots, q0_shots, i1_shots, q1_shots) = QND_analysis(i_0, q_0, i_1, q_1, centers,
-                                                                confidence_selection=confidence_selection)
-        qnd = (state0_probs[0] + state1_probs[1]) / 2
-        qnd_err = np.sqrt(state0_probs_err[0] ** 2 + state1_probs_err[0] ** 2)
+        try :
+            (state0_probs, state0_probs_err, state0_num,
+             state1_probs, state1_probs_err, state1_num,
+             i0_shots, q0_shots, i1_shots, q1_shots) = QND_analysis(i_0, q_0, i_1, q_1, centers,
+                                                                    confidence_selection=confidence_selection)
+            qnd = (state0_probs[0] + state1_probs[1]) / 2
+            qnd_err = np.sqrt(state0_probs_err[0] ** 2 + state1_probs_err[0] ** 2)
+        except:
+            state0_probs = [0,0]
+            state0_probs_err = [0,0]
+            state0_num = 0
+            state1_probs = [0,0]
+            state1_probs_err = [0,0]
+            state1_num = 0
+            i0_shots = []
+            q0_shots = []
+            i1_shots = []
+            q1_shots = []
+            qnd = 0
+            qnd_err = 0
 
 
         ### print out results
@@ -218,74 +232,77 @@ class QNDmeas(ExperimentClass):
         if data is None:
             data = self.data
 
-        i_0 = data["data"]["i_0"]
-        q_0 = data["data"]["q_0"]
-        i_1 = data["data"]["i_1"]
-        q_1 = data["data"]["q_1"]
-        i_1_0 = data["data"]["i0_shots"] # Shots in i_1 that originated in blob0
-        q_1_0 = data["data"]["q0_shots"]  # Shots in q_1 that originated in blob0
-        i_1_1 = data["data"]["i1_shots"]  # Shots in i_1 that originated in blob1
-        q_1_1 = data["data"]["q1_shots"]  # Shots in i_1 that originated in blob1
-        centers = data["data"]["centers"]
-        qnd = data["data"]["qnd"]
-        qnd_err = data["data"]["qnd_err"]
-        confidence = data["data"]["confidence"]
-        state1_0_probs = data["data"]["state0_probs"]   #
-        state1_1_probs = data["data"]["state1_probs"]
+        try:
+            i_0 = data["data"]["i_0"]
+            q_0 = data["data"]["q_0"]
+            i_1 = data["data"]["i_1"]
+            q_1 = data["data"]["q_1"]
+            i_1_0 = data["data"]["i0_shots"] # Shots in i_1 that originated in blob0
+            q_1_0 = data["data"]["q0_shots"]  # Shots in q_1 that originated in blob0
+            i_1_1 = data["data"]["i1_shots"]  # Shots in i_1 that originated in blob1
+            q_1_1 = data["data"]["q1_shots"]  # Shots in i_1 that originated in blob1
+            centers = data["data"]["centers"]
+            qnd = data["data"]["qnd"]
+            qnd_err = data["data"]["qnd_err"]
+            confidence = data["data"]["confidence"]
+            state1_0_probs = data["data"]["state0_probs"]   #
+            state1_1_probs = data["data"]["state1_probs"]
 
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[15, 6], width_ratios=[1.2, 1, 1])
-        # Plot histogram of the initial measurement
-        if "bin_size" in kwargs:
-            bin_size = kwargs["bin_size"]
-        else:
-            bin_size = 151
-        iq_data = np.stack((i_0, q_0), axis=0)
-        hist2d = sse2.createHistogram(iq_data, bin_size)
-        xedges = hist2d[1]
-        yedges = hist2d[2]
-        x_points = (xedges[1:] + xedges[:-1]) / 2
-        y_points = (yedges[1:] + yedges[:-1]) / 2
-        im = axs[0].imshow(np.rint(np.transpose(hist2d[0])), extent=[x_points[0], x_points[-1], y_points[0], y_points[-1]],
-                           origin='lower', aspect='auto')
-        axs[0].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
-        axs[0].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
-        axs[0].set_xlabel('I')
-        axs[0].set_ylabel('Q')
-        axs[0].set_title("Single Shot Histogram of the initial state")
-        axs[0].legend()
-        fig.colorbar(im, ax=axs[0])
+            fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[15, 6], width_ratios=[1.2, 1, 1])
+            # Plot histogram of the initial measurement
+            if "bin_size" in kwargs:
+                bin_size = kwargs["bin_size"]
+            else:
+                bin_size = 151
+            iq_data = np.stack((i_0, q_0), axis=0)
+            hist2d = sse2.createHistogram(iq_data, bin_size)
+            xedges = hist2d[1]
+            yedges = hist2d[2]
+            x_points = (xedges[1:] + xedges[:-1]) / 2
+            y_points = (yedges[1:] + yedges[:-1]) / 2
+            im = axs[0].imshow(np.rint(np.transpose(hist2d[0])), extent=[x_points[0], x_points[-1], y_points[0], y_points[-1]],
+                               origin='lower', aspect='auto')
+            axs[0].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
+            axs[0].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
+            axs[0].set_xlabel('I')
+            axs[0].set_ylabel('Q')
+            axs[0].set_title("Single Shot Histogram of the initial state")
+            axs[0].legend()
+            fig.colorbar(im, ax=axs[0])
 
-        # Plot scatter of the final measurement
-        axs[1].scatter(i_1_0, q_1_0, s=0.1)
-        axs[1].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
-        axs[1].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
-        axs[1].set_xlabel('I')
-        axs[1].set_ylabel('Q')
-        axs[1].set_title("Begin in Blob 0 | P( Other blob ) = " + str(state1_0_probs[1].round(4)))
-        axs[1].legend()
+            # Plot scatter of the final measurement
+            axs[1].scatter(i_1_0, q_1_0, s=0.1)
+            axs[1].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
+            axs[1].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
+            axs[1].set_xlabel('I')
+            axs[1].set_ylabel('Q')
+            axs[1].set_title("Begin in Blob 0 | P( Other blob ) = " + str(state1_0_probs[1].round(4)))
+            axs[1].legend()
 
-        axs[2].scatter(i_1_1, q_1_1, s=0.1)
-        axs[2].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
-        axs[2].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
-        axs[2].set_xlabel('I')
-        axs[2].set_ylabel('Q')
-        axs[2].set_title("Begin in Blob 1 | P( Other blob ) = " + str(state1_1_probs[0].round(4)))
-        axs[2].legend()
+            axs[2].scatter(i_1_1, q_1_1, s=0.1)
+            axs[2].scatter(centers[0, 0], centers[0, 1], c="k", label="Blob 0")
+            axs[2].scatter(centers[1, 0], centers[1, 1], c="w", label="Blob 1")
+            axs[2].set_xlabel('I')
+            axs[2].set_ylabel('Q')
+            axs[2].set_title("Begin in Blob 1 | P( Other blob ) = " + str(state1_1_probs[0].round(4)))
+            axs[2].legend()
 
-        data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
-                            + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " +
-                            str(self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_freq"])
-                            + " MHz \n"+
-                            "QND fidelity is " + str((qnd*100).round(4)) + " +/- " + str((qnd_err*100).round(4)) +
-                            ", Confidence threshold is " + str(confidence) + ".")
+            data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
+                                + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " +
+                                str(self.cfg["relax_delay"]) + "us." + " Qubit Frequency = " + str(self.cfg["qubit_freq"])
+                                + " MHz \n"+
+                                "QND fidelity is " + str((qnd*100).round(4)) + " +/- " + str((qnd_err*100).round(4)) +
+                                ", Confidence threshold is " + str(confidence) + ".")
 
-        plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
-        plt.tight_layout()
-        plt.savefig(self.iname, dpi=400)
-        if plotDisp:
-            plt.show()
-        else:
-            plt.close()
+            plt.suptitle(self.outerFolder + '\n' + self.path_wDate + '\n' + data_information)
+            plt.tight_layout()
+            plt.savefig(self.iname, dpi=400)
+            if plotDisp:
+                plt.show()
+            else:
+                plt.close()
+        except Exception as e:
+            print("Error in display: ", e)
 
 
     def save_data(self, data=None):

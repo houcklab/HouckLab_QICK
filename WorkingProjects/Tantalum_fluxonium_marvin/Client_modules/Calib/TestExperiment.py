@@ -145,12 +145,12 @@ UpdateConfig_transmission = {
     # cavity
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 4000,
-    "read_pulse_freq": 6671.64,  # 6253.8,
+    "read_pulse_gain": 5500,
+    "read_pulse_freq": 6671.49,  # 6253.8,
 
     # Experiment Parameter
-    "TransSpan":  3,  # [MHz] span will be center frequency +/- this parameter
-    "TransNumPoints": 201,  # number of points in the transmission frequency
+    "TransSpan":  6,  # [MHz] span will be center frequency +/- this parameter
+    "TransNumPoints": 401,  # number of points in the transmission frequency
     "meas_config": "hanger"
 ,}
 
@@ -162,17 +162,17 @@ UpdateConfig_qubit = {
     "qubit_length": 4,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 3200,
-    "qubit_freq_stop": 3201,
-    "SpecNumPoints": 3,  # Number of points
+    "qubit_freq_start": 1800,
+    "qubit_freq_stop": 2200,
+    "SpecNumPoints": 101,  # Number of points
     'spec_reps': 4000,  # Number of repetition
     "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 
     # Define the yoko voltage
-    "yokoVoltage": -0.1205,
+    "yokoVoltage": -0.148,
     "relax_delay": 10,  # [us] Delay post one experiment
     'use_switch': False, # This is for turning off the heating tone
-    'mode_periodic': True,
+    'mode_periodic': False,
     'ro_periodic': False,
 }
 
@@ -215,7 +215,7 @@ print(opt_freq)
 # TITLE Perform the cavity transmission experiment with qubit tone
 
 config = BaseConfig | UpdateConfig
-# config["qubit_freq"] = 512.8
+config["qubit_freq"] = 1960
 Instance_trans = Transmission_wQubitTone(path="Transmission_wQubTone", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
 data_trans = Instance_trans.acquire()
 Instance_trans.save_data(data_trans)
@@ -305,7 +305,7 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 # TITLE: Transmission vs Power
 
 UpdateConfig = {
-    "yokoVoltage": -0.1185,
+    "yokoVoltage": -0.148,
     "trans_gain_start": 100,
     "trans_gain_stop": 10000,
     "trans_gain_num": 21,

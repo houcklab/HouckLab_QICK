@@ -525,7 +525,7 @@ class FFSpecSlice_Experiment_wPPD(ExperimentClass):
             self.popt = None
             self.qubit_peak_freq = self.qubit_freqs[np.argmax(mag)]
 
-        self.qubit_peak_freq = self.qubit_freqs[np.argmax(mag)]
+        # self.qubit_peak_freq = self.qubit_freqs[np.argmax(mag)]
 
         data = {'config': self.cfg, 'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq, 'qubit_peak_freq': self.qubit_peak_freq}}
         self.data = data
