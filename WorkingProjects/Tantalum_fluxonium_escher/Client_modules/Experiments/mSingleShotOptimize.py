@@ -227,7 +227,7 @@ class SingleShotMeasure(ExperimentClass):
         print(self.path_only)
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
                                            name = self.datetimestring, num_bins = 151, fast = self.fast_analysis)
-        self.data["data"] = self.data["data"] | self.analysis.estimate_populations(max_iter = self.max_iter, num_trials = self.num_trials, pop_perc = self.pop_perc)
+        self.data["data"] = self.data["data"] | self.analysis.estimate_populations()#max_iter = self.max_iter, num_trials = self.num_trials, pop_perc = self.pop_perc)
 
         # Calculating the distinctness of cluster
         self.distinctness = {}

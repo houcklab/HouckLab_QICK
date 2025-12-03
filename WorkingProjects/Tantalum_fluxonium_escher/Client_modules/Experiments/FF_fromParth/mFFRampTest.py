@@ -16,7 +16,7 @@ from qick.averager_program import QickSweep
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 class FFRampTest(NDAveragerProgram):
@@ -46,8 +46,8 @@ class FFRampTest(NDAveragerProgram):
 
         # Define the fast flux ramp. For now, just linear ramp is supported
         if self.cfg["ff_ramp_style"] == "linear":
-            PulseFunctions.create_ff_ramp(self, ramp_start = 0, ramp_stop = self.cfg["ff_ramp_gain"], pulse_name = 'ramp')
-            PulseFunctions.create_ff_ramp(self, ramp_start = self.cfg["ff_ramp_gain"], ramp_stop = 0, pulse_name = 'ramp_reversed')
+            PulseFunctions.create_ff_ramp(self, reversed = False)
+            PulseFunctions.create_ff_ramp(self, reversed = True)
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
@@ -80,34 +80,31 @@ class FFRampTest(NDAveragerProgram):
 
         # trigger measurement, play measurement pulse, wait for relax_delay_1. Once per experiment.
         # Can't use measure command because that has sync_all which pushes us to after the trigger offset
+        # Parth : The benefit of not waiting for trigger to finish is of 0.5 us which is negligible.
         self.trigger(self.cfg['ro_chs'], adc_trig_offset=adc_trig_offset_cycles, t = 0)
         self.pulse(ch = self.cfg["res_ch"], t = 0)
 
         # Cycle the ff ramp as requested.
         for c in range(self.cfg["cycle_number"]):
             # play fast flux ramp
-
             # I need to use the t argument so that the pulse can start before the readout trigger is complete
             # In principle, this could also be done with synci, but sync_all doesn't know about previous synci commands
             # and there is a bug in the current firmware that incorrectly compiles without a t argument after synci
-
-            # The set pulse registers commands use up a lot of tproc command memory, so we can do at most ~ 500 pulses.
-            # If we need more pulses, replace set_pulse_registers with manual instructions to change waveform, t
-            # The other commands that this compiles into are redundant, I think (set phase, gain, etc)
-
-            # If pulses conflict, try increasing cycle_delay. This should probably be at least a few ns.
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel = 'last',
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp", outsel="input")
-            t_1 = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
-                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay']))
-            self.pulse(ch = self.cfg["ff_ch"], t = t_1)
+            self.pulse(ch = self.cfg["ff_ch"], t = self.us2cycles(self.cfg["read_length"] + self.cfg["relax_delay_1"] +
+                        c * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay'])))
 
+            # # play constant pulse to keep FF at ramped value if a delay here is desired
+            if self.cfg["ff_delay"] > 0:
+                self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='const', phase=0, gain = self.cfg["ff_ramp_stop"],
+                                         length = self.us2cycles(self.cfg["ff_delay"], gen_ch=self.cfg["ff_ch"]))
+                self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
-            # play reversed fast flux ramp (after delay), return to original spot
+            # play reversed fast flux ramp, return to original spot
             self.set_pulse_registers(ch=self.cfg["ff_ch"], freq=0, style='arb', phase=0,
                                      gain = self.soccfg['gens'][0]['maxv'], waveform="ramp_reversed", outsel="input")
-            self.pulse(ch = self.cfg["ff_ch"], t = t_1 + self.us2cycles(self.cfg['ff_ramp_length'] + self.cfg['ff_delay']))
-
+            self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
         # Sync to make sure ramping is done before starting second measurement.
         self.sync_all(self.us2cycles(0.02))
@@ -116,24 +113,6 @@ class FFRampTest(NDAveragerProgram):
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t = 0, wait = True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay_2"]))
-
-        # Play a reverse pulse if desired. Don't want to eat up all instruction memory, so just run one pulse
-        # that has total area equal to all of the pulses before. Only works for original point at 0 DAC units.
-        # Only take one ramp length since it's half by area. Since pulse length is limited, actually play a pulse of
-        # length 3, then just wait for l-3 before returning to 0.
-        if self.cfg["reversed_pulse"]:
-            # This is used in sync_all, so no gen_ch argument
-            l = self.us2cycles(self.cfg['cycle_number'] * (self.cfg['ff_ramp_length'] + self.cfg['ff_delay']))
-            self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
-                                      gain=-self.cfg["ff_ramp_gain"], length=3, stdysel='last')
-            self.pulse(ch=self.cfg['ff_ch'])
-            self.sync_all(l - 3)
-
-            # Return back to 0
-            self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
-                                     gain=0, length=3, stdysel='last')
-            self.pulse(ch=self.cfg['ff_ch'])
-            self.sync_all(3)
 
 
     # Override acquire such that we can collect the single-shot data
@@ -162,7 +141,9 @@ class FFRampTest(NDAveragerProgram):
 
         # Fast flux pulse parameters
         "ff_ramp_style": "const",         # one of ["linear"]
-        "ff_delay": 1,                    # [us] Delay between fast flux ramps (length of constant part)
+        "ff_ramp_start": 0,               # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+        "ff_ramp_stop": 100,              # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+        "ff_delay": 1,                    # [us] Delay between fast flux ramps
         "ff_ch": 6,                       # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                      # Nyquist zone to use for fast flux drive
 
@@ -183,20 +164,16 @@ class FFRampTest(NDAveragerProgram):
         "ff_ramp_length_expts": 10,       # [int] Number of points in the ff ramp length sweep
 
         # Gain sweep parameters
-        "ff_gain_sweep_start": 0,         # [DAC units] Starting value of gain sweep endpoint, -32766 < ff_ramp_start < 32766
-        "ff_gain_sweep_stop": 100,        # [DAC units] Ending value of gain sweep endpoint, -32766 < ff_ramp_stop < 32766
         "ff_gain_expts": 10,              # [int] How many different ff ramp gains to use
+        "ff_ramp_length": 1,              # [us] Half-length of ramp to use when sweeping gain
 
         # Number of cycle repetitions sweep parameters
         "cycle_number_expts": 11,         # [int] How many values for number of cycles around to use in this experiment
         "max_cycle_number": 5,            # [int] What is the largest number of cycles to use in sweep? Start at 1
         "cycle_delay": 0.02,              # [us] How long to wait between cycles in one experiment?
 
-        # General/common sweep parameters
+        # General sweep parameters
         "sweep_type": 'ramp_length',      # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
-        "ff_ramp_length": 1,              # [us] Half-length of ramp to use when sweeping gain, overridden in length sweep
-        "ff_ramp_gain": 100,              # [DAC] Value to which the ff ramps, overridden in gain sweep
-        #"ff_ramp_offset": 0,             # [DAC] [Not implemented yet] Value from which ff ramp starts
 
         # Other parameters
         "yokoVoltage": 0,                 # [V] Yoko voltage for magnet offset of flux
@@ -204,8 +181,6 @@ class FFRampTest(NDAveragerProgram):
         "relax_delay_2": 10,              # [us] Relax delay after second readout
         "reps": 1000,
         "sets": 5,
-        "reversed_pulse": False,          # Do we play a reversed pulse after the regular one?
-        #"reversed_pulse_length": 1,       # [us] Length of reversed pulse (shape is currently const)
 
         "angle": None,                    # [radians] Angle of rotation for readout
         "threshold": None,                # [DAC units] Threshold between g and e
@@ -259,8 +234,7 @@ class FFRampTest_Experiment(ExperimentClass):
             i_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
             q_arr = np.zeros((self.cfg["ff_gain_expts"], self.cfg["reps"], 2))
 
-            self.final_gains = np.rint(np.linspace(self.cfg["ff_gain_sweep_start"], self.cfg["ff_gain_sweep_stop"],
-                                                   num = self.cfg["ff_gain_expts"]))
+            self.final_gains = np.rint(np.linspace(0, self.cfg["ff_ramp_stop"], num = self.cfg["ff_gain_expts"]))
             for idx, final_gain in enumerate(self.final_gains):
                 prog = FFRampTest(self.soccfg, self.cfg | {"ff_ramp_stop": final_gain})
 
@@ -317,8 +291,6 @@ class FFRampTest_Experiment(ExperimentClass):
         self._make_plots_gauss(pop, prob_0, prob_1, data, confidence = self.cfg["confidence"])
 
         self._plot_gaussian_probabilities(pop, x_points)
-
-        return {'prob_0': prob_0, 'prob_1': prob_1, 'pop': pop}
 
         ## If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
         #if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
@@ -640,15 +612,15 @@ class FFRampTest_Experiment(ExperimentClass):
 
             if self.cfg["sweep_type"] == 'ff_gain':
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
-                                          (self.cfg['yokoVoltage'], 0, x_pt,
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], x_pt,
                                            self.cfg['ff_delay'], self.cfg["ff_ramp_length"]))
             elif self.cfg["sweep_type"] == 'ramp_length':
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us.' %
-                                          (self.cfg['yokoVoltage'], 0, self.cfg['ff_ramp_gain'],
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                            self.cfg['ff_delay'], x_pt))
             elif self.cfg["sweep_type"] == 'cycle_number':
                 plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us. Ramp half-length %.2f us. %d ramp cycles' %
-                                          (self.cfg['yokoVoltage'], 0, self.cfg['ff_ramp_gain'],
+                                          (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'],
                                            self.cfg['ff_delay'], self.cfg["ff_ramp_length"], x_pt))
             plt.tight_layout()
             plt.subplots_adjust(top=0.97, hspace=0.05, wspace=0.2)
@@ -723,8 +695,8 @@ class FFRampTest_Experiment(ExperimentClass):
         plt.xlabel('Ramp lengths (us)')
         plt.ylabel('P(start right, end right)')
 
-        plt.suptitle(self.fname + '\nYoko voltage %.5f V,  FF delay %.2f us.' %
-                     (self.cfg['yokoVoltage'], self.cfg['ff_delay']))
+        plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
+                     (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
         plt.tight_layout()
 
         plt.savefig(self.iname)
@@ -765,7 +737,7 @@ class FFRampTest_Experiment(ExperimentClass):
                                        self.cfg['ff_delay'], self.cfg["confidence"]))
         elif self.cfg["sweep_type"] == 'cycle_number':
             plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF ramp half-length %.2f us, FF delay %.2f us. Confidence %.4f' %
-                                      (self.cfg['yokoVoltage'], 0, self.cfg["ff_ramp_gain"],
+                                      (self.cfg['yokoVoltage'], self.cfg["ff_ramp_start"], self.cfg["ff_ramp_stop"],
                                        self.cfg['ff_ramp_length'], self.cfg['ff_delay'], self.cfg["confidence"]))
         plt.tight_layout()
         plt.subplots_adjust(top=0.92, hspace=0.05, wspace=0.2)
@@ -779,20 +751,7 @@ class FFRampTest_Experiment(ExperimentClass):
 
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
-        if self.cfg["sweep_type"] == 'ff_gain':
-            return 0xBADC0FFEE
-        elif self.cfg["sweep_type"] == 'ramp_length':
-            return 0xBADC0FFEE
-        elif self.cfg["sweep_type"] == 'cycle_number':
-            t = 0
-            for cn in np.rint(np.linspace(1, self.cfg["max_cycle_number"], num=self.cfg["cycle_number_expts"])).astype(int):
-                t += self.cfg["reps"] * (self.cfg["read_length"] + self.cfg["relax_delay_1"] +
-                        cn * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] + self.cfg['cycle_delay']) +
-                        self.cfg["read_length"] + self.cfg["relax_delay_2"] +
-                        cn * (self.cfg['ff_ramp_length'] + self.cfg['ff_delay']))
-            return t
-        else:
-            return 0xBADC0FFEE
+        return 0xBADC0FFEE
         # return self.cfg["reps"] * self.cfg["qubit_freq_expts"] * (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6  # [s]
 
 

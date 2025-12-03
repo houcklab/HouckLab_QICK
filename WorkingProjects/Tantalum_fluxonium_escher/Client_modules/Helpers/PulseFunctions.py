@@ -95,6 +95,8 @@ def create_ff_ramp(prog: AcquireProgram, ramp_start: int, ramp_stop: int, pulse_
 
     prog.add_pulse(ch=prog.cfg["ff_ch"], name=pulse_name, idata = idata, qdata = qdata)
 
+    #TODO consider getting rid of this, probably bad for defining ramps up and down
+
     # Gain here is multiplied by the i/q values, so we set the gain to max value (32766) and control it with i/q instead
     prog.set_pulse_registers(ch=prog.cfg["ff_ch"], freq=0, style='arb',
                              phase=0, gain = prog.soccfg['gens'][0]['maxv'],

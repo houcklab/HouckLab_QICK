@@ -19,8 +19,16 @@ class LoopbackProgramTrans(AveragerProgram):
 
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"], #mode='periodic',
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+
+        if self.cfg["ro_mode_periodic"]:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0,
+                                     gain=cfg["read_pulse_gain"], mode='periodic',
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        else:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
@@ -56,7 +64,7 @@ class Transmission(ExperimentClass):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             #self.soc.reset_gens()  # clear any DC or periodic values on generators
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True, progress = progress))
         print(f'Time: {time.time() - start}')
         results = np.transpose(results)
         #

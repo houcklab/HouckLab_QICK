@@ -1,6 +1,8 @@
 #%%
 
 import os
+import sys
+
 # path = os.getcwd()
 from tqdm import tqdm
 # os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
@@ -45,13 +47,13 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.4895, #1079, #0.093277, #816 , #0.09473, #25,
+    "yokoVoltage": -1.133, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,  # us
-    "read_pulse_gain": 6800, #1025,  # [DAC units]
-    "read_pulse_freq": 7391.9, #6723.55
+    "read_pulse_gain": 5000, #1025,  # [DAC units]
+    "read_pulse_freq": 7392, #6723.55
     # qubit spec parameters
     "qubit_pulse_style": "flat_top",
 
@@ -59,11 +61,11 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 1,
     "flat_top_length": 1,
-    "qubit_freq": 943.0, #1255,
+    "qubit_freq": 935.0, #1255,
     "relax_delay": 200, #2500,
 
     # define shots
-    "shots": int(2e4),
+    "shots": int(1e4),
     "use_switch": False,
     #"adc_trig_offset": 0, ################
 }
@@ -71,8 +73,9 @@ config = BaseConfig | UpdateConfig
 
 yoko.SetVoltage(config["yokoVoltage"])
 
-mlbf_filter = MLBFDriver("192.168.1.11")
-mlbf_filter.set_frequency(int(config["read_pulse_freq"]))
+#mlbf_filter = MLBFDriver("192.168.1.11")
+#mlbf_filter.set_frequency(int(config["read_pulse_freq"]))
+print('Warning: not connecting to MLBF', file=sys.stderr)
 
 #%%
 # TITLE: Single shot experiment
@@ -269,29 +272,29 @@ plt.show()
 # TITLE: T1 of a thermal state
 UpdateConfig = {
     # set yoko
-    "yokoVoltage": -1.09,
-    "yokoVoltage_freqPoint": -1.09, #1.12,
+    "yokoVoltage": -1.133,
+    "yokoVoltage_freqPoint": -1.133, #1.12,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 15,  # us
-    "read_pulse_gain": 8000,  # [DAC units]
-    "read_pulse_freq": 7391.9441,
+    "read_length": 13,  # us
+    "read_pulse_gain": 5000,  # [DAC units]
+    "read_pulse_freq": 7392,
 
     # qubit spec parameters
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 6000, #1,
-    "flat_top_length": 10,
+    "qubit_gain": 32000, #1,
+    "flat_top_length": 5,
     "qubit_pulseLength": 10,
     "sigma": 0.5,
-    "qubit_freq": 940.8,
-    "relax_delay": 10,
+    "qubit_freq": 935,
+    "relax_delay": 15000,
 
     # Experiment parameters
-    "shots": 10000,
+    "shots": 5000,
     "wait_start": 0,
-    "wait_stop": 6000,
-    "wait_num": 31,
+    "wait_stop": 5000,
+    "wait_num": 21,
     "wait_type": "linear",
     "cen_num": 2,
     'use_switch': False,
@@ -302,7 +305,7 @@ config = BaseConfig | UpdateConfig
 
 yoko.SetVoltage(config["yokoVoltage"])
 #%%
-plt.close("all")
+# plt.close("all")
 
 # Estimating Time
 time_per_scan = config["shots"] * (np.sum(np.linspace(config["wait_start"], config["wait_stop"], config["wait_num"]) + config["relax_delay"])) * 1e-6 /60
@@ -569,20 +572,20 @@ inst_t2r_ps.save_config()
 # Parth-approved
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.502, #25,
+    "yokoVoltage": -1.128, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,  # us
-    "read_pulse_gain": 6800,  # [DAC units]
-    "read_pulse_freq": 7391.9, #6422.81,#7, #6422.757, #6423.025,
+    "read_pulse_gain": 4000,  # [DAC units]
+    "read_pulse_freq": 7392, #6422.81,#7, #6422.757, #6423.025,
 
     # qubit spec
     "qubit_pulse_style": "flat_top",
-    "flat_top_length": 1,
+    "flat_top_length": 5,
     "qubit_ge_gain": 0,
     "qubit_ef_gain": 0,
-    "qubit_ge_freq": 943.0,
+    "qubit_ge_freq": 950.0,
     "qubit_ef_freq": 2110,
     "apply_ge": False,
     "apply_ef": False,
@@ -605,9 +608,9 @@ plt.close('all')
 #%%
 # TITLE Running automatic optimization
 param_bounds ={
-    "read_pulse_freq": (config["read_pulse_freq"] - 0.5, config["read_pulse_freq"] + 0.5 ),
+    "read_pulse_freq": (config["read_pulse_freq"] - 0.1, config["read_pulse_freq"] + 0.1 ),
     'read_length': (10, 60),
-    'read_pulse_gain': (5000, 10000)
+    'read_pulse_gain': (3000, 10000)
 }
 step_size = {
     "read_pulse_freq": 0.05, #02,
@@ -615,9 +618,9 @@ step_size = {
     'read_pulse_gain': 500,
 }
 
-keys = ["read_pulse_gain"]
+keys = ["read_pulse_freq"]
 
-config["shots"] = 10000
+config["shots"] = 5000
 inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config,
                                        soc=soc, soccfg=soccfg, fast_analysis=True, max_iter = 1000, num_trials = 1000, pop_perc = 11)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )
@@ -645,14 +648,14 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.483,
-    "yokoVoltage_freqPoint": -1.4895,
+    "yokoVoltage": -1.128,
+    "yokoVoltage_freqPoint": -1.128,
 
     # cavity
     "read_pulse_style": "const",
     "read_length": 13,
-    "read_pulse_gain": 5600,
-    "read_pulse_freq": 7391.9,
+    "read_pulse_gain": 4500,
+    "read_pulse_freq": 7392,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
@@ -660,7 +663,7 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 0.5,
     "flat_top_length": 1,
-    "qubit_freq": 943.0,
+    "qubit_freq": 957.0,
 
     # Experiment
     "shots": 500000,  #1000000

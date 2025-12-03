@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf_driver import *
 # define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_05_02_cooldown\QCage_dev\WFQ_1\\" # end in '\\'
+outerFolder = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\\HouckCage_dev\\" # end in '\\'
 
 
 
@@ -27,28 +27,28 @@ BaseConfig = BaseConfig | SwitchConfig
 UpdateConfig = {
     # set yoko
     "yokoVoltageStart": -1.7,  # 1.06, #-1,
-    "yokoVoltageStop": -0.7,  # 1,
-    "yokoVoltageNumPoints": 201,  # 5001,
+    "yokoVoltageStop": -1.45,  # 1,
+    "yokoVoltageNumPoints": 21,  # 5001,
 
     # Readout parameters
-    "trans_reps": 2000,
+    "trans_reps": 500,
     "read_pulse_style": "const",
-    "read_length": 10,
-    "read_pulse_gain": 12000,
+    "read_length": 13,
+    "read_pulse_gain": 4500,
     # "read_pulse_freq": 6723.5,
     "trans_freq_start": 7390.5,
     "trans_freq_stop": 7393.5,
     'TransNumPoints': 201,
 
     # qubit spec parameters
-    "spec_reps": 8000,  # 10000,#22000,
-    "qubit_pulse_style": "const",  # "flat_top", "const", "arb"
-    "qubit_gain": 25000,  # 3000,
-    "qubit_length": 10,
+    "spec_reps":2000,# 10000,  # 10000,#22000,
+    "qubit_pulse_style": "flat_top",  # "flat_top", "const", "arb"
+    "qubit_gain": 32000,#25000,  # 3000,
+    "qubit_length": 3,
     "flat_top_length": 1,
-    "qubit_freq_start": 50,
-    "qubit_freq_stop": 1000,
-    "SpecNumPoints": 301,  # 101,#101
+    "qubit_freq_start": 100,
+    "qubit_freq_stop": 1100,
+    "SpecNumPoints": 301 ,#101,  # 101,#101
     "sigma": 0.5,
     "relax_delay": 5,  # 150,
     "use_switch": False,
@@ -68,11 +68,12 @@ UpdateConfig = {
 
 config = BaseConfig | UpdateConfig
 #
-mlbf_filter = MLBFDriver("192.168.1.11")
+#mlbf_filter = MLBFDriver("192.168.1.11")
 #Updating the mlbf filter
-filter_freq = (config["trans_freq_start"] + config["trans_freq_stop"])/2
-mlbf_filter.set_frequency(filter_freq)
-print("Set filter frequency to %.3f MHz. It is now %.3f" % (filter_freq, mlbf_filter.get_frequency()))
+#filter_freq = (config["trans_freq_start"] + config["trans_freq_stop"])/2
+#mlbf_filter.set_frequency(filter_freq)
+#print("Set filter frequency to %.3f MHz. It is now %.3f" % (filter_freq, mlbf_filter.get_frequency()))
+
  #%%
 import matplotlib
 matplotlib.use('Qt5Agg')

@@ -2,15 +2,14 @@
 # This experiment runs mFFSpecSlice in a loop with varying qubit_spec_delay.
 # Lev May 13, 2025. Create file
 ###
-import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
 from time import time
 
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecSlice import FFSpecSlice
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice import FFSpecSlice
 
 
 class FFSpecVsDelay_Experiment(ExperimentClass):
@@ -30,13 +29,6 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         :param fig_num: int: fignum of figure to plot on
         :return: data: dict: dictionary of data obtained from the experiment.
         """
-
-        # Warn the user if we're cutting the ff pulses short, as interpreting this case is difficult for a short relax
-        if self.cfg["cut_off_ff_pulse"]:
-            print('Warning: cutting off ff pulses. Ensure sufficient relax delay!', file = sys.stderr)
-
-        if "marker_pulse" in self.cfg and self.cfg["marker_pulse"]:
-            print('Warning: playing marker pulse!', file = sys.stderr)
 
         # If no fig_num is given, use a brute-force way to create a new one. Else, assume we want to use the given value
         if fig_num is None:
@@ -61,7 +53,6 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
         # Loop over different delay lengths
         for i, delay in enumerate(self.delays):
-            print('Current delay %.2f (%d/%d)' % (delay, i + 1, self.delays.size))
             if i == 1:
                 step = time()
 
@@ -95,8 +86,6 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                     im_handles[key].set_clim(vmin=np.nanmin(mat), vmax=np.nanmax(mat))
                     cbar_handles[key].remove()
                     cbar_handles[key] = fig.colorbar(im_handles[key], ax=axs[key], extend='both')
-                    if self.cfg["qubit_spec_delay_type"] == 'log':
-                        axs[key].set_xscale('log')
 
             extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
                       self.spec_fpts[0], self.spec_fpts[-1]]
@@ -118,7 +107,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
             if plot_disp:
                 plt.show(block=False)
-                plt.pause(5)
+                plt.pause(0.2)
 
             # # Create new plot the first time, change data in the future; matplotlib is too slow.
             # if i == 0:
@@ -148,24 +137,11 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         plt.suptitle(self.fname + '\nYoko voltage %f V, FF amplitude %d DAC.' % (self.cfg['yokoVoltage'], self.cfg['ff_gain']))
         plt.savefig(self.iname)
 
-        # Time the experiments
-        end_time = datetime.now()
-        print('') ### print empty row for spacing
-        print('ending date time: ' + end_time.strftime("%Y/%m/%d %H:%M:%S"))
-
         return self.data
 
     def __predeclare_arrays(self):
         # Create the array of delays to loop over
-        if self.cfg["qubit_spec_delay_type"] == 'linear':
-            self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"],
-                                      self.cfg["qubit_spec_delay_steps"])
-        elif self.cfg["qubit_spec_delay_type"] == 'log':
-            self.delays = np.logspace(np.log(self.cfg["qubit_spec_delay_start"]), np.log(self.cfg["qubit_spec_delay_stop"]),
-                                      self.cfg["qubit_spec_delay_steps"], base = np.e)  # logspace is base 10, log is e
-        else:
-            raise ValueError("cfg[\"qubit_spec_delay_type\"] must be \'linear\' or \'log\'!")
-
+        self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
         # Create array of spectroscopy frequency points
         self.spec_fpts = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"], self.cfg["qubit_freq_expts"])
 
@@ -190,27 +166,8 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
     # Used in the GUI, returns estimated runtime in seconds
     def estimate_runtime(self):
         #TODO broken by change of experiment
-        if self.cfg["qubit_pulse_style"] == "arb":
-            qubit_pulse_length = self.cfg["sigma"] * 4  # [us]
-        elif self.cfg["qubit_pulse_style"] == "flat_top":
-            qubit_pulse_length = self.cfg["sigma"] * 4 + self.cfg["flat_top_length"]  # [us]
-        elif self.cfg["qubit_pulse_style"] == "const":
-            qubit_pulse_length = self.cfg["qubit_length"]  # [us]
-
-        if self.cfg["qubit_spec_delay_type"] == 'linear':
-            delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"],
-                                      self.cfg["qubit_spec_delay_steps"])
-        elif self.cfg["qubit_spec_delay_type"] == 'log':
-            delays = np.logspace(np.log(self.cfg["qubit_spec_delay_start"]), np.log(self.cfg["qubit_spec_delay_stop"]),
-                                      self.cfg["qubit_spec_delay_steps"], base = np.e)  # logspace is base 10, log is e
-        else:
-            raise ValueError("cfg[\"qubit_spec_delay_type\"] must be \'linear\' or \'log\'!")
-
-        reverse_pulse_time = self.cfg['ff_length'] if self.cfg['reverse_pulse'] else 0
-        pulse_length = sum([np.max([self.cfg['ff_length'] + self.cfg['pre_ff_delay'] + reverse_pulse_time,
-                                    delay + qubit_pulse_length]) for delay in delays])
-        return (self.cfg["reps"] * self.cfg["qubit_freq_expts"] *
-                (self.cfg["qubit_spec_delay_steps"] * (self.cfg['read_length'] + self.cfg["relax_delay"]) + pulse_length) * 1e-6)  # [s]
+        return (self.cfg["reps"] * self.cfg["qubit_spec_delay_steps"] * self.cfg["qubit_freq_expts"] *
+                (self.cfg["relax_delay"] + self.cfg["ff_length"]) * 1e-6)  # [s]
 
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -236,62 +193,19 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         # Fast flux pulse parameters
         "ff_gain": 1,                    # [DAC units] Gain for fast flux pulse
         "ff_length": 50,                 # [us] Total length of positive fast flux pulse
-        "ff_pulse_style": "const",       # one of ["const", "linear"]
+        "ff_pulse_style": "const",       # one of ["const", "flat_top", "arb"], currently only "const" is supported
         "ff_ch": 6,                      # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
-        "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
-        "ff_ramp_length": 1,  # [us] length of one half of the flux ramp, used with linear style
 
         # qubit_spec_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-        "qubit_spec_delay_start": 0,        # [us] Initial value
-        "qubit_spec_delay_stop": 2,         # [us] Final value
-        "qubit_spec_delay_steps": 10,       # number of qubit_spec_delay points to take
-        "qubit_spec_delay_type": 'linear',  # [string] 'linear' or 'log': how to space the points
+        "qubit_spec_delay_start": 0,     # [us] Initial value
+        "qubit_spec_delay_stop": 2,     # [us] Final value
+        "qubit_spec_delay_steps": 10,    # number of qubit_spec_delay points to take
 
-        # Other parameters
         "yokoVoltage": -0.115,           # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,               # [us]
         "qubit_freq_expts": 2000,        # number of points of qubit frequency
         "reps": 1000,
         "sets": 5,
         "use_switch": False,
-        "cut_off_ff_pulse": False,       # [Bool] do we cut off the fast flux pulse if the qubit pulse is done already?
     }
-
-    # Fits the output of acquire, draws some plots. data is a dictionary in the same format as acquire returns.
-    # p0 is the array of initial guesses, one for each parameter in lorentzian (4 atm).
-    def fit_data(self, data, p0):
-        import numpy as np
-        import matplotlib.pyplot as plt
-        from scipy.optimize import curve_fit
-
-        def lorentzian(x, x0, gamma, A, y0):
-            return A * gamma ** 2 / ((x - x0) ** 2 + gamma ** 2) + y0
-
-        # dim: [delays, spec]
-        spec_Imat = data['data']['spec_Imat']
-        spec_Qmat = data['data']['spec_Qmat']
-        delays_vec = data['data']['delays_vec']
-        spec_fpts = data['data']['spec_fpts']
-        mag = np.sqrt(spec_Imat ** 2, spec_Qmat ** 2)
-
-        # p0 = [540, 20, -0.3, 2.8]
-        popts = np.zeros((4, mag.shape[0]))
-
-        for j, delay in enumerate(delays_vec):
-            try:
-                popts[:, j], pcov = curve_fit(lorentzian, spec_fpts, mag[j, :], p0 = p0)
-            except RuntimeError:
-                popts[:, j] = [np.nan, np.nan, np.nan, np.nan]
-
-
-        plt.figure()
-        plt.subplot(2, 1, 1)
-        plt.plot( delays_vec, popts[0])
-        plt.ylabel('Centre frequency [MHz]')
-        plt.xlabel('Delay [ns]')
-
-        plt.subplot(2, 1, 2)
-        plt.plot(delays_vec, popts[1])
-        plt.ylabel('Bandwidth [MHz]')
-        plt.xlabel('Delay [ns]')

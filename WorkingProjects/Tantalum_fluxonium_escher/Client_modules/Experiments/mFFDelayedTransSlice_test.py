@@ -1,5 +1,6 @@
 ###
-# This file performs a transmission slice at a particular FF point.
+# This file performs a transmission slice at a particular FF point, with adjustable delays before, during, and after
+# the ff pulse. Compare to mFFSpecSlice
 # This requires several helper experiment files due to the way the RFSOC qick works.
 # Lev, September 2025: create file.
 ###
@@ -14,11 +15,11 @@ import matplotlib.pyplot as plt
 
 # ====================================================== #
 
-class FFTransSlice_Experiment(ExperimentClass):
+class FFDelayedTransSlice_test_Experiment(ExperimentClass):
     """
     This experiment runs a slice of transmission vs. frequency at some fast flux value.
-    Since you cannot sweep readout frequency inside an experiment, this is accomplished by creating two program
-    classes, one of which sets the fast flux value with a const pulse and stdysel = 'last', while the other measures.
+    The flux pulse has adjustable start, end times, and length.
+    We are not allowed to change readout frequency in one program, so uses a helper class
     """
     # Template config dictionary, used in GUI for initial values
     config_template = {
@@ -32,52 +33,24 @@ class FFTransSlice_Experiment(ExperimentClass):
         "ff_gain": 1,                   # [DAC units] Gain for fast flux pulse
         "ff_ch": 6,                     # RFSOC output channel of fast flux drive
         "ff_nqz": 1,                    # Nyquist zone to use for fast flux drive
-
-        # Transmission Experiment. Parameter naming convention preserved from mTransmission_SaraTest below
-        #"read_pulse_freq": 7000,        # [MHz] Centre frequency of transmission sweep
-        #"TransSpan": 5,                 # [MHz] Span of transmission sweep
-        #"TransNumPoints": 301,          # Number of poitns in transmission sweep
+        "ff_length": 99,                # [us] Total length of positive fast flux pulse
+        "pre_ff_delay": 0.5,            # [us] Delay before ff pulse starts
+        "post_ff_delay": 0.5,           # [us] Delay after ff pulse is over and before measurement
 
         # New format parameters for transmission experiment
         "start_freq": 5000,             # [MHz] Start frequency of sweep
         "stop_freq": 6000,              # [MHz] Stop frequency of sweep
         "num_freqs": 101,               # Number of frequency points to use
-        "init_time": 1,                 # [us] Thermalisation time after FF to new point before starting measurement
-        "therm_time": 1,                # [us] Thermalisation time after moving FF down to 0 for measurement, if measure_at_0
-        "measure_at_0": False,          # [Bool] Do we go back to 0 DAC units on the FF to measure?
-        "reversed_pulse": False,        # [Bool] Do we play a reversed pulse on the ff channel after measurement?
 
         "yokoVoltage": 0,               # [V] Yoko voltage for DC component of fast flux
         "relax_delay": 10,              # [us] Delay after measurement before starting next measurement
         "reps": 1000,                   # Reps of measurements; init program is run only once
         "sets": 5,                      # Sets of whole measurement; used in GUI
+        "reversed_pulse": False,        # [Bool] Whether to play a reversed pulse to compensate for reactive elements
     }
 
-    # Create some internal program classes that will only ever be used inside of this ExperimentClass.
-
-    # Sets up the FF to the new point, waits some time to allow thermalisation, and keeps the fast flux at the new value
-    # It may be possible to put this in the initialise of the other experiment, but I'm not 100% sure of the timing
-    # of the execution of that, so let's just be explicit by having a separate program.
-    class FFInit_Prog(AveragerProgram):
-        def initialize(self):
-            # Declare channels
-            self.declare_gen(ch=self.cfg["ff_ch"], nqz=self.cfg["ff_nqz"])  # Fast flux
-
-            # Define the fast flux pulse. The length is very short, since we will keep it const through mode or stdysel
-            # stdysel = 'last' keeps the generator on the last value used, which in this case is the const value
-            # This persists even when the tproc is done running the program. Could also use mode = 'periodic'
-            self.set_pulse_registers(ch=self.cfg["ff_ch"], style="const", freq=0, phase=0, gain=self.cfg["ff_gain"],
-                                     length=self.us2cycles(0.01, gen_ch=self.cfg["ff_ch"]), stdysel = 'last')
-
-            # Give some time to run the commands on the tproc
-            self.sync_all(self.us2cycles(0.05))
-
-        def body(self):
-            self.pulse(ch=self.cfg["ff_ch"], t = 0)  # play fast flux pulse
-
-            self.sync_all(self.us2cycles(self.cfg["init_time"]))  # Wait to allow everything to thermalise at this flux
-
-    class FFTransPoint_Prog(AveragerProgram):
+    # Create an internal helper class that will only ever be used inside of this ExperimentClass.
+    class FFTransDelayedPoint_Prog(AveragerProgram):
         def initialize(self):
             # Declare channels
             self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
@@ -102,29 +75,12 @@ class FFTransSlice_Experiment(ExperimentClass):
             # For convenience
             adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
 
-            # If measuring at 0 ff DAC units, send back to 0
-            if self.cfg["measure_at_0"]:
-                self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0, gain=0, length=3)
-                self.pulse(ch=self.cfg['ff_ch'], t=0)
+            # Sync to point where it's time to measure
+            self.sync_all(self.us2cycles(self.cfg["pre_ff_delay"] + self.cfg["ff_length"] + self.cfg["post_ff_delay"]))
 
             # trigger measurement, play measurement pulse, wait for qubit to relax
             self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                          wait=True, syncdelay=self.us2cycles(self.cfg["relax_delay"]))
-
-            # If measuring at 0 ff DAC units, go back to high value and leave it there; wait for init time
-            if self.cfg["measure_at_0"]:
-                # If we want to play a reversed FF pulse to cancel out the residual currents in the system and bring
-                # us back to the correct amount of flux. Since we thermalise at ff_gain, the "pulse" is going back to 0.
-                if self.cfg["reversed_pulse"]:
-                    self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
-                                             gain=2 * self.cfg["ff_gain"], length=3, stdysel='last')
-                    self.pulse(ch=self.cfg['ff_ch'], t=0)
-                    self.sync_all(self.us2cycles(self.cfg['read_length'] + self.cfg["relax_delay"]))
-                # Send very short (3 clock cycles) pulse at ff_gain to move ff back. stdysel='last' so it stays there
-                self.set_pulse_registers(ch=self.cfg['ff_ch'], style="const", mode="oneshot", freq=0, phase=0,
-                                         gain=self.cfg["ff_gain"], length=3, stdysel = 'last')
-                self.pulse(ch=self.cfg['ff_ch'], t=0)
-                self.sync_all(self.us2cycles(self.cfg["therm_time"]))
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):
@@ -132,32 +88,17 @@ class FFTransSlice_Experiment(ExperimentClass):
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
         # Declare some arrays
-
-        # This is the way consistent with mTransmission_SaraTest, which is bad because 1) TransSpan is half of span and
-        # 2) it doesn't actually go to the correct endpoint, it's one step off. Uncomment the lines if you prefer this
-        #self.fpts = (self.cfg['read_pulse_freq'] - self.cfg['TransSpan'] +
-        #             2 * self.cfg['TransSpan'] / self.cfg['TransNumPoints'] * np.arange(self.cfg['TransNumPoints']))
-        # self.avgi = np.zeros(self.cfg['TransNumPoints'])
-        # self.avgq = np.zeros(self.cfg['TransNumPoints'])
-
         self.fpts = np.linspace(start = self.cfg['start_freq'], stop = self.cfg['stop_freq'], num = self.cfg['num_freqs'])
         self.avgi = np.zeros(self.cfg['num_freqs'])
         self.avgq = np.zeros(self.cfg['num_freqs'])
 
         self.data = {}
 
-        if (self.cfg["measure_at_0"] and self.cfg["reversed_pulse"] and
-            (self.cfg["ff_gain"] * 2 > self.soc.get_maxv(self.cfg['ff_ch']))):
-            raise ValueError('If playing reversed pulse and measuring at 0, ff_gain * 2 cannot exceed maximum value')
 
     def acquire(self, progress=False, debug=False):
-        # First, run init program. Only one rep for this one!
-        init_prog = self.FFInit_Prog(soccfg = self.soccfg, cfg = self.cfg | {'reps': 1})
-        init_prog.run_rounds(self.soc, progress = False)  # No measure in this one
-
-        # Now, loop over transmission frequencies -- we are not allowed to change frequency inside a program!
+        # Loop over transmission frequencies -- we are not allowed to change frequency inside a program!
         for i, freq in enumerate(tqdm(self.fpts, disable = not progress)):
-            trans_prog = self.FFTransPoint_Prog(soccfg = self.soccfg, cfg = self.cfg | {'read_pulse_freq': freq})
+            trans_prog = self.FFTransDelayedPoint_Prog(soccfg = self.soccfg, cfg = self.cfg | {'read_pulse_freq': freq})
 
             # Collect the data
             outp = trans_prog.acquire(self.soc, angle=None, load_pulses=True,
@@ -168,7 +109,7 @@ class FFTransSlice_Experiment(ExperimentClass):
         self.data = {'config': self.cfg, 'data': {'fpts': self.fpts, 'avgi': self.avgi, 'avgq': self.avgq}}
 
         # Return fast flux to 0
-        self.soc.reset_gens()
+        #self.soc.reset_gens()
 
         return self.data
 
@@ -237,5 +178,6 @@ class FFTransSlice_Experiment(ExperimentClass):
     def estimate_runtime(self):
         #return (self.cfg['init_time'] + self.cfg["reps"] * self.cfg["TransNumPoints"] *
         #                                (self.cfg["relax_delay"] + self.cfg["read_length"]) * 1e-6)  # [s]
-        return (self.cfg['init_time'] + self.cfg["reps"] * self.cfg["num_freqs"] *
-                                (self.cfg["relax_delay"] + self.cfg["read_length"]) * 1e-6)  # [s]
+        return self.cfg["reps"] * self.cfg["num_freqs"] * (
+                                self.cfg["pre_ff_delay"] + self.cfg["ff_length"] + self.cfg["post_ff_delay"] +
+                                self.cfg["read_length"] + self.cfg["relax_delay"]) * 1e-6  # [s]

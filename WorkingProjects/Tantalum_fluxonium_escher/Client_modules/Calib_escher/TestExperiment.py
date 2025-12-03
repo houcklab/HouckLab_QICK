@@ -123,42 +123,42 @@ ConstantTone_Experiment.save_config(ConstantTone_Instance)
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 3000,
+    "reps": 1000,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 13,
     "read_pulse_gain": 5000,
-    "read_pulse_freq": 7391.9,
+    "read_pulse_freq": 7392,
 
     # Transmission Experiment
     "TransSpan": 1.6,
-    "TransNumPoints": 451,
+    "TransNumPoints": 151,
     "ro_mode_periodic": False,
 
     # define the yoko voltage
-    "yokoVoltage": -1.125,
+    "yokoVoltage": -1.127,
 
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "arb",
-    "qubit_freq": 944, #940.8,
-    "qubit_gain": 30000,
+    "qubit_pulse_style": "flat_top",
+    "qubit_freq": 950, #940.8,
+    "qubit_gain": 32000,
 
     # Constant Pulse Tone
     "qubit_length": 10,
 
     # Flat top or gaussian pulse tone
-    "sigma": 1,#0.3,
-    "flat_top_length": 0.5,
+    "sigma": 0.05,#0.3,
+    "flat_top_length": 5,
 
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 800, #2105,
-    "qubit_freq_stop": 1200,#2120,
-    "SpecNumPoints": 301,
+    "qubit_freq_start": 850, #2105,
+    "qubit_freq_stop": 1050,#2120,
+    "SpecNumPoints": 51,
     'spec_reps': 2000,#10000, #20000,
 
     # amplitude rabi parameters
@@ -169,7 +169,7 @@ UpdateConfig_qubit = {
 
 
     # Experiment parameters
-    "relax_delay": 10, #2000,
+    "relax_delay": 75, #2000,
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": False,
@@ -186,7 +186,8 @@ config = BaseConfig | UpdateConfig
 
 #Updating the mlbf filter
 filter_freq = (config["read_pulse_freq"])
-mlbf_filter.set_frequency(int(filter_freq))
+#mlbf_filter.set_frequency(int(filter_freq))
+print("Warning: not setting MLBF!", file=sys.stderr)
 
 ## Changing the peak finder to maxima
 
@@ -519,48 +520,48 @@ TimeRabi_Blob.save_config(Instance_TimeRabi_Blob)
 
 # ###TITLE: Interleaved T1 measurement
 ##region T1 Config
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": -0.5,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 10, # us
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 7392.6 , # [MHz] actual frequency is this number + "cavity_LO"
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq": 4830.0,
-#     "qubit_gain": 22500,
-#     "sigma": 0.005,  ### units us, define a 20ns sigma
-#     "flat_top_length": 0.025,  ### in us
-#     "qubit_pulse_style": "arb", #### arb means gaussain here
-#     "relax_delay": 500,  ### turned into us inside the run function
-#     ##### T1 parameters
+UpdateConfig = {
+    ##### define attenuators
+    "yokoVoltage": -1.133,
+    ###### cavity
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 13, # us
+    "read_pulse_gain": 5000, # [DAC units]
+    "read_pulse_freq": 7392 , # [MHz] actual frequency is this number + "cavity_LO"
+    ##### spec parameters for finding the qubit frequency
+    "qubit_freq": 938.0,
+    "qubit_gain": 32000,
+    "sigma": 0.05,  ### units us, define a 20ns sigma
+    "flat_top_length": 5,  ### in us
+    "qubit_pulse_style": "flat_top", #### arb means gaussain here
+    "relax_delay": 1000,  ### turned into us inside the run function
+    ##### T1 parameters
+    "start": 0, ### us
+    "step": 500, ### us
+    "expts": 21, ### number of experiemnts
+    "reps": 2000, ### number of averages on each experiment
+}
+config = BaseConfig | UpdateConfig
+
+# small_update_config = {
 #     "start": 0, ### us
-#     "step": 10, ### us
-#     "expts": 101, ### number of experiemnts
-#     "reps": 2000, ### number of averages on each experiment
+#     "step": 100, ### us
+#     "expts": 4, ### number of experiemnts
+#     "reps": 3000, ### number of averages on each experiment
 # }
-# config = BaseConfig | UpdateConfig
+# config = config | small_update_config
 #
-# # small_update_config = {
-# #     "start": 0, ### us
-# #     "step": 100, ### us
-# #     "expts": 4, ### number of experiemnts
-# #     "reps": 3000, ### number of averages on each experiment
-# # }
-# # config = config | small_update_config
-# #
-# # print(config)
-# # config = UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print("Voltage is ", yoko1.GetVoltage(), " Volts")
-#
-# Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
-# data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
-# T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
-# T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
-# T1Experiment.save_config(Instance_T1Experiment)
+# print(config)
+# config = UpdateConfig
+
+yoko.SetVoltage(config["yokoVoltage"])
+print("Voltage is ", yoko.GetVoltage(), " Volts")
+
+Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
+data_T1Experiment = T1Experiment.acquire(Instance_T1Experiment)
+T1Experiment.display(Instance_T1Experiment, data_T1Experiment, plotDisp=True)
+T1Experiment.save_data(Instance_T1Experiment, data_T1Experiment)
+T1Experiment.save_config(Instance_T1Experiment)
 
 # for idx in range(30):
 #     Instance_T1Experiment = T1Experiment(path="dataTestT1Experiment", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg,  progress=True)
@@ -1256,20 +1257,20 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
 
     # Fast flux pulse parameters
-    "ff_gain": -5000,  # [DAC units] Gain for fast flux pulse
+    "ff_gain": 0,  # [DAC units] Gain for fast flux pulse
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
-    "ff_length": 1000,  # [us] Total length of positive fast flux pulse
-    "pre_ff_delay": 5,  # [us] Delay before ff pulse starts
-    "post_ff_delay": 0.1,  # [us] Delay after ff pulse is over and before measurement
+    "ff_length": 20,  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 1,  # [us] Delay before ff pulse starts
+    "post_ff_delay": 0,  # [us] Delay after ff pulse is over and before measurement
 
     # New format parameters for transmission experiment
-    "start_freq": 7390.5,  # [MHz] Start frequency of sweep
-    "stop_freq": 7393.5,  # [MHz] Stop frequency of sweep
+    "start_freq": 7391.7,  # [MHz] Start frequency of sweep
+    "stop_freq": 7392.5,  # [MHz] Stop frequency of sweep
     "num_freqs": 201,  # Number of frequency points to use
 
-    "yokoVoltage": -1.05,  # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 10,  # [us] Delay after measurement before starting next measurement
+    "yokoVoltage": -1.128,  # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 2000,  # [us] Delay after measurement before starting next measurement
     "reps": 500,  # Reps of measurements; init program is run only once
     "reversed_pulse": False,
     "marker_pulse": False,
@@ -1365,36 +1366,37 @@ except Exception:
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 13,                # [us]
+    "read_length": 15,                # [us]
     "read_pulse_gain": 5000,         # [DAC units]
-    "read_pulse_freq": 7391.9,      # [MHz]
+    "read_pulse_freq": 7392,      # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 250,        # [MHz]
-    "qubit_freq_stop": 750,         # [MHz]
+    "qubit_freq_start": 100,        # [MHz]
+    "qubit_freq_stop": 700,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
-    "sigma": 0.0250,                  # [us], used with "arb" and "flat_top"
-    "qubit_length": 0.2,               # [us], used with "const"
-    "flat_top_length": 0.5,        # [us], used with "flat_top"
+    "sigma": 0.05,                  # [us], used with "arb" and "flat_top"
+    "qubit_length": 0.05,               # [us], used with "const"
+    "flat_top_length": 5,        # [us], used with "flat_top"
     "qubit_gain": 32000,             # [DAC units]
     "qubit_ch": 1,                   # RFSOC output channel of qubit drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
-    "qubit_spec_delay": 5,          # [us] Delay before qubit pulse
+    "qubit_spec_delay": 50,          # [us] Delay before qubit pulse
 
     # Fast flux pulse parameters
-    "ff_gain": 3000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 11,                  # [us] Total length of positive fast flux pulse
+    "ff_gain": 5000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 100,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "reverse_pulse": False,           # [Bool] reverse fast flux pulse to cancel current in reactive components
+    "cut_off_ff_pulse": False,  # [Bool] do we cut off the fast flux pulse if the qubit pulse is done already?
 
-    "yokoVoltage": -1.125,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 1000,               # [us]
-    "qubit_freq_expts": 101,         # number of points
+    "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 100,               # [us]
+    "qubit_freq_expts": 51,         # number of points
     "reps": 1000,
     "use_switch": False,
 }
@@ -1426,42 +1428,43 @@ except Exception:
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 13,                # [us]
+    "read_length": 15,                # [us]
     "read_pulse_gain": 5000,         # [DAC units]
-    "read_pulse_freq": 7391.9,      # [MHz]
+    "read_pulse_freq": 7392,      # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 510,        # [MHz]
-    "qubit_freq_stop": 590,         # [MHz]
+    "qubit_freq_start": 200,        # [MHz]
+    "qubit_freq_stop": 300,         # [MHz]
     "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
     "sigma": 0.05,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 0.05,               # [us], used with "const"
-    "flat_top_length": 0.5,        # [us], used with "flat_top"
+    "flat_top_length": 5,        # [us], used with "flat_top"
     "qubit_gain": 32000,             # [DAC units]
     "qubit_ch": 1,                   # RFSOC output channel of qubit drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": 3000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 990,                  # [us] Total length of positive fast flux pulse
-    "pre_ff_delay": 5,               # [us] Delay before the fast flux pulse
+    "ff_gain": 5000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 3005,                  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "const",
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
-    "reverse_pulse": False,           # [Bool] reverse fast flux pulse to cancel current in reactive components
+    "reverse_pulse": True,           # [Bool] reverse fast flux pulse to cancel current in reactive components
 
-    "yokoVoltage": -1.125,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 5000,               # [us]
+    "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 10000,               # [us]
     "qubit_freq_expts": 51,         # number of points
-    "reps": 5000,
+    "reps": 1000,
     "use_switch": False,
-    "marker_pulse": False,       # Bool, do we send a marker qubit pulse at beginning of expt to see in scope
+    "marker_pulse": False,          # Bool, do we send a marker qubit pulse at beginning of expt to see in scope
+    "cut_off_ff_pulse": True,      # [Bool] do we cut off the fast flux pulse if the qubit pulse is done already?
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-    "qubit_spec_delay_start": 1.0,  # [us] Initial value
-    "qubit_spec_delay_stop": 1000,      # [us] Final value
+    "qubit_spec_delay_start": 1,  # [us] Initial value
+    "qubit_spec_delay_stop": 3000,      # [us] Final value
     "qubit_spec_delay_steps": 31,    # number of post_ff_delay points to take
     "qubit_spec_delay_type": 'log',  # [string] 'linear' or 'log': how to space the points
 }
@@ -1896,3 +1899,126 @@ if config["save_data"]:
     if fname[:-3] != '.h5':
         with open(fname, 'w') as fid:
             json.dump(config, fid, cls=NpEncoder),
+
+
+
+######################### testing files
+#%%
+#TITLE: Fast Flux DC voltage Delayed Trans Slice
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFDelayedTransSlice_test import \
+    FFDelayedTransSlice_test_Experiment
+
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",  # --Fixed
+    "read_length": 13,  # [us]
+    "read_pulse_gain": 5000,  # [DAC units]
+    "ro_mode_periodic": False,  # Bool: if True, keeps readout tone on always
+
+    # Fast flux pulse parameters
+    "ff_gain": 0,  # [DAC units] Gain for fast flux pulse
+    "ff_ch": 6,  # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+    "ff_length": 2000,  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 1,  # [us] Delay before ff pulse starts
+    "post_ff_delay": 0,  # [us] Delay after ff pulse is over and before measurement
+
+    # New format parameters for transmission experiment
+    "start_freq": 7391.7,  # [MHz] Start frequency of sweep
+    "stop_freq": 7392.5,  # [MHz] Stop frequency of sweep
+    "num_freqs": 201,  # Number of frequency points to use
+
+    "yokoVoltage": -1.128,  # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 5,  # [us] Delay after measurement before starting next measurement
+    "reps": 500,  # Reps of measurements; init program is run only once
+    "reversed_pulse": False,
+    "marker_pulse": False,
+}
+
+config = BaseConfig | UpdateConfig
+yoko.SetVoltage(config["yokoVoltage"])
+
+Instance_FFDelayedTransSlice_test = FFDelayedTransSlice_test_Experiment(path="FFDelayedTransSlice_test", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFDelayedTransSlice_test.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+try:
+    data_FFDelayedTransSlice_test = FFDelayedTransSlice_test_Experiment.acquire(Instance_FFDelayedTransSlice_test, progress = True)
+    FFDelayedTransSlice_test_Experiment.display(Instance_FFDelayedTransSlice_test, data_FFDelayedTransSlice_test, plot_disp=True)
+    FFDelayedTransSlice_test_Experiment.save_data(Instance_FFDelayedTransSlice_test, data_FFDelayedTransSlice_test)
+    FFDelayedTransSlice_test_Experiment.save_config(Instance_FFDelayedTransSlice_test)
+    # print(Instance_specSlice.qubitFreq)
+    plt.show()
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
+
+#%%
+#TITLE: Fast Flux DC voltage Spec Slice
+
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mFFSpecSlice_test import \
+    FFSpecSlice_test_Experiment
+
+UpdateConfig = {
+    # Readout section
+    "read_pulse_style": "const",     # --Fixed
+    "read_length": 13,                # [us]
+    "read_pulse_gain": 5000,         # [DAC units]
+    "read_pulse_freq": 7392,      # [MHz]
+    "ro_mode_periodic": False,  # currently unused
+
+    # Qubit spec parameters
+    "qubit_freq_start": 850,        # [MHz]
+    "qubit_freq_stop": 1050,         # [MHz]
+    "qubit_pulse_style": "flat_top", # one of ["const", "flat_top", "arb"]
+    "sigma": 0.05,                  # [us], used with "arb" and "flat_top"
+    "qubit_length": 0.05,               # [us], used with "const"
+    "flat_top_length": 5,        # [us], used with "flat_top"
+    "qubit_gain": 32000,             # [DAC units]
+    "qubit_ch": 1,                   # RFSOC output channel of qubit drive
+    "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
+    "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
+    "qubit_spec_delay": 0,          # [us] Delay before qubit pulse
+
+    # Fast flux pulse parameters
+    "ff_gain": 0,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 0.1,                  # [us] Total length of positive fast flux pulse
+    "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
+    "ff_pulse_style": "const",
+    "ff_ch": 6,                      # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
+    "reverse_pulse": False,           # [Bool] reverse fast flux pulse to cancel current in reactive components
+    "cut_off_ff_pulse": True,  # [Bool] do we cut off the fast flux pulse if the qubit pulse is done already?
+
+    "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 7500,               # [us]
+    "qubit_freq_expts": 51,         # number of points
+    "reps": 2000,
+    "use_switch": False,
+}
+
+config = BaseConfig | UpdateConfig
+yoko.SetVoltage(config["yokoVoltage"])
+
+Instance_FFSpecSlice_test = FFSpecSlice_test_Experiment(path="FFSpecSlice_test", cfg=config,soc=soc,soccfg=soccfg,
+                                              outerFolder = outerFolder, short_directory_names = True)
+
+# Estimate Time
+time = Instance_FFSpecSlice_test.estimate_runtime()
+print("Time for ff spec experiment is about ", time, " s")
+
+try:
+    data_FFSpecSlice_test = FFSpecSlice_test_Experiment.acquire(Instance_FFSpecSlice_test, progress = True)
+    FFSpecSlice_test_Experiment.display(Instance_FFSpecSlice_test, data_FFSpecSlice_test, plot_disp=True)
+    FFSpecSlice_test_Experiment.save_data(Instance_FFSpecSlice_test, data_FFSpecSlice_test)
+    FFSpecSlice_test_Experiment.save_config(Instance_FFSpecSlice_test)
+    # print(Instance_specSlice_test.qubitFreq)
+    plt.show()
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
+
+

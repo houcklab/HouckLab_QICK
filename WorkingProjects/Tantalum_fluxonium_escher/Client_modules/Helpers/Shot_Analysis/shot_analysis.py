@@ -34,8 +34,10 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analy
 
 class SingleShotAnalysis:
 
-    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, i_0_arr = None, q_0_arr = None,
-                centers = None, outerFolder = None, name = None, num_bins = None):
+
+    def __init__(self, i_arr, q_arr, cen_num = 2, cluster_method = 'gmm', fast = False, disp_image = True, i_0_arr = None, q_0_arr = None,
+                centers = None, outerFolder = None, name = None, num_bins = None, qubit_freq_mat = None):
+
         """
         Initialize the class. 
 
@@ -50,9 +52,9 @@ class SingleShotAnalysis:
         cluster_method : str
             The method to cluster the data. Options are 'gmm' and 'kmeans'
         fast: bool
-            If to skip all error calculation and plotting which takes most of the time
-        calc_pop: bool
-            If to calculate the populations
+            If to skip all error calculation which takes most of the time
+        disp_image: bool
+            If to display the image, only used if fast is True
         i_0_arr : ndarray
             The I values of training data to initialize the centers
         q_0_arr : ndarray
@@ -71,6 +73,8 @@ class SingleShotAnalysis:
             The suffix to the name of the folder under which to save all data
         initialized : bool
             Whether the initialized state is provided or not
+        qubit_freq_mat : 2d array or None
+            The array of transition frequencies between each states
 
         Methods
         -------
@@ -98,6 +102,9 @@ class SingleShotAnalysis:
         self.outerFolder = outerFolder
         self.num_bins = num_bins
         self.fast = fast
+        self.disp_image = disp_image
+        self.qubit_freq_mat = qubit_freq_mat
+
 
         # Set the path
         if self.outerFolder is not None:
@@ -127,7 +134,7 @@ class SingleShotAnalysis:
         
         
     # Estimate populations from the data
-    def estimate_populations(self,  max_iter = 50000, num_trials = 50000, pop_perc = 101):
+    def estimate_populations(self,i_arr=[], q_arr=[]):
         """
         Estimate the populations from the data
 
@@ -136,12 +143,15 @@ class SingleShotAnalysis:
         population_dict : dict
             A dictionary containing the populations of the centers
         """
-
         if self.initialized == True:
             # Step 1 : Get the centers from the initial data
-            self.get_Centers(self.i_0_arr, self.q_0_arr)
-            self.logger.info('Centers found')
-            self.logger.info(self.centers)
+            if self.centers is not None:
+                print("Centers passed in:\n", self.centers)
+            else:
+                # print("Centers is none")
+                self.get_Centers(self.i_0_arr, self.q_0_arr)
+                self.logger.info('Centers found')
+                self.logger.info(self.centers)
 
             # Step 2 : Fit gaussians to the initial data to get fit parameters
             self.inital_fit_results = self.fit_gaussians(self.i_0_arr, self.q_0_arr, self.centers)
@@ -150,25 +160,40 @@ class SingleShotAnalysis:
             self.logger.info('Initial fitting completed')
             self.logger.info(self.inital_fit_results['result'].fit_report())
 
-            self.book_keeping(self.inital_fit_results, 'Initial')
+            if self.fast is False or self.disp_image:
+                self.book_keeping(self.inital_fit_results, 'Initial')
+
             initial_params = self.inital_fit_results['result'].params
-        
+
         else:
             initial_params = None
-            self.get_Centers(self.i_arr, self.q_arr)
+            if self.centers is not None:
+                print("Centers passed in:\n", self.centers)
+            else:
+                # print("centers is none")
+                self.get_Centers(self.i_arr, self.q_arr)
 
         # Step 3 : Fit gaussians to the final data to get fit parameters
-        self.final_results = self.fit_gaussians(self.i_arr, self.q_arr, self.centers, initial_params = initial_params)
+
+        # if no IQ arrays are passed, it will use the arrays that belong to the object at instantiation
+        if not ( np.any(i_arr) or np.any(q_arr) ):
+           self.final_results = self.fit_gaussians(self.i_arr, self.q_arr, self.centers, initial_params = initial_params)
+
+        #use (truncated) arrays that are passed in as keyword arguments (see post_selection_SSA)
+        else:
+            self.final_results = self.fit_gaussians(i_arr, q_arr, self.centers, initial_params=initial_params)
 
         # Log the results
         self.logger.info('Fitting completed')
         self.logger.info((self.final_results['result'].fit_report()))
 
         # Bookkeeping
-        self.book_keeping(self.final_results, 'Final')
+
+        if self.fast is False or self.disp_image:
+            self.book_keeping(self.final_results, 'Final')
 
         # Step 4 : Estimate the populations
-        self.population_dict = self.calculate_populations(self.final_results,  max_iter = max_iter, num_trials = num_trials, pop_perc = pop_perc)
+        self.population_dict = self.calculate_populations(self.final_results)
 
         return self.population_dict
 
@@ -197,7 +222,8 @@ class SingleShotAnalysis:
         else:
             self.logger.error('Invalid cluster method')
             raise ValueError('Invalid cluster method')
-        
+
+        # print("Returning \n",self.centers)
         return self.centers
         
 
@@ -228,7 +254,7 @@ class SingleShotAnalysis:
             params.add(prefix + 'sigmax', expr = 'sigma')
             params.add(prefix + 'sigmay', expr = 'sigma')
 
-        #TODO : Add in calculations for finding centers in the case there is no intialization data
+        #TODO : Add in calculations for finding centers in the case there is no initialization data
 
         # Add in the guess for the centers 
         # Add the bounds for the centers
@@ -342,26 +368,22 @@ class SingleShotAnalysis:
             heading, fit_result["result"].fit_report(), file_name, append = True)
         
         # save the residual plot
-        try:
-            self.plot_Fit(fit_result["result"], fit_result["X"], fit_result["Y"],  fit_result["hist2d"], plot_disp = False,
-                          plot_save = True, plot_title = name + ' Fit')
-        except:
-            self.logger.info("Failed to plot the fit. God knows why!")
+        self.plot_Fit(fit_result["result"], fit_result["X"], fit_result["Y"],  fit_result["hist2d"], plot_disp = True,
+                      plot_save = True, plot_title = name + ' Fit')
 
         heading = 'confidence intervals'
         self.logger.info('Calculating confidence intervals for book keeping')
-        if self.fast is False:
-            try :
-                conf_int_report = fit_result["result"].ci_report(
-                    ndigits = 3,
-                    maxiter = 10000,
-                    verbose = False,
-                    )
-                self.logger.info('Confidence intervals')
-                self.logger.info(conf_int_report)
-                self.saveOutput(heading, conf_int_report, file_name, append=True)
-            except:
-                self.logger.info("Failed to calculate confidence intervals for book keeping")
+        try :
+            conf_int_report = fit_result["result"].ci_report(
+                ndigits = 3,
+                maxiter = 10000,
+                verbose = False,
+                )
+            self.logger.info('Confidence intervals')
+            self.logger.info(conf_int_report)
+            self.saveOutput(heading, conf_int_report, file_name, append=True)
+        except:
+            self.logger.info("Failed to calculate confidence intervals for book keeping")
 
 
         
@@ -386,7 +408,7 @@ class SingleShotAnalysis:
                 text_file.write(output)
 
     # function to plot the fit
-    def plot_Fit(self, result, X, Y, Z, plot_disp = False, plot_save = True, plot_title = 'Fit Comparision'):
+    def plot_Fit(self, result, X, Y, Z, plot_disp = False, plot_save = True, plot_title = 'Fit Comparison'):
         """
         Plot the fit and residuals of the data and the fit
 
@@ -408,9 +430,6 @@ class SingleShotAnalysis:
             The title of the plot
         """
 
-        # Close all open plots
-        plt.close('all')
-
         # Evaluate the fit
         fit = result.eval(
             x = X, 
@@ -419,13 +438,6 @@ class SingleShotAnalysis:
         
         # Convert all elements in fit to integer
         int_fit = np.rint(fit)
-
-        # Get Centers
-        center_x = []
-        center_y = []
-        for i in range(self.cen_num):
-            center_x.append(result.best_values['g' + str(i) + '_centerx'])
-            center_y.append(result.best_values['g' + str(i) + '_centery'])
 
         # Create the plot
         fig, axs = plt.subplots(2, 2, figsize=(7, 5))
@@ -439,7 +451,6 @@ class SingleShotAnalysis:
         ax.set_aspect('equal')
         plt.colorbar(art, ax=ax, label='z')
         ax.set_title('Data')
-        ax.scatter(center_x, center_y, color = 'r', marker = 'x')
         
         # find the ranges of the initial plot
         xlim = ax.get_xlim()
@@ -449,10 +460,7 @@ class SingleShotAnalysis:
         ax = axs[0, 1]
         art = ax.pcolor(X, Y, int_fit , norm=LogNorm(), shading='auto', cmap = cmap)
         ax.set_aspect('equal')
-        try:
-            plt.colorbar(art, ax=ax, label='z')
-        except:
-            print("Failed to plot colorbar")
+        plt.colorbar(art, ax=ax, label='z')
         ax.set_title('Fit')
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
@@ -485,11 +493,11 @@ class SingleShotAnalysis:
 
         if plot_disp:
             plt.show()
-        else:
-            plt.close()
+
+        plt.close()
 
     # Calculate the populations
-    def calculate_populations(self, fit_results, max_iter = 50000, num_trials = 50000, pop_perc = 101):
+    def calculate_populations(self, fit_results, max_iter = 1000, num_trials = 50000):
         """
         Calculate the populations
         """
@@ -498,7 +506,7 @@ class SingleShotAnalysis:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]
 
             # define and array of the percentages to calculate
-            percentages = np.linspace(0.01, 0.99, pop_perc)
+            percentages = np.linspace(0.01, 0.99, 101)
 
             # Get the confidence intervals
             self.logger.info('Calculating confidence intervals for calculating populations')
@@ -512,6 +520,7 @@ class SingleShotAnalysis:
             # calculate the populations
             self.logger.info('Calculating populations')
             estimates = []
+            temperatures = []
             for idx_trial in tqdm(range(num_trials)):
                 amps = []
                 # find random indexes to try
@@ -531,16 +540,39 @@ class SingleShotAnalysis:
                 # append the estimates with the current population
                 estimates.append(self.Pop_calc(amps))
 
+                # Calculate the temperature
+                if self.qubit_freq_mat is not None:
+                    temperatures.append(utils.calc_tempr_mat(estimates[-1],self.qubit_freq_mat))
+
             # transpose for ease of use
+            temperatures = np.array(temperatures)
+            mean_temperature = np.mean(temperatures, axis = 0)
+            std_temperatures = np.std(temperatures, axis = 0)
             estimates = np.transpose(estimates)
             mean_estimate = np.mean(estimates, axis=1)
             std_estimate = np.std(estimates, axis=1)
 
+            # Get the centers of the gaussians
+            keys_x = ['g' + str(idx) + '_centerx' for idx in range(self.cen_num)]
+            keys_y = ['g' + str(idx) + '_centery' for idx in range(self.cen_num)]
+            centers = []
+            for i in range(self.cen_num):
+                centers.append((
+                    fit_results['result'].best_values[keys_x[i]],
+                    fit_results['result'].best_values[keys_y[i]]
+                ))
+            centers = np.array(centers)
+
+
             population_dict = {
-                'mean': mean_estimate,
-                'std': std_estimate,
+                'mean_pop': mean_estimate,
+                'std_pop': std_estimate,
                 'estimates': estimates,
                 'num_trials': num_trials,
+                'mean_temp': mean_temperature,
+                'std_temp': std_temperatures,
+                'temperatures': temperatures,
+                'centers': centers,
             }
         else:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]
@@ -603,7 +635,7 @@ class SingleShotAnalysis:
             means[i,:] = [params[key+"centerx"], params[key+"centery"]]
             sigmas[i,0,0] = sigmas[i,1,1] = params[key+'sigmax']
             amps[i] = params[key+'amplitude']
-
+        # print(amps)
         if method == "mahalanobis":
             # Calculate the malalanabois distance
             for i in range(cen_num):
@@ -637,5 +669,13 @@ class SingleShotAnalysis:
 
         # Sum of all non-diagonal element
         quant = np.sum(quant) - np.trace(quant)
+
+        # Check if the amps have a sane value if not then quant is zero
+        total_amp = np.sum(amps)
+        percentage = amps/total_amp
+        # if any percentage less than 10 % we set to zero
+        if np.min(percentage) < 0.1:
+            quant = 0
+
 
         return quant
