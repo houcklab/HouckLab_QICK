@@ -411,6 +411,7 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 3), np.nan))
             perr = dct.get('perr', [None]*R)
+            r_squared = dct.get('r_squared', [None]*R)
             g_sorted = dct.get('g_sorted', y)
 
             # Reconstruct everything
@@ -418,10 +419,9 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
 
             for r, ax in enumerate(axs):
 
-                # relative_err = perr[r] / np.abs(popt[r])
-                # if np.any(relative_err > 0.5):
-                #     print(f"Not plotting since error breaches threshold: {relative_err}")
-                #     continue
+                if np.any(np.isnan(popt[r])) or r_squared[r] is None or r_squared[r] < 0.65:  # Skip bad fits
+                    print(f"Skipping fit plotting since R^2 high: {r_squared[r]}")
+                    continue
 
                 # Twin axis for contrast
                 axc = ax.twiny()
@@ -491,6 +491,7 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 5), np.nan))
             perr = dct.get('perr', [None]*R)
+            r_squared = dct.get('r_squared', [None]*R)
             offset_sorted = dct.get('offset_sorted', y)
             best_wait_idx = dct.get('best_wait_idx', np.zeros(R, dtype=int))
 
@@ -499,10 +500,9 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
 
             for r, ax in enumerate(axs):
 
-                # relative_err = perr[r] / np.abs(popt[r])
-                # if np.any(relative_err > 0.5):
-                #     print(f"Not plotting since error breaches threshold: {relative_err}")
-                #     continue
+                if np.any(np.isnan(popt[r])) or r_squared[r] is None or r_squared[r] < 0.65:  # Skip bad fits
+                    print(f"Skipping fit plotting since R^2 high: {r_squared[r]}")
+                    continue
 
                 # Twin axis for contrast
                 axc = ax.twiny()

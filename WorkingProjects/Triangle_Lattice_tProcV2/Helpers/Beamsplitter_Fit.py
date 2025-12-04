@@ -95,6 +95,7 @@ def fit_double_beamsplitter(Z, gains):
     # Allocate result arrays
     popt_array = np.full((R, 3), np.nan)
     pcov_array = np.full((R, 3, 3), np.nan)
+    r_squared_array = np.full(R, np.nan)
 
     # Loop over readouts
     for r in range(R):
@@ -152,9 +153,17 @@ def fit_double_beamsplitter(Z, gains):
             popt_array[r] = best_popt
             pcov_array[r] = best_pcov
 
+            # Calculate r^2
+            y_fit = model(g_fit, *best_popt)
+            ss_res = np.sum((c_fit - y_fit) ** 2)
+            ss_tot = np.sum((c_fit - np.mean(c_fit)) ** 2)
+            r_squared = 1 - (ss_res / ss_tot)
+            r_squared_array[r] = r_squared
+
     return {
         'popt': popt_array,
         'perr': [np.sqrt(np.diag(pcov)) for pcov in pcov_array],
+        'r_squared': r_squared_array,
         'g_sorted': g_sorted
     }
 
@@ -283,6 +292,7 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
 
     popt_array = np.full((R, 5), np.nan)
     pcov_array = np.full((R, 5, 5), np.nan)
+    r_squared_array = np.full(R, np.nan)
     best_wait_idx_array = np.full(R, first_col_idx, dtype=int)
 
     for r in range(R):
@@ -336,9 +346,17 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
             popt_array[r] = best_popt
             pcov_array[r] = best_pcov
 
+            # Calculate R^2
+            y_fit = sine_model(offset_sorted, *best_popt)
+            ss_res = np.sum((c_norm - y_fit) ** 2)
+            ss_tot = np.sum((c_norm - np.mean(c_norm)) ** 2)
+            r_squared = 1 - (ss_res / ss_tot)
+            r_squared_array[r] = r_squared
+
     return {
         'popt': popt_array,
         'perr': [np.sqrt(np.diag(pcov)) for pcov in pcov_array],
+        'r_squared': r_squared_array,
         'offset_sorted': offset_sorted,
         'best_wait_idx': best_wait_idx_array
     }
