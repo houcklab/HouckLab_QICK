@@ -390,27 +390,39 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
         self.fit_params = fit_double_beamsplitter(Z, gains)
         data_dict.update(self.fit_params)
 
-    def _display_plot(self, data=None, fig_axs=None, plot_fit=False):
+    def _display_plot(self, data=None, fig_axs=None):
         if data is None:
             data = self.data
         dct = data.get('data', data)
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        x = np.asarray(dct[self.loop_names[0]], float)
+        try:
+            x_key_name = self.x_key
+        except:
+            x_key_name = self.loop_names[0]
+
+        x = np.asarray(dct[x_key_name])
         y = np.asarray(dct.get(SweepHelpers.key_savename(self.y_key)), float)
         Z = np.asarray(dct[self.z_value], float)
         R, G, T = Z.shape
 
-        if 'popt' in dct and plot_fit:
+        if 'popt' in dct:
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 3), np.nan))
+            perr = dct.get('perr', [None]*R)
             g_sorted = dct.get('g_sorted', y)
 
             # Reconstruct everything
             fit = reconstruct_double_beamsplitter_fit(popt, g_sorted, y, Z)
 
             for r, ax in enumerate(axs):
+
+                # relative_err = perr[r] / np.abs(popt[r])
+                # if np.any(relative_err > 0.5):
+                #     print(f"Not plotting since error breaches threshold: {relative_err}")
+                #     continue
+
                 # Twin axis for contrast
                 axc = ax.twiny()
                 axc.set_xlim(-0.05, 1.05)
@@ -425,13 +437,13 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
                 # Phase lines
                 for yy in fit['pi'][r]:
                     ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
-                    ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='cyan', ha='left', va='bottom',
+                    ax.annotate(f'π/2: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
+                                fontsize=9, color='cyan', ha='left', va='bottom', zorder=10,
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
                 for yy in fit['zero'][r]:
                     ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
                     ax.annotate(f'0: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='yellow', ha='left', va='bottom',
+                                fontsize=9, color='yellow', ha='left', va='bottom', zorder=10,
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
                 h1, l1 = ax.get_legend_handles_labels()
@@ -458,21 +470,27 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times)
         data_dict.update(self.fit_params)
 
-    def _display_plot(self, data=None, fig_axs=None, plot_fit=False):
+    def _display_plot(self, data=None, fig_axs=None):
         if data is None:
             data = self.data
         dct = data.get('data', data)
 
         fig, axs = super()._display_plot(data, fig_axs)
 
-        x = np.asarray(dct[self.loop_names[0]], float)
+        try:
+            x_key_name = self.x_key
+        except:
+            x_key_name = self.loop_names[0]
+
+        x = np.asarray(dct[x_key_name])
         y = np.asarray(dct.get(SweepHelpers.key_savename(self.y_key), None), float)
         Z = np.asarray(dct[self.z_value], float)
         R, O, T = Z.shape
 
-        if 'popt' in dct and plot_fit:
+        if 'popt' in dct:
             # Load saved fit data
             popt = dct.get('popt', np.full((R, 5), np.nan))
+            perr = dct.get('perr', [None]*R)
             offset_sorted = dct.get('offset_sorted', y)
             best_wait_idx = dct.get('best_wait_idx', np.zeros(R, dtype=int))
 
@@ -480,6 +498,11 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
             fit = reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, x, y, Z)
 
             for r, ax in enumerate(axs):
+
+                # relative_err = perr[r] / np.abs(popt[r])
+                # if np.any(relative_err > 0.5):
+                #     print(f"Not plotting since error breaches threshold: {relative_err}")
+                #     continue
 
                 # Twin axis for contrast
                 axc = ax.twiny()
@@ -496,28 +519,29 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
                 wait_time = x[best_wait_idx[r]]
                 ax.axvline(wait_time, color='magenta', lw=2.0, ls=':', alpha=0.8, label=f'slice: {wait_time:.1f}')
 
-                # Zero point
+                # Zero line
                 if fit['zero_offsets'][r] is not None:
-                    zero_y = fit['zero_offsets'][r]
+                    zero_y = fit['zero'][r]
                     if y.min() <= zero_y <= y.max():
-                        ax.plot(fit['zero_waits'][r], zero_y, 'o', color='red', markersize=10,
-                                markeredgecolor='white', markeredgewidth=2, label='zero', zorder=10)
-
+                        ax.axhline(zero_y, color='w', lw=2.2, ls='-', alpha=0.95)
+                        ax.annotate(f'0: {zero_y:.1f}', (x.min() + (x.max() - x.min()) * 0.02, zero_y),
+                                    fontsize=9, color='w', ha='left', va='bottom', zorder=10,
+                                    bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
                 # Phase lines
                 for yy in fit['twopi'][r]:
                     ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'2π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='w', ha='left', va='bottom',
+                                fontsize=9, color='w', ha='left', va='bottom', zorder=10,
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
                 for yy in fit['pi'][r]:
-                    ax.axhline(yy, color='cyan', lw=2.2, ls='-', alpha=0.95)
+                    ax.axhline(yy, color='w', lw=2.2, ls='-', alpha=0.95)
                     ax.annotate(f'π: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='cyan', ha='left', va='bottom',
+                                fontsize=9, color='w', ha='left', va='bottom', zorder=10,
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
                 for yy in fit['pihalf'][r]:
-                    ax.axhline(yy, color='yellow', lw=2.2, ls='--', alpha=0.95)
+                    ax.axhline(yy, color='w', lw=2.2, ls='--', alpha=0.95)
                     ax.annotate(f'π/2: {yy:.1f}', (x.min() + (x.max() - x.min()) * 0.02, yy),
-                                fontsize=9, color='yellow', ha='left', va='bottom',
+                                fontsize=9, color='w', ha='left', va='bottom', zorder=10,
                                 bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
 
                 h1, l1 = ax.get_legend_handles_labels()

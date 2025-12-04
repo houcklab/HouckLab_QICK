@@ -154,18 +154,30 @@ def fit_double_beamsplitter(Z, gains):
 
     return {
         'popt': popt_array,
-        'pcov': pcov_array,
+        'perr': [np.sqrt(np.diag(pcov)) for pcov in pcov_array],
         'g_sorted': g_sorted
     }
 
 def reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, wait_times, offsets_unsorted, Z):
-    """Reconstruct all fit data from minimal saved parameters (simple: origin as zero)."""
+    """Reconstruct all fit data from minimal saved parameters."""
     R = popt.shape[0]
     o0, o1 = float(offset_sorted[0]), float(offset_sorted[-1])
     offset_dense = np.linspace(o0, o1, 500)
 
     def sine_model(x, A, w, phi, offset, gamma):
         return A * np.exp(-gamma * (x - o0)) * np.sin(w * x + phi) + offset
+
+    def find_phase_points(w, phi, phase_value):
+        if w <= 0:
+            return []
+        points = []
+        n_start = int(np.floor((w * o0 + phi - phase_value) / (2 * np.pi))) - 1
+        n_end = int(np.ceil((w * o1 + phi - phase_value) / (2 * np.pi))) + 1
+        for n in range(n_start, n_end + 1):
+            x = (phase_value - phi + 2 * np.pi * n) / w
+            if o0 - 1e-9 <= x <= o1 + 1e-9:
+                points.append(float(x))
+        return sorted(points)
 
     order = np.argsort(offsets_unsorted)
     contrast_norm, contrast_fit_dense = [], []
@@ -195,25 +207,33 @@ def reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, wait
         # Reconstruct dense fit
         contrast_fit_dense.append(sine_model(offset_dense, A, w, phi, offset_param, gamma))
 
-        # Simple: zero at origin
-        zero_offset = o0
-        zero_waits.append(wait_times[best_wait_idx[r]])
+        # Find π/2 point (first min/max)
+        extrema = find_phase_points(w, phi, -np.pi / 2 if r == 0 else np.pi / 2)
+
+        if not extrema:
+            zero_offsets.append(None)
+            zero_waits.append(None)
+            pihalf_list.append([])
+            pi_list.append([])
+            twopi_list.append([])
+            continue
+
+        pihalf_offset = extrema[0]
+        phase_at_pihalf = w * pihalf_offset + phi
+
+        # Calculate zero and other points
+        zero_offset = (phase_at_pihalf - np.pi / 2 - phi) / w
         zero_offsets.append(zero_offset)
+        zero_waits.append(wait_times[best_wait_idx[r]])
 
-        # Calculate phase at origin and find other points
-        phase_at_zero = w * zero_offset + phi
+        # Find π and 2π
+        pi_points = find_phase_points(w, phi, phase_at_pihalf + np.pi / 2)
+        twopi_points = find_phase_points(w, phi, phase_at_pihalf + 3 * np.pi / 2)
 
-        def find_offset_at_phase(target_phase):
-            if w <= 0:
-                return None
-            offset = (target_phase - phi) / w
-            return float(offset) if o0 <= offset <= o1 else None
+        pi_offset = next((pt for pt in pi_points if pt > pihalf_offset + 1e-6), None)
+        twopi_offset = next((pt for pt in twopi_points if pt > pihalf_offset + 1e-6), None)
 
-        pihalf_offset = find_offset_at_phase(phase_at_zero + np.pi / 2)
-        pi_offset = find_offset_at_phase(phase_at_zero + np.pi)
-        twopi_offset = find_offset_at_phase(phase_at_zero + 2 * np.pi)
-
-        pihalf_list.append([pihalf_offset] if pihalf_offset else [])
+        pihalf_list.append([pihalf_offset])
         pi_list.append([pi_offset] if pi_offset else [])
         twopi_list.append([twopi_offset] if twopi_offset else [])
 
@@ -221,8 +241,8 @@ def reconstruct_beamsplitter_offset_fit(popt, offset_sorted, best_wait_idx, wait
         'offset_dense': offset_dense,
         'contrast_norm': contrast_norm,
         'contrast_fit_dense': contrast_fit_dense,
-        'zero_offsets': zero_offsets,
         'zero_waits': zero_waits,
+        'zero': zero_offsets,
         'pihalf': pihalf_list,
         'pi': pi_list,
         'twopi': twopi_list
@@ -279,8 +299,8 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
         smoothed = gaussian_filter1d(c_norm, sigma=2.0) if len(c_norm) > 5 else c_norm
         order_freq = max(2, len(c_norm) // 15)
         n_extrema = (
-            len(argrelmin(smoothed, order=order_freq)[0]) +
-            len(argrelmax(smoothed, order=order_freq)[0])
+                len(argrelmin(smoothed, order=order_freq)[0]) +
+                len(argrelmax(smoothed, order=order_freq)[0])
         )
         n_periods = max(1, n_extrema / 2.0)
         w_guess = 2 * np.pi * n_periods / span
@@ -309,7 +329,7 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
                             best_resid = resid
                             best_popt = popt
                             best_pcov = pcov
-                    except:
+                    except Exception:
                         continue
 
         if best_popt is not None:
@@ -318,7 +338,7 @@ def fit_beamsplitter_offset(Z, offsets, wait_times):
 
     return {
         'popt': popt_array,
-        'pcov': pcov_array,
+        'perr': [np.sqrt(np.diag(pcov)) for pcov in pcov_array],
         'offset_sorted': offset_sorted,
         'best_wait_idx': best_wait_idx_array
     }

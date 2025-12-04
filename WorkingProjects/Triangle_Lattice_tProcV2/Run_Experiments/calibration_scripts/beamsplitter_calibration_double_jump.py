@@ -25,21 +25,19 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
     RampDoubleJump_BS_GainR, RampCorrelations_Sweep_BS_Gain, RampCorrelations_Sweep_BS_Offset
 
 
-calibrate_gain                  = True
-calibrate_intermediate_offset   = True
+calibrate_gain                  = False
+calibrate_intermediate_offset   = False
 calibrate_intermediate_gain     = True
 
 
 
-# beamsplitter_point = '1234_correlations'
-ijump_point        = '1234_intermediate'
-beamsplitter_point = '1245_correlations'
+beamsplitter_point = '2356_correlations'
 
 # rungs = ['34_dis', '78_dis']
 # rungs = ['23_dis', '45_dis', '67_dis']
 # rungs = ['23_dis', '67_dis']
 # rungs = ['12', '34', '56', '78']
-rungs = ['12_dis', '45_dis']
+rungs = ['23','56']
 
 offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
 
@@ -49,13 +47,13 @@ double_jump_base = {'reps': 200, 'ramp_time': 1000,
                     Qubit_Parameters[beamsplitter_point]['t_offset'],
                     'relax_delay': 180,
                     'start': 0, 'step': 16, 'expts': 71,
-                    'intermediate_jump_samples': Qubit_Parameters[ijump_point]['IJ']['samples'],
-                    'intermediate_jump_gains': Qubit_Parameters[ijump_point]['IJ']['gains'],}
+                    'intermediate_jump_samples': Qubit_Parameters[beamsplitter_point].get('ij_samples',[None]*8),
+                    'intermediate_jump_gains':   Qubit_Parameters[beamsplitter_point].get('ij_gains',[None]*8)}
 
 double_jump_BS_gain_dict = {'t_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                             'gainRange': 3000, 'gainNumPoints': 11}
 
-double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 40, 'samples_step': 1}
+double_jump_intermediate_offset_dict = {'samples_start': 0, 'samples_stop': 20, 'samples_step': 1}
 
 
 double_jump_intermediate_gain_dict = {'gainRange': 20000, 'gainNumPoints': 25}
@@ -149,7 +147,7 @@ def calibrate_rung_gains(BS_FF, rungs):
 
     return swept_qubits, center_gains
 
-def calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=False):
+def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
     print(f'BS_FF {BS_FF}')
 
@@ -214,7 +212,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=False):
 
         experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
                                 cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
-        data = experiment.acquire_display_save(plotDisp=True, block=False, plot_fit=plot_fit)
+        data = experiment.acquire_display_save(plotDisp=True, block=False)
 
         if 'popt' in data['data']:
 
@@ -255,7 +253,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=False):
 
     return swept_qubits, optimal_offsets
 
-def calibrate_rung_intermediate_gains(BS_FF, rungs,  plot_fit=False):
+def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
     print(f'BS_FF {BS_FF}')
 
@@ -324,7 +322,7 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs,  plot_fit=False):
 
         experiment = RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
                               cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg)
-        data = experiment.acquire_display_save(plotDisp=True, block=False, plot_fit=False)
+        data = experiment.acquire_display_save(plotDisp=True, block=False)
 
 
         if 'popt' in data['data']:
@@ -408,7 +406,7 @@ if calibrate_gain:
 
 if calibrate_intermediate_offset:
 
-    swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs, plot_fit=True)
+    swept_qubits, offsets = calibrate_rung_intermediate_offset(BS_FF, rungs)
 
     if any(offset for offset in offsets):
         print(f"Found optimal offsets: {list(zip(swept_qubits, offsets))}")
@@ -423,7 +421,7 @@ if calibrate_intermediate_offset:
 
 
 if calibrate_intermediate_gain:
-    swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs, plot_fit=True)
+    swept_qubits, gains = calibrate_rung_intermediate_gains(BS_FF, rungs)
 
     if any(offset for offset in gains):
         print(f"Found optimal gains: {list(zip(swept_qubits, gains))}")
