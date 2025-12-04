@@ -39,7 +39,7 @@ beamsplitter_point = '2356_correlations'
 # rungs = ['12', '34', '56', '78']
 rungs = ['23','56']
 
-offset_pi_coeff_choice = 0.5 # Choices are 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
+offset_pi_coeff_choice = 0.5 # Choices are 0, 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
 
 double_jump_base = {'reps': 200, 'ramp_time': 1000,
                     't_offset':
@@ -238,6 +238,8 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
                 chosen_pi_point_key = 'twopi'
             elif offset_pi_coeff_choice == 0.5:
                 chosen_pi_point_key = 'pihalf'
+            elif offset_pi_coeff_choice == 0:
+                chosen_pi_point_key = 'zero'
             else:
                 print(f"Invalid offset_pi_coeff_choice choice, defaulting to {chosen_pi_point_key}")
 

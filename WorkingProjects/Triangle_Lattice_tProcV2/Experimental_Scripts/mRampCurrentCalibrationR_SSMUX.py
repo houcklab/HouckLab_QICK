@@ -419,8 +419,14 @@ class RampDoubleJumpGainR(RampDoubleJumpBase, SweepExperiment2D_plots):
 
             for r, ax in enumerate(axs):
 
-                if np.any(np.isnan(popt[r])) or r_squared[r] is None or r_squared[r] < 0.65:  # Skip bad fits
-                    print(f"Skipping fit plotting since R^2 high: {r_squared[r]}")
+                i_f = 1 # index of the frequency parameter
+                if (np.any(np.isnan(popt[r])) or np.any(np.isnan(perr[r])) or
+                    perr[r][i_f] / np.abs(popt[r][i_f]) >= 0.12
+                ):  # Skip bad fits
+                    try:
+                        print(f"Skipping fit plotting since frequency fit error high: {perr[r][i_f] / np.abs(popt[r][i_f])}")
+                    except:
+                        print("Skipping fit plotting.")
                     continue
 
                 # Twin axis for contrast
@@ -500,8 +506,14 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
 
             for r, ax in enumerate(axs):
 
-                if np.any(np.isnan(popt[r])) or r_squared[r] is None or r_squared[r] < 0.65:  # Skip bad fits
-                    print(f"Skipping fit plotting since R^2 high: {r_squared[r]}")
+                i_f = 1  # index of the frequency parameter
+                if (np.any(np.isnan(popt[r])) or np.any(np.isnan(perr[r])) or
+                        perr[r][i_f] / np.abs(popt[r][i_f]) >= 0.12
+                ):  # Skip bad fits
+                    try:
+                        print(f"Skipping fit plotting since frequency fit error high: {perr[r][i_f] / np.abs(popt[r][i_f])}")
+                    except:
+                        print("Skipping fit plotting.")
                     continue
 
                 # Twin axis for contrast
