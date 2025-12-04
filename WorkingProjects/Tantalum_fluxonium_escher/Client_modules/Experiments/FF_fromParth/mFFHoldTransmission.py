@@ -12,7 +12,7 @@ from qick.averager_program import QickSweep
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
 import time
 
 class mFFnTransmission(NDAveragerProgram):

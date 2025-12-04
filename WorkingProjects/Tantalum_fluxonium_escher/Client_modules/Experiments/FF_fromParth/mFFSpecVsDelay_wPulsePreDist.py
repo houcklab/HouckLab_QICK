@@ -9,17 +9,17 @@ from datetime import datetime
 from time import time
 
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFSpecSlice import FFSpecSlice
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFSpecSlice_wPulsePreDist import FFSpecSlice_wPPD
 
 
-class FFSpecVsDelay_Experiment(ExperimentClass):
+class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
                          config_file=config_file, progress=progress, short_directory_names = short_directory_names)
 
     def acquire(self, progress: bool = False, plot_disp: bool = True, plot_save: bool = True,
-                fig_num: int = None, custom_delay_array=None):
+                fig_num: int = None, custom_delay_array=None, plot_debug = False):
         """
         Qubit spectroscopy vs post-FF delay.
         Handles non-uniform custom_delay_array by switching imshow (uniform) <-> pcolormesh (non-uniform)
@@ -49,7 +49,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         # axis vectors in physical units
         delays_ns = np.asarray(self.delays, dtype=float) * 1000.0  # x
         freqs_mhz = np.asarray(self.spec_fpts, dtype=float)  # y
-
+        print(self.delays)
         # helpers -----------------------------------------------------------
         def _is_linear(x, rtol=1e-3, atol=1e-9):
             if len(x) < 3:
@@ -139,9 +139,12 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         for i, delay in enumerate(self.delays):
             # update config
             self.cfg["qubit_spec_delay"] = delay
+            if self.cfg.get('dt_set_auto', False):
+                self.cfg['dt_pulseplay'] = max(0.1, delay/ 500)
+                print("Auto-setting dt_pulseplay to %.3f us" % self.cfg['dt_pulseplay'])
 
             # acquire
-            prog = FFSpecSlice(self.soccfg, self.cfg)
+            prog = FFSpecSlice_wPPD(self.soccfg, self.cfg, plot_debug=plot_debug)
             x_pts, avgi, avgq = prog.acquire(
                 self.soc, threshold=None, angle=None, load_pulses=True,
                 readouts_per_experiment=1, save_experiments=None,
@@ -164,7 +167,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
 
             if plot_disp:
                 plt.show(block=False)
-                plt.pause(5)
+                plt.pause(0.2)
 
         # finalize ----------------------------------------------------------
         plt.suptitle(

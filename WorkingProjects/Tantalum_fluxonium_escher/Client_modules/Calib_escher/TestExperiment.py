@@ -142,12 +142,12 @@ UpdateConfig_transmission = {
 }
 
 UpdateConfig_qubit = {
-    "qubit_pulse_style": "flat_top",
+    "qubit_pulse_style": "const",
     "qubit_freq": 950, #940.8,
-    "qubit_gain": 32000,
+    "qubit_gain": 20000,
 
     # Constant Pulse Tone
-    "qubit_length": 10,
+    "qubit_length": 1,
 
     # Flat top or gaussian pulse tone
     "sigma": 0.05,#0.3,
@@ -158,7 +158,7 @@ UpdateConfig_qubit = {
     "qubit_nqz": 1,
     "qubit_freq_start": 850, #2105,
     "qubit_freq_stop": 1050,#2120,
-    "SpecNumPoints": 51,
+    "SpecNumPoints": 201,
     'spec_reps': 2000,#10000, #20000,
 
     # amplitude rabi parameters
@@ -166,8 +166,6 @@ UpdateConfig_qubit = {
     "qubit_gain_step": 10000,
     "qubit_gain_expts": 5,
     "AmpRabi_reps": 1000,
-
-
     # Experiment parameters
     "relax_delay": 75, #2000,
     "fridge_temp": 10,

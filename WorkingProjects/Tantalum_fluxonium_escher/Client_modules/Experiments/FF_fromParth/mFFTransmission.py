@@ -38,8 +38,8 @@ class mFFTransmission(NDAveragerProgram):
 
         # Define the fast flux ramp. For now, just linear ramp is supported
         if self.cfg["ff_ramp_style"] == "linear":
-            PulseFunctions.create_ff_ramp(self, reversed = False)
-            PulseFunctions.create_ff_ramp(self, reversed = True)
+            PulseFunctions.create_ff_ramp(self, reversed=False)
+            PulseFunctions.create_ff_ramp(self, reversed=True)
         else:
             print("Need an ff_ramp_style! only \"linear\" supported at the moment.")
 
@@ -124,12 +124,6 @@ class FFTransmission(ExperimentClass):
             # time.sleep(0.01) # Added to wait for the RFSOC to send all data
         if debug:
             print(f'Time: {time.time() - start}')
-        # results = np.transpose(results)
-        #
-        # prog = LoopbackProgram(self.soccfg, self.cfg)
-        # self.soc.reset_gens()  # clear any DC or periodic values on generators
-        # iq_list = prog.acquire_decimated(self.soc, load_pulses=True, progress=False, debug=False)
-
 
         #### find the frequency corresponding to the peak
         avgi = np.array([elem[1] for elem in results])[:,0,0]

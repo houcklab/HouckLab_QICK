@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from time import time
 
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFSpecSlice import FFSpecSlice
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice_wPulsePreDist import FFSpecSlice_wPPD
 
 
-class FFSpecVsFlux_Experiment(ExperimentClass):
+class FFSpecVsFlux_wPulsePreDist(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='', cfg=None, config_file=None,
                  progress=None, short_directory_names = False):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg,
@@ -60,9 +60,10 @@ class FFSpecVsFlux_Experiment(ExperimentClass):
             # Update the FF DAC Val
             self.cfg['ff_gain'] = int(dac_val)
             print(int(dac_val))
+
             self.soc.reset_gens()
             # Run single slice program, take data
-            prog = FFSpecSlice(self.soccfg, self.cfg)
+            prog = FFSpecSlice_wPPD(self.soccfg, self.cfg)
             x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                              readouts_per_experiment=1, save_experiments=None,
                                              start_src="internal", progress=self.progress)
@@ -111,30 +112,6 @@ class FFSpecVsFlux_Experiment(ExperimentClass):
                 plt.show(block=False)
                 plt.pause(0.2)
 
-            # # Create new plot the first time, change data in the future; matplotlib is too slow.
-            # if i == 0:
-            #     plot1 = axs['a'].imshow(np.transpose(self.amps), aspect = 'auto', origin = 'lower', interpolation = 'none',
-            #                             extent = [self.delays[0] * 1000, self.delays[-1] * 1000,
-            #                                       self.spec_fpts[0], self.spec_fpts[-1]])
-            #     cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
-            #     cbar0.set_label('ADC units', rotation=90)
-            # else:
-            #     plot1.set_data(np.transpose(self.amps))
-            #     plot1.set_clim(vmin=np.nanmin(self.amps))
-            #     plot1.set_clim(vmax=np.nanmax(self.amps))
-            #     cbar0.remove()
-            #     cbar0 = fig.colorbar(plot1, ax=axs['a'], extend='both')
-            #     cbar0.set_label('ADC units', rotation=90)
-            #
-            # axs['a'].set_ylabel("Spec frequency (MHz)")
-            # axs['a'].set_xlabel("post FF pulse delay (ns)")
-            #
-            # if plot_disp:
-            #     plt.show(block=False)
-            #     plt.pause(0.2)
-
-            # Z_spec[:i + 1, :] = spec_normalize(I_spec[:i + 1, :], Q_spec[:i + 1, :])
-            # # Z_spec[i, :] = avgamp0  # - self.cfg["minADC"]
 
         plt.suptitle(self.fname + '\nYoko voltage %f V' % (self.cfg['yokoVoltage']))
         plt.savefig(self.iname)

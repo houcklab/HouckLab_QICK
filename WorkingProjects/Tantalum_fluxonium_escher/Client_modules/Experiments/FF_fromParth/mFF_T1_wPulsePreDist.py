@@ -2,10 +2,11 @@ from qick import *
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import GammaFitv2 as gf
-from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFRampHoldTest import FFRampHoldTest
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import GammaFit as gf
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest_wPulsePreDist import \
+    FFRampHoldTest
 from tqdm import tqdm
 import time
 
@@ -18,10 +19,7 @@ def expFit(x, a, T1, c):
     return a * np.exp(-1 * x / T1) + c
 
 
-
-
-
-class FF_T1_PS_sse(ExperimentClass):
+class FF_T1_wPulsePreDist(ExperimentClass):
     """
     Use post selection at a thermal state (significant thermal population) to find T1
     """
@@ -31,13 +29,13 @@ class FF_T1_PS_sse(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self):
+    def acquire(self, plot_predist=False):
 
         ### Define the wait vector
         if self.cfg['wait_type'] == 'linear':
             wait_vec = np.linspace(self.cfg["wait_start"], self.cfg["wait_stop"], self.cfg["wait_num"])
         if self.cfg['wait_type'] == 'log':
-            wait_vec = np.logspace(self.cfg["wait_start"], np.log10(self.cfg["wait_stop"]), self.cfg["wait_num"],
+            wait_vec = np.logspace(np.log10(1 + self.cfg["wait_start"]), np.log10(self.cfg["wait_stop"]), self.cfg["wait_num"],
                                    base=10) - 1
 
         ##### create arrays to store all the raw data
@@ -50,8 +48,16 @@ class FF_T1_PS_sse(ExperimentClass):
         for idx_wait in tqdm(range(self.cfg["wait_num"])):
             self.cfg["ff_hold"] = wait_vec[idx_wait]
 
+            # if 'auto_dt_pulseplay' in self.cfg :
+            #     if self.cfg['auto_dt_pulseplay'] :
+            #         # automatic calculation of pulsedelay based on ff_hold time
+            #         # pulsedelay should be at least ff_hold + 100 ns
+            #         self.cfg['dt_pulseplay'] = max(0.1, (wait_vec[idx_wait]+0.1*self.cfg['relax_delay'])/500)
+
             #### pull the data from the single shots for the first run
-            prog = FFRampHoldTest(self.soccfg, self.cfg)
+            prog = FFRampHoldTest(self.soccfg, self.cfg, save_loc=self.path_wDate + "_ff_predist_"
+                                                                  + str(wait_vec[idx_wait]) + ".png",
+                                  plot_debug=plot_predist)
             i_0, i_1, q_0, q_1 = prog.acquire(self.soc, load_pulses=True)
 
             #### save all the data to arrays
@@ -90,11 +96,10 @@ class FF_T1_PS_sse(ExperimentClass):
 
         data_to_process = [i_0, i_1, q_0, q_1, wait_vec]
 
-        gammafit = gf.GammaFit(data_to_process, freq_01 = data['config']["qubit_ge_freq"]*1e6, verbose = False)
+        gammafit = gf.GammaFit(data_to_process, freq_01=data['config']["qubit_ge_freq"] * 1e6, verbose=False)
         pop = gammafit.pops_vec
         pop_err = gammafit.pops_err_vec
-        centers_init_list = gammafit.centers_init
-        centers_final_list = gammafit.centers_final
+        centers_list = gammafit.centers
         g01 = gammafit.result.params['g01'].value
         err01 = gammafit.result.params['g01'].stderr
         g10 = gammafit.result.params['g10'].value
@@ -107,20 +112,17 @@ class FF_T1_PS_sse(ExperimentClass):
         T1_guess = gammafit.T1_guess
 
         # saving the processed data
-        update_data = {"data": {"population": pop, "population_std": pop_err, "centers_init": centers_init_list,
-                                "centers_final": centers_final_list,
+        update_data = {"data": {"population": pop, "population_std": pop_err, "centers_list": centers_list,
                                 "g01": g01, "err01": err01, "g10": g10, "err10": err10, "T1": T1, "T1_err": T1_err,
                                 "temp_rate": temp_rate, "temp_std_rate": temp_std_rate, "data_fitted": data_fitted,
                                 "T1_guess": T1_guess}}
 
-
         data["data"] = data["data"] | update_data["data"]
         self.data = data
 
-
         return data
 
-    def display(self, data=None, plotDisp=False, saveFig = True, figNum=1, ran=None, **kwargs):
+    def display(self, data=None, plotDisp=False, saveFig=True, figNum=1, ran=None, **kwargs):
 
         if data is None:
             data = self.data
@@ -136,8 +138,8 @@ class FF_T1_PS_sse(ExperimentClass):
         wait_vec = data["data"]["wait_vec"]
         pop = data["data"]["population"]
         pop_err = data["data"]["population_std"]
-        centers = data["data"]["centers_init"][0]
-        centers_last = data['data']['centers_init'][-1]
+        centers = data["data"]["centers_list"][0]
+        centers_last = data['data']['centers_list'][-1]
         # popt_list = data["data"]["popt_list"]
         # perr_list = data["data"]["perr_list"]
 
@@ -146,8 +148,8 @@ class FF_T1_PS_sse(ExperimentClass):
         T1_err = data["data"]["T1_err"]
 
         # Create histogram
-        iq_data = np.stack((i_0[0],q_0[0]), axis = 0)
-        hist2d = sse2.createHistogram(iq_data, bin_size = 51)
+        iq_data = np.stack((i_0[0], q_0[0]), axis=0)
+        hist2d = sse2.createHistogram(iq_data, bin_size=51)
         xedges = hist2d[1]
         yedges = hist2d[2]
         x_points = (xedges[1:] + xedges[:-1]) / 2
@@ -174,13 +176,13 @@ class FF_T1_PS_sse(ExperimentClass):
         subplot_left.set_ylabel("Q")
 
         subplot_left_bottom = plt.subplot(gs[1, 0])
-        im = subplot_left_bottom.imshow(np.transpose(hist2d[0]), extent = [x_points[0], x_points[-1], y_points[0], y_points[-1]],
-               origin = 'lower', aspect = 'auto')
-        fig.colorbar(im, ax = subplot_left_bottom)
+        im = subplot_left_bottom.imshow(np.transpose(hist2d[0]),
+                                        extent=[x_points[0], x_points[-1], y_points[0], y_points[-1]],
+                                        origin='lower', aspect='auto')
+        fig.colorbar(im, ax=subplot_left_bottom)
         subplot_left_bottom.scatter(centers[:, 0], centers[:, 1], s=10, c='r')
         subplot_left_bottom.set_xlabel("I")
         subplot_left_bottom.set_ylabel("Q")
-
 
         # Plot the population vs time
         subplot_right = []
@@ -207,7 +209,6 @@ class FF_T1_PS_sse(ExperimentClass):
             subplot_right[idx_start].set_title("Start Blob = " + str(idx_start) + "\n" + T1_str)
             subplot_right[idx_start].legend()
 
-
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
                             + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
                     self.cfg["relax_delay"])
@@ -222,7 +223,7 @@ class FF_T1_PS_sse(ExperimentClass):
             plt.show()
         plt.close()
 
-    def display_all_data(self, data = None, **kwargs):
+    def display_all_data(self, data=None, **kwargs):
         if data is None:
             data = self.data
 
@@ -236,8 +237,8 @@ class FF_T1_PS_sse(ExperimentClass):
         i_1 = data["data"]["i_1"]
         q_1 = data["data"]["q_1"]
         wait_vec = data["data"]["wait_vec"]
-        centers_init = data["data"]["centers_init"]
-        centers_final = data["data"]["centers_final"]
+        centers_init = data["data"]["centers_list"]
+        centers_final = data["data"]["centers_list"]
 
         # Plot all raw data in I-Q plane, each plot has two subplots. For each wait_vec there is going to be a figure
         # with two subplots. First is a scatter plot of i_0 vs q_0 and the second is a scatter plot of i_1 vs q_1
@@ -245,7 +246,7 @@ class FF_T1_PS_sse(ExperimentClass):
         # + ".png" Make the folder if it does not exist
 
         import os
-        folder_path = os.path.join(self.path_only, "all_raw_data_" + self.datetimestring )
+        folder_path = os.path.join(self.path_only, "all_raw_data_" + self.datetimestring)
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         for idx_wait in range(len(wait_vec)):
@@ -258,7 +259,8 @@ class FF_T1_PS_sse(ExperimentClass):
             ax1.set_ylabel("Q")
             ax2.scatter(i_1[idx_wait], q_1[idx_wait], s=0.1)
             # Plot the centers
-            ax2.scatter(centers_final[idx_wait][:, 0], centers_final[idx_wait][:, 1], s=10, c='r', label='Final Centers')
+            ax2.scatter(centers_final[idx_wait][:, 0], centers_final[idx_wait][:, 1], s=10, c='r',
+                        label='Final Centers')
             ax2.set_title("Wait time: " + str(wait_vec[idx_wait]) + " us - Second Measurement")
             ax2.set_xlabel("I")
             ax2.set_ylabel("Q")
@@ -266,9 +268,6 @@ class FF_T1_PS_sse(ExperimentClass):
             plt.tight_layout()
             plt.savefig(os.path.join(folder_path, "wait_" + str(wait_vec[idx_wait]) + ".png"), dpi=300)
             plt.close()
-
-
-
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest import FFRampHoldTest
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFRampHoldTest import FFRampHoldTest
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
 import scipy.optimize as opt
 
 '''
@@ -58,14 +58,14 @@ class FFSingleShotSSE(ExperimentClass):
             qubit_freq_mat = None
 
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
-                                           name = self.datetimestring + "final", num_bins = 151, fast = self.fast_analysis,
-                                           disp_image = self.disp_image, qubit_freq_mat= qubit_freq_mat, centers=centers)
+                                           name = self.datetimestring + "final", fast = self.fast_analysis,
+                                           disp_image = self.disp_image, qubit_freq_mat= qubit_freq_mat, centers=centers, i_0_arr=i_0, q_0_arr=q_0)
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
 
-        self.analysis_init = SingleShotAnalysis(i_0, q_0, cen_num=cen_num, outerFolder=self.path_only,
-                                           name=self.datetimestring + "init", num_bins=151, fast=True,
-                                           disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat)
-        self.analysis_init.estimate_populations()
+        # self.analysis_init = SingleShotAnalysis(i_0, q_0, cen_num=cen_num, outerFolder=self.path_only,
+        #                                    name=self.datetimestring + "init", num_bins=151, fast=True,
+        #                                    disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat)
+        # self.analysis_init.estimate_populations()
 
         if 'keys' in self.cfg.keys():
             # Calculating the distinctness of cluster

@@ -16,7 +16,7 @@ from qick.averager_program import QickSweep
 from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 class FFRampTest(NDAveragerProgram):
@@ -107,7 +107,7 @@ class FFRampTest(NDAveragerProgram):
             self.pulse(ch = self.cfg["ff_ch"], t ='auto')
 
         # Sync to make sure ramping is done before starting second measurement.
-        self.sync_all(self.us2cycles(0.02))
+        self.sync_all(self.us2cycles(1))
 
         # trigger measurement, play measurement pulse, wait for relax_delay_2. Once per experiment.
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
@@ -292,83 +292,11 @@ class FFRampTest_Experiment(ExperimentClass):
 
         self._plot_gaussian_probabilities(pop, x_points)
 
-        ## If angle and threshold are not given, fit them from the data. Uses first measurement for lowest delay value
-        #if self.cfg["angle"] is None or self.cfg["threshold"] is None: # Both must be given to be valid
-        #    theta, threshold = self._find_angle_threshold(i_arr[0, :, 0], q_arr[0, :, 0])
-        #else: # User has provided override values
-        #    theta = self.cfg["angle"]
-        #    threshold = self.cfg["threshold"]
+        data['data']['pop'] = pop
+        data['data']['prob_0'] = prob_0
+        data['data']['prob_1'] = prob_1
 
-        ## Rotate the data. Positive angle rotates ccw
-        #i_arr_rot = i_arr * np.cos(theta) - q_arr * np.sin(theta)
-        #q_arr_rot = i_arr * np.sin(theta) + q_arr * np.cos(theta)
-
-        ## Threshold; the data has been rotated such that the signal is in e
-        #data_thresh = i_arr_rot > threshold
-
-        #if plot_all_points:
-        #    ramp_lengths_loop = ramp_lengths
-        #else:
-        #    ramp_lengths_loop = [ramp_lengths[0]]
-
-        ## Draw plots for all the desired ramp lengths
-        #for i, rl in enumerate(ramp_lengths_loop):
-        #    # Make the figure
-        #    while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists
-        #        fig_num += 1
-        #    fig = plt.figure(figsize=(12, 12), num=fig_num)
-
-        #    # Make histogram of original data
-        #    ax1 = plt.subplot(2, 2, 1)
-        #    self._draw_histogram(ax1, i_arr[i, :, 0], q_arr[i, :, 0], 'Raw I/Q data, %.3f us ramp half-length, before ramp' % rl)
-
-        #    # Scatter plot of rotated data, with colour set by threshold. For now, plot only first delay value
-        #    ax2 = plt.subplot(2, 2, 2)
-        #    plt.scatter(i_arr_rot[i, :, 0][data_thresh[i, :, 0]], q_arr_rot[i, :, 0][data_thresh[i, :, 0]],
-        #                color = 'r', marker = 'o', alpha = 0.5)
-        #    plt.scatter(i_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])], q_arr_rot[i, :, 0][NOT(data_thresh[i, :, 0])],
-        #                color = 'b', marker = 'o', alpha = 0.5)
-        #    plt.xlabel('I (DAC units)')
-        #    plt.ylabel('Q (DAC units)')
-        #    plt.title('Rotated I/Q data, %.3f us ramp half-length, before ramp\n%.2f%% | %.2f%%' %
-        #              (rl, NOT(data_thresh[i, :, 0]).sum() / data_thresh.shape[1] * 100,
-        #                   data_thresh[i, :, 0].sum() / data_thresh.shape[1] * 100 ))
-
-        #    ax2.set_aspect('equal')
-
-        #    # Histograms of rotated post-ramp points for start in below/above threshold.
-        #    ax3 = plt.subplot(2, 2, 3)
-        #    self._draw_histogram(ax3, i_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
-        #                              q_arr_rot[i, :, 1][NOT(data_thresh[i, :, 0])],
-        #        'Rotated I/Q data, %.3f us ramp half-length,\nafter ramp, start left of threshold\n%.2f%% | %.2f%%' % (
-        #        rl,
-        #        NOT(data_thresh[i, :, 1])[NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100,
-        #        data_thresh[i, :, 1][NOT(data_thresh[i, :, 0])].sum() / NOT(data_thresh[i, :, 0]).sum() * 100 ))
-
-
-        #    ax4 = plt.subplot(2, 2, 4)
-        #    self._draw_histogram(ax4, i_arr_rot[i, :, 1][data_thresh[i, :, 0]], q_arr_rot[i, :, 1][data_thresh[i, :, 0]],
-        #           'Rotated I/Q data, %.3f ramp half-length,\nafter ramp, start right of threshold\n%.2f%% | %.2f%%' % (
-        #           rl,
-        #           NOT(data_thresh[i, :, 1])[data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100,
-        #           data_thresh[i, :, 1][data_thresh[i, :, 0]].sum() / data_thresh[i, :, 0].sum() * 100 ))
-
-        #    plt.suptitle(self.fname + '\nYoko voltage %.5f V, FF ramp from %d to %d DAC, FF delay %.2f us.' %
-        #                 (self.cfg['yokoVoltage'], self.cfg['ff_ramp_start'], self.cfg['ff_ramp_stop'], self.cfg['ff_delay']))
-        #    plt.tight_layout()
-        #    plt.subplots_adjust(top=0.97, hspace = 0.05, wspace = 0.2)
-
-        ## Calculate & plot probability of staying in same state vs. ramp time
-        #self._plot_probabilities(data_thresh[:, :, 0], data_thresh[:, :, 1])
-
-        ##
-        ## if plot_disp:
-        ##     plt.show(block=False)
-        ##     plt.pause(2)
-        ##
-        ## else:
-        ##     fig.clf(True)
-        ##     plt.close(fig)
+        return data
 
 
     def _find_angle_threshold(self, i_arr: np.ndarray, q_arr: np.ndarray) -> tuple[float, float]:
