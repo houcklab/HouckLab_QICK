@@ -20,7 +20,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingl
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mStarkShift_vs_general import StarkShift
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mCavityTransmission_vs_general import CavityInducedHeating
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_10_14_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
 
 SwitchConfig = {
     "trig_buffer_start": 0.035,  # in us
@@ -219,10 +219,10 @@ UpdateConfig = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 20,
-    "read_pulse_gain": 1000,
-    'cavity_pulse_gain': 300,
-    "read_pulse_freq": 6671.87,
+    "read_length": 25,
+    "read_pulse_gain": 5500,
+    'cavity_pulse_gain': 1000,
+    "read_pulse_freq": 6671.49,
 
     # Parameters
     "reps": 8000,  # Number of repetitions
@@ -231,24 +231,24 @@ UpdateConfig = {
 
     # Qubit
     "qubit_pulse_style": "const",  # Constant pulse
-    "qubit_gain": 6000,  # [DAC Units]
-    "qubit_length": 25,  # [us]
+    "qubit_gain": 20000,  # [DAC Units]
+    "qubit_length": 0.5,  # [us]
 
     # Define qubit experiment parameters
-    "qubit_freq_start": 1985,
-    "qubit_freq_stop": 2015,
-    "SpecNumPoints": 201,  # Number of points
-    'spec_reps': 250000,
+    "qubit_freq_start": 2050,
+    "qubit_freq_stop": 2200,
+    "SpecNumPoints": 51,  # Number of points
+    'spec_reps': 10000,
 
     # Define cavity experiment parameters
     "param_name": "cavity_pulse_gain",
-    "param_start" : 20,
-    "param_stop" : 100,
-    "param_num" : 5,
+    "param_start" : 0,
+    "param_stop" : 7000,
+    "param_num" : 15,
 
     # Define experiment
-    "yokoVoltage": -0.465,
-    "relax_delay": 20,  # [us] Delay post one experiment
+    "yokoVoltage": -0.148,
+    "relax_delay": 200,  # [us] Delay post one experiment
     'use_switch': False,
     'mode_periodic': False,
     'ro_periodic': False,

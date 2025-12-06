@@ -571,9 +571,9 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
         peaks = np.zeros((n_slices,), dtype=float)
 
         # Fill row 0 from the first slice
-        I2d[0, :]   = np.array(first["data"]["avgi"])
-        Q2d[0, :]   = np.array(first["data"]["avgq"])
-        Mag2d[0, :] = np.array(first["data"]["mag"])
+        I2d[0, :]   = np.array(first["data"]["avgi"]) - np.mean(first["data"]["avgi"])
+        Q2d[0, :]   = np.array(first["data"]["avgq"]) - np.mean(first["data"]["avgq"])
+        Mag2d[0, :] = np.array(first["data"]["mag"]) - np.mean(first["data"]["mag"])
         peaks[0]    = float(first["data"]["qubit_peak_freq"])
 
         # Set up live plot
@@ -605,9 +605,9 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
             self.cfg[sweep_key] = sweep_values[i]
             d = self.acquire(progress=progress, debug=debug)
 
-            I2d[i, :]   = np.array(d["data"]["avgi"])
-            Q2d[i, :]   = np.array(d["data"]["avgq"])
-            Mag2d[i, :] = np.array(d["data"]["mag"])
+            I2d[i, :]   = np.array(d["data"]["avgi"]) - np.mean(d["data"]["avgi"])
+            Q2d[i, :]   = np.array(d["data"]["avgq"]) - np.mean(d["data"]["avgq"])
+            Mag2d[i, :] = np.array(d["data"]["mag"]) - np.mean(d["data"]["mag"])
             peaks[i]    = float(d["data"]["qubit_peak_freq"])
 
             if live_plot:
@@ -651,6 +651,26 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
             self.cfg[sweep_key] = _orig_val
         else:
             self.cfg.pop(sweep_key, None)
+
+        # Save the plot
+        if live_plot:
+            plt.ioff()
+            fig.savefig(self.iname.replace('.png', '_2d.png'))
+            plt.close(fig)
+        else:
+            # Save a static plot anyway
+            fig, ax = plt.subplots()
+            im = ax.imshow(data2d["data"][plot_what],
+                           aspect="auto",
+                           origin="lower",
+                           extent=(x_ghz.min(), x_ghz.max(), sweep_values[0], sweep_values[-1]),)
+            ax.set_xlabel("Cavity Frequency (GHz)")
+            ax.set_ylabel(sweep_key)
+            ax.set_title(f"Stark shift vs qubit freq × {sweep_key}  (Averages={self.cfg.get('reps','?')})")
+            cbar = fig.colorbar(im, ax=ax, label={"mag": "|IQ| (a.u.)", "i": "I (a.u.)", "q": "Q (a.u.)"}[plot_what])
+            fig.tight_layout()
+            fig.savefig(self.iname.replace('.png', '_2d.png'))
+            plt.close(fig)
 
         return data2d
     def save_data(self, data=None):

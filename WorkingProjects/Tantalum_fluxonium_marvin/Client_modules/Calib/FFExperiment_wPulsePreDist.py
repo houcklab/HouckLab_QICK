@@ -605,8 +605,8 @@ UpdateConfig = {
     "qubit_freq": 2120,  # [MHz] Frequency of qubit pulse
     "sigma": 0.5,
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
-    "qubit_length": 8,  # [us], used with "const"
-    "qubit_gain": 3000,  # [DAC units]
+    "qubit_length": 0.5,  # [us], used with "const"
+    "qubit_gain": 20000,  # [DAC units]
 
     # Populate Pulse Details
     "pop_pulse_length": 30,  # [us]
@@ -622,7 +622,7 @@ UpdateConfig = {
     # General parameters
     "yokoVoltage": -0.148,  # [V] Yoko voltage for magnet offset of flux
     "relax_delay_2": 200,  # [us] Relax delay after second readout
-    "reps": 3000,
+    "reps": 5000,
     "pulse_pre_dist": True,
     'dt_pulseplay': 0.5,  # This should be proportional to the qubit spec delay definitions
     "zeroing_pulse": True,
@@ -646,7 +646,7 @@ plt.show()
 inst_ffstark_popgain = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config,soc=soc,soccfg=soccfg,
                                             outerFolder = outerFolder, progress = True)
 sweep_key = 'pop_pulse_gain'
-sweep_values = np.linspace(0,5000, 3, dtype = int)
+sweep_values = np.linspace(0,6000, 7, dtype = int)
 data_ffstark_popgain = inst_ffstark_popgain.acquire_2d(sweep_key=sweep_key, sweep_values=sweep_values)
 inst_ffstark_popgain.save_data(data_ffstark_popgain)
 inst_ffstark_popgain.save_config()
@@ -656,30 +656,31 @@ inst_ffstark_popgain.save_config()
 
 from tqdm import tqdm
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_30Nov_1012\\"
-FF_sweep = np.linspace(14700, 17700, 6)
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_4Dec_1443\\"
+FF_sweep = np.linspace(6500, 20000, 28, dtype=int)
+pop_pulse_gain = 5000
 # add a point at zero to the beginning
 # FF_sweep = np.insert(FF_sweep, 0, 0)
 
 def freq_predictor(ff_dac_val):
-    return -0.052*ff_dac_val + 1024
+    return -0.052*ff_dac_val + 2120
 
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 35,  # [us]
-    "read_pulse_gain": 10000,  # 5600,  # [DAC units]
-    "read_pulse_freq": 6671.25,  # [MHz]
+    "read_length": 25,  # [us]
+    "read_pulse_gain": 5500,  # 5600,  # [DAC units]
+    "read_pulse_freq": 6671.49,  # [MHz]
 
     # Qubit Tone
     "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
-    "qubit_freq": 1024,  # [MHz] Frequency of qubit pulse
+    "qubit_freq": 2120,  # [MHz] Frequency of qubit pulse
     "qubit_ge_freq" : 69,
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
     "sigma": 0.50,  # [us], used with "arb" and "flat_top"
-    "qubit_length": 1,  # [us], used with "const"
+    "qubit_length": 3,  # [us], used with "const"
     "flat_top_length": 1,  # [us], used with "flat_top"
-    "qubit_gain": 15000,  # [DAC units]
+    "qubit_gain": 20000,  # [DAC units]
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # General parameters
@@ -687,8 +688,8 @@ UpdateConfig = {
     "cen_num": 2,
     "initialize_pulse": True,
     "fridge_temp": 7,
-    "yokoVoltage": -0.1202,
-    "yokoVoltage_freqPoint": -0.1202,
+    "yokoVoltage": -0.148,
+    "yokoVoltage_freqPoint": -0.148,
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
     "use_switch": False,
@@ -704,11 +705,11 @@ config = BaseConfig | UpdateConfig
 
 UpdateConfig_spec_noff = {
     # Qubit spec parameters
-    "qubit_freq_start": 900,        # [MHz]
-    "qubit_freq_stop": 1150,         # [MHz]
+    "qubit_freq_start": 2020,        # [MHz]
+    "qubit_freq_stop": 2220,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse
     "qubit_freq_expts": 101,  # number of points
-    "qubit_gain": 10000,            # [DAC units]
+    "qubit_gain": 20000,            # [DAC units]
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
 
     # Fast flux pulse parameters
@@ -729,8 +730,8 @@ config_spec_noff = config | UpdateConfig_spec_noff
 
 UpdateConfig_spec_ff_beg = {
     # Qubit spec parameters
-    "qubit_freq_start": 900,        # [MHz]
-    "qubit_freq_stop": 1150,         # [MHz]
+    "qubit_freq_start": 2020,        # [MHz]
+    "qubit_freq_stop": 2220,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -799,7 +800,7 @@ UpdateConfig_t1 = {
     "relax_delay_1": 5,  # Relax delay after the first readout
     "relax_delay_2": 20,  # [us] Relax delay after second readout
     "wait_start": 10,
-    "wait_stop": 1600,
+    "wait_stop": 800,
     "wait_num": 15,
     "wait_type": 'log',
 
@@ -808,7 +809,6 @@ UpdateConfig_t1 = {
     "cen_num":2,
     "initialize_pulse": True,
     "fridge_temp": 7,
-    "yokoVoltage_freqPoint": -0.1202,
     "pre_meas_delay": 2,
     "pulse_pre_dist": True,
     'dt_pulseplay': 2,  # This should be proportional to the qubit spec delay definitions
@@ -819,8 +819,8 @@ config_t1 = config | UpdateConfig_t1
 
 UpdateConfig_spec_ff_end = {
     # Qubit spec parameters
-    "qubit_freq_start": 980,        # [MHz]
-    "qubit_freq_stop": 1080,         # [MHz]
+    "qubit_freq_start": 2020,        # [MHz]
+    "qubit_freq_stop": 2220,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse = 5*T1
     "qubit_freq_expts": 51,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -843,8 +843,8 @@ config_spec_ff_end = config | UpdateConfig_spec_ff_end
 
 UpdateConfig_spec_post_ff = {
     # Qubit spec parameters
-    "qubit_freq_start": 900,        # [MHz]
-    "qubit_freq_stop": 1150,         # [MHz]
+    "qubit_freq_start": 2020,        # [MHz]
+    "qubit_freq_stop": 2220,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse = 5*T1 + 10
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -867,8 +867,8 @@ config_spec_post_ff = config | UpdateConfig_spec_post_ff
 
 UpdateConfig_spec_post_zeroing = {
     # Qubit spec parameters
-    "qubit_freq_start": 900,  # [MHz]
-    "qubit_freq_stop": 1150,  # [MHz]
+    "qubit_freq_start": 2020,  # [MHz]
+    "qubit_freq_stop": 2220,  # [MHz]
     "qubit_spec_delay": 10,  # [us] Delay before qubit pulse = 5*T1 + 10
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -916,7 +916,7 @@ config_ss = config | UpdateConfig_ss
 UpdateConfig_transmission = {
     # Readout section
     "read_pulse_freq": 6671.5,  # [MHz]
-    "read_pulse_gain": 3000,
+    "read_pulse_gain": 2000,
     "TransSpan": 1,
     "TransNumPoints": 101,
 
@@ -940,6 +940,47 @@ UpdateConfig_transmission = {
 
 config_transmission = config | UpdateConfig_transmission
 
+UpdateConfig_stark = {
+
+    # Fast flux pulse parameters
+    "ff_ramp_style": "linear",  # one of ["linear"]
+    "ff_ramp_start": 0,  # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
+    "ff_ramp_stop": 4000,  # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+    "ff_hold": 20,  # [us] Delay between fast flux ramps
+    "ff_ch": 6,  # RFSOC output channel of fast flux drive
+    "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
+    "ff_ramp_length": 0.02,  # [us] Half-length of ramp to use when sweeping gain
+
+    # Optional qubit pulse before measurement, intende0 as pi/2 to populate both blobs
+    "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
+    "qubit_freq": 2120,  # [MHz] Frequency of qubit pulse
+    "sigma": 0.5,
+    "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
+    "qubit_length": 0.5,  # [us], used with "const"
+    "qubit_gain": 20000,  # [DAC units]
+
+    # Populate Pulse Details
+    "pop_pulse_length": 30,  # [us]
+    "pop_pulse_gain": pop_pulse_gain,  # [DAC units]
+    "pop_pulse_freq": 6671.49,  # [MHz]
+    'pop_relax_delay' : 5,
+
+    # Qubit frequency sweep
+    "qubit_freq_start": 2020,  # [MHz]
+    "qubit_freq_stop": 2220,  # [MHz]
+    "qubit_freq_expts": 51,  # number of points
+
+    # General parameters
+    "relax_delay_2": 20,  # [us] Relax delay after second readout
+    "reps": 5000,
+    "pulse_pre_dist": True,
+    'dt_pulseplay': 0.5,  # This should be proportional to the qubit spec delay definitions
+    "zeroing_pulse": True,
+    'dt_pulsedef': 0.01,
+    "zeroing_a_max": 30000,
+}
+config_stark = config | UpdateConfig_stark
+
 UpdateConfig_popnprobe = {
     # Fast flux pulse parameters
     "ff_ramp_style": "linear",  # one of ["linear"]
@@ -952,7 +993,7 @@ UpdateConfig_popnprobe = {
 
     # Populate Pulse Details
     "pop_pulse_length": 30,  # [us]
-    "pop_pulse_gain": 5000,  # [DAC units]
+    "pop_pulse_gain": pop_pulse_gain,  # [DAC units]
     "pop_pulse_freq": 6671.46,  # [MHz]
     'pop_relax_delay': 5,
 
@@ -984,11 +1025,12 @@ pop_meas_err_list = []
 temp_ss_meas_list = []
 temp_ss_err_meas_list = []
 tranmsission_freq_list = []
+stark_shift_list = []
 temp_popnprobe_meas_list = []
 temp_popnprobe_err_meas_list = []
 pop_popnprobe_meas_list = []
 pop_popnprobe_err_meas_list = []
-centers = [[ 3.47040081, -3.8108755 ], [3.6454694, -2.14590693]]
+centers = None
 centers_list = []
 
 #%%
@@ -1006,6 +1048,7 @@ for i in tqdm(range(FF_sweep.size)):
     config_spec_post_zeroing['ff_gain'] = FF_sweep[i]
     config_ss['ff_ramp_stop'] = FF_sweep[i]
     config_transmission['ff_ramp_stop'] = FF_sweep[i]
+    config_stark['ff_ramp_stop'] = FF_sweep[i]
     config_popnprobe['ff_ramp_stop'] = FF_sweep[i]
 
     # Create a new directory
@@ -1018,6 +1061,8 @@ for i in tqdm(range(FF_sweep.size)):
     config_spec_ff_beg['qubit_freq_stop'] = qubit_ge_freq + 100
     config_spec_ff_end['qubit_freq_start'] = qubit_ge_freq - 100
     config_spec_ff_end['qubit_freq_stop'] = qubit_ge_freq + 100
+    config_stark['qubit_freq_start'] = qubit_ge_freq - 60
+    config_stark['qubit_freq_stop'] = qubit_ge_freq + 60
 
     # Update qubit_ge_freq in other configs
     config_t1['qubit_ge_freq'] = qubit_ge_freq
@@ -1059,6 +1104,8 @@ for i in tqdm(range(FF_sweep.size)):
     config_t1['qubit_ge_freq'] = qubit_ge_freq
     config_ss['qubit_ge_freq'] = qubit_ge_freq
     config_popnprobe['qubit_ge_freq'] = qubit_ge_freq
+    config_stark['qubit_freq_start'] = qubit_ge_freq - 60
+    config_stark['qubit_freq_stop'] = qubit_ge_freq + 60
 
     # TITLE : Run the FF fidelity check
     soc.reset_gens()
@@ -1205,9 +1252,40 @@ for i in tqdm(range(FF_sweep.size)):
     trans_peak = inst_ff_trans.peakFreq
     print(f"The populating frequency is set to {trans_peak} MHz")
     config_popnprobe['pop_pulse_freq'] = trans_peak
+    config_stark['pop_pulse_freq'] = trans_peak
 
     # Updating the lists
     tranmsission_freq_list.append(inst_ff_trans.peakFreq)
+
+    # TITLE : Running stark shift
+    soc.reset_gens()
+    # Get the stark shift without pop_pulse_gain
+    config_stark['pop_pulse_gain'] = 0
+    inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
+                                                outerFolder=outerFolderDac, progress=False)
+    data_ffstark = inst_ffstark.acquire(progress=False, plot_debug=False)
+    inst_ffstark.display(data_ffstark, plot_disp=False)
+    inst_ffstark.save_data(data_ffstark)
+    inst_ffstark.save_config()
+    qubit_freq_0 = inst_ffstark.qubit_peak_freq
+    # Get the stark shift with pop_pulse_gain/2
+    config_stark['pop_pulse_gain'] = int(pop_pulse_gain/2)
+    inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
+                                                outerFolder=outerFolderDac, progress=False)
+    data_ffstark = inst_ffstark.acquire(progress=False, plot_debug=False)
+    inst_ffstark.display(data_ffstark, plot_disp=False)
+    inst_ffstark.save_data(data_ffstark)
+    inst_ffstark.save_config()
+    # Get the stark shift with pop_pulse_gain
+    config_stark['pop_pulse_gain'] = pop_pulse_gain
+    inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
+                                                outerFolder=outerFolderDac, progress=False)
+    data_ffstark = inst_ffstark.acquire(progress=False, plot_debug=False)
+    inst_ffstark.display(data_ffstark, plot_disp=False)
+    inst_ffstark.save_data(data_ffstark)
+    inst_ffstark.save_config()
+    qubit_freq_pop = inst_ffstark.qubit_peak_freq
+    stark_shift_list.append(qubit_freq_pop - qubit_freq_0)
 
     # TITLE : Running Populate Probe Experiment
     soc.reset_gens()
@@ -1231,7 +1309,7 @@ for i in tqdm(range(FF_sweep.size)):
     pop_popnprobe_err_meas_list.append(data_ffpopprob['data']['std_pop'])
     temp_popnprobe_meas_list.append(data_ffpopprob['data']['mean_temp'][1, 0])
     temp_popnprobe_err_meas_list.append(data_ffpopprob['data']['std_temp'][1, 0])
-
+#%%
 # Saving all the lists
 collated_data = {
     "FF_sweep": FF_sweep,
@@ -1250,13 +1328,14 @@ collated_data = {
     "temp_ss_meas_list": temp_ss_meas_list,
     "temp_ss_err_meas_list": temp_ss_err_meas_list,
     "tranmsission_freq_list": tranmsission_freq_list,
+    "stark_shift_list": stark_shift_list,
     "temp_popnprobe_meas_list": temp_popnprobe_meas_list,
     "temp_popnprobe_err_meas_list": temp_popnprobe_err_meas_list,
     "pop_popnprobe_meas_list": pop_popnprobe_meas_list,
     "pop_popnprobe_err_meas_list": pop_popnprobe_err_meas_list,
     "pop_pulse_gain" : config_popnprobe['pop_pulse_gain'],
 }
-
+#
 # Save the data using h5
 import h5py
 def save_collated_h5(collated_data, path="collated_data.h5"):
@@ -1486,6 +1565,15 @@ make_pretty(ax, "FF DAC Value", "Qubit Frequency difference of No FF - Post Rela
 ax.legend()
 save_fig(fig, "qubit_freq_noff_postrelax_difference")
 
-plt.show()
 
+#--------------------------
+# Plotting stark shift vs FF
+#-------------------------
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(FF_sweep, stark_shift_list, "o-", label="Stark Shift")
+make_pretty(ax, "FF DAC Value", "Stark Shift [MHz]")
+ax.legend()
+save_fig(fig, "stark_shift_vs_ff")
+
+plt.show()
 #%%
