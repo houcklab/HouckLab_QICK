@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldPopTest_wPulsePreDist import FFRampHoldPopTest
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFRampHoldPopTest_wPulsePreDist import FFRampHoldPopTest
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers.Shot_Analysis.shot_analysis import SingleShotAnalysis
 import scipy.optimize as opt
 
 '''

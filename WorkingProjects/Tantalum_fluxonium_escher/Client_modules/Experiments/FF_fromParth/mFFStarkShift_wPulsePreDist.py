@@ -9,10 +9,10 @@ import sys
 import matplotlib
 from qick import NDAveragerProgram
 from qick.averager_program import QickSweep
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import PulseFunctions
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import PulseFunctions
 
 
 class mFFStarkShift(NDAveragerProgram):
@@ -194,15 +194,10 @@ class mFFStarkShift(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             print(
                 "!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
-            model = PulseFunctions.SimpleFourTailDistortion(A1 = self.cfg.get("A1", -0.02),
-                                                      tau1 = self.cfg.get("tau1", 17.9),
-                                                      A2 = self.cfg.get("A2", 0.128),
-                                                      tau2 = self.cfg.get("tau2", 417.5),
-                                                      A3=self.cfg.get("A3", 0.0608),
-                                                      tau3=self.cfg.get("tau3", 6850.47),
-                                                      A4 = self.cfg.get("A4", -0.0269),
-                                                      tau4 = self.cfg.get("tau4", 1076.0),
-                                                      x_val = dt_pulsedef)
+            print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
+            model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00618),
+                                                              tau=self.cfg.get("tau1", 31.3),
+                                                              x_val=self.cfg.get("dt_pulsedef", 0.002))
 
         total_time = (self.cfg["ff_ramp_length"] + self.cfg["ff_hold"] + self.cfg[
                           'pop_pulse_length'] + self.cfg['pop_relax_delay'] + self.cfg["qubit_length"]
@@ -262,7 +257,7 @@ class mFFStarkShift(NDAveragerProgram):
 
         if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
             x_pulse = waveform
-            T_opt, amps, edges = model.design_four_tail_zeroing_with_amax(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
+            T_opt, amps, edges = model.design_single_tail_zeroing(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
             self.t_opt = T_opt
             # print("Zeroing pulse parameters:")
             print(f"Optimal zeroing time: {T_opt} us")
@@ -272,12 +267,12 @@ class mFFStarkShift(NDAveragerProgram):
             self.amps = amps
 
             # Making it plottable if needed
-            taus = np.array([model.params.tau1, model.params.tau2, model.params.tau3, model.params.tau4])
+            taus = np.array([model.params.tau])
             t_zeroing = np.arange(0, T_opt + 100, model.dt)
             x_full = np.zeros_like(t_zeroing)
             x_full[:len(x_pulse)] = waveform
 
-            for j in range(4):
+            for j in range(1):
                 start_idx = int(round(edges[j] / model.dt))
                 end_idx = int(round(edges[j + 1] / model.dt))
                 x_full[start_idx:end_idx] = amps[j]

@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from time import time
 
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice_wPulsePreDist import FFSpecSlice_wPPD
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib.initialize import *
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFSpecSlice_wPulsePreDist import FFSpecSlice_wPPD
 
 
 class FFSpecVsFlux_wPulsePreDist(ExperimentClass):

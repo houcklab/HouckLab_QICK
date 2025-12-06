@@ -2,10 +2,10 @@ from qick import *
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Helpers import GammaFit as gf
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampHoldTest_wPulsePreDist import \
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import GammaFit as gf
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.FF_fromParth.mFFRampHoldTest_wPulsePreDist import \
     FFRampHoldTest
 from tqdm import tqdm
 import time

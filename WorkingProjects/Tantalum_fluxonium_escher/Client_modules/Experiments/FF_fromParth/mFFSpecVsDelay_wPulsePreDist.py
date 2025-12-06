@@ -167,7 +167,7 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
 
             if plot_disp:
                 plt.show(block=False)
-                plt.pause(0.2)
+                plt.pause(5)
 
         # finalize ----------------------------------------------------------
         plt.suptitle(

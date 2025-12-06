@@ -114,7 +114,8 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
 
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.qubit_freq,
                                  phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                 waveform="qubit")
+                                 waveform="qubit",
+                                 length=self.us2cycles(self.cfg["flat_top_length"], gen_ch=self.cfg["qubit_ch"]))
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
         self.sync_all(self.us2cycles(0.005, gen_ch = self.cfg["res_ch"]))  # align channels and wait 50ns)
@@ -132,21 +133,32 @@ class LoopbackProgramAmplitudeRabi_PS(RAveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, #debug=debug,
-                        readouts_per_experiment=2, save_experiments=[0,1])
+        super().acquire(soc, load_pulses=load_pulses, progress=progress) # qick update, debug=debug)
 
-        return self.collect_shots()
-
-    def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        data = self.get_raw()
+        shots_i0 = np.array(data)[0, :, 0, 0]/ length
+        shots_q0 = np.array(data)[0, :, 0, 1]/ length
+        shots_i1 = np.array(data)[0, :, 1, 0]/ length
+        shots_q1 = np.array(data)[0, :, 1, 1]/ length
+        i_0 = shots_i0
+        i_1 = shots_i1
+        q_0 = shots_q0
+        q_1 = shots_q1
 
         return i_0, i_1, q_0, q_1
+
+
+    # def collect_shots(self):
+    #     shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+    #     shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+    #
+    #     i_0 = shots_i0[0::2]
+    #     i_1 = shots_i0[1::2]
+    #     q_0 = shots_q0[0::2]
+    #     q_1 = shots_q0[1::2]
+    #
+    #     return i_0, i_1, q_0, q_1
 
 
 # ====================================================== #

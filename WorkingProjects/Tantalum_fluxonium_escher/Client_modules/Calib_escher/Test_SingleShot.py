@@ -427,47 +427,50 @@ print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 #%%
 # TITLE : Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -1.355,
+    "yokoVoltage": -1.128,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 60,
-    "read_pulse_gain": 400,
-    "read_pulse_freq": 6422.9,
+    "read_length": 15,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 7392,
 
     # spec parameters for finding the qubit frequency
-    "qubit_freq_start": 200, # Is also the qubit frequency if Rabi Num Points is 1
-    "qubit_freq_stop": 250,
-    "RabiNumPoints": 51,
-    "qubit_pulse_style": "arb",
-    "sigma": 0.6,
-    "flat_top_length": 30.0,
-    "relax_delay": 1500,
+    "qubit_freq_start": 945, # Is also the qubit frequency if Rabi Num Points is 1
+    "qubit_freq_stop": 980,
+    "RabiNumPoints": 15,
+    "qubit_pulse_style": "const",
+    "sigma": 0.1,
+    "flat_top_length": 2.0,
+    "qubit_length": 3,
+    "relax_delay": 50,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 2000, # Is also the qubit gain if the qubit gain expts is 1
-    "qubit_gain_step": 9000,
-    "qubit_gain_expts": 3,
-    "AmpRabi_reps": 2000,
+    "qubit_gain_start": 100, # Is also the qubit gain if the qubit gain expts is 1
+    "qubit_gain_step": 3000,
+    "qubit_gain_expts": 11,
+    "AmpRabi_reps": 1000,
 
     # Experiment parameters
     "cen_num": 2,
-    "shots": 8000,
+    "shots": 10000,
     "use_switch": True,
-    "initialize_pulse": False,
-    "initialize_qubit_gain": 0,
-    "initialize_qubit_freq": 2063,
+    "initialize_pulse": True,
+    "initialize_qubit_gain": 30000,
+    "qubit_freq_base": 962,
     "fridge_temp": 10,
-    "yokoVoltage_freqPoint": -1.355,
+    "yokoVoltage_freqPoint": -1.128,
 }
 config = BaseConfig | UpdateConfig
 
 yoko.SetVoltage(config["yokoVoltage"])
 
-Instance_AmplitudeRabi_PS = AmplitudeRabi_PS(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-data_AmplitudeRabi_PS = AmplitudeRabi_PS.acquire(Instance_AmplitudeRabi_PS)
-AmplitudeRabi_PS.save_data(Instance_AmplitudeRabi_PS, data_AmplitudeRabi_PS)
-AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
+Instance_AmplitudeRabi_PS = AmplitudeRabi_PS_sse(path="dataTestAmplitudeRabi_PS", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
+data_AmplitudeRabi_PS = Instance_AmplitudeRabi_PS.acquire()
+data_AmplitudeRabi_PS = Instance_AmplitudeRabi_PS.process_data(data = data_AmplitudeRabi_PS)
+Instance_AmplitudeRabi_PS.save_data(data_AmplitudeRabi_PS)
+Instance_AmplitudeRabi_PS.save_config()
+Instance_AmplitudeRabi_PS.display(plotDisp = True)
 #%%
 # TITLE: Amplitude rabi Blob with post selection and SSE
 
@@ -653,8 +656,8 @@ UpdateConfig = {
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 13,
-    "read_pulse_gain": 4500,
+    "read_length": 15,
+    "read_pulse_gain": 5000,
     "read_pulse_freq": 7392,
 
     # qubit tone
@@ -662,7 +665,7 @@ UpdateConfig = {
     "qubit_gain": 32000,
     "qubit_length": 10,
     "sigma": 0.5,
-    "flat_top_length": 1,
+    "flat_top_length": 3,
     "qubit_freq": 957.0,
 
     # Experiment

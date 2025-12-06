@@ -194,16 +194,10 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         # BUILDING THE PULSE
         if self.cfg.get("pulse_pre_dist", False):
             print("!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
-            print("Using 4 tail distortion model with default parameters unless specified otherwise in the config.")
-            model = PulseFunctions.SimpleFourTailDistortion(A1 = self.cfg.get("A1", -0.02),
-                                                      tau1 = self.cfg.get("tau1", 17.9),
-                                                      A2 = self.cfg.get("A2", 0.128),
-                                                      tau2 = self.cfg.get("tau2", 417.5),
-                                                      A3=self.cfg.get("A3", 0.0608),
-                                                      tau3=self.cfg.get("tau3", 6850.47),
-                                                      A4 = self.cfg.get("A4", -0.0269),
-                                                      tau4 = self.cfg.get("tau4", 1076.0),
-                                                      x_val = dt_pulsedef)
+            print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
+            model = PulseFunctions.SimpleSingleTailDistortion(A = self.cfg.get("A1", -0.00618),
+                                                              tau = self.cfg.get("tau1", 31.3),
+                                                              x_val = self.cfg.get("dt_pulsedef", 0.002))
 
         # Case 1 : if the qubit tone is played before the fast flux pulse
         if self.cfg["qubit_spec_delay"] + self.qubit_pulse_length < self.cfg["pre_ff_delay"]:
@@ -226,14 +220,22 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             self.case = 2
 
             # Play fast flux pulse only till the qubit pulse is done and pulse shape plays after the end of readout
-            total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg["pre_meas_delay"] + self.cfg['read_length']
+            if self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"]- self.cfg["ff_length"]) > 0 :
+                self.need_buffer = True
+                ff_length = self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"])
+                total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] + self.cfg["pre_meas_delay"] + self.cfg['read_length']
+            else:
+                self.need_buffer = False
+                ff_length = self.cfg["ff_length"]
+                total_time = self.cfg['qubit_spec_delay'] + self.qubit_pulse_length + self.cfg["pre_meas_delay"] + self.cfg['read_length']
+
             pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
             # Some comments on the flat : It is set such that we dont need to play the full ff pulse if the qubit
             # pulse ends before that. If the qubit pulse is happening while the ff is being ramped up then we let the
             # ramping get finished, and we ramp down but the flat is zero A padding is added after the qubit pulse so
             # that the aliasing of the ff pulse does not create any timing issue.
             pb.add_trapezoid(start = self.cfg["pre_ff_delay"], rise = self.cfg["ff_ramp_length"],
-                             flat = max(min(self.cfg["qubit_spec_delay"] + self.qubit_pulse_length + self.cfg['qubit_spec_buffer'] - (self.cfg["pre_ff_delay"] + self.cfg["ff_ramp_length"]), self.cfg["ff_length"]),0),
+                             flat = max(ff_length,0),
                              fall = self.cfg["ff_ramp_length"], amp = self.cfg["ff_gain"])
             waveform = pb.waveform()
 
@@ -324,7 +326,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
 
         if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
             x_pulse = waveform
-            T_opt, amps, edges = model.design_four_tail_zeroing_with_amax(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
+            T_opt, amps, edges = model.design_single_tail_zeroing(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
             self.t_opt = T_opt
             # print("Zeroing pulse parameters:")
             print(f"Optimal zeroing time: {T_opt} us")
@@ -334,12 +336,12 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             self.amps = amps
 
             # Making it plottable if needed
-            taus = np.array([model.params.tau1, model.params.tau2, model.params.tau3, model.params.tau4])
+            taus = np.array([model.params.tau])
             t_zeroing = np.arange(0, T_opt + 100, model.dt)
             x_full = np.zeros_like(t_zeroing)
             x_full[:len(x_pulse)] = waveform
 
-            for j in range(4):
+            for j in range(1):
                 start_idx = int(round(edges[j] / model.dt))
                 end_idx = int(round(edges[j + 1] / model.dt))
                 x_full[start_idx:end_idx] = amps[j]
@@ -410,7 +412,12 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
         qubit_length_cycles = self.us2cycles(self.qubit_pulse_length)
         pre_meas_delay_cycles = self.us2cycles(self.cfg["pre_meas_delay"])
-        read_after_cycle = self.us2cycles(self.cfg["qubit_spec_delay"]) + qubit_length_cycles + pre_meas_delay_cycles
+        if self.need_buffer:
+            read_after_cycle = (self.us2cycles(self.cfg["qubit_spec_delay"] + self.cfg["qubit_spec_buffer"])
+                                + qubit_length_cycles + pre_meas_delay_cycles)
+        else:
+            read_after_cycle = (self.us2cycles(self.cfg["qubit_spec_delay"])
+                                + qubit_length_cycles + pre_meas_delay_cycles)
 
         # Some sync time to let the code settle on the instructions (I havent seen this affect RFSOC, but suggested
         # by the documentation)
@@ -514,7 +521,7 @@ class FFSpecSlice_Experiment_wPPD(ExperimentClass):
 
             def lorentzian(x, x0, gamma, a, b):
                 return a * gamma ** 2 / ((x - x0) ** 2 + gamma ** 2) + b
-            p0 = [self.qubit_freqs[np.argmax(mag)], ( self.qubit_freqs[-1] -  self.qubit_freqs[0])/4, max(mag)-min(mag), min(mag)]
+            p0 = [self.qubit_freqs[np.argmin(mag)], ( self.qubit_freqs[-1] -  self.qubit_freqs[0])/4, min(mag)-max(mag), max(mag)]
             # print(p0)
             popt, _ = curve_fit(lorentzian, self.qubit_freqs, mag,
                                 p0=p0)

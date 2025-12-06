@@ -112,8 +112,8 @@ UpdateConfig = {
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 940,        # [MHz]
-    "qubit_freq_stop": 990,         # [MHz]
+    "qubit_freq_start": 2050,        # [MHz]
+    "qubit_freq_stop": 2150,         # [MHz]
     "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.02,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 2,               # [us], used with "const"
@@ -125,7 +125,7 @@ UpdateConfig = {
 
     # Fast flux pulse parameters
     "ff_gain": -8000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 1000,                  # [us] Total length of positive fast flux pulse
+    "ff_length": 300,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "ramp",
     "ff_ramp_length" : 0.05,
@@ -135,7 +135,7 @@ UpdateConfig = {
     "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 2000,               # [us]
     "qubit_freq_expts": 31,         # number of points
-    "reps": 1500,
+    "reps": 2000,
     "use_switch": False,
     "pre_meas_delay": 2,
 

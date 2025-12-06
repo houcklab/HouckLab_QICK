@@ -98,6 +98,135 @@ class PulseBuilder:
         plt.legend()
         plt.show()
 
+@dataclass
+class SingleTailParams:
+    A: float
+    tau: float
+
+
+class SimpleSingleTailDistortion:
+    """Single-tail line model using one parameter set."""
+    def __init__(self, A: float, tau: float, x_val: float):
+        self.params = SingleTailParams(A=A, tau=tau)
+        self.dt = float(x_val)
+
+    # ------------------------------------------------------------
+    # Forward distortion: 1 pole
+    # ------------------------------------------------------------
+    def simulate(self, x: np.ndarray) -> np.ndarray:
+        """Apply single-tail distortion."""
+        p = self.params
+        return self._single_tail_forward(x, p.A, p.tau)
+
+    def _single_tail_forward(self, x: np.ndarray, A: float, tau: float) -> np.ndarray:
+        alpha = tau / self.dt
+        y = np.zeros_like(x, float)
+        y[0] = x[0]
+        for k in range(1, len(x)):
+            num = x[k] + (1 + A)*alpha*(x[k] - x[k-1]) + alpha*y[k-1]
+            den = alpha + 1
+            y[k] = num / den
+        return y
+
+    # ------------------------------------------------------------
+    # Inverse predistortion: inverse of 1 pole
+    # ------------------------------------------------------------
+    def predistort(self, d: np.ndarray) -> np.ndarray:
+        p = self.params
+        return self._single_tail_inverse(d, p.A, p.tau)
+
+    def _single_tail_inverse(self, d: np.ndarray, A: float, tau: float) -> np.ndarray:
+        alpha = tau / self.dt
+        x = np.zeros_like(d, float)
+        x[0] = d[0]
+        den = (1 + A)*alpha + 1
+        for k in range(1, len(d)):
+            num = (1 + A)*alpha*x[k-1] + d[k] + alpha*(d[k] - d[k-1])
+            x[k] = num / den
+        return x
+
+    # ------------------------------------------------------------
+    # Zeroing a single tail:
+    # We only need ONE cancelling square pulse
+    # ------------------------------------------------------------
+    def design_single_tail_zeroing(self,
+                                   x_pred_main: np.ndarray,
+                                   a_max: float = 32000,
+                                   max_expand_factor: float = 5.0
+                                   ) -> tuple[float, list, np.ndarray]:
+        """
+        Compute a single amplitude a and end time T so that the tail from the
+        entire waveform (main + cancelling pulse) is zero.
+
+        Returns:
+            T_opt : end time >= T1
+            a_opt : cancelling pulse amplitude
+            edges : [T1, T_opt]
+        """
+        x_pred_main = np.asarray(x_pred_main, float).ravel()
+        tau = self.params.tau
+        dt = self.dt
+
+        # Main pulse duration
+        T1 = len(x_pred_main) * dt
+        t_main = np.arange(len(x_pred_main)) * dt
+
+        # Compute the tail contribution S_base = ∫ exp(-(T1 - t)/tau) * x(t) dt
+        weights = np.exp(-(T1 - t_main) / tau)
+        S_base = np.trapz(weights * x_pred_main, t_main)
+
+        # ------------------------------------------------------------
+        # For a single square pulse of amplitude a on [T1, T]:
+        #
+        #     integral = a * [-tau * (exp(-(T - T1)/tau) - exp(-(T - T)/tau))]
+        #               = a * [-tau * (exp(-(T - T1)/tau) - 1)]
+        #
+        # Condition for zero tail:
+        #
+        #   S_base * exp(-(T - T1)/tau) + a * ( -tau*(e^{-(T - T1)/tau} - 1) ) = 0
+        #
+        # Solve for a(T).
+        # ------------------------------------------------------------
+
+        def a_for_T(T: float) -> float:
+            dT = T - T1
+            if dT <= 0:
+                return np.inf
+            decay = np.exp(-dT / tau)
+            denom = -tau*(decay - 1)
+            return -(S_base * decay) / denom
+
+        # Check minimal T just above T1
+        T_low = T1 + dt
+        a_low = a_for_T(T_low)
+        if abs(a_low) <= a_max:
+            return T_low, [a_low], np.array([T1, T_low])
+
+        # Find a feasible high point
+        T_limit = T1 + max_expand_factor * tau
+        T_high = T_low + tau
+
+        while True:
+            a_high = a_for_T(T_high)
+            if abs(a_high) <= a_max:
+                break
+            T_high += tau
+            if T_high > T_limit:
+                raise RuntimeError("Could not satisfy amplitude bound; increase max_expand_factor.")
+
+        # Binary search between T_low (infeasible) and T_high (feasible)
+        for _ in range(60):
+            T_mid = 0.5*(T_low + T_high)
+            a_mid = a_for_T(T_mid)
+            if abs(a_mid) <= a_max:
+                T_high = T_mid
+            else:
+                T_low = T_mid
+
+        T_opt = T_high
+        a_opt = [a_for_T(T_opt)]
+        return T_opt, a_opt, np.array([T1, T_opt])
+
 
 @dataclass
 class TwoTailParams:
