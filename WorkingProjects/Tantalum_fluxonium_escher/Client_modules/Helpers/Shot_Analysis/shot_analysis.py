@@ -147,6 +147,9 @@ class SingleShotAnalysis:
             # Step 1 : Get the centers from the initial data
             if self.centers is not None:
                 print("Centers passed in:\n", self.centers)
+                self.get_Centers(self.i_0_arr, self.q_0_arr)
+                self.logger.info('Centers found')
+                self.logger.info(self.centers)
             else:
                 # print("Centers is none")
                 self.get_Centers(self.i_0_arr, self.q_0_arr)
@@ -368,7 +371,7 @@ class SingleShotAnalysis:
             heading, fit_result["result"].fit_report(), file_name, append = True)
         
         # save the residual plot
-        self.plot_Fit(fit_result["result"], fit_result["X"], fit_result["Y"],  fit_result["hist2d"], plot_disp = True,
+        self.plot_Fit(fit_result["result"], fit_result["X"], fit_result["Y"],  fit_result["hist2d"], plot_disp = False,
                       plot_save = True, plot_title = name + ' Fit')
 
         heading = 'confidence intervals'

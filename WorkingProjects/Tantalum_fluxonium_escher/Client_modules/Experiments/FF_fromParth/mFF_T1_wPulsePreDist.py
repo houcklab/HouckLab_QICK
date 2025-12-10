@@ -48,11 +48,11 @@ class FF_T1_wPulsePreDist(ExperimentClass):
         for idx_wait in tqdm(range(self.cfg["wait_num"])):
             self.cfg["ff_hold"] = wait_vec[idx_wait]
 
-            # if 'auto_dt_pulseplay' in self.cfg :
-            #     if self.cfg['auto_dt_pulseplay'] :
-            #         # automatic calculation of pulsedelay based on ff_hold time
-            #         # pulsedelay should be at least ff_hold + 100 ns
-            #         self.cfg['dt_pulseplay'] = max(0.1, (wait_vec[idx_wait]+0.1*self.cfg['relax_delay'])/500)
+            if 'auto_dt_pulseplay' in self.cfg :
+                if self.cfg['auto_dt_pulseplay'] :
+                    # automatic calculation of pulsedelay based on ff_hold time
+                    # pulsedelay should be at least ff_hold + 100 ns
+                    self.cfg['dt_pulseplay'] = max(0.1, (wait_vec[idx_wait]+0.1*self.cfg['relax_delay'])/500)
 
             #### pull the data from the single shots for the first run
             prog = FFRampHoldTest(self.soccfg, self.cfg, save_loc=self.path_wDate + "_ff_predist_"

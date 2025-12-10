@@ -199,7 +199,7 @@ class FFRampHoldTest(NDAveragerProgram):
 
         total_time = (self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"]
                       + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
-                      + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] )  # in us
+                      + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + 3*dt_pulseplay )  # in us
         pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
         pb.add_trapezoid(start = self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"] + self.cfg['relax_delay_1'],
                          rise = self.cfg["ff_ramp_length"],

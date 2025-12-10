@@ -411,8 +411,25 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
         self.qubit_freqs = np.linspace(self.cfg["qubit_freq_start"], self.cfg["qubit_freq_stop"],
                                        self.cfg["qubit_freq_expts"])
 
-        sig  = avgi[0][0] + 1j * avgq[0][0]
+        sig = avgi[0][0] + 1j * avgq[0][0]
+        # Assume the first data point to be representative of the background. Subtract that from signal
+        sig = sig - sig[0]
         mag = np.abs(sig)
+        phase = np.angle(sig, deg=False)
+        fit_data = mag
+        self.fit_type = 'magnitude'
+
+        # Determine if the data is a peak or a dip
+        if np.abs(np.max(fit_data) - np.median(fit_data)) > np.abs(np.min(fit_data) - np.median(fit_data)):
+            # Peak: amplitude positive, offset is min
+            a0 = np.max(fit_data) - np.min(fit_data)
+            b0 = np.min(fit_data)
+            f0 = self.qubit_freqs[np.argmax(fit_data)]
+        else:
+            # Dip: amplitude negative, offset is max
+            a0 = np.min(fit_data) - np.max(fit_data)
+            b0 = np.max(fit_data)
+            f0 = self.qubit_freqs[np.argmin(fit_data)]
 
         # Fit mag with a lorentzian to find peak frequency
         try:
@@ -420,10 +437,10 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
 
             def lorentzian(x, x0, gamma, a, b):
                 return a * gamma ** 2 / ((x - x0) ** 2 + gamma ** 2) + b
-            p0 = [self.qubit_freqs[np.argmax(mag)], ( self.qubit_freqs[-1] -  self.qubit_freqs[0])/4, max(mag)-min(mag), min(mag)]
+
+            p0 = [f0, (self.qubit_freqs[-1] - self.qubit_freqs[0]) / 4, a0, b0]
             # print(p0)
-            popt, _ = curve_fit(lorentzian, self.qubit_freqs, mag,
-                                p0=p0)
+            popt, _ = curve_fit(lorentzian, self.qubit_freqs, fit_data, p0=p0)
             self.qubit_peak_freq = popt[0]  # x0 is the peak frequency
             self.popt = popt
         except Exception as e:
@@ -454,18 +471,23 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=fig_num)
 
         ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
+        # Check if fit was done
+        if self.popt is not None and self.fit_type == 'phase':
+            fit_y = self.popt[2] * self.popt[1] ** 2 / ((x_pts - self.popt[0]) ** 2 + self.popt[1] ** 2) + self.popt[3]
+            axs[0].plot(x_pts, fit_y, 'r--', label="Lorentzian Fit")
         axs[0].set_ylabel("deg")
         axs[0].set_xlabel("Qubit Frequency (GHz)")
         axs[0].legend()
 
         ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
         # Check if fit was done
-        if self.popt is not None:
+        if self.popt is not None and self.fit_type == 'magnitude':
             fit_y = self.popt[2] * self.popt[1] ** 2 / ((x_pts - self.popt[0]) ** 2 + self.popt[1] ** 2) + self.popt[3]
             axs[1].plot(x_pts, fit_y, 'r--', label="Lorentzian Fit")
         axs[1].set_ylabel("ADC units")
         axs[1].set_xlabel("Qubit Frequency (GHz)")
         axs[1].legend()
+
 
         ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
         axs[2].set_ylabel("ADC units")
@@ -566,9 +588,9 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
         peaks = np.zeros((n_slices,), dtype=float)
 
         # Fill row 0 from the first slice
-        I2d[0, :]   = np.array(first["data"]["avgi"])
-        Q2d[0, :]   = np.array(first["data"]["avgq"])
-        Mag2d[0, :] = np.array(first["data"]["mag"])
+        I2d[0, :]   = np.array(first["data"]["avgi"]) - np.mean(first["data"]["avgi"])
+        Q2d[0, :]   = np.array(first["data"]["avgq"]) - np.mean(first["data"]["avgq"])
+        Mag2d[0, :] = np.array(first["data"]["mag"]) - np.mean(first["data"]["mag"])
         peaks[0]    = float(first["data"]["qubit_peak_freq"])
 
         # Set up live plot
@@ -600,9 +622,9 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
             self.cfg[sweep_key] = sweep_values[i]
             d = self.acquire(progress=progress, debug=debug)
 
-            I2d[i, :]   = np.array(d["data"]["avgi"])
-            Q2d[i, :]   = np.array(d["data"]["avgq"])
-            Mag2d[i, :] = np.array(d["data"]["mag"])
+            I2d[i, :]   = np.array(d["data"]["avgi"]) - np.mean(d["data"]["avgi"])
+            Q2d[i, :]   = np.array(d["data"]["avgq"]) - np.mean(d["data"]["avgq"])
+            Mag2d[i, :] = np.array(d["data"]["mag"]) - np.mean(d["data"]["mag"])
             peaks[i]    = float(d["data"]["qubit_peak_freq"])
 
             if live_plot:

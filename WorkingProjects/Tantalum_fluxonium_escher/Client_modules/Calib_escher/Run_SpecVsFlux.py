@@ -26,28 +26,28 @@ BaseConfig = BaseConfig | SwitchConfig
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": -1.7,  # 1.06, #-1,
-    "yokoVoltageStop": -1.45,  # 1,
-    "yokoVoltageNumPoints": 21,  # 5001,
+    "yokoVoltageStart": -1.45,  # 1.06, #-1,
+    "yokoVoltageStop": -1.25,  # 1,
+    "yokoVoltageNumPoints": 101,  # 5001,
 
     # Readout parameters
-    "trans_reps": 500,
+    "trans_reps": 2000,
     "read_pulse_style": "const",
     "read_length": 13,
-    "read_pulse_gain": 4500,
+    "read_pulse_gain": 3000,
     # "read_pulse_freq": 6723.5,
     "trans_freq_start": 7390.5,
     "trans_freq_stop": 7393.5,
-    'TransNumPoints': 201,
+    'TransNumPoints': 101,
 
     # qubit spec parameters
     "spec_reps":2000,# 10000,  # 10000,#22000,
-    "qubit_pulse_style": "flat_top",  # "flat_top", "const", "arb"
-    "qubit_gain": 32000,#25000,  # 3000,
+    "qubit_pulse_style": "const",  # "flat_top", "const", "arb"
+    "qubit_gain": 16000,#25000,  # 3000,
     "qubit_length": 3,
     "flat_top_length": 1,
     "qubit_freq_start": 100,
-    "qubit_freq_stop": 1100,
+    "qubit_freq_stop": 1000,
     "SpecNumPoints": 301 ,#101,  # 101,#101
     "sigma": 0.5,
     "relax_delay": 5,  # 150,
