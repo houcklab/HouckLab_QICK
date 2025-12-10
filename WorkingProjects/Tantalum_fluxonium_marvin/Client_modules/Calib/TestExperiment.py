@@ -162,9 +162,9 @@ UpdateConfig_qubit = {
     "qubit_length": 4,  # [us]
 
     # Define spec slice experiment parameters
-    "qubit_freq_start": 1800,
+    "qubit_freq_start": 100,
     "qubit_freq_stop": 2200,
-    "SpecNumPoints": 101,  # Number of points
+    "SpecNumPoints": 501,  # Number of points
     'spec_reps': 4000,  # Number of repetition
     "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
 

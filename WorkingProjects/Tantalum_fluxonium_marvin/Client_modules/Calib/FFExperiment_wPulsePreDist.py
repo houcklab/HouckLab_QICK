@@ -656,11 +656,11 @@ inst_ffstark_popgain.save_config()
 
 from tqdm import tqdm
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_4Dec_1443\\"
-FF_sweep = np.linspace(6500, 20000, 28, dtype=int)
-pop_pulse_gain = 5000
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_9Dec_1120\\"
+FF_sweep = np.linspace(10000, -20000, 51, dtype=int)
+pop_pulse_gain = 3000
 # add a point at zero to the beginning
-# FF_sweep = np.insert(FF_sweep, 0, 0)
+FF_sweep = np.insert(FF_sweep, 0, 0)
 
 def freq_predictor(ff_dac_val):
     return -0.052*ff_dac_val + 2120
@@ -668,8 +668,8 @@ def freq_predictor(ff_dac_val):
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 25,  # [us]
-    "read_pulse_gain": 5500,  # 5600,  # [DAC units]
+    "read_length": 30,  # [us]
+    "read_pulse_gain": 5000,  # 5600,  # [DAC units]
     "read_pulse_freq": 6671.49,  # [MHz]
 
     # Qubit Tone
@@ -688,8 +688,8 @@ UpdateConfig = {
     "cen_num": 2,
     "initialize_pulse": True,
     "fridge_temp": 7,
-    "yokoVoltage": -0.148,
-    "yokoVoltage_freqPoint": -0.148,
+    "yokoVoltage": -0.1376,
+    "yokoVoltage_freqPoint": -0.1376,
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
     "use_switch": False,
@@ -805,7 +805,7 @@ UpdateConfig_t1 = {
     "wait_type": 'log',
 
     # General parameters
-    "reps": 30000,
+    "reps": 10000,
     "cen_num":2,
     "initialize_pulse": True,
     "fridge_temp": 7,
@@ -905,7 +905,7 @@ UpdateConfig_ss = {
     "relax_delay_2": 20,  # [us] Relax delay after second readout
 
     # General parameters
-    "reps": 100000,
+    "reps": 50000,
     "cen_num":2,
     "initialize_pulse": True,
     "pulse_pre_dist": True,
@@ -1002,7 +1002,7 @@ UpdateConfig_popnprobe = {
     "relax_delay_2": 20,  # [us] Relax delay after second readout
 
     # General parameters
-    "reps": 100000,
+    "reps": 50000,
     "cen_num":2,
     "pulse_pre_dist": True,
     'dt_pulseplay': 2,  # This should be proportional to the qubit spec delay definitions
@@ -1259,6 +1259,7 @@ for i in tqdm(range(FF_sweep.size)):
 
     # TITLE : Running stark shift
     soc.reset_gens()
+    qubit_freq_starks = []
     # Get the stark shift without pop_pulse_gain
     config_stark['pop_pulse_gain'] = 0
     inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
@@ -1268,6 +1269,15 @@ for i in tqdm(range(FF_sweep.size)):
     inst_ffstark.save_data(data_ffstark)
     inst_ffstark.save_config()
     qubit_freq_0 = inst_ffstark.qubit_peak_freq
+    # Get the stark shift with pop_pulse_gain/4
+    config_stark['pop_pulse_gain'] = int(pop_pulse_gain / 4)
+    inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
+                                                outerFolder=outerFolderDac, progress=False)
+    data_ffstark = inst_ffstark.acquire(progress=False, plot_debug=False)
+    inst_ffstark.display(data_ffstark, plot_disp=False)
+    inst_ffstark.save_data(data_ffstark)
+    inst_ffstark.save_config()
+    qubit_freq_starks.append(inst_ffstark.qubit_peak_freq - qubit_freq_0)
     # Get the stark shift with pop_pulse_gain/2
     config_stark['pop_pulse_gain'] = int(pop_pulse_gain/2)
     inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
@@ -1276,6 +1286,17 @@ for i in tqdm(range(FF_sweep.size)):
     inst_ffstark.display(data_ffstark, plot_disp=False)
     inst_ffstark.save_data(data_ffstark)
     inst_ffstark.save_config()
+    qubit_freq_starks.append(inst_ffstark.qubit_peak_freq - qubit_freq_0)
+    # Get the stark shift with 3*pop_pulse_gain/4
+    config_stark['pop_pulse_gain'] = int(3*pop_pulse_gain/4)
+    inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
+                                                outerFolder=outerFolderDac, progress=False)
+    data_ffstark = inst_ffstark.acquire(progress=False, plot_debug=False)
+    inst_ffstark.display(data_ffstark, plot_disp=False)
+    inst_ffstark.save_data(data_ffstark)
+    inst_ffstark.save_config()
+    qubit_freq_starks.append(inst_ffstark.qubit_peak_freq - qubit_freq_0)
+
     # Get the stark shift with pop_pulse_gain
     config_stark['pop_pulse_gain'] = pop_pulse_gain
     inst_ffstark = FFStarkShift_Experiment_wPPD(path="FFStarkShift_wPPD", cfg=config_stark, soc=soc, soccfg=soccfg,
@@ -1284,8 +1305,23 @@ for i in tqdm(range(FF_sweep.size)):
     inst_ffstark.display(data_ffstark, plot_disp=False)
     inst_ffstark.save_data(data_ffstark)
     inst_ffstark.save_config()
-    qubit_freq_pop = inst_ffstark.qubit_peak_freq
-    stark_shift_list.append(qubit_freq_pop - qubit_freq_0)
+    qubit_freq_starks.append(inst_ffstark.qubit_peak_freq - qubit_freq_0)
+
+    # Fit qubit_freq_starks vs pop_pulse_gain points to a parabola y = a*x^2 and get the a
+    from scipy.optimize import curve_fit
+    def parabola(x, a):
+        return a * x**2
+    pop_gains = np.array([ pop_pulse_gain/4, pop_pulse_gain/2, 3*pop_pulse_gain/4, pop_pulse_gain])
+    qubit_freq_starks = np.array(qubit_freq_starks)
+    try:
+        popt, pcov = curve_fit(parabola, pop_gains, qubit_freq_starks)
+        a = popt[0]
+        print(f"Fitted parabola coefficient a: {a}")
+        stark_shift_list.append(a)
+    except Exception as e:
+        print(f"Error in curve fitting: {e}")
+        stark_shift_list.append(0)
+
 
     # TITLE : Running Populate Probe Experiment
     soc.reset_gens()
@@ -1570,8 +1606,8 @@ save_fig(fig, "qubit_freq_noff_postrelax_difference")
 # Plotting stark shift vs FF
 #-------------------------
 fig, ax = plt.subplots(figsize=(6, 4))
-ax.plot(FF_sweep, stark_shift_list, "o-", label="Stark Shift")
-make_pretty(ax, "FF DAC Value", "Stark Shift [MHz]")
+ax.plot(FF_sweep, np.array(stark_shift_list)*pop_pulse_gain**2, "o-", label="Stark Shift")
+make_pretty(ax, "FF DAC Value", "Stark Shift at pop_pulse_gain [MHz]")
 ax.legend()
 save_fig(fig, "stark_shift_vs_ff")
 

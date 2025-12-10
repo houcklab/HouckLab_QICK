@@ -217,13 +217,13 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.148,
-    "yokoVoltage_freqPoint": -0.148,
+    "yokoVoltage": -0.1376,
+    "yokoVoltage_freqPoint": -0.1376,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 25,
-    "read_pulse_gain": 5500,
+    "read_length": 30,
+    "read_pulse_gain": 5000,
     "read_pulse_freq": 6671.49,
 
     # qubit tone
