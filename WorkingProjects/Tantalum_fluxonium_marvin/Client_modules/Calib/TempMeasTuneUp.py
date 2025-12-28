@@ -217,25 +217,25 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -0.1376,
-    "yokoVoltage_freqPoint": -0.1376,
+    "yokoVoltage": -0.0842,
+    "yokoVoltage_freqPoint":-0.0842,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 30,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 6671.49,
+    "read_length": 40,
+    "read_pulse_gain": 5200,
+    "read_pulse_freq": 6672.634,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 20000,
+    "qubit_gain": 25000,
     "qubit_length": 4,
-    "sigma": 0.02,
-    "flat_top_length": 4,
-    "qubit_freq": 2120,
+    "sigma": 0.01,
+    "flat_top_length": 0.08,
+    "qubit_freq": 159.7,
 
     # Experiment
-    "shots": 2000000,
+    "shots": 400000,
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
@@ -261,15 +261,15 @@ inst_qnd.display(data_QNDmeas, plotDisp=True)
 # TITLE : Brute Search best parameters
 param_bounds ={
     "read_pulse_freq" : (config["read_pulse_freq"] - 0.1 , config["read_pulse_freq"] + 0.1  ),
-    'read_length': (10, 50),
-    'read_pulse_gain': (4000, 8000)
+    'read_length': (10, 40),
+    'read_pulse_gain': (3000, 8000)
 }
 step_size = {
-    "read_pulse_freq" : 0.025,
+    "read_pulse_freq" : 0.05,
     'read_length': 5,
-    'read_pulse_gain': 500,
+    'read_pulse_gain': 1000,
 }
-keys = ["read_pulse_gain", "read_length"]
+keys = ["read_pulse_gain", "read_pulse_freq"]
 config["shots"] = 200000
 soc.reset_gens()
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)

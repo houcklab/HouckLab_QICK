@@ -277,31 +277,31 @@ print("Saved in ",savepath)
 #%%
 # TITLE : code for running Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -0.1205,
-    'yokoVoltage_freqPoint': -0.1285,
+    "yokoVoltage": -0.0842,
+    'yokoVoltage_freqPoint': -0.0842,
 
     # Readout
     "read_pulse_style": "const",
-    "read_length": 35,
-    "read_pulse_gain": 11000,
-    "read_pulse_freq": 6671.25,
+    "read_length": 20,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6672.535,
 
     # Qubit Tone
-    "qubit_freq_start": 900,
-    "qubit_freq_stop": 1100,
-    "RabiNumPoints": 41,
+    "qubit_freq_start": 154,
+    "qubit_freq_stop": 162,
+    "RabiNumPoints": 21,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 10,
-    'qubit_length': 0.5,
+    'qubit_length': 0.04,
     "relax_delay": 10,
     "initialize_qubit_gain" : 30000,
-    "qubit_freq_base": 1010,
+    "qubit_freq_base": 156.6,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 1000,
-    "qubit_gain_step": 3000,
-    "qubit_gain_expts": 11,
+    "qubit_gain_start": 2000,
+    "qubit_gain_step": 2000,
+    "qubit_gain_expts": 15,
 
     # define number of clusters to use
     "cen_num": 2,
@@ -385,45 +385,45 @@ print('end of analysis: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"
  # %%
 
 # TITLE code finding T2R of a thermal state using pulses
-# UpdateConfig = {
-#     ##### set yoko
-#     "yokoVoltage": -2.8,
-#     ###### cavity
-#     #"reps": 0,  # this line does nothing, is overwritten with "shots"
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 5, # [Clock ticks]
-#     "read_pulse_gain": 10000, # [DAC units]
-#     "read_pulse_freq": 6437.2, # [MHz]
-#     ##### qubit spec parameters
-#     "qubit_pulse_style": "arb",
-#     "qubit_gain": 8000, #22000,
-#     # "qubit_length": 10,  ###us, this is used if pulse style is const
-#     "sigma": 0.150,  ### units us, define a 20ns sigma
-#     # "flat_top_length": 0.150,
-#     "qubit_freq": 2034.5 - 1.0,
-#     "relax_delay": 100,  ### turned into us inside the run function
-#     #### define shots
-#     "shots": 6000, ### this gets turned into "reps"
-#     ### define the wait times
-#     "wait_start": 0.0,
-#     "wait_stop": 10.0,
-#     "wait_num": 101,
-#     ##### define number of clusters to use
-#     "cen_num": 3,
-#     "pre_pulse": True,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-#
-# Instance_T2R_PS = T2R_PS(path="dataTestT2R_PS", outerFolder=outerFolder, cfg=config,
-#                                                soc=soc, soccfg=soccfg)
-# data_T2R_PS = T2R_PS.acquire(Instance_T2R_PS)
-# T2R_PS.save_data(Instance_T2R_PS, data_T2R_PS)
-# T2R_PS.save_config(Instance_T2R_PS)
-#
-# print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+UpdateConfig = {
+    ##### set yoko
+    "yokoVoltage": -2.8,
+    ###### cavity
+    #"reps": 0,  # this line does nothing, is overwritten with "shots"
+    "read_pulse_style": "const", # --Fixed
+    "read_length": 5, # [Clock ticks]
+    "read_pulse_gain": 10000, # [DAC units]
+    "read_pulse_freq": 6437.2, # [MHz]
+    ##### qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 8000, #22000,
+    # "qubit_length": 10,  ###us, this is used if pulse style is const
+    "sigma": 0.150,  ### units us, define a 20ns sigma
+    # "flat_top_length": 0.150,
+    "qubit_freq": 2034.5 - 1.0,
+    "relax_delay": 100,  ### turned into us inside the run function
+    #### define shots
+    "shots": 6000, ### this gets turned into "reps"
+    ### define the wait times
+    "wait_start": 0.0,
+    "wait_stop": 10.0,
+    "wait_num": 101,
+    ##### define number of clusters to use
+    "cen_num": 3,
+    "pre_pulse": True,
+}
+config = BaseConfig | UpdateConfig
+
+yoko1.SetVoltage(config["yokoVoltage"])
+print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+
+Instance_T2R_PS = T2R_PS(path="dataTestT2R_PS", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_T2R_PS = T2R_PS.acquire(Instance_T2R_PS)
+T2R_PS.save_data(Instance_T2R_PS, data_T2R_PS)
+T2R_PS.save_config(Instance_T2R_PS)
+
+print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 #%%
 # TITLE: Single Shot Optimize
