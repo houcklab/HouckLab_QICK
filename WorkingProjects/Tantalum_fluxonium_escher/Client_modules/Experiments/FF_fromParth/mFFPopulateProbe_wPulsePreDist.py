@@ -57,10 +57,16 @@ class FFPopulateProbe(ExperimentClass):
         else:
             qubit_freq_mat = None
 
+        # self.analysis = SingleShotAnalysis(i_0, q_0, cen_num=cen_num, outerFolder=self.path_only,
+        #                                    name=self.datetimestring + "inital", fast=True,
+        #                                    disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat, centers=centers)
+        # self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
+
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
                                            name=self.datetimestring + "final", fast=self.fast_analysis,
                                            disp_image=self.disp_image, qubit_freq_mat=qubit_freq_mat, centers=centers,
-                                           i_0_arr=i_0, q_0_arr=q_0)
+                                           i_0_arr = i_0, q_0_arr = q_0)
+
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
 
 

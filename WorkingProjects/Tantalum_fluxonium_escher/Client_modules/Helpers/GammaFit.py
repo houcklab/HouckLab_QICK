@@ -23,7 +23,7 @@ kb = sp.constants.k
 ##### define a class for fitting and storing the gamma matrix
 
 class GammaFit:
-    def __init__(self, data, freq_01 = 0.815e9):
+    def __init__(self, data, freq_01 = 0.815e9, verbose = False):
         #### extract out the data
         self.i_0_arr = np.array(data[0])
         self.i_1_arr = np.array(data[1])

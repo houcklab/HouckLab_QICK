@@ -129,12 +129,14 @@ class GammaFit:
             
             i1_shots = []
             q1_shots = []
-            
+
+            confidence = 0.95
+
             for idx in range(len(sorted_shots_0)):
-                if sorted_shots_0[idx] > 0.8:
+                if sorted_shots_0[idx] > confidence:
                     i0_shots.append(self.i_1_arr[idx_t][idx])
                     q0_shots.append(self.q_1_arr[idx_t][idx])
-                if sorted_shots_1[idx] > 0.8:
+                if sorted_shots_1[idx] > confidence:
                     i1_shots.append(self.i_1_arr[idx_t][idx])
                     q1_shots.append(self.q_1_arr[idx_t][idx])
            

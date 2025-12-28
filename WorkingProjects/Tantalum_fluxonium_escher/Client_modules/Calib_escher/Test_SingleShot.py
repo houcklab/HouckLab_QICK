@@ -47,25 +47,25 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.133, #1079, #0.093277, #816 , #0.09473, #25,
+    "yokoVoltage": -1.25, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 13,  # us
-    "read_pulse_gain": 5000, #1025,  # [DAC units]
+    "read_length": 30,  # us
+    "read_pulse_gain": 8000, #1025,  # [DAC units]
     "read_pulse_freq": 7392, #6723.55
     # qubit spec parameters
-    "qubit_pulse_style": "flat_top",
+    "qubit_pulse_style": "const",
 
-    "qubit_gain": 32000,
-    "qubit_length": 10,
+    "qubit_gain": 30000,
+    "qubit_length": 2,
     "sigma": 1,
     "flat_top_length": 1,
-    "qubit_freq": 935.0, #1255,
-    "relax_delay": 200, #2500,
+    "qubit_freq": 530, #1255,
+    "relax_delay": 20, #2500,
 
     # define shots
-    "shots": int(1e4),
+    "shots": int(3e4),
     "use_switch": False,
     #"adc_trig_offset": 0, ################
 }
@@ -427,18 +427,18 @@ print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 #%%
 # TITLE : Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -1.128,
+    "yokoVoltage": -1.25,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 15,
-    "read_pulse_gain": 5000,
+    "read_length": 30,
+    "read_pulse_gain": 8000,
     "read_pulse_freq": 7392,
 
     # spec parameters for finding the qubit frequency
-    "qubit_freq_start": 945, # Is also the qubit frequency if Rabi Num Points is 1
-    "qubit_freq_stop": 980,
-    "RabiNumPoints": 15,
+    "qubit_freq_start": 350, # Is also the qubit frequency if Rabi Num Points is 1
+    "qubit_freq_stop": 650,
+    "RabiNumPoints": 61,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 2.0,
@@ -457,7 +457,7 @@ UpdateConfig = {
     "use_switch": True,
     "initialize_pulse": True,
     "initialize_qubit_gain": 30000,
-    "qubit_freq_base": 962,
+    "qubit_freq_base": 550,
     "fridge_temp": 10,
     "yokoVoltage_freqPoint": -1.128,
 }
@@ -651,14 +651,14 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.128,
-    "yokoVoltage_freqPoint": -1.128,
+    "yokoVoltage": -1.25,
+    "yokoVoltage_freqPoint": -1.25,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 15,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 7392,
+    "read_length": 9,
+    "read_pulse_gain": 6000,
+    "read_pulse_freq": 7391.8,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
@@ -666,10 +666,10 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 0.5,
     "flat_top_length": 3,
-    "qubit_freq": 957.0,
+    "qubit_freq": 523,
 
     # Experiment
-    "shots": 500000,  #1000000
+    "shots": 300000,  #1000000
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
@@ -689,7 +689,7 @@ inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFold
 
 try:
     data_QNDmeas = inst_qnd.acquire()
-    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.99)
     inst_qnd.save_data(data_QNDmeas)
     inst_qnd.save_config()
     inst_qnd.display(data_QNDmeas, plotDisp=True)
@@ -699,17 +699,17 @@ except Exception:
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.25, config["read_pulse_freq"] + 0.25),
-    'read_length': (5,20),
-    'read_pulse_gain': (5000, 7500)
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.3, config["read_pulse_freq"] + 0.3),
+    'read_length': (5,15),
+    'read_pulse_gain': (4000, 7000)
 }
 step_size = {
     "read_pulse_freq" : 0.05,
-    'read_length': 1,
-    'read_pulse_gain': 100,
+    'read_length': 2,
+    'read_pulse_gain': 500,
 }
-keys = ["read_pulse_gain"]
-config["shots"] = 20000
+keys = ["read_length", "read_pulse_gain"]
+config["shots"] = 50000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
 print(opt_results)

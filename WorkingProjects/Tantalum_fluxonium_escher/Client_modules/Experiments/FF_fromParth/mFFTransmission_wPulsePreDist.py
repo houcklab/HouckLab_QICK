@@ -197,7 +197,7 @@ class mFFTransmission(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             print(
                 "!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
-            print("Using 4 tail distortion model with default parameters unless specified otherwise in the config.")
+            print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
             model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00618),
                                                               tau=self.cfg.get("tau1", 31.3),
                                                               x_val=self.cfg.get("dt_pulsedef", 0.002))
@@ -392,7 +392,7 @@ class FFTransmission(ExperimentClass):
         avgq = np.array([elem[2] for elem in results])[:,0,0]
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmin(avgamp0)
+        peak_loc = np.argmax(avgamp0)
         self.peakFreq = fpts[peak_loc]
 
         self.cfg["read_pulse_freq"] = expt_cfg["center"] # reset to original value
