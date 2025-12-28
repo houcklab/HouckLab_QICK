@@ -110,7 +110,7 @@ class FFSpecVsFlux_wPulsePreDist(ExperimentClass):
 
             if plot_disp:
                 plt.show(block=False)
-                plt.pause(0.2)
+                plt.pause(3)
 
 
         plt.suptitle(self.fname + '\nYoko voltage %f V' % (self.cfg['yokoVoltage']))

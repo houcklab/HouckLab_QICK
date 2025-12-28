@@ -220,8 +220,9 @@ class FF_T1_wPulsePreDist(ExperimentClass):
             plt.savefig(self.iname, dpi=400)
 
         if plotDisp:
-            plt.show()
-        plt.close()
+            plt.show(block = False)
+        else:
+            plt.close()
 
     def display_all_data(self, data=None, **kwargs):
         if data is None:

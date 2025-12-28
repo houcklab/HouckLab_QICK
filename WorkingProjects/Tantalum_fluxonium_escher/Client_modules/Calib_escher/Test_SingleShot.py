@@ -651,14 +651,14 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.25,
-    "yokoVoltage_freqPoint": -1.25,
+    "yokoVoltage": -1.127,
+    "yokoVoltage_freqPoint": -1.127,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 9,
-    "read_pulse_gain": 6000,
-    "read_pulse_freq": 7391.8,
+    "read_length": 8,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 7391.96,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
@@ -666,7 +666,7 @@ UpdateConfig = {
     "qubit_length": 10,
     "sigma": 0.5,
     "flat_top_length": 3,
-    "qubit_freq": 523,
+    "qubit_freq": 972,
 
     # Experiment
     "shots": 300000,  #1000000
@@ -699,16 +699,16 @@ except Exception:
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.3, config["read_pulse_freq"] + 0.3),
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
     'read_length': (5,15),
-    'read_pulse_gain': (4000, 7000)
+    'read_pulse_gain': (4000, 9000)
 }
 step_size = {
-    "read_pulse_freq" : 0.05,
+    "read_pulse_freq" : 0.04,
     'read_length': 2,
-    'read_pulse_gain': 500,
+    'read_pulse_gain': 1000,
 }
-keys = ["read_length", "read_pulse_gain"]
+keys = ["read_pulse_freq", "read_pulse_gain"]
 config["shots"] = 50000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)

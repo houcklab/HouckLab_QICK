@@ -6,6 +6,7 @@
 # * slower than any crossings (adiabatic), as well as the energy spliting between g and e. (speed compares to these squared)
 # * faster than any decoherence channels
 # Lev, June 2025: create file.
+
 ###
 import sys
 
@@ -69,6 +70,7 @@ class FFRampTest(NDAveragerProgram):
 
         # Check that the flux ramps finish after the first readout. Otherwise, the sync_all will insert extra delay.
         # This can be fixed by using the t argument everywhere in the body, but I think it's not a good idea
+        print(f"FF ramp length is {self.cfg['ff_ramp_length']} us")
         if self.cfg["relax_delay_1"] + self.cfg['cycle_number'] * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] +
                                                                   self.cfg['cycle_delay']) < self.cfg['adc_trig_offset']:
            print('Warning: readout will not complete before flux ramps. Expect a delay before 2nd readout', file = sys.stderr)
@@ -246,7 +248,7 @@ class FFRampTest_Experiment(ExperimentClass):
             i_arr = np.zeros((self.cfg["cycle_number_expts"], self.cfg["reps"], 2))
             q_arr = np.zeros((self.cfg["cycle_number_expts"], self.cfg["reps"], 2))
 
-            self.cycle_numbers = np.rint(np.linspace(1, self.cfg["max_cycle_number"], num=self.cfg["cycle_number_expts"])).astype(int)
+            self.cycle_numbers = np.rint(np.linspace(0, self.cfg["max_cycle_number"], num=self.cfg["cycle_number_expts"])).astype(int)
             for idx, cycle_number in enumerate(self.cycle_numbers):
                 prog = FFRampTest(self.soccfg, self.cfg | {'cycle_number' : cycle_number})
 

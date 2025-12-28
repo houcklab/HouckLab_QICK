@@ -198,8 +198,8 @@ class mFFTransmission(NDAveragerProgram):
             print(
                 "!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
             print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
-            model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00618),
-                                                              tau=self.cfg.get("tau1", 31.3),
+            model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00499),
+                                                              tau=self.cfg.get("tau1", 50.6),
                                                               x_val=self.cfg.get("dt_pulsedef", 0.002))
 
 

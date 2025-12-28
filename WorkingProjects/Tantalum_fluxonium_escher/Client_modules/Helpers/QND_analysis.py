@@ -33,7 +33,7 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
     
     # Converting the data to 2d histogram
     # Check if bin_size is given as input
-    bin_size = 51
+    bin_size = 101
     hist2d = sse2.createHistogram(iq_data, bin_size)
     
     # Find the fit parameters for the double 2D Gaussian

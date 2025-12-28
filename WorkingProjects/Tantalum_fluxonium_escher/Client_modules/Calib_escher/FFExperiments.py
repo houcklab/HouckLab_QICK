@@ -106,14 +106,14 @@ plt.show()
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 30,                # [us]
+    "read_length": 20,                # [us]
     "read_pulse_gain": 5000,         # [DAC units]
     "read_pulse_freq": 7392,      # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 2050,        # [MHz]
-    "qubit_freq_stop": 2150,         # [MHz]
+    "qubit_freq_start": 940,        # [MHz]
+    "qubit_freq_stop": 1040,         # [MHz]
     "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.02,                  # [us], used with "arb" and "flat_top"
     "qubit_length": 2,               # [us], used with "const"
@@ -124,8 +124,8 @@ UpdateConfig = {
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": -8000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 300,                  # [us] Total length of positive fast flux pulse
+    "ff_gain": -30000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 350,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "ramp",
     "ff_ramp_length" : 0.05,
@@ -133,16 +133,16 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
     "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 2000,               # [us]
-    "qubit_freq_expts": 31,         # number of points
-    "reps": 2000,
+    "relax_delay": 1000,               # [us]
+    "qubit_freq_expts": 51,         # number of points
+    "reps": 1000,
     "use_switch": False,
     "pre_meas_delay": 2,
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-    "qubit_spec_delay_start": 1000,  # [us] Initial value
-    "qubit_spec_delay_stop": 3000,      # [us] Final value
-    "qubit_spec_delay_steps": 21,# number of post_ff_delay points to take
+    "qubit_spec_delay_start": 351,  # [us] Initial value
+    "qubit_spec_delay_stop": 800,      # [us] Final value
+    "qubit_spec_delay_steps": 201,# number of post_ff_delay points to take
     "spacing": 'log',
     "negative_pulse": False,
 }
@@ -165,7 +165,7 @@ custom_delay_array = np.logspace(np.log10(start_delay), np.log10(stop_delay), co
 print("Using custom delay array: ", custom_delay_array)
 
 try:
-    data_FFSpecVsDelay = FFSpecVsDelay_Experiment.acquire(Instance_FFSpecVsDelay, progress = True, custom_delay_array = custom_delay_array)
+    data_FFSpecVsDelay = FFSpecVsDelay_Experiment.acquire(Instance_FFSpecVsDelay, progress = True, custom_delay_array = None)
 except Exception:
     print("Pyro traceback:")
     print("".join(Pyro4.util.getPyroTraceback()))
@@ -178,12 +178,12 @@ plt.show()
 #%%
 # TITLE : Sweeping over differenet parameters
 import time
-start_delay = 1
-stop_delay = config["qubit_spec_delay_stop"] - config["qubit_spec_delay_start"] + 1
-custom_delay_array = np.logspace(np.log10(start_delay), np.log10(stop_delay), config["qubit_spec_delay_steps"]) + config["qubit_spec_delay_start"] - 1
+# start_delay = 1
+# stop_delay = config["qubit_spec_delay_stop"] - config["qubit_spec_delay_start"] + 1
+# custom_delay_array = np.logspace(np.log10(start_delay), np.log10(stop_delay), config["qubit_spec_delay_steps"]) + config["qubit_spec_delay_start"] - 1
 
 sweep_var = "ff_gain"
-sweep_arr = np.linspace(10000,-10000, 4)
+sweep_arr = np.linspace(1000,6000, 3)
 update_qubit_freq = False
 dac2qubitfreq = -0.058  # MHz per DAC unit
 zerodacfreq = 1140
@@ -200,7 +200,7 @@ for val in sweep_arr:
     inst = FFSpecVsDelay_Experiment(path=f"FFSpecVsDelay_{curr_date_time}_{sweep_var}", cfg=config,soc=soc,soccfg=soccfg,
                                                 outerFolder = outerFolder_sweep, short_directory_names = True)
     try:
-        data = inst.acquire(progress = True,custom_delay_array = custom_delay_array )
+        data = inst.acquire(progress = True,custom_delay_array = None )
     except Exception:
         print("Pyro traceback:")
         print("".join(Pyro4.util.getPyroTraceback()))

@@ -462,6 +462,7 @@ class FFSpecSlice_Experiment_wPPD_studyzeroing(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
         sig  = avgi[0][0] + 1j * avgq[0][0]
+        sig = sig - sig[0]  # background subtraction
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
         while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists

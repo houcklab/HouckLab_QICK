@@ -195,8 +195,8 @@ class mFFStarkShift(NDAveragerProgram):
             print(
                 "!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
             print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
-            model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00618),
-                                                              tau=self.cfg.get("tau1", 31.3),
+            model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00499),
+                                                              tau=self.cfg.get("tau1", 50.6),
                                                               x_val=self.cfg.get("dt_pulsedef", 0.002))
 
         total_time = (self.cfg["ff_ramp_length"] + self.cfg["ff_hold"] + self.cfg[
@@ -464,6 +464,7 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
         sig  = avgi[0][0] + 1j * avgq[0][0]
+        sig = sig - sig[0]  # background subtraction
         avgsig = np.abs(sig)
         avgphase = np.angle(sig, deg=True)
         while plt.fignum_exists(num=fig_num): ###account for if figure with number already exists

@@ -298,9 +298,9 @@ class GammaFit:
             return P0_0_resid, P0_1_resid, P1_0_resid, P1_1_resid
         
         params = Parameters()
-       
-        params.add('g01', value = 1e-2, min = 1e-9, max = 0.1)
-        params.add('g10', value = 1e-2, min = 1e-9, max = 0.1)
+
+        params.add('g01', value=1e-2, min=1e-9, max=0.1)
+        params.add('g10', value=1e-2, min=1e-9, max=0.1)
         
         params.add('P0_0_init',P0_0_data[0],vary = False)
         params.add('P0_1_init',P0_1_data[0],vary = False)
@@ -317,13 +317,13 @@ class GammaFit:
         
         data = [P0_0_data, P0_1_data, P1_0_data, P1_1_data]
         data_err = [P0_0_data_err, P0_1_data_err, P1_0_data_err, P1_1_data_err]
-        
-        result_shgo = minimize(residual, params, args = (t_arr, data, data_err), 
-            method = 'ampgo')
+
+        result_shgo = minimize(residual, params, args=(t_arr, data, data_err),
+                               method='ampgo')
         params_update = result_shgo.params
-        
-        result = minimize(residual, params_update, args = (t_arr, data, data_err), 
-            method = 'leastsq')
+
+        result = minimize(residual, params_update, args=(t_arr, data, data_err),
+                          method='leastsq')
        
         result.params.pretty_print(colwidth=11)
 
@@ -371,7 +371,7 @@ class GammaFit:
         data0_fitted = self.g(t_arr, P0_init, result.params)
         data1_fitted = self.g(t_arr, P1_init, result.params)
         data_fitted = [data0_fitted, data1_fitted]
-        
+
         data_plot = [
             [P0_0_data, P0_1_data], 
             [P1_0_data, P1_1_data]

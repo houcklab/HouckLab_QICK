@@ -47,7 +47,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             seg_play[i] = np.mean(seg[i*points_per_play_step:(i+1)*points_per_play_step])
         return seg_play
 
-    def play_ff_pulse(self, seg1 = None, seg2 = None, seg3 = None, dt_pulseplay = 5, case = 1):
+    def play_ff_pulse(self, seg1 = None, seg2 = None, seg3 = None, dt_pulseplay = 5, case = 1, dt_pulseplay_readout = 2):
         """
         Plays the fast flux pulse according to the specified configuration.
 
@@ -158,7 +158,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             self.pulse(ch=self.cfg["ff_ch"], t=ts)
 
 
-    def build_ff_pulse(self, dt_pulsedef = 0.25, dt_pulseplay = 5):
+    def build_ff_pulse(self, dt_pulsedef = 0.25, dt_pulseplay = 5, dt_pulseplay_readout = 2):
         """
         Build the fast flux pulse according to the configuration.
 
@@ -196,8 +196,8 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             print("!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
             print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
-            model = PulseFunctions.SimpleSingleTailDistortion(A = self.cfg.get("A1", -0.00618),
-                                                              tau = self.cfg.get("tau1", 31.3),
+            model = PulseFunctions.SimpleSingleTailDistortion(A = self.cfg.get("A1", -0.00499),
+                                                              tau = self.cfg.get("tau1", 50.6),
                                                               x_val = self.cfg.get("dt_pulsedef", 0.002))
 
         # Case 1 : if the qubit tone is played before the fast flux pulse
