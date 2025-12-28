@@ -21,22 +21,31 @@ def plotCenter(iq_data, centers, fname, loc):
 
 def getCenters(iq_data, cen_num,**kwargs):
     # use kmeans to cluster the data
-    if 'use_gmm' in kwargs and kwargs["use_gmm"]:
+    init_method = 'GMM'
+    if 'init_method' in kwargs:
+        init_method = kwargs['init_method']
+
+    if init_method == 'GMM':
         if 'init_guess' in kwargs:
-            # Use gmm to cluster the data
-            gmm_model = gmm(n_components=cen_num, means_init = kwargs["init_guess"]).fit(iq_data.T)
+            # use GMM to cluster the data
+            gmm = GMM(n_components=cen_num, covariance_type='tied', means_init=kwargs["init_guess"]).fit(iq_data.T)
         else:
-            gmm_model = gmm(n_components=cen_num).fit(iq_data.T)
-        centers = gmm_model.means_
-    else:
+            # use GMM to cluster the data
+            gmm = GMM(n_components=cen_num, covariance_type='tied').fit(iq_data.T)
+        centers = gmm.means_
+        return centers
+    elif init_method == 'kmeans':
         if 'init_guess' in kwargs:
             # use kmeans to cluster the data
             kmeans = KMeans(init=kwargs["init_guess"], n_clusters=cen_num, n_init=1, max_iter=10000).fit(iq_data.T)
         else:
             # use kmeans to cluster the data
             kmeans = KMeans(n_clusters=cen_num, n_init=7, max_iter=10000).fit(iq_data.T)
+
         # Get the centers of the clusters
         centers = kmeans.cluster_centers_
+    else:
+        raise ValueError('init_method must be either GMM or kmeans')
 
     # Check if plot is given as input
     if 'plot' in kwargs:
@@ -72,6 +81,22 @@ def double_gaussian_2d(points, *p):
     result = np.zeros(points[0].shape)
     for i in range(cen_num):
         result += gaussian_2d(points, *p[i*no_of_params:(i+1)*no_of_params])
+    return result
+
+# Same as gaussian 2d except sigma is the first parameter and all the random crap is removed. ss = same sigma
+def gaussian_2d_ss(points, sigma, A, x0, y0):
+    x, y = points
+    return A * np.exp(-((x - x0)**2 + (y - y0)**2) / (2 * sigma ** 2))
+
+# Same as double gaussian 2d, but all sigmas are the same. sigma is the first parameter, each gaussian then has 3 params
+def double_gaussian_2d_ss(points, *p):
+    no_of_params = 3
+    cen_num = int((len(p) - 1)/no_of_params)
+    result = np.zeros(points[0].shape)
+    sigma = p[0]
+    other_args = p[1:]
+    for i in range(cen_num):
+        result += gaussian_2d_ss(points, sigma, *other_args[i*no_of_params:(i+1)*no_of_params])
     return result
 
 # Plot the 2d gaussians
@@ -147,11 +172,11 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
 
         bounds[0][j*no_of_params] = 0
         bounds[1][j*no_of_params] = np.inf #hist2d[0][indx_x, indx_y]*1.1
-        bounds[0][j*no_of_params+1] = centers[j,0] - np.abs(centers[j,0])*0.05
-        bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.05
-        bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.05
-        bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.05
-        
+        bounds[0][j * no_of_params + 1] = centers[j, 0] - np.abs(centers[j, 0]) * 0.2
+        bounds[1][j * no_of_params + 1] = centers[j, 0] + np.abs(centers[j, 0]) * 0.2
+        bounds[0][j * no_of_params + 2] = centers[j, 1] - np.abs(centers[j, 1]) * 0.2
+        bounds[1][j * no_of_params + 2] = centers[j, 1] + np.abs(centers[j, 1]) * 0.2
+
         # Check if sigma is given as input in kwargs
         if 'sigma' in kwargs:
             bounds[0][j*no_of_params+3] = kwargs['sigma'][j]*0.95
@@ -313,8 +338,14 @@ def calcProbability(
     std_probability = np.zeros(cen_num)
     total_samples = np.sum(num_samples_in_gaussian)
     for i in range(cen_num):
-        probability[i] = num_samples_in_gaussian[i]/total_samples
-        std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
+        if total_samples == 0:
+            probability[i] = 0
+            std_probability[i] = 0
+            print("TOTAL SAMPLES: ", total_samples)
+        else:
+            probability[i] = num_samples_in_gaussian[i]/total_samples
+            std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
+
 
     return probability, std_probability
 
@@ -367,16 +398,19 @@ def findProb(iq_data, cen_num, **kwargs):
     return probability, std_probability
 
 
-def findTempr(probability, std_probability, f1):
+def findTempr(probability, std_probability, f1, cen_num = 2):
     h = 6.62607015e-34
     kb = 1.380649e-23
-    # Calculate the temperature between state 0 and 1
-    T = -(h*f1/kb) /np.log(probability[0]/probability[1])
-    # Calculate the uncertainty in the temperature
-    u_T = std_probability[0]**2*(T/(probability[0]*np.log(probability[0]/probability[1])))**2 \
-        + std_probability[1]**2*(T/(probability[1]*np.log(probability[0]/probability[1])))**2 
-    
-    return np.abs(T), np.sqrt(u_T)
+    # Since there are ^{cen_num}C_2 choices of temperature. Let's calculate all of them
+    tempr = np.zeros((cen_num, cen_num))
+    tempr_std = np.zeros((cen_num, cen_num))
+    for i in range(cen_num):
+        for j in range(cen_num):
+            if i != j:
+                tempr[i,j] = np.abs((h*f1[i,j]/kb)/np.log(probability[i]/probability[j]))
+                tempr_std[i,j] =  np.abs(std_probability[i]**2*(tempr[i,j]/(probability[i]*np.log(probability[i]/probability[j])))**2
+                                   + std_probability[j]**2*(tempr[i,j]/(probability[j]*np.log(probability[i]/probability[j])))**2)
+    return tempr, tempr_std
 
 
 def plotFitAndData(pdf, gaussians, x_points, y_points, centers, iq_data, fig, axs, cen_num = 2, **kwargs):
