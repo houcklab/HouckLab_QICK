@@ -37,6 +37,7 @@ class GammaFit:
         q_0_arr  = self.q_0_arr 
         q_1_arr  = self.q_1_arr 
         wait_arr = self.wait_arr
+        self.verbose = verbose
 
         self._sortShots()
         self._calcGammaMat()
@@ -168,14 +169,23 @@ class GammaFit:
                     hist2d, pdf, cen_num, plot = False, 
                     fname = "Wait_Arr_0_1", loc = "plots/", 
                     x_points = x_points, y_points = y_points)
-                
-                num_samples_in_gaussian_std = sse2.calcNumSamplesInGaussianSTD(
-                    hist2d, pdf, cen_num, plot = False, 
-                    fname = "Wait_Arr_0_1",loc = "plots/", 
-                    x_points = x_points, y_points = y_points)
-                
+
                 probability, std_probability = sse2.calcProbability(
-                    num_samples_in_gaussian, num_samples_in_gaussian_std,cen_num)
+                    num_samples_in_gaussian,cen_num, sigma_sys = 0.01)
+
+                if self.verbose:
+                    if std_probability[0] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[0]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[0]))
+                    if std_probability[1] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[1]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[1]))
             
                 if idx_cen == 0:
                     state0_probs.append(probability[0])
@@ -291,10 +301,11 @@ class GammaFit:
         
             P0_0_resid = ((P0_0_model - P0_0_data)/P0_0_data_err).ravel()
             P0_1_resid = ((P0_1_model - P0_1_data)/P0_1_data_err).ravel()
-        
+
             P1_0_resid = ((P1_0_model - P1_0_data)/P1_0_data_err).ravel()
             P1_1_resid = ((P1_1_model - P1_1_data)/P1_1_data_err).ravel()
-         
+
+
             return P0_0_resid, P0_1_resid, P1_0_resid, P1_1_resid
         
         params = Parameters()
@@ -317,9 +328,8 @@ class GammaFit:
         
         data = [P0_0_data, P0_1_data, P1_0_data, P1_1_data]
         data_err = [P0_0_data_err, P0_1_data_err, P1_0_data_err, P1_1_data_err]
-
         result_shgo = minimize(residual, params, args=(t_arr, data, data_err),
-                               method='ampgo')
+                               method='differential_evolution')
         params_update = result_shgo.params
 
         result = minimize(residual, params_update, args=(t_arr, data, data_err),

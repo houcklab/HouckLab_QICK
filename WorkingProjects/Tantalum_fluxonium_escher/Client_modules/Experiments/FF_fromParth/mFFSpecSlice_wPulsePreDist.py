@@ -308,6 +308,8 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             self.seg2_play = seg2_play
             self.seg3_play = seg3_play
 
+            print(f"Length of seg1_play : {len(seg1_play)*dt_pulseplay}, seg2_play : {len(seg2_play)*dt_pulseplay}, seg3_play : {len(seg3_play)*dt_pulseplay}")
+
             # Adding one more seg to seg3_pplay with value zero
             seg3_play = np.append(seg3_play, 0)
 

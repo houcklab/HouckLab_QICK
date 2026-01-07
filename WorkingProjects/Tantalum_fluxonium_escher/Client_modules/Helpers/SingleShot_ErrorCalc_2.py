@@ -3,7 +3,7 @@ from sklearn.cluster import KMeans
 from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from matplotlib.colors import LogNorm
-from sklearn.mixture import GaussianMixture as gmm
+from sklearn.mixture import GaussianMixture as GMM
 # plt.rc('text', usetex=True)
 # plt.rc('font', family='serif')
 from tqdm import tqdm
@@ -292,8 +292,12 @@ def calcNumSamplesInGaussian(hist2d, pdf, cen_num, **kwargs):
             plt.close()
         
     return num_samples_in_gaussian
-            
-def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
+
+# If you have reached here by debugging this code then congratulations
+# When I (Parth) wrote this code I never thought this comment would see the light of day
+# I was stupid and naive at this time. Now I am wise and experienced.
+# To fix this issue look how GammaFit.py has implemented the new usage of calcProbability without calcNumSamplesInGaussianSTD
+def calcNumSamplesInGaussianSTD_donotuse(hist2d, pdf, cen_num, **kwargs):
     num_samples_in_gaussian_std = np.zeros(cen_num)
     expected_dist_std = np.zeros((cen_num,) + hist2d[0].shape)
     for i in range(cen_num):
@@ -331,12 +335,14 @@ def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
     
     return num_samples_in_gaussian_std
 
-def calcProbability(
-            num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num
-            ):
+
+def calcProbability(num_samples_in_gaussian, cen_num, **kwargs):
     probability = np.zeros(cen_num)
     std_probability = np.zeros(cen_num)
     total_samples = np.sum(num_samples_in_gaussian)
+    sigma_sys = 0.01  # Systematic error of 1%
+    if 'sigma_sys' in kwargs:
+        sigma_sys = kwargs['sigma_sys']
     for i in range(cen_num):
         if total_samples == 0:
             probability[i] = 0
@@ -344,7 +350,7 @@ def calcProbability(
             print("TOTAL SAMPLES: ", total_samples)
         else:
             probability[i] = num_samples_in_gaussian[i]/total_samples
-            std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
+            std_probability[i] = np.sqrt(probability[i]*(1-probability[i])/total_samples + sigma_sys**2)
 
 
     return probability, std_probability

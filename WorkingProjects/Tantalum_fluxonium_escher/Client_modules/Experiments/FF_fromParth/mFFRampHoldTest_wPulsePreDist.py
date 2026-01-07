@@ -225,6 +225,11 @@ class FFRampHoldTest(NDAveragerProgram):
         seg2_play = self.create_avg_segs(seg2, dt_pulsedef, dt_pulseplay)
         seg3_play = self.create_avg_segs(seg3, dt_pulsedef, dt_pulseplay)
 
+        # Calculate the length of segments in us
+        self.seg1_play_length = len(seg1_play) * dt_pulseplay
+        self.seg2_play_length = len(seg2_play) * dt_pulseplay
+        self.seg3_play_length = len(seg3_play) * dt_pulseplay
+
         # # Add one more seg to seg3_pplay with value zero
         if not self.cfg.get("zeroing_pulse", False):
             seg3_play = np.append(seg3_play, 0)
@@ -334,7 +339,14 @@ class FFRampHoldTest(NDAveragerProgram):
     def body(self):
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
         read1_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"])
-        read2_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"] + self.cfg["read_length"] + self.cfg['relax_delay_1'] + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]+ self.cfg["ff_ramp_length"]+ self.cfg['pre_meas_delay'])
+        # read2_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["pre_meas_delay"]
+        #                                      + self.cfg["read_length"] + self.cfg['relax_delay_1']
+        #                                      + self.cfg["ff_ramp_length"] + self.cfg["ff_hold"]
+        #                                      + self.cfg["ff_ramp_length"]+ self.cfg['pre_meas_delay'])
+        # print(f"Read1 length (cycles): {read1_length_cycles}, Read2 length (cycles): {read2_length_cycles}")
+        read2_length_cycles = self.us2cycles(self.seg1_play_length + self.seg2_play_length
+                                             + 2*self.cfg["ff_ramp_length"] +  self.cfg['pre_meas_delay'])
+        print(f"Updated Read2 length (cycles): {read2_length_cycles}")
 
         self.pulse(ch = self.cfg["qubit_ch"], t = 0)
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,

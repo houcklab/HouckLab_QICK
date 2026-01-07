@@ -129,29 +129,29 @@ UpdateConfig = {
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": -15000,                  # [DAC units] Gain for fast flux pulse
-    "ff_length": 300,                  # [us] Total length of positive fast flux pulse
+    "ff_gain": -3000,                  # [DAC units] Gain for fast flux pulse
+    "ff_length": 13235,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "ramp",
     "ff_ramp_length" : 0.02,
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
-    "yokoVoltage": -1.127,           # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -1.128,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 20,               # [us]
     "qubit_freq_expts": 31,         # number of points
-    "reps": 700,
+    "reps": 500,
     "use_switch": False,
     "pre_meas_delay": 5,
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
-    "qubit_spec_delay_start": 299,  # [us] Initial value
-    "qubit_spec_delay_stop": 340,      # [us] Final value
-    "qubit_spec_delay_steps": 51,# number of post_ff_delay points to take
+    "qubit_spec_delay_start": 13235,  # [us] Initial value
+    "qubit_spec_delay_stop": 13365,      # [us] Final value
+    "qubit_spec_delay_steps": 5,# number of post_ff_delay points to take
     "spacing": 'linear',
     "negative_pulse": False,
     "pulse_pre_dist": True,
-    'dt_pulseplay': 50, # This should be proportional to the qubit spec delay definitions
+    'dt_pulseplay': 66, # This should be proportional to the qubit spec delay definitions
     'dt_set_auto': False,
     "zeroing_pulse": True,
     'dt_pulsedef': 0.01,
@@ -396,23 +396,6 @@ config = BaseConfig | UpdateConfig
 soc.reset_gens()
 inst_ff_t1 = FF_T1_wPulsePreDist(path="FF_T1_PS_wPPD", cfg=config,soc=soc,soccfg=soccfg,
                                               outerFolder = outerFolder)
-#%%
-import h5py as h5
-#Load h5 file
-file_path = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\HouckCage_dev\FF_sweep_26Dec_1125\dac_0.0\FF_T1_PS_wPPD\FF_T1_PS_wPPD_2025_12_26\FF_T1_PS_wPPD_2025_12_26_14_18_51_data.h5"
-data_ff_t1 = {}
-data_ff_t1['config'] = {}
-data_ff_t1['config']["qubit_ge_freq"] = config["qubit_ge_freq"]
-data_ff_t1['data'] = {}
-with h5.File(file_path, 'r') as f:
-    # List all groups
-    print("Keys: %s" % f.keys())
-
-    # Get the data
-    for key in f.keys():
-        data_ff_t1['data'][key] = f[key][()]
-
-
 
 #%%
 try:
@@ -420,8 +403,7 @@ try:
 except Exception:
     print("Pyro traceback:")
     print("".join(Pyro4.util.getPyroTraceback()))
-#%%
-data_ff_t1 = inst_ff_t1.process_data(data = data_ff_t1)
+data_ff_t1 = inst_ff_t1.process_data()
 inst_ff_t1.save_data(data_ff_t1)
 inst_ff_t1.display(data_ff_t1, plotDisp=True)
 # inst_ff_t1.display_all_data(data_ff_t1)
@@ -433,22 +415,22 @@ plt.show()
 # TITLE  : Measure Steady State Populations with Pulse Predistortion
 UpdateConfig = {
     "read_pulse_style": "const",  # --Fixed
-    "read_length" : 15,  # [us]
-    "read_pulse_gain": 5000,  # 5600,  # [DAC units]
+    "read_length" : 9,  # [us]
+    "read_pulse_gain": 5500,  # 5600,  # [DAC units]
     "read_pulse_freq": 7392,  # [MHz]
 
     # Fast flux pulse parameters
     "ff_ramp_style": "linear",  # one of ["linear"]
     "ff_ramp_start": 0,  # [DAC units] Starting amplitude of ff ramp, -32766 < ff_ramp_start < 32766
-    "ff_ramp_stop": -4000,  # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
-    "ff_hold": 15000,  # [us] Delay between fast flux ramps
+    "ff_ramp_stop": -3000,  # [DAC units] Ending amplitude of ff ramp, -32766 < ff_ramp_stop < 32766
+    "ff_hold": 13235.138477098331,  # [us] Delay between fast flux ramps
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
     "ff_ramp_length": 0.02,  # [us] Half-length of ramp to use when sweeping gain
 
     # Optional qubit pulse before measurement, intende0 as pi/2 to populate both blobs
     "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
-    "qubit_freq": 965,  # [MHz] Frequency of qubit pulse
+    "qubit_freq": 967,  # [MHz] Frequency of qubit pulse
     "qubit_ge_freq": 2444,
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
     "sigma": 0.50,  # [us], used with "arb" and "flat_top"
@@ -458,16 +440,16 @@ UpdateConfig = {
 
     # Ramp sweep parameters
     "yokoVoltage": -1.128,  # [V] Yoko voltage for magnet offset of flux
-    "relax_delay_1": 5,  # - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+    "relax_delay_1": 20,  # - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
     "relax_delay_2": 20,  # [us] Relax delay after second readout
     "pre_meas_delay" : 0.5,
 
     # General parameters
-    "reps": 50000,
+    "reps": 10000,
     "cen_num":2,
     "initialize_pulse": True,
     "pulse_pre_dist": True,
-    'dt_pulseplay': 20,  # This should be proportional to the qubit spec delay definitions
+    'dt_pulseplay': 66,  # This should be proportional to the qubit spec delay definitions
     'factor_dist_rlxdlay' : 0.1,  # Portion of relax delay to be distorted
     "zeroing_pulse": True,
     'dt_pulsedef': 0.01,
@@ -583,7 +565,7 @@ UpdateConfig = {
 
     # Ramp sweep parameters
     "yokoVoltage": -1.128,  # [V] Yoko voltage for magnet offset of flux
-    "relax_delay_1": 5,  # Relax delay after first readout
+    "relax_delay_1": 20,  # Relax delay after first readout
     "relax_delay_2": 25,  # [us] Relax delay after second readout
 
     # General parameters
@@ -686,8 +668,8 @@ inst_ffstark_popgain.save_config()
 
 from tqdm import tqdm
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\HouckCage_dev\\FF_sweep_26Dec_1125\\"
-FF_sweep = np.linspace(0, -3000, 21)
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\HouckCage_dev\\FF_sweep_6Jan_2343\\"
+FF_sweep = np.linspace(-2000, 2000, 51)
 # add a point at zero to the beginning
 FF_sweep = np.insert(FF_sweep, 0, 0)
 
@@ -755,7 +737,7 @@ UpdateConfig_spec_noff = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "pre_meas_delay": 6,
 
-    "relax_delay": 2000,               # [us]
+    "relax_delay": 1000,               # [us]
     "reps": 1000,
     'dt_pulseplay': 1,
 }
@@ -779,7 +761,7 @@ UpdateConfig_spec_ff_beg = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "pre_meas_delay": 6,
 
-    "relax_delay": 2000,               # [us]
+    "relax_delay": 1000,               # [us]
     "reps": 1000,
     'dt_pulseplay': 2,
 }
@@ -800,13 +782,13 @@ UpdateConfig_ff_fid = {
     "ff_ramp_length": 0.02,  # [us] Half-length of ramp to use when sweeping gain
 
     # Number of cycle repetitions sweep parameters
-    "cycle_number_expts": 21,  # [int] How many different values for number of cycles around to use in this experiment
+    "cycle_number_expts": 31,  # [int] How many different values for number of cycles around to use in this experiment
     "max_cycle_number": 100,  # [int] What is the largest number of cycles to use in sweep? Smallest value always 1
     "cycle_delay": 0.02,  # [us] How long to wait between cycles in one experiment?
 
     # General parameters
     "sweep_type": 'cycle_number',  # [str] What to sweep? 'ramp_length', 'ff_gain', 'cycle_number'
-    "reps": 25000,
+    "reps": 30000,
     "sets": 5,
     "angle": None,  # [radians] Angle of rotation for readout
     "threshold": None,  # [DAC units] Threshold between g and e
@@ -831,15 +813,15 @@ UpdateConfig_t1 = {
     "ff_ramp_length": 0.02,  # [us] Half-length of ramp to use when sweeping gain
 
     # Experiment parameters
-    "relax_delay_1": 5,  # Relax delay after the first readout
+    "relax_delay_1": 20,  # Relax delay after the first readout
     "relax_delay_2": 20,  # [us] Relax delay after second readout
     "wait_start": 2,
     "wait_stop": 3000,
-    "wait_num": 41,
+    "wait_num": 21,
     "wait_type": 'log',
 
     # General parameters
-    "reps": 25000,
+    "reps": 20000,
     "cen_num":2,
     "initialize_pulse": True,
     "fridge_temp": 7,
@@ -883,7 +865,7 @@ UpdateConfig_spec_post_ff = {
     "qubit_freq_start": 870,        # [MHz]
     "qubit_freq_stop": 1070,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse = 5*T1 + 10
-    "qubit_freq_expts": 101,  # number of points
+    "qubit_freq_expts": 51,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
 
     # Fast flux pulse parameters
@@ -909,7 +891,7 @@ UpdateConfig_spec_post_zeroing = {
     "qubit_freq_start": 870,  # [MHz]
     "qubit_freq_stop": 1070,  # [MHz]
     "qubit_spec_delay": 10,  # [us] Delay before qubit pulse = 5*T1 + 10
-    "qubit_freq_expts": 101,  # number of points
+    "qubit_freq_expts": 51,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
 
     # Fast flux pulse parameters
@@ -942,11 +924,11 @@ UpdateConfig_ss = {
     "qubit_ge_freq": 2444,
 
     # Ramp sweep parameters
-    "relax_delay_1": 5,  # - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
+    "relax_delay_1": 20,  # - BaseConfig["adc_trig_offset"],  # [us] Relax delay after first readout
     "relax_delay_2": 20,  # [us] Relax delay after second readout
 
     # General parameters
-    "reps": 100000,
+    "reps": 50000,
     "cen_num":2,
     "initialize_pulse": True,
     "pulse_pre_dist": True,
@@ -1015,8 +997,8 @@ UpdateConfig_stark = {
     "qubit_freq_expts": 51,  # number of points
 
     # General parameters
-    "relax_delay_2": 2000,  # [us] Relax delay after second readout
-    "reps": 5000,
+    "relax_delay_2": 200,  # [us] Relax delay after second readout
+    "reps": 3000,
     "pulse_pre_dist": True,
     'dt_pulseplay': 0.5,  # This should be proportional to the qubit spec delay definitions
     "zeroing_pulse": True,
@@ -1044,11 +1026,11 @@ UpdateConfig_popnprobe = {
     'pop_relax_delay': 5,
 
     # Ramp sweep parameters
-    "relax_delay_1": 5,  # Relax delay after first readout
+    "relax_delay_1": 20,  # Relax delay after first readout
     "relax_delay_2": 20,  # [us] Relax delay after second readout
 
     # General parameters
-    "reps": 100000,
+    "reps": 50000,
     "cen_num":2,
     "pulse_pre_dist": True,
     "zeroing_pulse": True,
@@ -1217,52 +1199,61 @@ for i in tqdm(range(FF_sweep.size)):
     g10_rate_list.append(data_ff_t1['data']['g10'])
     g10_err_rate_list.append(data_ff_t1['data']['err10'])
 
-    # TITLE : Run spec slice at end of fast flux pulse
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_ff_end['ff_length'] = 5*t1 + 10
-    config_spec_ff_end['qubit_spec_delay'] = 5*t1
-    config_spec_ff_end['dt_pulseplay'] = max(1, int((5*t1)/1000))
-    inst_spec_ff_end = FFSpecSlice_Experiment_wPPD(path="Spec_FF_end", cfg=config_spec_ff_end, soc=soc, soccfg=soccfg,
-                                                 outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_ff_end.acquire(progress=False)
-    inst_spec_ff_end.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_ff_end.save_data(data_FFSpecSlice)
-    inst_spec_ff_end.save_config()
-    qubit_freq_ff_end_list.append(inst_spec_ff_end.qubit_peak_freq)
+    if i%5 == 0:
+        # TITLE : Run spec slice at end of fast flux pulse
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_ff_end['dt_pulseplay'] = max(1, int((5*t1 + 10)/1000))
+        config_spec_ff_end['ff_length'] = 5*t1 + 10
+        config_spec_ff_end['qubit_spec_delay'] = 5*t1
+        inst_spec_ff_end = FFSpecSlice_Experiment_wPPD(path="Spec_FF_end", cfg=config_spec_ff_end, soc=soc, soccfg=soccfg,
+                                                     outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_ff_end.acquire(progress=False)
+        inst_spec_ff_end.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_ff_end.save_data(data_FFSpecSlice)
+        inst_spec_ff_end.save_config()
+        qubit_freq_ff_end_list.append(inst_spec_ff_end.qubit_peak_freq)
+    else:
+        qubit_freq_ff_end_list.append(qubit_ge_freq)
 
     # TITLE : Run spec slice after the fast flux pulse
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_post_ff['ff_length'] = 5*t1
-    config_spec_post_ff['qubit_spec_delay'] = 5*t1 + 10
-    config_spec_post_ff['dt_pulseplay'] = max(1, int((5*t1 + 10)/1000))
-    inst_spec_post_ff = FFSpecSlice_Experiment_wPPD(path="Spec_post_FF", cfg=config_spec_post_ff, soc=soc, soccfg=soccfg,
-                                                    outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_post_ff.acquire(progress=False)
-    inst_spec_post_ff.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_post_ff.save_data(data_FFSpecSlice)
-    inst_spec_post_ff.save_config()
-    qubit_freq_post_ff_list.append(inst_spec_post_ff.qubit_peak_freq)
+    if i%5 == 0:
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_post_ff['dt_pulseplay'] = max(1, int((5*t1 + 30)/1000))
+        config_spec_post_ff['ff_length'] = 5*t1
+        config_spec_post_ff['qubit_spec_delay'] = 5*t1 + 30
+        inst_spec_post_ff = FFSpecSlice_Experiment_wPPD(path="Spec_post_FF", cfg=config_spec_post_ff, soc=soc, soccfg=soccfg,
+                                                        outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_post_ff.acquire(progress=False)
+        inst_spec_post_ff.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_post_ff.save_data(data_FFSpecSlice)
+        inst_spec_post_ff.save_config()
+        qubit_freq_post_ff_list.append(inst_spec_post_ff.qubit_peak_freq)
+    else:
+        qubit_freq_post_ff_list.append(qubit_freq)
 
     # TITLE : Run Spec slice after the relax delay
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_post_zeroing['ff_length'] = 5*t1
-    config_spec_post_zeroing['dt_pulseplay'] = max(1, int((5*t1 + config_spec_post_ff['relax_delay'])/1000))
-    inst_spec_post_relax = FFSpecSlice_Experiment_wPPD_studyzeroing(path="Spec_post_zeroing", cfg=config_spec_post_zeroing, soc=soc, soccfg=soccfg,
-                                                    outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_post_relax.acquire(progress=False)
-    inst_spec_post_relax.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_post_relax.save_data(data_FFSpecSlice)
-    inst_spec_post_relax.save_config()
-    qubit_freq_post_relax_list.append(inst_spec_post_relax.qubit_peak_freq)
+    if i%5 == 0:
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_post_zeroing['ff_length'] = 5*t1
+        config_spec_post_zeroing['dt_pulseplay'] = max(1, int((5*t1 + config_spec_post_ff['relax_delay'])/1000))
+        inst_spec_post_relax = FFSpecSlice_Experiment_wPPD_studyzeroing(path="Spec_post_zeroing", cfg=config_spec_post_zeroing, soc=soc, soccfg=soccfg,
+                                                        outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_post_relax.acquire(progress=False)
+        inst_spec_post_relax.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_post_relax.save_data(data_FFSpecSlice)
+        inst_spec_post_relax.save_config()
+        qubit_freq_post_relax_list.append(inst_spec_post_relax.qubit_peak_freq)
+    else:
+        qubit_freq_post_relax_list.append(qubit_freq)
 
     # TITLE : Run Single Shot
     soc.reset_gens()
     # Updating the ff_hold based on t1
     config_ss['ff_hold'] = 5 * t1
-    config_ss['dt_pulseplay'] = max(1, int((5*t1)/200))
+    config_ss['dt_pulseplay'] = max(1, int((5*t1)/1000))
     print(f"Setting ff_hold to {config_ss['ff_hold']} us and dt_pulseplay to {config_ss['dt_pulseplay']} us")
     inst_ffsingleshot = FFSingleShot_wPPD(path="FFSingleShot_wPPD", cfg=config_ss, soc=soc, soccfg=soccfg,
                                           outerFolder=outerFolderDac, progress=False, fast_analysis=False)
@@ -1393,7 +1384,7 @@ for i in tqdm(range(FF_sweep.size)):
     # TITLE : Running Populate Probe Experiment
     soc.reset_gens()
     config_popnprobe['ff_hold'] = 5 * t1
-    config_popnprobe['dt_pulseplay'] = max(1, int((5 * t1) / 200))
+    config_popnprobe['dt_pulseplay'] = max(1, int((5 * t1) / 1000))
     print(f"Setting ff_hold to {config_popnprobe['ff_hold']} us and dt_pulseplay to {config_popnprobe['dt_pulseplay']} us")
     inst_FFPopulateProbe = FFPopulateProbe(path="FFPopulateProbe", cfg=config_popnprobe, soc=soc, soccfg=soccfg,
                                            outerFolder=outerFolderDac, progress=False)

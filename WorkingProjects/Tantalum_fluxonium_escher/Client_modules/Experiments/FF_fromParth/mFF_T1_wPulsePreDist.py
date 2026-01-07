@@ -144,7 +144,7 @@ class FF_T1_wPulsePreDist(ExperimentClass):
         # perr_list = data["data"]["perr_list"]
 
         data_fitted = data["data"]["data_fitted"]
-        T1 = data["data"]["T1"]
+        T1 =data["data"]["T1"]
         T1_err = data["data"]["T1_err"]
 
         # Create histogram
@@ -203,7 +203,7 @@ class FF_T1_wPulsePreDist(ExperimentClass):
                     subplot_right[idx_start].plot(wait_vec, data_fitted[idx_start][:, idx_end],
                                                   c=colorlist[idx_end], linestyle="--")
             if cen_num == 2:
-                T1_str = "T1 = " + str(T1.round(3)) + " +/- " + str(T1_err.round(3)) + " us"
+                T1_str = "T1 = " + str(T1) + " +/- " + str(T1_err) + " us"
             subplot_right[idx_start].set_xlabel("time (n us)")
             subplot_right[idx_start].set_ylabel("Population in Blob")
             subplot_right[idx_start].set_title("Start Blob = " + str(idx_start) + "\n" + T1_str)

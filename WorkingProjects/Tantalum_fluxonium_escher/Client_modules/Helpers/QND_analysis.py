@@ -135,13 +135,8 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
             fname = "Wait_Arr_0_1", loc = "plots_QND/", 
             x_points = x_points, y_points = y_points)
         
-        num_samples_in_gaussian_std = sse2.calcNumSamplesInGaussianSTD(
-            hist2d, pdf, cen_num, plot = False, 
-            fname = "Wait_Arr_0_1",loc = "plots_QND/", 
-            x_points = x_points, y_points = y_points)
-        
         probability, std_probability = sse2.calcProbability(
-            num_samples_in_gaussian, num_samples_in_gaussian_std,cen_num)
+            num_samples_in_gaussian,cen_num)
     
         if idx_cen == 0:
             state0_probs.append(probability[0])
