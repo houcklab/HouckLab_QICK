@@ -31,13 +31,13 @@ class GammaFit:
         self.q_1_arr = np.array(data[3])
         self.wait_arr = np.array(data[4])
         self.freq_01 = freq_01
+        self.verbose = verbose
         #### write local arrays
         i_0_arr  = self.i_0_arr 
         i_1_arr  = self.i_1_arr 
         q_0_arr  = self.q_0_arr 
         q_1_arr  = self.q_1_arr 
         wait_arr = self.wait_arr
-        self.verbose = verbose
 
         self._sortShots()
         self._calcGammaMat()
@@ -72,7 +72,7 @@ class GammaFit:
 
             # Find the fit parameters for the double 2D Gaussian
             gaussians, popt, x_points, y_points, bounds = sse2.findGaussians(
-                hist2d, self.centers[idx_t], cen_num, plot= False,
+                hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
                 return_bounds = True,
                 fname = "Wait_Arr_0_0", loc = "plots/")
 
@@ -131,7 +131,7 @@ class GammaFit:
             q1_shots = []
 
             confidence = 0.95
-            
+
             for idx in range(len(sorted_shots_0)):
                 if sorted_shots_0[idx] > confidence:
                     i0_shots.append(self.i_1_arr[idx_t][idx])
@@ -151,7 +151,7 @@ class GammaFit:
                 
                 # Find the fit parameters for the double 2D Gaussian
                 gaussians, popt, x_points, y_points = sse2.findGaussians(
-                    hist2d, self.centers[idx_t], cen_num, plot= False,
+                    hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
                     input_bounds = bounds, p_guess = p_guess,
                     sigma = sigma,
                     fname = "Wait_Arr_0_0", loc = "plots/")
@@ -166,7 +166,7 @@ class GammaFit:
                 
                 # Calculate the extected probability
                 num_samples_in_gaussian = sse2.calcNumSamplesInGaussian(
-                    hist2d, pdf, cen_num, plot = False, 
+                    hist2d, pdf, cen_num, plot = self.verbose,
                     fname = "Wait_Arr_0_1", loc = "plots/", 
                     x_points = x_points, y_points = y_points)
 

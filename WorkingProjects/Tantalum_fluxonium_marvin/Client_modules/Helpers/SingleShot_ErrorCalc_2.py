@@ -176,7 +176,7 @@ def findGaussians(hist2d, centers, cen_num, return_bounds = False,
         bounds[1][j*no_of_params+1] = centers[j,0] + np.abs(centers[j,0])*0.2
         bounds[0][j*no_of_params+2] = centers[j,1] - np.abs(centers[j,1])*0.2
         bounds[1][j*no_of_params+2] = centers[j,1] + np.abs(centers[j,1])*0.2
-        
+
         # Check if sigma is given as input in kwargs
         if 'sigma' in kwargs:
             bounds[0][j*no_of_params+3] = kwargs['sigma'][j]*0.95
@@ -292,18 +292,22 @@ def calcNumSamplesInGaussian(hist2d, pdf, cen_num, **kwargs):
             plt.close()
         
     return num_samples_in_gaussian
-            
-def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
+
+# If you have reached here by debugging this code then congratulations
+# When I (Parth) wrote this code I never thought this comment would see the light of day
+# I was stupid and naive at this time. Now I am wise and experienced.
+# To fix this issue look how GammaFit.py has implemented the new usage of calcProbability without calcNumSamplesInGaussianSTD
+def calcNumSamplesInGaussianSTD_donotuse(hist2d, pdf, cen_num, **kwargs):
     num_samples_in_gaussian_std = np.zeros(cen_num)
     expected_dist_std = np.zeros((cen_num,) + hist2d[0].shape)
     for i in range(cen_num):
-        expected_dist_std[i] = pdf[i]*(1-pdf[i])*hist2d[0]
+        expected_dist_std[i] = pdf[i] * (1 - pdf[i]) * hist2d[0]
         num_samples_in_gaussian_std[i] = np.sqrt(np.sum(expected_dist_std[i]))
-            
+
     # Check if plot is given as input
     if 'plot' in kwargs:
         if kwargs['plot'] == True:
-            #Check if fname, loc, x_points and y_points are given as input. If not give error
+            # Check if fname, loc, x_points and y_points are given as input. If not give error
             if 'fname' not in kwargs:
                 raise ValueError('fname is not given as input')
             if 'loc' not in kwargs:
@@ -315,37 +319,38 @@ def calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num, **kwargs):
             # Plot the data with each center having a different subplot
             plt.figure()
             for i in range(cen_num):
-                plt.subplot(1,cen_num,i+1)
+                plt.subplot(1, cen_num, i + 1)
                 plt.imshow(np.transpose(expected_dist_std[i]),
-                           extent = [
-                           kwargs["x_points"][0], kwargs["x_points"][-1], 
-                           kwargs["y_points"][0], kwargs["y_points"][-1]
-                           ], 
-                           origin = 'lower')
+                           extent=[
+                               kwargs["x_points"][0], kwargs["x_points"][-1],
+                               kwargs["y_points"][0], kwargs["y_points"][-1]
+                           ],
+                           origin='lower')
                 plt.colorbar()
                 plt.xlabel('I')
                 plt.ylabel('Q')
-            plt.savefig(kwargs["loc"]+kwargs["fname"]+
-                '_expected_dist_std.png', dpi = 300)  
+            plt.savefig(kwargs["loc"] + kwargs["fname"] +
+                        '_expected_dist_std.png', dpi=300)
             plt.close()
-    
+
     return num_samples_in_gaussian_std
 
-def calcProbability(
-            num_samples_in_gaussian, num_samples_in_gaussian_std, cen_num
-            ):
+
+def calcProbability(num_samples_in_gaussian, cen_num, **kwargs):
     probability = np.zeros(cen_num)
     std_probability = np.zeros(cen_num)
     total_samples = np.sum(num_samples_in_gaussian)
+    sigma_sys = 0.01  # Systematic error of 1%
+    if 'sigma_sys' in kwargs:
+        sigma_sys = kwargs['sigma_sys']
     for i in range(cen_num):
         if total_samples == 0:
             probability[i] = 0
             std_probability[i] = 0
             print("TOTAL SAMPLES: ", total_samples)
         else:
-            probability[i] = num_samples_in_gaussian[i]/total_samples
-            std_probability[i] = num_samples_in_gaussian_std[i]/total_samples
-
+            probability[i] = num_samples_in_gaussian[i] / total_samples
+            std_probability[i] = np.sqrt(probability[i] * (1 - probability[i]) / total_samples + sigma_sys ** 2)
 
     return probability, std_probability
 

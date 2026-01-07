@@ -169,14 +169,23 @@ class GammaFit:
                     hist2d, pdf, cen_num, plot = self.verbose,
                     fname = "Wait_Arr_0_1", loc = "plots/", 
                     x_points = x_points, y_points = y_points)
-                
-                num_samples_in_gaussian_std = sse2.calcNumSamplesInGaussianSTD(
-                    hist2d, pdf, cen_num, plot = self.verbose,
-                    fname = "Wait_Arr_0_1",loc = "plots/", 
-                    x_points = x_points, y_points = y_points)
-                
+
                 probability, std_probability = sse2.calcProbability(
-                    num_samples_in_gaussian, num_samples_in_gaussian_std,cen_num)
+                    num_samples_in_gaussian,cen_num, sigma_sys = 0.01)
+
+                if self.verbose:
+                    if std_probability[0] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[0]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[0]))
+                    if std_probability[1] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[1]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[1]))
             
                 if idx_cen == 0:
                     state0_probs.append(probability[0])
@@ -217,11 +226,8 @@ class GammaFit:
             def expFit(x, a, T1, c):
                 return a * np.exp(-1 * x / T1) + c
 
-            try:
-                popt, pcov = curve_fit(expFit, self.wait_arr, pop_curr, p0=guess)
-                self.T1_guess = popt[1]
-            except:
-                self.T1_guess = 0
+            popt, pcov = curve_fit(expFit, self.wait_arr, pop_curr, p0=guess)
+            self.T1_guess = popt[1]
     ##########
     def Pops_ode(self, pops, t, params):
         """
@@ -295,16 +301,17 @@ class GammaFit:
         
             P0_0_resid = ((P0_0_model - P0_0_data)/P0_0_data_err).ravel()
             P0_1_resid = ((P0_1_model - P0_1_data)/P0_1_data_err).ravel()
-        
+
             P1_0_resid = ((P1_0_model - P1_0_data)/P1_0_data_err).ravel()
             P1_1_resid = ((P1_1_model - P1_1_data)/P1_1_data_err).ravel()
-         
+
+
             return P0_0_resid, P0_1_resid, P1_0_resid, P1_1_resid
         
         params = Parameters()
-       
-        params.add('g01', value = 1e-2, min = 1e-9, max = 0.1)
-        params.add('g10', value = 1e-2, min = 1e-9, max = 0.1)
+
+        params.add('g01', value=1e-2, min=1e-9, max=0.1)
+        params.add('g10', value=1e-2, min=1e-9, max=0.1)
         
         params.add('P0_0_init',P0_0_data[0],vary = False)
         params.add('P0_1_init',P0_1_data[0],vary = False)
@@ -321,13 +328,12 @@ class GammaFit:
         
         data = [P0_0_data, P0_1_data, P1_0_data, P1_1_data]
         data_err = [P0_0_data_err, P0_1_data_err, P1_0_data_err, P1_1_data_err]
-        
-        result_shgo = minimize(residual, params, args = (t_arr, data, data_err), 
-            method = 'ampgo')
+        result_shgo = minimize(residual, params, args=(t_arr, data, data_err),
+                               method='differential_evolution')
         params_update = result_shgo.params
-        
-        result = minimize(residual, params_update, args = (t_arr, data, data_err), 
-            method = 'leastsq')
+
+        result = minimize(residual, params_update, args=(t_arr, data, data_err),
+                          method='leastsq')
        
         result.params.pretty_print(colwidth=11)
 
@@ -375,7 +381,7 @@ class GammaFit:
         data0_fitted = self.g(t_arr, P0_init, result.params)
         data1_fitted = self.g(t_arr, P1_init, result.params)
         data_fitted = [data0_fitted, data1_fitted]
-        
+
         data_plot = [
             [P0_0_data, P0_1_data], 
             [P1_0_data, P1_1_data]

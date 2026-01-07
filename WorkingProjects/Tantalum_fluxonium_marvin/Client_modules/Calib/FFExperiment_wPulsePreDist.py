@@ -13,7 +13,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpe
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice_wPulsePreDist import FFSpecSlice_Experiment_wPPD
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice_wPulsePreDist_studyZeroing import FFSpecSlice_Experiment_wPPD_studyzeroing
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecVsFlux_wPulsePreDist import FFSpecVsFlux_wPulsePreDist
-from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampTest import FFRampTest_Experiment
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFRampTest_corrected import (FFRampTest_Experiment)
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFF_T1_wPulsePreDist import FF_T1_wPulsePreDist
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSingleShot_wPulsePreDist import FFSingleShot_wPPD
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFTransmission_wPulsePreDist import FFTransmission
@@ -678,41 +678,42 @@ inst_ffstark_popgain.save_config()
 
 from tqdm import tqdm
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_22Dec_2307\\"
-FF_sweep = np.linspace(7500 ,15000, 31, dtype=int)
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\FF_sweep_7Jan_1640\\"
+FF_sweep = np.linspace(0, -3000, 21, dtype=int)
 pop_pulse_gain = 5000
 pop_pulse_gain2 = 3000
 # add a point at zero to the beginning
 FF_sweep = np.insert(FF_sweep, 0, 0)
 
 def freq_predictor(ff_dac_val):
-    return -0.052*ff_dac_val + 1024
+    return 0.052*ff_dac_val + 1470
 
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 35,  # [us]
+    "read_length": 9,  # [us]
     "read_pulse_gain": 9000,  # 5600,  # [DAC units]
-    "read_pulse_freq": 6671.25,  # [MHz]
+    "read_pulse_freq": 6671.695,  # [MHz]
 
     # Qubit Tone
     "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
-    "qubit_freq": 1024,  # [MHz] Frequency of qubit pulse
+    "qubit_freq": 1470,  # [MHz] Frequency of qubit pulse
     "qubit_ge_freq" : 69,
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
     "sigma": 0.50,  # [us], used with "arb" and "flat_top"
-    "qubit_length": 3,  # [us], used with "const"
+    "qubit_length": 10,  # [us], used with "const"
     "flat_top_length": 1,  # [us], used with "flat_top"
-    "qubit_gain": 20000,  # [DAC units]
+    "qubit_gain": 4000,  # [DAC units]
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
+    "LO_freq" : 6200,
 
     # General parameters
     "reps": 25000,
     "cen_num": 2,
     "initialize_pulse": True,
     "fridge_temp": 7,
-    "yokoVoltage": -0.11,
-    "yokoVoltage_freqPoint": -0.11,
+    "yokoVoltage": 0.0113,
+    "yokoVoltage_freqPoint": 0.0113,
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
     "use_switch": False,
@@ -728,8 +729,8 @@ config = BaseConfig | UpdateConfig
 
 UpdateConfig_spec_noff = {
     # Qubit spec parameters
-    "qubit_freq_start": 920,        # [MHz]
-    "qubit_freq_stop": 1120,         # [MHz]
+    "qubit_freq_start": 1370,        # [MHz]
+    "qubit_freq_stop": 1570,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse
     "qubit_freq_expts": 101,  # number of points
     "qubit_gain": 20000,            # [DAC units]
@@ -753,8 +754,8 @@ config_spec_noff = config | UpdateConfig_spec_noff
 
 UpdateConfig_spec_ff_beg = {
     # Qubit spec parameters
-    "qubit_freq_start": 920,        # [MHz]
-    "qubit_freq_stop": 1120,         # [MHz]
+    "qubit_freq_start": 1370,        # [MHz]
+    "qubit_freq_stop": 1570,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -805,6 +806,7 @@ UpdateConfig_ff_fid = {
     "plot_all_lengths": False,
     "verbose": False,
     "relax_delay": 100,               # [us]
+    "cen_num": 2,
 }
 
 config_ff_fid = config | UpdateConfig_ff_fid
@@ -824,7 +826,7 @@ UpdateConfig_t1 = {
     "relax_delay_2": 20,  # [us] Relax delay after second readout
     "wait_start": 10,
     "wait_stop": 800,
-    "wait_num": 15,
+    "wait_num": 21,
     "wait_type": 'log',
 
     # General parameters
@@ -842,8 +844,8 @@ config_t1 = config | UpdateConfig_t1
 
 UpdateConfig_spec_ff_end = {
     # Qubit spec parameters
-    "qubit_freq_start": 920,        # [MHz]
-    "qubit_freq_stop": 1120,         # [MHz]
+    "qubit_freq_start": 1370,        # [MHz]
+    "qubit_freq_stop": 1570,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse = 5*T1
     "qubit_freq_expts": 51,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -866,8 +868,8 @@ config_spec_ff_end = config | UpdateConfig_spec_ff_end
 
 UpdateConfig_spec_post_ff = {
     # Qubit spec parameters
-    "qubit_freq_start": 920,        # [MHz]
-    "qubit_freq_stop": 1120,         # [MHz]
+    "qubit_freq_start": 1370,        # [MHz]
+    "qubit_freq_stop": 1570,         # [MHz]
     "qubit_spec_delay": 10,          # [us] Delay before qubit pulse = 5*T1 + 10
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -890,8 +892,8 @@ config_spec_post_ff = config | UpdateConfig_spec_post_ff
 
 UpdateConfig_spec_post_zeroing = {
     # Qubit spec parameters
-    "qubit_freq_start": 920,  # [MHz]
-    "qubit_freq_stop": 1120,  # [MHz]
+    "qubit_freq_start": 1370,  # [MHz]
+    "qubit_freq_stop": 1570,  # [MHz]
     "qubit_spec_delay": 10,  # [us] Delay before qubit pulse = 5*T1 + 10
     "qubit_freq_expts": 101,  # number of points
     "qubit_spec_buffer": 10,  # Extra buffer fast flux pulse will be on after the qubit pulse (not more than ff_length)
@@ -976,7 +978,7 @@ UpdateConfig_stark = {
 
     # Optional qubit pulse before measurement, intende0 as pi/2 to populate both blobs
     "qubit_pulse": True,  # [bool] Whether to apply the optional qubit pulse at the beginning
-    "qubit_freq": 1024,  # [MHz] Frequency of qubit pulse
+    "qubit_freq": 1470,  # [MHz] Frequency of qubit pulse
     "sigma": 0.5,
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
     "qubit_length": 0.5,  # [us], used with "const"
@@ -989,8 +991,8 @@ UpdateConfig_stark = {
     'pop_relax_delay' : 5,
 
     # Qubit frequency sweep
-    "qubit_freq_start": 920,  # [MHz]
-    "qubit_freq_stop": 1120,  # [MHz]
+    "qubit_freq_start": 1370,  # [MHz]
+    "qubit_freq_stop": 1470,  # [MHz]
     "qubit_freq_expts": 51,  # number of points
 
     # General parameters
@@ -1035,10 +1037,15 @@ config_popnprobe = config | UpdateConfig_popnprobe
 #%%
 qubit_freq_readout_list = []
 qubit_freq_ff_beg_list = []
+qnd_list = []
 fid_list = []
 t1_meas_list = []
 t1_err_meas_list = []
 temp_rate_meas_list = []
+g01_rate_list = []
+g01_err_rate_list = []
+g10_rate_list = []
+g10_err_rate_list = []
 temp_rate_err_meas_list = []
 qubit_freq_ff_end_list  = []
 qubit_freq_post_ff_list = []
@@ -1092,9 +1099,9 @@ for i in tqdm(range(FF_sweep.size)):
     config_stark['qubit_freq_stop'] = qubit_ge_freq + 60
 
     # Update qubit_ge_freq in other configs
-    config_t1['qubit_ge_freq'] = qubit_ge_freq
-    config_ss['qubit_ge_freq'] = qubit_ge_freq
-    config_popnprobe['qubit_ge_freq'] = qubit_ge_freq
+    config_t1['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
+    config_ss['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
+    config_popnprobe['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
 
     # TITLE : Run the spec slice without fast flux to get the qubit frequency
     soc.reset_gens()
@@ -1110,10 +1117,10 @@ for i in tqdm(range(FF_sweep.size)):
     qubit_freq_readout_list.append(qubit_freq)
 
     # Update the qubit frequency in other config
-    # config_ff_fid['qubit_freq'] = qubit_freq
-    # config_t1['qubit_freq'] = qubit_freq
-    # config_ss['qubit_freq'] = qubit_freq
-    # config_popnprobe['qubit_freq'] = qubit_freq
+    config_ff_fid['qubit_freq'] = qubit_freq
+    config_t1['qubit_freq'] = qubit_freq
+    config_ss['qubit_freq'] = qubit_freq
+    config_popnprobe['qubit_freq'] = qubit_freq
 
     # TITLE : Run the spec slice at beginning of a fast flux pulse
     soc.reset_gens()
@@ -1128,9 +1135,9 @@ for i in tqdm(range(FF_sweep.size)):
     qubit_ge_freq = inst_spec_ff_beg.qubit_peak_freq
     qubit_freq_ff_beg_list.append(qubit_ge_freq)
     print(f"Qubit's measured frequency is {qubit_ge_freq}")
-    config_t1['qubit_ge_freq'] = qubit_ge_freq
-    config_ss['qubit_ge_freq'] = qubit_ge_freq
-    config_popnprobe['qubit_ge_freq'] = qubit_ge_freq
+    config_t1['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
+    config_ss['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
+    config_popnprobe['qubit_ge_freq'] = config["LO_freq"] - qubit_ge_freq
     config_stark['qubit_freq_start'] = qubit_ge_freq - 60
     config_stark['qubit_freq_stop'] = qubit_ge_freq + 60
 
@@ -1141,16 +1148,17 @@ for i in tqdm(range(FF_sweep.size)):
     # Estimate Time
     try:
         data_FFRampTest = FFRampTest_Experiment.acquire(Instance_FFRampTest, progress=False)
-        FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=False,
-                                      plot_all_lengths=config_ff_fid['plot_all_lengths'])
-        FFRampTest_Experiment.save_data(Instance_FFRampTest, data_FFRampTest)
+        data_FFRampTest = FFRampTest_Experiment.process(Instance_FFRampTest, data_FFRampTest)
+        FFRampTest_Experiment.display(Instance_FFRampTest, data_FFRampTest, plot_disp=False)
+        FFRampTest_Experiment.save_data(Instance_FFRampTest, data_FFRampTest['data'])
         FFRampTest_Experiment.save_config(Instance_FFRampTest)
-        pop00 = data_FFRampTest['data']['pop'][0, 0, 0]
-        pop11 = data_FFRampTest['data']['pop'][0, 1, 1]
-        pop01 = data_FFRampTest['data']['pop'][0, 0, 1]
-        pop10 = data_FFRampTest['data']['pop'][0, 1, 0]
-        fid = (pop00/(pop00 + pop01) + pop11/(pop11 + pop10))/2
-        fid_list.append(fid)
+        qnd = data_FFRampTest['data']['fid_list'][0]
+        qnd_list.append(qnd)
+        fid = data_FFRampTest['data']['popt'][2]
+        if fid is not None:
+            fid_list.append(fid)
+        else:
+            fid_list.append(0)
     except Exception:
         print("Pyro traceback:")
         print("".join(Pyro4.util.getPyroTraceback()))
@@ -1181,53 +1189,66 @@ for i in tqdm(range(FF_sweep.size)):
     t1_err_meas_list.append(t1_err)
     temp_rate_meas_list.append(data_ff_t1['data']['temp_rate'])
     temp_rate_err_meas_list.append(data_ff_t1['data']['temp_std_rate'])
+    g01_rate_list.append(data_ff_t1['data']['g01'])
+    g01_err_rate_list.append(data_ff_t1['data']['err01'])
+    g10_rate_list.append(data_ff_t1['data']['g10'])
+    g10_err_rate_list.append(data_ff_t1['data']['err10'])
 
     # TITLE : Run spec slice at end of fast flux pulse
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_ff_end['ff_length'] = 5*t1 + 10
-    config_spec_ff_end['qubit_spec_delay'] = 5*t1
-    config_spec_ff_end['dt_pulseplay'] = max(1, int((5*t1)/1000))
-    inst_spec_ff_end = FFSpecSlice_Experiment_wPPD(path="Spec_FF_end", cfg=config_spec_ff_end, soc=soc, soccfg=soccfg,
-                                                 outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_ff_end.acquire(progress=False)
-    inst_spec_ff_end.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_ff_end.save_data(data_FFSpecSlice)
-    inst_spec_ff_end.save_config()
-    qubit_freq_ff_end_list.append(inst_spec_ff_end.qubit_peak_freq)
+    if i%5 == 0:
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_ff_end['dt_pulseplay'] = max(1, int((5*t1 + 10)/1000))
+        config_spec_ff_end['ff_length'] = 5*t1 + 10
+        config_spec_ff_end['qubit_spec_delay'] = 5*t1
+        inst_spec_ff_end = FFSpecSlice_Experiment_wPPD(path="Spec_FF_end", cfg=config_spec_ff_end, soc=soc, soccfg=soccfg,
+                                                     outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_ff_end.acquire(progress=False)
+        inst_spec_ff_end.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_ff_end.save_data(data_FFSpecSlice)
+        inst_spec_ff_end.save_config()
+        qubit_freq_ff_end_list.append(inst_spec_ff_end.qubit_peak_freq)
+    else:
+        qubit_freq_ff_end_list.append(qubit_ge_freq)
 
     # TITLE : Run spec slice after the fast flux pulse
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_post_ff['ff_length'] = 5*t1
-    config_spec_post_ff['qubit_spec_delay'] = 5*t1 + 10
-    config_spec_post_ff['dt_pulseplay'] = max(1, int((5*t1 + 10)/1000))
-    inst_spec_post_ff = FFSpecSlice_Experiment_wPPD(path="Spec_post_FF", cfg=config_spec_post_ff, soc=soc, soccfg=soccfg,
-                                                    outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_post_ff.acquire(progress=False)
-    inst_spec_post_ff.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_post_ff.save_data(data_FFSpecSlice)
-    inst_spec_post_ff.save_config()
-    qubit_freq_post_ff_list.append(inst_spec_post_ff.qubit_peak_freq)
+    if i%5 == 0:
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_post_ff['dt_pulseplay'] = max(1, int((5*t1 + 30)/1000))
+        config_spec_post_ff['ff_length'] = 5*t1
+        config_spec_post_ff['qubit_spec_delay'] = 5*t1 + 30
+        inst_spec_post_ff = FFSpecSlice_Experiment_wPPD(path="Spec_post_FF", cfg=config_spec_post_ff, soc=soc, soccfg=soccfg,
+                                                        outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_post_ff.acquire(progress=False)
+        inst_spec_post_ff.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_post_ff.save_data(data_FFSpecSlice)
+        inst_spec_post_ff.save_config()
+        qubit_freq_post_ff_list.append(inst_spec_post_ff.qubit_peak_freq)
+    else:
+        qubit_freq_post_ff_list.append(qubit_freq)
 
     # TITLE : Run Spec slice after the relax delay
-    soc.reset_gens()
-    # Updating the length based on t1
-    config_spec_post_zeroing['ff_length'] = 5*t1
-    config_spec_post_zeroing['dt_pulseplay'] = max(1, int((5*t1 + config_spec_post_ff['relax_delay'])/1000))
-    inst_spec_post_relax = FFSpecSlice_Experiment_wPPD_studyzeroing(path="Spec_post_zeroing", cfg=config_spec_post_zeroing, soc=soc, soccfg=soccfg,
-                                                    outerFolder=outerFolderDac, short_directory_names=True)
-    data_FFSpecSlice = inst_spec_post_relax.acquire(progress=False)
-    inst_spec_post_relax.display(data_FFSpecSlice, plot_disp=False)
-    inst_spec_post_relax.save_data(data_FFSpecSlice)
-    inst_spec_post_relax.save_config()
-    qubit_freq_post_relax_list.append(inst_spec_post_relax.qubit_peak_freq)
+    if i%5 == 0:
+        soc.reset_gens()
+        # Updating the length based on t1
+        config_spec_post_zeroing['ff_length'] = 5*t1
+        config_spec_post_zeroing['dt_pulseplay'] = max(1, int((5*t1 + config_spec_post_ff['relax_delay'])/1000))
+        inst_spec_post_relax = FFSpecSlice_Experiment_wPPD_studyzeroing(path="Spec_post_zeroing", cfg=config_spec_post_zeroing, soc=soc, soccfg=soccfg,
+                                                        outerFolder=outerFolderDac, short_directory_names=True)
+        data_FFSpecSlice = inst_spec_post_relax.acquire(progress=False)
+        inst_spec_post_relax.display(data_FFSpecSlice, plot_disp=False)
+        inst_spec_post_relax.save_data(data_FFSpecSlice)
+        inst_spec_post_relax.save_config()
+        qubit_freq_post_relax_list.append(inst_spec_post_relax.qubit_peak_freq)
+    else:
+        qubit_freq_post_relax_list.append(qubit_freq)
 
     # TITLE : Run Single Shot
     soc.reset_gens()
     # Updating the ff_hold based on t1
     config_ss['ff_hold'] = 5 * t1
-    config_ss['dt_pulseplay'] = max(1, int((5*t1)/200))
+    config_ss['dt_pulseplay'] = max(1, int((5*t1)/1000))
     print(f"Setting ff_hold to {config_ss['ff_hold']} us and dt_pulseplay to {config_ss['dt_pulseplay']} us")
     inst_ffsingleshot = FFSingleShot_wPPD(path="FFSingleShot_wPPD", cfg=config_ss, soc=soc, soccfg=soccfg,
                                           outerFolder=outerFolderDac, progress=False, fast_analysis=False)
@@ -1358,7 +1379,7 @@ for i in tqdm(range(FF_sweep.size)):
     # TITLE : Running Populate Probe Experiment
     soc.reset_gens()
     config_popnprobe['ff_hold'] = 5 * t1
-    config_popnprobe['dt_pulseplay'] = max(1, int((5 * t1) / 200))
+    config_popnprobe['dt_pulseplay'] = max(1, int((5 * t1) / 1000))
     print(f"Setting ff_hold to {config_popnprobe['ff_hold']} us and dt_pulseplay to {config_popnprobe['dt_pulseplay']} us")
     inst_FFPopulateProbe = FFPopulateProbe(path="FFPopulateProbe", cfg=config_popnprobe, soc=soc, soccfg=soccfg,
                                            outerFolder=outerFolderDac, progress=False)
@@ -1378,7 +1399,7 @@ for i in tqdm(range(FF_sweep.size)):
     temp_popnprobe_meas_list.append(data_ffpopprob['data']['mean_temp'][1, 0])
     temp_popnprobe_err_meas_list.append(data_ffpopprob['data']['std_temp'][1, 0])
 
-    # Change pop_pulse_gain to pop_pulse_gain2 and rerun
+    soc.reset_gens()
     config_popnprobe['pop_pulse_gain'] = pop_pulse_gain2
     inst_FFPopulateProbe = FFPopulateProbe(path="FFPopulateProbe_gain2", cfg=config_popnprobe, soc=soc, soccfg=soccfg,
                                            outerFolder=outerFolderDac, progress=False)
@@ -1404,11 +1425,16 @@ collated_data = {
     "FF_sweep": FF_sweep,
     "qubit_freq_readout_list": qubit_freq_readout_list,
     "qubit_freq_ff_beg_list": qubit_freq_ff_beg_list,
+    "qnd_list": qnd_list,
     "fid_list": fid_list,
     "t1_meas_list": t1_meas_list,
     "t1_err_meas_list": t1_err_meas_list,
     "temp_rate_meas_list": temp_rate_meas_list,
     "temp_rate_err_meas_list": temp_rate_err_meas_list,
+    "g01_rate_list": g01_rate_list,
+    "g01_err_rate_list": g01_err_rate_list,
+    "g10_rate_list": g10_rate_list,
+    "g10_err_rate_list": g10_err_rate_list,
     "qubit_freq_ff_end_list": qubit_freq_ff_end_list,
     "qubit_freq_post_ff_list": qubit_freq_post_ff_list,
     "qubit_freq_post_relax_list": qubit_freq_post_relax_list,
@@ -1463,6 +1489,7 @@ import os
 # outerFolder = "/path/to/folder"
 
 FF_sweep = np.array(collated_data["FF_sweep"])
+fid_list = np.array(collated_data["fid_list"])
 temp_ss = np.abs(np.array(collated_data["temp_ss_meas_list"]) * 1000)
 temp_ss_err = np.array(collated_data["temp_ss_err_meas_list"]) * 1000
 temp_rate = np.abs(np.array(collated_data["temp_rate_meas_list"]) * 1000)
@@ -1477,6 +1504,7 @@ qubit_freq_ff_end = np.array(collated_data["qubit_freq_ff_end_list"])
 qubit_freq_post_ff = np.array(collated_data["qubit_freq_post_ff_list"])
 qubit_freq_post_relax = np.array(collated_data["qubit_freq_post_relax_list"])
 transmission_freq = np.array(collated_data["tranmsission_freq_list"])
+stark_shift = np.array(collated_data["stark_shift_list"])
 pop_popnprobe_meas = np.stack(collated_data["pop_popnprobe_meas_list"])          # shape (N, 2)
 pop_popnprobe_err = np.stack(collated_data["pop_popnprobe_err_meas_list"])  # shape (N, 2)
 pop_popnprobe_meas2= np.stack(collated_data["pop_popnprobe_meas_list2"])          # shape (N, 2)

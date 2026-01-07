@@ -9,6 +9,7 @@ import time
 from sklearn.cluster import KMeans
 import math
 from scipy.optimize import curve_fit
+from tqdm import tqdm
 
 ##########################################################################################################
 ### define functions to be used later for analysis
@@ -68,7 +69,7 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
 
         res_ch = cfg["res_ch"]
         #         r_freq=self.sreg(cfg["res_ch"], "freq")   #Get frequency register for res_ch
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])
 
         # Qubit configuration
         qubit_ch = cfg["qubit_ch"]
@@ -102,7 +103,10 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
-
+        elif self.cfg["qubit_pulse_style"] == 'const':
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=self.cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
         else:
             print("define pi or flat top pulse")
 
@@ -152,19 +156,21 @@ class LoopbackProgramT2R_PS(RAveragerProgram):
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=2, save_experiments=[0,1],
                 start_src="internal", progress=False, debug=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug,
+        super().acquire(soc, load_pulses=load_pulses, progress=progress,
                         readouts_per_experiment=2, save_experiments=[0,1])
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0]/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-
-        i_0 = shots_i0[0::2]
-        i_1 = shots_i0[1::2]
-        q_0 = shots_q0[0::2]
-        q_1 = shots_q0[1::2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i1 = np.array(self.get_raw())[0, :, :, 1, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q1 = np.array(self.get_raw())[0, :, :, 1, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        i_0 = shots_i0[0]
+        i_1 = shots_i1[0]
+        q_0 = shots_q0[0]
+        q_1 = shots_q1[0]
 
         return i_0, i_1, q_0, q_1
 
@@ -200,7 +206,7 @@ class T2R_PS(ExperimentClass):
         q_1_arr = np.full((expt_cfg["wait_num"], int(self.cfg["shots"]) ), np.nan)
 
         #### loop over all wait times and collect raw data
-        for idx_wait in range(expt_cfg["wait_num"]):
+        for idx_wait in tqdm(range(expt_cfg["wait_num"])):
             self.cfg["wait_length"] = wait_vec[idx_wait]
 
             #### pull the data from the single shots for the first run
@@ -378,33 +384,66 @@ class T2R_PS(ExperimentClass):
         colors = ['b', 'r', 'm', 'c', 'g']
 
         ### exponential fitting
-        def expFit(x, a, T1, c):
-            return a * np.exp(-1 * x / T1) + c
+        def sinusoidalDecayFit(x, a, T1,f,phase, c):
+            return a * np.exp(-1 * x / T1)*np.sin(2*np.pi*f*x + phase) + c
 
+        T2_list = []
+        T2_err_list = []
+        fringefreq_list = []
+        pOpt_list = []
+        pErr_list = []
         #### loop over starting blobs
         for idx_plot in range(cen_num):
             #### loop over each final blob
             for idx_blob in range(cen_num):
 
-                # #### find the T1 fit of the data
-                # if idx_plot == idx_blob:
-                #     pop_list = pops_arr[idx_plot][idx_blob]
-                #     a_guess = (np.max(pop_list) - np.min(pop_list)) * -1
-                #     T1_guess = np.max(t_arr) / 4.0
-                #     c_guess = np.min(pop_list)
-                #     guess = [a_guess, T1_guess, c_guess]
-                #
-                #     pOpt, pCov = curve_fit(expFit, t_arr, pop_list, p0=guess)
-                #     pErr = np.sqrt(np.diag(pCov))
-                #
-                #     T1 = pOpt[1]
-                #     T1_err = pErr[1]
-                #     fit = expFit(t_arr, *pOpt)
-                #
-                #     print(T1)
-                #
-                #     axs[idx_plot].plot(t_arr, fit, 'k-')
-                ######
+                #### find the T2 fit of the data
+                if idx_plot == idx_blob:
+                    pop_list = pops_arr[idx_plot][idx_blob]
+                    a_guess = (np.max(pop_list) - np.mean(pop_list))*3
+                    T1_guess = np.max(t_arr) / 2.0
+                    f_guess = np.abs(1/((t_arr[np.argmax(pop_list)] - t_arr[np.argmin(pop_list)])*2))
+                    phase_guess = np.pi/4
+                    c_guess = np.mean(pop_list)
+                    guess = [a_guess, T1_guess, f_guess, phase_guess, c_guess]
+                    try:
+                        pOpt, pCov = curve_fit(sinusoidalDecayFit, t_arr, pop_list, p0=guess)
+                        pErr = np.sqrt(np.diag(pCov))
+
+                        T2 = pOpt[1]
+                        T2_err = pErr[1]
+                        fringefreq = pOpt[2]
+
+                        # Append to lists
+                        T2_list.append(T2)
+                        T2_err_list.append(T2_err)
+                        fringefreq_list.append(fringefreq)
+                        pOpt_list.append(pOpt)
+                        pErr_list.append(pErr)
+
+
+                        fit = sinusoidalDecayFit(t_arr, *pOpt)
+
+                        print(f"T2 fit starting blob {idx_plot} ending blob {idx_blob}: " +
+                              f"{round(T2, 2)} +/- {round(T2_err, 2)} us")
+                        print(f"fringe frequency: {round(fringefreq, 4)} MHz")
+
+                        axs[idx_plot].plot(t_arr, fit, 'k-', label = 'T2 fit')
+
+                        # Add text on the plot top right corner
+                        # The text is T2 = value +/- error us
+                        axs[idx_plot].text(0.95, 0.95, f'T2 = {round(T2, 1)} ± {round(T2_err, 1)} μs\nf = {round(fringefreq, 4)} MHz',
+                                            horizontalalignment='right', verticalalignment='top',
+                                            transform=axs[idx_plot].transAxes,
+                                            bbox=dict(facecolor='white', alpha=0.8, edgecolor='black'))
+                    except:
+                        print("fit failed for starting blob " + str(idx_plot) + " ending blob " + str(idx_blob))
+                        T2 = 0
+                        T2_err = 0
+                    fit_guess = sinusoidalDecayFit(t_arr, *guess)
+                    axs[idx_plot].plot(t_arr, fit_guess, 'g-', label = 'initial guess')
+
+                #####
 
                 axs[idx_plot].plot(t_arr, pops_arr[idx_plot][idx_blob], '-o',
                                    label='blob ' + str(idx_blob), color=colors[idx_blob])
@@ -416,6 +455,7 @@ class T2R_PS(ExperimentClass):
             #     'starting blob: ' + str(idx_plot) + ', T1: ' + str(round(T1, 1)) + ' +/- ' + str(round(T1_err)) + ' us')
             axs[idx_plot].set_title(
                 'starting blob: ' + str(idx_plot) )
+            axs[idx_plot].legend()
         #     axs[idx_plot].set_ylim([0.0,0.8])
 
         plt.tight_layout()
@@ -429,7 +469,9 @@ class T2R_PS(ExperimentClass):
                                              "wait_vec": wait_vec,
                                              'i_0_arr': i_0_arr, 'q_0_arr': q_0_arr,
                                              'i_1_arr': i_1_arr, 'q_1_arr': q_1_arr,
-                                             'pop_arr': pops_arr,
+                                             'pop_arr': pops_arr, 't_arr': t_arr,
+                                             'T2': T2_list, 'T2_err': T2_err_list, "fringefreq": fringefreq_list,
+                                              'pOpt': pOpt_list, 'pErr': pErr_list
                                              }
                 }
 
