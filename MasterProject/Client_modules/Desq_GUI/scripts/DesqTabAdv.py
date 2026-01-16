@@ -385,6 +385,11 @@ class QDesqTab(QWidget):
         # NEW: Use PlotManager for centralized, thread-safe plot tracking
         self.plot_manager = PlotManager()
 
+        # --- incremental plotting caches (PyQtGraph + Matplotlib embed) ---
+        self._auto_plot_signature = None
+        self._auto_plot_cache = []  # list of per-plot handles (curve/image/etc)
+        self._mpl_embed_signature = None  # tuple of figure ids currently embedded
+
         # DEPRECATED: Keep for backwards compatibility but delegate to plot_manager
         self.plots = []  # Will be synchronized with plot_manager via @property
         self.labels = []  # Will be synchronized with plot_manager via @property
@@ -717,6 +722,11 @@ class QDesqTab(QWidget):
         # Reset flags
         self.labels_added = False
 
+        # Reset incremental plotting caches
+        self._auto_plot_signature = None
+        self._auto_plot_cache = []
+        self._mpl_embed_signature = None
+
         qInfo("All plots cleared successfully")
 
     def remove_plot(self):
@@ -749,9 +759,13 @@ class QDesqTab(QWidget):
         if data_to_plot is None:
             data_to_plot = self.data
 
-        # Clear plots if starting fresh
-        if len(self.plot_manager.get_pyqtgraph_plots()) == 0:
-            self.clear_plots()
+        # Clear plots if starting fresh (mode-aware!)
+        if self.use_matplotlib_checkbox.isChecked():
+            if len(self.plot_manager.matplotlib_figures) == 0:
+                self.clear_plots()
+        else:
+            if len(self.plot_manager.get_pyqtgraph_plots()) == 0:
+                self.clear_plots()
 
         plotting_method = self.plot_method_combo.currentText()
 
@@ -772,9 +786,18 @@ class QDesqTab(QWidget):
                             parent_method = None
 
                         if parent_method is not None and instance_method.__func__ is not parent_method:
-                            exp_instance.display(data_to_plot, plotDisp=True)
+                            # Ensure the matplotlib sink is active in *this* thread (often the GUI thread),
+                            # because exp_instance.display() may trigger draw() here (not in the worker).
+                            psm = getattr(self.app, "plot_sink_manager", None)
+
+                            if psm is not None:
+                                with psm.sink_context(self):
+                                    exp_instance.display(data_to_plot, plotDisp=True)
+                            else:
+                                exp_instance.display(data_to_plot, plotDisp=True)
                         else:
                             self.auto_plot_prepare()
+
                     else:
                         self.auto_plot_prepare()
             elif plotting_method in QDesqTab.custom_plot_methods:
@@ -802,8 +825,15 @@ class QDesqTab(QWidget):
             self.convert_matplotlib_to_pyqtgraph(*args, **kwargs)
 
     def embed_matplotlib_plots(self, *args, **kwargs):
+        """
+        Embed matplotlib figures in the tab.
+
+        NEW behavior:
+        - If the same Figure objects are being updated (same ids), we do NOT clear/rebuild widgets.
+          We just redraw canvases (fast).
+        - If figures are new/different (ids changed or count changed), we clear and rebuild once.
+        """
         self.plot_stack.setCurrentIndex(1)
-        self.clear_plots()
 
         figures = kwargs.pop("_captured_figures", None)
         if not figures:
@@ -814,60 +844,96 @@ class QDesqTab(QWidget):
             qWarning("No matplotlib figures to embed")
             return
 
-        qInfo(f"Embedding {len(figures)} matplotlib figure(s)...")
+        new_sig = tuple(id(fig) for fig in figures)
 
-        for i, fig in enumerate(figures):
+        # Decide whether this is an in-place update (same figures) or a layout change (new figures)
+        existing_items = list(self.plot_manager.matplotlib_figures)
+        can_update_in_place = (
+                self._mpl_embed_signature == new_sig
+                and len(existing_items) == len(figures)
+                and len(existing_items) > 0
+        )
+
+        print(f"#################{can_update_in_place}")
+        print(f"### matching sig: {self._mpl_embed_signature == new_sig}")
+        print(f"### existing items length: {len(existing_items) == len(figures)}")
+        print(f"### length: {len(existing_items)}")
+
+        if not can_update_in_place:
+            # Layout changed or first time: rebuild widgets once
+            self.clear_plots()
+            self._mpl_embed_signature = new_sig
+
+            qInfo(f"Embedding {len(figures)} matplotlib figure(s)...")
+
+            for i, fig in enumerate(figures):
+                try:
+                    fig.tight_layout(pad=1.0)
+                except Exception:
+                    pass
+
+                # Dynamically compute figure size based on available container height
+                available_height = max(200, self.matplotlib_container.height() - 50)
+                fig_height = max(150, available_height // max(1, len(figures)))
+
+                # Create canvas and toolbar
+                canvas = FigureCanvas(fig)
+                canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+                canvas.setMinimumHeight(fig_height)
+                canvas.setMaximumHeight(fig_height)
+
+                toolbar = NavigationToolbar(canvas, self.matplotlib_container)
+                toolbar.setIconSize(QSize(14, 14))
+                toolbar.setStyleSheet(
+                    "QToolBar { padding: 1px; spacing: 2px; } "
+                    "QToolButton { margin: 0; padding: 0; }"
+                )
+                toolbar.setFixedHeight(30)
+
+                # Container for toolbar + canvas
+                fig_layout = QVBoxLayout()
+                fig_layout.addWidget(toolbar)
+                fig_layout.addWidget(canvas)
+                fig_layout.setContentsMargins(0, 0, 0, 0)
+                fig_layout.setSpacing(0)
+
+                fig_widget = QWidget()
+                fig_widget.setLayout(fig_layout)
+                fig_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+                self.matplotlib_layout.addWidget(fig_widget)
+
+                fig_item = MatplotlibFigureItem(
+                    figure=fig,
+                    canvas=canvas,
+                    toolbar=toolbar,
+                    container=fig_widget,
+                    labels=[]
+                )
+                self.plot_manager.add_matplotlib_figure(fig_item)
+
+                canvas.draw_idle()
+
+            # Add stretch once (only on rebuild)
+            self.matplotlib_layout.addStretch()
+            self.labels_added = True
+            qInfo(f"Successfully embedded {len(figures)} matplotlib figure(s)")
+            return
+
+        # In-place update path: DO NOT clear, just redraw existing canvases
+        # Also refresh sizing constraints if the container changed size.
+        available_height = max(200, self.matplotlib_container.height() - 50)
+        fig_height = max(150, available_height // max(1, len(figures)))
+
+        for fig_item in self.plot_manager.matplotlib_figures:
             try:
-                fig.tight_layout(pad=1.0)
+                fig_item.canvas.setMinimumHeight(fig_height)
+                fig_item.canvas.setMaximumHeight(fig_height)
             except Exception:
                 pass
-
-            # Dynamically compute figure size based on available container height
-            available_height = max(200, self.matplotlib_container.height() - 50)
-            fig_height = max(150, available_height // len(figures))
-            fig.set_size_inches(fig.get_size_inches()[0], fig_height / 100)
-
-            # Create canvas and toolbar
-            canvas = FigureCanvas(fig)
-            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            canvas.setMinimumHeight(fig_height)
-            canvas.setMaximumHeight(fig_height)
-
-            toolbar = NavigationToolbar(canvas, self.matplotlib_container)
-            toolbar.setIconSize(QSize(14, 14))
-            toolbar.setStyleSheet("QToolBar { padding: 1px; spacing: 2px; } QToolButton { margin: 0; padding: 0; }")
-            toolbar.setFixedHeight(30)
-
-            # Add toolbar + figure to a horizontal sublayout
-            fig_layout = QVBoxLayout()
-            fig_layout.addWidget(toolbar)
-            fig_layout.addWidget(canvas)
-            fig_layout.setContentsMargins(0, 0, 0, 0)
-
-            # Create a container widget for each figure
-            fig_widget = QWidget()
-            fig_widget.setLayout(fig_layout)
-            fig_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-            # Add to main layout
-            self.matplotlib_layout.addWidget(fig_widget)
-
-            # Track and draw
-            fig_item = MatplotlibFigureItem(
-                figure=fig,
-                canvas=canvas,
-                toolbar=toolbar,
-                container=fig_widget,
-                labels=[]
-            )
-            self.plot_manager.add_matplotlib_figure(fig_item)
-            canvas.draw()
-
-        # Add stretch at the end
-        self.matplotlib_layout.addStretch()
+            fig_item.canvas.draw_idle()
 
         self.labels_added = True
-        qInfo(f"Successfully embedded {len(figures)} matplotlib figure(s)")
 
     def convert_matplotlib_to_pyqtgraph(self, *args, **kwargs):
         """
@@ -1082,78 +1148,193 @@ class QDesqTab(QWidget):
 
     def auto_plot_prepare(self, data_to_plot=None):
         """
-        UPDATED: Automatically prepares data based on shape with proper plot tracking.
+        Auto-plot for datasets / fallback plotting.
+
+        NEW behavior (PyQtGraph):
+        - If the structure of the plot is unchanged (same keys + same dimensionality),
+          update existing PlotDataItem/ImageItem in place.
+        - Only call clear_plots() when the plot layout truly changes.
+
+        Supported inputs:
+        - dict[str, array-like]  -> multiple 1D traces vs index
+        - dict[str, (x, y)]      -> multiple 1D traces with explicit x
+        - 2D array-like          -> image
+        - (x, y)                 -> single trace
         """
-        # Switch to PyQtGraph view for auto plotting
         self.plot_stack.setCurrentIndex(0)
-
-        self.clear_plots()
-
-        if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
-            self.prepare_file_naming()
-
-        label = self.plot_widget.ci.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
-        self.plot_manager.add_pyqtgraph_label(label)  # UPDATED: Use plot_manager
-        self.plot_widget.nextRow()
-
-        prepared_data = {"plots": [], "images": [], "columns": []}
 
         if data_to_plot is None:
             data_to_plot = self.data
-        f = data_to_plot
-        if 'data' in data_to_plot:
-            f = data_to_plot['data']
 
-        for name, data in f.items():
-            if isinstance(data, int):
-                continue
+        if data_to_plot is None:
+            qWarning("auto_plot_prepare: no data to plot")
+            return
 
+        # -----------------------------
+        # Helpers
+        # -----------------------------
+        def _as_array(v):
             try:
-                data = np.array(data, dtype=np.float64).squeeze()
-                data = np.nan_to_num(data, nan=0)
-                shape = data.shape
-            except Exception as e:
-                qDebug("Auto plotter could not handle data: " + str(e))
-                qDebug(traceback.format_exc())
-                label = self.plot_widget.ci.addLabel("Could not handle plotting", colspan=2, size='12pt')
-                self.plot_manager.add_pyqtgraph_label(label)  # UPDATED: Use plot_manager
+                return np.asarray(v)
+            except Exception:
+                return None
+
+        def _is_xy_pair(v):
+            return (
+                    isinstance(v, (tuple, list))
+                    and len(v) == 2
+                    and _as_array(v[0]) is not None
+                    and _as_array(v[1]) is not None
+            )
+
+        # -----------------------------
+        # Normalize input into a list of "plot specs"
+        # Each spec is one of:
+        #   ("curve", title, x, y)
+        #   ("image", title, img2d)
+        # -----------------------------
+        specs = []
+
+        if _is_xy_pair(data_to_plot):
+            x = _as_array(data_to_plot[0])
+            y = _as_array(data_to_plot[1])
+            specs.append(("curve", "Plot", x, y))
+
+        elif isinstance(data_to_plot, dict):
+            # dict[str, y] or dict[str, (x,y)] or dict[str, 2D]
+            for k, v in data_to_plot.items():
+                if _is_xy_pair(v):
+                    x = _as_array(v[0])
+                    y = _as_array(v[1])
+                    specs.append(("curve", str(k), x, y))
+                else:
+                    arr = _as_array(v)
+                    if arr is None:
+                        continue
+                    if arr.ndim == 2:
+                        specs.append(("image", str(k), arr))
+                    elif arr.ndim == 1:
+                        x = np.arange(arr.shape[0])
+                        specs.append(("curve", str(k), x, arr))
+                    else:
+                        # Skip higher-dim silently
+                        continue
+
+        else:
+            arr = _as_array(data_to_plot)
+            if arr is None:
+                qWarning(f"auto_plot_prepare: unsupported data type: {type(data_to_plot)}")
+                return
+            if arr.ndim == 2:
+                specs.append(("image", "Image", arr))
+            elif arr.ndim == 1:
+                x = np.arange(arr.shape[0])
+                specs.append(("curve", "Plot", x, arr))
+            else:
+                qWarning(f"auto_plot_prepare: unsupported ndarray dim: {arr.ndim}")
                 return
 
-            # Handle 1D data -> 2D Plots
-            if len(shape) == 1:
-                x_data = None
-                if 'x_pts' in f:
-                    x_data = list(f['x_pts'])
-                    if name == 'x_pts':
-                        continue
-                    y_data = list(data)
-                    if len(x_data) == len(y_data):
-                        prepared_data["plots"].append({
-                            "x": x_data,
-                            "y": y_data,
-                            "label": name,
-                            "xlabel": "Qubit Frequency (GHz)",
-                            "ylabel": "a.u."
-                        })
-            # Handle 3D data -> Column Plots
-            elif len(shape) == 2 and shape[1] == 2:
-                prepared_data["columns"].append({
-                    "data": data,
-                    "label": name,
-                    "xlabel": "X-axis",
-                    "ylabel": "Y-axis"
-                })
-            # Handle 2D data -> Image Plots
-            elif len(shape) == 2:
-                prepared_data["images"].append({
-                    "data": data,
-                    "label": name,
-                    "xlabel": "X-axis",
-                    "ylabel": "Y-axis",
-                    "colormap": "viridis"
-                })
+        if not specs:
+            qWarning("auto_plot_prepare: nothing plottable found")
+            return
 
-        self.auto_plot_plot(prepared_data)
+        # -----------------------------
+        # Compute a signature for "layout"
+        # (don’t include actual data values; only structure)
+        # -----------------------------
+        def _shape_sig(a):
+            try:
+                a = np.asarray(a)
+                return tuple(a.shape)
+            except Exception:
+                return None
+
+        sig_parts = []
+        for s in specs:
+            if s[0] == "curve":
+                _, title, x, y = s
+                sig_parts.append(("curve", title, _shape_sig(x), _shape_sig(y)))
+            else:
+                _, title, img = s
+                sig_parts.append(("image", title, _shape_sig(img)))
+
+        new_signature = tuple(sig_parts)
+
+        # -----------------------------
+        # Decide update vs rebuild
+        # -----------------------------
+        can_update = (
+                self._auto_plot_signature == new_signature
+                and len(self._auto_plot_cache) == len(specs)
+                and len(self._auto_plot_cache) > 0
+        )
+
+        if not can_update:
+            # Rebuild
+            self.clear_plots()
+            self._auto_plot_signature = new_signature
+            self._auto_plot_cache = []
+
+            # Optional dataset title label (like your other paths)
+            if (not self.labels_added) and (not self.is_experiment) and hasattr(self, "file_name"):
+                label = self.plot_widget.ci.addLabel(self.file_name, row=0, col=0, colspan=1, size="12pt")
+                self.plot_manager.add_pyqtgraph_label(label)
+
+            # Create one plot per spec (stacked vertically)
+            row = 1
+            for idx, s in enumerate(specs):
+                kind = s[0]
+                title = s[1]
+
+                # axis title label
+                label = self.plot_widget.ci.addLabel(title, row=row, col=0, colspan=1, size="10pt")
+                self.plot_manager.add_pyqtgraph_label(label)
+                row += 1
+                self.plot_widget.nextRow()
+
+                plot = self.plot_widget.ci.addPlot(row, 0)
+                plot.showGrid(x=True, y=True, alpha=0.3)
+                self.plot_manager.add_pyqtgraph_plot(plot, label=None, row=row, col=0)
+
+                if kind == "curve":
+                    _, _, x, y = s
+                    curve = plot.plot(x, y)
+                    self._auto_plot_cache.append(("curve", curve, plot))
+                else:
+                    _, _, img = s
+                    img_item = pg.ImageItem(img)
+                    plot.addItem(img_item)
+                    plot.setAspectLocked(True)
+                    self._auto_plot_cache.append(("image", img_item, plot))
+
+                row += 1
+                self.plot_widget.nextRow()
+
+            self.labels_added = True
+            return
+
+        # -----------------------------
+        # Update in place (no clear)
+        # -----------------------------
+        for spec, cached in zip(specs, self._auto_plot_cache):
+            kind = spec[0]
+            if kind == "curve":
+                _, _, x, y = spec
+                _, curve, _plot = cached
+                try:
+                    curve.setData(x, y)
+                except Exception:
+                    # fallback: if something about the curve broke, force rebuild next time
+                    self._auto_plot_signature = None
+            else:
+                _, _, img = spec
+                _, img_item, _plot = cached
+                try:
+                    img_item.setImage(img, autoLevels=False)
+                except Exception:
+                    self._auto_plot_signature = None
+
+        self.labels_added = True
 
     def auto_plot_plot(self, prepared_data):
         """
