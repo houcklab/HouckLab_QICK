@@ -1,15 +1,14 @@
 """
 ============
-DesqTab.py - COMPLETE REVAMPED VERSION
+DesqTab.py - SIMPLIFIED PLOTTING VERSION
 ============
 The custom QDesqTab class for the central tabs module of the main application.
 
-REVAMPED FEATURES:
-- Thread-safe plot management with PlotManager
-- Proper resource cleanup (no orphaned labels/widgets)
-- Support for any number of figures and layouts
-- Better matplotlib/PyQtGraph integration
-- No memory leaks
+SIMPLIFIED PLOTTING ARCHITECTURE:
+- Experiments plot via their `display()` method only
+- No plotter-selection UI or logic
+- Loaded datasets use auto-plotting
+- Single, clear plotting entry point
 
 Each QDesqTab is either an experiment tab or a data tab that stores its own object attributes,
 configuration, data, and plotting.
@@ -25,7 +24,8 @@ from pathlib import Path
 import datetime
 import shutil
 import matplotlib
-matplotlib.use("Agg")
+# Don't override backend here - let PlotSinkManager handle it
+# matplotlib.use("Agg")  # REMOVED - conflicts with BackendDesq
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -208,6 +208,16 @@ class PlotManager:
         with QMutexLocker(self.mutex):
             return [item.plot for item in self.pyqtgraph_plots]
 
+    def has_pyqtgraph_content(self):
+        """Check if there are any PyQtGraph plots or labels (thread-safe)."""
+        with QMutexLocker(self.mutex):
+            return len(self.pyqtgraph_plots) > 0 or len(self.pyqtgraph_labels) > 0
+
+    def has_matplotlib_content(self):
+        """Check if there are any matplotlib figures (thread-safe)."""
+        with QMutexLocker(self.mutex):
+            return len(self.matplotlib_figures) > 0
+
     def clear_fit_overlays(self):
         """Clear all fit overlay references."""
         with QMutexLocker(self.mutex):
@@ -306,24 +316,20 @@ class ExperimentInfoBar(QWidget):
 
 
 # =============================================================================
-# Main QDesqTab Class - COMPLETE REVAMPED VERSION
+# Main QDesqTab Class - SIMPLIFIED PLOTTING VERSION
 # =============================================================================
 
 class QDesqTab(QWidget):
     """
     A tab widget that holds either an experiment instance or a data instance.
 
-    REVAMPED FEATURES:
+    SIMPLIFIED PLOTTING ARCHITECTURE:
+    - Experiments plot via their `display()` method
+    - No plotter-selection UI or logic
+    - Loaded datasets use auto-plotting
     - Thread-safe plot management via PlotManager
     - Proper resource cleanup (no orphaned labels/widgets)
-    - Support for any number of figures and layouts
-    - Better separation between PyQtGraph and Matplotlib backends
-    - No memory leaks
-    - 100% backwards compatible with existing experiments
     """
-
-    custom_plot_methods = {}
-    """Custom plotting methods dictionary."""
 
     updated_tab = pyqtSignal()
     """Signal sent to main application when tab is updated."""
@@ -389,10 +395,14 @@ class QDesqTab(QWidget):
         self._auto_plot_signature = None
         self._auto_plot_cache = []  # list of per-plot handles (curve/image/etc)
         self._mpl_embed_signature = None  # tuple of figure ids currently embedded
+        self._mpl_content_signature = None  # Content-based signature for figure isolation
 
-        # DEPRECATED: Keep for backwards compatibility but delegate to plot_manager
-        self.plots = []  # Will be synchronized with plot_manager via @property
-        self.labels = []  # Will be synchronized with plot_manager via @property
+        # PyQtGraph live update tracking
+        self._pyqtgraph_signature = None
+        self._pyqtgraph_axes_map = []
+
+        # Track whether initial labels/layout have been set up
+        # This prevents duplicate labels when updating plots in-place
         self.labels_added = False
 
         # Fit manager and results
@@ -440,7 +450,7 @@ class QDesqTab(QWidget):
                                                                  self.plot_utilities_container)
         self.reExtract_experiment_button.setToolTip("Re-extracts the experiment file to reflect changes to code file")
         self.replot_button = Helpers.create_button("RePlot", "replot_button", False, self.plot_utilities_container)
-        self.replot_button.setToolTip("Replots the current data using plot method")
+        self.replot_button.setToolTip("Replots the current data")
         self.snip_plot_button = Helpers.create_button("Snip", "snip_plot_button", True, self.plot_utilities_container)
         self.snip_plot_button.setToolTip("Snip Plot to Clipboard")
         self.export_data_button = Helpers.create_button("Export", "export_data_button", False,
@@ -480,19 +490,13 @@ class QDesqTab(QWidget):
         self.experiment_infobar.add_info_row(self.hardware_label)
         self.plot_layout.addWidget(self.experiment_infobar)
 
-        ### Plot Settings Bar
+        ### Plot Settings Bar (simplified - no plotter selection)
         self.plot_settings_container = QWidget()
         self.plot_settings_container.setMaximumHeight(30)
         self.plot_settings = QHBoxLayout(self.plot_settings_container)
         self.plot_settings.setContentsMargins(10, 0, 0, 5)
         self.plot_settings.setSpacing(5)
         self.plot_settings.setObjectName("plot_settings")
-
-        self.plot_method_label = QLabel("Plotter:")
-        self.plot_method_label.setObjectName("plot_method_label")
-        self.plot_method_combo = QComboBox()
-        self.plot_method_combo.setFixedWidth(100)
-        self.plot_method_combo.setObjectName("plot_method_combo")
 
         self.average_simult_checkbox = QCheckBox("Average Simult.", self.plot_settings_container)
         self.average_simult_checkbox.setToolTip("Average intermediate data simultaneously versus at end of set.")
@@ -561,8 +565,6 @@ class QDesqTab(QWidget):
         self.plot_layout.setStretch(1, 10)
         self.plot_wrapper.setLayout(self.plot_layout)
 
-        self.setup_plotter_options()
-
         # Add config panel
         self.experiment_config_panel.setParent(self.splitter)
 
@@ -612,77 +614,21 @@ class QDesqTab(QWidget):
         self.export_data_button.clicked.connect(self.export_data)
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
         self.replot_button.clicked.connect(self.replot_data)
-        self.plot_method_combo.currentIndexChanged.connect(self.handle_plot_combo_selection)
         self.fit_button.clicked.connect(self.perform_fit)
+
+        self.use_matplotlib_checkbox.toggled.connect(self.on_matplotlib_toggled)
 
         self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
         self.remove_plot_shortcut.activated.connect(self.remove_plot)
 
         if self.is_experiment:
-            self.experiment_config_panel.update_voltage_panel.connect(self.app.voltage_controller_panel.update_sweeps)
             self.experiment_config_panel.update_runtime_prediction.connect(self.app.call_tab_runtime_prediction)
             self.reExtract_experiment_button.setEnabled(True)
-
-            if self.is_experiment and self.experiment_obj is not None:
-                if self.experiment_obj.experiment_plotter is not None:
-                    QDesqTab.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
-
             self.predict_runtime(self.experiment_config_panel.config)
 
         if self.tab_name != "None":
             self.export_data_button.setEnabled(True)
             self.replot_button.setEnabled(True)
-
-    # =========================================================================
-    # PLOTTER OPTIONS AND COMBO HANDLING
-    # =========================================================================
-
-    def setup_plotter_options(self):
-        """Sets up the plotting options based on the current experiment."""
-        self.plot_method_combo.blockSignals(True)
-
-        self.plot_method_combo.clear()
-        self.plot_method_combo.addItems(["None"])
-
-        for key in QDesqTab.custom_plot_methods.keys():
-            if self.tab_name is not None and key == self.tab_name:
-                self.plot_method_combo.insertItem(0, key)
-                self.plot_method_combo.setCurrentText(key)
-            else:
-                self.plot_method_combo.addItems([key])
-
-        self.plot_method_combo.addItems(["Add..."])
-        self.plot_method_combo.blockSignals(False)
-
-    def handle_plot_combo_selection(self):
-        """Handler for when the Plotting Methods Combo is changed."""
-        if self.plot_method_combo.currentText() == "Add...":
-            self.plot_method_combo.blockSignals(True)
-
-            file = Helpers.open_file_dialog("Open Python File", "Python Files (*.py)",
-                                            "add_plotter_method", self, file=True)
-
-            if file:
-                path = str(Path(file))
-                qInfo("Retrieving experiment plotter from: " + path)
-                experiment_name = os.path.splitext(os.path.basename(path))[0]
-                temp_experiment = ExperimentObject(self, experiment_name, path)
-                if temp_experiment.experiment_plotter is not None:
-                    self.plot_method_combo.insertItem(0, experiment_name)
-                    self.plot_method_combo.setCurrentText(experiment_name)
-                    QDesqTab.custom_plot_methods[experiment_name] = temp_experiment.experiment_plotter
-                    qInfo("Added " + experiment_name + " plotter.")
-                    self.replot_data()
-                else:
-                    self.plot_method_combo.setCurrentText("None")
-                    qDebug("No plotter function found within " + experiment_name)
-            else:
-                self.plot_method_combo.setCurrentText("None")
-
-            self.plot_method_combo.blockSignals(False)
-        else:
-            if self.data is not None:
-                self.replot_data()
 
     # =========================================================================
     # UTILITY METHODS
@@ -703,15 +649,15 @@ class QDesqTab(QWidget):
         QTimer.singleShot(3000, lambda: self.snip_plot_button.setText('Snip'))
 
     # =========================================================================
-    # CORE PLOTTING METHODS (REVAMPED)
+    # CORE PLOTTING METHODS (SIMPLIFIED)
     # =========================================================================
 
     def clear_plots(self):
         """
-        REVAMPED: Thread-safe clearing of all plots and labels.
+        Thread-safe clearing of all plots and labels.
         Properly cleans up all resources in both PyQtGraph and Matplotlib modes.
         """
-        qInfo("Clearing all plots...")
+        qInfo(f"Clearing all plots for tab: {self.tab_name}...")
 
         # Use plot_manager for thread-safe cleanup
         self.plot_manager.clear_all(self.plot_widget, self.matplotlib_layout)
@@ -726,12 +672,17 @@ class QDesqTab(QWidget):
         self._auto_plot_signature = None
         self._auto_plot_cache = []
         self._mpl_embed_signature = None
+        self._mpl_content_signature = None  # Content-based signature for figure isolation
 
-        qInfo("All plots cleared successfully")
+        # Reset PyQtGraph live update tracking
+        self._pyqtgraph_signature = None
+        self._pyqtgraph_axes_map = []
+
+        qInfo(f"All plots cleared successfully for tab: {self.tab_name}")
 
     def remove_plot(self):
         """
-        REVAMPED: Removes a plot at the mouse cursor position with proper label cleanup.
+        Removes a plot at the mouse cursor position with proper label cleanup.
         Only works for PyQtGraph mode.
         """
         if self.use_matplotlib_checkbox.isChecked():
@@ -754,7 +705,11 @@ class QDesqTab(QWidget):
 
     def plot_data(self, exp_instance=None, data_to_plot=None):
         """
-        Main plotting entry point. Routes to appropriate plotting method.
+        SIMPLIFIED: Main plotting entry point.
+
+        Plotting behavior:
+        - For experiments: Call display() method if available, fall back to auto_plot
+        - For loaded data: Always use auto_plot
         """
         if data_to_plot is None:
             data_to_plot = self.data
@@ -767,52 +722,68 @@ class QDesqTab(QWidget):
             if len(self.plot_manager.get_pyqtgraph_plots()) == 0:
                 self.clear_plots()
 
-        plotting_method = self.plot_method_combo.currentText()
+        # SIMPLIFIED PLOTTING LOGIC:
+        # 1. For experiments with display() method: use display()
+        # 2. For loaded data (non-experiments): use auto_plot
+        # 3. Fall back to auto_plot if display() fails or doesn't exist
 
+        if self.is_experiment and exp_instance is not None:
+            # Try to use the experiment's display() method
+            if self._try_experiment_display(exp_instance, data_to_plot):
+                return  # display() succeeded
+            # Fall back to auto_plot
+            qInfo("Falling back to auto_plot for experiment")
+            self.auto_plot_prepare(data_to_plot)
+        else:
+            # Loaded data: always use auto_plot
+            self.auto_plot_prepare(data_to_plot)
+
+    def _try_experiment_display(self, exp_instance, data_to_plot):
+        """
+        Attempt to call the experiment's display() method.
+
+        Returns True if display() was called successfully, False otherwise.
+        """
         try:
-            if plotting_method == "None":
-                if not self.is_experiment:
-                    self.auto_plot_prepare()
-                else:
-                    if hasattr(exp_instance, "display") and callable(getattr(exp_instance, "display")):
-                        instance_method = exp_instance.display
+            # Check if exp_instance has an overridden display() method
+            if not hasattr(exp_instance, "display"):
+                return False
 
-                        # Check if display is overridden
-                        for cls in type(exp_instance).__mro__[1:]:
-                            if "display" in cls.__dict__:
-                                parent_method = cls.__dict__["display"]
-                                break
-                        else:
-                            parent_method = None
+            display_method = getattr(exp_instance, "display")
+            if not callable(display_method):
+                return False
 
-                        if parent_method is not None and instance_method.__func__ is not parent_method:
-                            # Ensure the matplotlib sink is active in *this* thread (often the GUI thread),
-                            # because exp_instance.display() may trigger draw() here (not in the worker).
-                            psm = getattr(self.app, "plot_sink_manager", None)
+            # Check if display() is overridden (not the base ExperimentClass.display)
+            # by checking if it does more than just 'pass'
+            for cls in type(exp_instance).__mro__[1:]:
+                if "display" in cls.__dict__:
+                    parent_method = cls.__dict__["display"]
+                    break
+            else:
+                parent_method = None
 
-                            if psm is not None:
-                                with psm.sink_context(self):
-                                    exp_instance.display(data_to_plot, plotDisp=True)
-                            else:
-                                exp_instance.display(data_to_plot, plotDisp=True)
-                        else:
-                            self.auto_plot_prepare()
+            # If display is not overridden, use auto_plot
+            if parent_method is not None and display_method.__func__ is parent_method:
+                return False
 
-                    else:
-                        self.auto_plot_prepare()
-            elif plotting_method in QDesqTab.custom_plot_methods:
-                QDesqTab.custom_plot_methods[plotting_method](
-                    self.plot_widget,
-                    self.plot_manager.get_pyqtgraph_plots(),
-                    data_to_plot
-                )
+            # Call display() with plot sink context if available
+            psm = getattr(self.app, "plot_sink_manager", None)
+            if psm is not None:
+                with psm.sink_context(self):
+                    exp_instance.display(data_to_plot, plotDisp=True)
+            else:
+                exp_instance.display(data_to_plot, plotDisp=True)
+
+            return True
+
         except Exception as e:
-            qCritical(f"Failed to plot using method [{plotting_method}]: {str(e)}")
-            qCritical(traceback.format_exc())
+            qWarning(f"Experiment display() failed: {str(e)}")
+            qWarning(traceback.format_exc())
+            return False
 
     def handle_pltplot(self, *args, **kwargs):
         """
-        REVAMPED: Handles matplotlib plots by routing to appropriate backend.
+        Handles matplotlib plots by routing to appropriate backend.
         Supports any number of figures with any layout.
         """
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
@@ -824,14 +795,153 @@ class QDesqTab(QWidget):
         else:
             self.convert_matplotlib_to_pyqtgraph(*args, **kwargs)
 
+    def _copy_matplotlib_figure(self, original_fig):
+        """
+        Create an independent copy of a matplotlib figure.
+
+        This isolates the figure from matplotlib's global state so that
+        other experiments can't interfere with it.
+
+        Returns:
+            A new Figure object that's a copy of the original
+        """
+        import pickle
+        import io
+
+        try:
+            # Use pickle to create a deep copy of the figure
+            buf = io.BytesIO()
+            pickle.dump(original_fig, buf)
+            buf.seek(0)
+            new_fig = pickle.load(buf)
+            buf.close()
+
+            # The copied figure won't have a number in matplotlib's registry
+            # which is exactly what we want for isolation
+            return new_fig
+
+        except Exception as e:
+            qWarning(f"Failed to copy figure via pickle: {e}, using original")
+            return original_fig
+
+    def _compute_figure_content_signature(self, figures):
+        """
+        Compute a signature based on figure CONTENT rather than object id.
+
+        This allows us to detect when the same logical figure is being updated
+        (same axes structure, same data shapes) vs when a completely new figure
+        is being created.
+        """
+        sig_parts = []
+        for fig in figures:
+            fig_sig = []
+            # Include figure size
+            fig_sig.append(fig.get_size_inches().tobytes())
+            # Include number of axes
+            fig_sig.append(len(fig.axes))
+            for ax in fig.axes:
+                # Include axis position
+                pos = ax.get_position()
+                fig_sig.append((round(pos.x0, 2), round(pos.y0, 2),
+                                round(pos.width, 2), round(pos.height, 2)))
+                # Include data presence indicators
+                fig_sig.append(len(ax.lines))
+                fig_sig.append(len(ax.images))
+                # Include data shapes for lines
+                for line in ax.lines[:3]:  # Just first 3 to keep signature small
+                    xdata = line.get_xdata()
+                    if hasattr(xdata, '__len__'):
+                        fig_sig.append(len(xdata))
+                # Include data shapes for images
+                for img in ax.images[:2]:
+                    data = img.get_array()
+                    if data is not None:
+                        fig_sig.append(data.shape)
+            sig_parts.append(tuple(fig_sig))
+        return tuple(sig_parts)
+
+    def isolate_matplotlib_figures(self):
+        """
+        Isolate embedded matplotlib figures from the global registry.
+
+        This should be called when an experiment finishes to ensure the displayed
+        figures won't be affected by future experiments that may reuse figure numbers.
+
+        The method:
+        1. Creates copies of all embedded figures
+        2. Replaces the canvases with new ones displaying the copies
+        3. Closes the original figures to free their figure numbers
+        """
+        if not self.plot_manager.matplotlib_figures:
+            return
+
+        qInfo(f"[{self.tab_name}] Isolating {len(self.plot_manager.matplotlib_figures)} matplotlib figures...")
+
+        for fig_item in self.plot_manager.matplotlib_figures:
+            try:
+                original_fig = fig_item.figure
+
+                # Create isolated copy
+                copied_fig = self._copy_matplotlib_figure(original_fig)
+
+                # Update the canvas to use the copied figure
+                # We need to create a new canvas since FigureCanvas binds to a specific figure
+                old_canvas = fig_item.canvas
+                new_canvas = FigureCanvas(copied_fig)
+
+                # Copy size settings
+                new_canvas.setMinimumHeight(old_canvas.minimumHeight())
+                new_canvas.setMaximumHeight(old_canvas.maximumHeight())
+                new_canvas.setSizePolicy(old_canvas.sizePolicy())
+
+                # Replace canvas in the layout
+                layout = fig_item.container.layout()
+                if layout:
+                    # Find and replace the canvas
+                    for i in range(layout.count()):
+                        item = layout.itemAt(i)
+                        if item and item.widget() == old_canvas:
+                            layout.removeWidget(old_canvas)
+                            layout.insertWidget(i, new_canvas)
+                            break
+
+                # Update toolbar to use new canvas
+                fig_item.toolbar.canvas = new_canvas
+
+                # Update fig_item references
+                fig_item.figure = copied_fig
+                fig_item.canvas = new_canvas
+
+                # Clean up old canvas
+                old_canvas.deleteLater()
+
+                # Close the original figure to remove from global registry
+                try:
+                    plt.close(original_fig)
+                except:
+                    pass
+
+                new_canvas.draw_idle()
+
+            except Exception as e:
+                qWarning(f"Failed to isolate figure: {e}")
+
+        # Reset signatures since figures changed
+        self._mpl_embed_signature = None
+        self._mpl_content_signature = None
+
+        qInfo(f"[{self.tab_name}] Figure isolation complete")
+
     def embed_matplotlib_plots(self, *args, **kwargs):
         """
         Embed matplotlib figures in the tab.
 
-        NEW behavior:
-        - If the same Figure objects are being updated (same ids), we do NOT clear/rebuild widgets.
-          We just redraw canvases (fast).
-        - If figures are new/different (ids changed or count changed), we clear and rebuild once.
+        LIVE UPDATE STRATEGY:
+        - During live plotting (experiment running), we embed the ORIGINAL figures
+          so the experiment can continue updating them
+        - When the experiment finishes, call isolate_matplotlib_figures() to create
+          independent copies that won't be affected by future experiments
+        - For in-place updates, we just redraw existing canvases
         """
         self.plot_stack.setCurrentIndex(1)
 
@@ -844,101 +954,105 @@ class QDesqTab(QWidget):
             qWarning("No matplotlib figures to embed")
             return
 
-        new_sig = tuple(id(fig) for fig in figures)
+        # Use content-based signature for detecting updates vs rebuilds
+        content_sig = self._compute_figure_content_signature(figures)
+        obj_sig = tuple(id(fig) for fig in figures)
 
-        # Decide whether this is an in-place update (same figures) or a layout change (new figures)
+        # Decide whether this is an in-place update or a layout change
         existing_items = list(self.plot_manager.matplotlib_figures)
-        can_update_in_place = (
-                self._mpl_embed_signature == new_sig
-                and len(existing_items) == len(figures)
-                and len(existing_items) > 0
-        )
 
-        print(f"#################{can_update_in_place}")
-        print(f"### matching sig: {self._mpl_embed_signature == new_sig}")
-        print(f"### existing items length: {len(existing_items) == len(figures)}")
-        print(f"### length: {len(existing_items)}")
+        # Can update in-place if same figure objects are being updated
+        same_objects = (self._mpl_embed_signature == obj_sig and len(existing_items) > 0)
 
-        if not can_update_in_place:
-            # Layout changed or first time: rebuild widgets once
-            self.clear_plots()
-            self._mpl_embed_signature = new_sig
+        # Or if same content structure (same logical figure being redrawn)
+        same_content = (hasattr(self, '_mpl_content_signature') and
+                        self._mpl_content_signature == content_sig and
+                        len(existing_items) == len(figures) and
+                        len(existing_items) > 0)
 
-            qInfo(f"Embedding {len(figures)} matplotlib figure(s)...")
+        can_update_in_place = same_objects or same_content
 
-            for i, fig in enumerate(figures):
-                try:
-                    fig.tight_layout(pad=1.0)
-                except Exception:
-                    pass
+        if can_update_in_place:
+            # In-place update path: just redraw existing canvases
+            available_height = max(200, self.matplotlib_container.height() - 50)
+            fig_height = max(150, available_height // max(1, len(figures)))
 
-                # Dynamically compute figure size based on available container height
-                available_height = max(200, self.matplotlib_container.height() - 50)
-                fig_height = max(150, available_height // max(1, len(figures)))
+            for fig_item in self.plot_manager.matplotlib_figures:
+                fig_item.canvas.draw_idle()
 
-                # Create canvas and toolbar
-                canvas = FigureCanvas(fig)
-                canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-                canvas.setMinimumHeight(fig_height)
-                canvas.setMaximumHeight(fig_height)
-
-                toolbar = NavigationToolbar(canvas, self.matplotlib_container)
-                toolbar.setIconSize(QSize(14, 14))
-                toolbar.setStyleSheet(
-                    "QToolBar { padding: 1px; spacing: 2px; } "
-                    "QToolButton { margin: 0; padding: 0; }"
-                )
-                toolbar.setFixedHeight(30)
-
-                # Container for toolbar + canvas
-                fig_layout = QVBoxLayout()
-                fig_layout.addWidget(toolbar)
-                fig_layout.addWidget(canvas)
-                fig_layout.setContentsMargins(0, 0, 0, 0)
-                fig_layout.setSpacing(0)
-
-                fig_widget = QWidget()
-                fig_widget.setLayout(fig_layout)
-                fig_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-                self.matplotlib_layout.addWidget(fig_widget)
-
-                fig_item = MatplotlibFigureItem(
-                    figure=fig,
-                    canvas=canvas,
-                    toolbar=toolbar,
-                    container=fig_widget,
-                    labels=[]
-                )
-                self.plot_manager.add_matplotlib_figure(fig_item)
-
-                canvas.draw_idle()
-
-            # Add stretch once (only on rebuild)
-            self.matplotlib_layout.addStretch()
             self.labels_added = True
-            qInfo(f"Successfully embedded {len(figures)} matplotlib figure(s)")
             return
 
-        # In-place update path: DO NOT clear, just redraw existing canvases
-        # Also refresh sizing constraints if the container changed size.
-        available_height = max(200, self.matplotlib_container.height() - 50)
-        fig_height = max(150, available_height // max(1, len(figures)))
+        # Layout changed or first time: rebuild widgets
+        qInfo(f"[{self.tab_name}] Embedding {len(figures)} matplotlib figure(s)...")
+        self.clear_plots()
+        self._mpl_embed_signature = obj_sig
+        self._mpl_content_signature = content_sig
 
-        for fig_item in self.plot_manager.matplotlib_figures:
+        for i, fig in enumerate(figures):
+            # During live plotting, embed the ORIGINAL figure so experiment can update it
+            # Isolation will happen when experiment finishes (via isolate_matplotlib_figures)
+
             try:
-                fig_item.canvas.setMinimumHeight(fig_height)
-                fig_item.canvas.setMaximumHeight(fig_height)
-            except Exception:
+                if hasattr(fig, '_layoutgrid') and fig._layoutgrid is not None:
+                    pass
+                else:
+                    fig.set_constrained_layout(False)
+                    fig.tight_layout(pad=2.0)
+            except (ValueError, ZeroDivisionError, Exception):
                 pass
-            fig_item.canvas.draw_idle()
 
+            available_height = max(200, self.matplotlib_container.height() - 50)
+            fig_height = max(150, available_height // max(1, len(figures)))
+
+            canvas = FigureCanvas(fig)
+            canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+            toolbar = NavigationToolbar(canvas, self.matplotlib_container)
+            toolbar.setIconSize(QSize(14, 14))
+            toolbar.setStyleSheet(
+                "QToolBar { padding: 1px; spacing: 2px; } "
+                "QToolButton { margin: 0; padding: 0; }"
+            )
+            toolbar.setFixedHeight(30)
+
+            fig_layout = QVBoxLayout()
+            fig_layout.addWidget(toolbar)
+            fig_layout.addWidget(canvas)
+            fig_layout.setContentsMargins(0, 0, 0, 0)
+            fig_layout.setSpacing(0)
+
+            fig_widget = QWidget()
+            fig_widget.setLayout(fig_layout)
+            fig_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+            self.matplotlib_layout.addWidget(fig_widget)
+
+            fig_item = MatplotlibFigureItem(
+                figure=fig,
+                canvas=canvas,
+                toolbar=toolbar,
+                container=fig_widget,
+                labels=[]
+            )
+            self.plot_manager.add_matplotlib_figure(fig_item)
+
+            canvas.draw_idle()
+
+        self.matplotlib_layout.addStretch()
         self.labels_added = True
+        qInfo(f"[{self.tab_name}] Successfully embedded {len(figures)} matplotlib figure(s)")
 
     def convert_matplotlib_to_pyqtgraph(self, *args, **kwargs):
         """
-        REVAMPED: Converts ANY matplotlib figure/axes layout to PyQtGraph.
+        Converts ANY matplotlib figure/axes layout to PyQtGraph.
         Handles complex multi-figure, multi-axes scenarios.
+
+        NEW: Supports live updates by:
+        1. Computing figure signature to detect layout changes
+        2. Only rebuilding layout when structure changes
+        3. Not closing figures (needed for live updates)
+        4. Preserving original grid layout from matplotlib
         """
         self.plot_stack.setCurrentIndex(0)
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
@@ -952,13 +1066,32 @@ class QDesqTab(QWidget):
             qWarning("No matplotlib figures to convert")
             return
 
+        # Compute signature for this set of figures (structure only, not data)
+        new_sig = self._compute_pyqtgraph_signature(figures)
+
+        # Check if we can update in place
+        can_update_in_place = (
+                hasattr(self, '_pyqtgraph_signature') and
+                self._pyqtgraph_signature == new_sig and
+                len(self.plot_manager.get_pyqtgraph_plots()) > 0
+        )
+
+        if can_update_in_place:
+            # Update existing plots without rebuilding layout
+            self._update_pyqtgraph_plots(figures)
+            return
+
+        # Layout changed - need to rebuild
+        self.clear_plots()
+        self._pyqtgraph_signature = new_sig
+
         # Add title label if this is a dataset
         if not self.labels_added and not self.is_experiment:
             label = self.plot_widget.ci.addLabel(self.file_name, row=0, col=0, colspan=2, size='12pt')
             self.plot_manager.add_pyqtgraph_label(label)
 
-        curr_row = 0
-        curr_plot_index = 0
+        curr_row = 0 if self.is_experiment else 1
+        self._pyqtgraph_axes_map = []  # Track (fig_idx, ax_idx, plot) for updates
 
         for fig_idx, fig in enumerate(figures):
             axes = fig.get_axes()
@@ -966,47 +1099,214 @@ class QDesqTab(QWidget):
             if len(axes) == 0:
                 continue
 
+            # Detect grid layout from axes positions
+            grid_layout = self._detect_axes_grid(axes)
+            nrows, ncols = grid_layout['nrows'], grid_layout['ncols']
+
             # Add figure title
             fig_title = fig._suptitle.get_text() if fig._suptitle else f"{self.file_name} fig{fig_idx + 1}"
             if not self.labels_added:
-                ncols = max(1, len(axes))
                 label = self.plot_widget.ci.addLabel(fig_title, row=curr_row, col=0,
-                                                    colspan=ncols, size='12pt')
+                                                     colspan=ncols, size='12pt')
                 self.plot_manager.add_pyqtgraph_label(label)
 
             curr_row += 1
             self.plot_widget.nextRow()
 
-            # Process each axis in the figure
-            for ax_idx, ax in enumerate(axes):
-                # Skip empty axes
-                if self._is_axis_empty(ax):
-                    continue
+            # Process each axis in detected grid order
+            for ax_row in range(nrows):
+                for ax_col in range(ncols):
+                    ax_idx = grid_layout['grid'].get((ax_row, ax_col))
+                    if ax_idx is None:
+                        continue
 
-                # Add axis title
-                ax_title = ax.get_title() or f"Plot {curr_plot_index + 1}"
-                if not self.labels_added:
-                    label = self.plot_widget.ci.addLabel(ax_title, row=curr_row, col=0,
-                                                        colspan=1, size='10pt')
-                    self.plot_manager.add_pyqtgraph_label(label)
+                    ax = axes[ax_idx]
 
-                curr_row += 1
-                self.plot_widget.nextRow()
+                    # Skip empty axes
+                    if self._is_axis_empty(ax):
+                        continue
 
-                # Extract and plot the axis data
-                self.extract_and_plot_pyqtgraph(ax, curr_row, 0, curr_plot_index)
-                curr_plot_index += 1
+                    # Add axis title as a sublabel (only if there's meaningful content)
+                    ax_title = ax.get_title()
+                    if ax_title and not self.labels_added:
+                        label = self.plot_widget.ci.addLabel(ax_title, row=curr_row, col=ax_col,
+                                                             colspan=1, size='9pt')
+                        self.plot_manager.add_pyqtgraph_label(label)
 
-                curr_row += 1
-                self.plot_widget.nextRow()
+                # After titles for this row, start a new row for plots
+                if any(grid_layout['grid'].get((ax_row, c)) is not None for c in range(ncols)):
+                    if not self.labels_added:
+                        curr_row += 1
+                        self.plot_widget.nextRow()
+
+                    # Add the actual plots for this row
+                    for ax_col in range(ncols):
+                        ax_idx = grid_layout['grid'].get((ax_row, ax_col))
+                        if ax_idx is None:
+                            continue
+
+                        ax = axes[ax_idx]
+                        if self._is_axis_empty(ax):
+                            continue
+
+                        # Extract and plot the axis data
+                        plot = self.extract_and_plot_pyqtgraph(ax, curr_row, ax_col, None)
+                        if plot is not None:  # Only track successfully created plots
+                            self._pyqtgraph_axes_map.append((fig_idx, ax_idx, plot))
+
+                    curr_row += 1
+                    self.plot_widget.nextRow()
 
             # Add spacing between figures
             curr_row += 1
             self.plot_widget.nextRow()
 
         self.labels_added = True
-        plt.close('all')
-        qInfo(f"Converted {curr_plot_index} matplotlib axes to PyQtGraph")
+        # NOTE: Don't call plt.close('all') here - it breaks live plotting!
+        # Figures will be closed when tab is closed or experiment stops
+        qInfo(f"Converted matplotlib figures to PyQtGraph (preserved layout)")
+
+    def _compute_pyqtgraph_signature(self, figures):
+        """
+        Compute a signature for figure structure to detect layout changes.
+        Only includes structure info, not data values.
+        """
+        sig_parts = []
+        for fig in figures:
+            axes = fig.get_axes()
+            fig_sig = []
+            for ax in axes:
+                # Include axis position and whether it has images/lines/scatter
+                pos = ax.get_position()
+                ax_sig = (
+                    round(pos.x0, 2), round(pos.y0, 2),
+                    round(pos.width, 2), round(pos.height, 2),
+                    len(ax.get_lines()) > 0,
+                    len(ax.get_images()) > 0,
+                    len([c for c in ax.collections if isinstance(c, PathCollection)]) > 0
+                )
+                fig_sig.append(ax_sig)
+            sig_parts.append(tuple(fig_sig))
+        return tuple(sig_parts)
+
+    def _detect_axes_grid(self, axes):
+        """
+        Detect grid layout from axes positions.
+        Returns dict with nrows, ncols, and grid mapping (row, col) -> ax_index.
+        """
+        if len(axes) == 0:
+            return {'nrows': 0, 'ncols': 0, 'grid': {}}
+
+        if len(axes) == 1:
+            return {'nrows': 1, 'ncols': 1, 'grid': {(0, 0): 0}}
+
+        # Get axis positions (bounding boxes)
+        positions = []
+        for i, ax in enumerate(axes):
+            pos = ax.get_position()
+            positions.append({
+                'idx': i,
+                'x0': pos.x0, 'y0': pos.y0,
+                'x1': pos.x0 + pos.width,
+                'y1': pos.y0 + pos.height,
+                'cx': pos.x0 + pos.width / 2,
+                'cy': pos.y0 + pos.height / 2
+            })
+
+        # Cluster by y-position (rows) and x-position (columns)
+        # Use center points with tolerance for clustering
+        tol = 0.05
+
+        # Find unique row positions (by y center)
+        y_centers = sorted(set(round(p['cy'] / tol) * tol for p in positions), reverse=True)
+        x_centers = sorted(set(round(p['cx'] / tol) * tol for p in positions))
+
+        nrows = len(y_centers)
+        ncols = len(x_centers)
+
+        # Map each axis to grid position
+        grid = {}
+        for p in positions:
+            # Find closest row
+            row_idx = min(range(nrows), key=lambda r: abs(y_centers[r] - p['cy']))
+            col_idx = min(range(ncols), key=lambda c: abs(x_centers[c] - p['cx']))
+            grid[(row_idx, col_idx)] = p['idx']
+
+        return {'nrows': nrows, 'ncols': ncols, 'grid': grid}
+
+    def _update_pyqtgraph_plots(self, figures):
+        """
+        Update existing PyQtGraph plots with new data from matplotlib figures.
+        Called when figure structure hasn't changed (live update path).
+        """
+        if not hasattr(self, '_pyqtgraph_axes_map'):
+            return
+
+        for fig_idx, ax_idx, plot in self._pyqtgraph_axes_map:
+            # Skip entries with None plot (from empty axes)
+            if plot is None:
+                continue
+
+            if fig_idx >= len(figures):
+                continue
+
+            fig = figures[fig_idx]
+            axes = fig.get_axes()
+            if ax_idx >= len(axes):
+                continue
+
+            ax = axes[ax_idx]
+
+            try:
+                # Update lines
+                plot_items = [item for item in plot.items if isinstance(item, pg.PlotDataItem)]
+                lines = ax.get_lines()
+                for i, line in enumerate(lines):
+                    x, y = line.get_xdata(), line.get_ydata()
+                    if x is None or y is None or len(x) == 0:
+                        continue
+                    if i < len(plot_items):
+                        # Handle NaN values in line data
+                        x_clean = np.asarray(x, dtype=float)
+                        y_clean = np.asarray(y, dtype=float)
+                        plot_items[i].setData(x_clean, y_clean)
+
+                # Update images
+                image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
+                images = ax.get_images()
+                for i, img in enumerate(images):
+                    data = img.get_array()
+                    if data is None or data.size == 0:
+                        continue
+                    if i >= len(image_items):
+                        continue
+
+                    # Convert to numpy array and handle masked arrays
+                    if hasattr(data, 'mask'):
+                        # Masked array - fill masked values with NaN
+                        data = np.ma.filled(data.astype(float), np.nan)
+                    else:
+                        data = np.asarray(data, dtype=float)
+
+                    # Compute valid min/max for levels
+                    valid_mask = ~np.isnan(data)
+                    if np.any(valid_mask):
+                        vmin, vmax = np.nanmin(data), np.nanmax(data)
+                        if vmin == vmax:
+                            vmax = vmin + 1  # Avoid zero-range
+                        # Replace NaN with vmin for display
+                        display_data = np.where(np.isnan(data), vmin, data)
+                    else:
+                        # All NaN - skip update to preserve previous view
+                        continue
+
+                    # Update image with explicit levels
+                    image_items[i].setImage(display_data.T, levels=(vmin, vmax))
+
+            except Exception as e:
+                # If update fails, force a rebuild on next call
+                qWarning(f"PyQtGraph live update failed: {e}")
+                self._pyqtgraph_signature = None
 
     def _is_axis_empty(self, ax):
         """Check if a matplotlib axis has any plottable data."""
@@ -1019,11 +1319,14 @@ class QDesqTab(QWidget):
 
     def extract_and_plot_pyqtgraph(self, ax, row, col, plot_index=None):
         """
-        REVAMPED: Extract matplotlib axis data and plot in PyQtGraph.
+        Extract matplotlib axis data and plot in PyQtGraph.
         Properly tracks plots and labels.
+
+        Returns:
+            The PyQtGraph PlotItem created or updated
         """
         if self._is_axis_empty(ax):
-            return
+            return None
 
         def mpl_color_to_pg(color):
             """Convert matplotlib color to PyQtGraph format."""
@@ -1042,13 +1345,14 @@ class QDesqTab(QWidget):
             # Update mode
             plot = existing_plots[plot_index]
             plot_data_items = [item for item in plot.items if
-                             isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
+                               isinstance(item, pg.PlotDataItem) or isinstance(item, pg.ImageItem)]
             new_plot = False
         else:
             # Create new plot
             plot = self.plot_widget.ci.addPlot(row, col)
             self.plot_manager.add_pyqtgraph_plot(plot, row=row, col=col)
             new_plot = True
+            plot_data_items = []
 
         plot_item_num = 0
 
@@ -1089,18 +1393,40 @@ class QDesqTab(QWidget):
             data = img.get_array()
             extent = img.get_extent()  # [xmin, xmax, ymin, ymax]
 
-            if data.size == 0:
+            if data is None or data.size == 0:
                 continue
+
+            # Convert to numpy array and handle masked arrays
+            if hasattr(data, 'mask'):
+                # Masked array - fill masked values with NaN
+                data = np.ma.filled(data.astype(float), np.nan)
+            else:
+                data = np.asarray(data, dtype=float)
+
+            # Compute valid min/max for levels, handling all-NaN case
+            # IMPORTANT: We ALWAYS create the ImageItem so it can be updated later during live plotting
+            valid_mask = ~np.isnan(data)
+            if np.any(valid_mask):
+                vmin, vmax = np.nanmin(data), np.nanmax(data)
+                if vmin == vmax:
+                    vmax = vmin + 1  # Avoid zero-range
+                # For display, replace NaN with vmin (will show as lowest color)
+                display_data = np.where(np.isnan(data), vmin, data)
+            else:
+                # All NaN - use placeholder values but still create the ImageItem
+                vmin, vmax = 0, 1
+                display_data = np.zeros_like(data)
 
             if not new_plot and plot_item_num < len(plot_data_items):
                 img_image = plot_data_items[plot_item_num]
-                img_image.setImage(data.T, levels=img_image.levels)
+                img_image.setImage(display_data.T, levels=(vmin, vmax))
                 plot_item_num += 1
             else:
                 plot.setLabel('left', ax.get_ylabel())
                 plot.setLabel('bottom', ax.get_xlabel())
 
-                img_item = pg.ImageItem(image=data.T)
+                img_item = pg.ImageItem(image=display_data.T)
+                img_item.setLevels((vmin, vmax))
                 plot.addItem(img_item)
 
                 color_map = pg.colormap.get("viridis")
@@ -1112,7 +1438,7 @@ class QDesqTab(QWidget):
                 ))
 
                 color_bar = pg.ColorBarItem(
-                    values=(np.nanmin(img_item.image), np.nanmax(img_item.image)),
+                    values=(vmin, vmax),
                     colorMap=color_map
                 )
                 color_bar.setImageItem(img_item, insert_in=plot)
@@ -1125,7 +1451,7 @@ class QDesqTab(QWidget):
                     x, y = offsets[:, 0], offsets[:, 1]
                     facecolors = coll.get_facecolors()
                     color = (255, 0, 0, 150) if len(facecolors) == 0 else \
-                            tuple((facecolors[0, :3] * 255).astype(int)) + (int(facecolors[0, 3] * 255),)
+                        tuple((facecolors[0, :3] * 255).astype(int)) + (int(facecolors[0, 3] * 255),)
                     plot.plot(x, y, pen=None, symbol='o', symbolSize=5, symbolBrush=color)
 
         # Extract and plot bars/rectangles
@@ -1141,6 +1467,8 @@ class QDesqTab(QWidget):
                 rect.setBrush(brush)
                 rect.setPen(pg.mkPen(None))
                 plot.addItem(rect)
+
+        return plot
 
     # =========================================================================
     # AUTO PLOTTING
@@ -1240,7 +1568,7 @@ class QDesqTab(QWidget):
 
         # -----------------------------
         # Compute a signature for "layout"
-        # (don’t include actual data values; only structure)
+        # (don't include actual data values; only structure)
         # -----------------------------
         def _shape_sig(a):
             try:
@@ -1338,7 +1666,7 @@ class QDesqTab(QWidget):
 
     def auto_plot_plot(self, prepared_data):
         """
-        UPDATED: Auto plots data using pyqtgraph with proper plot tracking.
+        Auto plots data using pyqtgraph with proper plot tracking.
         """
         # Create line plots
         if "plots" in prepared_data:
@@ -1354,7 +1682,7 @@ class QDesqTab(QWidget):
                 y_min, y_max = min(plot["y"]), max(plot["y"])
                 p.setRange(xRange=[x_min, x_max], yRange=[y_min, y_max])
 
-                self.plot_manager.add_pyqtgraph_plot(p)  # UPDATED: Use plot_manager
+                self.plot_manager.add_pyqtgraph_plot(p)
                 self.plot_widget.nextRow()
 
         # Create image plots
@@ -1374,7 +1702,7 @@ class QDesqTab(QWidget):
                                             colorMap=color_map)
                 color_bar.setImageItem(image_item, insert_in=p)
 
-                self.plot_manager.add_pyqtgraph_plot(p)  # UPDATED: Use plot_manager
+                self.plot_manager.add_pyqtgraph_plot(p)
                 if len(self.plot_manager.get_pyqtgraph_plots()) % 2 == 0:
                     self.plot_widget.nextRow()
 
@@ -1391,7 +1719,7 @@ class QDesqTab(QWidget):
 
                 p.plot(x_data, y_data, pen=None, symbol='o', symbolSize=5, symbolBrush='b')
 
-                self.plot_manager.add_pyqtgraph_plot(p)  # UPDATED: Use plot_manager
+                self.plot_manager.add_pyqtgraph_plot(p)
                 if len(self.plot_manager.get_pyqtgraph_plots()) % 2 == 0:
                     self.plot_widget.nextRow()
 
@@ -1415,7 +1743,7 @@ class QDesqTab(QWidget):
         self.plot_data()
 
     # =========================================================================
-    # FITTING METHODS (UPDATED)
+    # FITTING METHODS
     # =========================================================================
 
     def perform_fit(self):
@@ -1436,8 +1764,8 @@ class QDesqTab(QWidget):
             self.perform_fit_pyqtgraph(fit_model)
 
     def perform_fit_pyqtgraph(self, fit_model: str):
-        """UPDATED: Performs fitting on PyQtGraph plots with plot_manager."""
-        plots = self.plot_manager.get_pyqtgraph_plots()  # UPDATED
+        """Performs fitting on PyQtGraph plots with plot_manager."""
+        plots = self.plot_manager.get_pyqtgraph_plots()
 
         if not plots:
             qWarning("No plots available to fit")
@@ -1494,8 +1822,8 @@ class QDesqTab(QWidget):
             qWarning("No fits were successful")
 
     def perform_fit_matplotlib(self, fit_model: str):
-        """UPDATED: Performs fitting on matplotlib plots with plot_manager."""
-        canvases = self.plot_manager.get_matplotlib_canvases()  # UPDATED
+        """Performs fitting on matplotlib plots with plot_manager."""
+        canvases = self.plot_manager.get_matplotlib_canvases()
 
         if not canvases:
             qWarning("No matplotlib plots available to fit")
@@ -1506,7 +1834,7 @@ class QDesqTab(QWidget):
 
         qInfo(f"Performing matplotlib fit with model: {fit_model}")
 
-        figures = self.plot_manager.get_matplotlib_figures()  # UPDATED
+        figures = self.plot_manager.get_matplotlib_figures()
 
         if not figures:
             qWarning("No matplotlib figures found")
@@ -1695,7 +2023,7 @@ class QDesqTab(QWidget):
         x_keys = ['times', 'time', 'pulse_lengths', 'pulse_length', 'x_pts', 'x_axis', 'x', 'expt_samples']
         # Common y-axis names
         y_keys = ['gains', 'gain', 'detunings', 'detuning', 'frequencies', 'frequency', 'y_pts', 'y_axis', 'y',
-                 'Gain_Expt', 'Gain_BS']
+                  'Gain_Expt', 'Gain_BS']
 
         x_axis = None
         y_axis = None
@@ -1740,6 +2068,12 @@ class QDesqTab(QWidget):
 
         return None, None
 
+    def on_matplotlib_toggled(self):
+        if self.use_matplotlib_checkbox.isChecked():
+            self.coord_label.hide()
+        else:
+            self.coord_label.show()
+
     def overlay_fit_on_matplotlib(self, ax, fit_result: FitResult):
         """Overlay the fitted curve on a matplotlib axis."""
         try:
@@ -1752,7 +2086,7 @@ class QDesqTab(QWidget):
 
             # Add fit curve with distinct style
             line, = ax.plot(x_fit, y_fit, 'r--', linewidth=2.5,
-                            label=f'{fit_result.model_name} Fit (R²={fit_result.r_squared:.3f})',
+                            label=f'{fit_result.model_name} Fit (RÂ²={fit_result.r_squared:.3f})',
                             zorder=10)
 
             # Store reference for later removal
@@ -1789,7 +2123,7 @@ class QDesqTab(QWidget):
 
     def clear_fit_overlays(self):
         """
-        UPDATED: Clear all fit overlay curves from both PyQtGraph and matplotlib plots.
+        Clear all fit overlay curves from both PyQtGraph and matplotlib plots.
         """
         # Clear from plot_manager first
         self.plot_manager.clear_fit_overlays()
@@ -1808,7 +2142,7 @@ class QDesqTab(QWidget):
 
         # Redraw matplotlib canvases if in matplotlib mode
         if self.use_matplotlib_checkbox.isChecked():
-            for canvas in self.plot_manager.get_matplotlib_canvases():  # UPDATED
+            for canvas in self.plot_manager.get_matplotlib_canvases():
                 try:
                     canvas.draw()
                 except Exception as e:
@@ -1839,7 +2173,7 @@ class QDesqTab(QWidget):
                 pos=delta0,
                 angle=0,
                 pen=pg.mkPen(color='cyan', width=2, style=Qt.DashLine),
-                label=f'Center Δ₀={delta0:.3f}',
+                label=f'Center Î”â‚€={delta0:.3f}',
                 labelOpts={'position': 0.70, 'color': 'cyan'}
             )
             plot.addItem(center_line)
@@ -1867,7 +2201,7 @@ class QDesqTab(QWidget):
             hline = ax.axhline(
                 y=delta0,
                 color='cyan', linestyle='--', linewidth=2.5,
-                label=f'Center Δ₀={delta0:.3f}',
+                label=f'Center Î”â‚€={delta0:.3f}',
                 zorder=14
             )
             self.fit_overlays.append(hline)
@@ -1965,13 +2299,13 @@ class QDesqTab(QWidget):
 
     def update_coordinates(self, pos):
         """
-        UPDATED: Updates the coordinates label with plot_manager.
+        Updates the coordinates label with plot_manager.
         """
 
         if not self.use_matplotlib_checkbox.isChecked():
 
             # Find the active plot
-            for plot in self.plot_manager.get_pyqtgraph_plots():  # UPDATED
+            for plot in self.plot_manager.get_pyqtgraph_plots():
                 vb = plot.vb
                 if plot.sceneBoundingRect().contains(pos):
                     self.plot_widget.setCursor(Qt.CrossCursor)
@@ -2006,9 +2340,6 @@ class QDesqTab(QWidget):
         """ReExtracts the current experiment to reflect code changes."""
         if self.experiment_obj is not None:
             self.experiment_obj.load_module_and_class()
-
-            if self.experiment_obj.experiment_plotter is not None:
-                QDesqTab.custom_plot_methods[self.tab_name] = self.experiment_obj.experiment_plotter
 
             if self.experiment_obj is not None and self.experiment_obj.experiment_hardware_req is not None:
                 hardware_str = "[" + (

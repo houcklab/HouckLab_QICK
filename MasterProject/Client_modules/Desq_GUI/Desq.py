@@ -22,6 +22,7 @@ BACKEND_MODULE = 'module://MasterProject.Client_modules.Desq_GUI.scripts.Backend
 os.environ["MPLBACKEND"] = BACKEND_MODULE
 
 import matplotlib
+
 matplotlib.use(BACKEND_MODULE, force=True)
 import matplotlib.pyplot as plt
 
@@ -63,8 +64,8 @@ from PyQt5.QtWidgets import (
 
 from MasterProject.Client_modules.Init.initialize import BaseConfig
 from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
 
-from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
 from MasterProject.Client_modules.Desq_GUI.CoreLib.VoltageInterface import VoltageInterface
 from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
@@ -115,7 +116,7 @@ class Desq(QMainWindow):
     rfsoc_connection_updated = pyqtSignal(str, str)
     """
     The Signal sent to the accounts tab after an rfsoc connection attempt 
-    
+
     :param ip_address: The IP address of the RFSoC instance.
     :type ip_address: str
     :param status: The status of the attempt, either success or failure.
@@ -154,7 +155,7 @@ class Desq(QMainWindow):
         # The settings window
         self.settings_window = SettingsWindow()
 
-        self.setup_ui() # Setup up the PyQt UI
+        self.setup_ui()  # Setup up the PyQt UI
 
         # Window Event Handling (Resize and Hide)
 
@@ -162,7 +163,7 @@ class Desq(QMainWindow):
         self.size_grip = QSizeGrip(self)
         self.size_grip.setStyleSheet("background: transparent;")
         self.size_grip.setFixedSize(12, 12)
-        self.size_grip.raise_() # Ensure it's above other widgets
+        self.size_grip.raise_()  # Ensure it's above other widgets
 
         QApplication.instance().installEventFilter(self)
 
@@ -186,7 +187,7 @@ class Desq(QMainWindow):
         ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
         ### central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Desq")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window) # removes native title bar but a bit finicky
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)  # removes native title bar but a bit finicky
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self.resize(1300, 820)
@@ -225,11 +226,11 @@ class Desq(QMainWindow):
 
         ### Main Splitter with all main components: Code Editor, Tabs, Voltage Panel, Config Tree
         self.main_splitter = QSplitter(self.wrapper)
-        self.main_splitter.setOpaqueResize(True) # Setting to False allows faster resizing (doesn't look as good)
+        self.main_splitter.setOpaqueResize(True)  # Setting to False allows faster resizing (doesn't look as good)
         self.main_splitter.setHandleWidth(6)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
-        self.main_splitter.setContentsMargins(10,0,10,0)
+        self.main_splitter.setContentsMargins(10, 0, 10, 0)
 
         ### Vertical Splitter with Tabs and config Editor
         self.vert_splitter = QSplitter(self.main_splitter)
@@ -285,7 +286,7 @@ class Desq(QMainWindow):
         self.central_tabs_layout.addWidget(self.central_tabs)
         self.central_tabs_container.setLayout(self.central_tabs_layout)
 
-        #Template Experiment Tab
+        # Template Experiment Tab
         template_experiment_tab = QDesqTab(app=self)
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")
         self.central_tabs.setCurrentIndex(0)
@@ -320,7 +321,8 @@ class Desq(QMainWindow):
         self.side_tabs.setObjectName("side_tabs")
 
         ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel(self.global_config_panel, template_experiment_tab, parent=self.side_tabs)
+        self.voltage_controller_panel = QVoltagePanel(self.global_config_panel, template_experiment_tab,
+                                                      parent=self.side_tabs)
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
         ### Accounts Panel
         self.accounts_panel = QAccountPanel(parent=self.side_tabs)
@@ -332,7 +334,7 @@ class Desq(QMainWindow):
         self.log_panel = QLogPanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
 
-        self.side_tabs.setCurrentIndex(1) # select accounts panel by default
+        self.side_tabs.setCurrentIndex(1)  # select accounts panel by default
 
         # Defining default sizes for tab splitter
         self.tab_splitter.setStretchFactor(0, 2)
@@ -369,7 +371,8 @@ class Desq(QMainWindow):
         self.stop_experiment_button.clicked.connect(self.stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
-        self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
+        self.documentation_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
         self.settings_button.clicked.connect(self.show_settings)
 
         # Directory symbols
@@ -392,12 +395,11 @@ class Desq(QMainWindow):
         # self.test_logging()
 
         # Config Tree Panel signal
-        self.global_config_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
         self.global_config_panel.update_runtime_prediction.connect(self.call_tab_runtime_prediction)
 
         # Settings Window
         self.settings_window.update_settings.connect(self.apply_settings)
-        self.settings_window.apply_settings() # Apply the saved settings
+        self.settings_window.apply_settings()  # Apply the saved settings
 
         # Config editor
         self.config_code_editor.extracted_config.connect(self.extracted_config)
@@ -405,7 +407,6 @@ class Desq(QMainWindow):
         self.update_progress(0)
         if TESTING:
             qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
-
 
     def disconnect_rfsoc(self):
         """
@@ -452,7 +453,7 @@ class Desq(QMainWindow):
         if timeout:
             qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
             QMessageBox.critical(None, "Timeout Error", "Connection to RFSoC took too long. " +
-                                            "Connection attempt will continue in the background until termination.")
+                                 "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
             self.soc_status_label.setText('✖ Soc Disconnected')
@@ -559,8 +560,8 @@ class Desq(QMainWindow):
         """
 
         try:
-            if TESTING or self.soc_connected: # ensure RFSoC connection
-                if self.current_tab.experiment_obj is None: # ensure tab is not a data tab
+            if TESTING or self.soc_connected:  # ensure RFSoC connection
+                if self.current_tab.experiment_obj is None:  # ensure tab is not a data tab
                     qCritical("Attempted execution of a data tab (" + self.current_tab.tab_name +
                               ")rather than an experiment tab")
                     QMessageBox.critical(None, "Error", "Tab is a Data tab.")
@@ -593,44 +594,19 @@ class Desq(QMainWindow):
                 # print(inspect.getsourcelines(experiment_class))
 
                 experiment_type = self.current_tab.experiment_obj.experiment_type
-                if experiment_type == ExperimentClassPlus:
-                    # Retrieving hardware (ie. if voltage interface required, make sure it is included)
-                    collected_hardware = [self.soc, self.soccfg]
-                    hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
 
-                    if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
-                        if TESTING:
-                            pass
-                        elif not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
-                            QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
-                            qCritical("Voltage Controller needed but not connected.")
-                            return
-
-                        voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
-                        if TESTING:
-                            collected_hardware.append(voltage_hardware)
-                        elif not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
-                            QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
-                            qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
-                            return
-                        else:
-                            collected_hardware.append(voltage_hardware)
-
-                    self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
-
-                # Normal Experiments
-                else:
-                    # Inject outerFolder variable manually for triangle lattice (this should be changed later to be more general)
-                    # This solves the weird pycharm workspace issue
-                    obj = object.__new__(experiment_class) # runs without init
-                    if self.soc_connected: # inject before init
-                        setattr(
-                            obj,
-                            "outerFolder",
-                            "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
-                        )
-                    experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
-                    self.experiment_instance = obj
+                # TODO: This is a problem specific to triangle lattice
+                # Inject outerFolder variable manually for triangle lattice (this should be changed later to be more general)
+                # This solves the weird pycharm workspace issue
+                obj = object.__new__(experiment_class)  # runs without init
+                if self.soc_connected:  # inject before init
+                    setattr(
+                        obj,
+                        "outerFolder",
+                        "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
+                    )
+                experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+                self.experiment_instance = obj
 
                 ### Creating the experiment worker from ExperimentThread and Connecting Signals
                 self.experiment_worker = ExperimentThread(
@@ -641,16 +617,16 @@ class Desq(QMainWindow):
                     plot_sink_manager=self.plot_sink_manager,  # NEW
                     target_tab=self.current_tab  # NEW
                 )
-                self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
+                self.experiment_worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread
 
                 # Connecting started and finished signals
                 self.thread.started.connect(self.current_tab.prepare_file_naming)
                 self.thread.started.connect(self.current_tab.clear_plots)
-                self.thread.started.connect(self.experiment_worker.run) # run experiment
-                self.experiment_worker.finished.connect(self.thread.quit) # stop thread
-                self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
-                self.thread.finished.connect(self.thread.deleteLater) # delete thread
-                self.thread.finished.connect(self.finished_experiment) # update UI
+                self.thread.started.connect(self.experiment_worker.run)  # run experiment
+                self.experiment_worker.finished.connect(self.thread.quit)  # stop thread
+                self.experiment_worker.finished.connect(self.experiment_worker.deleteLater)  # delete worker
+                self.thread.finished.connect(self.thread.deleteLater)  # delete thread
+                self.thread.finished.connect(self.finished_experiment)  # update UI
 
                 # UI updates for tab
                 self.currently_running_tab = self.current_tab
@@ -658,12 +634,14 @@ class Desq(QMainWindow):
                 self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
 
                 # Connecting data related slots
-                self.experiment_worker.updateData.connect(self.currently_running_tab.update_data) # update data & plot
-                self.experiment_worker.intermediateData.connect(self.currently_running_tab.intermediate_data) # intermediate data & plot
-                self.experiment_worker.updateRuntime.connect(self.currently_running_tab.update_runtime_estimation) # update runtime
+                self.experiment_worker.updateData.connect(self.currently_running_tab.update_data)  # update data & plot
+                self.experiment_worker.intermediateData.connect(
+                    self.currently_running_tab.intermediate_data)  # intermediate data & plot
+                self.experiment_worker.updateRuntime.connect(
+                    self.currently_running_tab.update_runtime_estimation)  # update runtime
 
-                self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
-                self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
+                self.experiment_worker.updateProgress.connect(self.update_progress)  # update progress bar
+                self.experiment_worker.RFSOC_error.connect(self.RFSOC_error)  # connect any RFSoC errors
 
                 ### button and GUI updates
                 self.update_progress(0)
@@ -671,8 +649,10 @@ class Desq(QMainWindow):
 
                 self.start_experiment_button.setEnabled(False)
                 self.stop_experiment_button.setEnabled(True)
-                self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
-                self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
+                self.start_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
+                self.stop_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
 
                 self.central_tabs.setTabsClosable(False)  # Disable closing tabs
                 # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
@@ -702,8 +682,10 @@ class Desq(QMainWindow):
 
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
-        self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-        self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/timer-off.svg');;")
+        self.start_experiment_button.setStyleSheet(
+            "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+        self.stop_experiment_button.setStyleSheet(
+            "image: url('MasterProject/Client_modules/Desq_GUI/assets/timer-off.svg');;")
         # self.is_stopping = True
         # self.stopping_dot_count = 0
         # self.animate_stopping()
@@ -721,19 +703,34 @@ class Desq(QMainWindow):
     def finished_experiment(self):
         """
         Finish an experiment by updating UI, this is called when Stop is complete.
+        Also isolates matplotlib figures to prevent interference from future experiments.
         """
         self.is_stopping = False
+
+        # IMPORTANT: Isolate matplotlib figures on the finished tab
+        # This creates copies of the figures that won't be affected by future experiments
+        # that might reuse the same figure numbers
+        if self.currently_running_tab is not None:
+            try:
+                if hasattr(self.currently_running_tab, 'isolate_matplotlib_figures'):
+                    self.currently_running_tab.isolate_matplotlib_figures()
+            except Exception as e:
+                qWarning(f"Failed to isolate matplotlib figures: {e}")
 
         if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
         else:
             self.start_experiment_button.setEnabled(True)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
 
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         # self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
@@ -745,7 +742,7 @@ class Desq(QMainWindow):
         self.central_tabs.setTabText(idx, self.currently_running_tab.tab_name + ".py")
 
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
-        if hasattr(self.currently_running_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
+        if hasattr(self.currently_running_tab, 'tab_name'):  # dumb way to make sure not accessing empty tab_name
             qInfo("Stopping Experiment: " + str(self.currently_running_tab.tab_name))
 
         self.currently_running_tab = None
@@ -799,13 +796,13 @@ class Desq(QMainWindow):
             #     return
 
             qInfo("Loading experiment file: " + str(path))
-            self.create_experiment_tab(str(path)) # pass full path of the experiment file
+            self.create_experiment_tab(str(path))  # pass full path of the experiment file
 
     def create_experiment_tab(self, path):
         """
         Creates one or more experiment tabs from an experiment file.
 
-        Searches for all ExperimentClass / ExperimentClassPlus subclasses inside the file,
+        Searches for all ExperimentClass subclasses inside the file,
         prompts the user to select which to load, and creates a tab for each selected class.
 
         :param path: The path to the experiment file.
@@ -882,7 +879,6 @@ class Desq(QMainWindow):
         Updates a tab UI, which currently just means the config and voltage panel.
         """
         self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
-        self.current_tab.setup_plotter_options()  # setup plotter options
 
     def change_tab(self, idx):
         """
@@ -900,20 +896,23 @@ class Desq(QMainWindow):
         # now handle new tab
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
-            self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
-            self.current_tab.setup_plotter_options() # setup plotter options
+            self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
 
             if self.currently_running_tab is None:
-                if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
+                if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
                     self.start_experiment_button.setEnabled(False)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+                    self.stop_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
                 else:
                     self.start_experiment_button.setEnabled(True)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
+                    self.stop_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
 
     def close_tab(self, idx):
         """
@@ -925,22 +924,22 @@ class Desq(QMainWindow):
 
         tab_to_delete = self.central_tabs.widget(idx)
         tab_name = tab_to_delete.tab_name
-        QDesqTab.custom_plot_methods.pop(tab_name, None)
 
-        self.central_tabs.removeTab(idx) # remove tab from widget
+        self.central_tabs.removeTab(idx)  # remove tab from widget
 
-        if self.central_tabs.count() == 0: # if no tabs remaining
+        if self.central_tabs.count() == 0:  # if no tabs remaining
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
             self.current_tab = None
         else:
-            current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
+            current_tab_idx = self.central_tabs.currentIndex()  # get the tab changed to upon closure
             self.change_tab(current_tab_idx)
-            self.current_tab.setup_plotter_options()
 
-        tab_to_delete.deleteLater() # safely delete the tab
+        tab_to_delete.deleteLater()  # safely delete the tab
 
     def update_config_workspaces(self, workspace):
         self.workspace = workspace
@@ -968,8 +967,8 @@ class Desq(QMainWindow):
         reps, sets = 1, 1
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
-        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
-        self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
+        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100))  # calculate completed %
+        self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps))  # set label
 
     def call_tab_runtime_prediction(self, config):
         """
@@ -1157,13 +1156,12 @@ class Desq(QMainWindow):
             style = style.replace('$FIND_BAR_COLOR', f"#E0E1E2")
             style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
 
-
         ### Fonts
         style = style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
-        style = style.replace('$LARGER_FONT_SIZE', f"{(font_size+2)}")
-        style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size-1)}")
-        style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")
-        style = style.replace('$SMALL_FONT_SIZE', f"{(font_size-2)}")
+        style = style.replace('$LARGER_FONT_SIZE', f"{(font_size + 2)}")
+        style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size - 1)}")
+        style = style.replace('$TAB_FONT_SIZE', f"{(font_size - 2)}")
+        style = style.replace('$SMALL_FONT_SIZE', f"{(font_size - 2)}")
 
         app.setStyleSheet(style)
 
@@ -1227,9 +1225,9 @@ class Desq(QMainWindow):
             return
 
         # Check if this is still the running tab (experiment may have been stopped)
-        if self.currently_running_tab != target_tab:
-            qDebug(f"Ignoring figure for non-running tab")
-            return
+        # if self.currently_running_tab != target_tab:
+        #     qDebug(f"Ignoring figure for non-running tab")
+        #     return
 
         try:
             # Pass figure to tab's handler

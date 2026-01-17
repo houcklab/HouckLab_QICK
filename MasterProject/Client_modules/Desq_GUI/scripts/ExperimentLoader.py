@@ -18,7 +18,7 @@ Functions:
         Safely imports a Python module as a module.
 
     find_experiment_classes(module) -> list[(str, type)]
-        Returns all classes in the module that inherit from ExperimentClass or ExperimentClassPlus,
+        Returns all classes in the module that inherit from ExperimentClass
         identified by base class name (string match, not issubclass).
 """
 
@@ -112,7 +112,7 @@ def find_experiment_classes(module):
     Finds all experiment classes inside a loaded module.
 
     A valid experiment class is any class whose base class has a name of
-    'ExperimentClass' or 'ExperimentClassPlus'. String matching is used because
+    'ExperimentClass'. String matching is used because
     different files may define different versions of ExperimentClass.
 
     :param module: The Python module object.
@@ -129,7 +129,7 @@ def find_experiment_classes(module):
         if obj.__module__ != module.__name__:
             continue
 
-        if any(base.__name__ in {"ExperimentClass", "ExperimentClassPlus"} for base in obj.__mro__[1:]):
+        if any(base.__name__ in {"ExperimentClass"} for base in obj.__mro__[1:]):
             qInfo(f"Discovered experiment class: {name}")
             experiment_classes.append((name, obj))
 

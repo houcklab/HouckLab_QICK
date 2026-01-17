@@ -291,9 +291,17 @@ def _recursive_save(h, d):
 
                 # If datum is still a list of arrays, pad it to make a rectangular array
                 if isinstance(datum, list):
-                    max_len = max(len(arr) for arr in datum)
+                    arrs = [np.atleast_1d(arr) if isinstance(arr, np.ndarray)
+                            else np.atleast_1d(np.asarray(arr))
+                            for arr in datum]
+
+                    max_len = max(a.shape[0] for a in arrs)
+
                     datum = np.array(
-                        [np.pad(arr, (0, max_len - len(arr)), constant_values=np.nan) for arr in datum])
+                        [np.pad(a, (0, max_len - a.shape[0]), constant_values=np.nan)
+                         for a in arrs],
+                        dtype=float
+                    )
 
                 try:
                     h.create_dataset(key, data=datum, shape=datum.shape,

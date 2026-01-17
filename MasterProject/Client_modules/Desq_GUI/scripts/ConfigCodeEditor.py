@@ -15,6 +15,11 @@ ENHANCEMENTS:
 - Unsaved changes indicator
 - Advanced code editing with QsciScintilla (syntax highlighting, auto-indent, commenting)
 - Dark mode toggle
+
+MATPLOTLIB BACKEND INTEGRATION:
+- Uses BackendDesq for plot interception (not Agg backend)
+- Config extraction temporarily disables plot sink to prevent figures from routing to GUI
+- No plt.show monkey-patching needed - handled at canvas level
 """
 
 import os
@@ -23,8 +28,10 @@ import sys
 import ast
 import importlib.util
 from types import SimpleNamespace
-import matplotlib
-matplotlib.use("Agg")
+
+# NOTE: Do NOT set matplotlib backend here!
+# The backend is already configured in Desq.py before this module is imported.
+# Using matplotlib.use() here would conflict with BackendDesq.
 import matplotlib.pyplot as plt
 
 from PyQt5.QtWidgets import (
@@ -47,6 +54,11 @@ except ImportError:
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 from MasterProject.Client_modules.Desq_GUI.scripts.DualMultiCheckboxDialog import DualMultiCheckboxDialog
+
+# Import BackendDesq functions for plot sink management
+from MasterProject.Client_modules.Desq_GUI.scripts.BackendDesq import (
+    get_plot_sink, set_plot_sink, clear_plot_sink
+)
 
 
 class FindBar(QFrame):
@@ -851,8 +863,13 @@ class ConfigCodeEditor(QWidget):
 
         - Uses an AST check to detect banned imports statically.
         - Uses a runtime import hook to block dynamic/deep imports.
-        - Blocks execution of ExperimentClass/ExperimentClassPlus subclasses via dummy class.
+        - Blocks execution of ExperimentClass subclasses via dummy class.
         - Also catches and reports execution errors.
+
+        MATPLOTLIB INTEGRATION:
+        - Temporarily clears the plot sink so figures generated during config extraction
+          don't get routed to GUI tabs (they would have no valid target anyway).
+        - Restores the previous sink state after execution.
         """
         import os
         import sys
@@ -882,9 +899,9 @@ class ConfigCodeEditor(QWidget):
                         qWarning(f"[Blocked] Import from '{node.module}' is not allowed.")
                 elif isinstance(node, ast.ClassDef):
                     for base in node.bases:
-                        if isinstance(base, ast.Name) and base.id in ("ExperimentClass", "ExperimentClassPlus"):
+                        if isinstance(base, ast.Name) and base.id in ("ExperimentClass"):
                             qWarning(
-                                f"[Blocked] Defining subclass of ExperimentClass/ExperimentClassPlus: '{node.name}'")
+                                f"[Blocked] Defining subclass of ExperimentClass: '{node.name}'")
         except Exception as e:
             print(f"Static analysis error: {e}")
 
@@ -923,7 +940,7 @@ class ConfigCodeEditor(QWidget):
         # Step 3: Define dummy Experiment classes
         class DummyExperimentClass:
             def __init__(self, *args, **kwargs):
-                qWarning("Skipped ExperimentClass/ExperimentClassPlus Initialization")
+                qWarning("Skipped ExperimentClass Initialization")
                 pass
 
             def __getattr__(self, name):
@@ -939,7 +956,6 @@ class ConfigCodeEditor(QWidget):
         namespace = {
             **{name: blocked_function for name in blocked_funcs},
             "ExperimentClass": DummyExperimentClass,
-            "ExperimentClassPlus": DummyExperimentClass,
             "__builtins__": __builtins__
         }
 
@@ -947,16 +963,21 @@ class ConfigCodeEditor(QWidget):
         orig_sys_path = sys.path.copy()
 
         # Step 5: Execute code in script directory to allow relative imports
+        # Save and clear the plot sink so figures don't route to GUI during extraction
+        saved_sink = get_plot_sink()
+
         try:
             # Use the directory where this script is being run as the current dir
             script_dir = os.path.dirname(os.path.abspath(self.code_file))  # folder of the loaded file
             sys.path.insert(0, script_dir)
             os.chdir(script_dir)
 
-            # Get rid of plt intercept hook during the config extraction
-            plt.show = self.app._original_show
+            # Clear plot sink during config extraction
+            # This prevents any matplotlib figures generated during extraction from
+            # being routed to GUI tabs (which would fail since there's no valid target)
+            clear_plot_sink()
+
             exec(code, namespace)
-            plt.show = self.app._intercept_plt_show_wrapper()
 
         except Exception as e:
             qCritical("Error while running script:")
@@ -964,8 +985,11 @@ class ConfigCodeEditor(QWidget):
             traceback.print_exc()
 
         finally:
-            # restore custom interceptor, and namespace directories
-            plt.show = self.app._intercept_plt_show_wrapper()
+            # Restore the plot sink to its previous state
+            if saved_sink is not None:
+                set_plot_sink(saved_sink)
+
+            # Restore namespace directories
             os.chdir(orig_cwd)
             sys.path = orig_sys_path
 

@@ -203,20 +203,29 @@ class ExperimentClass:
         :type config: dict
         """
 
-        # Store the data dictionary
+        # Store the data dictionary with general recursive method
         Helpers.dict_to_h5(data_file, data)
 
-    def save_data(self, data=None):  #do I want to try to make this a very general function to save a dictionary containing arrays and variables?
+    def save_data(self, data=None):
         if data is None:
             data=self.data
 
-        with self.datafile() as f:
-            for k, d in data.items():
-                f.add(k, np.array(d))
+        # Store the data dictionary with general recursive method
+        Helpers.dict_to_h5(self.fname, data)
 
-    def load_data(self, f):
-        data={}
-        for k in f.keys():
-            data[k]=np.array(f[k])
-        data['attrs']=f.get_dict()
-        return data
+        # OLD implementation simple
+        # with self.datafile() as f:
+        #     for k, d in data.items():
+        #         f.add(k, np.array(d))
+
+    def load_data(self, file_name):
+
+        # Restore the data dictionary with general recursive method
+        Helpers.h5_to_dict(file_name)
+
+        # OLD implementation simple
+        # data={}
+        # for k in f.keys():
+        #     data[k]=np.array(f[k])
+        # data['attrs']=f.get_dict()
+        # return data

@@ -2,8 +2,12 @@
 ===================
 ExperimentObject.py
 ===================
-Each loaded experiment creates an ExperimentObject instance that extracts modules, important functions (such as
-plotting), and stores experiment specific variables (name, path, tab).
+Each loaded experiment creates an ExperimentObject instance that extracts modules, important functions,
+and stores experiment specific variables (name, path, tab).
+
+SIMPLIFIED VERSION:
+- Removed experiment_plotter attribute and related logic
+- Experiments now use display() method for plotting
 
 Now supports specifying a particular experiment class via experiment_id = (path, class_name)
 """
@@ -16,8 +20,7 @@ from qick import QickConfig
 from PyQt5.QtCore import qCritical, qInfo, qDebug, QThread, QEventLoop
 from PyQt5.QtWidgets import QMessageBox
 
-from MasterProject.Client_modules.CoreLib.Experiment import ExperimentClass
-from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
+from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
 from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import AuxiliaryThread
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
@@ -30,7 +33,6 @@ class ExperimentObject:
         * experiment_path (str): Absolute path to the experiment file.
         * experiment_name (str): Name of the experiment class.
         * experiment_class (type): Class reference of the experiment.
-        * experiment_plotter (callable): Class method for plotting.
         * experiment_exporter (callable): Class method for exporting data.
         * experiment_hardware_req (list): Hardware requirements (if any).
     """
@@ -49,7 +51,6 @@ class ExperimentObject:
         self.experiment_module = None
         self.experiment_class = None
         self.experiment_type = None
-        self.experiment_plotter = None
         self.experiment_exporter = ExperimentClass.export_data
         self.experiment_runtime_estimator = None
         self.experiment_hardware_req = [Proxy, QickConfig]
@@ -137,21 +138,18 @@ class ExperimentObject:
 
         # Determine type
         bases = [b.__name__ for b in obj.__mro__[1:]]
-        if "ExperimentClassPlus" in bases:
-            self.experiment_type = ExperimentClassPlus
-            self.experiment_hardware_req = self.find_attribute(obj, "hardware_requirement") or self.experiment_hardware_req
-        elif "ExperimentClass" in bases:
+        if "ExperimentClass" in bases:
             self.experiment_type = ExperimentClass
+            self.experiment_hardware_req = self.find_attribute(obj, "hardware_requirement") or self.experiment_hardware_req
         else:
-            qCritical(f"{self.experiment_name} does not inherit from ExperimentClass or ExperimentClassPlus.")
-            QMessageBox.critical(None, "Error", f"{self.experiment_name} must inherit from ExperimentClass or ExperimentClassPlus.")
+            qCritical(f"{self.experiment_name} does not inherit from ExperimentClass.")
+            QMessageBox.critical(None, "Error", f"{self.experiment_name} must inherit from ExperimentClass.")
             return
 
         qInfo(f"Loaded {self.experiment_type.__name__} class: {self.experiment_name}")
 
         # Save class reference and important methods
         self.experiment_class = obj
-        self.experiment_plotter = self.find_attribute(obj, "plotter")
         self.experiment_exporter = self.find_attribute(obj, "export_data") or self.experiment_exporter
         self.experiment_runtime_estimator = self.find_attribute(obj, "estimate_runtime")
 

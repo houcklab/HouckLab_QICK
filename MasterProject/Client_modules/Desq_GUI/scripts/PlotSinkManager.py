@@ -107,16 +107,19 @@ class PlotSinkManager(QObject):
         tab_ref = weakref.ref(tab)
         manager_ref = weakref.ref(self)
 
-        # Track figures seen in this sink to avoid duplicates
-        seen_figures = set()
+        # Track last notification time per figure for time-based debouncing
+        last_notification_time = {}
+        DEBOUNCE_INTERVAL = 0.05  # 50ms debounce for live updates
 
-        # For debugging
+        # Capture debug flag at creation time
         debug = self._debug
 
         def sink(figure, event_type):
             """
             Sink callable invoked by BackendDesq on each draw.
             """
+            import time
+
             # Only capture on 'draw' (complete render), not 'draw_idle'
             if event_type != 'draw':
                 return
@@ -135,31 +138,25 @@ class PlotSinkManager(QObject):
                     print(f"[PlotSink] Manager no longer exists, ignoring figure")
                 return
 
-            # Debounce: skip if we've seen this exact figure object recently
+            # Time-based debounce: skip if we notified for this figure too recently
+            # This allows live updates while preventing spam from rapid redraws
             fig_id = id(figure)
-            if fig_id in seen_figures:
+            current_time = time.monotonic()
+            last_time = last_notification_time.get(fig_id, 0)
+
+            if current_time - last_time < DEBOUNCE_INTERVAL:
                 if debug:
-                    print(f"[PlotSink] Figure {fig_id} already seen, skipping")
+                    print(f"[PlotSink] Figure {fig_id} debounced (last: {last_time:.3f}, now: {current_time:.3f})")
                 return
-            seen_figures.add(fig_id)
+
+            last_notification_time[fig_id] = current_time
 
             if debug:
                 print(f"[PlotSink] Emitting figure {fig_id} to GUI thread")
 
-            # Clear from seen set after delay (allow re-notification for updated figures)
-            def clear_seen():
-                seen_figures.discard(fig_id)
-
             # Emit signal - Qt handles thread-safe delivery
             # Note: Qt signal emission from non-GUI thread uses QueuedConnection
             manager.figureReceived.emit(figure, tab, event_type)
-
-            # Schedule cleanup of seen set (use thread-safe timer scheduling)
-            try:
-                QTimer.singleShot(100, clear_seen)
-            except RuntimeError:
-                # Timer creation failed (thread issues), just clear now
-                clear_seen()
 
         return sink
 
