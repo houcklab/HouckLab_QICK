@@ -82,6 +82,7 @@ from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import Auxili
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
 from MasterProject.Client_modules.Desq_GUI.scripts.SettingsWindow import SettingsWindow
 from MasterProject.Client_modules.Desq_GUI.scripts import ExperimentLoader
+from MasterProject.Client_modules.Desq_GUI.scripts.LoadDataWindow import LoadDataWindow
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -155,6 +156,10 @@ class Desq(QMainWindow):
 
         # The settings window
         self.settings_window = SettingsWindow()
+
+        # The load data window
+        self.load_data_window = LoadDataWindow()
+        self.load_data_window.load_requested.connect(self._on_load_data_requested)
 
         self.setup_ui()  # Setup up the PyQt UI
 
@@ -445,7 +450,7 @@ class Desq(QMainWindow):
         # UI updates
         self.soc_connected = True
         self.is_connecting = False
-        self.soc_status_label.setText('✔ Soc connected')
+        self.soc_status_label.setText('âœ” Soc connected')
         self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
         self.accounts_panel.connect_button.setEnabled(True)
 
@@ -467,7 +472,7 @@ class Desq(QMainWindow):
                                  "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
-            self.soc_status_label.setText('✖ Soc Disconnected')
+            self.soc_status_label.setText('âœ– Soc Disconnected')
             QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
 
@@ -546,7 +551,10 @@ class Desq(QMainWindow):
         if ext == '.py':
             self.create_experiment_tab(str(path))
         elif ext == '.h5':
-            self.create_data_tab(str(path))
+            # Open LoadDataWindow with the h5 path pre-filled
+            self.load_data_window.set_h5_path(str(path))
+            self.load_data_window.show()
+            self.load_data_window.raise_()
         else:
             pass
 
@@ -648,7 +656,7 @@ class Desq(QMainWindow):
                 # UI updates for tab
                 self.currently_running_tab = self.current_tab
                 idx = self.central_tabs.indexOf(self.currently_running_tab)
-                self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
+                self.central_tabs.setTabText(idx, 'âœ” ' + self.currently_running_tab.tab_name + ".py")
 
                 # Connecting data related slots
                 self.experiment_worker.updateData.connect(self.currently_running_tab.update_data)  # update data & plot
@@ -826,6 +834,12 @@ class Desq(QMainWindow):
         try:
             if getattr(self, "settings_window", None) is not None:
                 self.settings_window.close()
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, "load_data_window", None) is not None:
+                self.load_data_window.close()
         except Exception:
             pass
 
@@ -1051,18 +1065,11 @@ class Desq(QMainWindow):
 
     def load_data_file(self):
         """
-        Gets an .h5 experiment file per user input. Then calls the create_data_tab() function with the file's path.
+        Shows the LoadDataWindow for selecting an H5 data file and an experiment
+        to use for displaying the data.
         """
-
-        # load data file
-        file = Helpers.open_file_dialog("Open Data h5 File", "h5 Files (*.h5)",
-                                        "load_data_file", self, file=True)
-        if not file:
-            return
-        else:
-            path = Path(file)
-            qInfo("Loading dataset file: " + str(path))
-            self.create_data_tab(file)  # pass full path of the data file
+        self.load_data_window.show()
+        self.load_data_window.raise_()
 
     def create_data_tab(self, file):
         """
@@ -1088,6 +1095,158 @@ class Desq(QMainWindow):
             if tab_count == 1:
                 self.central_tabs.removeTab(0)
         self.tabs_added = True
+
+    def _on_load_data_requested(self, h5_path, experiment_path, class_name):
+        """
+        Handle the load_requested signal from LoadDataWindow.
+        Creates a data tab and uses the specified experiment's display() method.
+
+        :param h5_path: Path to the H5 data file.
+        :type h5_path: str
+        :param experiment_path: Path to the experiment .py file.
+        :type experiment_path: str
+        :param class_name: Name of the experiment class to use.
+        :type class_name: str
+        """
+        try:
+            qInfo(f"Loading data with experiment display: {h5_path} -> {class_name}")
+
+            # Load the experiment module
+            module_name, experiment_classes = ExperimentLoader.load_and_find(experiment_path)
+            if not experiment_classes:
+                QMessageBox.critical(self, "Error", "No experiment classes found in file.")
+                return
+
+            # Find the specified class
+            experiment_class = None
+            for name, cls in experiment_classes:
+                if name == class_name:
+                    experiment_class = cls
+                    break
+
+            if experiment_class is None:
+                QMessageBox.critical(self, "Error", f"Experiment class '{class_name}' not found.")
+                return
+
+            # Load the data from H5 file
+            data = Helpers.h5_to_dict(h5_path)
+            qInfo(f"Loaded data keys: {list(data.keys())}")
+
+            # Create the data tab
+            tab_count = self.central_tabs.count()
+            h5_filename = os.path.basename(h5_path)
+            # tab_name = f"{h5_filename} ({class_name})"
+            tab_name = f"{h5_filename}"
+
+            new_data_tab = QDesqTab(
+                experiment_id=(None, None),
+                tab_name=tab_name,
+                source_file_name=h5_filename,
+                is_experiment=False,
+                dataset_file=None,  # Don't auto-load, we'll handle it manually
+                app=self
+            )
+
+            # Store the data in the tab
+            new_data_tab.data = data
+
+            # Extract config if present
+            if "config" in data:
+                qInfo("Config in h5 metadata found")
+                temp_config = data["config"]
+                new_data_tab.experiment_config_panel.update_config_dict(temp_config, reset=True)
+                new_data_tab.data.pop("config", None)
+
+            # Add the tab to the UI
+            tab_idx = self.central_tabs.addTab(new_data_tab, tab_name)
+            self.central_tabs.setCurrentIndex(tab_idx)
+            self.start_experiment_button.setEnabled(False)
+            self.current_tab = new_data_tab
+
+            if not self.tabs_added:
+                if tab_count == 1:
+                    self.central_tabs.removeTab(0)
+            self.tabs_added = True
+
+            # Now call the experiment's display() method
+            self._call_experiment_display(new_data_tab, experiment_class, data)
+
+        except Exception as e:
+            qCritical(f"Error loading data with experiment display: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to load data:\n{str(e)}")
+
+    def _call_experiment_display(self, tab, experiment_class, data):
+        """
+        Call the experiment's display() method to visualize the data.
+
+        :param tab: The QDesqTab to display in.
+        :type tab: QDesqTab
+        :param experiment_class: The experiment class to use for display.
+        :type experiment_class: type
+        :param data: The data dictionary to display.
+        :type data: dict
+        """
+        import matplotlib.pyplot as plt
+
+        try:
+            # Start a plot session for figure isolation
+            session_id = tab.start_plot_session()
+            qInfo(f"Started plot session {session_id} for data display")
+
+            # Create a minimal experiment instance for display
+            # We create the object without calling __init__ to avoid hardware requirements
+            exp_instance = object.__new__(experiment_class)
+
+            # Set minimal attributes that display() might need
+            exp_instance.cfg = data.get("config", {})
+            if hasattr(experiment_class, 'outerFolder'):
+                exp_instance.outerFolder = ""
+
+            # Check if the class has a display method
+            if not hasattr(experiment_class, 'display'):
+                qWarning(f"Experiment class {experiment_class.__name__} has no display() method")
+                # Fall back to auto-plotting
+                tab.plot_data(exp_instance=None, data_to_plot=data)
+                return
+
+            # Record existing figure numbers BEFORE calling display()
+            existing_fig_nums = set(plt.get_fignums())
+
+            # Call display() - this may create new matplotlib figures
+            try:
+                experiment_class.display(exp_instance, data, plotDisp=True)
+            except TypeError:
+                # Some display methods might not take plotDisp argument
+                experiment_class.display(exp_instance, data)
+            except Exception as e:
+                qCritical(f"Error loading data with experiment display: {e}")
+                return
+
+            # Find NEW figures created during display()
+            new_fig_nums = set(plt.get_fignums()) - existing_fig_nums
+
+            if new_fig_nums:
+                qInfo(f"display() created {len(new_fig_nums)} new figure(s)")
+
+                # Route each new figure to the tab with session_id=-1 (trusted)
+                for fig_num in sorted(new_fig_nums):
+                    fig = plt.figure(fig_num)
+                    tab.receive_figure(fig, 'draw', session_id=-1)
+
+                qInfo(f"Routed {len(new_fig_nums)} figures to carousel")
+            else:
+                # display() didn't create new figures - fall back to auto_plot
+                qWarning("display() created no new figures, falling back to auto_plot")
+                tab.plot_data(exp_instance=None, data_to_plot=data)
+
+        except Exception as e:
+            qCritical(f"Error calling experiment display: {e}")
+            traceback.print_exc()
+
+            # Fall back to auto-plotting
+            qInfo("Falling back to auto_plot due to display() error")
+            tab.plot_data(exp_instance=None, data_to_plot=data)
 
     def check_log_read(self):
         """
