@@ -284,6 +284,20 @@ def _recursive_save(h, d):
                 # Handle list of strings with variable-length dtype
                 dt = h5py.string_dtype(encoding='utf-8')
                 h.create_dataset(key, data=np.array(val, dtype=object), dtype=dt)
+            elif isinstance(val, list):
+                # If list contains dicts, store as a group with index-based subgroups
+                if any(isinstance(x, dict) for x in val):
+                    h.create_group(key)
+                    for i, item in enumerate(val):
+                        subkey = f"{i:04d}"
+                        if isinstance(item, dict):
+                            h[key].create_group(subkey)
+                            _recursive_save(h[key][subkey], item)
+                        else:
+                            # store non-dict items in the list too
+                            # simplest: as JSON string
+                            h[key].attrs[subkey] = json.dumps(item, cls=NpEncoder)
+                    continue
             else:
                 # Handle list of numbers as a variable-length array
                 datum = [np.array(sub_arr, dtype=np.float64) for sub_arr in val] \

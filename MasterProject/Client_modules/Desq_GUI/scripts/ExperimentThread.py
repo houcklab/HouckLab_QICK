@@ -22,9 +22,26 @@ IMPORTANT: Do NOT use qDebug/qInfo/qWarning from within the run() method!
 
 import time
 import traceback
+import ctypes
+import threading
 
 from PyQt5.QtCore import QObject, pyqtSignal, qWarning, qDebug
 
+
+class ExperimentInterrupted(Exception):
+    """Raised when experiment is force-stopped."""
+    pass
+
+
+def _raise_in_thread(thread_id: int, exc_class: type) -> bool:
+    """Inject exception into thread. Returns True on success."""
+    result = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ctypes.c_ulong(thread_id),
+        ctypes.py_object(exc_class)
+    )
+    if result > 1:  # Affected multiple threads - undo
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), 0)
+    return result == 1
 
 class ExperimentThread(QObject):
     """
@@ -93,13 +110,24 @@ class ExperimentThread(QObject):
     :type traceback: str
     """
 
-    def __init__(self, config, soccfg, exp, soc, plot_sink_manager=None, target_tab=None, parent=None):
+    forceStopCompleted = pyqtSignal()
+    """
+    Signal to send when the experiment is force-stopped.
+    """
+
+    def __init__(self, config, soccfg, exp, soc, plot_sink_manager=None, target_tab=None, session_id=0, parent=None):
         """
         Initializes an ExperimentThread object with the actual experiment instance, configuration, and soc connection.
 
-        NEW PARAMETERS:
+        Args:
+            config: The config dictionary for the experiment
+            soccfg: The SoC configuration
+            exp: The experiment instance
+            soc: The RFSoC connection proxy
             plot_sink_manager: PlotSinkManager instance for routing matplotlib figures
             target_tab: QDesqTab that should receive plots from this experiment
+            session_id: Plot session ID for isolating figures (obtained from tab.start_plot_session())
+            parent: Optional Qt parent
         """
 
         super().__init__(parent)
@@ -108,12 +136,13 @@ class ExperimentThread(QObject):
         self.experiment_instance = exp  # The object representing an instance of a QickProgram subclass to be run
         self.soc = soc  # The RFSOC!
 
-        # NEW: Plot sink management
+        # Plot sink management with session isolation
         self.plot_sink_manager = plot_sink_manager
         self.target_tab = target_tab
+        self.session_id = session_id
 
-        # ### create the experiment instance (not needed anymore since instance is passed
-        # self.experiment_instance = exp(soccfg, self.config)
+        self._thread_id = None
+        self._was_force_stopped = False
 
         if not exp:
             qDebug('Warning: None experiment. Going to crash in 3, 2, 1...')
@@ -128,34 +157,33 @@ class ExperimentThread(QObject):
         can change configuration variables at each set iteration. Sends appropriate signals at each set execution to
         update the data and progress bar.
 
-        CHANGES:
-        - Sets up plot sink at the start of execution
-        - All matplotlib draws during acquire() are automatically captured
-        - Cleans up plot sink when finished
+        SESSION ISOLATION:
+        - Sets up plot sink with session_id at the start of execution
+        - All matplotlib draws during acquire() are tagged with this session_id
+        - The target tab rejects figures with non-matching session_id
 
         IMPORTANT: This method runs on a WORKER THREAD!
         Do NOT use qDebug/qInfo/qWarning here - use print() instead.
         """
-
-        # yoko1.SetVoltage(self.config["yokoVoltage"]) # this needs to go somewhere else
+        self._thread_id = threading.current_thread().ident
 
         # =====================================================================
-        # NEW: Set up plot sink for this thread
+        # Set up plot sink for this thread with session_id
         # This routes all matplotlib draws to the target tab via Qt signals
+        # The session_id ensures figures from old/different runs are rejected
         # =====================================================================
         if self.plot_sink_manager and self.target_tab:
-            self.plot_sink_manager.setup_sink_for_thread(self.target_tab)
-            # Use print() instead of qDebug() - we're on a worker thread!
-            print(f"[ExperimentThread] Plot sink set up for target tab {self.target_tab.tab_name}")
+            self.plot_sink_manager.setup_sink_for_thread(self.target_tab, self.session_id)
+            print(f"[ExperimentThread] Plot sink set up for {self.target_tab.tab_name} (session={self.session_id})")
         else:
-            print(f"[ExperimentThread] Plot sink not set")
+            print(f"[ExperimentThread] Plot sink not configured")
 
         try:
             self.running = True
             self.idx_set = 0
             prev_time = time.perf_counter()
 
-            print(f"[ExperimentThread] Starting experiment loop, sets={self.config.get('sets', 1)}")
+            print(f"[ExperimentThread] Starting experiment loop, sets={self.config.get('sets', 1)}, session={self.session_id}")
 
             ### loop over all the sets for the data taking
             while self.running and self.idx_set < self.config["sets"]:
@@ -163,6 +191,13 @@ class ExperimentThread(QObject):
                 try:
                     data = self.experiment_instance.acquire()
                     data['data']['set_num'] = self.idx_set
+
+                except ExperimentInterrupted:
+                    print("[ExperimentThread] Force stopped!")
+                    self._was_force_stopped = True
+                    self.forceStopCompleted.emit()
+                    break
+
                 except Exception as e:
                     format_exc = traceback.format_exc()
                     print(f"[ExperimentThread] RFSOC error: {e}")
@@ -187,12 +222,17 @@ class ExperimentThread(QObject):
             print(f"[ExperimentThread] Experiment loop completed")
             self.finished.emit()
 
+        except ExperimentInterrupted:  # NEW: Catch if raised between iterations
+            print("[ExperimentThread] Force stopped between sets")
+            self._was_force_stopped = True
+            self.forceStopCompleted.emit()
         except Exception as e:
             # emit an error signal (add one if you don't have it)
             print(f"[ExperimentThread] Experiment thread crashed: {e}")
             self.RFSOC_error.emit(str(e), traceback.format_exc())
         finally:
             self.running = False
+            self._thread_id = None
 
             # =====================================================================
             # NEW: Clean up plot sink for this thread
@@ -215,14 +255,23 @@ class ExperimentThread(QObject):
         data['data']['set_num'] = self.idx_set
         self.intermediateData.emit(data, self.experiment_instance)
 
+
     def stop(self):
         """
-        Stops an experiment.
+        Safe stop an experiment.
         """
-
         self.running = False
-        if hasattr(self.experiment_instance, 'stop_flag'):  # if a stop_flag exists
+        if hasattr(self.experiment_instance, 'stop_flag'):
             self.experiment_instance.stop_flag = True
+        qDebug("Safe stop requested, stopping the thread at the next set iteration......")
 
-        # Use qDebug here since stop() is called from the main thread
-        qDebug("Stopping the thread at the next set iteration...")
+    def force_stop(self) -> bool:  # NEW METHOD
+        """
+        Force stop - interrupt immediately.
+        """
+        self.stop()  # Also set flags
+
+        if self._thread_id is None:
+            return False
+
+        return _raise_in_thread(self._thread_id, ExperimentInterrupted)

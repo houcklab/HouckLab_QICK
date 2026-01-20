@@ -75,7 +75,7 @@ class CustomMenuBar(QWidget):
         self.experiment_progress_bar_label = QLabel(self)
         self.experiment_progress_bar_label.setObjectName("experiment_progress_bar_label")
         self.load_data_button = Helpers.create_button("Load Data", "load_data_button", True, self)
-        self.load_experiment_button = Helpers.create_button("Extract Experiment", "load_experiment_button", True, self)
+        self.load_experiment_button = Helpers.create_button("Load Experiment", "load_experiment_button", True, self)
 
         self.documentation_button = Helpers.create_button("", "documentation", True, self)
         self.documentation_button.setToolTip("Documentation")

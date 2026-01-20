@@ -28,6 +28,15 @@ In the main GUI (Desq.py):
     self.plot_sink_manager = PlotSinkManager()
     self.plot_sink_manager.figureReceived.connect(self.handle_figure_received)
 
+    def handle_figure_received(self, figure, target_tab, event_type):
+        '''Handle figure from worker thread - runs on GUI thread'''
+        if target_tab is not None:
+            target_tab.receive_figure(figure, event_type)
+
+In experiment runner (before starting experiment):
+    # Clear carousel state for new run
+    tab.start_new_run()
+
 In experiment worker threads:
     with plot_sink_manager.sink_context(tab):
         # Run experiment code - all matplotlib draws will be captured
@@ -49,13 +58,19 @@ class PlotSinkManager(QObject):
     Uses Qt signals for thread-safe communication. Figures are captured in worker
     threads and emitted via signal to the GUI thread for display.
 
+    SESSION-BASED ISOLATION:
+    Each sink is created with a session_id. When figures are emitted, the session_id
+    is included so the receiving tab can validate it matches the current session.
+    This prevents cross-tab and cross-run figure contamination.
+
     Signals:
-        figureReceived: Emitted when a figure is drawn. Args: (figure, target_tab, event_type)
+        figureReceived: Emitted when a figure is drawn.
+                       Args: (figure, target_tab, event_type, session_id)
     """
 
     # Signal emitted when a figure is received from any worker thread
-    # Args: (figure object, target tab widget, event_type string)
-    figureReceived = pyqtSignal(object, object, str)
+    # Args: (figure object, target tab widget, event_type string, session_id int)
+    figureReceived = pyqtSignal(object, object, str, int)
 
     def __init__(self, parent=None):
         """
@@ -67,7 +82,7 @@ class PlotSinkManager(QObject):
         super().__init__(parent)
 
         # Track active sinks by thread ID
-        # Maps thread_id -> (sink_callable, target_tab_weakref)
+        # Maps thread_id -> (sink_callable, target_tab_weakref, session_id)
         self._active_sinks = {}
         self._lock = threading.Lock()
 
@@ -90,7 +105,7 @@ class PlotSinkManager(QObject):
             thread_id = threading.current_thread().ident
             print(f"[PlotSinkManager][Thread-{thread_id}] {message}")
 
-    def create_sink_for_tab(self, tab):
+    def create_sink_for_tab(self, tab, session_id: int):
         """
         Create a plot sink callable that routes figures to the specified tab.
 
@@ -99,6 +114,8 @@ class PlotSinkManager(QObject):
 
         Args:
             tab: QDesqTab instance that should receive the figures
+            session_id: The plot session ID to associate with captured figures.
+                       The receiving tab will validate this matches its current session.
 
         Returns:
             Callable that can be passed to set_plot_sink()
@@ -111,8 +128,9 @@ class PlotSinkManager(QObject):
         last_notification_time = {}
         DEBOUNCE_INTERVAL = 0.05  # 50ms debounce for live updates
 
-        # Capture debug flag at creation time
+        # Capture debug flag and session_id at creation time
         debug = self._debug
+        captured_session_id = session_id
 
         def sink(figure, event_type):
             """
@@ -152,20 +170,19 @@ class PlotSinkManager(QObject):
             last_notification_time[fig_id] = current_time
 
             if debug:
-                print(f"[PlotSink] Emitting figure {fig_id} to GUI thread")
+                print(f"[PlotSink] Emitting figure {fig_id} to GUI thread (session={captured_session_id})")
 
-            # Emit signal - Qt handles thread-safe delivery
-            # Note: Qt signal emission from non-GUI thread uses QueuedConnection
-            manager.figureReceived.emit(figure, tab, event_type)
+            # Emit signal with session_id - Qt handles thread-safe delivery
+            manager.figureReceived.emit(figure, tab, event_type, captured_session_id)
 
         return sink
 
-    def sink_context(self, tab):
+    def sink_context(self, tab, session_id: int):
         """
         Context manager for setting up a plot sink in a worker thread.
 
         Usage:
-            with plot_sink_manager.sink_context(tab):
+            with plot_sink_manager.sink_context(tab, session_id):
                 # All matplotlib draws in this block route to `tab`
                 plt.figure()
                 plt.plot(data)
@@ -173,13 +190,14 @@ class PlotSinkManager(QObject):
 
         Args:
             tab: QDesqTab that should receive figures
+            session_id: The plot session ID for this context
 
         Returns:
             Context manager
         """
-        return _SinkContext(self, tab)
+        return _SinkContext(self, tab, session_id)
 
-    def setup_sink_for_thread(self, tab):
+    def setup_sink_for_thread(self, tab, session_id: int):
         """
         Set up the plot sink for the current thread to route to the given tab.
 
@@ -188,20 +206,21 @@ class PlotSinkManager(QObject):
 
         Args:
             tab: QDesqTab that should receive figures
+            session_id: The plot session ID to associate with this sink
         """
         # Import from same package (scripts/)
         from MasterProject.Client_modules.Desq_GUI.scripts.BackendDesq import set_plot_sink
 
-        sink = self.create_sink_for_tab(tab)
+        sink = self.create_sink_for_tab(tab, session_id)
         thread_id = threading.current_thread().ident
 
         with self._lock:
-            self._active_sinks[thread_id] = (sink, weakref.ref(tab))
+            self._active_sinks[thread_id] = (sink, weakref.ref(tab), session_id)
 
         set_plot_sink(sink)
 
         # Use print() instead of qDebug() - see docstring for why
-        self._log(f"Plot sink activated for thread {thread_id}")
+        self._log(f"Plot sink activated for thread {thread_id} (session={session_id})")
 
     def cleanup_sink_for_thread(self):
         """
@@ -229,12 +248,13 @@ class _SinkContext:
     Ensures sink is properly cleaned up even if an exception occurs.
     """
 
-    def __init__(self, manager, tab):
+    def __init__(self, manager, tab, session_id: int):
         self.manager = manager
         self.tab = tab
+        self.session_id = session_id
 
     def __enter__(self):
-        self.manager.setup_sink_for_thread(self.tab)
+        self.manager.setup_sink_for_thread(self.tab, self.session_id)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

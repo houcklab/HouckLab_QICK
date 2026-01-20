@@ -136,6 +136,8 @@ class FigureCanvasDesq(FigureCanvasAgg):
         super().__init__(figure)
         self._desq_draw_pending = False
         self._desq_last_notification = 0
+        # Marker attribute so we can identify this as a BackendDesq canvas
+        self._is_desq_canvas = True
         _log(f"FigureCanvasDesq created for figure {id(figure)}")
 
     def draw(self):
@@ -295,8 +297,14 @@ def show(*args, block=None, **kwargs):
     """
     Backend's plt.show() implementation.
 
-    For our headless backend, this ensures all figures are drawn
-    (which triggers sink notifications) but does not block or display windows.
+    CRITICAL FIX: Do NOT draw ALL figures. Only draw figures that haven't
+    been drawn yet. This prevents cross-tab contamination where calling
+    plt.show() in one tab would re-draw (and re-capture) figures from
+    other tabs.
+
+    For our headless backend, individual figure.draw() calls already
+    trigger sink notifications. We only need to ensure NEW figures
+    (that haven't been drawn) get their initial draw.
 
     Args:
         block: Ignored (no event loop to block)
@@ -306,9 +314,16 @@ def show(*args, block=None, **kwargs):
     managers = list(Gcf.get_all_fig_managers())
     _log(f"show() called with {len(managers)} figures")
 
-    # Draw all figures (this triggers sink notifications)
+    # Only draw figures that haven't been drawn yet
+    # We track this with a custom attribute on the figure
     for manager in managers:
-        manager.canvas.draw()
+        fig = manager.canvas.figure
+        if not getattr(fig, '_desq_initial_draw_done', False):
+            _log(f"Drawing figure {fig.number} (first time)")
+            manager.canvas.draw()
+            fig._desq_initial_draw_done = True
+        else:
+            _log(f"Skipping figure {fig.number} (already drawn)")
 
 
 # Required backend attributes
@@ -397,6 +412,10 @@ class QtSignalSink:
 
         sink = QtSignalSink(receiver.figureReady)
         set_plot_sink(sink)
+
+    NOTE: Figure copying is not supported. Qt canvases cannot be pickled,
+    and figure isolation should be handled by detaching from matplotlib's
+    global registry after the experiment completes (see DesqTabAdv.isolate_matplotlib_figures).
     """
 
     def __init__(self, signal, copy_figure=False):
@@ -405,10 +424,14 @@ class QtSignalSink:
 
         Args:
             signal: Qt signal to emit (must accept (figure, event_type))
-            copy_figure: If True, copy figure data before emitting (safer but slower)
+            copy_figure: DEPRECATED - ignored. Figure copying is not supported
+                        with Qt canvases. Use registry detachment instead.
         """
         self.signal = signal
-        self.copy_figure = copy_figure
+        if copy_figure:
+            print("[QtSignalSink] WARNING: copy_figure=True is not supported "
+                  "(Qt canvases cannot be pickled). Figures will be passed by reference. "
+                  "Use isolate_matplotlib_figures() after experiment completion instead.")
         self._seen_draws = set()
 
     def __call__(self, figure, event_type):
@@ -432,10 +455,6 @@ class QtSignalSink:
         except ImportError:
             pass  # Non-Qt environment, skip debounce cleanup
 
-        if self.copy_figure:
-            # Deep copy figure to avoid thread issues
-            import pickle
-            figure = pickle.loads(pickle.dumps(figure))
-
         # Emit signal (Qt handles thread-safe delivery via queued connection)
+        # Figure is passed by reference - isolation handled separately
         self.signal.emit(figure, event_type)

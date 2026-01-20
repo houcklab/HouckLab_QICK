@@ -95,8 +95,9 @@ except AttributeError:
 QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
+
 ### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-# to be used with TesterExperiment.py
+# to be used with mock experiments.
 TESTING = True
 
 
@@ -224,9 +225,17 @@ class Desq(QMainWindow):
         self.documentation_button = self.custom_menu_bar.documentation_button
         self.settings_button = self.custom_menu_bar.settings_button
 
+        # Create a context menu for the stop button
+        self.stop_menu = QMenu()
+        self.safe_stop_action = self.stop_menu.addAction("Safe Stop")
+        self.safe_stop_action.setToolTip("Complete current set, then stop")
+        self.stop_menu.addSeparator()
+        self.force_stop_action = self.stop_menu.addAction("Force Stop")
+        self.force_stop_action.setToolTip("Interrupt immediately")
+
         ### Main Splitter with all main components: Code Editor, Tabs, Voltage Panel, Config Tree
         self.main_splitter = QSplitter(self.wrapper)
-        self.main_splitter.setOpaqueResize(True)  # Setting to False allows faster resizing (doesn't look as good)
+        self.main_splitter.setOpaqueResize(False)  # Setting to False allows faster resizing (doesn't look as good)
         self.main_splitter.setHandleWidth(6)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
@@ -234,7 +243,7 @@ class Desq(QMainWindow):
 
         ### Vertical Splitter with Tabs and config Editor
         self.vert_splitter = QSplitter(self.main_splitter)
-        self.vert_splitter.setOpaqueResize(True)
+        self.vert_splitter.setOpaqueResize(False)
         self.vert_splitter.setHandleWidth(6)
         self.vert_splitter.setChildrenCollapsible(True)
         self.vert_splitter.setObjectName("vert_splitter")
@@ -245,7 +254,7 @@ class Desq(QMainWindow):
 
         ### Tab Splitter with the directory tree and tabs
         self.tab_splitter = QSplitter(self.vert_splitter)
-        self.tab_splitter.setOpaqueResize(True)  # Setting to False allows faster resizing (doesn't look as good)
+        self.tab_splitter.setOpaqueResize(False)  # Setting to False allows faster resizing (doesn't look as good)
         self.tab_splitter.setHandleWidth(6)
         self.tab_splitter.setChildrenCollapsible(True)
         self.tab_splitter.setObjectName("tab_splitter")
@@ -368,7 +377,9 @@ class Desq(QMainWindow):
 
         # Connecting the top bar buttons to their respective functions
         self.start_experiment_button.clicked.connect(self.run_experiment)
-        self.stop_experiment_button.clicked.connect(self.stop_experiment)
+        self.stop_experiment_button.clicked.connect(self.show_stop_menu)
+        self.safe_stop_action.triggered.connect(self.safe_stop_experiment)
+        self.force_stop_action.triggered.connect(self.force_stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
         self.documentation_button.clicked.connect(
@@ -608,20 +619,26 @@ class Desq(QMainWindow):
                 experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
                 self.experiment_instance = obj
 
+                # Start a new plot session BEFORE creating the worker
+                # This clears old plots, closes figures, and gets a new session_id for isolation
+                plot_session_id = self.current_tab.start_plot_session()
+                qInfo(f"Started plot session {plot_session_id} for {self.current_tab.tab_name}")
+
                 ### Creating the experiment worker from ExperimentThread and Connecting Signals
                 self.experiment_worker = ExperimentThread(
                     experiment_format_config,
                     soccfg=self.soccfg,
                     exp=self.experiment_instance,
                     soc=self.soc,
-                    plot_sink_manager=self.plot_sink_manager,  # NEW
-                    target_tab=self.current_tab  # NEW
+                    plot_sink_manager=self.plot_sink_manager,
+                    target_tab=self.current_tab,
+                    session_id=plot_session_id  # Session ID for isolation
                 )
                 self.experiment_worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread
 
                 # Connecting started and finished signals
                 self.thread.started.connect(self.current_tab.prepare_file_naming)
-                self.thread.started.connect(self.current_tab.clear_plots)
+                # NOTE: clear_plots is now called by start_plot_session() above
                 self.thread.started.connect(self.experiment_worker.run)  # run experiment
                 self.experiment_worker.finished.connect(self.thread.quit)  # stop thread
                 self.experiment_worker.finished.connect(self.experiment_worker.deleteLater)  # delete worker
@@ -635,8 +652,6 @@ class Desq(QMainWindow):
 
                 # Connecting data related slots
                 self.experiment_worker.updateData.connect(self.currently_running_tab.update_data)  # update data & plot
-                self.experiment_worker.intermediateData.connect(
-                    self.currently_running_tab.intermediate_data)  # intermediate data & plot
                 self.experiment_worker.updateRuntime.connect(
                     self.currently_running_tab.update_runtime_estimation)  # update runtime
 
@@ -671,24 +686,38 @@ class Desq(QMainWindow):
             qCritical(format_exc)
             print(format_exc)
 
-    def stop_experiment(self):
-        """
-        Stop an Experiment if not auto-terminated and update respective UI for during stop.
-        """
+    def show_stop_menu(self):
+        """Show the stop options menu below the button."""
+        pos = self.stop_experiment_button.mapToGlobal(
+            self.stop_experiment_button.rect().bottomLeft()
+        )
+        self.stop_menu.exec_(pos)
 
+    def safe_stop_experiment(self):
+        """Stop after current set completes."""
         if self.experiment_worker:
             self.experiment_worker.stop()
-            qDebug("Stopping the experiment worker...")
+            qInfo("Safe stop initiated - completing current set...")
+        self._update_stop_ui()
 
+    def force_stop_experiment(self):
+        """Interrupt experiment immediately."""
+        if self.experiment_worker:
+            success = self.experiment_worker.force_stop()
+            if success:
+                qInfo("Force stop initiated - interrupting...")
+            else:
+                qWarning("Force stop failed - using safe stop")
+        self._update_stop_ui()
+
+    def _update_stop_ui(self):
+        """Update UI after stop is initiated."""
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
         self.start_experiment_button.setStyleSheet(
             "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
         self.stop_experiment_button.setStyleSheet(
             "image: url('MasterProject/Client_modules/Desq_GUI/assets/timer-off.svg');;")
-        # self.is_stopping = True
-        # self.stopping_dot_count = 0
-        # self.animate_stopping()
 
     def animate_stopping(self):
         """
@@ -749,29 +778,56 @@ class Desq(QMainWindow):
 
     def closeEvent(self, event):
         """
-        Overrides the default closeEvent() function in a PyQt widget by first ensuring all threads have stopped.
-
-        :param event: The PyQt widget to close.
-        :type event: QCloseEvent
+        Overrides closeEvent by first ensuring all threads have stopped.
+        Safe against double-shutdown and already-deleted QObjects.
         """
+        # Ask the experiment to stop (async)
+        try:
+            self.safe_stop_experiment()
+        except Exception:
+            pass
 
-        self.stop_experiment()
-
-        if hasattr(self, 'aux_worker') and self.aux_worker is not None:
+        # Stop aux worker
+        if getattr(self, "aux_worker", None) is not None:
             try:
                 self.aux_worker.stop()
-            except:
+            except Exception:
                 pass
 
-        if getattr(self, "thread", None):
-            # self.thread.requestInterruption()
-            self.thread.quit()
-            self.thread.wait(5000)  # avoid zombie threads
-            if self.worker:
-                self.worker.deleteLater()
-            self.thread.deleteLater()
+        # IMPORTANT: your worker attribute in this file is `experiment_worker`, not `worker`
+        # Don't explicitly delete worker/thread here because you already connected finished->deleteLater.
+        # Just try to shut down if still alive.
+        th = getattr(self, "thread", None)
+        if th is not None:
+            try:
+                # If it's already deleted, either of these can throw RuntimeError
+                if th.isRunning():
+                    th.quit()
+                    th.wait(5000)
+            except RuntimeError:
+                # Underlying C++ object already deleted
+                pass
+            except Exception:
+                pass
+            finally:
+                self.thread = None
 
-        self.settings_window.close()
+        wk = getattr(self, "experiment_worker", None)
+        if wk is not None:
+            try:
+                # might already be deleted; touching it could raise RuntimeError
+                # but we don't need to do anything because finished->deleteLater exists
+                pass
+            except RuntimeError:
+                pass
+            finally:
+                self.experiment_worker = None
+
+        try:
+            if getattr(self, "settings_window", None) is not None:
+                self.settings_window.close()
+        except Exception:
+            pass
 
         event.accept()
 
@@ -1208,7 +1264,7 @@ class Desq(QMainWindow):
 
         return direct_imports
 
-    def _on_figure_received(self, figure, target_tab, event_type):
+    def _on_figure_received(self, figure, target_tab, event_type, session_id):
         '''
         Handler for figures received from the backend-based plot sink.
 
@@ -1219,22 +1275,25 @@ class Desq(QMainWindow):
             figure: The matplotlib Figure object
             target_tab: The QDesqTab that should display this figure
             event_type: 'draw' or 'draw_idle'
+            session_id: Plot session ID for validation
         '''
-        if target_tab is None or not hasattr(target_tab, 'handle_pltplot'):
+        if target_tab is None:
             qWarning("Figure received but no valid target tab")
             return
 
-        # Check if this is still the running tab (experiment may have been stopped)
-        # if self.currently_running_tab != target_tab:
-        #     qDebug(f"Ignoring figure for non-running tab")
-        #     return
+        # Check if the tab has the receive_figure method (carousel-aware)
+        if not hasattr(target_tab, 'receive_figure'):
+            qWarning("Target tab does not have receive_figure method")
+            return
 
         try:
-            # Pass figure to tab's handler
-            # The _captured_figures key ensures compatibility with existing handle_pltplot
-            target_tab.handle_pltplot(_captured_figures=[figure])
+            # Pass figure to tab's carousel-aware receiver with session_id
+            # The tab validates session_id and rejects figures from old sessions
+            target_tab.receive_figure(figure, event_type, session_id)
         except Exception as e:
             qWarning(f"Error handling received figure: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # Creating the Desq GUI Main Window

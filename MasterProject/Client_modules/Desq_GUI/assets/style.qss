@@ -91,6 +91,12 @@ QWidget#plot_utilities_container QPushButton{
 QWidget#plot_utilities_container QPushButton#reExtract_experiment_button{
     border-right: 1px solid $GENERAL_BORDER_COLOR;
     border-bottom-left-radius: 5px;
+    border-radius: 5px;
+}
+
+QWidget#plot_utilities_container QPushButton#replot_button{
+    border-right: 1px solid $GENERAL_BORDER_COLOR;
+    border-bottom-left-radius: 5px;
     border-top-left-radius: 5px;
 }
 
