@@ -497,10 +497,12 @@ class QConfigTreePanel(QWidget):
 
                 if self.type == "Experiment" and "Experiment Config" in config_data:
                     # Flatten Experiment Config
-                    config_data = {**config_data, **config_data["Experiment Config"]}
+                    exp_cfg = config_data.pop("Experiment Config")
+                    config_data.update(exp_cfg)
                 elif self.type == "Global" and "Base Config" in config_data:
                     # Flatten Base Config
-                    config_data = {**config_data, **config_data["Base Config"]}
+                    exp_cfg = config_data.pop("Base Config")
+                    config_data.update(exp_cfg)
 
             # Store the config
             self.checked_config_files[file_path] = config_data

@@ -80,6 +80,9 @@ from PyQt5.QtWidgets import (
     QFrame,
 )
 import pyqtgraph as pg
+import warnings
+warnings.filterwarnings('ignore', message='All-NaN slice encountered',
+                        category=RuntimeWarning, module='pyqtgraph')
 from matplotlib.collections import PathCollection
 from matplotlib.patches import Rectangle
 

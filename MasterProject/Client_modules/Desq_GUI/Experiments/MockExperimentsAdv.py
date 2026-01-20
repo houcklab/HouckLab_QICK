@@ -5,6 +5,7 @@ These experiments focus on testing the GUI's ability to handle:
 1. Figures with different grid configurations (1x1, 1x2, 2x2, 2x3, 3x3, GridSpec layouts)
 2. Experiments that create multiple separate figures
 3. Experiments with live plotting (updating during sweeps/loops)
+4. Experiments with multiple figures where some are live-updating
 
 Unlike MockExperiments.py which tests plot appearance, this module tests the
 backend's ability to properly route, update, and manage complex figure scenarios.
@@ -483,16 +484,16 @@ class MockGridSpec(MockExperimentBase):
 
         # Right column: IQ scatter (1x1)
         ax2 = fig.add_subplot(gs[0, 2])
-        ax2.scatter(d['i_g'], d['q_g'], alpha=0.3, s=2, label='|g⟩')
-        ax2.scatter(d['i_e'], d['q_e'], alpha=0.3, s=2, label='|e⟩')
+        ax2.scatter(d['i_g'], d['q_g'], alpha=0.3, s=2, label='|gâŸ©')
+        ax2.scatter(d['i_e'], d['q_e'], alpha=0.3, s=2, label='|eâŸ©')
         ax2.set_title('IQ Scatter')
         ax2.legend(markerscale=5)
         ax2.set_aspect('equal')
 
         # Right column: I histogram (1x1)
         ax3 = fig.add_subplot(gs[1, 2])
-        ax3.hist(d['i_g'], bins=30, alpha=0.5, label='|g⟩')
-        ax3.hist(d['i_e'], bins=30, alpha=0.5, label='|e⟩')
+        ax3.hist(d['i_g'], bins=30, alpha=0.5, label='|gâŸ©')
+        ax3.hist(d['i_e'], bins=30, alpha=0.5, label='|eâŸ©')
         ax3.set_title('I Histogram')
         ax3.legend()
 
@@ -656,8 +657,8 @@ class MockMultiFigure2(MockExperimentBase):
             figNum += 1
         fig2, ax2 = plt.subplots(figsize=(8, 8), num=figNum)
 
-        ax2.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|g⟩', c='blue')
-        ax2.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|e⟩', c='red')
+        ax2.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|gâŸ©', c='blue')
+        ax2.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|eâŸ©', c='red')
         ax2.set_xlabel('I')
         ax2.set_ylabel('Q')
         ax2.set_title(f'{self.titlename} - Figure 2: IQ Scatter')
@@ -737,7 +738,7 @@ class MockMultiFigure3(MockExperimentBase):
 
         axs1[1].plot(d['x'], d['y_t1'], 'ro-', markersize=4)
         axs1[1].set_title('T1 Decay')
-        axs1[1].set_xlabel('Wait Time (µs)')
+        axs1[1].set_xlabel('Wait Time (Âµs)')
         axs1[1].set_ylabel('Population')
 
         fig1.suptitle(f'{self.titlename} - Figure 1: 1D Sweeps')
@@ -770,8 +771,8 @@ class MockMultiFigure3(MockExperimentBase):
             figNum += 1
         fig3, ax3 = plt.subplots(figsize=(8, 5), num=figNum)
 
-        ax3.hist(d['shots_g'], bins=40, alpha=0.7, label='|g⟩', color='blue')
-        ax3.hist(d['shots_e'], bins=40, alpha=0.7, label='|e⟩', color='red')
+        ax3.hist(d['shots_g'], bins=40, alpha=0.7, label='|gâŸ©', color='blue')
+        ax3.hist(d['shots_e'], bins=40, alpha=0.7, label='|eâŸ©', color='red')
         ax3.set_xlabel('Rotated I')
         ax3.set_ylabel('Counts')
         ax3.set_title(f'{self.titlename} - Figure 3: Single Shot Histogram')
@@ -1170,7 +1171,7 @@ class MockLivePlotWithFit(MockExperimentBase):
 
         ax.set_xlim(t_pts[0] - 1, t_pts[-1] + 1)
         ax.set_ylim(-0.1, 1.1)
-        ax.set_xlabel('Wait Time (µs)')
+        ax.set_xlabel('Wait Time (Âµs)')
         ax.set_ylabel('Population')
         ax.set_title(f'{self.titlename} - Live T1 with Fit')
         ax.legend()
@@ -1208,7 +1209,7 @@ class MockLivePlotWithFit(MockExperimentBase):
                     # Update fit line
                     t_fine = np.linspace(0, t_pts[-1], 200)
                     fit_line.set_data(t_fine, exp_decay(t_fine, *popt))
-                    fit_text.set_text(f'T1 = {T1_fit:.2f} µs')
+                    fit_text.set_text(f'T1 = {T1_fit:.2f} Âµs')
                 except Exception:
                     pass
 
@@ -1247,11 +1248,11 @@ class MockLivePlotWithFit(MockExperimentBase):
             popt, _ = curve_fit(exp_decay, t_pts, y_data, p0=[5.0, 1.0, 0.0])
             t_fine = np.linspace(0, t_pts[-1], 200)
             ax.plot(t_fine, exp_decay(t_fine, *popt), 'r-', linewidth=2,
-                    label=f'Fit: T1 = {popt[0]:.2f} µs')
+                    label=f'Fit: T1 = {popt[0]:.2f} Âµs')
         except Exception:
             pass
 
-        ax.set_xlabel('Wait Time (µs)')
+        ax.set_xlabel('Wait Time (Âµs)')
         ax.set_ylabel('Population')
         ax.set_title(f'{self.titlename} - T1 Measurement (Completed)')
         ax.legend()
@@ -1304,8 +1305,8 @@ class MockLivePlotScatter(MockExperimentBase):
             figNum += 1
         fig, ax = plt.subplots(figsize=(8, 8), num=figNum)
 
-        scatter_g = ax.scatter([], [], alpha=0.5, s=10, label='|g⟩', c='blue')
-        scatter_e = ax.scatter([], [], alpha=0.5, s=10, label='|e⟩', c='red')
+        scatter_g = ax.scatter([], [], alpha=0.5, s=10, label='|gâŸ©', c='blue')
+        scatter_e = ax.scatter([], [], alpha=0.5, s=10, label='|eâŸ©', c='red')
 
         ax.set_xlim(-1, 2)
         ax.set_ylim(-1, 1.5)
@@ -1353,8 +1354,8 @@ class MockLivePlotScatter(MockExperimentBase):
         fig, ax = plt.subplots(figsize=(8, 8), num=figNum)
 
         d = data['data']
-        ax.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|g⟩', c='blue')
-        ax.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|e⟩', c='red')
+        ax.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|gâŸ©', c='blue')
+        ax.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|eâŸ©', c='red')
 
         ax.set_xlabel('I')
         ax.set_ylabel('Q')
@@ -1368,6 +1369,862 @@ class MockLivePlotScatter(MockExperimentBase):
             plt.show(block=block)
 
         return fig, ax
+
+
+# ============================================================================
+# PART 4: LIVE MULTI-FIGURE EXPERIMENTS
+# ============================================================================
+
+class MockLiveMultiFigure2(MockExperimentBase):
+    """
+    Experiment that creates 2 figures: one static summary and one live sweep.
+
+    Tests: Mixed static + live figure routing.
+    """
+
+    def __init__(self, **kwargs):
+        default_cfg = {
+            'sweep_points': 40,
+            'delay_per_point': 0.08,
+            'num_shots': 500,
+        }
+        cfg = kwargs.pop('cfg', {})
+        merged_cfg = {**default_cfg, **cfg}
+        super().__init__(cfg=merged_cfg, **kwargs)
+
+    def acquire(self, progress=False, plotDisp=True, figNum=1, block=False):
+        cfg = self.cfg
+        np.random.seed(42)
+
+        # Pre-generate static data (IQ scatter)
+        i_g = np.random.randn(cfg['num_shots']) * 0.25
+        q_g = np.random.randn(cfg['num_shots']) * 0.25
+        i_e = np.random.randn(cfg['num_shots']) * 0.25 + 1.0
+        q_e = np.random.randn(cfg['num_shots']) * 0.25 + 0.5
+
+        # Prepare live sweep data
+        x_pts = np.linspace(0, 10, cfg['sweep_points'])
+        y_data = np.full(len(x_pts), np.nan)
+
+        self.data = {
+            'config': cfg,
+            'data': {
+                'i_g': i_g, 'q_g': q_g, 'i_e': i_e, 'q_e': q_e,
+                'x_pts': x_pts, 'y_data': y_data
+            }
+        }
+
+        figs = []
+
+        # Figure 1: Static IQ scatter (created first, not updated)
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1, ax1 = plt.subplots(figsize=(8, 8), num=figNum)
+
+        ax1.scatter(i_g, q_g, alpha=0.5, s=10, label='|g⟩', c='blue')
+        ax1.scatter(i_e, q_e, alpha=0.5, s=10, label='|e⟩', c='red')
+        ax1.set_xlabel('I')
+        ax1.set_ylabel('Q')
+        ax1.set_title(f'{self.titlename} - Figure 1: IQ Calibration (Static)')
+        ax1.legend()
+        ax1.set_aspect('equal')
+        ax1.grid(True, alpha=0.3)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: Live 1D sweep
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 6), num=figNum)
+
+        line, = ax2.plot(x_pts, y_data, 'go-', markersize=5, linewidth=1.5)
+        ax2.set_xlim(x_pts[0] - 0.5, x_pts[-1] + 0.5)
+        ax2.set_ylim(-1.5, 1.5)
+        ax2.set_xlabel('Drive Amplitude')
+        ax2.set_ylabel('Population')
+        ax2.set_title(f'{self.titlename} - Figure 2: Rabi (Live)')
+        ax2.grid(True, alpha=0.3)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig2)
+
+        # Live sweep loop
+        for i, x in enumerate(x_pts):
+            time.sleep(cfg['delay_per_point'])
+            y_data[i] = np.cos(2 * np.pi * x / 4) * 0.5 + 0.5 + 0.05 * np.random.randn()
+
+            line.set_ydata(y_data)
+            ax2.relim()
+            ax2.autoscale_view(scalex=False, scaley=True)
+
+            fig2.canvas.draw()
+            fig2.canvas.flush_events()
+
+        self.data['data']['y_data'] = y_data
+        self.figs = figs
+
+        if plotDisp and block:
+            plt.show(block=True)
+
+        return self.data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Re-display completed figures."""
+        if data is None:
+            data = self.data
+
+        d = data['data']
+        figs = []
+
+        # Figure 1: IQ scatter
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1, ax1 = plt.subplots(figsize=(8, 8), num=figNum)
+
+        ax1.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|g⟩', c='blue')
+        ax1.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|e⟩', c='red')
+        ax1.set_xlabel('I')
+        ax1.set_ylabel('Q')
+        ax1.set_title(f'{self.titlename} - IQ Calibration')
+        ax1.legend()
+        ax1.set_aspect('equal')
+        ax1.grid(True, alpha=0.3)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: Rabi
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 6), num=figNum)
+
+        ax2.plot(d['x_pts'], d['y_data'], 'go-', markersize=5, linewidth=1.5)
+        ax2.set_xlabel('Drive Amplitude')
+        ax2.set_ylabel('Population')
+        ax2.set_title(f'{self.titlename} - Rabi (Completed)')
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        if plotDisp:
+            plt.show(block=block)
+        figs.append(fig2)
+
+        return figs
+
+
+class MockLiveMultiFigure3(MockExperimentBase):
+    """
+    Experiment that creates 3 figures: static config, live 1D, and live 2D.
+
+    Tests: Multiple live figures updating simultaneously with a static one.
+    """
+
+    def __init__(self, **kwargs):
+        default_cfg = {
+            'sweep_points_1d': 30,
+            'x_points_2d': 20,
+            'y_points_2d': 15,
+            'delay_per_step': 0.1,
+        }
+        cfg = kwargs.pop('cfg', {})
+        merged_cfg = {**default_cfg, **cfg}
+        super().__init__(cfg=merged_cfg, **kwargs)
+
+    def acquire(self, progress=False, plotDisp=True, figNum=1, block=False):
+        cfg = self.cfg
+        np.random.seed(42)
+
+        # Prepare data arrays
+        t_1d = np.linspace(0, 15, cfg['sweep_points_1d'])
+        y_1d = np.full(len(t_1d), np.nan)
+
+        x_2d = np.linspace(-3, 3, cfg['x_points_2d'])
+        y_2d = np.linspace(-2, 2, cfg['y_points_2d'])
+        Z_2d = np.full((len(y_2d), len(x_2d)), np.nan)
+
+        self.data = {
+            'config': cfg,
+            'data': {
+                't_1d': t_1d, 'y_1d': y_1d,
+                'x_2d': x_2d, 'y_2d': y_2d, 'Z_2d': Z_2d
+            }
+        }
+
+        figs = []
+
+        # Figure 1: Static configuration summary (GridSpec)
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1 = plt.figure(figsize=(10, 6), num=figNum)
+        gs = GridSpec(2, 2, figure=fig1)
+
+        ax1a = fig1.add_subplot(gs[0, 0])
+        ax1a.bar(['Sweep 1D', 'Sweep 2D'], [cfg['sweep_points_1d'], cfg['x_points_2d'] * cfg['y_points_2d']])
+        ax1a.set_ylabel('Total Points')
+        ax1a.set_title('Sweep Configuration')
+
+        ax1b = fig1.add_subplot(gs[0, 1])
+        ax1b.text(0.5, 0.5, f"1D: {cfg['sweep_points_1d']} pts\n"
+                            f"2D: {cfg['x_points_2d']}x{cfg['y_points_2d']}\n"
+                            f"Delay: {cfg['delay_per_step']}s",
+                  ha='center', va='center', fontsize=14,
+                  transform=ax1b.transAxes)
+        ax1b.set_title('Parameters')
+        ax1b.axis('off')
+
+        ax1c = fig1.add_subplot(gs[1, :])
+        progress_bar = ax1c.barh(['1D Sweep', '2D Sweep'], [0, 0], color=['blue', 'green'])
+        ax1c.set_xlim(0, 100)
+        ax1c.set_xlabel('Progress (%)')
+        ax1c.set_title('Acquisition Progress')
+
+        fig1.suptitle(f'{self.titlename} - Figure 1: Config Summary', fontsize=14)
+        plt.tight_layout()
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: Live 1D T1-like decay
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 5), num=figNum)
+
+        line_1d, = ax2.plot(t_1d, y_1d, 'bo-', markersize=5, linewidth=1.5)
+        ax2.set_xlim(t_1d[0] - 0.5, t_1d[-1] + 0.5)
+        ax2.set_ylim(-0.1, 1.2)
+        ax2.set_xlabel('Wait Time (μs)')
+        ax2.set_ylabel('Population')
+        ax2.set_title(f'{self.titlename} - Figure 2: T1 Decay (Live)')
+        ax2.grid(True, alpha=0.3)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig2)
+
+        # Figure 3: Live 2D spectroscopy
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig3, ax3 = plt.subplots(figsize=(10, 7), num=figNum)
+
+        im = ax3.imshow(Z_2d, extent=[x_2d[0], x_2d[-1], y_2d[0], y_2d[-1]],
+                        origin='lower', aspect='auto', cmap='viridis', vmin=-1, vmax=1)
+        cbar = fig3.colorbar(im, ax=ax3)
+        cbar.set_label('Signal')
+        ax3.set_xlabel('Frequency Offset (MHz)')
+        ax3.set_ylabel('Flux (a.u.)')
+        ax3.set_title(f'{self.titlename} - Figure 3: 2D Spec (Live)')
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig3)
+
+        # Interleaved acquisition - alternate between 1D and 2D
+        idx_1d = 0
+        idx_2d_row = 0
+
+        total_1d = len(t_1d)
+        total_2d_rows = len(y_2d)
+
+        while idx_1d < total_1d or idx_2d_row < total_2d_rows:
+            time.sleep(cfg['delay_per_step'])
+
+            # Acquire one 1D point if available
+            if idx_1d < total_1d:
+                y_1d[idx_1d] = np.exp(-t_1d[idx_1d] / 5.0) + 0.05 * np.random.randn()
+                line_1d.set_ydata(y_1d)
+                idx_1d += 1
+
+            # Acquire one 2D row if available
+            if idx_2d_row < total_2d_rows:
+                for i, x in enumerate(x_2d):
+                    Z_2d[idx_2d_row, i] = np.exp(-((x - y_2d[idx_2d_row]) ** 2)) + 0.1 * np.random.randn()
+                im.set_data(Z_2d)
+                im.autoscale()
+                idx_2d_row += 1
+
+            # Update progress bars
+            progress_bar[0].set_width(100 * idx_1d / total_1d)
+            progress_bar[1].set_width(100 * idx_2d_row / total_2d_rows)
+
+            # Refresh all figures
+            for fig in figs:
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+
+        self.data['data']['y_1d'] = y_1d
+        self.data['data']['Z_2d'] = Z_2d
+        self.figs = figs
+
+        if plotDisp and block:
+            plt.show(block=True)
+
+        return self.data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Re-display completed figures."""
+        if data is None:
+            data = self.data
+
+        d = data['data']
+        cfg = self.cfg
+        figs = []
+
+        # Figure 1: Summary
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1, ax1 = plt.subplots(figsize=(8, 5), num=figNum)
+        ax1.text(0.5, 0.5, 'Configuration Summary\n(see other figures for data)',
+                 ha='center', va='center', fontsize=14, transform=ax1.transAxes)
+        ax1.axis('off')
+        fig1.suptitle(f'{self.titlename} - Config Summary')
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: T1
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 5), num=figNum)
+        ax2.plot(d['t_1d'], d['y_1d'], 'bo-', markersize=5, linewidth=1.5)
+        ax2.set_xlabel('Wait Time (μs)')
+        ax2.set_ylabel('Population')
+        ax2.set_title(f'{self.titlename} - T1 Decay (Completed)')
+        ax2.grid(True, alpha=0.3)
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig2)
+
+        # Figure 3: 2D
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig3, ax3 = plt.subplots(figsize=(10, 7), num=figNum)
+        im = ax3.imshow(d['Z_2d'], extent=[d['x_2d'][0], d['x_2d'][-1], d['y_2d'][0], d['y_2d'][-1]],
+                        origin='lower', aspect='auto', cmap='viridis')
+        fig3.colorbar(im, ax=ax3, label='Signal')
+        ax3.set_xlabel('Frequency Offset (MHz)')
+        ax3.set_ylabel('Flux (a.u.)')
+        ax3.set_title(f'{self.titlename} - 2D Spec (Completed)')
+        plt.tight_layout()
+        if plotDisp:
+            plt.show(block=block)
+        figs.append(fig3)
+
+        return figs
+
+
+class MockLiveMultiFigureT1T2(MockExperimentBase):
+    """
+    Simultaneous T1 and T2 measurements with separate live figures.
+
+    Tests: Two independent live sweeps in parallel figures.
+    """
+
+    def __init__(self, **kwargs):
+        default_cfg = {
+            'sweep_points': 35,
+            'delay_per_point': 0.1,
+            'T1_true': 8.0,
+            'T2_true': 4.0,
+        }
+        cfg = kwargs.pop('cfg', {})
+        merged_cfg = {**default_cfg, **cfg}
+        super().__init__(cfg=merged_cfg, **kwargs)
+
+    def acquire(self, progress=False, plotDisp=True, figNum=1, block=False):
+        cfg = self.cfg
+
+        t_pts = np.linspace(0, 20, cfg['sweep_points'])
+        y_t1 = np.full(len(t_pts), np.nan)
+        y_t2 = np.full(len(t_pts), np.nan)
+
+        self.data = {
+            'config': cfg,
+            'data': {'t_pts': t_pts, 'y_t1': y_t1, 'y_t2': y_t2}
+        }
+
+        figs = []
+
+        # Figure 1: Live T1 measurement
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1, ax1 = plt.subplots(figsize=(10, 5), num=figNum)
+
+        line_t1, = ax1.plot(t_pts, y_t1, 'bo-', markersize=5, linewidth=1.5, label='T1 Data')
+        fit_t1, = ax1.plot([], [], 'b--', linewidth=2, alpha=0.7, label='T1 Fit')
+        ax1.set_xlim(t_pts[0] - 1, t_pts[-1] + 1)
+        ax1.set_ylim(-0.1, 1.2)
+        ax1.set_xlabel('Wait Time (μs)')
+        ax1.set_ylabel('|e⟩ Population')
+        ax1.set_title(f'{self.titlename} - Figure 1: T1 (Live)')
+        ax1.legend(loc='upper right')
+        ax1.grid(True, alpha=0.3)
+        text_t1 = ax1.text(0.02, 0.98, '', transform=ax1.transAxes, va='top', fontsize=11)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: Live T2 measurement
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 5), num=figNum)
+
+        line_t2, = ax2.plot(t_pts, y_t2, 'ro-', markersize=5, linewidth=1.5, label='T2 Data')
+        fit_t2, = ax2.plot([], [], 'r--', linewidth=2, alpha=0.7, label='T2 Fit')
+        ax2.set_xlim(t_pts[0] - 1, t_pts[-1] + 1)
+        ax2.set_ylim(-0.6, 0.6)
+        ax2.set_xlabel('Wait Time (μs)')
+        ax2.set_ylabel('Signal')
+        ax2.set_title(f'{self.titlename} - Figure 2: T2 Ramsey (Live)')
+        ax2.legend(loc='upper right')
+        ax2.grid(True, alpha=0.3)
+        text_t2 = ax2.text(0.02, 0.98, '', transform=ax2.transAxes, va='top', fontsize=11)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig2)
+
+        def exp_decay(t, T, A, y0):
+            return A * np.exp(-t / T) + y0
+
+        def ramsey_decay(t, T2, A, f, phi, y0):
+            return A * np.exp(-t / T2) * np.cos(2 * np.pi * f * t + phi) + y0
+
+        # Parallel sweep with fitting
+        for i, t in enumerate(t_pts):
+            time.sleep(cfg['delay_per_point'])
+
+            # Simulate T1 measurement
+            y_t1[i] = np.exp(-t / cfg['T1_true']) + 0.03 * np.random.randn()
+
+            # Simulate T2 Ramsey measurement
+            y_t2[i] = np.exp(-t / cfg['T2_true']) * np.cos(2 * np.pi * 0.3 * t) * 0.5 + 0.03 * np.random.randn()
+
+            # Update T1 plot
+            line_t1.set_ydata(y_t1)
+            if i >= 5:
+                try:
+                    valid = ~np.isnan(y_t1)
+                    popt, _ = curve_fit(exp_decay, t_pts[valid], y_t1[valid], p0=[5.0, 1.0, 0.0], maxfev=500)
+                    t_fine = np.linspace(0, t_pts[-1], 100)
+                    fit_t1.set_data(t_fine, exp_decay(t_fine, *popt))
+                    text_t1.set_text(f'T1 = {popt[0]:.2f} μs')
+                except Exception:
+                    pass
+
+            # Update T2 plot
+            line_t2.set_ydata(y_t2)
+            if i >= 8:
+                try:
+                    valid = ~np.isnan(y_t2)
+                    popt, _ = curve_fit(ramsey_decay, t_pts[valid], y_t2[valid],
+                                        p0=[4.0, 0.5, 0.3, 0.0, 0.0], maxfev=1000)
+                    t_fine = np.linspace(0, t_pts[-1], 200)
+                    fit_t2.set_data(t_fine, ramsey_decay(t_fine, *popt))
+                    text_t2.set_text(f'T2 = {popt[0]:.2f} μs')
+                except Exception:
+                    pass
+
+            # Refresh both figures
+            for fig in figs:
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+
+        self.data['data']['y_t1'] = y_t1
+        self.data['data']['y_t2'] = y_t2
+        self.figs = figs
+
+        if plotDisp and block:
+            plt.show(block=True)
+
+        return self.data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Re-display completed T1 and T2 figures."""
+        if data is None:
+            data = self.data
+
+        d = data['data']
+        cfg = self.cfg
+        figs = []
+
+        def exp_decay(t, T, A, y0):
+            return A * np.exp(-t / T) + y0
+
+        def ramsey_decay(t, T2, A, f, phi, y0):
+            return A * np.exp(-t / T2) * np.cos(2 * np.pi * f * t + phi) + y0
+
+        # Figure 1: T1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig1, ax1 = plt.subplots(figsize=(10, 5), num=figNum)
+        ax1.plot(d['t_pts'], d['y_t1'], 'bo', markersize=5, label='Data')
+        try:
+            popt, _ = curve_fit(exp_decay, d['t_pts'], d['y_t1'], p0=[5.0, 1.0, 0.0])
+            t_fine = np.linspace(0, d['t_pts'][-1], 100)
+            ax1.plot(t_fine, exp_decay(t_fine, *popt), 'b-', linewidth=2,
+                     label=f'Fit: T1 = {popt[0]:.2f} μs')
+        except Exception:
+            pass
+        ax1.set_xlabel('Wait Time (μs)')
+        ax1.set_ylabel('|e⟩ Population')
+        ax1.set_title(f'{self.titlename} - T1 (Completed)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig1)
+
+        # Figure 2: T2
+        figNum += 1
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig2, ax2 = plt.subplots(figsize=(10, 5), num=figNum)
+        ax2.plot(d['t_pts'], d['y_t2'], 'ro', markersize=5, label='Data')
+        try:
+            popt, _ = curve_fit(ramsey_decay, d['t_pts'], d['y_t2'], p0=[4.0, 0.5, 0.3, 0.0, 0.0], maxfev=1000)
+            t_fine = np.linspace(0, d['t_pts'][-1], 200)
+            ax2.plot(t_fine, ramsey_decay(t_fine, *popt), 'r-', linewidth=2,
+                     label=f'Fit: T2 = {popt[0]:.2f} μs')
+        except Exception:
+            pass
+        ax2.set_xlabel('Wait Time (μs)')
+        ax2.set_ylabel('Signal')
+        ax2.set_title(f'{self.titlename} - T2 Ramsey (Completed)')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        plt.tight_layout()
+        if plotDisp:
+            plt.show(block=block)
+        figs.append(fig2)
+
+        return figs
+
+
+class MockLiveMultiFigureMUX(MockExperimentBase):
+    """
+    Multi-qubit MUX readout with live figure per qubit plus summary.
+
+    Tests: Many simultaneous live figures (4 qubits + 1 summary).
+    """
+
+    def __init__(self, **kwargs):
+        default_cfg = {
+            'num_qubits': 4,
+            'sweep_points': 30,
+            'delay_per_point': 0.1,
+        }
+        cfg = kwargs.pop('cfg', {})
+        merged_cfg = {**default_cfg, **cfg}
+        super().__init__(cfg=merged_cfg, **kwargs)
+
+    def acquire(self, progress=False, plotDisp=True, figNum=1, block=False):
+        cfg = self.cfg
+
+        x_pts = np.linspace(0, 8, cfg['sweep_points'])
+        qubit_data = [np.full(len(x_pts), np.nan) for _ in range(cfg['num_qubits'])]
+
+        self.data = {
+            'config': cfg,
+            'data': {'x_pts': x_pts, 'qubit_data': qubit_data}
+        }
+
+        figs = []
+        lines = []
+        qubit_axes = []
+        colors = plt.cm.Set1(np.linspace(0, 1, cfg['num_qubits']))
+
+        # Create individual qubit figures (live)
+        for q in range(cfg['num_qubits']):
+            while plt.fignum_exists(num=figNum):
+                figNum += 1
+            fig, ax = plt.subplots(figsize=(8, 4), num=figNum)
+
+            line, = ax.plot(x_pts, qubit_data[q], 'o-', color=colors[q], markersize=5, linewidth=1.5)
+            lines.append(line)
+            qubit_axes.append(ax)
+
+            ax.set_xlim(x_pts[0] - 0.5, x_pts[-1] + 0.5)
+            ax.set_ylim(-0.1, 1.2)
+            ax.set_xlabel('Drive Amplitude')
+            ax.set_ylabel('Population')
+            ax.set_title(f'{self.titlename} - Qubit {q + 1} Rabi (Live)')
+            ax.grid(True, alpha=0.3)
+
+            if plotDisp:
+                plt.show(block=False)
+            figs.append(fig)
+            figNum += 1
+
+        # Create summary figure (also live)
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig_summary, ax_summary = plt.subplots(figsize=(12, 6), num=figNum)
+
+        summary_lines = []
+        for q in range(cfg['num_qubits']):
+            line, = ax_summary.plot(x_pts, qubit_data[q], 'o-', color=colors[q],
+                                    markersize=4, linewidth=1.5, label=f'Q{q + 1}')
+            summary_lines.append(line)
+
+        ax_summary.set_xlim(x_pts[0] - 0.5, x_pts[-1] + 0.5)
+        ax_summary.set_ylim(-0.1, 1.2)
+        ax_summary.set_xlabel('Drive Amplitude')
+        ax_summary.set_ylabel('Population')
+        ax_summary.set_title(f'{self.titlename} - All Qubits Summary (Live)')
+        ax_summary.legend(loc='upper right')
+        ax_summary.grid(True, alpha=0.3)
+
+        if plotDisp:
+            plt.show(block=False)
+        figs.append(fig_summary)
+
+        # Live acquisition loop
+        for i, x in enumerate(x_pts):
+            time.sleep(cfg['delay_per_point'])
+
+            # Simulate data for each qubit (different Rabi frequencies)
+            for q in range(cfg['num_qubits']):
+                freq = 1.5 + 0.3 * q  # Different Rabi frequency per qubit
+                qubit_data[q][i] = np.cos(freq * x) ** 2 + 0.05 * np.random.randn()
+
+            # Update individual qubit figures
+            for q in range(cfg['num_qubits']):
+                lines[q].set_ydata(qubit_data[q])
+                qubit_axes[q].relim()
+                qubit_axes[q].autoscale_view(scalex=False, scaley=True)
+
+            # Update summary figure
+            for q in range(cfg['num_qubits']):
+                summary_lines[q].set_ydata(qubit_data[q])
+            ax_summary.relim()
+            ax_summary.autoscale_view(scalex=False, scaley=True)
+
+            # Refresh all figures
+            for fig in figs:
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+
+        self.data['data']['qubit_data'] = qubit_data
+        self.figs = figs
+
+        if plotDisp and block:
+            plt.show(block=True)
+
+        return self.data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Re-display completed MUX data."""
+        if data is None:
+            data = self.data
+
+        d = data['data']
+        cfg = self.cfg
+        figs = []
+        colors = plt.cm.Set1(np.linspace(0, 1, cfg['num_qubits']))
+
+        # Individual qubit figures
+        for q in range(cfg['num_qubits']):
+            while plt.fignum_exists(num=figNum):
+                figNum += 1
+            fig, ax = plt.subplots(figsize=(8, 4), num=figNum)
+
+            ax.plot(d['x_pts'], d['qubit_data'][q], 'o-', color=colors[q], markersize=5, linewidth=1.5)
+            ax.set_xlabel('Drive Amplitude')
+            ax.set_ylabel('Population')
+            ax.set_title(f'{self.titlename} - Qubit {q + 1} Rabi (Completed)')
+            ax.grid(True, alpha=0.3)
+
+            if plotDisp:
+                plt.show(block=False)
+            figs.append(fig)
+            figNum += 1
+
+        # Summary figure
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig_summary, ax_summary = plt.subplots(figsize=(12, 6), num=figNum)
+
+        for q in range(cfg['num_qubits']):
+            ax_summary.plot(d['x_pts'], d['qubit_data'][q], 'o-', color=colors[q],
+                            markersize=4, linewidth=1.5, label=f'Q{q + 1}')
+
+        ax_summary.set_xlabel('Drive Amplitude')
+        ax_summary.set_ylabel('Population')
+        ax_summary.set_title(f'{self.titlename} - All Qubits Summary (Completed)')
+        ax_summary.legend(loc='upper right')
+        ax_summary.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        if plotDisp:
+            plt.show(block=block)
+        figs.append(fig_summary)
+
+        return figs
+
+
+class MockLiveMultiFigureCalibration(MockExperimentBase):
+    """
+    Calibration pipeline with multiple stages, each producing a live figure.
+
+    Tests: Sequential figure creation with live updates in each stage.
+    """
+
+    def __init__(self, **kwargs):
+        default_cfg = {
+            'stages': ['resonator', 'qubit_spec', 'rabi', 'T1'],
+            'points_per_stage': 25,
+            'delay_per_point': 0.08,
+        }
+        cfg = kwargs.pop('cfg', {})
+        merged_cfg = {**default_cfg, **cfg}
+        super().__init__(cfg=merged_cfg, **kwargs)
+
+    def acquire(self, progress=False, plotDisp=True, figNum=1, block=False):
+        cfg = self.cfg
+
+        # Define stage-specific parameters
+        stage_params = {
+            'resonator': {
+                'x_range': (5800, 5900),
+                'y_func': lambda x: -10 / ((x - 5850) ** 2 + 25),
+                'xlabel': 'Frequency (MHz)',
+                'ylabel': 'S21 (dB)',
+            },
+            'qubit_spec': {
+                'x_range': (4400, 4500),
+                'y_func': lambda x: np.exp(-((x - 4450) ** 2) / 100),
+                'xlabel': 'Frequency (MHz)',
+                'ylabel': 'Signal (a.u.)',
+            },
+            'rabi': {
+                'x_range': (0, 10),
+                'y_func': lambda x: np.cos(1.5 * x) ** 2,
+                'xlabel': 'Drive Amplitude',
+                'ylabel': 'Population',
+            },
+            'T1': {
+                'x_range': (0, 30),
+                'y_func': lambda x: np.exp(-x / 10),
+                'xlabel': 'Wait Time (μs)',
+                'ylabel': 'Population',
+            },
+        }
+
+        results = {}
+        figs = []
+
+        for stage_name in cfg['stages']:
+            params = stage_params[stage_name]
+            x_pts = np.linspace(*params['x_range'], cfg['points_per_stage'])
+            y_data = np.full(len(x_pts), np.nan)
+
+            results[stage_name] = {'x_pts': x_pts, 'y_data': y_data}
+
+            # Create live figure for this stage
+            while plt.fignum_exists(num=figNum):
+                figNum += 1
+            fig, ax = plt.subplots(figsize=(10, 5), num=figNum)
+
+            line, = ax.plot(x_pts, y_data, 'o-', markersize=5, linewidth=1.5)
+            ax.set_xlim(x_pts[0], x_pts[-1])
+            ax.set_xlabel(params['xlabel'])
+            ax.set_ylabel(params['ylabel'])
+            ax.set_title(f'{self.titlename} - {stage_name.replace("_", " ").title()} (Live)')
+            ax.grid(True, alpha=0.3)
+
+            # Add status text
+            status_text = ax.text(0.02, 0.98, 'Starting...', transform=ax.transAxes,
+                                  va='top', fontsize=10, color='green')
+
+            if plotDisp:
+                plt.show(block=False)
+            figs.append(fig)
+
+            # Live sweep for this stage
+            for i, x in enumerate(x_pts):
+                time.sleep(cfg['delay_per_point'])
+                y_data[i] = params['y_func'](x) + 0.05 * np.random.randn()
+
+                line.set_ydata(y_data)
+                ax.relim()
+                ax.autoscale_view()
+
+                progress_pct = 100 * (i + 1) / len(x_pts)
+                status_text.set_text(f'Progress: {progress_pct:.0f}%')
+
+                fig.canvas.draw()
+                fig.canvas.flush_events()
+
+            # Mark stage complete
+            status_text.set_text('Complete ✓')
+            status_text.set_color('blue')
+            ax.set_title(f'{self.titlename} - {stage_name.replace("_", " ").title()} (Done)')
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+
+            results[stage_name]['y_data'] = y_data
+            figNum += 1
+
+        self.data = {'config': cfg, 'data': results}
+        self.figs = figs
+
+        if plotDisp and block:
+            plt.show(block=True)
+
+        return self.data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Re-display all calibration stages."""
+        if data is None:
+            data = self.data
+
+        cfg = self.cfg
+        results = data['data']
+        figs = []
+
+        stage_labels = {
+            'resonator': ('Frequency (MHz)', 'S21 (dB)'),
+            'qubit_spec': ('Frequency (MHz)', 'Signal (a.u.)'),
+            'rabi': ('Drive Amplitude', 'Population'),
+            'T1': ('Wait Time (μs)', 'Population'),
+        }
+
+        for stage_name in cfg['stages']:
+            if stage_name not in results:
+                continue
+
+            stage_data = results[stage_name]
+            xlabel, ylabel = stage_labels.get(stage_name, ('X', 'Y'))
+
+            while plt.fignum_exists(num=figNum):
+                figNum += 1
+            fig, ax = plt.subplots(figsize=(10, 5), num=figNum)
+
+            ax.plot(stage_data['x_pts'], stage_data['y_data'], 'o-', markersize=5, linewidth=1.5)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.set_title(f'{self.titlename} - {stage_name.replace("_", " ").title()} (Completed)')
+            ax.grid(True, alpha=0.3)
+
+            if plotDisp:
+                plt.show(block=False if stage_name != cfg['stages'][-1] else block)
+            figs.append(fig)
+            figNum += 1
+
+        return figs
 
 
 # ============================================================================
@@ -1398,7 +2255,7 @@ def get_multifigure_experiments():
 
 
 def get_liveplot_experiments():
-    """Get list of experiments with live plotting."""
+    """Get list of experiments with live plotting (single figure)."""
     return [
         MockLivePlot1D,
         MockLivePlot2D,
@@ -1408,9 +2265,23 @@ def get_liveplot_experiments():
     ]
 
 
+def get_live_multifigure_experiments():
+    """Get list of experiments with live plotting across multiple figures."""
+    return [
+        MockLiveMultiFigure2,
+        MockLiveMultiFigure3,
+        MockLiveMultiFigureT1T2,
+        MockLiveMultiFigureMUX,
+        MockLiveMultiFigureCalibration,
+    ]
+
+
 def get_all_advanced_experiments():
     """Get list of all advanced mock experiments."""
-    return get_grid_experiments() + get_multifigure_experiments() + get_liveplot_experiments()
+    return (get_grid_experiments() +
+            get_multifigure_experiments() +
+            get_liveplot_experiments() +
+            get_live_multifigure_experiments())
 
 
 def run_grid_experiments(plotDisp=True, block=False):
@@ -1455,13 +2326,30 @@ def run_multifigure_experiments(plotDisp=True, block=False):
 
 
 def run_liveplot_experiments(plotDisp=True, block=False):
-    """Run all live plotting experiments."""
+    """Run all live plotting experiments (single figure)."""
     print("=" * 60)
-    print("Running Live Plotting Experiments")
+    print("Running Live Plotting Experiments (Single Figure)")
     print("=" * 60)
 
     experiments = {}
     for ExpClass in get_liveplot_experiments():
+        name = ExpClass.__name__
+        print(f"\n{name}...")
+        exp = ExpClass(path=name, prefix='test', titlename=name)
+        exp.acquire(plotDisp=plotDisp, block=block)
+        experiments[name] = exp
+
+    return experiments
+
+
+def run_live_multifigure_experiments(plotDisp=True, block=False):
+    """Run all live multi-figure experiments."""
+    print("=" * 60)
+    print("Running Live Multi-Figure Experiments")
+    print("=" * 60)
+
+    experiments = {}
+    for ExpClass in get_live_multifigure_experiments():
         name = ExpClass.__name__
         print(f"\n{name}...")
         exp = ExpClass(path=name, prefix='test', titlename=name)
@@ -1478,6 +2366,7 @@ def run_all_advanced_experiments(plotDisp=True, block=False):
     experiments.update(run_grid_experiments(plotDisp=plotDisp, block=block))
     experiments.update(run_multifigure_experiments(plotDisp=plotDisp, block=block))
     experiments.update(run_liveplot_experiments(plotDisp=plotDisp, block=block))
+    experiments.update(run_live_multifigure_experiments(plotDisp=plotDisp, block=block))
 
     print("\n" + "=" * 60)
     print("All advanced experiments completed!")
@@ -1494,7 +2383,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Run advanced mock experiments for GUI testing')
-    parser.add_argument('--category', choices=['grid', 'multi', 'live', 'all'],
+    parser.add_argument('--category', choices=['grid', 'multi', 'live', 'livemulti', 'all'],
                         default='all', help='Which category to run')
     parser.add_argument('--block', action='store_true', help='Block on each plot')
     parser.add_argument('--no-display', action='store_true', help='Disable plot display')
@@ -1510,5 +2399,7 @@ if __name__ == '__main__':
         run_multifigure_experiments(plotDisp=plotDisp, block=block)
     elif args.category == 'live':
         run_liveplot_experiments(plotDisp=plotDisp, block=block)
+    elif args.category == 'livemulti':
+        run_live_multifigure_experiments(plotDisp=plotDisp, block=block)
     else:
         run_all_advanced_experiments(plotDisp=plotDisp, block=block)
