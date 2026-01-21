@@ -53,7 +53,7 @@ except ImportError:
     qWarning("QScintilla not available. Install with: pip install QScintilla")
 
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
-from MasterProject.Client_modules.Desq_GUI.scripts.DualMultiCheckboxDialog import DualMultiCheckboxDialog
+from MasterProject.Client_modules.Desq_GUI.scripts.CheckboxDialogs import DualMultiCheckboxDialog
 
 # Import BackendDesq functions for plot sink management
 from MasterProject.Client_modules.Desq_GUI.scripts.BackendDesq import (

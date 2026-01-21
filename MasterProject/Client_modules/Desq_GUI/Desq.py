@@ -67,7 +67,7 @@ from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
 from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
 
 from MasterProject.Client_modules.Desq_GUI.CoreLib.VoltageInterface import VoltageInterface
-from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
+from MasterProject.Client_modules.Desq_GUI.scripts.CheckboxDialogs import MultiCheckboxDialog
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentThread import ExperimentThread
 from MasterProject.Client_modules.Desq_GUI.scripts.DesqTabAdv import QDesqTab
@@ -83,6 +83,7 @@ from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import Confi
 from MasterProject.Client_modules.Desq_GUI.scripts.SettingsWindow import SettingsWindow
 from MasterProject.Client_modules.Desq_GUI.scripts import ExperimentLoader
 from MasterProject.Client_modules.Desq_GUI.scripts.LoadDataWindow import LoadDataWindow
+from MasterProject.Client_modules.Desq_GUI.scripts.ImageViewTab import ImageViewTab
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -268,7 +269,7 @@ class Desq(QMainWindow):
         ### Directory Tree panel
         self.directory_tree_panel = DirectoryTreePanel(
             parent=self.tab_splitter,
-            file_filters=['.py', '.h5'],
+            file_filters=['.py', '.h5', *ImageViewTab.SUPPORTED_EXTENSIONS],
             history_key="load_directory"
         )
 
@@ -450,7 +451,8 @@ class Desq(QMainWindow):
         # UI updates
         self.soc_connected = True
         self.is_connecting = False
-        self.soc_status_label.setText('âœ” Soc connected')
+        self.soc_status_label.setText('Soc connected')
+        self.soc_status_label.setStyleSheet("color: #4CAF50;")
         self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
         self.accounts_panel.connect_button.setEnabled(True)
 
@@ -472,7 +474,8 @@ class Desq(QMainWindow):
                                  "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
-            self.soc_status_label.setText('âœ– Soc Disconnected')
+            self.soc_status_label.setText('Soc Disconnected')
+            self.soc_status_label.setStyleSheet("color: lightgray;")
             QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
 
@@ -555,6 +558,8 @@ class Desq(QMainWindow):
             self.load_data_window.set_h5_path(str(path))
             self.load_data_window.show()
             self.load_data_window.raise_()
+        elif ext in ImageViewTab.SUPPORTED_EXTENSIONS:  # NEW
+            self.create_image_tab(str(path))
         else:
             pass
 
@@ -622,7 +627,7 @@ class Desq(QMainWindow):
                     setattr(
                         obj,
                         "outerFolder",
-                        "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
+                        self.workspace #"Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
                     )
                 experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
                 self.experiment_instance = obj
@@ -656,7 +661,7 @@ class Desq(QMainWindow):
                 # UI updates for tab
                 self.currently_running_tab = self.current_tab
                 idx = self.central_tabs.indexOf(self.currently_running_tab)
-                self.central_tabs.setTabText(idx, 'âœ” ' + self.currently_running_tab.tab_name + ".py")
+                self.central_tabs.setTabText(idx, '* ' + self.currently_running_tab.tab_name + ".py")
 
                 # Connecting data related slots
                 self.experiment_worker.updateData.connect(self.currently_running_tab.update_data)  # update data & plot
@@ -823,9 +828,7 @@ class Desq(QMainWindow):
         wk = getattr(self, "experiment_worker", None)
         if wk is not None:
             try:
-                # might already be deleted; touching it could raise RuntimeError
-                # but we don't need to do anything because finished->deleteLater exists
-                pass
+                self.experiment_worker.deleteLater()
             except RuntimeError:
                 pass
             finally:
@@ -844,6 +847,8 @@ class Desq(QMainWindow):
             pass
 
         event.accept()
+        QApplication.processEvents()
+        QApplication.quit()
 
     def load_experiment_file(self):
         """
@@ -1096,6 +1101,42 @@ class Desq(QMainWindow):
                 self.central_tabs.removeTab(0)
         self.tabs_added = True
 
+    def create_image_tab(self, file_path):
+        """
+        Creates a new image viewing tab for displaying image files.
+        """
+        tab_count = self.central_tabs.count()
+        file_name = os.path.basename(file_path)
+
+        try:
+            new_image_tab = ImageViewTab(file_path, parent=self)
+
+            tab_idx = self.central_tabs.addTab(new_image_tab, file_name)
+            self.central_tabs.setCurrentIndex(tab_idx)
+            self.central_tabs.setTabToolTip(tab_idx, file_path)
+
+            # Image tabs can't run experiments
+            self.start_experiment_button.setEnabled(False)
+            self.stop_experiment_button.setEnabled(False)
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+
+            self.current_tab = new_image_tab
+
+            if not self.tabs_added:
+                if tab_count == 1:
+                    self.central_tabs.removeTab(0)
+            self.tabs_added = True
+
+            qInfo(f"Created image tab for: {file_name}")
+
+        except Exception as e:
+            qCritical(f"Failed to create image tab: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to open image:\n{str(e)}")
+
     def _on_load_data_requested(self, h5_path, experiment_path, class_name):
         """
         Handle the load_requested signal from LoadDataWindow.
@@ -1201,7 +1242,7 @@ class Desq(QMainWindow):
             # Set minimal attributes that display() might need
             exp_instance.cfg = data.get("config", {})
             if hasattr(experiment_class, 'outerFolder'):
-                exp_instance.outerFolder = ""
+                exp_instance.outerFolder = self.workspace
 
             # Check if the class has a display method
             if not hasattr(experiment_class, 'display'):

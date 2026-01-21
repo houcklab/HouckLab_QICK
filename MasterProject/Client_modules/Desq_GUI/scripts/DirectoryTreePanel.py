@@ -110,7 +110,10 @@ class DirectoryTreePanel(QWidget):
         self.setMinimumSize(125, 0)
 
         # Set default file filters if none provided
-        self.file_filters = file_filters if file_filters is not None else ['.py', '.h5']
+        self.file_filters = file_filters if file_filters is not None else [
+            '.py', '.h5',  # Experiments and data
+            '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp'  # Images
+        ]
 
         self.history_key = history_key
         self.workspace = workspace or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

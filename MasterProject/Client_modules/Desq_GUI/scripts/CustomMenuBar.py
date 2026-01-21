@@ -66,7 +66,8 @@ class CustomMenuBar(QWidget):
         self.stop_experiment_button = Helpers.create_button("", "stop_experiment", False, self)
         self.stop_experiment_button.setToolTip("Stop")
         self.stop_experiment_button.setFixedWidth(35)
-        self.soc_status_label = QLabel('✖ Soc Disconnected', self)
+        self.soc_status_label = QLabel('Soc Disconnected', self)
+        self.soc_status_label.setStyleSheet("color: lightgray;")
         self.soc_status_label.setObjectName("soc_status_label")
         self.experiment_progress_bar = QProgressBar(self, value=0)
         self.experiment_progress_bar.setFixedHeight(15)
@@ -146,10 +147,33 @@ class CustomMenuBar(QWidget):
         if event.button() == Qt.LeftButton:
             self.mouse_pos = event.globalPos()
 
+            # macOS: let the system handle dragging
+            if self.is_macos:
+                window = self.parent.windowHandle()
+                if window is not None:
+                    window.startSystemMove()
+
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton:
             delta = QPoint(event.globalPos() - self.mouse_pos)
             self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+            self.mouse_pos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.is_macos:
+            # macOS dragging handled by system
+            return
+        if self.parent.isFullScreen():
+            return
+        if not self.parent.isVisible():
+            return
+
+        if event.buttons() & Qt.LeftButton:
+            if not self.parent.isVisible():
+                return
+
+            delta = event.globalPos() - self.mouse_pos
+            self.parent.move(self.parent.pos() + delta)
             self.mouse_pos = event.globalPos()
 
     def paintEvent(self, event):

@@ -1,286 +1,422 @@
 """
-=============
-mSpecSlice.py
-=============
-A Basic Spec slice experiment.
-Plots using pyqtgraph (recommended) but also provides a matplotlib display function.
+================================================================================
+mSpecSlice.py - Qubit Spectroscopy (Two-Tone)
+================================================================================
 
-plotter (pyqtgraph): provided
-display (matplotlib): provided
+Performs two-tone spectroscopy to find the qubit frequency:
+1. Apply a spectroscopy tone at variable frequency
+2. Immediately measure the resonator response
+3. Look for dispersive shift indicating qubit excitation
+
+USAGE:
+------
+    from StarterPackConfig import BaseConfig, make_config
+    from SpecSliceExperiment import SpecSliceExperiment
+    
+    exp_cfg = {"qubit_freq_start": 4450, "qubit_freq_stop": 4550, "qubit_freq_expts": 101}
+    full_cfg = make_config(exp_cfg, qubit_id='1')
+    
+    exp = SpecSliceExperiment(path='Spec', cfg=full_cfg, soc=soc, soccfg=soccfg)
+    data = exp.acquire()
+    exp.display(data)
+
+================================================================================
 """
 
-from qick import RAveragerProgram
-from Pyro4 import Proxy
-from qick import QickConfig
-import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
-from MasterProject.Client_modules.Helpers.Amplitude_IQ import Amplitude_IQ
-from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
+# QICK imports
+try:
+    from qick import RAveragerProgram
+    QICK_AVAILABLE = True
+except ImportError:
+    QICK_AVAILABLE = False
+    class RAveragerProgram:
+        pass
+
+# Base experiment class
+try:
+    from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
+except ImportError:
+    try:
+        from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+    except ImportError:
+        try:
+            from .StarterPackConfig import ExperimentClass
+        except ImportError:
+            from StarterPackConfig import ExperimentClass
 
 
-class SpecSlice(RAveragerProgram):
+# =============================================================================
+# QICK PROGRAM
+# =============================================================================
+
+class SpecSliceProgram(RAveragerProgram):
+    """
+    Two-tone spectroscopy pulse sequence.
+
+    Sequence: spectroscopy pulse (variable freq) → readout
+    Sweep: qubit drive frequency
+    """
+
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        #### set the start, step, and other parameters
-        self.cfg["x_pts_label"] = "qubit freq (MHz)"
-        self.cfg["y_pts_label"] = None
+        cfg = self.cfg
 
-        ### define the start and step for the dictionary
-        self.cfg["start"] = self.cfg["qubit_freq_start"]
-        self.cfg["step"] = (self.cfg["qubit_freq_stop"] - self.cfg["qubit_freq_start"]) / (self.cfg["qubit_freq_expts"] - 1)
-        self.cfg["expts"] = self.cfg["qubit_freq_expts"]
+        # Frequency sweep setup
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
+        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
 
-        ### define the start and step in dac values
-        self.f_start = self.freq2reg(self.cfg["start"], gen_ch=self.cfg["qubit_ch"])
-        self.f_step = self.freq2reg(self.cfg["step"], gen_ch=self.cfg["qubit_ch"])
+        # Declare channels
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
 
-        self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
-        self.q_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # get freq register for qubit_ch
+        for ch in cfg["ro_chs"]:
+            self.declare_readout(
+                ch=ch,
+                length=self.us2cycles(cfg["read_length"]),
+                freq=cfg["read_pulse_freq"],
+                gen_ch=cfg["res_ch"]
+            )
 
-        self.declare_gen(ch=self.cfg["res_ch"], nqz=self.cfg["nqz"])  # Readout
-        self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])  # Qubit
+        # Frequencies
+        read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+                                  ro_ch=cfg["ro_chs"][0])
+        
+        # Calculate frequency step
+        self.f_start = self.freq2reg(cfg["qubit_freq_start"], gen_ch=cfg["qubit_ch"])
+        self.f_stop = self.freq2reg(cfg["qubit_freq_stop"], gen_ch=cfg["qubit_ch"])
+        self.f_step = (self.f_stop - self.f_start) // (cfg["qubit_freq_expts"] - 1)
 
-        for ch in self.cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]),
-                                 freq=self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"])
+        # Setup qubit pulse
+        if cfg["qubit_pulse_style"] == "arb":
+            self.add_gauss(
+                ch=cfg["qubit_ch"],
+                name="qubit",
+                sigma=self.us2cycles(cfg["sigma"]),
+                length=self.us2cycles(cfg["sigma"]) * 4
+            )
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"],
+                style="arb",
+                freq=self.f_start,
+                phase=0,
+                gain=cfg["qubit_gain"],
+                waveform="qubit"
+            )
+        elif cfg["qubit_pulse_style"] == "flat_top":
+            self.add_gauss(
+                ch=cfg["qubit_ch"],
+                name="qubit",
+                sigma=self.us2cycles(cfg["sigma"]),
+                length=self.us2cycles(cfg["sigma"]) * 4
+            )
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"],
+                style="flat_top",
+                freq=self.f_start,
+                phase=0,
+                gain=cfg["qubit_gain"],
+                waveform="qubit",
+                length=self.us2cycles(cfg["flat_top_length"])
+            )
+        else:  # const
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"],
+                style="const",
+                freq=self.f_start,
+                phase=0,
+                gain=cfg["qubit_gain"],
+                length=self.us2cycles(cfg["qubit_length"])
+            )
 
-        ### convert the readout frequency to proper units
-        read_freq = self.freq2reg(self.cfg["read_pulse_freq"], gen_ch=self.cfg["res_ch"],
-                                  ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
+        # Setup readout pulse
+        self.set_pulse_registers(
+            ch=cfg["res_ch"],
+            style=cfg["read_pulse_style"],
+            freq=read_freq,
+            phase=0,
+            gain=cfg["read_pulse_gain"],
+            length=self.us2cycles(cfg["read_length"])
+        )
 
-
-        self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
-                                 gain=self.cfg["read_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"]))
-
-        #### define the qubit pulse depending on the pulse type
-        if self.cfg["qubit_pulse_style"] == "arb":
-            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                     waveform="qubit")
-
-        elif self.cfg["qubit_pulse_style"] == "flat_top":
-            self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]),
-                           length=self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"]) * 4)
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=self.f_start,
-                                     phase=self.deg2reg(90, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_gain"],
-                                     waveform="qubit", length=self.us2cycles(self.cfg["flat_top_length"]))
-
-        elif self.cfg["qubit_pulse_style"] == "const":
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
-                                     gain=self.cfg["qubit_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]), )
-            # mode="periodic")
-        else:
-            print("define arb, const, or flat top pulse")
-
-        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
-
-
+        self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def body(self):
+        # Play spectroscopy pulse
+        self.pulse(ch=self.cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(0.05))
 
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
-
-        # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
-                     wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+        # Readout
+        self.measure(
+            pulse_ch=self.cfg["res_ch"],
+            adcs=self.cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"],
+                                           ro_ch=self.cfg["ro_chs"][0]),
+            wait=True,
+            syncdelay=self.us2cycles(self.cfg["relax_delay"])
+        )
 
     def update(self):
-        self.mathi(self.q_rp, self.q_freq, self.q_freq, '+', self.f_step)  # update freq of the Gaussian pi pulse
+        # Step frequency
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)
 
-# ====================================================== #
 
-class SpecSlice_Experiment(ExperimentClassPlus):
+# =============================================================================
+# EXPERIMENT CLASS
+# =============================================================================
+
+class SpecSliceExperiment(ExperimentClass):
     """
-    Basic spec experiment that takes a single slice of data
+    Qubit Spectroscopy (Two-Tone Measurement)
+
+    Sweeps the qubit drive frequency while monitoring the resonator response.
+    The qubit transition appears as a dispersive shift in the resonator.
     """
 
-    ### define the template config
+    # =========================================================================
+    # CONFIGURATION TEMPLATE (Experiment-Specific Parameters Only)
+    # =========================================================================
+
     config_template = {
-        ###### cavity
-        "read_pulse_style": "const",  # --Fixed
-        "read_length": 5,  # us
-        "read_pulse_gain": 10000,  # [DAC units]
-        "read_pulse_freq": 6425.3,
-        ##### spec parameters for finding the qubit frequency
-        "qubit_freq_start": 2869 - 20,
-        "qubit_freq_stop": 2869 + 20,
-        "qubit_freq_expts": 81,  ### number of points
-        "qubit_pulse_style": "flat_top",
-        "sigma": 0.050,  ### units us
-        "qubit_length": 1,  ### units us, doesnt really get used though
-        "flat_top_length": 0.300,  ### in us
-        "relax_delay": 500,  ### turned into us inside the run function
-        "qubit_gain": 20000,  # Constant gain to use
-        # "qubit_gain_start": 18500, # shouldn't need this...
-        "reps": 100,
-        "sets": 5,
+        # --- Spectroscopy Sweep Parameters ---
+        "qubit_freq_start": 4450,         # Start frequency [MHz]
+        "qubit_freq_stop": 4550,          # Stop frequency [MHz]
+        "qubit_freq_expts": 81,           # Number of points
+        
+        # --- Spectroscopy Pulse Parameters ---
+        "qubit_pulse_style": "flat_top",  # "arb", "flat_top", or "const"
+        "flat_top_length": 0.500,         # Flat top duration [µs]
+        "qubit_length": 1.0,              # Const pulse length [µs] (if const style)
+        "qubit_gain": 20000,              # Spectroscopy pulse amplitude [DAC units]
     }
 
-    ### Hardware Requirement
-    hardware_requirement = [Proxy, QickConfig]
-
-    def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
-                 cfg=None, config_file=None, progress=None):
-
-        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
-                         hardware_requirement=self.hardware_requirement, cfg=cfg,
-                         config_file=config_file, progress=progress)
-
-        # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg = hardware
+    def __init__(self, path='', outerFolder='', prefix='data',
+                 soc=None, soccfg=None, cfg=None, config_file=None, **kwargs):
+        super().__init__(
+            path=path, outerFolder=outerFolder, prefix=prefix,
+            soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file, **kwargs
+        )
 
     def acquire(self, progress=False, debug=False):
-        ##### code to aquire just the qubit spec data
-        expt_cfg = {
-            ### spec parameters
-            "qubit_freq_start": self.cfg["qubit_freq_start"],
-            "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-            "qubit_freq_expts": self.cfg["qubit_freq_expts"],  ### number of points
+        """Run spectroscopy measurement."""
+        # Set up expts for RAveragerProgram
+        self.cfg["expts"] = self.cfg["qubit_freq_expts"]
+        
+        prog = SpecSliceProgram(self.soccfg, self.cfg)
+        x_pts, avgi, avgq = prog.acquire(
+            self.soc, threshold=None, angle=None, load_pulses=True,
+            readouts_per_experiment=1, save_experiments=None,
+            start_src="internal", progress=progress
+        )
+
+        # Create frequency axis
+        freqs = np.linspace(
+            self.cfg["qubit_freq_start"],
+            self.cfg["qubit_freq_stop"],
+            self.cfg["qubit_freq_expts"]
+        )
+
+        data = {
+            'config': self.cfg,
+            'data': {
+                'freqs': freqs,
+                'avgi': avgi,
+                'avgq': avgq,
+            }
         }
-        # self.cfg["reps"] = self.cfg["spec_reps"]
-        self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["qubit_freq_expts"]
-        self.cfg["expts"] = expt_cfg["qubit_freq_expts"]
-
-        ### define qubit frequency array
-        self.qubit_freqs = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"],
-                                       expt_cfg["qubit_freq_expts"])
-
-        prog = SpecSlice(self.soccfg, self.cfg)
-
-        x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False)
-
-        data = {'config': self.cfg,
-                'data': {'x_pts': self.qubit_freqs, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
-        #### find the frequency corresponding to the qubit dip
-        sig = np.array(data['data']['avgi']) + 1j * np.array(data['data']['avgq']) #modified to fix complex type error
-        avgamp0 = np.abs(sig)
-
-        peak_loc = np.argmax(np.abs(data['data']['avgq'])) # Maximum location
-        peak_loc = np.argmin(np.abs(data['data']['avgq']))  # Minimum location
-
-        print(np.max(np.abs(data['data']['avgq'])))
-        self.qubitFreq = data['data']['x_pts'][peak_loc]
+        # Find peak
+        mag = np.abs(avgi[0][0] + 1j * avgq[0][0])
+        peak_idx = np.argmax(mag)
+        data['data']['qubit_freq'] = freqs[peak_idx]
+        print(f"[SpecSlice] Peak at {freqs[peak_idx]:.3f} MHz")
 
         return data
 
-    @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        # clear plot widget and array
-        plot_widget.ci.clear()
-        plots = []
-
-        if 'data' in data:
-            data = data['data']
-
-        x_pts = data['x_pts']
-        avgi = data['avgi']
-        avgq = data['avgq']
-
-        sig = np.array(avgi).squeeze() + 1j * np.array(avgq).squeeze()
-        print(sig)
-        avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
-
-        # Create structured data
-        prepared_data = {
-            "plots": [
-                {"x": x_pts, "y": avgphase, "label": "Phase", "xlabel": "Qubit Frequency (GHz)", "ylabel": "Degree"},
-                {"x": x_pts, "y": avgsig, "label": "Magnitude", "xlabel": "Qubit Frequency (GHz)", "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgi[0][0]), "label": "I - Data", "xlabel": "Qubit Frequency (GHz)",
-                 "ylabel": "a.u."},
-                {"x": x_pts, "y": np.abs(avgq[0][0]), "label": "Q - Data", "xlabel": "Qubit Frequency (GHz)",
-                 "ylabel": "a.u."}
-            ]
-        }
-
-        date_time_now = datetime.datetime.now()
-        date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
-        plot_title = "SpecSlice_" + date_time_string
-        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='12pt')
-        plot_widget.nextRow()
-
-        for i, plot in enumerate(prepared_data["plots"]):
-            p = plot_widget.addPlot(title=plot["label"])
-            p.addLegend()
-            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
-            p.setLabel('bottom', plot["xlabel"])
-            p.setLabel('left', plot["ylabel"])
-            plots.append(p)
-            plot_widget.nextRow()
-
-        return
-
-    @classmethod
-    def export_data(cls, data_file, data, config):
-        super().export_data(data_file, data, config)
-        pass
-
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
-
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Plot spectroscopy results."""
         if data is None:
             data = self.data
 
-        x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi']
-        avgq = data['data']['avgq']
-        sig  = avgi[0][0] + 1j * avgq[0][0]
-        avgsig = np.abs(sig)
-        avgphase = np.angle(sig, deg=True)
-        while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
+        freqs = data['data']['freqs']
+        avgi = data['data']['avgi'][0][0]
+        avgq = data['data']['avgq'][0][0]
+        mag = np.abs(avgi + 1j * avgq)
+        phase = np.angle(avgi + 1j * avgq, deg=True)
+
+        while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
+        fig, axs = plt.subplots(4, 1, figsize=(10, 10), num=figNum)
 
-        ax0 = axs[0].plot(x_pts, avgphase, 'o-', label="phase")
-        axs[0].set_ylabel("degree.")
-        axs[0].set_xlabel("Qubit Frequency (GHz)")
-        axs[0].legend()
+        axs[0].plot(freqs, phase, 'o-', color='purple', markersize=4)
+        axs[0].set_ylabel("Phase (deg)")
+        axs[0].set_title("Qubit Spectroscopy")
+        axs[0].grid(True, alpha=0.3)
 
-        ax1 = axs[1].plot(x_pts, avgsig, 'o-', label="magnitude")
-        axs[1].set_ylabel("a.u.")
-        axs[1].set_xlabel("Qubit Frequency (GHz)")
-        axs[1].legend()
+        axs[1].plot(freqs, mag, 'o-', color='blue', markersize=4)
+        if 'qubit_freq' in data['data']:
+            axs[1].axvline(data['data']['qubit_freq'], color='red', linestyle='--',
+                          label=f"Peak: {data['data']['qubit_freq']:.3f} MHz")
+            axs[1].legend()
+        axs[1].set_ylabel("Magnitude (a.u.)")
+        axs[1].grid(True, alpha=0.3)
 
-        ax2 = axs[2].plot(x_pts, np.abs(avgi[0][0]), 'o-', label="I - Data")
-        axs[2].set_ylabel("a.u.")
-        axs[2].set_xlabel("Qubit Frequency (GHz)")
-        axs[2].legend()
+        axs[2].plot(freqs, avgi, 'o-', color='orange', markersize=4)
+        axs[2].set_ylabel("I (a.u.)")
+        axs[2].grid(True, alpha=0.3)
 
-        ax3 = axs[3].plot(x_pts, np.abs(avgq[0][0]), 'o-', label="Q - Data")
-        axs[3].set_ylabel("a.u.")
-        axs[3].set_xlabel("Qubit Frequency (GHz)")
-        axs[3].legend()
+        axs[3].plot(freqs, avgq, 'o-', color='green', markersize=4)
+        axs[3].set_ylabel("Q (a.u.)")
+        axs[3].set_xlabel("Frequency (MHz)")
+        axs[3].grid(True, alpha=0.3)
 
         plt.tight_layout()
 
-        # plt.savefig(self.iname)
-
         if plotDisp:
-            plt.show(block=False)
-            plt.pause(2)
-
+            plt.show(block=block)
         else:
-            fig.clf(True)
             plt.close(fig)
 
+        return fig, axs
+
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
+        if data is None:
+            data = self.data
+        print(f"[SpecSliceExperiment] Saving to {self.fname}")
         super().save_data(data=data['data'])
+
+
+# =============================================================================
+# MOCK VERSION FOR TESTING
+# =============================================================================
+
+class MockSpecSliceExperiment(ExperimentClass):
+    """
+    Mock Spectroscopy Experiment - Generates simulated Lorentzian peak without hardware.
+    """
+
+    config_template = {
+        # --- Spectroscopy Sweep Parameters ---
+        "qubit_freq_start": 4450,
+        "qubit_freq_stop": 4550,
+        "qubit_freq_expts": 81,
+        "qubit_pulse_style": "flat_top",
+        "flat_top_length": 0.500,
+        "qubit_length": 1.0,
+        "qubit_gain": 20000,
+        
+        # --- Mock Simulation Parameters ---
+        "qubit_freq_true": 4500.0,        # Simulated qubit frequency [MHz]
+        "linewidth": 5.0,                 # Peak linewidth [MHz]
+        "noise_level": 0.05,
+    }
+
+    def __init__(self, path='', outerFolder='', prefix='data', cfg=None, **kwargs):
+        default_cfg = self.config_template.copy()
+        if cfg:
+            default_cfg.update(cfg)
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix,
+                         cfg=default_cfg, **kwargs)
+
+    def acquire(self, progress=False, debug=False):
+        """Generate simulated Lorentzian peak data."""
+        cfg = self.cfg
+        freqs = np.linspace(cfg['qubit_freq_start'], cfg['qubit_freq_stop'],
+                           cfg['qubit_freq_expts'])
+
+        f0 = cfg['qubit_freq_true']
+        gamma = cfg['linewidth']
+
+        # Lorentzian in magnitude
+        lorentzian = gamma**2 / ((freqs - f0)**2 + gamma**2)
+        noise_i = cfg['noise_level'] * np.random.randn(len(freqs))
+        noise_q = cfg['noise_level'] * np.random.randn(len(freqs))
+
+        avgi = lorentzian + noise_i
+        avgq = 0.3 * lorentzian + noise_q
+
+        data = {
+            'config': cfg,
+            'data': {
+                'freqs': freqs,
+                'avgi': [[avgi]],
+                'avgq': [[avgq]],
+            }
+        }
+        self.data = data
+
+        # Find peak
+        mag = np.abs(avgi + 1j * avgq)
+        peak_idx = np.argmax(mag)
+        data['data']['qubit_freq'] = freqs[peak_idx]
+        print(f"[MockSpecSlice] Peak at {freqs[peak_idx]:.3f} MHz (true = {f0:.3f} MHz)")
+
+        return data
+
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Plot spectroscopy results."""
+        if data is None:
+            data = self.data
+
+        freqs = data['data']['freqs']
+        avgi = data['data']['avgi'][0][0]
+        avgq = data['data']['avgq'][0][0]
+        mag = np.abs(avgi + 1j * avgq)
+        phase = np.angle(avgi + 1j * avgq, deg=True)
+
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig, axs = plt.subplots(4, 1, figsize=(10, 10), num=figNum)
+
+        axs[0].plot(freqs, phase, 'o-', color='purple', markersize=3)
+        axs[0].set_ylabel("Phase (deg)")
+        axs[0].set_title("Mock Qubit Spectroscopy")
+        axs[0].grid(True, alpha=0.3)
+
+        axs[1].plot(freqs, mag, 'o-', color='blue', markersize=3)
+        if 'qubit_freq' in data['data']:
+            axs[1].axvline(data['data']['qubit_freq'], color='red', linestyle='--',
+                          label=f"Peak: {data['data']['qubit_freq']:.3f} MHz")
+            axs[1].legend()
+        axs[1].set_ylabel("Magnitude (a.u.)")
+        axs[1].grid(True, alpha=0.3)
+
+        axs[2].plot(freqs, avgi, 'o-', color='orange', markersize=3)
+        axs[2].set_ylabel("I (a.u.)")
+        axs[2].grid(True, alpha=0.3)
+
+        axs[3].plot(freqs, avgq, 'o-', color='green', markersize=3)
+        axs[3].set_ylabel("Q (a.u.)")
+        axs[3].set_xlabel("Frequency (MHz)")
+        axs[3].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+
+        if plotDisp:
+            plt.show(block=block)
+        else:
+            plt.close(fig)
+
+        return fig, axs
+
+    def save_data(self, data=None):
+        if data is None:
+            data = self.data
+        print(f"[MockSpecSlice] Saving to {self.fname}")
+        super().save_data(data=data.get('data', data))
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+if __name__ == '__main__':
+    print("Testing MockSpecSliceExperiment...")
+    exp = MockSpecSliceExperiment(path='test', prefix='spec')
+    data = exp.acquire()
+    exp.display(data, plotDisp=True, block=True)
