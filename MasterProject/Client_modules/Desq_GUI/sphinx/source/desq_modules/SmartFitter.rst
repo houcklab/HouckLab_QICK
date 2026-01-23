@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+SmartFitter
+===========
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.SmartFitter
    :members:
    :undoc-members:
    :show-inheritance:

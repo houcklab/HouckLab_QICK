@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+ExperimentLoader
+================
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.ExperimentLoader
    :members:
    :undoc-members:
    :show-inheritance:

@@ -2,8 +2,10 @@
 ==============
 SmartFitter.py
 ==============
-Intelligent fitting system that analyzes data and suggests/applies appropriate fits.
-Includes common quantum experiment models and general curve fitting.
+
+Semi-intelligent fitting system that analyzes data and suggests/applies appropriate fits.
+Includes common quantum experiment models and general curve fitting. This feature is less of a focus and works
+best for single figure experiments.
 """
 
 import numpy as np

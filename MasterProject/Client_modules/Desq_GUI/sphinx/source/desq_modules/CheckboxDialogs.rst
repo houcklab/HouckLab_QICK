@@ -1,7 +1,7 @@
-AuxiliaryThread
+CheckboxDialogs
 ===============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.CheckboxDialogs
    :members:
    :undoc-members:
    :show-inheritance:

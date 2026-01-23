@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+LoadDataWindow
+==============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.LoadDataWindow
    :members:
    :undoc-members:
    :show-inheritance:

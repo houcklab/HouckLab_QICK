@@ -1,63 +1,87 @@
 """
-=============
-DesqTabAdv.py
-=============
-The custom QDesqTab class for the central tabs module of the main application.
+==========
+DesqTab.py
+==========
 
-SIMPLIFIED PLOTTING ARCHITECTURE:
-- Experiments plot via their `display()` method only
+Custom QDesqTab class for the central tabs module of the main Desq application.
+
+This module provides the primary tab widget that manages experiment visualization,
+data loading, and interactive plotting within the Desq GUI framework.
+
+Architecture Overview
+---------------------
+
+**Simplified Plotting Architecture:**
+
+- Experiments plot via their ``display()`` method only
 - No plotter-selection UI or logic
 - Loaded datasets use auto-plotting
 - Single, clear plotting entry point
 
-FIGURE CAROUSEL WITH STACKED WIDGETS:
+**Figure Carousel with Stacked Widgets:**
+
 - When multiple matplotlib figures are generated, thumbnails appear in a carousel
 - Each figure gets PERSISTENT plot widgets (both matplotlib and pyqtgraph versions)
 - Widgets are stored in QStackedWidgets for instant switching
 - Clicking a thumbnail just changes the stack index - NO re-rendering
 - This eliminates geometry instability and enables proper live plotting
 
-STACKED WIDGET STRUCTURE:
-- plot_stack: Main switcher between modes
-  - Index 0: pyqtgraph_stack (contains all PyQtGraph GraphicsLayoutWidgets)
-  - Index 1: matplotlib_stack (contains all Matplotlib FigureCanvas containers)
+**Stacked Widget Structure:**
+
+- ``plot_stack``: Main switcher between modes
+
+  - Index 0: ``pyqtgraph_stack`` (contains all PyQtGraph GraphicsLayoutWidgets)
+  - Index 1: ``matplotlib_stack`` (contains all Matplotlib FigureCanvas containers)
+
 - Each sub-stack:
+
   - Index 0: Default placeholder widget ("Nothing to plot")
   - Index 1+: One widget per figure from the carousel
 
-LIVE PLOTTING:
+**Live Plotting:**
+
 - Live updates modify data on the EXISTING persistent widgets
 - No widget recreation or re-rendering on data updates
 - Proper tracking of which figure is being updated
 
-Each QDesqTab is either an experiment tab or a data tab that stores its own object attributes,
-configuration, data, and plotting.
+Each QDesqTab is either an experiment tab or a data tab that stores its own
+object attributes, configuration, data, and plotting.
+
+.. note::
+    The module uses session-based plot isolation to prevent cross-contamination
+    between experiment runs. Each run/replot increments the session ID.
+
+.. seealso::
+    - :mod:`FigureCarousel` for carousel navigation implementation
+    - :mod:`PlotSinkManager` for matplotlib backend interception
+    - :mod:`ExperimentObject` for experiment wrapper functionality
 """
 
-import copy
+from __future__ import annotations
+
 import os
 import json
-import time
 import h5py
 import traceback
 from pathlib import Path
 import datetime
 import shutil
 import matplotlib
-# Don't override backend here - let PlotSinkManager handle it
-# matplotlib.use("Agg")  # REMOVED - conflicts with BackendDesq
+# NOTE: Don't override backend here - let PlotSinkManager handle it via BackendDesq.
+# Using matplotlib.use("Agg") here would conflict with the custom backend interception
+# system that enables GUI integration and live plotting.
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Callable
 
-from PyQt5.QtGui import QKeySequence, QCursor, QImage, QPixmap, QColor, QPainter, QPen
+from PyQt5.QtGui import QKeySequence, QCursor
 from PyQt5.QtCore import (
-    Qt, QSize, qCritical, qInfo, qDebug, QRect, QTimer, QEvent,
-    pyqtSignal, qWarning, QSettings, QObject, QMutex, QMutexLocker
+    Qt, QSize, qCritical, qInfo, qDebug, QTimer,
+    pyqtSignal, qWarning, QMutex, QMutexLocker
 )
 from PyQt5.QtWidgets import (
     QApplication,
@@ -69,24 +93,24 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QLabel,
     QComboBox,
-    QFileDialog,
     QShortcut,
     QCheckBox,
-    QGraphicsDropShadowEffect,
     QScrollArea,
-    QPushButton,
     QSplitter,
     QStackedWidget,
-    QFrame,
 )
 import pyqtgraph as pg
 import warnings
+
+# Suppress common PyQtGraph "All-NaN slice" warnings that occur during plotting
+# when data contains NaN values. These are expected in quantum experiments where
+# data is progressively filled during acquisition.
 warnings.filterwarnings('ignore', message='All-NaN slice encountered',
                         category=RuntimeWarning, module='pyqtgraph')
 from matplotlib.collections import PathCollection
 from matplotlib.patches import Rectangle
 
-from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanelAdv import QConfigTreePanel
+from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentObject import ExperimentObject
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 from MasterProject.Client_modules.Desq_GUI.scripts.SmartFitter import FitManager, FitResult
@@ -99,35 +123,88 @@ from MasterProject.Client_modules.Desq_GUI.scripts.FigureCarousel import FigureC
 
 @dataclass
 class PyQtGraphPlotItem:
-    """Tracks a single PyQtGraph plot with its associated label."""
+    """
+    Track a single PyQtGraph plot with its associated label.
+
+    This dataclass provides a structured way to track PyQtGraph PlotItems
+    along with their metadata for proper cleanup and management.
+
+    :ivar plot: The PyQtGraph PlotItem instance.
+    :vartype plot: pg.PlotItem
+    :ivar label: Optional label widget in GraphicsLayout (e.g., title label).
+    :vartype label: Optional[Any]
+    :ivar row: Grid row position in the GraphicsLayoutWidget.
+    :vartype row: int
+    :ivar col: Grid column position in the GraphicsLayoutWidget.
+    :vartype col: int
+    """
     plot: pg.PlotItem
-    label: Optional[Any] = None  # Label widget in GraphicsLayout
+    label: Optional[Any] = None
     row: int = 0
     col: int = 0
 
 
 @dataclass
 class MatplotlibFigureItem:
-    """Tracks a matplotlib figure with all its associated widgets."""
+    """
+    Track a matplotlib figure with all its associated widgets.
+
+    This dataclass encapsulates all Qt widgets associated with a single
+    matplotlib figure for proper resource management and cleanup.
+
+    :ivar figure: The matplotlib Figure object.
+    :vartype figure: matplotlib.figure.Figure
+    :ivar canvas: The Qt canvas widget displaying the figure.
+    :vartype canvas: FigureCanvas
+    :ivar toolbar: The navigation toolbar for the figure.
+    :vartype toolbar: NavigationToolbar
+    :ivar container: The container widget holding canvas and toolbar.
+    :vartype container: QWidget
+    :ivar labels: List of label widgets associated with this figure.
+    :vartype labels: List[Any]
+    """
     figure: Any  # matplotlib.figure.Figure
     canvas: FigureCanvas
     toolbar: NavigationToolbar
     container: QWidget
-    labels: List[Any] = field(default_factory=list)  # Label widgets
+    labels: List[Any] = field(default_factory=list)
 
 
 class PlotManager:
     """
     Centralized plot management with thread safety.
-    Handles both PyQtGraph and Matplotlib plots.
+
+    This class provides thread-safe management of both PyQtGraph and Matplotlib
+    plots within a QDesqTab. It handles plot tracking, cleanup, and resource
+    management to prevent memory leaks and orphaned widgets.
+
+    The PlotManager uses a QMutex to ensure thread-safe access to plot
+    collections, which is essential when experiments run in worker threads
+    while the GUI needs to update in the main thread.
+
+    :ivar mutex: Thread synchronization mutex for safe concurrent access.
+    :vartype mutex: QMutex
+    :ivar pyqtgraph_plots: List of tracked PyQtGraph plot items.
+    :vartype pyqtgraph_plots: List[PyQtGraphPlotItem]
+    :ivar pyqtgraph_labels: Global labels (titles, etc.) in PyQtGraph.
+    :vartype pyqtgraph_labels: List[Any]
+    :ivar matplotlib_figures: List of tracked matplotlib figure items.
+    :vartype matplotlib_figures: List[MatplotlibFigureItem]
+    :ivar fit_overlays: Fit curve overlays that can be on either backend.
+    :vartype fit_overlays: List[Any]
+
+    .. note::
+        All public methods acquire the mutex lock internally, so callers
+        do not need to handle synchronization manually.
     """
 
-    def __init__(self):
-        self.mutex = QMutex()
+    def __init__(self) -> None:
+        """Initialize the PlotManager with empty collections and a new mutex."""
+        self.mutex: QMutex = QMutex()
 
         # PyQtGraph tracking
         self.pyqtgraph_plots: List[PyQtGraphPlotItem] = []
-        self.pyqtgraph_labels: List[Any] = []  # Global labels (titles, etc.)
+        self.pyqtgraph_labels: List[Any] = []
 
         # Matplotlib tracking
         self.matplotlib_figures: List[MatplotlibFigureItem] = []
@@ -135,16 +212,33 @@ class PlotManager:
         # Fit overlays (can be on either backend)
         self.fit_overlays: List[Any] = []
 
-    def clear_all(self, plot_widget, matplotlib_layout):
-        """Thread-safe clearing of all plots and labels."""
+    def clear_all(self, plot_widget: pg.GraphicsLayoutWidget,
+                  matplotlib_layout: QVBoxLayout) -> None:
+        """
+        Thread-safe clearing of all plots and labels from both backends.
+
+        This method performs complete cleanup of all tracked plots, labels,
+        and matplotlib figures. It properly closes matplotlib figures to
+        prevent memory leaks.
+
+        :param plot_widget: The PyQtGraph GraphicsLayoutWidget to clear.
+        :type plot_widget: pg.GraphicsLayoutWidget
+        :param matplotlib_layout: The layout containing matplotlib widgets.
+        :type matplotlib_layout: QVBoxLayout
+
+        .. warning::
+            This method will close all matplotlib figures, which cannot
+            be undone. Ensure any necessary data is saved before calling.
+        """
         with QMutexLocker(self.mutex):
-            # Clear PyQtGraph
+            # Clear PyQtGraph labels first
             for label in self.pyqtgraph_labels:
                 try:
                     plot_widget.ci.removeItem(label)
                 except:
                     pass
 
+            # Clear PyQtGraph plots and their associated labels
             for plot_item in self.pyqtgraph_plots:
                 try:
                     plot_widget.ci.removeItem(plot_item.plot)
@@ -157,17 +251,19 @@ class PlotManager:
             self.pyqtgraph_plots.clear()
             self.pyqtgraph_labels.clear()
 
-            # Clear Matplotlib
+            # Clear Matplotlib figures with proper Qt widget cleanup
             for fig_item in self.matplotlib_figures:
                 for label in fig_item.labels:
                     label.deleteLater()
                 fig_item.toolbar.deleteLater()
                 fig_item.canvas.deleteLater()
+                # Close the matplotlib figure to free memory
                 try:
                     plt.close(fig_item.figure)
                 except:
                     pass
 
+                # Clean up container widget
                 try:
                     if fig_item.container is not None:
                         fig_item.container.setParent(None)
@@ -175,7 +271,7 @@ class PlotManager:
                 except Exception:
                     pass
 
-            # Clear matplotlib layout
+            # Clear all widgets from matplotlib layout
             while matplotlib_layout.count():
                 item = matplotlib_layout.takeAt(0)
                 widget = item.widget()
@@ -187,8 +283,18 @@ class PlotManager:
             # Clear fit overlays
             self.fit_overlays.clear()
 
-    def remove_pyqtgraph_plot(self, plot_widget, plot_to_remove):
-        """Remove a specific PyQtGraph plot and its label."""
+    def remove_pyqtgraph_plot(self, plot_widget: pg.GraphicsLayoutWidget,
+                              plot_to_remove: pg.PlotItem) -> bool:
+        """
+        Remove a specific PyQtGraph plot and its associated label.
+
+        :param plot_widget: The widget containing the plot.
+        :type plot_widget: pg.GraphicsLayoutWidget
+        :param plot_to_remove: The plot item to remove.
+        :type plot_to_remove: pg.PlotItem
+        :returns: True if the plot was found and removed, False otherwise.
+        :rtype: bool
+        """
         with QMutexLocker(self.mutex):
             for i, plot_item in enumerate(self.pyqtgraph_plots):
                 if plot_item.plot == plot_to_remove:
@@ -202,49 +308,102 @@ class PlotManager:
                     return True
             return False
 
-    def add_pyqtgraph_plot(self, plot, label=None, row=0, col=0):
-        """Add a PyQtGraph plot with thread safety."""
+    def add_pyqtgraph_plot(self, plot: pg.PlotItem, label: Optional[Any] = None,
+                           row: int = 0, col: int = 0) -> None:
+        """
+        Add a PyQtGraph plot with thread safety.
+
+        :param plot: The PlotItem to track.
+        :type plot: pg.PlotItem
+        :param label: Optional label widget associated with the plot.
+        :type label: Optional[Any]
+        :param row: Grid row position.
+        :type row: int
+        :param col: Grid column position.
+        :type col: int
+        """
         with QMutexLocker(self.mutex):
             plot_item = PyQtGraphPlotItem(plot=plot, label=label, row=row, col=col)
             self.pyqtgraph_plots.append(plot_item)
 
-    def add_pyqtgraph_label(self, label):
-        """Add a global PyQtGraph label (e.g., figure title)."""
+    def add_pyqtgraph_label(self, label: Any) -> None:
+        """
+        Add a global PyQtGraph label (e.g., figure title).
+
+        :param label: The label widget to track.
+        :type label: Any
+        """
         with QMutexLocker(self.mutex):
             self.pyqtgraph_labels.append(label)
 
-    def add_matplotlib_figure(self, fig_item: MatplotlibFigureItem):
-        """Add a matplotlib figure with all its widgets."""
+    def add_matplotlib_figure(self, fig_item: MatplotlibFigureItem) -> None:
+        """
+        Add a matplotlib figure with all its associated widgets.
+
+        :param fig_item: The figure item containing figure and widget references.
+        :type fig_item: MatplotlibFigureItem
+        """
         with QMutexLocker(self.mutex):
             self.matplotlib_figures.append(fig_item)
 
-    def get_matplotlib_canvases(self):
-        """Get all matplotlib canvases (thread-safe)."""
+    def get_matplotlib_canvases(self) -> List[FigureCanvas]:
+        """
+        Get all matplotlib canvases (thread-safe).
+
+        :returns: List of FigureCanvas objects for all tracked figures.
+        :rtype: List[FigureCanvas]
+        """
         with QMutexLocker(self.mutex):
             return [fig.canvas for fig in self.matplotlib_figures]
 
-    def get_matplotlib_figures(self):
-        """Get all matplotlib figure objects (thread-safe)."""
+    def get_matplotlib_figures(self) -> List[Any]:
+        """
+        Get all matplotlib figure objects (thread-safe).
+
+        :returns: List of matplotlib Figure objects.
+        :rtype: List[Any]
+        """
         with QMutexLocker(self.mutex):
             return [fig.figure for fig in self.matplotlib_figures]
 
-    def get_pyqtgraph_plots(self):
-        """Get all PyQtGraph plots (thread-safe)."""
+    def get_pyqtgraph_plots(self) -> List[pg.PlotItem]:
+        """
+        Get all PyQtGraph plots (thread-safe).
+
+        :returns: List of PlotItem objects.
+        :rtype: List[pg.PlotItem]
+        """
         with QMutexLocker(self.mutex):
             return [item.plot for item in self.pyqtgraph_plots]
 
-    def has_pyqtgraph_content(self):
-        """Check if there are any PyQtGraph plots or labels (thread-safe)."""
+    def has_pyqtgraph_content(self) -> bool:
+        """
+        Check if there are any PyQtGraph plots or labels (thread-safe).
+
+        :returns: True if any PyQtGraph content exists.
+        :rtype: bool
+        """
         with QMutexLocker(self.mutex):
             return len(self.pyqtgraph_plots) > 0 or len(self.pyqtgraph_labels) > 0
 
-    def has_matplotlib_content(self):
-        """Check if there are any matplotlib figures (thread-safe)."""
+    def has_matplotlib_content(self) -> bool:
+        """
+        Check if there are any matplotlib figures (thread-safe).
+
+        :returns: True if any matplotlib figures exist.
+        :rtype: bool
+        """
         with QMutexLocker(self.mutex):
             return len(self.matplotlib_figures) > 0
 
-    def clear_fit_overlays(self):
-        """Clear all fit overlay references."""
+    def clear_fit_overlays(self) -> None:
+        """
+        Clear all fit overlay references.
+
+        This removes internal references to fit overlays but does not
+        remove them from the actual plots. Use :meth:`QDesqTab.clear_fit_overlays`
+        for complete cleanup including visual removal.
+        """
         with QMutexLocker(self.mutex):
             self.fit_overlays.clear()
 
@@ -256,10 +415,35 @@ class PlotManager:
 class ExperimentInfoBar(QWidget):
     """
     Collapsible experiment information section.
-    Can store multiple rows of data and expand/collapse on click.
+
+    Displays metadata about the current experiment including source file,
+    runtime estimation, and hardware requirements. The content area can
+    be expanded or collapsed by clicking the toggle button.
+
+    :ivar main_layout: The main vertical layout of the widget.
+    :vartype main_layout: QVBoxLayout
+    :ivar header: The header widget containing toggle button and label.
+    :vartype header: QWidget
+    :ivar toggle_button: Button to expand/collapse the content area.
+    :vartype toggle_button: QPushButton
+    :ivar content_area: Scrollable area containing info rows.
+    :vartype content_area: QScrollArea
+    :ivar content_widget: Widget inside the scroll area.
+    :vartype content_widget: QWidget
+    :ivar content_layout: Layout for info row widgets.
+    :vartype content_layout: QVBoxLayout
+
+    :param parent: Parent widget.
+    :type parent: Optional[QWidget]
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        """
+        Initialize the ExperimentInfoBar.
+
+        :param parent: Parent widget.
+        :type parent: Optional[QWidget]
+        """
         super().__init__(parent)
         self.setObjectName("ExperimentInfoBar")
         self.setContentsMargins(0, 0, 0, 0)
@@ -312,12 +496,22 @@ class ExperimentInfoBar(QWidget):
 
         self.setMaximumHeight(15)
 
-    def add_info_row(self, widget: QWidget):
-        """Adds a widget row to the content area."""
+    def add_info_row(self, widget: QWidget) -> None:
+        """
+        Add a widget row to the content area.
+
+        :param widget: The widget to add as an info row.
+        :type widget: QWidget
+        """
         self.content_layout.addWidget(widget)
 
-    def toggle_content(self):
-        """Expand or collapse the content area."""
+    def toggle_content(self) -> None:
+        """
+        Expand or collapse the content area.
+
+        When expanded, the content area shows all info rows up to a maximum
+        height of 300 pixels. When collapsed, only the header is visible.
+        """
         if self.toggle_button.isChecked():
             self.toggle_button.setStyleSheet(
                 "image: url('MasterProject/Client_modules/Desq_GUI/assets/chevron-down.svg');")
@@ -348,62 +542,103 @@ class QDesqTab(QWidget):
     """
     A tab widget that holds either an experiment instance or a data instance.
 
-    SIMPLIFIED PLOTTING ARCHITECTURE:
-    - Experiments plot via their `display()` method
+    QDesqTab is the primary visualization and control widget in the Desq
+    application. Each tab manages its own experiment or dataset, including
+    configuration, plotting, data export, and fitting functionality.
+
+    **Simplified Plotting Architecture:**
+
+    - Experiments plot via their ``display()`` method
     - No plotter-selection UI or logic
     - Loaded datasets use auto-plotting
     - Thread-safe plot management via PlotManager
     - Proper resource cleanup (no orphaned labels/widgets)
 
-    FIGURE CAROUSEL:
+    **Figure Carousel:**
+
     - Shows thumbnails of all matplotlib figures generated
     - Allows switching between figures without re-running
     - Cleared on each new run to prevent cross-run mixing
+
+    :ivar updated_tab: Signal emitted when the tab is updated.
+    :vartype updated_tab: pyqtSignal
+    :ivar app: Reference to the main Desq application.
+    :vartype app: QApplication
+    :ivar tab_name: Display name of the tab.
+    :vartype tab_name: Optional[str]
+    :ivar source_file_name: Name of the source experiment file.
+    :vartype source_file_name: Optional[str]
+    :ivar is_experiment: Whether this tab represents an experiment (vs dataset).
+    :vartype is_experiment: bool
+    :ivar workspace: Path to the workspace directory.
+    :vartype workspace: str
+    :ivar experiment_obj: Wrapper object for the experiment class.
+    :vartype experiment_obj: Optional[ExperimentObject]
+    :ivar dataset_file: Path to loaded dataset file.
+    :vartype dataset_file: Optional[str]
+    :ivar data: Current data being displayed.
+    :vartype data: Optional[Dict[str, Any]]
+    :ivar plot_manager: Thread-safe plot management instance.
+    :vartype plot_manager: PlotManager
+    :ivar fit_manager: Fitting algorithm manager.
+    :vartype fit_manager: FitManager
+    :ivar fit_results: List of fitting results from current session.
+    :vartype fit_results: List[FitResult]
+    :ivar fit_overlays: Fit curve overlay plot items.
+    :vartype fit_overlays: List[Any]
+
+    .. note::
+        The tab uses session-based plot isolation. Each call to
+        :meth:`start_plot_session` increments the session ID, causing
+        any in-flight figures from previous sessions to be rejected.
+
+    .. seealso::
+        - :class:`PlotManager` for thread-safe plot tracking
+        - :class:`FigureCarousel` for multi-figure navigation
     """
 
-    updated_tab = pyqtSignal()
-    """Signal sent to main application when tab is updated."""
+    #: Signal sent to main application when tab is updated.
+    updated_tab: pyqtSignal = pyqtSignal()
 
     def __init__(
             self,
-            experiment_id=(None, None),
-            tab_name=None,
-            source_file_name=None,
-            is_experiment=None,
-            dataset_file=None,
-            app=None,
-            workspace=None,
-    ):
+            experiment_id: Tuple[Optional[str], Optional[str]] = (None, None),
+            tab_name: Optional[str] = None,
+            source_file_name: Optional[str] = None,
+            is_experiment: Optional[bool] = None,
+            dataset_file: Optional[str] = None,
+            app: Optional[Any] = None,
+            workspace: Optional[str] = None,
+    ) -> None:
         """
-        Initializes a QDesqTab widget that will either be an experiment or dataset tab.
+        Initialize a QDesqTab widget for experiment or dataset display.
 
-        Parameters:
-        -----------
-        experiment_id : tuple(str, str)
-            The experiment path and class name
-        tab_name : str
-            Name of the tab widget
-        source_file_name : str
-            Name of the file the experiment lies in
-        is_experiment : bool
-            Whether the tab corresponds to an experiment or dataset
-        dataset_file : str
-            Path to the dataset file
-        app : QApplication
-            The main application (Desq.py)
-        workspace : str
-            The workspace directory
+        :param experiment_id: Tuple of (experiment_path, class_name) identifying
+            the experiment to load.
+        :type experiment_id: Tuple[Optional[str], Optional[str]]
+        :param tab_name: Display name for the tab.
+        :type tab_name: Optional[str]
+        :param source_file_name: Name of the experiment source file (without .py).
+        :type source_file_name: Optional[str]
+        :param is_experiment: True for experiment tabs, False for dataset tabs.
+        :type is_experiment: Optional[bool]
+        :param dataset_file: Path to dataset file (for data tabs).
+        :type dataset_file: Optional[str]
+        :param app: Reference to the main Desq application (for signal connections).
+        :type app: Optional[Any]
+        :param workspace: Path to the workspace directory for data storage.
+        :type workspace: Optional[str]
         """
         super().__init__()
         self.app = app
 
-        ### Experiment Variables
-        self.tab_name = str(tab_name) if tab_name else None
-        self.source_file_name = source_file_name
-        self.is_experiment = is_experiment
-        self.workspace = workspace or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        # === Experiment Variables ===
+        self.tab_name: Optional[str] = str(tab_name) if tab_name else None
+        self.source_file_name: Optional[str] = source_file_name
+        self.is_experiment: bool = is_experiment if is_experiment is not None else False
+        self.workspace: str = workspace or os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-        # Experiment config panel
+        # Configuration panel - provides tree-based parameter editing interface
         self.experiment_config_panel = QConfigTreePanel(
             self,
             self.tab_name if self.is_experiment else None,
@@ -413,36 +648,42 @@ class QDesqTab(QWidget):
             workspace=self.workspace,
         )
 
-        self.experiment_obj = None if experiment_id == (None, None) \
+        # Create experiment object wrapper if an experiment ID was provided
+        self.experiment_obj: Optional[ExperimentObject] = None if experiment_id == (None, None) \
             else ExperimentObject(self, experiment_id)
-        self.dataset_file = dataset_file
-        self.data = None
+        self.dataset_file: Optional[str] = dataset_file
+        self.data: Optional[Dict[str, Any]] = None
 
-        # NEW: Use PlotManager for centralized, thread-safe plot tracking
-        self.plot_manager = PlotManager()
+        # PlotManager for centralized, thread-safe plot tracking
+        # Essential for proper cleanup and avoiding memory leaks
+        self.plot_manager: PlotManager = PlotManager()
 
-        # --- incremental plotting caches (PyQtGraph + Matplotlib embed) ---
-        self._auto_plot_signature = None
-        self._auto_plot_cache = []  # list of per-plot handles (curve/image/etc)
-        self._mpl_embed_signature = None  # tuple of figure ids currently embedded
-        self._mpl_content_signature = None  # Content-based signature for figure isolation
+        # === Incremental plotting caches ===
+        # These signatures enable detecting whether a full rebuild is needed
+        # or if an in-place data update is sufficient (live plotting optimization)
+        self._auto_plot_signature: Optional[Tuple] = None
+        self._auto_plot_cache: List[Tuple] = []  # Per-plot handles (curve/image/etc)
+        self._mpl_embed_signature: Optional[Tuple] = None  # Tuple of figure object ids
+        self._mpl_content_signature: Optional[Tuple] = None  # Content-based signature for isolation
 
-        # PyQtGraph live update tracking
-        self._pyqtgraph_signature = None
-        self._pyqtgraph_axes_map = []
+        # === PyQtGraph live update tracking ===
+        # These track the structure of plots to enable efficient in-place updates
+        self._pyqtgraph_signature: Optional[Tuple] = None
+        self._pyqtgraph_axes_map: List[Tuple] = []
 
-        # Track whether initial labels/layout have been set up
-        # This prevents duplicate labels when updating plots in-place
-        self.labels_added = False
+        # Flag to prevent duplicate labels when updating plots in-place
+        # Set to True after initial layout is created
+        self.labels_added: bool = False
 
-        # Fit manager and results
-        self.fit_manager = FitManager()
-        self.fit_results = []
-        self.fit_overlays = []  # Delegated to plot_manager
+        # === Fitting ===
+        self.fit_manager: FitManager = FitManager()
+        self.fit_results: List[FitResult] = []
+        self.fit_overlays: List[Any] = []  # Visual overlay items (delegated to plot_manager)
 
-        self.last_run_experiment_config = {}
+        # Store configuration from the last experiment run for data export
+        self.last_run_experiment_config: Dict[str, Any] = {}
 
-        ### Setting up the Tab
+        # === Setting up the Tab Widget Layout ===
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setObjectName("QDesqTab")
 
@@ -688,19 +929,26 @@ class QDesqTab(QWidget):
     # SIGNAL SETUP
     # =========================================================================
 
-    def setup_signals(self):
-        """Sets up all the signals and slots of the QDesqTab widget."""
+    def setup_signals(self) -> None:
+        """
+        Set up all signal-slot connections for the QDesqTab widget.
+
+        Connects button clicks, checkbox toggles, and keyboard shortcuts
+        to their respective handler methods. Also sets up experiment-specific
+        connections for runtime prediction.
+        """
+        # Mouse coordinate tracking for PyQtGraph (shows X, Y position)
         self.plot_widget.scene().sigMouseMoved.connect(self.update_coordinates)
+
+        # Button connections
         self.snip_plot_button.clicked.connect(self.capture_plot_to_clipboard)
         self.export_data_button.clicked.connect(self.export_data)
         self.reExtract_experiment_button.clicked.connect(self.reExtract_experiment)
         self.replot_button.clicked.connect(self.replot_data)
         self.fit_button.clicked.connect(self.perform_fit)
 
+        # Backend toggle checkbox
         self.use_matplotlib_checkbox.toggled.connect(self.on_matplotlib_toggled)
-
-        self.remove_plot_shortcut = QShortcut(QKeySequence("D"), self)
-        self.remove_plot_shortcut.activated.connect(self.remove_plot)
 
         if self.is_experiment:
             self.experiment_config_panel.update_runtime_prediction.connect(self.app.call_tab_runtime_prediction)
@@ -715,8 +963,14 @@ class QDesqTab(QWidget):
     # UTILITY METHODS
     # =========================================================================
 
-    def capture_plot_to_clipboard(self):
-        """Captures a screenshot of the plot and saves it to clipboard."""
+    def capture_plot_to_clipboard(self) -> None:
+        """
+        Capture a screenshot of the current plot and save it to the clipboard.
+
+        Captures from the appropriate stacked widget (matplotlib or pyqtgraph)
+        based on the current rendering mode. Provides visual feedback by
+        temporarily changing the button text to "Done!".
+        """
         if self.use_matplotlib_checkbox.isChecked():
             # Grab from the current matplotlib stack widget
             current_idx = self.matplotlib_stack.currentIndex()
@@ -745,12 +999,24 @@ class QDesqTab(QWidget):
     # CORE PLOTTING METHODS (SIMPLIFIED)
     # =========================================================================
 
-    def clear_plots(self):
+    def clear_plots(self) -> None:
         """
         Thread-safe clearing of all plots and labels.
-        Properly cleans up all resources in both PyQtGraph and Matplotlib modes.
 
-        CRITICAL: Also clears the figure carousel to prevent cross-run mixing.
+        Properly cleans up all resources in both PyQtGraph and Matplotlib modes.
+        This method also clears the figure carousel to prevent cross-run mixing.
+
+        **Actions performed:**
+
+        1. Clears all tracked plots via PlotManager
+        2. Removes all stacked figure widgets (keeping default placeholders)
+        3. Clears fit overlays
+        4. Resets incremental plotting caches and signatures
+        5. Clears the figure carousel (closes matplotlib figures)
+
+        .. warning::
+            This method closes all matplotlib figures which cannot be undone.
+            Ensure any necessary data is saved before calling.
         """
         qInfo(f"Clearing all plots for tab: {self.tab_name}...")
 
@@ -805,36 +1071,23 @@ class QDesqTab(QWidget):
 
         qInfo(f"All plots cleared successfully for tab: {self.tab_name}")
 
-    def remove_plot(self):
+    def plot_data(self, exp_instance: Optional[Any] = None,
+                  data_to_plot: Optional[Dict[str, Any]] = None) -> None:
         """
-        Removes a plot at the mouse cursor position with proper label cleanup.
-        Only works for PyQtGraph mode.
-        """
-        if self.use_matplotlib_checkbox.isChecked():
-            qWarning("Plot removal not supported in Matplotlib mode")
-            return
+        Main plotting entry point (simplified architecture).
 
-        pos = self.plot_widget.mapFromGlobal(QCursor.pos())
+        Handles plotting for both experiments and loaded datasets with automatic
+        fallback to auto_plot when experiment ``display()`` is unavailable.
 
-        # Find which plot is under the cursor
-        for plot in self.plot_manager.get_pyqtgraph_plots():
-            vb = plot.vb
-            if plot.sceneBoundingRect().contains(pos):
-                # Remove the plot and its label using plot_manager
-                if self.plot_manager.remove_pyqtgraph_plot(self.plot_widget, plot):
-                    self.plot_widget.update()
-                    qInfo("Plot removed successfully")
-                    return
+        **Plotting behavior:**
 
-        qWarning("No plot found at cursor position")
-
-    def plot_data(self, exp_instance=None, data_to_plot=None):
-        """
-        SIMPLIFIED: Main plotting entry point.
-
-        Plotting behavior:
-        - For experiments: Call display() method if available, fall back to auto_plot
+        - For experiments: Call ``display()`` method if available, fall back to auto_plot
         - For loaded data: Always use auto_plot
+
+        :param exp_instance: Experiment instance with optional display() method.
+        :type exp_instance: Optional[Any]
+        :param data_to_plot: Data dictionary to plot. If None, uses ``self.data``.
+        :type data_to_plot: Optional[Dict[str, Any]]
         """
         if data_to_plot is None:
             data_to_plot = self.data
@@ -872,17 +1125,28 @@ class QDesqTab(QWidget):
             # Loaded data: always use auto_plot
             self.auto_plot_prepare(data_to_plot)
 
-    def _try_experiment_display(self, exp_instance, data_to_plot):
+    def _try_experiment_display(self, exp_instance: Any,
+                                data_to_plot: Dict[str, Any]) -> bool:
         """
-        Attempt to call the experiment's display() method and capture any figures it creates.
+        Attempt to call the experiment's display() method and capture figures.
 
         This method:
-        1. Records existing figure numbers BEFORE calling display()
-        2. Calls display()
-        3. Identifies NEW figures created during display()
-        4. Passes new figures to receive_figure() for carousel handling
 
-        Returns True if display() was called successfully, False otherwise.
+        1. Records existing figure numbers BEFORE calling display()
+        2. Calls the experiment's display() method
+        3. Identifies NEW figures created during display()
+        4. Passes new figures to :meth:`receive_figure` for carousel handling
+
+        :param exp_instance: The experiment instance with display() method.
+        :type exp_instance: Any
+        :param data_to_plot: Data dictionary to pass to the display() method.
+        :type data_to_plot: Dict[str, Any]
+        :returns: True if display() was called successfully, False otherwise.
+        :rtype: bool
+
+        .. note::
+            Uses session_id=-1 for figures from GUI-thread display() calls,
+            bypassing session validation since these are trusted.
         """
         import matplotlib.pyplot as plt
 
@@ -936,10 +1200,18 @@ class QDesqTab(QWidget):
             qWarning(traceback.format_exc())
             return False
 
-    def handle_pltplot(self, *args, **kwargs):
+    def handle_pltplot(self, *args: Any, **kwargs: Any) -> None:
         """
-        Handles matplotlib plots by routing to appropriate backend.
-        Supports any number of figures with any layout.
+        Handle matplotlib plots by routing to appropriate backend.
+
+        Supports any number of figures with any layout. Routes to either
+        :meth:`embed_matplotlib_plots` or :meth:`convert_matplotlib_to_pyqtgraph`
+        based on the current rendering mode setting.
+
+        :param args: Variable positional arguments (passed through).
+        :type args: Any
+        :param kwargs: Keyword arguments, may include ``_captured_figures``.
+        :type kwargs: Any
         """
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
@@ -950,26 +1222,24 @@ class QDesqTab(QWidget):
         else:
             self.convert_matplotlib_to_pyqtgraph(*args, **kwargs)
 
-    def _copy_matplotlib_figure(self, original_fig):
-        """
-        Create an independent copy of a matplotlib figure.
-
-        DEPRECATED: Deep copying via pickle is unreliable with Qt canvases.
-        This method now just returns the original figure.
-        Use isolate_matplotlib_figures() which detaches from the global registry instead.
-        """
-        qWarning("_copy_matplotlib_figure is deprecated - use registry detachment instead")
-        return original_fig
-
-    def _detach_figure_from_registry(self, fig):
+    def _detach_figure_from_registry(self, fig: Any) -> bool:
         """
         Remove a figure from matplotlib's global registry WITHOUT closing it.
 
-        This prevents future plt.figure(N) calls from returning this figure,
+        This prevents future ``plt.figure(N)`` calls from returning this figure,
         while keeping the figure object fully functional for display.
 
         The figure remains valid and renderable - we just remove matplotlib's
         reference to it so it won't be affected by global state operations.
+
+        :param fig: The figure to detach from the registry.
+        :type fig: matplotlib.figure.Figure
+        :returns: True if detachment was successful, False otherwise.
+        :rtype: bool
+
+        .. note::
+            The figure's number is cleared and stored as ``_detached_number``
+            attribute for debugging purposes.
         """
         import matplotlib.pyplot as plt
         from matplotlib._pylab_helpers import Gcf
@@ -991,13 +1261,18 @@ class QDesqTab(QWidget):
             qWarning(f"Failed to detach figure from registry: {e}")
             return False
 
-    def _compute_figure_content_signature(self, figures):
+    def _compute_figure_content_signature(self, figures: List[Any]) -> Tuple:
         """
         Compute a signature based on figure CONTENT rather than object id.
 
-        This allows us to detect when the same logical figure is being updated
+        This allows detecting when the same logical figure is being updated
         (same axes structure, same data shapes) vs when a completely new figure
-        is being created.
+        is being created. Used for efficient in-place update detection.
+
+        :param figures: List of matplotlib figures to compute signature for.
+        :type figures: List[matplotlib.figure.Figure]
+        :returns: Tuple signature representing the figure structure and content.
+        :rtype: Tuple
         """
         sig_parts = []
         for fig in figures:
@@ -1027,20 +1302,22 @@ class QDesqTab(QWidget):
             sig_parts.append(tuple(fig_sig))
         return tuple(sig_parts)
 
-    def isolate_matplotlib_figures(self):
+    def isolate_matplotlib_figures(self) -> None:
         """
         Isolate embedded matplotlib figures from the global registry.
 
         This should be called when an experiment finishes to ensure the displayed
         figures won't be affected by future experiments that may reuse figure numbers.
 
-        SIMPLIFIED APPROACH:
+        **Simplified Approach:**
+
         Instead of deep-copying figures (which fails with Qt canvases), we simply
         remove them from matplotlib's global registry. The figures remain fully
         functional for display - we just prevent them from being returned by
-        future plt.figure(N) calls.
+        future ``plt.figure(N)`` calls.
 
         This is safe because:
+
         1. We hold direct Python references to the figure objects
         2. The Qt canvas widgets hold references to their figures
         3. Removing from registry doesn't invalidate the figure
@@ -1077,16 +1354,22 @@ class QDesqTab(QWidget):
         """
         Start a new plot session for this tab.
 
-        MUST be called BEFORE starting any experiment or replot operation.
-        This is the PRIMARY entry point for session-based isolation.
+        This method MUST be called BEFORE starting any experiment or replot
+        operation. It is the PRIMARY entry point for session-based isolation.
 
-        Actions:
+        **Actions performed:**
+
         1. Increments session_id (invalidates any in-flight figures from old sessions)
-        2. Clears all plot state (PlotManager, carousel, signatures)
-        3. Closes matplotlib figures from the previous session
+        2. Snapshots current plot slot size for fixed-size rendering
+        3. Clears all plot state (PlotManager, carousel, signatures)
+        4. Closes matplotlib figures from the previous session
 
-        Returns:
-            The new session_id to pass to ExperimentThread/PlotSinkManager
+        :returns: The new session_id to pass to ExperimentThread/PlotSinkManager.
+        :rtype: int
+
+        .. note::
+            The plot slot size is snapshotted once per session. GUI resizing
+            will not affect plot sizes until a new session is started.
         """
         # Increment session ID FIRST - this invalidates any in-flight figures
         self._plot_session_id += 1
@@ -1105,27 +1388,40 @@ class QDesqTab(QWidget):
         return new_session
 
     def get_plot_session_id(self) -> int:
-        """Get the current plot session ID for this tab."""
+        """
+        Get the current plot session ID for this tab.
+
+        :returns: The current session ID.
+        :rtype: int
+        """
         return self._plot_session_id
 
-    def receive_figure(self, figure, event_type: str = 'draw', session_id: int = -1):
+    def receive_figure(self, figure: Any, event_type: str = 'draw',
+                       session_id: int = -1) -> bool:
         """
         Receive a figure and add it to this tab's carousel with a PERSISTENT widget.
 
-        STACKED WIDGET ARCHITECTURE:
+        **Stacked Widget Architecture:**
+
         - Each figure gets ONE persistent widget (FigureCanvas for matplotlib,
           GraphicsLayoutWidget for PyQtGraph)
         - Widgets are added to stacked containers and NEVER recreated
-        - Switching figures is just setCurrentIndex() - no re-rendering
+        - Switching figures is just ``setCurrentIndex()`` - no re-rendering
 
-        Args:
-            figure: matplotlib Figure object
-            event_type: Type of draw event ('draw' or 'draw_idle')
-            session_id: Plot session ID. MUST match current session or figure is rejected.
-                       Use -1 to bypass validation (for GUI-thread display() calls on current tab).
+        :param figure: matplotlib Figure object to receive.
+        :type figure: matplotlib.figure.Figure
+        :param event_type: Type of draw event ('draw' or 'draw_idle').
+        :type event_type: str
+        :param session_id: Plot session ID. MUST match current session or figure
+            is rejected. Use -1 to bypass validation (for GUI-thread display()
+            calls on current tab).
+        :type session_id: int
+        :returns: True if figure was accepted, False if rejected.
+        :rtype: bool
 
-        Returns:
-            True if figure was accepted, False if rejected
+        .. note::
+            Session validation ensures figures from previous/cancelled runs
+            don't appear in the current session's carousel.
         """
         # SESSION VALIDATION
         # session_id of -1 means "trust this figure" (used for GUI-thread display() calls)
@@ -1182,15 +1478,24 @@ class QDesqTab(QWidget):
         print(f"[{self.tab_name}] Now showing figure {new_index + 1} of {len(self._carousel_figures)}")
         return True
 
-    def _create_persistent_matplotlib_widget(self, fig, figure_index: int):
+    def _create_persistent_matplotlib_widget(self, fig: Any, figure_index: int) -> None:
         """
         Create a PERSISTENT matplotlib widget for a figure and add to the stack.
 
         This widget is created ONCE and never recreated. Switching figures
-        just changes the stack index.
+        just changes the stack index. The method handles:
 
-        CRITICAL: We preserve the BackendDesq canvas after creating the Qt canvas
-        so that live updates still trigger sink notifications.
+        - Aspect-preserving sizing based on the snapshot from session start
+        - Font size adjustment for embedded display
+        - BackendDesq canvas preservation for live update notifications
+
+        **Critical:** We preserve the BackendDesq canvas after creating the Qt canvas
+        so that live updates still trigger sink notifications via the custom backend.
+
+        :param fig: The matplotlib figure to create a widget for.
+        :type fig: matplotlib.figure.Figure
+        :param figure_index: Index of this figure in the carousel.
+        :type figure_index: int
         """
         # Store original figure properties
         original_size = fig.get_size_inches()
@@ -1295,7 +1600,7 @@ class QDesqTab(QWidget):
         # Make the container fixed as well so Qt layouts don't stretch it
         try:
             container.setFixedSize(int(target_w + overhead_w), int(target_h + overhead_h))
-        except Exception:
+        except Exception as e:
             print(f"[{self.tab_name}] Warning: container sizing failed: {e}")
 
         # Add to the matplotlib stack
@@ -1310,12 +1615,24 @@ class QDesqTab(QWidget):
         print(
             f"[{self.tab_name}] Created persistent matplotlib widget at stack index {self.matplotlib_stack.count() - 1}")
 
-    def _create_persistent_pyqtgraph_widget(self, figure, figure_index: int):
+    def _create_persistent_pyqtgraph_widget(self, figure: Any, figure_index: int) -> None:
         """
         Create a PERSISTENT PyQtGraph widget for a figure and add to the stack.
 
         This widget is created ONCE and never recreated. Switching figures
-        just changes the stack index.
+        just changes the stack index. The conversion from matplotlib to PyQtGraph
+        supports:
+
+        - Line plots with various styles and markers
+        - Scatter plots (PathCollection)
+        - Bar charts / histograms (Rectangle patches)
+        - 2D images with colormaps
+        - Proper grid layout detection including spanning axes
+
+        :param figure: The matplotlib figure to convert and display.
+        :type figure: matplotlib.figure.Figure
+        :param figure_index: Index of this figure in the carousel.
+        :type figure_index: int
         """
         # Create a new GraphicsLayoutWidget for this figure
         pg_widget = pg.GraphicsLayoutWidget()
@@ -1394,9 +1711,31 @@ class QDesqTab(QWidget):
         """
         Extract matplotlib axis data and plot in a specific PyQtGraph widget.
 
-        ENHANCED: Now properly handles colors, labels, and legends.
+        This method handles conversion of various matplotlib plot types to PyQtGraph
+        equivalents, including proper color conversion, legend handling, and
+        grid placement with spanning support.
 
-        Returns the PlotItem for tracking live updates.
+        **Supported plot types:**
+
+        - Line plots (with style and marker conversion)
+        - Scatter plots (PathCollection)
+        - Bar charts / histograms (Rectangle patches)
+        - 2D images with colormap and extent handling
+
+        :param pg_widget: The PyQtGraph widget to plot into.
+        :type pg_widget: pg.GraphicsLayoutWidget
+        :param ax: The matplotlib axis to extract data from.
+        :type ax: matplotlib.axes.Axes
+        :param row: Grid row position.
+        :type row: int
+        :param col: Grid column position.
+        :type col: int
+        :param rowspan: Number of rows to span.
+        :type rowspan: int
+        :param colspan: Number of columns to span.
+        :type colspan: int
+        :returns: The created PlotItem for tracking live updates, or None if axis is empty.
+        :rtype: Optional[pg.PlotItem]
         """
         if self._is_axis_empty(ax):
             return None
@@ -1614,8 +1953,17 @@ class QDesqTab(QWidget):
 
         return plot
 
-    def _matplotlib_cmap_to_lut(self, cmap, n=256):
-        """Convert a matplotlib colormap to a PyQtGraph lookup table."""
+    def _matplotlib_cmap_to_lut(self, cmap: Any, n: int = 256) -> Optional[np.ndarray]:
+        """
+        Convert a matplotlib colormap to a PyQtGraph lookup table.
+
+        :param cmap: Matplotlib colormap object.
+        :type cmap: matplotlib.colors.Colormap
+        :param n: Number of colors in the lookup table.
+        :type n: int
+        :returns: RGBA lookup table as numpy array, or None on failure.
+        :rtype: Optional[np.ndarray]
+        """
         try:
             lut = np.zeros((n, 4), dtype=np.uint8)
             for i in range(n):
@@ -1625,11 +1973,15 @@ class QDesqTab(QWidget):
         except Exception:
             return None
 
-    def _switch_to_figure(self, index: int):
+    def _switch_to_figure(self, index: int) -> None:
         """
         Switch to display a figure by index.
 
-        STACKED WIDGET: This is just setCurrentIndex() - NO re-rendering!
+        This uses the stacked widget architecture - it's just ``setCurrentIndex()``
+        with NO re-rendering required.
+
+        :param index: Index of the figure in the carousel (0-based).
+        :type index: int
         """
         if index < 0 or index >= len(self._carousel_figures):
             return
@@ -1650,16 +2002,22 @@ class QDesqTab(QWidget):
                 self.pyqtgraph_stack.setCurrentIndex(stack_index)
                 print(f"[{self.tab_name}] Switched pyqtgraph stack to index {stack_index}")
 
-    def _live_update_figure_widgets(self, figure, figure_index: int):
+    def _live_update_figure_widgets(self, figure: Any, figure_index: int) -> None:
         """
         Update the persistent widgets for a figure with new data (live plotting).
 
-        This updates data IN PLACE without recreating widgets.
-        Handles axes that were empty at creation but now have data.
+        This updates data IN PLACE without recreating widgets. Also handles axes
+        that were empty at creation time but now have data.
 
-        Note: The figure's canvas may be BackendDesq (for notifications) while
-        we have a separate Qt canvas stored for display. We update the Qt canvas
-        directly here.
+        :param figure: The matplotlib figure with updated data.
+        :type figure: matplotlib.figure.Figure
+        :param figure_index: Index of the figure in the carousel.
+        :type figure_index: int
+
+        .. note::
+            The figure's canvas may be BackendDesq (for notifications) while
+            we have a separate Qt canvas stored for display. We update the Qt
+            canvas directly here.
         """
         # Update matplotlib canvas - this updates the matplotlib display
         if figure_index < len(self._matplotlib_figure_widgets):
@@ -1709,12 +2067,18 @@ class QDesqTab(QWidget):
                         # Update the stored axes_map
                         self._pyqtgraph_figure_widgets[figure_index] = (pg_widget, axes_map)
 
-    def _update_pyqtgraph_plot_data(self, plot, ax):
+    def _update_pyqtgraph_plot_data(self, plot: pg.PlotItem, ax: Any) -> None:
         """
         Update a single PyQtGraph plot with new data from a matplotlib axis.
 
-        Uses listDataItems() for reliable PlotDataItem retrieval.
-        Now handles scatter plots (PathCollection) for live updates.
+        Uses ``listDataItems()`` for reliable PlotDataItem retrieval. Handles
+        updates for line plots, scatter plots (PathCollection), images, and
+        bar graphs.
+
+        :param plot: The PyQtGraph PlotItem to update.
+        :type plot: pg.PlotItem
+        :param ax: The matplotlib axis containing source data.
+        :type ax: matplotlib.axes.Axes
         """
         try:
             def mpl_color_to_pg(color):
@@ -1851,8 +2215,13 @@ class QDesqTab(QWidget):
             import traceback
             traceback.print_exc()
 
-    def _refresh_current_display(self):
-        """Refresh the currently displayed figure (for live updates)."""
+    def _refresh_current_display(self) -> None:
+        """
+        Refresh the currently displayed figure (for live updates).
+
+        This method triggers a live update of the widgets associated with
+        the currently displayed figure in the carousel.
+        """
         if self._displayed_figure_index < 0:
             return
         if self._displayed_figure_index >= len(self._carousel_figures):
@@ -1861,11 +2230,15 @@ class QDesqTab(QWidget):
         fig = self._carousel_figures[self._displayed_figure_index]
         self._live_update_figure_widgets(fig, self._displayed_figure_index)
 
-    def _on_carousel_figure_selected(self, index: int):
+    def _on_carousel_figure_selected(self, index: int) -> None:
         """
         Handle carousel thumbnail click - switch displayed figure.
 
-        STACKED WIDGET: This is just setCurrentIndex() - NO re-rendering!
+        Uses the stacked widget architecture - this is just ``setCurrentIndex()``
+        with NO re-rendering required.
+
+        :param index: Index of the selected figure in the carousel.
+        :type index: int
         """
         if index < 0 or index >= len(self._carousel_figures):
             qWarning(f"Invalid carousel figure index: {index}")
@@ -1886,16 +2259,21 @@ class QDesqTab(QWidget):
         """
         self._switch_to_figure(index)
 
-    def embed_matplotlib_plots(self, *args, **kwargs):
+    def embed_matplotlib_plots(self, *args: Any, **kwargs: Any) -> None:
         """
         Embed matplotlib figures in the tab with carousel support.
 
-        STACKED WIDGET ARCHITECTURE:
-        - Each figure gets a persistent widget in the matplotlib stack
-        - Switching figures is just setCurrentIndex() - no re-rendering
+        Uses the stacked widget architecture where each figure gets a persistent
+        widget in the matplotlib stack. Switching figures is just ``setCurrentIndex()``
+        - no re-rendering required.
 
-        CRITICAL: This method does NOT scan the global Matplotlib registry.
-        Figures MUST be passed explicitly via _captured_figures kwarg.
+        **Critical:** This method does NOT scan the global Matplotlib registry.
+        Figures MUST be passed explicitly via ``_captured_figures`` kwarg.
+
+        :param args: Variable positional arguments (passed through).
+        :type args: Any
+        :param kwargs: Keyword arguments, must include ``_captured_figures``.
+        :type kwargs: Any
         """
         self.plot_stack.setCurrentIndex(1)  # Show matplotlib mode
 
@@ -1961,16 +2339,21 @@ class QDesqTab(QWidget):
         self.labels_added = True
         qInfo(f"[{self.tab_name}] Successfully created {len(figures)} persistent matplotlib widgets")
 
-    def convert_matplotlib_to_pyqtgraph(self, *args, **kwargs):
+    def convert_matplotlib_to_pyqtgraph(self, *args: Any, **kwargs: Any) -> None:
         """
-        Converts ANY matplotlib figure/axes layout to PyQtGraph.
+        Convert ANY matplotlib figure/axes layout to PyQtGraph.
 
-        STACKED WIDGET ARCHITECTURE:
-        - Each figure gets a persistent GraphicsLayoutWidget in the pyqtgraph stack
-        - Switching figures is just setCurrentIndex() - no re-rendering
+        Uses the stacked widget architecture where each figure gets a persistent
+        GraphicsLayoutWidget in the pyqtgraph stack. Switching figures is just
+        ``setCurrentIndex()`` - no re-rendering required.
 
-        CRITICAL: This method does NOT scan the global Matplotlib registry.
-        Figures MUST be passed explicitly via _captured_figures kwarg.
+        **Critical:** This method does NOT scan the global Matplotlib registry.
+        Figures MUST be passed explicitly via ``_captured_figures`` kwarg.
+
+        :param args: Variable positional arguments (passed through).
+        :type args: Any
+        :param kwargs: Keyword arguments, must include ``_captured_figures``.
+        :type kwargs: Any
         """
         self.plot_stack.setCurrentIndex(0)  # Show pyqtgraph mode
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
@@ -2033,10 +2416,18 @@ class QDesqTab(QWidget):
         self.labels_added = True
         qInfo(f"[{self.tab_name}] Successfully created {len(figures)} persistent PyQtGraph widgets")
 
-    def _compute_pyqtgraph_signature(self, figures):
+    def _compute_pyqtgraph_signature(self, figures: List[Any]) -> Tuple:
         """
         Compute a signature for figure structure to detect layout changes.
-        Only includes structure info, not data values.
+
+        Only includes structure info (axis positions, data presence), not actual
+        data values. Used to determine if widgets can be updated in-place or
+        need to be rebuilt.
+
+        :param figures: List of matplotlib figures.
+        :type figures: List[matplotlib.figure.Figure]
+        :returns: Tuple signature representing figure structure.
+        :rtype: Tuple
         """
         sig_parts = []
         for fig in figures:
@@ -2057,7 +2448,18 @@ class QDesqTab(QWidget):
         return tuple(sig_parts)
 
     def _fit_size_keep_aspect(self, max_w: int, max_h: int, aspect: float) -> Tuple[int, int]:
-        """Return (w,h) that fits within (max_w,max_h) while preserving w/h=aspect."""
+        """
+        Return (width, height) that fits within bounds while preserving aspect ratio.
+
+        :param max_w: Maximum allowed width in pixels.
+        :type max_w: int
+        :param max_h: Maximum allowed height in pixels.
+        :type max_h: int
+        :param aspect: Target aspect ratio (width / height).
+        :type aspect: float
+        :returns: Tuple of (width, height) that fits the constraints.
+        :rtype: Tuple[int, int]
+        """
         if max_w <= 1 or max_h <= 1 or aspect <= 0:
             return max(1, max_w), max(1, max_h)
 
@@ -2069,11 +2471,16 @@ class QDesqTab(QWidget):
         return max(1, w), max(1, h)
 
     def _get_plot_slot_size_px(self) -> Tuple[int, int]:
-        """Return the available (w,h) for plotting inside the GUI slot.
+        """
+        Return the available (width, height) for plotting inside the GUI slot.
 
-        This intentionally measures the plot_stack area (which excludes the carousel below it).
-        The returned value is used as a *snapshot* at the start of each plot session so that
-        GUI resizes do not resize plots unless RePlot/Run is clicked.
+        This intentionally measures the plot_stack area (which excludes the
+        carousel below it). The returned value is used as a *snapshot* at the
+        start of each plot session so that GUI resizes do not resize plots
+        unless RePlot/Run is clicked.
+
+        :returns: Tuple of (width, height) in pixels.
+        :rtype: Tuple[int, int]
         """
         try:
             w = int(self.plot_stack.width())
@@ -2091,14 +2498,23 @@ class QDesqTab(QWidget):
 
         return max(1, w), max(1, h)
 
-    def _detect_axes_grid(self, axes):
+    def _detect_axes_grid(self, axes: List[Any]) -> Dict[str, Any]:
         """
         Detect grid layout from axes positions, including spanning axes.
 
-        Returns dict with:
-            - nrows, ncols: grid dimensions
-            - grid: mapping (row, col) -> ax_index (for the top-left cell of each axis)
-            - spans: mapping ax_index -> (rowspan, colspan)
+        Analyzes the bounding boxes of matplotlib axes to determine the grid
+        structure, including handling of axes that span multiple rows/columns.
+
+        :param axes: List of matplotlib Axes objects.
+        :type axes: List[matplotlib.axes.Axes]
+        :returns: Dictionary containing:
+
+            - ``nrows``: Number of grid rows
+            - ``ncols``: Number of grid columns
+            - ``grid``: Mapping of (row, col) -> axis_index for top-left cell
+            - ``spans``: Mapping of axis_index -> (rowspan, colspan)
+
+        :rtype: Dict[str, Any]
         """
         if len(axes) == 0:
             return {'nrows': 0, 'ncols': 0, 'grid': {}, 'spans': {}}
@@ -2202,10 +2618,15 @@ class QDesqTab(QWidget):
 
         return {'nrows': nrows, 'ncols': ncols, 'grid': grid, 'spans': spans}
 
-    def _update_pyqtgraph_plots(self, figures):
+    def _update_pyqtgraph_plots(self, figures: List[Any]) -> None:
         """
         Update existing PyQtGraph plots with new data from matplotlib figures.
-        Called when figure structure hasn't changed (live update path).
+
+        Called when figure structure hasn't changed (live update path). This
+        is more efficient than rebuilding all widgets from scratch.
+
+        :param figures: List of matplotlib figures with updated data.
+        :type figures: List[matplotlib.figure.Figure]
         """
         if not hasattr(self, '_pyqtgraph_axes_map'):
             return
@@ -2276,8 +2697,15 @@ class QDesqTab(QWidget):
                 qWarning(f"PyQtGraph live update failed: {e}")
                 self._pyqtgraph_signature = None
 
-    def _is_axis_empty(self, ax):
-        """Check if a matplotlib axis has any plottable data."""
+    def _is_axis_empty(self, ax: Any) -> bool:
+        """
+        Check if a matplotlib axis has any plottable data.
+
+        :param ax: Matplotlib axis to check.
+        :type ax: matplotlib.axes.Axes
+        :returns: True if axis is empty (no lines, images, scatter, or bars).
+        :rtype: bool
+        """
         has_lines = len(ax.get_lines()) > 0
         has_images = len(ax.get_images()) > 0
         has_scatter = len([c for c in ax.collections if isinstance(c, PathCollection)]) > 0
@@ -2285,13 +2713,24 @@ class QDesqTab(QWidget):
 
         return not (has_lines or has_images or has_scatter or has_bars)
 
-    def extract_and_plot_pyqtgraph(self, ax, row, col, plot_index=None):
+    def extract_and_plot_pyqtgraph(self, ax: Any, row: int, col: int,
+                                   plot_index: Optional[int] = None) -> Optional[pg.PlotItem]:
         """
         Extract matplotlib axis data and plot in PyQtGraph.
-        Properly tracks plots and labels.
 
-        Returns:
-            The PyQtGraph PlotItem created or updated
+        Properly tracks plots and labels via PlotManager. Similar to
+        :meth:`_extract_and_plot_to_widget` but uses the default plot_widget.
+
+        :param ax: Matplotlib axis to extract data from.
+        :type ax: matplotlib.axes.Axes
+        :param row: Grid row position.
+        :type row: int
+        :param col: Grid column position.
+        :type col: int
+        :param plot_index: Optional index for tracking (unused).
+        :type plot_index: Optional[int]
+        :returns: The PyQtGraph PlotItem created, or None if axis is empty.
+        :rtype: Optional[pg.PlotItem]
         """
         if self._is_axis_empty(ax):
             return None
@@ -2479,8 +2918,16 @@ class QDesqTab(QWidget):
     # COORDINATE DISPLAY
     # =========================================================================
 
-    def update_coordinates(self, pos):
-        """Updates the coordinate label with the current mouse position."""
+    def update_coordinates(self, pos: Any) -> None:
+        """
+        Update the coordinate label with the current mouse position.
+
+        Only active in PyQtGraph mode. Maps the scene position to data
+        coordinates and displays them in the coord_label widget.
+
+        :param pos: Mouse position from PyQtGraph scene signal.
+        :type pos: QPointF
+        """
         if not self.use_matplotlib_checkbox.isChecked():
             mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(pos) if hasattr(self.plot_widget,
                                                                                       'plotItem') else None
@@ -2492,8 +2939,15 @@ class QDesqTab(QWidget):
     # EXPERIMENT CONTROL
     # =========================================================================
 
-    def reExtract_experiment(self):
-        """Re-extracts the experiment from its source file."""
+    def reExtract_experiment(self) -> None:
+        """
+        Re-extract the experiment from its source file.
+
+        Reloads the experiment class definition to pick up code changes
+        without restarting the application. Useful during development.
+
+        :raises Exception: If reload fails, displays error dialog.
+        """
         if self.experiment_obj is not None:
             try:
                 self.experiment_obj.reload_experiment()
@@ -2504,19 +2958,44 @@ class QDesqTab(QWidget):
                 qCritical(f"Failed to re-extract experiment: {str(e)}")
                 QMessageBox.critical(self, "Error", f"Failed to re-extract experiment: {str(e)}")
 
-    def process_data(self, data):
-        """Process incoming data from experiment thread."""
+    def process_data(self, data: Dict[str, Any]) -> None:
+        """
+        Process incoming data from experiment thread.
+
+        Stores the data in self.data for later plotting and export.
+
+        :param data: Data dictionary from experiment.
+        :type data: Dict[str, Any]
+        """
         self.data = data
 
-    def predict_runtime(self, config):
-        """Predicts the runtime if estimate_runtime method is provided."""
+    def predict_runtime(self, config: Dict[str, Any]) -> None:
+        """
+        Predict the runtime if estimate_runtime method is provided.
+
+        Uses the experiment's runtime estimator function to calculate
+        expected duration and update the info bar display.
+
+        :param config: Experiment configuration dictionary.
+        :type config: Dict[str, Any]
+        """
         if self.experiment_obj.experiment_runtime_estimator is not None:
             flattened_config = config.copy()
             time_delta = self.experiment_obj.experiment_runtime_estimator(flattened_config)
             self.update_runtime_estimation(time_delta, 0)
 
-    def update_runtime_estimation(self, time_delta, set_num):
-        """Updates the estimated runtime and endtime."""
+    def update_runtime_estimation(self, time_delta: float, set_num: int) -> None:
+        """
+        Update the estimated runtime and end time displays.
+
+        Calculates remaining time based on time per set and displays
+        both total estimated runtime and expected completion time.
+
+        :param time_delta: Time in seconds for one set.
+        :type time_delta: float
+        :param set_num: Current set number (0-indexed).
+        :type set_num: int
+        """
         total_sets = 1
         if "sets" in self.experiment_config_panel.config:
             total_sets = self.experiment_config_panel.config["sets"]
@@ -2534,18 +3013,30 @@ class QDesqTab(QWidget):
         self.runtime_label.setText("Estimated Runtime: " + runtime_string)
         self.endtime_label.setText("End: " + end_time_string + " (" + leftover_runtime_string + ")")
 
-    def update_data(self, data, exp_instance):
+    def update_data(self, data: Dict[str, Any], exp_instance: Any) -> None:
         """
         Slot for the emission of data from the experiment thread.
-        Calls the methods to process and plot the data.
+
+        Calls the methods to process, plot, and save the data. This is
+        the main entry point for live data updates during experiment runs.
+
+        :param data: Data dictionary from experiment.
+        :type data: Dict[str, Any]
+        :param exp_instance: The experiment instance (for display method).
+        :type exp_instance: Any
         """
         self.exp_instance = exp_instance
         self.process_data(data)
         self.plot_data(exp_instance)
         self.save_data()
 
-    def replot_data(self):
-        """Function called when RePlot button pressed."""
+    def replot_data(self) -> None:
+        """
+        Replot current data (called when RePlot button is pressed).
+
+        Starts a new plot session (recalculates fixed plot size) and
+        replots existing data without re-running the experiment.
+        """
         # Start a new plot session so the fixed plot size is recalculated once.
         # This also clears plot state safely (carousel + widgets + signatures).
         self.start_plot_session()
@@ -2558,16 +3049,25 @@ class QDesqTab(QWidget):
     # DATA EXPORT
     # =========================================================================
 
-    def export_data(self):
-        """Called when the export button clicked."""
+    def export_data(self) -> None:
+        """
+        Export data to a custom location (called when Export button is clicked).
+
+        Opens a file dialog to select destination and saves data files.
+        """
         self.prepare_file_naming()
         self.save_data(custom_path=True)
 
         self.export_data_button.setText('Done!')
         QTimer.singleShot(3000, lambda: self.export_data_button.setText('Export'))
 
-    def prepare_file_naming(self):
-        """Prepares naming conventions with experiment type and timestamps."""
+    def prepare_file_naming(self) -> None:
+        """
+        Prepare naming conventions with experiment type and timestamps.
+
+        Sets ``self.folder_name`` and ``self.file_name`` based on whether
+        this is an experiment or dataset tab, using current date/time.
+        """
         date_time_now = datetime.datetime.now()
         date_time_string = date_time_now.strftime("%Y_%m_%d_%H_%M_%S")
         date_string = date_time_now.strftime("%Y_%m_%d")
@@ -2580,10 +3080,15 @@ class QDesqTab(QWidget):
             self.folder_name = self.tab_name + "_" + date_string
             self.file_name = self.tab_name + "_" + date_time_string
 
-    def save_data(self, custom_path=False):
+    def save_data(self, custom_path: bool = False) -> None:
         """
-        Performs the saving of an experiment's data via 3 files:
-        h5, json, and PNG.
+        Save experiment data via three files: HDF5, JSON config, and PNG image.
+
+        For experiments, saves to the workspace Data directory. For datasets,
+        prompts user for save location.
+
+        :param custom_path: If True, prompt user for save location.
+        :type custom_path: bool
         """
         if not hasattr(self, 'file_name') or not hasattr(self, 'folder_name'):
             self.prepare_file_naming()
@@ -2683,9 +3188,15 @@ class QDesqTab(QWidget):
             qDebug("Data export attempted at " + date_time_string +
                    " to: " + folder_path + "/" + self.tab_name + "/" + self.folder_name)
 
-    def backup_exporter(self, data_filename):
+    def backup_exporter(self, data_filename: str) -> None:
         """
         Backup exporter used if no custom exporter is provided.
+
+        Writes data to HDF5 format, handling dictionaries as JSON attributes
+        and arrays as datasets. Handles jagged arrays by padding with NaN.
+
+        :param data_filename: Path to the output HDF5 file.
+        :type data_filename: str
         """
         data_file = h5py.File(data_filename, 'w')
 
@@ -2723,10 +3234,22 @@ class QDesqTab(QWidget):
     # AUTO-PLOTTING METHODS
     # =========================================================================
 
-    def auto_plot_prepare(self, data_to_plot):
+    def auto_plot_prepare(self, data_to_plot: Optional[Dict[str, Any]]) -> None:
         """
-        Prepares data for plotting by extracting arrays from various formats.
-        Supports incremental updates for live plotting.
+        Prepare data for plotting by extracting arrays from various formats.
+
+        Supports incremental updates for live plotting by maintaining a signature
+        of the data structure. If the signature matches, updates are done in-place
+        without rebuilding the plot layout.
+
+        **Supported data formats:**
+
+        - Dictionary with named arrays (1D curves or 2D images)
+        - Tuple/list pairs interpreted as (x, y) data
+        - Direct numpy arrays
+
+        :param data_to_plot: Data dictionary or array to plot.
+        :type data_to_plot: Optional[Dict[str, Any]]
         """
         # This method handles auto-plotting for loaded data and experiments
         # without a custom display() method
@@ -2901,9 +3424,15 @@ class QDesqTab(QWidget):
 
         self.labels_added = True
 
-    def auto_plot_plot(self, prepared_data):
+    def auto_plot_plot(self, prepared_data: Dict[str, Any]) -> None:
         """
-        Auto plots data using pyqtgraph with proper plot tracking.
+        Auto plot data using PyQtGraph with proper plot tracking.
+
+        Creates line plots, image plots, and column plots based on the
+        structure of the prepared data dictionary.
+
+        :param prepared_data: Dictionary containing 'plots', 'images', and/or 'columns'.
+        :type prepared_data: Dict[str, Any]
         """
         # Create line plots
         if "plots" in prepared_data:
@@ -2964,8 +3493,16 @@ class QDesqTab(QWidget):
     # DATASET LOADING
     # =========================================================================
 
-    def load_dataset_file(self, dataset_file):
-        """Takes the dataset file and loads the dict, before calling the plotter."""
+    def load_dataset_file(self, dataset_file: str) -> None:
+        """
+        Load a dataset file and display it.
+
+        Takes the dataset file path, loads the HDF5 data to a dictionary,
+        extracts any embedded config, and calls the plotter.
+
+        :param dataset_file: Path to the HDF5 dataset file.
+        :type dataset_file: str
+        """
         self.data = Helpers.h5_to_dict(dataset_file)
 
         # Extracting the Config
@@ -2983,10 +3520,13 @@ class QDesqTab(QWidget):
     # FITTING METHODS
     # =========================================================================
 
-    def perform_fit(self):
+    def perform_fit(self) -> None:
         """
-        Performs fitting on the current plots based on fit_combo selection.
-        Handles both 1D line plots and 2D image data in both backends.
+        Perform fitting on the current plots based on fit_combo selection.
+
+        Handles both 1D line plots and 2D image data in both backends
+        (PyQtGraph and Matplotlib). Routes to the appropriate backend-specific
+        fitting method.
         """
         fit_model = self.fit_combo.currentText()
 
@@ -3000,11 +3540,15 @@ class QDesqTab(QWidget):
         else:
             self.perform_fit_pyqtgraph(fit_model)
 
-    def perform_fit_pyqtgraph(self, fit_model: str):
+    def perform_fit_pyqtgraph(self, fit_model: str) -> None:
         """
-        Performs fitting on PyQtGraph plots for the CURRENTLY SELECTED figure only.
+        Perform fitting on PyQtGraph plots for the CURRENTLY SELECTED figure only.
 
-        FIXED: Now uses the stacked widget architecture - only fits the selected figure.
+        Uses the stacked widget architecture - only fits the selected figure.
+        Handles both 1D line fitting and 2D pattern analysis (e.g., chevron).
+
+        :param fit_model: Name of the fit model to use (e.g., 'Auto', 'Lorentzian').
+        :type fit_model: str
         """
         # Check if we have any figures
         if self._displayed_figure_index < 0:
@@ -3073,11 +3617,15 @@ class QDesqTab(QWidget):
         else:
             qWarning("No fits were successful")
 
-    def perform_fit_matplotlib(self, fit_model: str):
+    def perform_fit_matplotlib(self, fit_model: str) -> None:
         """
-        Performs fitting on matplotlib plots for the CURRENTLY SELECTED figure only.
+        Perform fitting on matplotlib plots for the CURRENTLY SELECTED figure only.
 
-        FIXED: Now uses the stacked widget architecture - only fits the selected figure.
+        Uses the stacked widget architecture - only fits the selected figure.
+        Handles both 1D line fitting and 2D pattern analysis (e.g., chevron).
+
+        :param fit_model: Name of the fit model to use (e.g., 'Auto', 'Lorentzian').
+        :type fit_model: str
         """
         # Check if we have any figures
         if self._displayed_figure_index < 0:
@@ -3151,8 +3699,20 @@ class QDesqTab(QWidget):
         else:
             qWarning("No fits were successful")
 
-    def fit_2d_plot(self, plot, fit_model: str):
-        """Fit 2D data in a PyQtGraph plot."""
+    def fit_2d_plot(self, plot: pg.PlotItem, fit_model: str) -> Optional[Dict[str, Any]]:
+        """
+        Fit 2D data in a PyQtGraph plot.
+
+        Extracts image data from the plot and runs 2D analysis (e.g., chevron
+        pattern detection and fitting).
+
+        :param plot: PyQtGraph PlotItem containing image data.
+        :type plot: pg.PlotItem
+        :param fit_model: Name of the 2D analysis method.
+        :type fit_model: str
+        :returns: Fit result dictionary or None on failure.
+        :rtype: Optional[Dict[str, Any]]
+        """
         try:
             image_items = [item for item in plot.items if isinstance(item, pg.ImageItem)]
             if not image_items:
@@ -3185,8 +3745,20 @@ class QDesqTab(QWidget):
             traceback.print_exc()
             return None
 
-    def fit_2d_matplotlib(self, ax, fit_model: str):
-        """Fit 2D data in a matplotlib axis."""
+    def fit_2d_matplotlib(self, ax: Any, fit_model: str) -> Optional[Dict[str, Any]]:
+        """
+        Fit 2D data in a matplotlib axis.
+
+        Extracts image data from the axis and runs 2D analysis (e.g., chevron
+        pattern detection and fitting).
+
+        :param ax: Matplotlib axis containing image data.
+        :type ax: matplotlib.axes.Axes
+        :param fit_model: Name of the 2D analysis method.
+        :type fit_model: str
+        :returns: Fit result dictionary or None on failure.
+        :rtype: Optional[Dict[str, Any]]
+        """
         try:
             images = ax.get_images()
             if not images:
@@ -3215,8 +3787,13 @@ class QDesqTab(QWidget):
             traceback.print_exc()
             return None
 
-    def display_2d_fit_results(self, result: Dict):
-        """Display 2D fit results (e.g., chevron parameters)."""
+    def display_2d_fit_results(self, result: Dict[str, Any]) -> None:
+        """
+        Display 2D fit results (e.g., chevron parameters) to the log.
+
+        :param result: Fit result dictionary containing success status and parameters.
+        :type result: Dict[str, Any]
+        """
         if not result.get("success"):
             qWarning(f"2D analysis unsuccessful: {result.get('message')}")
             return
@@ -3228,7 +3805,14 @@ class QDesqTab(QWidget):
             qInfo(f"Coupling g: {g:.3e}, Center detuning: {delta0:.3f}")
 
     def try_extract_axes_from_data(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Try to extract x and y axis arrays from self.data for 2D fitting."""
+        """
+        Try to extract x and y axis arrays from self.data for 2D fitting.
+
+        Searches for common axis names like 'times', 'gains', 'frequencies', etc.
+
+        :returns: Tuple of (x_axis, y_axis) arrays, or (None, None) if not found.
+        :rtype: Tuple[Optional[np.ndarray], Optional[np.ndarray]]
+        """
         if self.data is None:
             return None, None
 
@@ -3263,8 +3847,15 @@ class QDesqTab(QWidget):
 
         return x_axis, y_axis
 
-    def extract_plot_data(self, plot) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Extract x and y data from a PyQtGraph plot."""
+    def extract_plot_data(self, plot: pg.PlotItem) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Extract x and y data from a PyQtGraph plot.
+
+        :param plot: PyQtGraph PlotItem to extract data from.
+        :type plot: pg.PlotItem
+        :returns: Tuple of (x_data, y_data) arrays, or (None, None) if not found.
+        :rtype: Tuple[Optional[np.ndarray], Optional[np.ndarray]]
+        """
         try:
             items = [item for item in plot.items if isinstance(item, pg.PlotDataItem)]
 
@@ -3283,8 +3874,13 @@ class QDesqTab(QWidget):
 
         return None, None
 
-    def on_matplotlib_toggled(self):
-        """Handle matplotlib checkbox toggle - switch between rendering modes."""
+    def on_matplotlib_toggled(self) -> None:
+        """
+        Handle matplotlib checkbox toggle - switch between rendering modes.
+
+        Switches the plot_stack between PyQtGraph (index 0) and Matplotlib
+        (index 1) modes, and updates the coordinate label visibility.
+        """
         if self.use_matplotlib_checkbox.isChecked():
             self.coord_label.hide()
             # Switch to matplotlib mode
@@ -3304,8 +3900,15 @@ class QDesqTab(QWidget):
                 if stack_index < self.pyqtgraph_stack.count():
                     self.pyqtgraph_stack.setCurrentIndex(stack_index)
 
-    def overlay_fit_on_matplotlib(self, ax, fit_result: FitResult):
-        """Overlay the fitted curve on a matplotlib axis."""
+    def overlay_fit_on_matplotlib(self, ax: Any, fit_result: FitResult) -> None:
+        """
+        Overlay the fitted curve on a matplotlib axis.
+
+        :param ax: Matplotlib axis to add the fit curve to.
+        :type ax: matplotlib.axes.Axes
+        :param fit_result: FitResult containing fit data and parameters.
+        :type fit_result: FitResult
+        """
         try:
             if fit_result.fit_data.size == 0:
                 qWarning("No fit data to overlay")
@@ -3333,8 +3936,15 @@ class QDesqTab(QWidget):
             qCritical(f"Failed to overlay fit on matplotlib: {str(e)}")
             traceback.print_exc()
 
-    def overlay_fit_on_plot(self, plot, fit_result: FitResult):
-        """Overlay the fitted curve on a PyQtGraph plot."""
+    def overlay_fit_on_plot(self, plot: pg.PlotItem, fit_result: FitResult) -> None:
+        """
+        Overlay the fitted curve on a PyQtGraph plot.
+
+        :param plot: PyQtGraph PlotItem to add the fit curve to.
+        :type plot: pg.PlotItem
+        :param fit_result: FitResult containing fit data and parameters.
+        :type fit_result: FitResult
+        """
         try:
             if fit_result.fit_data.size == 0:
                 return
@@ -3351,9 +3961,12 @@ class QDesqTab(QWidget):
         except Exception as e:
             qCritical(f"Failed to overlay fit: {str(e)}")
 
-    def clear_fit_overlays(self):
+    def clear_fit_overlays(self) -> None:
         """
         Clear all fit overlay curves from both PyQtGraph and matplotlib plots.
+
+        Removes fit curve visual elements and clears the fit_results list.
+        Also triggers canvas redraw in matplotlib mode.
         """
         # Clear from plot_manager first
         self.plot_manager.clear_fit_overlays()
@@ -3381,13 +3994,28 @@ class QDesqTab(QWidget):
         self.fit_overlays.clear()
         self.fit_results.clear()
 
-    def display_fit_results(self, fit_result: FitResult):
-        """Display fit results in console."""
+    def display_fit_results(self, fit_result: FitResult) -> None:
+        """
+        Display fit results in the console/log.
+
+        :param fit_result: FitResult to display.
+        :type fit_result: FitResult
+        """
         result_text = fit_result.format_params()
         qInfo(f"Fit Results:\n{result_text}")
 
-    def overlay_chevron_fit_on_pyqtgraph(self, plot, result: Dict):
-        """Overlay chevron fit visualization on a PyQtGraph plot."""
+    def overlay_chevron_fit_on_pyqtgraph(self, plot: pg.PlotItem, result: Dict[str, Any]) -> None:
+        """
+        Overlay chevron fit visualization on a PyQtGraph plot.
+
+        Displays either full fit results (center detuning line) or basic
+        detection results (crosshairs at sweet spot).
+
+        :param plot: PyQtGraph PlotItem to overlay on.
+        :type plot: pg.PlotItem
+        :param result: Chevron fit result dictionary.
+        :type result: Dict[str, Any]
+        """
         try:
             # Check if full fit was performed
             if result.get("fit_performed"):
@@ -3443,8 +4071,18 @@ class QDesqTab(QWidget):
             qCritical(f"Failed to overlay chevron fit on PyQtGraph: {str(e)}")
             traceback.print_exc()
 
-    def overlay_chevron_fit_on_matplotlib(self, ax, result: Dict):
-        """Overlay chevron fit visualization on a matplotlib axis."""
+    def overlay_chevron_fit_on_matplotlib(self, ax: Any, result: Dict[str, Any]) -> None:
+        """
+        Overlay chevron fit visualization on a matplotlib axis.
+
+        Displays either full fit results (center detuning line) or basic
+        detection results (crosshairs at sweet spot).
+
+        :param ax: Matplotlib axis to overlay on.
+        :type ax: matplotlib.axes.Axes
+        :param result: Chevron fit result dictionary.
+        :type result: Dict[str, Any]
+        """
         try:
             # Check if full fit was performed
             if result.get("fit_performed"):

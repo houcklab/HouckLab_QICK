@@ -1,7 +1,7 @@
-AuxiliaryThread
+MockExperiments
 ===============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: Experiments.MockExperiments
    :members:
    :undoc-members:
    :show-inheritance:

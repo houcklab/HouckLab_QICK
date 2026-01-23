@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+DirectoryTreePanel
+==================
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.DirectoryTreePanel
    :members:
    :undoc-members:
    :show-inheritance:

@@ -484,16 +484,16 @@ class MockGridSpec(MockExperimentBase):
 
         # Right column: IQ scatter (1x1)
         ax2 = fig.add_subplot(gs[0, 2])
-        ax2.scatter(d['i_g'], d['q_g'], alpha=0.3, s=2, label='|gâŸ©')
-        ax2.scatter(d['i_e'], d['q_e'], alpha=0.3, s=2, label='|eâŸ©')
+        ax2.scatter(d['i_g'], d['q_g'], alpha=0.3, s=2, label='ground')
+        ax2.scatter(d['i_e'], d['q_e'], alpha=0.3, s=2, label='excited')
         ax2.set_title('IQ Scatter')
         ax2.legend(markerscale=5)
         ax2.set_aspect('equal')
 
         # Right column: I histogram (1x1)
         ax3 = fig.add_subplot(gs[1, 2])
-        ax3.hist(d['i_g'], bins=30, alpha=0.5, label='|gâŸ©')
-        ax3.hist(d['i_e'], bins=30, alpha=0.5, label='|eâŸ©')
+        ax3.hist(d['i_g'], bins=30, alpha=0.5, label='ground')
+        ax3.hist(d['i_e'], bins=30, alpha=0.5, label='excited')
         ax3.set_title('I Histogram')
         ax3.legend()
 
@@ -657,8 +657,8 @@ class MockMultiFigure2(MockExperimentBase):
             figNum += 1
         fig2, ax2 = plt.subplots(figsize=(8, 8), num=figNum)
 
-        ax2.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|gâŸ©', c='blue')
-        ax2.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|eâŸ©', c='red')
+        ax2.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='ground', c='blue')
+        ax2.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='excited', c='red')
         ax2.set_xlabel('I')
         ax2.set_ylabel('Q')
         ax2.set_title(f'{self.titlename} - Figure 2: IQ Scatter')
@@ -771,8 +771,8 @@ class MockMultiFigure3(MockExperimentBase):
             figNum += 1
         fig3, ax3 = plt.subplots(figsize=(8, 5), num=figNum)
 
-        ax3.hist(d['shots_g'], bins=40, alpha=0.7, label='|gâŸ©', color='blue')
-        ax3.hist(d['shots_e'], bins=40, alpha=0.7, label='|eâŸ©', color='red')
+        ax3.hist(d['shots_g'], bins=40, alpha=0.7, label='ground', color='blue')
+        ax3.hist(d['shots_e'], bins=40, alpha=0.7, label='excited', color='red')
         ax3.set_xlabel('Rotated I')
         ax3.set_ylabel('Counts')
         ax3.set_title(f'{self.titlename} - Figure 3: Single Shot Histogram')
@@ -1305,8 +1305,8 @@ class MockLivePlotScatter(MockExperimentBase):
             figNum += 1
         fig, ax = plt.subplots(figsize=(8, 8), num=figNum)
 
-        scatter_g = ax.scatter([], [], alpha=0.5, s=10, label='|gâŸ©', c='blue')
-        scatter_e = ax.scatter([], [], alpha=0.5, s=10, label='|eâŸ©', c='red')
+        scatter_g = ax.scatter([], [], alpha=0.5, s=10, label='ground', c='blue')
+        scatter_e = ax.scatter([], [], alpha=0.5, s=10, label='excited', c='red')
 
         ax.set_xlim(-1, 2)
         ax.set_ylim(-1, 1.5)
@@ -1354,8 +1354,8 @@ class MockLivePlotScatter(MockExperimentBase):
         fig, ax = plt.subplots(figsize=(8, 8), num=figNum)
 
         d = data['data']
-        ax.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='|gâŸ©', c='blue')
-        ax.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='|eâŸ©', c='red')
+        ax.scatter(d['i_g'], d['q_g'], alpha=0.5, s=10, label='ground', c='blue')
+        ax.scatter(d['i_e'], d['q_e'], alpha=0.5, s=10, label='excited', c='red')
 
         ax.set_xlabel('I')
         ax.set_ylabel('Q')

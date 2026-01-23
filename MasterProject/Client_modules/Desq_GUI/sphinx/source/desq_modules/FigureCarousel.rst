@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+FigureCarousel
+==============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.FigureCarousel
    :members:
    :undoc-members:
    :show-inheritance:

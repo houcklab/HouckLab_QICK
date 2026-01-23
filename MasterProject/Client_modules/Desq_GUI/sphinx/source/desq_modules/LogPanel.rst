@@ -1,5 +1,5 @@
-LogPanel Class
-==============
+LogPanel
+========
 
 .. automodule:: scripts.LogPanel
    :members:

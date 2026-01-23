@@ -1,5 +1,5 @@
-SettingsWindow Class
-====================
+SettingsWindow
+==============
 
 .. automodule:: scripts.SettingsWindow
    :members:

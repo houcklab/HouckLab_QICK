@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+BackendDesq
+===========
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.BackendDesq
    :members:
    :undoc-members:
    :show-inheritance:

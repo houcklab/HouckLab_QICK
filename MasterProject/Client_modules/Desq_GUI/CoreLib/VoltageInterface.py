@@ -1,7 +1,9 @@
 class VoltageInterface:
     """
     The Parent class for all voltage interface classes: Yoko, Qblox.
-    Extremely simple, and its purpose is so the GUI can pass references to Yoko or Qblox without caring about the class.
+
+    Extremely simple, and its purpose is so the GUI can pass references to Yoko or
+    Qblox without caring about the class. (Voltage interface agnostic)
     """
 
     def __init__(self):

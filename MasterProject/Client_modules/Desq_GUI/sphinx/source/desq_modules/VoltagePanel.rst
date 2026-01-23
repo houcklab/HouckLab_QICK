@@ -1,5 +1,5 @@
-VoltagePanel Class
-==================
+VoltagePanel
+============
 
 .. automodule:: scripts.VoltagePanel
    :members:

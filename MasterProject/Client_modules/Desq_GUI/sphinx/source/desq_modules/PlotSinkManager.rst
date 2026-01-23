@@ -1,7 +1,7 @@
-AuxiliaryThread
+PlotSinkManager
 ===============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.PlotSinkManager
    :members:
    :undoc-members:
    :show-inheritance:

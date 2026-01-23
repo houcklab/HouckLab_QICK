@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+ConfigManager
+=============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.ConfigManager
    :members:
    :undoc-members:
    :show-inheritance:

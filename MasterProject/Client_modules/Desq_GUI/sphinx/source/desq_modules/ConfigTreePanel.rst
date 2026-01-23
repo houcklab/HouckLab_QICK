@@ -1,5 +1,5 @@
-ConfigTreePanel Class
-=====================
+ConfigTreePanel
+===============
 
 .. automodule:: scripts.ConfigTreePanel
    :members:

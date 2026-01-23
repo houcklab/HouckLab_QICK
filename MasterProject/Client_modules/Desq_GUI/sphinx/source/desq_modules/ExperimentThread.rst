@@ -1,5 +1,5 @@
-ExperimentThread Class
-======================
+ExperimentThread
+================
 
 .. automodule:: scripts.ExperimentThread
    :members:

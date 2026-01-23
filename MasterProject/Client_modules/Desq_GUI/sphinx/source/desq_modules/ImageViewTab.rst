@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+ImageViewTab
+=============
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: scripts.ImageViewTab
    :members:
    :undoc-members:
    :show-inheritance:

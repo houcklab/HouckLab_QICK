@@ -1,5 +1,5 @@
-ExperimentObject Class
-======================
+ExperimentObject
+================
 
 .. automodule:: scripts.ExperimentObject
    :members:

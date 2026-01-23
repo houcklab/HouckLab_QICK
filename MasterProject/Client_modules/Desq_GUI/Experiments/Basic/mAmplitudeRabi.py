@@ -39,17 +39,7 @@ except ImportError:
         pass
 
 # Base experiment class
-try:
-    from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
-except ImportError:
-    try:
-        from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-    except ImportError:
-        try:
-            from .StarterPackConfig import ExperimentClass
-        except ImportError:
-            from StarterPackConfig import ExperimentClass
-
+from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
 
 # =============================================================================
 # QICK PROGRAM

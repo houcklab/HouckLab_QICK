@@ -41,16 +41,10 @@ except ImportError:
             self.start = start
             self.end = end
 
-# Local imports
-try:
-    from .FFAveragerProgram import FFAveragerProgramV2
-    from . import FF_utils as FF
-    from .BaseConfigFFMUX import ExperimentClass, IQ_contrast
-except ImportError:
-    from FFAveragerProgram import FFAveragerProgramV2
-    import FF_utils as FF
-    from BaseConfigFFMUX import ExperimentClass, IQ_contrast
-
+from MasterProject.Client_modules.Desq_GUI.Experiments.FFMUX.FFAveragerProgram import FFAveragerProgramV2
+from MasterProject.Client_modules.Desq_GUI.Experiments.FFMUX import FF_utils as FF
+from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
+from MasterProject.Client_modules.Desq_GUI.Experiments.FFMUX.BaseConfigFFMUX import IQ_contrast
 
 # =============================================================================
 # QICK PROGRAM

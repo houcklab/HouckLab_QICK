@@ -1,7 +1,7 @@
-AuxiliaryThread
-===============
+Experiment
+==========
 
-.. automodule:: scripts.AuxiliaryThread
+.. automodule:: CoreLib.Experiment
    :members:
    :undoc-members:
    :show-inheritance:
