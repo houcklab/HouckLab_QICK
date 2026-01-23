@@ -13,8 +13,8 @@ To run the Desq GUI for the first time, follow these steps:
 
     1. **Pulling from Git:**
 
-       Ensure you have the latest version of Desq by cloning or pulling from the `Link HouckLab_QICK repository <https://github.com/houcklab/HouckLab_QICK>`_.
-       Currently, the GUI resides on the ``desq_dev`` branch.
+       Ensure you have the latest version of Desq by cloning or pulling from the `HouckLab_QICK repository <https://github.com/houcklab/HouckLab_QICK>`_.
+       Currently, the GUI resides on the ``desq_dev`` branch `here <https://github.com/houcklab/HouckLab_QICK/tree/desq_dev/MasterProject/Client_modules/Desq_GUI>`_.
 
     2. **Configuring Environment:**
 
