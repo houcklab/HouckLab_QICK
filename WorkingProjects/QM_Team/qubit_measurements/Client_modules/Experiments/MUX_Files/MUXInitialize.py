@@ -28,12 +28,12 @@ BaseConfig = {
     "pulse_style": "const",  # --Fixed
     "length": 30,  # [Clock ticks]
     "pulse_gain": 30000,  # [DAC units]
-    "adc_trig_offset": 1,  # [us]
+    "adc_trig_offset": 0.1,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
-    "cavity_LO": 0, #6.5e9
+    "cavity_LO": 6.1e9 * 0, #6.5e9
     # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
     # 'cavity_winding_offset': -32.10723885 + np.pi #-15.77597 * 0
-    "cavity_winding_freq": 0,
+    "cavity_winding_freq": 1.0903695,
     'cavity_winding_offset': 0
 }
 FF_channel1 = 0

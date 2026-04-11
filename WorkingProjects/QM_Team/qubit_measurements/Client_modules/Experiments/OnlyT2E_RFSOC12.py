@@ -1,6 +1,3 @@
-# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
-# os.add_dll_directory(os.getcwd() + '.\..\\')
-
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q import *
 import time
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mTransmissionFF import CavitySpecFF
@@ -11,62 +8,49 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF_NoUpdate import T1FF_N
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2EFF import T2EMUX
 
-soc, soccfg = makeProxy_RFSOC_119()
+soc, soccfg = makeProxy_RFSOC_12()
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6600.30, 'Gain': 4000},
-          'Qubit': {'Frequency': 2943.12, 'Gain': 6250, "sigma": 0.15, "flattop_length": 0.4}, #3125
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername':"Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
-    '2': {'Readout': {'Frequency': 6712.7, 'Gain': 3700},
-          'Qubit': {'Frequency': 3312.544, 'Gain': 10000, "sigma": 0.4, "flattop_length": 80},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
-    '3': {'Readout': {'Frequency': 6862.26, 'Gain': 3000},
-          'Qubit': {'Frequency': 3192.10, 'Gain': 7600, "sigma": 0.4, "flattop_length": 50},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
-    '4': {'Readout': {'Frequency': 6941.53, 'Gain': 2900},
-          'Qubit': {'Frequency': 3655.40, 'Gain': 7140, "sigma": 0.02, "flattop_length": 0.1}, #3570
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
-    '5': {'Readout': {'Frequency': 7101.8, 'Gain': 3800},
-          'Qubit': {'Frequency': 3660.43, 'Gain': 8600, "sigma": 0.02, "flattop_length": 0.6}, #8600
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
-    '6': {'Readout': {'Frequency': 7190.186, 'Gain': 3800},
-          'Qubit': {'Frequency': 3496.27, 'Gain': 8820, "sigma": 0.1, "flattop_length": 1.0},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-11-04_CoolDown/TATQ02-Si-01/T2E_Q1_Q4_Q5_Q6/"},
+    '1': {'Readout': {'Frequency': 7093.10, 'Gain': 900},
+          'Qubit': {'Frequency': 4913.57, 'Gain': 7500, "sigma": 0.1, "flattop_length": 0.3}, # pi = 7500, pi/2 = 3750
+          'outerfoldername':"Z:/t1Team/Data/2024-12-22_cooldown/TATCR02_Siegert_01/T2E/"},
+    '2': {'Readout': {'Frequency': 7208, 'Gain': 1300},
+          'Qubit': {'Frequency': 4786.1, 'Gain': 6150, "sigma": 0.1, "flattop_length": 0.2}, # pi = 6150, pi/2 = 3100
+          'outerfoldername':"Z:/t1Team/Data/2024-12-22_cooldown/TATCR02_Siegert_01/T2E/"},
+    '3': {'Readout': {'Frequency': 7289.10, 'Gain': 1200},
+          'Qubit': {'Frequency': 4393.66, 'Gain': 5750, "sigma": 0.1, "flattop_length": 0.1}, # pi = 5750, pi/2 = 3950
+          'outerfoldername': "Z:/t1Team/Data/2024-12-22_cooldown/TATCR02_Siegert_01/T2E/"},
+    '4': {'Readout': {'Frequency': 7384.17, 'Gain': 950},
+          'Qubit': {'Frequency': 3933.75, 'Gain': 7750, "sigma": 0.1, "flattop_length": 2}, #pi = 7750, pi/2 = 2500
+          'outerfoldername': "Z:/t1Team/Data/2024-12-22_cooldown/TATCR02_Siegert_01/T2E/"},
     }
 
 T2_qubitsweep = True
 T1_qubitsweep = False
-
-T2E_params = {"qubit_swept": [1, 4, 5, 6],
-               "T2_max_us_list": [400, 1, 1, 200, 800, 400],
-               "T2_expts_list": [100, 1, 1, 100, 200, 100],
-               "T2_reps_list": [15, 1, 1, 10, 20, 20],
-               "T2_rounds_list": [15, 1, 1, 10, 20, 20],
-               "pi2_gain_list": [3125, 1, 1, 3570, 4300, 4410],
+T2E_params = {"qubit_swept": [1, 2, 3, 4],
+               "T2_max_us_list": [300, 300, 300, 300],
+               "T2_expts_list": [50, 50, 50, 50],
+               "T2_reps_list": [20, 20, 20, 20],
+               "T2_rounds_list": [20, 20, 20, 20],
+               "pi2_gain_list": [3750, 3100, 2875, 3800],
                "freq_shift": 0.0,
                "num_pulses": 1,
-               "relax_delay": 2000}
+               "relax_delay": 1000}
 
 RunAmplitudeRabi = True
-Amplitude_Rabi_params = {"reps": 100, #200
-                         'rounds': 10,
+Amplitude_Rabi_params = {"reps": 200, #200
+                         'rounds': 2,
                          'relax_delay': 5000}
 repetition_number = 10000
 
 if T2_qubitsweep:
     for r in range(repetition_number):
-        for i in T2E_params["qubit_swept"]:
+        for i, qubit in enumerate(T2E_params["qubit_swept"]):
 
             from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q import BaseConfig
 
-            Qubit_Readout = i
-            Qubit_Pulse = i
+            Qubit_Readout = qubit
+            Qubit_Pulse = qubit
             outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
             cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']

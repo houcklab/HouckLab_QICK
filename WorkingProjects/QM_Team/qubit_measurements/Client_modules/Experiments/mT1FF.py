@@ -126,7 +126,7 @@ class T1FF(ExperimentClass):
         avgq = rotated_IQ.imag
 
 
-        if "min_max" in data:
+        if "min_m908ax" in data:
             ground = data["min_max"][0]
             excited = data["min_max"][-1]
             avgi = (avgi - ground) / (excited - ground)
@@ -208,7 +208,6 @@ class T1FF(ExperimentClass):
         new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
         self.fname = new_name
         print(f'Saving {self.fname}')
-        print(' ')
         super().save_data(data=data['data'])
 
 def Amplitude_IQ(I, Q, phase_num_points = 200):

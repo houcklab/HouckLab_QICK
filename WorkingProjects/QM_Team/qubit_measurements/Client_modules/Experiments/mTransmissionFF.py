@@ -16,20 +16,8 @@ class CavitySpecFFProg(AveragerProgram):
                                  freq=cfg["pulse_freq"], gen_ch=cfg["res_ch"])
         freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"],
                              ro_ch=cfg["ro_chs"][0])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        if 'ro_periodic' in self.cfg.keys():
-            if self.cfg['ro_periodic']:
-                print("Readout periodic")
-                self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0,
-                                         gain=cfg["pulse_gain"],
-                                         length=self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"]) , mode='periodic')
-            else:
-                self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=cfg["res_phase"],
-                                         gain=cfg["pulse_gain"],
-                                         length=self.us2cycles(cfg["length"]))  # , mode='periodic')
-        else:
-            self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=cfg["res_phase"],
-                                     gain=cfg["pulse_gain"],
-                                     length=self.us2cycles(cfg["length"]))
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0, gain=cfg["pulse_gain"],
+                                 length=self.us2cycles(cfg["length"]))
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):

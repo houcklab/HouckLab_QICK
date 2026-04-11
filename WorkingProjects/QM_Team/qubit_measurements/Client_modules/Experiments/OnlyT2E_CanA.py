@@ -70,6 +70,123 @@ T2CPMG_params = {"qubit_swept": [3, 4, 5, 6], "T2_max_us": 3000, "T2_expts": 75,
                  'T2_max_us_list': [[2000], [2000], [2000], [2000]]
                  }
 
+# cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
+# resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Frequency']
+# qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
+# qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
+#
+# qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
+# qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
+#
+# trans_config = {
+#     "reps": 10000,  # this will used for all experiements below unless otherwise changed in between trials
+#     "pulse_style": "const",  # --Fixed
+#     "readout_length": 5,  # [us]
+#     "pulse_gain": cavity_gain,  # [DAC units]
+#     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
+#     "TransSpan": 0.6,  ### MHz, span will be center+/- this parameter
+#     "TransNumPoints": 61,  ### number of points in the transmission frequecny
+#     "cav_relax_delay": 30
+# }
+#
+# UpdateConfig = trans_config
+# config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
+# config["FF_Qubits"] = FF_Qubits
+#
+# #### update the qubit and cavity attenuation
+# # cavityAtten.SetAttenuation(config["cav_Atten"], printOut=True)
+#
+# cavity_min = True
+# config["cavity_min"] = cavity_min  # look for dip, not peak, perform the cavity transmission experiment
+
+#
+# if RunAmplitudeRabi:
+#     number_of_steps = 3
+#     ARabi_config = {'gain_start': 0, "gain_end": qubit_gain,
+#                         'gainNumPoints': number_of_steps,
+#                         "reps": Amplitude_Rabi_params['reps'],
+#                         "rounds": Amplitude_Rabi_params['rounds'],
+#                         "sigma": qubit_sigma, "f_ge": Amplitude_Rabi_params["qubit_freq"],
+#                         "relax_delay": 5000,
+#                         "flattop_length": qubit_flattop}
+#     config = config | ARabi_config  ### note that UpdateConfig will overwrite elements in BaseConfig
+#     iAmpRabi = AmplitudeRabiFF_N(path="AmplitudeRabi", cfg=config, soc=soc, soccfg=soccfg,
+#                                outerFolder=outerFolder)
+#     dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
+#     rotation_angle, min_max = AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2)
+#     print(rotation_angle, min_max)
+#     AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
+#     AmplitudeRabiFF_N.save_config(iAmpRabi)
+#
+#
+# if RunT2:
+#     T2R_cfg = {"start": 0, "step": T1T2_params["T2_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=2),
+#                "expts": T1T2_params["T2_expts"], "reps": T1T2_params["T2_reps"], "rounds": T1T2_params["T2_rounds"],
+#                "pi_gain": qubit_gain, "sigma": T1T2_params["sigma"],
+#                "pi2_gain": qubit_gain // 2, "relax_delay": T1T2_params["relax_delay"],
+#                'f_ge': qubit_frequency_center + T1T2_params["freq_shift"]
+#                }
+#     config = config | T2R_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+#     iT2R = T2R(path="T2R", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+#     dT2R = T2R.acquire(iT2R)
+#     T2R.display(iT2R, dT2R, plotDisp=True, figNum=2)
+#     T2R.save_data(iT2R, dT2R)
+#     T2R.save_config(iT2R)
+#
+# if RunT2E:
+#     for r in range(T2E_params["repetitions"]):
+#         for ind, num_p in enumerate(T2E_params["num_pulses"]):
+#             number_of_steps = 3
+#             num_pulses = num_p
+#             ARabi_config = {'gain_start': 0, "gain_end": qubit_gain,
+#                             'gainNumPoints': number_of_steps,
+#                             "reps": Amplitude_Rabi_params['reps'],
+#                             "rounds": Amplitude_Rabi_params['rounds'],
+#                             "sigma": qubit_sigma, "f_ge": Amplitude_Rabi_params["qubit_freq"],
+#                             "relax_delay": 5000,
+#                             "flattop_length": qubit_flattop,
+#                             "num_pi_pulses": num_p}
+#             config = config | ARabi_config  ### note that UpdateConfig will overwrite elements in BaseConfig
+#             iAmpRabi = AmplitudeRabiFF_N(path="AmplitudeRabi", cfg=config, soc=soc, soccfg=soccfg,
+#                                          outerFolder=outerFolder)
+#             dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
+#             rotation_angle, min_max = AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=False, figNum=2)
+#             AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
+#             AmplitudeRabiFF_N.save_config(iAmpRabi)
+#             config["rotation_angle"] = rotation_angle
+#             config["min_max"] = min_max
+#
+#             if T2E_params["pi2_gain"] == False:
+#                 qubit_gain_pi2 = qubit_gain // 2
+#             else:
+#                 qubit_gain_pi2 = T2E_params["pi2_gain"]
+#
+#             if T2E_params["T2_max_us_list"] != None:
+#                 max_t2 = T2E_params["T2_max_us_list"][ind]
+#             else:
+#                 max_t2 = T2E_params["T2_max_us"]
+#             int_steps = max_t2 // (0.00232515 * (num_pulses + 1) * T2E_params["T2_expts"])
+#             T2E_cfg = {"start": 0, "step": 0.00232515 * (num_pulses + 1) * int_steps,
+#                        "expts": T2E_params["T2_expts"], "reps": T2E_params["T2_reps"], "rounds": T2E_params["T2_rounds"],
+#                        "pi_gain": qubit_gain, "sigma": qubit_sigma,
+#                        "pi2_gain": qubit_gain_pi2, "relax_delay": T2E_params["relax_delay"],
+#                        'f_ge': qubit_frequency_center + T2E_params["freq_shift"],
+#                        "num_pi_pulses": num_p
+#                        }
+#             if int_steps == 0:
+#                 print('Step size is 0! need to increase total time or decrease experiments')
+#             else:
+#                 config = config | T2E_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+#                 iT2E = T2EMUX(path="T2E", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+#                 dT2E = T2EMUX.acquire(iT2E)
+#                 T2EMUX.display(iT2E, dT2E, plotDisp=False, figNum=2)
+#                 T2EMUX.save_data(iT2E, dT2E)
+#                 T2EMUX.save_config(iT2E)
+#
+#                 time.sleep(10)
+#                 soc.reset_gens()
+
+
 if RunT2CPMG:
     for r in range(T2E_params["repetitions"]):
 
@@ -179,3 +296,4 @@ if RunT2CPMG:
 
                 time.sleep(10)
                 soc.reset_gens()
+

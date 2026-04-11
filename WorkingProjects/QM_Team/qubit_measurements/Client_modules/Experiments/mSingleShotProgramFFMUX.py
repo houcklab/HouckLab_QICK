@@ -169,8 +169,8 @@ class SingleShotProgram(AveragerProgram):
             #              width=self.trig_length)
 
             for i in range(self.cfg["number_of_pulses"]):
-                # self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"] - self.cfg["trig_buffer_start"]),
-                #              width=self.trig_length)
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"] - self.cfg["trig_buffer_start"]),
+                             width=self.trig_length)
                 if self.cfg["flattop_length"] != None:
                     self.setup_and_pulse(self.cfg["qubit_ch"], style='flat_top', freq=freq_, phase=0,
                                      gain=gain_,
@@ -181,7 +181,6 @@ class SingleShotProgram(AveragerProgram):
                                      gain=gain_,
                                      waveform="qubit")
                 self.sync_all(self.us2cycles(0.05))
-            print(self.pulse_sigma, self.pulse_qubit_lenth, gain_, freq_)
             # self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  #play probe pulse
         self.sync_all(self.us2cycles(0.05))
 
@@ -192,9 +191,9 @@ class SingleShotProgram(AveragerProgram):
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
         start = time.time()
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
         end = time.time()
 
         print('time', end - start)
@@ -203,7 +202,7 @@ class SingleShotProgram(AveragerProgram):
     def collect_shots(self):
         all_i = []
         all_q = []
-        # print(self.di_buf)#, self.di_buf[1][:30])
+        #, self.di_buf[1][:30])
         for i in range(len(self.di_buf)):
             shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
             shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)

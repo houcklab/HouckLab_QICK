@@ -90,7 +90,7 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
         avgi = [[signal.real]]
         avgq = [[signal.imag]]
-        data = {'config': self.cfg, 'data': {'x_pts': gainpts, 'avgi': avgi, 'avgq': avgq}}
+        data = {'config': self.cfg, 'data': {'x_pts': gainpts, 'avgi': avgi, 'avgq': avgq}}#, 'n_pulses': self.cfg["num_pi_pulses"]}}
         self.data = data
 
         return data
@@ -133,12 +133,9 @@ class AmplitudeRabiFF_N(ExperimentClass):
         return(rotation_angle, [avgi[0], avgi[-1]])
 
     def save_data(self, data=None):
-        #print(f'Saving {self.fname}')
-        num_pulses = self.cfg["num_pi_pulses"]
-        if num_pulses == 0:
-            new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
-        else:
-            new_name = self.fname[:-3] + '_n' + str(self.cfg["num_pi_pulses"]) + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
+        #new_name = self.fname[:-3] + '_n' + str(self.cfg["num_pi_pulses"]) + '.h5'
+        #self.fname = new_name
+        new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
         self.fname = new_name
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
