@@ -147,8 +147,11 @@ class SingleShotAnalysis:
             # Step 1 : Get the centers from the initial data
             if self.centers is not None:
                 print("Centers passed in:\n", self.centers)
+                self.get_Centers(self.i_0_arr, self.q_0_arr)
+                self.logger.info('Centers found')
+                self.logger.info(self.centers)
             else:
-                print("Centers is none")
+                # print("Centers is none")
                 self.get_Centers(self.i_0_arr, self.q_0_arr)
                 self.logger.info('Centers found')
                 self.logger.info(self.centers)
@@ -163,15 +166,14 @@ class SingleShotAnalysis:
             if self.fast is False or self.disp_image:
                 self.book_keeping(self.inital_fit_results, 'Initial')
 
-            if self.fast is False:
-                initial_params = self.inital_fit_results['result'].params
+            initial_params = self.inital_fit_results['result'].params
 
         else:
             initial_params = None
             if self.centers is not None:
                 print("Centers passed in:\n", self.centers)
             else:
-                print("centers is none")
+                # print("centers is none")
                 self.get_Centers(self.i_arr, self.q_arr)
 
         # Step 3 : Fit gaussians to the final data to get fit parameters
@@ -224,7 +226,7 @@ class SingleShotAnalysis:
             self.logger.error('Invalid cluster method')
             raise ValueError('Invalid cluster method')
 
-        print("Returning \n",self.centers)
+        # print("Returning \n",self.centers)
         return self.centers
         
 
@@ -498,7 +500,7 @@ class SingleShotAnalysis:
         plt.close()
 
     # Calculate the populations
-    def calculate_populations(self, fit_results, max_iter = 50000, num_trials = 50000):
+    def calculate_populations(self, fit_results, max_iter = 1000, num_trials = 50000):
         """
         Calculate the populations
         """
@@ -553,6 +555,18 @@ class SingleShotAnalysis:
             mean_estimate = np.mean(estimates, axis=1)
             std_estimate = np.std(estimates, axis=1)
 
+            # Get the centers of the gaussians
+            keys_x = ['g' + str(idx) + '_centerx' for idx in range(self.cen_num)]
+            keys_y = ['g' + str(idx) + '_centery' for idx in range(self.cen_num)]
+            centers = []
+            for i in range(self.cen_num):
+                centers.append((
+                    fit_results['result'].best_values[keys_x[i]],
+                    fit_results['result'].best_values[keys_y[i]]
+                ))
+            centers = np.array(centers)
+
+
             population_dict = {
                 'mean_pop': mean_estimate,
                 'std_pop': std_estimate,
@@ -561,6 +575,7 @@ class SingleShotAnalysis:
                 'mean_temp': mean_temperature,
                 'std_temp': std_temperatures,
                 'temperatures': temperatures,
+                'centers': centers,
             }
         else:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]
@@ -623,7 +638,7 @@ class SingleShotAnalysis:
             means[i,:] = [params[key+"centerx"], params[key+"centery"]]
             sigmas[i,0,0] = sigmas[i,1,1] = params[key+'sigmax']
             amps[i] = params[key+'amplitude']
-        print(amps)
+        # print(amps)
         if method == "mahalanobis":
             # Calculate the malalanabois distance
             for i in range(cen_num):

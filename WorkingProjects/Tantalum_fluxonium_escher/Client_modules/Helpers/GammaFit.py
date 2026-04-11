@@ -23,7 +23,7 @@ kb = sp.constants.k
 ##### define a class for fitting and storing the gamma matrix
 
 class GammaFit:
-    def __init__(self, data, freq_01 = 0.815e9):
+    def __init__(self, data, freq_01 = 0.815e9, verbose = False):
         #### extract out the data
         self.i_0_arr = np.array(data[0])
         self.i_1_arr = np.array(data[1])
@@ -31,6 +31,7 @@ class GammaFit:
         self.q_1_arr = np.array(data[3])
         self.wait_arr = np.array(data[4])
         self.freq_01 = freq_01
+        self.verbose = verbose
         #### write local arrays
         i_0_arr  = self.i_0_arr 
         i_1_arr  = self.i_1_arr 
@@ -71,7 +72,7 @@ class GammaFit:
 
             # Find the fit parameters for the double 2D Gaussian
             gaussians, popt, x_points, y_points, bounds = sse2.findGaussians(
-                hist2d, self.centers[idx_t], cen_num, plot= False,
+                hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
                 return_bounds = True,
                 fname = "Wait_Arr_0_0", loc = "plots/")
 
@@ -130,7 +131,7 @@ class GammaFit:
             q1_shots = []
 
             confidence = 0.95
-            
+
             for idx in range(len(sorted_shots_0)):
                 if sorted_shots_0[idx] > confidence:
                     i0_shots.append(self.i_1_arr[idx_t][idx])
@@ -150,7 +151,7 @@ class GammaFit:
                 
                 # Find the fit parameters for the double 2D Gaussian
                 gaussians, popt, x_points, y_points = sse2.findGaussians(
-                    hist2d, self.centers[idx_t], cen_num, plot= False,
+                    hist2d, self.centers[idx_t], cen_num, plot= self.verbose,
                     input_bounds = bounds, p_guess = p_guess,
                     sigma = sigma,
                     fname = "Wait_Arr_0_0", loc = "plots/")
@@ -165,17 +166,26 @@ class GammaFit:
                 
                 # Calculate the extected probability
                 num_samples_in_gaussian = sse2.calcNumSamplesInGaussian(
-                    hist2d, pdf, cen_num, plot = False, 
+                    hist2d, pdf, cen_num, plot = self.verbose,
                     fname = "Wait_Arr_0_1", loc = "plots/", 
                     x_points = x_points, y_points = y_points)
-                
-                num_samples_in_gaussian_std = sse2.calcNumSamplesInGaussianSTD(
-                    hist2d, pdf, cen_num, plot = False, 
-                    fname = "Wait_Arr_0_1",loc = "plots/", 
-                    x_points = x_points, y_points = y_points)
-                
+
                 probability, std_probability = sse2.calcProbability(
-                    num_samples_in_gaussian, num_samples_in_gaussian_std,cen_num)
+                    num_samples_in_gaussian,cen_num, sigma_sys = 0.01)
+
+                if self.verbose:
+                    if std_probability[0] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[0]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[0]))
+                    if std_probability[1] < 1e-4:
+                        print('Warning: std_probability is very small: ' + str(std_probability[1]))
+                        print('At wait time: ' + str(self.wait_arr[idx_t]) + ' us'
+                                + ' and center: ' + str(idx_cen))
+                        print('Number of samples in gaussian: ' + str(num_samples_in_gaussian))
+                        print('Probability: ' + str(probability[1]))
             
                 if idx_cen == 0:
                     state0_probs.append(probability[0])
@@ -291,16 +301,17 @@ class GammaFit:
         
             P0_0_resid = ((P0_0_model - P0_0_data)/P0_0_data_err).ravel()
             P0_1_resid = ((P0_1_model - P0_1_data)/P0_1_data_err).ravel()
-        
+
             P1_0_resid = ((P1_0_model - P1_0_data)/P1_0_data_err).ravel()
             P1_1_resid = ((P1_1_model - P1_1_data)/P1_1_data_err).ravel()
-         
+
+
             return P0_0_resid, P0_1_resid, P1_0_resid, P1_1_resid
         
         params = Parameters()
-       
-        params.add('g01', value = 1e-2, min = 1e-9, max = 0.1)
-        params.add('g10', value = 1e-2, min = 1e-9, max = 0.1)
+
+        params.add('g01', value=1e-2, min=1e-9, max=0.1)
+        params.add('g10', value=1e-2, min=1e-9, max=0.1)
         
         params.add('P0_0_init',P0_0_data[0],vary = False)
         params.add('P0_1_init',P0_1_data[0],vary = False)
@@ -317,13 +328,12 @@ class GammaFit:
         
         data = [P0_0_data, P0_1_data, P1_0_data, P1_1_data]
         data_err = [P0_0_data_err, P0_1_data_err, P1_0_data_err, P1_1_data_err]
-        
-        result_shgo = minimize(residual, params, args = (t_arr, data, data_err), 
-            method = 'ampgo')
+        result_shgo = minimize(residual, params, args=(t_arr, data, data_err),
+                               method='differential_evolution')
         params_update = result_shgo.params
-        
-        result = minimize(residual, params_update, args = (t_arr, data, data_err), 
-            method = 'leastsq')
+
+        result = minimize(residual, params_update, args=(t_arr, data, data_err),
+                          method='leastsq')
        
         result.params.pretty_print(colwidth=11)
 
@@ -371,7 +381,7 @@ class GammaFit:
         data0_fitted = self.g(t_arr, P0_init, result.params)
         data1_fitted = self.g(t_arr, P1_init, result.params)
         data_fitted = [data0_fitted, data1_fitted]
-        
+
         data_plot = [
             [P0_0_data, P0_1_data], 
             [P1_0_data, P1_1_data]

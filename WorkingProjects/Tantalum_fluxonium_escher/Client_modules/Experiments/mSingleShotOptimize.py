@@ -149,10 +149,21 @@ class SingleShotExperiment(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0]/ self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        shots_q0 = self.dq_buf[0] / self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+
+
+        # Something about this has broken, and now I don't understand how it ever worked.
+        # Currently, di/q_buf has only 2 points, which are the 2 expts averaged reps times. Why did this ever have more points?
+
+        # shots_i0 = self.di_buf[0]/ self.us2cycles(
+        #     self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        # shots_q0 = self.dq_buf[0] / self.us2cycles(
+        #     self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+
+        # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, 0, :, 0, 0]/ length
+        shots_q0 = np.array(self.get_raw())[0, 0, :, 0, 1]/ length
+
 
         return shots_i0, shots_q0
 
@@ -216,7 +227,7 @@ class SingleShotMeasure(ExperimentClass):
         print(self.path_only)
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
                                            name = self.datetimestring, num_bins = 151, fast = self.fast_analysis)
-        self.data["data"] = self.data["data"] | self.analysis.estimate_populations(max_iter = self.max_iter, num_trials = self.num_trials, pop_perc = self.pop_perc)
+        self.data["data"] = self.data["data"] | self.analysis.estimate_populations()#max_iter = self.max_iter, num_trials = self.num_trials, pop_perc = self.pop_perc)
 
         # Calculating the distinctness of cluster
         self.distinctness = {}

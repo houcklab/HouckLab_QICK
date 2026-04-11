@@ -8,6 +8,7 @@ path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantal
 os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Calib.initialize import *
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
+from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecSlice_SaraTest import SpecSlice
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotTemp_sse import SingleShotSSE
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS_sse import T1_PS_sse
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSingleShotPS import SingleShotPS
@@ -22,7 +23,7 @@ import datetime
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mT1_PS import T1_PS
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -108,28 +109,28 @@ for idx in range(loop_len):
 # TITLE : code finding T1 of a thermal state with and without pulses
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -3,
-    "yokoVoltage_freqPoint": -3,
+    "yokoVoltage": 0.0113,
+    "yokoVoltage_freqPoint": 0.0113,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 60,
-    "read_pulse_gain": 1500,
-    "read_pulse_freq": 6244.2,
+    "read_length": 9,
+    "read_pulse_gain": 9000,
+    "read_pulse_freq": 6671.695,
 
     # qubit tone
     "qubit_pulse_style": "const",
-    "qubit_gain": 10000,
+    "qubit_gain": 4000,
     "qubit_length": 20,
     "sigma": 1,
     "flat_top_length": 10.0,
-    "qubit_freq": 881,
+    "qubit_freq": 1470,
 
     # experiment
     "shots": 20000,
     "wait_start": 0,
-    "wait_stop": 4000,
-    "wait_num": 21,
+    "wait_stop": 300,
+    "wait_num": 31,
     'wait_type': 'linear',
     "cen_num": 2,
     "fridge_temp": 10,
@@ -216,25 +217,25 @@ inst_tempr.display(data_tempr, plotDisp=True, save_fig=True)
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.021,
-    "yokoVoltage_freqPoint": -1.021,
+    "yokoVoltage": 0.0113,
+    "yokoVoltage_freqPoint": 0.0113,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 60,
-    "read_pulse_gain": 2000,
-    "read_pulse_freq": 6671.37,
+    "read_length": 7,
+    "read_pulse_gain": 9500,
+    "read_pulse_freq": 6671.695,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 19000,
-    "qubit_length": 60,
-    "sigma": 1,
-    "flat_top_length": 60.0,
-    "qubit_freq": 850,
+    "qubit_gain": 8000,
+    "qubit_length": 20,
+    "sigma": 0.2,
+    "flat_top_length": 20,
+    "qubit_freq": 1470,
 
     # Experiment
-    "shots": 100000,
+    "shots": 600000,
     "cen_num": 2,
     "relax_delay": 10,
     "fridge_temp": 10,
@@ -245,91 +246,157 @@ config = BaseConfig | UpdateConfig
 yoko1.SetVoltage(config["yokoVoltage"])
 
 # %%
+soc.reset_gens()
 time_required = (config["relax_delay"] +config["read_length"] + config["flat_top_length"])* config["shots"] * 1e-6 / 60
 print("QND Measure Time Required: ", time_required, "min")
 inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,
                    soc=soc, soccfg=soccfg)
 
 data_QNDmeas = inst_qnd.acquire()
-data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.95)
+data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.99)
 inst_qnd.save_data(data_QNDmeas)
 inst_qnd.save_config()
 inst_qnd.display(data_QNDmeas, plotDisp=True)
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
-    'read_length': (20, 90),
-    'read_pulse_gain': (1250, 1750)
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.05 , config["read_pulse_freq"] + 0.05  ),
+    'read_length': (10, 40),
+    'read_pulse_gain': (4000, 8000)
 }
 step_size = {
     "read_pulse_freq" : 0.01,
-    'read_length': 10,
-    'read_pulse_gain': 100,
+    'read_length': 5,
+    'read_pulse_gain': 500,
 }
 keys = ["read_length"]
-config["shots"] = 300000
+config["shots"] = 200000
+soc.reset_gens()
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
-opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)
+opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True, confidence_selection = 0.95)
 inst_qndopt.brute_search_result_display(display = True)
 
+
 #%%
+# TITLE : Sweep Flux
+UpdateConfig = {
+    # yoko
+    "yokoVoltage": -0.1205,
+    "yokoVoltage_freqPoint": -0.1205,
+
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 30,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 6670.47,
+
+    # qubit tone
+    "qubit_pulse_style": "flat_top",
+    "qubit_gain": 30000,
+    "qubit_length": 4,
+    "sigma": 0.02,
+    "flat_top_length":1,
+    "qubit_freq": 1960,
+
+    # Experiment
+    "shots": 100000,
+    "cen_num": 2,
+    "relax_delay": 10,
+    "fridge_temp": 10,
+    'use_switch': True,
+}
+config_qnd = BaseConfig | UpdateConfig
+
+UpdateConfig = {
+    # Parameters
+    "reps": 3000,  # Number of repetitions
+
+    # cavity
+    "read_pulse_style": "const",
+    "read_length": 30,
+    "read_pulse_gain": 3000,
+    "read_pulse_freq": 6670.47,  # 6253.8,
+
+    # qubit tone
+    "qubit_pulse_style": "flat_top",  # Constant pulse
+    "qubit_gain": 30000,  # [DAC Units]
+    'sigma': 2,
+    'flat_top_length': 1,
+    "qubit_length": 0.5,  # [us]
+
+    # Define spec slice experiment parameters
+    "qubit_freq_start": 1800,
+    "qubit_freq_stop": 2200,
+    "SpecNumPoints": 101,  # Number of points
+    'spec_reps': 4000,  # Number of repetition
+    "delay_btwn_pulses" : 0.05, # Delay between the qubit tone and the readout tone. If not defined it uses 50ns
+
+    # Define the yoko voltage
+    "yokoVoltage": -0.1205,
+    "relax_delay": 10,  # [us] Delay post one experiment
+    'use_switch': False, # This is for turning off the heating tone
+    'mode_periodic': False,
+    'ro_periodic': False,
+}
+config_spec = BaseConfig | UpdateConfig
+
+yoko_range = np.linspace(-0.14, -0.15, 51)
+qnd_list = []
+qnd0_list = []
+qnd1_list = []
+outerFolderQND = outerFolder + "QND_Flux_Sweep3\\"
+for i in range(yoko_range.size):
+    # Set yoko
+    yoko1.SetVoltage(yoko_range[i])
+    config_qnd["yokoVoltage"] = yoko_range[i]
+    config_spec["yokoVoltage"] = yoko_range[i]
+    # Wait for 5s for stabilization
+    time.sleep(5)
+
+    # Run Spec Slice
+    soc.reset_gens()
+    Instance_specSlice = SpecSlice(path="Spec_" + str(yoko_range[i]), cfg=config_spec, soc=soc, soccfg=soccfg,
+                                   outerFolder=outerFolderQND)
+    data_specSlice = SpecSlice.acquire(Instance_specSlice)
+    SpecSlice.display(Instance_specSlice, data_specSlice, plotDisp=False)
+    SpecSlice.save_data(Instance_specSlice, data_specSlice)
+    print("Qubit frequency = ",Instance_specSlice.qubitFreq)
+    # Update qubit frequency in QND config
+    config_qnd["qubit_freq"] = Instance_specSlice.qubitFreq
+
+    # Run QND
+    soc.reset_gens()
+    inst_qnd = QNDmeas(path="QND_Meas_" + str(yoko_range[i]), outerFolder=outerFolderQND, cfg=config_qnd,
+                       soc=soc, soccfg=soccfg)
+
+    data_QNDmeas = inst_qnd.acquire()
+    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.98)
+    inst_qnd.save_data(data_QNDmeas)
+    inst_qnd.save_config()
+    inst_qnd.display(data_QNDmeas, plotDisp=False)
+    qnd_list.append(data_QNDmeas['data']['qnd'])
+    qnd0_list.append(data_QNDmeas['data']['state0_probs'][0])
+    qnd1_list.append(data_QNDmeas['data']['state1_probs'][1])
+
+#%%
+# Plot QND vs Yoko Voltage in subplot 1
+# Plot State 0 and State 1 probabilities vs Yoko Voltage in subplot 2
+fig, axs = plt.subplots(2, 1, figsize=(8, 10))
+axs[0].plot(yoko_range, qnd_list, marker='o')
+axs[0].set_title('QND vs Yoko Voltage')
+axs[0].set_xlabel('Yoko Voltage (V)')
+axs[0].set_ylabel('QND')
+axs[0].grid()
+axs[1].plot(yoko_range, qnd0_list, marker='o', label='State 0 Probability')
+axs[1].plot(yoko_range, qnd1_list, marker='o', label='State 1 Probability')
+axs[1].set_title('State Probabilities vs Yoko Voltage')
+axs[1].set_xlabel('Yoko Voltage (V)')
+axs[1].set_ylabel('Probability')
+axs[1].legend()
+axs[1].grid()
 
 plt.show()
 
-# %%
-# ###TITLE: Amplitude rabi Blob with post selection
-# region Amplitude Rabi PS Config
-# UpdateConfig = {
-#     ##### define attenuators
-#     "yokoVoltage": -0.46,
-#     "yokoVoltage_freqPoint": -0.46,
-#     ###### cavity
-#     "read_pulse_style": "const", # --Fixed
-#     "read_length": 20, # us
-#     "read_pulse_gain": 6000, # [DAC units]
-#     "read_pulse_freq": 7392.39, # [MHz]
-#     ##### spec parameters for finding the qubit frequency
-#     "qubit_freq_start": 4150,
-#     "qubit_freq_stop": 4250,
-#     "RabiNumPoints": 11,  ### number of points
-#     "qubit_pulse_style": "flat_top",
-#     "sigma": 0.050,  ### units us, define a 20ns sigma
-#     "flat_top_length": 10, ### in us
-#     "relax_delay": 1000,  ### turned into us inside the run function
-#     ##### amplitude rabi parameters
-#     "qubit_gain_start": 2000,
-#     "qubit_gain_step": 500, ### stepping amount of the qubit gain
-#     "qubit_gain_expts": 3, ### number of steps
-#     # "AmpRabi_reps": 2000,  # number of averages for the experiment
-#     ##### define number of clusters to use
-#     "cen_num": 2,
-#     "shots": 2000,  ### this gets turned into "reps"
-#     "fridge_temp": fridge_temp,
-#     "use_switch": True,
-#     "initialize_pulse": True,
-#     "initialize_qubit_gain": 30000,
-# }
-# config = BaseConfig | UpdateConfig
-#
-# outerFolder = "Z:\\TantalumFluxonium\\Data\\2023_10_31_BF2_cooldown_6\\WTF\\Rabi_Chevron\\Yoko_"+str(config["yokoVoltage_freqPoint"])+"\\"
-#
-# yoko1.SetVoltage(config["yokoVoltage"])
-# print("Voltage is ", yoko1.GetVoltage(), " Volts")
-#
-# # Calculating Time required
-# time_required = (config["qubit_gain_expts"]*config["RabiNumPoints"]*config["shots"]*
-#                  (config["flat_top_length"] + 2*config["read_length"] + config["relax_delay"])/1e6/60)
-# print("Time required is " + str(time_required) + " min")
-#
-# print('starting scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
-# Instance_AmplitudeRabi_PS = AmplitudeRabi_PS_sse(path="Rabi_Chevron_temp_" + str(config["fridge_temp"]), outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg, progress=True)
-# data_AmplitudeRabi_PS = Instance_AmplitudeRabi_PS.acquire()
-# data_AmplitudeRabi_PS = Instance_AmplitudeRabi_PS.process_data(data_AmplitudeRabi_PS)
-# Instance_AmplitudeRabi_PS.save_data(data_AmplitudeRabi_PS)
-# Instance_AmplitudeRabi_PS.save_config()
-# Instance_AmplitudeRabi_PS.display(data_AmplitudeRabi_PS, plotDisp=True)
-# endregion
 
 #####################################################################################################################
 print('program complete: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))

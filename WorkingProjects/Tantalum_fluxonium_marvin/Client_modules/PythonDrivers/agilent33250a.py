@@ -1,19 +1,53 @@
-#### testing driver for agilent 33250a
-
+# pip install pyvisa
 import pyvisa
 
-rm = pyvisa.ResourceManager()
+class Agilent33250A:
+    """
+    Minimal GPIB driver for Agilent/Keysight 33250A.
+    Supports: selecting NOISE output, setting amplitude (voltage), output ON/OFF.
+    """
 
-#####
-# burst_cmd_list = ["BURSt:MODE{0}", "BURSt:NCYCles{0}", "BURSt:INTernal:PERiod{0}", "BURSt:PHASe{0}",
-#                       "BURSt:STATe{0}", "UNIT:ANGLe{0}", "BURSt:GATE:POLarity{0}"]
-#####
+    def __init__(self, resource="GPIB0::10::INSTR", timeout_ms=5000):
+        self.rm = pyvisa.ResourceManager()
+        self.awg = self.rm.open_resource(resource)
+        self.awg.timeout = timeout_ms
+        self.awg.write_termination = "\n"
+        self.awg.read_termination = "\n"
 
-#### define class
+    # ---------- output control ----------
+    def output_on(self):
+        self.awg.write("OUTP ON")
 
-class agilent33250a():
-    def __init__(self, address):
-        self.awg = rm.open_resource(address)
+    def output_off(self):
+        self.awg.write("OUTP OFF")
+
+    def set_output(self, on: bool):
+        self.awg.write(f"OUTP {'ON' if on else 'OFF'}")
+
+    # ---------- amplitude ----------
+    def set_voltage(self, amplitude, unit="VPP"):
+        """unit ∈ {'VPP','VRMS','DBM'}"""
+        self.awg.write(f"VOLT:UNIT {unit}")
+        self.awg.write(f"VOLT {amplitude}")
+
+    # ---------- noise ----------
+    def set_noise(self, amplitude=None, unit="VPP", offset=None):
+        """
+        Select NOISE. Optionally set amplitude and/or DC offset.
+        (Uses low-level commands so we don't auto-enable output.)
+        """
+        self.awg.write("FUNC NOIS")
+        if unit:
+            self.awg.write(f"VOLT:UNIT {unit}")
+        if amplitude is not None:
+            self.awg.write(f"VOLT {amplitude}")
+        if offset is not None:
+            self.awg.write(f"VOLT:OFFS {offset}")
+
+    def close(self):
+        self.awg.close()
+        self.rm.close()
+
 
     def set_freq(self, freq):
         self.awg.write('FREQuency %f' % freq)
@@ -33,27 +67,22 @@ class agilent33250a():
     def set_offset(self, offset):
         self.awg.write('VOLTage:OFFSet %f' % offset)
 
-    def outputON(self):
-        self.awg.write('OUTPut 1')
 
-    def outputOFF(self):
-        self.awg.write('OUTPut 0')
+if __name__ == '__main__':
+    # ##### running the control
+    # duty_cycle = 20
+    # waveform = 'SQUARE'
+    # freq = 1e6
+    # period = 0.1
+    # volts = 0.5
+    # offset = 0.0
 
+    awg = Agilent33250A(resource = 'GPIB1::13::INSTR')
 
-##### running the control
-duty_cycle = 20
-waveform = 'SQUARE'
-freq = 1e6
-period = 0.1
-volts = 0.5
-offset = 0.0
-
-awg = agilent33250a('GPIB1::9::INSTR')
-
-awg.set_waveform(waveform)
-awg.set_period(period)
-awg.set_duty_cycle(duty_cycle)
-awg.set_voltage(volts)
-awg.set_offset(volts / 2)
-
-awg.outputON()
+    # awg.set_waveform(waveform)
+    # awg.set_period(period)
+    # awg.set_duty_cycle(duty_cycle)
+    # awg.set_voltage(volts)
+    # awg.set_offset(volts / 2)
+    #
+    # awg.outputON()

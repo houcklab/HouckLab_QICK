@@ -20,7 +20,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
@@ -56,7 +56,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
                                          gain=cfg["qubit_gain"],
                                          length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
                 self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
-            self.qubit_pulseLength = self.cfg["qubit_length"]
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
 
         elif self.cfg["qubit_pulse_style"] == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -110,7 +110,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -130,7 +130,7 @@ class SpecSlice(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg,
                          config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         ##### code to aquire just the qubit spec data
         expt_cfg = {
             ### spec parameters
@@ -140,7 +140,8 @@ class SpecSlice(ExperimentClass):
         }
         self.cfg["reps"] = self.cfg["spec_reps"]
         self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"]) / expt_cfg["SpecNumPoints"]
+        # Decreasing the denominator in the line below so that the last point is at qubit_freq_stop
+        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"]) / (expt_cfg["SpecNumPoints"]-1)
         self.cfg["expts"] = expt_cfg["SpecNumPoints"]
 
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
@@ -159,15 +160,15 @@ class SpecSlice(ExperimentClass):
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         self.data = data
 
         #### find the frequency corresponding to the qubit dip
-        sig = data['data']['avgi'] + 1j * data['data']['avgq']
+        sig = data['data']['avgi'][0][0] + 1j * data['data']['avgq'][0][0]
         avgamp0 = np.abs(sig)
 
-        peak_loc = np.argmax(np.abs(data['data']['avgq']))  # Maximum location
+        peak_loc = np.argmax(avgamp0)  # Maximum location
         # print(np.max(np.abs(data['data']['avgq'])))
         self.qubitFreq = data['data']['x_pts'][peak_loc]
 
@@ -176,40 +177,6 @@ class SpecSlice(ExperimentClass):
         return data
 
     def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
-        # if data is None:
-        #     data = self.data
-
-        # while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
-        #     figNum += 1
-        # fig = plt.figure(figNum)
-        #
-        # x_pts = data['data']['x_pts'] /1e3 #### put into units of frequency GHz
-        # sig = data['data']['avgi'][0][0] + 1j * data['data']['avgq'][0][0]
-        # avgamp0 = np.abs(sig)
-        # avgpphase0 = np.angle(sig, deg=True)
-        # # plt.plot(x_pts, data['data']['avgi'][0][0],label="I")
-        # plt.plot(x_pts, data['data']['avgq'][0][0],label="Q")
-        # # plt.plot(x_pts, avgamp0, label="Amplitude")
-        # # plt.plot(x_pts, avgpphase0, label= "Phase")
-        # plt.ylabel("a.u.")
-        # plt.xlabel("Qubit Frequency (GHz)")
-        # plt.title("Averages = " + str(self.cfg["reps"]))
-        # plt.legend()
-        # plt.savefig(self.iname)
-
-        # ##### code to aquire just the qubit spec data
-        # expt_cfg = {
-        #     ### spec parameters
-        #     "qubit_freq_start": self.cfg["qubit_freq_start"],
-        #     "qubit_freq_stop": self.cfg["qubit_freq_stop"],
-        #     "SpecNumPoints": self.cfg["SpecNumPoints"],  ### number of points
-        # }
-        # self.cfg["reps"] = self.cfg["spec_reps"]
-        # self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        # self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
-        # self.cfg["expts"] = expt_cfg["SpecNumPoints"]
-        #
-        # x_pts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
 
         if data is None:
             data = self.data

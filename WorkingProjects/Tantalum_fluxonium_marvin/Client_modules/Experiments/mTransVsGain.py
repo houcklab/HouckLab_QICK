@@ -251,7 +251,7 @@ class TransVsGain(ExperimentClass):
         fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
+        for f in fpts:
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             results.append(prog.acquire(self.soc, load_pulses=True))

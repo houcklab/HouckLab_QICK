@@ -72,10 +72,15 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"], gen_ch=qubit_ch) * 4 + self.us2cycles(self.cfg["flat_top_length"], gen_ch=qubit_ch)
 
         else:
-            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
-                                     gain=cfg["start"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
-                                     # mode="periodic")
+            if self.cfg['qubit_mode_periodic']:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                         gain=cfg["start"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
+                                         mode="periodic")
+            else:
+                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                         gain=cfg["start"],
+                                         length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
             self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"])
 
         if self.cfg["mode_periodic"]:
@@ -120,17 +125,18 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"]/2))  # update gain of the flat part
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1, save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
-        shots_q0=self.dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
 
-        return shots_i0,shots_q0
+        return shots_i0, shots_q0
 
 
 
@@ -144,7 +150,7 @@ class SingleShotProgram(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         #### pull the data from the single hots
         prog = LoopbackProgramSingleShot(self.soccfg, self.cfg)
         shots_i0,shots_q0 = prog.acquire(self.soc, load_pulses=True)

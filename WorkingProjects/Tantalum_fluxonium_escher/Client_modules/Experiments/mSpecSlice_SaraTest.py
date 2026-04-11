@@ -16,7 +16,7 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         for ch in cfg["ro_chs"]:
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]),
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
@@ -127,7 +127,10 @@ class SpecSlice(ExperimentClass):
         }
         self.cfg["reps"] = self.cfg["spec_reps"]
         self.cfg["start"] = expt_cfg["qubit_freq_start"]
-        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/expt_cfg["SpecNumPoints"]
+        # Decreasing the denominator by 1 so that it reaches the final stop point
+        if expt_cfg["SpecNumPoints"] <= 1:
+            raise ValueError("The number of Spec Number Points has to be greater than 1")
+        self.cfg["step"] = (expt_cfg["qubit_freq_stop"] - expt_cfg["qubit_freq_start"])/(expt_cfg["SpecNumPoints"]-1)
         self.cfg["expts"] = expt_cfg["SpecNumPoints"]
 
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)

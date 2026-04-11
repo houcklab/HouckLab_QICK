@@ -88,7 +88,7 @@ class ExperimentClass:
             os.makedirs(self.outerFolder + self.path)
         DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
-            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
+            os.makedirs(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
 
         self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')

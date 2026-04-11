@@ -87,7 +87,7 @@ class ExperimentClass:
         ##### check to see if the file path exists
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
-            os.mkdir(self.outerFolder + self.path)
+            os.makedirs(self.outerFolder + self.path)
         DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, datestring)).is_dir() if short_directory_names \
                             else Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
@@ -97,11 +97,13 @@ class ExperimentClass:
                 os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
 
         if short_directory_names:
+            self.dname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix)
             self.fname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.h5')
             self.iname = os.path.join(self.outerFolder + self.path, datestring, datetimestring + "_" + self.prefix + '.png')
             ### define name for the config file
             self.cname = os.path.join(self.outerFolder +  self.path, datestring, datetimestring + "_" + self.prefix + '.json')
         else:
+            self.dname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix)
             self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
             self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
             ### define name for the config file

@@ -217,7 +217,7 @@ class SpecVsFlux(ExperimentClass):
         #### loop over the yoko vector
         for i in range(expt_cfg["yokoVoltageNumPoints"]):
             ### set the yoko voltage for the specific run
-            yoko1.SetVoltage(voltVec[i])
+            yoko1.SetVoltage(voltVec[i],toPrint=False)
             time.sleep(self.cfg['magnet_relax'])
             self.cfg["yokoVoltage"] = voltVec[i]
 
@@ -257,6 +257,10 @@ class SpecVsFlux(ExperimentClass):
             axs['b'].set_ylabel("yoko voltage (V)")
             axs['b'].set_xlabel("Cavity Frequency (GHz)")
             axs['b'].set_title("Cavity Transmission")
+
+            # Draw the chosen frequency point
+            if self.cfg["draw_read_freq"]:
+                axs['b'].scatter(self.cfg["read_pulse_freq"] / 1000, voltVec[i], 50, 'red', marker='*')
 
             if plotDisp:
                 plt.show(block=False)
@@ -415,7 +419,7 @@ class SpecVsFlux(ExperimentClass):
         fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
+        for f in fpts:
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
@@ -447,7 +451,7 @@ class SpecVsFlux(ExperimentClass):
         if "trans_method" in self.cfg.keys():
             if self.cfg["trans_method"] == "enhanced" :
                 transm_exp = Transmission_Enhance(path="TransmisionEnhanced", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-                                                  outerFolder=self.outerFolder)
+                                                  outerFolder=self.outerFolder, progress=False)
                 data_transm = transm_exp.acquire()
                 opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, plotDisp=False)
                 print(opt_freq)
@@ -456,7 +460,7 @@ class SpecVsFlux(ExperimentClass):
                 data_Q = data_transm['data']['results'][0][0][1]
             else :
                 Instance_trans = Transmission(path="dataTestTransmission", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-                                              outerFolder=self.outerFolder)
+                                              outerFolder=self.outerFolder, progress=False)
                 data_trans = Instance_trans.acquire()
                 opt_freq = Instance_trans.peakFreq
                 self.cfg["read_pulse_freq"] = opt_freq
@@ -464,7 +468,7 @@ class SpecVsFlux(ExperimentClass):
                 data_Q = data_trans["data"]["results"][0][0][1]
         else :
             Instance_trans = Transmission(path="dataTestTransmission", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
-                                          outerFolder=self.outerFolder)
+                                          outerFolder=self.outerFolder, progress=False)
             data_trans = Instance_trans.acquire()
             opt_freq = Instance_trans.peakFreq
             self.cfg["read_pulse_freq"] = opt_freq
@@ -496,7 +500,7 @@ class SpecVsFlux(ExperimentClass):
             prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
             x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                              readouts_per_experiment=1, save_experiments=None,
-                                             start_src="internal", progress=False, debug=False)
+                                             start_src="internal", progress=False)
             data_I = avgi[0][0]
             data_Q = avgq[0][0]
 

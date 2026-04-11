@@ -41,7 +41,7 @@ if is_yoko2:
 
 # TITLE: Connect to MLBF
 if is_mlbf_filter:
-    mlbf_filter = MLBFDriver("192.168.1.10")
+    mlbf_filter = MLBFDriver("192.168.1.11")
 
 
 # TITLE : default configuration
@@ -53,7 +53,7 @@ BaseConfig = {
     "reps": 1000,  # --Fixed
     "nqz": 2,  #### refers to cavity
     "mode_periodic": False,
-    "qubit_nqz": 2,
+    "qubit_nqz": 1,
     "relax_delay": 10,  # us
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed

@@ -128,10 +128,16 @@ class LoopbackProgramSingleShot(RAveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0=self.di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
-        shots_q0=self.dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        # Something about this has broken, and now I don't understand how it ever worked.
+        # Currently, di/q_buf has only 2 points, which are the 2 expts averaged reps times. Why did this ever have more points?
+        #shots_i0=self.di_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        #shots_q0=self.dq_buf[0].reshape((self.cfg["expts"],self.cfg["reps"]))/self.us2cycles(self.cfg['read_length'], ro_ch = 0)
+        # Shape of get_raw: [# readout channels, # expts, # reps, # readouts, I/Q = 2]
+        length = self.us2cycles(self.cfg['read_length'], ro_ch = self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
 
-        return shots_i0,shots_q0
+        return shots_i0, shots_q0
 
 
 

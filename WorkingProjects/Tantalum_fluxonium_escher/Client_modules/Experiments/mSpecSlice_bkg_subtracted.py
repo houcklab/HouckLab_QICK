@@ -91,6 +91,24 @@ class LoopbackProgramSpecSlice(RAveragerProgram):
 
         self.sync_all(self.us2cycles(1))
 
+    def body(self):
+        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+
+        if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                         width=self.cfg["trig_len"])  # trigger for switch
+        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+
+        # trigger measurement, play measurement pulse, wait for qubit to relax
+        self.measure(pulse_ch=self.cfg["res_ch"],
+                     adcs=self.cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+                     wait=True,
+                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+
+    def update(self):
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
 # ====================================================== #
 
 class SpecSlice_bkg_sub(ExperimentClass):
@@ -122,7 +140,7 @@ class SpecSlice_bkg_sub(ExperimentClass):
         prog = LoopbackProgramSpecSlice(self.soccfg, self.cfg)
 
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
-                                         save_experiments=None, # readouts_per_experiment=1,
+                                         save_experiments=None, readouts_per_experiment=1,
                                          start_src="internal", progress=False) # qick update -, debug=False)
 
         ### Background data

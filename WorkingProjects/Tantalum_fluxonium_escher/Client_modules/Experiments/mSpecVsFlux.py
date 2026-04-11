@@ -316,7 +316,7 @@ class SpecVsFlux(ExperimentClass):
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True, progress = False))
         results = np.transpose(results)
         #### pull out I and Q data
         data_I = results[0][0][0]
@@ -325,8 +325,8 @@ class SpecVsFlux(ExperimentClass):
         #### find the frequency corresponding to the cavity peak and set as cavity transmission number
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmin(avgamp0)
-        # peak_loc = np.argmax(avgamp0)
+        # peak_loc = np.argmin(avgamp0)
+        peak_loc = np.argmax(avgamp0)
 
         #TODO we need a better way of finding the resonance frequency, e.g. circle fitting. Finding the max/min point results in noise
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]

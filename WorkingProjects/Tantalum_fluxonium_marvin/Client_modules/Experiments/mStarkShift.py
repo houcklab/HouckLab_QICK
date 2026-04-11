@@ -73,49 +73,51 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         if self.cfg['ro_periodic']:
             self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
                                      gain=cfg["cavity_pulse_gain"],
-                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+                                     length=self.us2cycles(cfg["pop_pulse_length"], gen_ch=cfg["res_ch"]), mode="periodic")
         elif not self.cfg['ro_periodic']:
             self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
                                      gain=cfg["cavity_pulse_gain"],
-                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["res_ch"]))
+                                     length=self.us2cycles(cfg["pop_pulse_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
                                               gen_ch=cfg["res_ch"]) + self.us2cycles(self.cfg["pop_pulse_length"]) # switch is open while populating pulse is playing
 
-        # self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
-        #                                       gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
-
+        if self.cfg['align'] == 'right' :
+                self.t_delay = self.us2cycles(self.cfg['pop_pulse_length'], gen_ch = cfg['qubit_ch']) - self.qubit_pulseLength
+                if self.t_delay < 0 :
+                    self.t_delay = 'auto'
+        else:
+           self.t_delay = 'auto'
+        print(f"t_delay = {self.t_delay}")
+        print(f"cavity gain = {self.cfg['cavity_pulse_gain']}")
         self.sync_all(self.us2cycles(1))
 
     def body(self):
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
-        # Configure the cavity pulse for populating the cavity
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
                                  gain=self.cfg["cavity_pulse_gain"],
                                  length=self.us2cycles(self.cfg["pop_pulse_length"], gen_ch=self.cfg["res_ch"]))
 
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
-
-        #if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
-        if self.cfg["use_switch"]:
-            self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
-                         width=self.cfg["trig_len"])  # trigger for switch
-
+        # #if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
+        # if self.cfg["use_switch"]:
+        #     self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+        #                  width=self.cfg["trig_len"])  # trigger for switch
+        #
         if self.cfg['simultaneous']:
             self.pulse(ch=self.cfg["res_ch"])   # Play a cavity tone
-            self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
+            self.pulse(ch=self.cfg["qubit_ch"], t = self.t_delay)  # Play a qubit tone
             self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
         else:
             self.pulse(ch=self.cfg["res_ch"])  # Play a cavity tone
             self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
             self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
 
-        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        self.sync_all(self.us2cycles(self.cfg["wait_between_pulses"]))  # align channels and wait 10ns
 
-        # Configure the cavity pulse for readout
+        # # Configure the cavity pulse for readout
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
                                  gain=self.cfg["read_pulse_gain"],
                                  length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
@@ -142,7 +144,7 @@ class StarkShift(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
 
 
-    def acquire(self, progress=False, debug=False, plotDisp = True, plotSave = True, figNum = 1):
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, figNum = 1):
         expt_cfg = {
             ### define the gainuator parameters
             "trans_gain_start": self.cfg["trans_gain_start"],
@@ -218,7 +220,7 @@ class StarkShift(ExperimentClass):
                 transm_exp.save_data(data_transm)
                 transm_exp.save_config()
                 transm_exp.display(data_transm, plotDisp=False)
-                opt_freq = transm_exp.findOptimalFrequency(data=data_transm, debug=True, window_size=0.1)
+                opt_freq = transm_exp.findOptimalFrequency(data=data_transm,  window_size=0.1)
                 self.cfg["read_pulse_freq"] = opt_freq
                 print(opt_freq)
 
@@ -396,7 +398,8 @@ class StarkShift(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal",
-                                         progress=False)  # qick update deprecated ? , debug=False)
+                                         progress=False)  # qick update deprecated ?
+        # )
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
         # Instance_specSlice = SpecSlice_bkg_sub(path="dataTestSpecSlice", cfg=self.cfg, soc=self.soc, soccfg=self.soccfg,
         #                                       outerFolder=r'Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\dataTestSpecVsFlux', progress=True)

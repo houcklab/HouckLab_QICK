@@ -112,7 +112,7 @@ class Transmission_wQubitTone(ExperimentClass):
             self.cfg["qubit_gain"] = gain[i]
             avg_i.append([])
             avg_q.append([])
-            for f in tqdm(fpts, position=0, disable=True):
+            for f in fpts:
                 self.cfg["read_pulse_freq"] = f
                 prog = LoopbackProgramTrans_wQubitTone(self.soccfg, self.cfg)
                 results = prog.acquire(self.soc, load_pulses=True)

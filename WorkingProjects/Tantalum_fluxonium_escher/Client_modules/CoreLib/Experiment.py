@@ -83,15 +83,13 @@ class ExperimentClass:
         # self.dataserver= dataserver_client()
 
         ##### define the path and file names with inculsion of date stamps
-        self.path_wDate = os.path.join(self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix)
-
         ##### check to see if the file path exists
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
             os.makedirs(self.outerFolder + self.path)
         DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
         if DataSubFolderBool == False:
-            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
+            os.makedirs(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
 
         self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')

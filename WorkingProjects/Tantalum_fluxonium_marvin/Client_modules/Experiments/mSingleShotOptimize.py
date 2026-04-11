@@ -42,7 +42,7 @@ class SingleShotExperiment(RAveragerProgram):
 
         # Configure the Resonator Tone
         res_ch = cfg["res_ch"]
-        self.declare_gen(ch=res_ch, nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=res_ch, nqz=cfg["nqz"])
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=res_ch, ro_ch=cfg["ro_chs"][0])
         if self.cfg["mode_periodic"]:
             self.set_pulse_registers(ch=cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=read_freq, phase=0,
@@ -140,17 +140,16 @@ class SingleShotExperiment(RAveragerProgram):
 
     def acquire(self, soc, threshold=None, angle=None, load_pulses=True, readouts_per_experiment=1,
                 save_experiments=None,
-                start_src="internal", progress=False, debug=False):
+                start_src="internal", progress=False):
 
-        super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
+        super().acquire(soc, load_pulses=load_pulses, progress=progress)
 
         return self.collect_shots()
 
     def collect_shots(self):
-        shots_i0 = self.di_buf[0]/ self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        shots_q0 = self.dq_buf[0] / self.us2cycles(
-            self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        shots_i0 = np.array(self.get_raw())[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q0 = np.array(self.get_raw())[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
 
         return shots_i0, shots_q0
 
@@ -185,21 +184,21 @@ class SingleShotMeasure(ExperimentClass):
         self.keys = []
         self.index = 0
         self.total_size = 1
-        self.mesh_grid = 0
+        self.mesh_grid = None
 
 
-    def acquire(self, progress=False, debug=False):
+    def acquire(self, progress=False):
         # Perform the experiment
         # print("Acquiring data")
         prog = SingleShotExperiment(self.soccfg, self.cfg)
         i_arr, q_arr = prog.acquire(self.soc, load_pulses=True)
 
         # Save the data
-        data = {'config': self.cfg, 'data': {'i_arr' : i_arr, 'q_arr' : q_arr}}
+        data = {'config': self.cfg, 'data': {'i_arr' : i_arr[0], 'q_arr' : q_arr[0]}}
         self.data = data
         return data
 
-    def process(self, data=None, cen_num = None, debug=False ):
+    def process(self, data=None, cen_num = None):
         # print("Processing data")
         # Get the data
         if data is None:
@@ -210,9 +209,13 @@ class SingleShotMeasure(ExperimentClass):
 
         i_arr = data['data']['i_arr']
         q_arr = data['data']['q_arr']
+        if cen_num == 2 :
+            qubit_freq_mat = np.array([[0,self.cfg['qubit_ge_freq']],[self.cfg['qubit_ge_freq'],0]])
+        else:
+            qubit_freq_mat = None
         self.analysis = SingleShotAnalysis(i_arr, q_arr, cen_num=cen_num, outerFolder=self.path_only,
                                            name = self.datetimestring, num_bins = 151, fast = self.fast_analysis,
-                                           disp_image = self.disp_image)
+                                           disp_image = self.disp_image, qubit_freq_mat= qubit_freq_mat)
         self.data["data"] = self.data["data"] | self.analysis.estimate_populations()
 
         # Calculating the distinctness of cluster
@@ -417,6 +420,8 @@ class SingleShotMeasure(ExperimentClass):
                 best_value = value
                 best_params = params
 
+        print(">>>>>>>>>>>Optimization finished<<<<<<<<<<")
+        print(f"Results : {best_params} with value {best_value}")
         return best_params, best_value
 
     def display_opt(self, data=None, plotDisp=False, figNum=1, save_fig=True, ran=None, **kwargs):
@@ -436,7 +441,30 @@ class SingleShotMeasure(ExperimentClass):
             plt.savefig(self.iname, dpi = 500)
             if plotDisp == True:
                 plt.show()
-        return
+            return
+
+        elif len(self.keys) == 2:
+            quants = self.quants
+            # Reshape quants to match the grid
+            X = self.mesh_grid[0]
+            Y = self.mesh_grid[1]
+            rows, cols = X.shape
+            quants_grid = np.array(quants).reshape(cols,rows).T
+
+            # Create a 2d color plot using pcolormesh
+            plt.figure(figsize=(10, 8))
+            pcm = plt.pcolormesh(X, Y, quants_grid, shading='auto', cmap='viridis')
+            plt.colorbar(pcm, label='KL Divergence')
+            plt.xlabel(self.keys[0])
+            plt.ylabel(self.keys[1])
+            plt.title('Optimization')
+            plt.tight_layout()
+            if save_fig:
+                plt.savefig(self.iname, dpi = 500)
+            if plotDisp == True:
+                plt.show()
+            return
+
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
