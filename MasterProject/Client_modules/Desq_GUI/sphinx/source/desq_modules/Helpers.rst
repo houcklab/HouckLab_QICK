@@ -1,5 +1,5 @@
-Helpers Module
-==============
+Helpers
+=======
 
 .. automodule:: scripts.Helpers
    :members:

@@ -1,5 +1,5 @@
-CustomMenuBar Class
-===================
+CustomMenuBar
+=============
 
 .. automodule:: scripts.CustomMenuBar
    :members:

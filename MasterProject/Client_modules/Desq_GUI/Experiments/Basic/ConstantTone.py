@@ -1,202 +1,388 @@
 """
-================
-ConstantTone.py
-===============
-A Constant Tone experiment.
-This experiment just outputs a constant tone on a given chanel at a given frequency and gain.
+================================================================================
+ConstantTone.py - Constant Tone Output
+================================================================================
 
-Note that the RFSOC will continue playing the tone after the experiment is complete, until THIS CHANNEL
-is told to play something else, e.g. if we play a tone on channel 1, then run this experiment for channel 0,
-both channel 1 AND channel 0 will continue playing their respective tones.
+Outputs a continuous tone at a specified frequency and amplitude.
+Useful for:
+- Calibrating with a spectrum analyzer
+- Finding the resonator with VNA
+- Testing DAC output levels
 
-Provides only a plotter pyqtgraph function for plotting what an oscilloscope should see.
+USAGE:
+------
+    from ConstantToneExperiment import ConstantToneExperiment
+    
+    cfg = {"freq": 5000, "gain": 10000, "channel": 0, "nqz": 1}
+    exp = ConstantToneExperiment(cfg=cfg, soc=soc, soccfg=soccfg)
+    exp.acquire()  # Starts tone output
+    # Use Ctrl+C to stop
 
-plotter (pyqtgraph): provided
-display (matplotlib): not provided
+================================================================================
 """
-from qick import AveragerProgram
-from MasterProject.Client_modules.Init.initialize import BaseConfig
-import Pyro4.util
+
 import numpy as np
-from Pyro4 import Proxy
-from qick import QickConfig
+import matplotlib.pyplot as plt
 
-from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
+# QICK imports
+try:
+    from qick import AveragerProgram
+    QICK_AVAILABLE = True
+except ImportError:
+    QICK_AVAILABLE = False
+    class AveragerProgram:
+        pass
 
-class ConstantTone(AveragerProgram):
+# Base experiment class
+try:
+    from MasterProject.Client_modules.Desq_GUI.CoreLib.Experiment import ExperimentClass
+except ImportError:
+    try:
+        from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+    except ImportError:
+        try:
+            from .StarterPackConfig import ExperimentClass
+        except ImportError:
+            from StarterPackConfig import ExperimentClass
+
+
+# =============================================================================
+# QICK PROGRAM
+# =============================================================================
+
+class ConstantToneProgram(AveragerProgram):
+    """
+    Outputs a constant tone.
+    
+    Uses a very long const pulse that continuously outputs.
+    """
+
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
-        freq = self.freq2reg(self.cfg["freq"], gen_ch=self.cfg["channel"], ro_ch=self.cfg["ro_chs"][0])  # convert to dac register value
-        self.declare_gen(ch=self.cfg["channel"], nqz=self.cfg["nqz"])
-        self.set_pulse_registers(ch=self.cfg["channel"], style="const", freq=freq, phase=0, gain=self.cfg["gain"],
-                                 length=self.us2cycles(1), mode="periodic")
-        self.sync_all(self.us2cycles(0.5)) # TODO unnecessary, probably
+        cfg = self.cfg
+
+        # Declare generator
+        self.declare_gen(ch=cfg["channel"], nqz=cfg["nqz"])
+
+        # Declare minimal readout (required)
+        ro_ch = cfg.get("ro_chs", [0])[0]
+        self.declare_readout(ch=ro_ch, length=100, freq=cfg["freq"], gen_ch=cfg["channel"])
+
+        # Convert frequency
+        freq_reg = self.freq2reg(cfg["freq"], gen_ch=cfg["channel"])
+
+        # Setup continuous pulse (max length)
+        self.set_pulse_registers(
+            ch=cfg["channel"],
+            style="const",
+            freq=freq_reg,
+            phase=0,
+            gain=cfg["gain"],
+            length=self.us2cycles(1000)  # 1ms pulse, repeated
+        )
+
+        self.sync_all(self.us2cycles(1))
 
     def body(self):
-        self.pulse(ch=self.cfg["channel"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+        # Play pulse
+        self.pulse(ch=self.cfg["channel"])
+        self.sync_all(self.us2cycles(1000))
 
-    def update(self):
-        pass # Nothing to update
 
-    ## define the template config
+# =============================================================================
+# EXPERIMENT CLASS
+# =============================================================================
+
+class ConstantToneExperiment(ExperimentClass):
+    """
+    Constant Tone Output
+
+    Outputs a continuous tone for calibration or testing purposes.
+    Calculates expected power and voltage based on DAC parameters.
+    """
+
+    # =========================================================================
+    # CONFIGURATION TEMPLATE (Experiment-Specific Parameters Only)
+    # =========================================================================
+
     config_template = {
-        ###### cavity
-        "read_pulse_style": "const",  # --Fixed
-        "gain": 1000, # [DAC units]
-        "freq": 2000, # [MHz]
-        "channel": 1, # TODO default value
-        "nqz": 1,     # TODO default value
-        "reps": 1,
-        "sets": 1,
+        # --- Tone Parameters ---
+        "gain": 10000,                    # Output amplitude [DAC units]
+        "freq": 5000,                     # Output frequency [MHz]
+        "channel": 1,                     # DAC channel to output on
+        "nqz": 1,                         # Nyquist zone for output channel
     }
 
-# ====================================================== #
-
-class ConstantTone_Experiment(ExperimentClassPlus):
-    """
-    This experiment just sets the RFSOC to output a constant tone on a given chanel at a given frequency and gain.
-    """
-
-    ### Hardware Requirement
-    hardware_requirement = [Proxy, QickConfig]
-
-    def __init__(self, path='', outerFolder='', prefix='data', hardware=None,
-                 cfg=None, config_file=None, progress=None):
-
-        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix, hardware=hardware,
-                         hardware_requirement=self.hardware_requirement, cfg=cfg,
-                         config_file=config_file, progress=progress)
-
-        # retrieve the hardware that corresponds to what was required
-        self.soc, self.soccfg = hardware
+    def __init__(self, path='', outerFolder='', prefix='data',
+                 soc=None, soccfg=None, cfg=None, config_file=None, **kwargs):
+        super().__init__(
+            path=path, outerFolder=outerFolder, prefix=prefix,
+            soc=soc, soccfg=soccfg, cfg=cfg, config_file=config_file, **kwargs
+        )
 
     def acquire(self, progress=False, debug=False):
-        prog = ConstantTone(self.soccfg, self.cfg)
-        prog.run_rounds(self.soc)
+        """
+        Start continuous tone output.
+        
+        Note: This runs indefinitely. Use Ctrl+C to stop.
+        """
+        # Add required config fields
+        self.cfg["reps"] = 1
+        self.cfg["ro_chs"] = self.cfg.get("ro_chs", [0])
+        
+        print(f"[ConstantTone] Starting tone: {self.cfg['freq']} MHz, "
+              f"gain={self.cfg['gain']}, ch={self.cfg['channel']}")
+        
+        # Calculate expected output
+        self._calculate_output()
 
-        # default values for ZCU216 I think
-        dac_max = 16383  # 14-bit DAC
-        v_full_scale = 1.0  # 1.0 Vpp (differential)
-        resistance = 50  # Standard RF load
+        prog = ConstantToneProgram(self.soccfg, self.cfg)
+        
+        try:
+            # Run continuously
+            while True:
+                prog.acquire(self.soc, load_pulses=True, progress=False)
+        except KeyboardInterrupt:
+            print("\n[ConstantTone] Stopped by user")
 
-        gain = self.cfg["gain"]
-        freq = self.cfg["freq"]
-
-        # 1. Period in microseconds seconds
-        period = 1 / freq
-        # 2. Peak Voltage from DAC gain
-        v_peak = (gain / dac_max) * (v_full_scale / 2)
-        # 3. RMS Voltage
-        v_rms = v_peak / np.sqrt(2)
-        # 4. Power in Watts
-        power_watts = (v_rms ** 2) / resistance
-        # 5. Power in dBm
-        power_dbm = 10 * np.log10(power_watts * 1000)
-
-        print(f"Period: {period * 1e9:.2f} μs")
-        print(f"Power: {power_dbm:.2f} dBm")
-        print(f"Peak Voltage: {v_peak:.3f} V")
-
-        # 7. Plot Voltage vs Time
-        t = np.linspace(0, 3 * period, 1000)
-        v_t = v_peak * np.sin(2 * np.pi * freq * t)
-
-        data = {'config': self.cfg, 'data': {'x_pts': t, 'v_t': v_t},}
-
+        data = {
+            'config': self.cfg,
+            'data': {
+                'freq': self.cfg['freq'],
+                'gain': self.cfg['gain'],
+                'channel': self.cfg['channel'],
+            }
+        }
+        self.data = data
         return data
 
-    @classmethod
-    def plotter(cls, plot_widget, plots, data):
-        gain = 0
-        freq = 0
-        if "config" in data:
-            gain = data["config"]["gain"]
-            freq = data["config"]["freq"]
+    def _calculate_output(self):
+        """Calculate expected output power and voltage."""
+        gain = self.cfg['gain']
+        
+        # DAC full scale is typically 32767 (15-bit signed)
+        dac_fs = 32767
+        
+        # Typical full-scale voltage is ~0.7 Vpp
+        v_fs = 0.7  # Volts peak-to-peak
+        
+        # Calculate voltage
+        v_pp = v_fs * (gain / dac_fs)
+        v_rms = v_pp / (2 * np.sqrt(2))
+        
+        # Calculate power into 50 ohms
+        p_watts = v_rms**2 / 50
+        p_dbm = 10 * np.log10(p_watts * 1000)
+        
+        self.cfg['expected_v_pp'] = v_pp
+        self.cfg['expected_v_rms'] = v_rms
+        self.cfg['expected_power_dbm'] = p_dbm
+        
+        print(f"[ConstantTone] Expected output:")
+        print(f"  Vpp  = {v_pp*1000:.1f} mV")
+        print(f"  Vrms = {v_rms*1000:.2f} mV")
+        print(f"  Power = {p_dbm:.1f} dBm (into 50Ω)")
 
-        if 'data' in data:
-            data = data['data']
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Display tone parameters and expected waveform."""
+        if data is None:
+            data = self.data if hasattr(self, 'data') else {'config': self.cfg, 'data': {}}
 
-        x_pts = data['x_pts']
-        v_t = data['v_t']
+        cfg = data['config']
+        
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig, axs = plt.subplots(2, 1, figsize=(10, 6), num=figNum)
 
-        # Create structured data
-        prepared_data = {
-            "plots": [
-                {"x": x_pts, "y": v_t, "label": "Expected Voltage vs Time (μs)", "xlabel": "Time (μs)",
-                 "ylabel": "Voltage (V)"},
-            ]
+        # Time axis (show 2 periods)
+        freq_mhz = cfg['freq']
+        period_us = 1.0 / freq_mhz
+        t = np.linspace(0, 4 * period_us, 1000)
+
+        # Waveform
+        gain = cfg['gain']
+        dac_fs = 32767
+        v_fs = 0.7
+        v_pp = v_fs * (gain / dac_fs)
+        amplitude = v_pp / 2
+        
+        waveform = amplitude * np.sin(2 * np.pi * freq_mhz * t)
+        
+        axs[0].plot(t * 1000, waveform * 1000, 'b-', linewidth=1.5)
+        axs[0].set_xlabel("Time (ns)")
+        axs[0].set_ylabel("Voltage (mV)")
+        axs[0].set_title(f"Constant Tone: {freq_mhz} MHz, Gain={gain}")
+        axs[0].grid(True, alpha=0.3)
+        axs[0].axhline(0, color='k', linestyle='-', linewidth=0.5)
+
+        # Parameters text
+        axs[1].axis('off')
+        
+        params_text = f"""
+        Frequency: {freq_mhz} MHz
+        DAC Channel: {cfg['channel']}
+        Nyquist Zone: {cfg['nqz']}
+        
+        Gain: {gain} / 32767 DAC units
+        
+        Expected Output (into 50Ω):
+          Vpp  = {v_pp*1000:.1f} mV
+          Vrms = {v_pp/(2*np.sqrt(2))*1000:.2f} mV
+          Power = {cfg.get('expected_power_dbm', 'N/A'):.1f} dBm
+        """
+        
+        axs[1].text(0.1, 0.5, params_text, transform=axs[1].transAxes,
+                   fontsize=12, verticalalignment='center', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+        plt.tight_layout()
+
+        if plotDisp:
+            plt.show(block=block)
+        else:
+            plt.close(fig)
+
+        return fig, axs
+
+    def save_data(self, data=None):
+        if data is None:
+            data = self.data
+        print(f"[ConstantToneExperiment] Saving to {self.fname}")
+        super().save_data(data=data['data'])
+
+
+# =============================================================================
+# MOCK VERSION FOR TESTING
+# =============================================================================
+
+class MockConstantToneExperiment(ExperimentClass):
+    """
+    Mock Constant Tone Experiment - Calculates expected output without hardware.
+    """
+
+    config_template = {
+        "gain": 10000,
+        "freq": 5000,
+        "channel": 1,
+        "nqz": 1,
+    }
+
+    def __init__(self, path='', outerFolder='', prefix='data', cfg=None, **kwargs):
+        default_cfg = self.config_template.copy()
+        if cfg:
+            default_cfg.update(cfg)
+        super().__init__(path=path, outerFolder=outerFolder, prefix=prefix,
+                         cfg=default_cfg, **kwargs)
+
+    def acquire(self, progress=False, debug=False):
+        """Calculate expected tone output."""
+        cfg = self.cfg
+        gain = cfg['gain']
+        
+        dac_fs = 32767
+        v_fs = 0.7
+        
+        v_pp = v_fs * (gain / dac_fs)
+        v_rms = v_pp / (2 * np.sqrt(2))
+        p_watts = v_rms**2 / 50
+        p_dbm = 10 * np.log10(p_watts * 1000)
+
+        data = {
+            'config': cfg,
+            'data': {
+                'freq': cfg['freq'],
+                'gain': cfg['gain'],
+                'channel': cfg['channel'],
+                'expected_v_pp': v_pp,
+                'expected_v_rms': v_rms,
+                'expected_power_dbm': p_dbm,
+            }
         }
+        
+        cfg['expected_v_pp'] = v_pp
+        cfg['expected_v_rms'] = v_rms
+        cfg['expected_power_dbm'] = p_dbm
+        
+        print(f"[MockConstantTone] {cfg['freq']} MHz @ gain={gain}")
+        print(f"  Vpp = {v_pp*1000:.1f} mV, Power = {p_dbm:.1f} dBm")
 
-        dac_max = 16383  # 14-bit DAC
-        v_full_scale = 1.0  # 1.0 Vpp (differential)
-        resistance = 50  # Standard RF load
+        self.data = data
+        return data
 
-        period = 1 / freq
-        v_peak = (gain / dac_max) * (v_full_scale / 2)
-        v_rms = v_peak / np.sqrt(2)
-        power_watts = (v_rms ** 2) / resistance
-        power_dbm = 10 * np.log10(power_watts * 1000)
+    def display(self, data=None, plotDisp=True, figNum=1, block=True, **kwargs):
+        """Display tone parameters."""
+        if data is None:
+            data = self.data
 
-        period_label = f" Period: {period*1000:.3f} ns, "
-        power_label = f" Power: {power_dbm:.4f} dBm, "
-        peakVoltage_label = f" Peak Voltage: {v_peak:.3f} V, "
+        cfg = data['config']
+        
+        while plt.fignum_exists(num=figNum):
+            figNum += 1
+        fig, axs = plt.subplots(2, 1, figsize=(10, 6), num=figNum)
 
-        plot_title = ("[Gain: " + str(gain) + " dBm, Freq: " + str(freq) + " Hz] Expected: " + period_label +
-                      power_label + peakVoltage_label)
-        plot_widget.addLabel(plot_title, row=0, col=0, colspan=2, size='8pt')
+        # Waveform
+        freq_mhz = cfg['freq']
+        period_us = 1.0 / freq_mhz
+        t = np.linspace(0, 4 * period_us, 1000)
 
-        plot_widget.nextRow()
+        gain = cfg['gain']
+        dac_fs = 32767
+        v_fs = 0.7
+        v_pp = v_fs * (gain / dac_fs)
+        amplitude = v_pp / 2
+        
+        waveform = amplitude * np.sin(2 * np.pi * freq_mhz * t)
+        
+        axs[0].plot(t * 1000, waveform * 1000, 'b-', linewidth=1.5)
+        axs[0].set_xlabel("Time (ns)")
+        axs[0].set_ylabel("Voltage (mV)")
+        axs[0].set_title(f"Mock Constant Tone: {freq_mhz} MHz, Gain={gain}")
+        axs[0].grid(True, alpha=0.3)
 
-        for i, plot in enumerate(prepared_data["plots"]):
-            p = plot_widget.addPlot(title=plot["label"])
-            p.addLegend()
-            p.plot(plot["x"], plot["y"], pen='b', symbol='o', symbolSize=5, symbolBrush='b')
-            p.setLabel('bottom', plot["xlabel"])
-            p.setLabel('left', plot["ylabel"])
-            plots.append(p)
-            plot_widget.nextRow()
+        # Parameters
+        axs[1].axis('off')
+        
+        p_dbm = cfg.get('expected_power_dbm', 10 * np.log10((v_pp/(2*np.sqrt(2)))**2 / 50 * 1000))
+        
+        params_text = f"""
+        Frequency: {freq_mhz} MHz
+        Channel: {cfg['channel']}
+        Nyquist Zone: {cfg['nqz']}
+        Gain: {gain} DAC units
+        
+        Expected Output:
+          Vpp = {v_pp*1000:.1f} mV
+          Power = {p_dbm:.1f} dBm
+        """
+        
+        axs[1].text(0.1, 0.5, params_text, transform=axs[1].transAxes,
+                   fontsize=12, verticalalignment='center', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
-        return
+        plt.tight_layout()
 
-    @classmethod
-    def export_data(cls, data_file, data, config):
-        super().export_data(data_file, data, config)
-        pass
+        if plotDisp:
+            plt.show(block=block)
+        else:
+            plt.close(fig)
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
-        pass # No data to display
+        return fig, axs
+
+    def save_data(self, data=None):
+        if data is None:
+            data = self.data
+        print(f"[MockConstantTone] Saving to {self.fname}")
+        super().save_data(data=data.get('data', data))
 
 
+# =============================================================================
+# MAIN
+# =============================================================================
 
-
-
-#%%
-# TITLE: Constant Tone Experiment
-# exp_cfg = {
-#     ###### cavity
-#     "read_pulse_style": "const",  # --Fixed
-#     "gain": 10000, # [DAC units]
-#     "freq": 500, # [MHz]
-#     "channel": 6, # TODO default value
-#     "nqz": 1,     # TODO default value
-#     "sets": 1,
-# }
-# config = BaseConfig | exp_cfg
-# outerFolder = r"C:\Users\newforce\Desktop\HouckLab_QICK\MasterProject\Client_modules\Desq_GUI\data\ConstantTone\data"
-# soc, soccfg = makeProxy("192.168.1.137")
-# ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-# try:
-#     ConstantTone_Experiment.acquire(ConstantTone_Instance)
-# except Exception:
-#     print("Pyro traceback:")
-#     print("".join(Pyro4.util.getPyroTraceback()))
-# ConstantTone_Experiment.save_data(ConstantTone_Instance)
-# ConstantTone_Experiment.save_config(ConstantTone_Instance)
-
-# using the 10MHz-1GHz balun
-# f_center = 10e9 #Hz
-# settings = set_filter(f_center)
-# print(settings)
+if __name__ == '__main__':
+    print("Testing MockConstantToneExperiment...")
+    exp = MockConstantToneExperiment(path='test', prefix='tone')
+    data = exp.acquire()
+    exp.display(data, plotDisp=True, block=True)

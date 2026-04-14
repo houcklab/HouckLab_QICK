@@ -1,5 +1,5 @@
-ConfigCodeEditor Class
-======================
+ConfigCodeEditor
+================
 
 .. automodule:: scripts.ConfigCodeEditor
    :members:

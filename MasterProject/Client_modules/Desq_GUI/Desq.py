@@ -2,30 +2,49 @@
 =======
 Desq.py
 =======
+
 Main entry point for the Desq GUI application.
 
 This module initializes the GUI, handles application-level logic, and manages interactions between
-different components.
+different components. Desq is a PyQt5-based GUI application for managing superconducting qubit
+experiments on RFSoC hardware.
+
+:var BACKEND_MODULE: The matplotlib backend module path for custom plot interception.
+:vartype BACKEND_MODULE: str
+:var TESTING: Global flag for testing mode. When True, RFSoC connection is not required
+    to run experiments. Should be used with mock experiments only.
+:vartype TESTING: bool
+
+.. note::
+    This module sets up the matplotlib backend before any other matplotlib imports
+    to ensure proper plot interception via the custom BackendDesq module.
 """
 
-import inspect
-import sys, os
-import importlib
+from __future__ import annotations
+
+import os
+import sys
+from typing import Optional, List, Any, Dict
+
+# Ensure our custom backend modules are importable
+script_directory = os.path.dirname(os.path.realpath(__file__))
+if script_directory not in sys.path:
+    sys.path.insert(0, script_directory)
+
+# Set the backend via environment variable (takes effect on first matplotlib import)
+BACKEND_MODULE = 'module://MasterProject.Client_modules.Desq_GUI.scripts.BackendDesq'
+os.environ["MPLBACKEND"] = BACKEND_MODULE
+
+import matplotlib
+
+matplotlib.use(BACKEND_MODULE, force=True)
+import matplotlib.pyplot as plt
+
 import ast
 import math
-import time
 import traceback
-import threading
-import numpy as np
-import concurrent.futures
-from collections import deque
 from pathlib import Path
-os.environ["MPLBACKEND"] = "Agg"  # ensures headless backend globally
-import matplotlib
-matplotlib.use("Agg", force=True)
-import matplotlib.pyplot as plt
-from matplotlib import _pylab_helpers as _pylab
-from PyQt5.QtGui import QIcon, QPixmap, QDesktopServices, QFont, QCursor
+from PyQt5.QtGui import QIcon, QDesktopServices
 from PyQt5.QtCore import (
     qInstallMessageHandler, qDebug, qInfo, qWarning, qCritical,
     Qt,
@@ -35,43 +54,41 @@ from PyQt5.QtCore import (
     QUrl,
     QTimer,
     QEvent,
-    QCoreApplication, QObject
+    QCoreApplication,
+    QObject
 )
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
-    QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QProgressBar,
     QSplitter,
     QMessageBox,
-    QFileDialog,
     QTabWidget,
-    QSizePolicy, QTextEdit, QSizeGrip, QMenu
+    QSizePolicy,
+    QSizeGrip,
+    QMenu
 )
 
-from MasterProject.Client_modules.Init.initialize import BaseConfig
-from MasterProject.Client_modules.CoreLib.socProxy import makeProxy
+from MasterProject.Client_modules.Desq_GUI.CoreLib.socProxy import makeProxy
 
-from MasterProject.Client_modules.Desq_GUI.CoreLib.ExperimentPlus import ExperimentClassPlus
-from MasterProject.Client_modules.Desq_GUI.CoreLib.VoltageInterface import VoltageInterface
-from MasterProject.Client_modules.Desq_GUI.scripts.MultiCheckboxDialog import MultiCheckboxDialog
+from MasterProject.Client_modules.Desq_GUI.scripts.CheckboxDialogs import MultiCheckboxDialog
 from MasterProject.Client_modules.Desq_GUI.scripts.CustomMenuBar import CustomMenuBar
 from MasterProject.Client_modules.Desq_GUI.scripts.ExperimentThread import ExperimentThread
-from MasterProject.Client_modules.Desq_GUI.scripts.DesqTabAdv import QDesqTab
+from MasterProject.Client_modules.Desq_GUI.scripts.DesqTab import QDesqTab
 from MasterProject.Client_modules.Desq_GUI.scripts.VoltagePanel import QVoltagePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AccountsPanel import QAccountPanel
 from MasterProject.Client_modules.Desq_GUI.scripts.LogPanel import QLogPanel
-from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanelAdv import QConfigTreePanel
+from MasterProject.Client_modules.Desq_GUI.scripts.ConfigTreePanel import QConfigTreePanel
 
+from MasterProject.Client_modules.Desq_GUI.scripts.PlotSinkManager import PlotSinkManager
 from MasterProject.Client_modules.Desq_GUI.scripts.DirectoryTreePanel import DirectoryTreePanel
 from MasterProject.Client_modules.Desq_GUI.scripts.AuxiliaryThread import AuxiliaryThread
 from MasterProject.Client_modules.Desq_GUI.scripts.ConfigCodeEditor import ConfigCodeEditor
 from MasterProject.Client_modules.Desq_GUI.scripts.SettingsWindow import SettingsWindow
 from MasterProject.Client_modules.Desq_GUI.scripts import ExperimentLoader
+from MasterProject.Client_modules.Desq_GUI.scripts.LoadDataWindow import LoadDataWindow
+from MasterProject.Client_modules.Desq_GUI.scripts.ImageViewTab import ImageViewTab
 import MasterProject.Client_modules.Desq_GUI.scripts.Helpers as Helpers
 
 script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -85,134 +102,162 @@ except AttributeError:
 QCoreApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QCoreApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
-### Testing Variable - if true, then no need to connect to RFSoC to run experiment
-# to be used with TesterExperiment.py
-TESTING = True
-
-
-from PyQt5.QtCore import QObject, pyqtSignal, Qt
-
-class _ShowRelay(QObject):
-    showRequested = pyqtSignal(object, tuple)  # (target, (args, kwargs))
-
-_relay = None
-def _get_relay(parent_on_gui):
-    """
-    Create the relay lazily on the GUI thread once the QApplication is running.
-    parent_on_gui is a bound slot (e.g., self._on_show_requested_gui)
-    """
-    global _relay
-    if _relay is None:
-        _relay = _ShowRelay()  # constructed on GUI thread
-    # Safe to connect multiple times from different owners; Qt de-duplicates exact same connections
-    try:
-        _relay.showRequested.disconnect(parent_on_gui)
-    except TypeError:
-        pass
-    _relay.showRequested.connect(parent_on_gui, Qt.QueuedConnection)
-    return _relay
+TESTING: bool = True
+"""
+Testing flag - if True, no RFSoC connection required for experiment execution.
+Used with mock experiments for GUI development and testing.
+"""
 
 
 class Desq(QMainWindow):
     """
-    The class for the main Desq application window.
+    Main application window for the Desq GUI.
 
-    **Important Attributes:**
+    Desq is a comprehensive quantum computing experiment control system for managing
+    superconducting qubit experiments on RFSoC hardware. This class provides the main
+    window interface with experiment tabs, configuration panels, voltage control,
+    and logging capabilities.
 
-        * experiment_worker (ExperimentThread): The instance of the experiment worker thread.
-        * soc (Proxy): The instance of the RFSoC Proxy connection via Pyro4.
-        * soccfg (QickConfig): The qick Config of the RFSoC.
-        * central_widget (QWidget): The central widget of the Desq GUI.
+    :ivar experiment_worker: The worker thread instance running the current experiment.
+    :vartype experiment_worker: ExperimentThread or None
+    :ivar soc: The RFSoC Proxy connection instance via Pyro4.
+    :vartype soc: Proxy or None
+    :ivar soccfg: The QICK configuration object from the RFSoC.
+    :vartype soccfg: QickConfig or None
+    :ivar soc_connected: Flag indicating whether the RFSoC is currently connected.
+    :vartype soc_connected: bool
+    :ivar workspace: The current workspace directory path.
+    :vartype workspace: str or None
+    :ivar central_widget: The central widget container of the main window.
+    :vartype central_widget: QWidget
+    :ivar current_tab: Reference to the currently active experiment/data tab.
+    :vartype current_tab: QDesqTab or None
+    :ivar currently_running_tab: Reference to the tab that has an experiment currently running.
+    :vartype currently_running_tab: QDesqTab or None
+    :ivar plot_sink_manager: Manager for intercepting and routing matplotlib figures to tabs.
+    :vartype plot_sink_manager: PlotSinkManager
+
+    Example usage::
+
+        app = QApplication(sys.argv)
+        window = Desq()
+        window.show()
+        sys.exit(app.exec_())
     """
 
-    ### Defining Signals
     rfsoc_connection_updated = pyqtSignal(str, str)
-    """
-    The Signal sent to the accounts tab after an rfsoc connection attempt 
-    
-    :param ip_address: The IP address of the RFSoC instance.
-    :type ip_address: str
-    :param status: The status of the attempt, either success or failure.
-    :type status: str
-    """
+    """Signal emitted after RFSoC connection attempt with (ip_address, status)."""
 
-    # Relay to hop to GUI thread
-    class _ShowRelay(QObject):
+    def __init__(self) -> None:
         """
-        Class that relays plt.show in a thread safe manner via signals.
-        """
-        showRequested = pyqtSignal(object, tuple)  # (target_tab, (args, kwargs))
+        Initialize the Desq main application window.
 
-    def __init__(self):
+        Sets up the GUI components, establishes signal connections, and prepares
+        the plot sink manager for matplotlib figure interception.
         """
-        Initializes an instance of a Desq GUI application.
-        """
-
         super().__init__()
 
         # Stores the thread that runs an experiment
-        self.experiment_worker = None
+        self.experiment_worker: Optional[ExperimentThread] = None
 
         # Instance variables for the rfsoc connection
         self.soc = None
         self.soccfg = None
-        self.soc_connected = False
-        self.workspace = None
+        self.soc_connected: bool = False
+        self.workspace: Optional[str] = None
 
         # Tracks the central tab module by the currently selected tab
-        self.current_tab = None
-        self.currently_running_tab = None
-        self.tabs_added = False
+        self.current_tab: Optional[QDesqTab] = None
+        self.currently_running_tab: Optional[QDesqTab] = None
+        self.tabs_added: bool = False
 
-        # Plot Interceptor
-        # queue + timer you already have
-        self._show_queue = deque()
-        self._show_lock = threading.Lock()
-        self._draining_shows = False
-
-        self._show_timer = QTimer(self)
-        self._show_timer.setSingleShot(True)
-        self._show_timer.timeout.connect(self._drain_show_queue)
-
-        # connect relay on GUI thread
-        self._relay = _get_relay(self._on_show_requested_gui)
+        # Backend-based plot interception
+        # This replaces the brittle plt.show() monkey-patching with canvas-level interception
+        self.plot_sink_manager: PlotSinkManager = PlotSinkManager(parent=self)
+        self.plot_sink_manager.figureReceived.connect(
+            self._on_figure_received,
+            Qt.QueuedConnection  # Ensure delivery on GUI thread
+        )
 
         # The settings window
-        self.settings_window = SettingsWindow()
+        self.settings_window: SettingsWindow = SettingsWindow()
 
-        self.setup_ui() # Setup up the PyQt UI
+        # The load data window
+        self.load_data_window: LoadDataWindow = LoadDataWindow()
+        self.load_data_window.load_requested.connect(self._on_load_data_requested)
+
+        self.setup_ui()  # Setup up the PyQt UI
 
         # Window Event Handling (Resize and Hide)
 
         # Resize Grip
-        self.size_grip = QSizeGrip(self)
+        self.size_grip: QSizeGrip = QSizeGrip(self)
         self.size_grip.setStyleSheet("background: transparent;")
         self.size_grip.setFixedSize(12, 12)
-        self.size_grip.raise_() # Ensure it's above other widgets
+        self.size_grip.raise_()  # Ensure it's above other widgets
 
         QApplication.instance().installEventFilter(self)
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """
+        Filter application events to handle window activation.
+
+        :param obj: The object that received the event.
+        :type obj: QObject
+        :param event: The event to be filtered.
+        :type event: QEvent
+        :returns: True if the event was handled, False otherwise.
+        :rtype: bool
+        """
         if event.type() == QEvent.ApplicationActivate:
             self.show()
         return super().eventFilter(obj, event)
 
-    # In your resizeEvent:
-    def resizeEvent(self, event):
+    def resizeEvent(self, event) -> None:
+        """
+        Handle window resize events to reposition the size grip.
+
+        :param event: The resize event containing new window dimensions.
+        :type event: QResizeEvent
+        """
         self.size_grip.move(self.width() - self.size_grip.width(), self.height() - self.size_grip.height())
         super().resizeEvent(event)
 
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         """
-        Initializes all the UI elements. The main sections include the central widgets tab, config panel, and the side
-        panel (voltage, accounts, log).
+        Initialize all UI elements of the main window.
+
+        Sets up the main layout structure including:
+
+        - Custom menu bar with experiment controls
+        - Central tabs container for experiment and data tabs
+        - Directory tree panel for file navigation
+        - Global configuration panel
+        - Side panel with voltage, accounts, and log tabs
+        - Config code editor for universal config loading
+
+        The layout hierarchy is::
+
+            central_widget
+            +-- central_layout
+                +-- wrapper
+                    +-- main_layout
+                        +-- custom_menu_bar
+                        +-- main_splitter
+                            +-- vert_splitter
+                            |   +-- config_code_editor
+                            |   +-- tab_splitter
+                            |       +-- directory_tree_panel
+                            |       +-- central_tabs_container
+                            +-- global_config_panel
+                            +-- side_tabs
         """
-        ### Central Widget, Layout, and Wrapper
-        ### To support responsive resizing of content within a widget, the content must be within a layout & widget
-        ### Thus, the central_layout contains all the elements of the UI within the wrapper widget
-        ### central widget <-- central layout <-- wrapper <-- all content elements
+        # Central Widget, Layout, and Wrapper
+        # To support responsive resizing of content within a widget, the content must be within a layout & widget
+        # Thus, the central_layout contains all the elements of the UI within the wrapper widget
+        # central widget <-- central layout <-- wrapper <-- all content elements
         self.setWindowTitle("Desq")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window) # removes native title bar but a bit finicky
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)  # removes native title bar but a bit finicky
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self.resize(1300, 820)
@@ -226,7 +271,7 @@ class Desq(QMainWindow):
         self.wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.wrapper.setObjectName("wrapper")
 
-        ### Main layout (vertical) <-- (top bar) + (main splitter that has all panels)
+        # Main layout (vertical) <-- (top bar) + (main splitter that has all panels)
         self.main_layout = QVBoxLayout(self.wrapper)
         self.main_layout.setContentsMargins(0, 0, 0, 5)
         self.main_layout.setObjectName("main_layout")
@@ -249,41 +294,49 @@ class Desq(QMainWindow):
         self.documentation_button = self.custom_menu_bar.documentation_button
         self.settings_button = self.custom_menu_bar.settings_button
 
-        ### Main Splitter with all main components: Code Editor, Tabs, Voltage Panel, Config Tree
+        # Create a context menu for the stop button
+        self.stop_menu = QMenu()
+        self.safe_stop_action = self.stop_menu.addAction("Safe Stop")
+        self.safe_stop_action.setToolTip("Complete current set, then stop")
+        self.stop_menu.addSeparator()
+        self.force_stop_action = self.stop_menu.addAction("Force Stop")
+        self.force_stop_action.setToolTip("Interrupt immediately")
+
+        # Main Splitter with all main components: Code Editor, Tabs, Voltage Panel, Config Tree
         self.main_splitter = QSplitter(self.wrapper)
-        self.main_splitter.setOpaqueResize(True) # Setting to False allows faster resizing (doesn't look as good)
+        self.main_splitter.setOpaqueResize(False)  # Setting to False allows faster resizing (doesn't look as good)
         self.main_splitter.setHandleWidth(6)
         self.main_splitter.setChildrenCollapsible(True)
         self.main_splitter.setObjectName("main_splitter")
-        self.main_splitter.setContentsMargins(10,0,10,0)
+        self.main_splitter.setContentsMargins(10, 0, 10, 0)
 
-        ### Vertical Splitter with Tabs and config Editor
+        # Vertical Splitter with Tabs and config Editor
         self.vert_splitter = QSplitter(self.main_splitter)
-        self.vert_splitter.setOpaqueResize(True)
+        self.vert_splitter.setOpaqueResize(False)
         self.vert_splitter.setHandleWidth(6)
         self.vert_splitter.setChildrenCollapsible(True)
         self.vert_splitter.setObjectName("vert_splitter")
         self.vert_splitter.setOrientation(Qt.Vertical)
 
-        # Defint he Universal Config Loader section
+        # Define the Universal Config Loader section
         self.config_code_editor = ConfigCodeEditor(self, self.vert_splitter)
 
-        ### Tab Splitter with the directory tree and tabs
+        # Tab Splitter with the directory tree and tabs
         self.tab_splitter = QSplitter(self.vert_splitter)
-        self.tab_splitter.setOpaqueResize(True)  # Setting to False allows faster resizing (doesn't look as good)
+        self.tab_splitter.setOpaqueResize(False)  # Setting to False allows faster resizing (doesn't look as good)
         self.tab_splitter.setHandleWidth(6)
         self.tab_splitter.setChildrenCollapsible(True)
         self.tab_splitter.setObjectName("tab_splitter")
         self.tab_splitter.setContentsMargins(0, 0, 0, 0)
 
-        ### Directory Tree panel
+        # Directory Tree panel
         self.directory_tree_panel = DirectoryTreePanel(
             parent=self.tab_splitter,
-            file_filters=['.py', '.h5'],
+            file_filters=['.py', '.h5', *ImageViewTab.SUPPORTED_EXTENSIONS],
             history_key="load_directory"
         )
 
-        ### The Central Tabs (contains experiment tabs and data tab)
+        # The Central Tabs (contains experiment tabs and data tab)
         self.central_tabs_container = QWidget(self.tab_splitter)
         self.central_tabs_container.setObjectName("central_tabs_container")
         self.central_tabs_layout = QVBoxLayout(self.central_tabs_container)
@@ -311,13 +364,13 @@ class Desq(QMainWindow):
         self.central_tabs_layout.addWidget(self.central_tabs)
         self.central_tabs_container.setLayout(self.central_tabs_layout)
 
-        #Template Experiment Tab
+        # Template Experiment Tab
         template_experiment_tab = QDesqTab(app=self)
         self.central_tabs.addTab(template_experiment_tab, "No Tabs Added")
         self.central_tabs.setCurrentIndex(0)
         self.current_tab = template_experiment_tab
 
-        ### Config Tree Panel
+        # Config Tree Panel
         self.global_config_panel = QConfigTreePanel(
             self,
             "Global",
@@ -326,7 +379,7 @@ class Desq(QMainWindow):
             {}
         )
 
-        ### Side Tabs Panel (Contains voltage, accounts, and log panels)
+        # Side Tabs Panel (Contains voltage, accounts, and log panels)
         self.side_tabs = QTabWidget(self.main_splitter)
         self.side_tabs.setObjectName("side_tabs")
         side_tab_sizepolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
@@ -345,20 +398,21 @@ class Desq(QMainWindow):
         side_tab_bar.setObjectName("side_tab_bar")
         self.side_tabs.setObjectName("side_tabs")
 
-        ### Voltage Controller Panel
-        self.voltage_controller_panel = QVoltagePanel(self.global_config_panel, template_experiment_tab, parent=self.side_tabs)
+        # Voltage Controller Panel
+        self.voltage_controller_panel = QVoltagePanel(self.global_config_panel, template_experiment_tab,
+                                                      parent=self.side_tabs)
         self.side_tabs.addTab(self.voltage_controller_panel, "Voltage")
-        ### Accounts Panel
+        # Accounts Panel
         self.accounts_panel = QAccountPanel(parent=self.side_tabs)
         self.workspace = self.accounts_panel.workspace_edit.text().strip()
         template_experiment_tab.experiment_config_panel.directory_tree.set_directory(self.workspace)
         self.global_config_panel.directory_tree.set_directory(self.workspace)
         self.side_tabs.addTab(self.accounts_panel, "Accounts")
-        ### Log Panel
+        # Log Panel
         self.log_panel = QLogPanel(parent=self.side_tabs)
         self.side_tabs.addTab(self.log_panel, "Log")
 
-        self.side_tabs.setCurrentIndex(1) # select accounts panel by default
+        self.side_tabs.setCurrentIndex(1)  # select accounts panel by default
 
         # Defining default sizes for tab splitter
         self.tab_splitter.setStretchFactor(0, 2)
@@ -384,18 +438,30 @@ class Desq(QMainWindow):
 
         self.setup_signals()
 
-    def setup_signals(self):
+    def setup_signals(self) -> None:
         """
-        Sets up all signals and slots of the main application window. These include button presses, RFSoC connections,
-        log messages, and tab changes.
-        """
+        Set up all signal-slot connections for the main application window.
 
+        Establishes connections for:
+
+        - Top bar button clicks (start, stop, load, settings)
+        - Directory tree file loading
+        - Tab change and close events
+        - RFSoC connection status updates
+        - Log message handling
+        - Config tree runtime prediction updates
+        - Settings window updates
+        - Config editor extraction
+        """
         # Connecting the top bar buttons to their respective functions
         self.start_experiment_button.clicked.connect(self.run_experiment)
-        self.stop_experiment_button.clicked.connect(self.stop_experiment)
+        self.stop_experiment_button.clicked.connect(self.show_stop_menu)
+        self.safe_stop_action.triggered.connect(self.safe_stop_experiment)
+        self.force_stop_action.triggered.connect(self.force_stop_experiment)
         self.load_experiment_button.clicked.connect(self.load_experiment_file)
         self.load_data_button.clicked.connect(self.load_data_file)
-        self.documentation_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
+        self.documentation_button.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://houcklab.github.io/HouckLab_QICK/index.html")))
         self.settings_button.clicked.connect(self.show_settings)
 
         # Directory symbols
@@ -418,18 +484,11 @@ class Desq(QMainWindow):
         # self.test_logging()
 
         # Config Tree Panel signal
-        self.global_config_panel.update_voltage_panel.connect(self.voltage_controller_panel.update_sweeps)
         self.global_config_panel.update_runtime_prediction.connect(self.call_tab_runtime_prediction)
-
-        # Plot Interceptor
-        self.last_intercept_time = 0
-        self.intercept_delay = 0.15  # 0.15 seconds delay between intercept times, too fast causes problems
-        self._original_show = plt.show
-        plt.show = self._intercept_plt_show_wrapper()
 
         # Settings Window
         self.settings_window.update_settings.connect(self.apply_settings)
-        self.settings_window.apply_settings() # Apply the saved settings
+        self.settings_window.apply_settings()  # Apply the saved settings
 
         # Config editor
         self.config_code_editor.extracted_config.connect(self.extracted_config)
@@ -438,56 +497,64 @@ class Desq(QMainWindow):
         if TESTING:
             qWarning("WARNING: The TESTING global variable is set to True, removing important checks.")
 
-
-    def disconnect_rfsoc(self):
+    def disconnect_rfsoc(self) -> None:
         """
-        Disconnects the RFSoC instance by setting RFSoC attributes to None. Also resets the base config.
+        Disconnect from the RFSoC instance.
+
+        Resets all RFSoC-related attributes to None and updates the connection
+        status flag. Also resets the base configuration.
         """
         self.soc = None
         self.soccfg = None
         self.soc_connected = False
         qInfo("Disconnected from RFSoC")
 
-    def save_RFSoC(self, soc, soccfg, ip_address):
+    def save_RFSoC(self, soc: Any, soccfg: Any, ip_address: str) -> None:
         """
-        Helper function for saving the soc and soccfg returned from a makeProxy call.
+        Save the RFSoC connection objects after successful connection.
 
-        :param soc: RFSoC Proxy instance
+        Updates the UI to reflect the successful connection status.
+
+        :param soc: The RFSoC Proxy instance returned from makeProxy.
         :type soc: Proxy
-        :param soccfg: QickConfig returned from a makeProxy call
+        :param soccfg: The QICK configuration object returned from makeProxy.
         :type soccfg: QickConfig
-        :param ip_address: IP address of the RFSoC instance
+        :param ip_address: The IP address of the connected RFSoC instance.
         :type ip_address: str
         """
-
         self.soc, self.soccfg = soc, soccfg
 
         # UI updates
         self.soc_connected = True
         self.is_connecting = False
-        self.soc_status_label.setText('✔ Soc connected')
+        self.soc_status_label.setText('Soc connected')
+        self.soc_status_label.setStyleSheet("color: #4CAF50;")
         self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab
         self.accounts_panel.connect_button.setEnabled(True)
 
-    def failed_rfsoc_error(self, e, ip_address, timeout=False):
+    def failed_rfsoc_error(self, e: str, ip_address: str, timeout: bool = False) -> None:
         """
-        Function to handle a failed RFSoC connection error.
+        Handle a failed RFSoC connection attempt.
 
-        :param e: Error message
+        Displays appropriate error messages and updates the UI to reflect
+        the failed connection status.
+
+        :param e: The error message describing the connection failure.
         :type e: str
-        :param ip_address: IP address of the RFSoC instance
+        :param ip_address: The IP address of the RFSoC that failed to connect.
         :type ip_address: str
-        :param timeout: Whether there was a timeout error
+        :param timeout: Whether the failure was due to a connection timeout.
+            Defaults to False.
         :type timeout: bool
         """
-
         if timeout:
             qCritical("Timeout: Connecting to RFSoC took too long (>2s) - check your ip_address is correct.")
             QMessageBox.critical(None, "Timeout Error", "Connection to RFSoC took too long. " +
-                                            "Connection attempt will continue in the background until termination.")
+                                 "Connection attempt will continue in the background until termination.")
         else:
             self.soc_connected = False
-            self.soc_status_label.setText('✖ Soc Disconnected')
+            self.soc_status_label.setText('Soc Disconnected')
+            self.soc_status_label.setStyleSheet("color: lightgray;")
             QMessageBox.critical(None, "Error", "RFSoC connection failed (see log).")
             qCritical("RFSoC connection to " + ip_address + " failed: " + str(e))
 
@@ -496,23 +563,30 @@ class Desq(QMainWindow):
             self.accounts_panel.connect_button.setEnabled(True)
 
         if TESTING:
-            self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit succeess to accounts tab if TESTING
+            self.rfsoc_connection_updated.emit(ip_address, 'success')  # emit success to accounts tab if TESTING
         else:
             self.rfsoc_connection_updated.emit(ip_address, 'failure')  # emit failure to accounts tab
         self.soc = None
         self.soccfg = None
 
-    def connect_rfsoc(self, ip_address, config):
+    def connect_rfsoc(self, ip_address: str, config: str) -> None:
         """
-        Connects the RFSoC instance to the specified IP address by calling makeProxy. Also extracts the BaseConfig
-        of the connected account to use.
+        Initiate connection to an RFSoC instance.
 
-        :param ip_address: The IP address of the RFSoC instance.
+        Spawns an auxiliary thread to perform the connection via makeProxy
+        to avoid blocking the GUI. Also extracts the BaseConfig of the
+        connected account.
+
+        :param ip_address: The IP address of the RFSoC instance to connect to.
         :type ip_address: str
-        :param config: The path to the module that contains the BaseConfig.
-    :   type config: str
-        """
+        :param config: The path to the module containing the BaseConfig.
+        :type config: str
 
+        .. note::
+            The connection is performed asynchronously using AuxiliaryThread.
+            Results are delivered via Qt signals to :meth:`save_RFSoC` on success
+            or :meth:`failed_rfsoc_error` on failure.
+        """
         qInfo("Attempting to connect to RFSoC")
         if ip_address is not None:
 
@@ -541,9 +615,13 @@ class Desq(QMainWindow):
             qCritical("RFSoC IP address is unspecified, param passed is " + str(ip_address))
             QMessageBox.critical(None, "Error", "RFSoC IP Address not given.")
 
-    def animate_connecting(self):
+    def animate_connecting(self) -> None:
         """
-        Small function to animate connecting to let the user know whatever connection is actively being attempted.
+        Animate the connecting button with a dot animation.
+
+        Provides visual feedback that a connection attempt is in progress
+        by cycling through 0-3 dots appended to "Connecting" text.
+        Repeats every 500ms until ``is_connecting`` becomes False.
         """
         if self.is_connecting:
             # Update the label with the current number of dots
@@ -552,13 +630,21 @@ class Desq(QMainWindow):
             self.connecting_dot_count = (self.connecting_dot_count + 1) % 4  # Cycle through 0, 1, 2
             QTimer.singleShot(500, self.animate_connecting)  # Repeat every 500 ms
 
-    def load_file(self, path):
+    def load_file(self, path: str) -> None:
         """
-        Calls load experiment or data based on type of file. Handles the directory
-        load_file signal.
+        Load a file based on its extension.
 
-        :param path: The path to the file to be loaded.
+        Routes the file to the appropriate handler based on file type:
+
+        - ``.py`` files: Create experiment tab
+        - ``.h5`` files: Open LoadDataWindow
+        - Image files: Create image viewing tab
+
+        :param path: The full path to the file to be loaded.
         :type path: str
+
+        .. seealso::
+            :meth:`create_experiment_tab`, :meth:`create_image_tab`
         """
         qInfo("Attempting to load " + path)
 
@@ -566,33 +652,45 @@ class Desq(QMainWindow):
         if ext == '.py':
             self.create_experiment_tab(str(path))
         elif ext == '.h5':
-            self.create_data_tab(str(path))
+            # Open LoadDataWindow with the h5 path pre-filled
+            self.load_data_window.set_h5_path(str(path))
+            self.load_data_window.show()
+            self.load_data_window.raise_()
+        elif ext in ImageViewTab.SUPPORTED_EXTENSIONS:  # NEW
+            self.create_image_tab(str(path))
         else:
             pass
 
-    def run_experiment(self):
+    def run_experiment(self) -> None:
         """
-        Runs the experiment instance of the current active tab via the RFSoC connection. This function is where the
-        new Experiment Worker Thread is created and all signals for data updating and experiment termination
-        are connected.
+        Execute the experiment from the currently active tab.
 
-        The desired config format for running an experiment merges Base and Experiment Config as well as downgrades
-        their level.
+        Creates a new ExperimentThread worker and starts the experiment
+        execution. Merges global and experiment-specific configurations
+        and sets up all necessary signal connections for progress updates
+        and error handling.
 
-        .. code-block:: python
+        The merged configuration format is a flat dictionary::
 
             config = {
-              "config_field1": 000,
-              "config_field2": 000,
-              "config_field3": 000,
-              ...
-              "config_field": 000,
+                "config_field1": value1,
+                "config_field2": value2,
+                ...
             }
-        """
 
+        .. note::
+            Requires either an active RFSoC connection or TESTING mode enabled.
+            Creates a new plot session for figure isolation before starting.
+
+        :raises: Displays QMessageBox on errors including:
+
+            - No RFSoC connection (when not in TESTING mode)
+            - Attempting to run a data tab instead of experiment tab
+            - Any exception during experiment initialization
+        """
         try:
-            if TESTING or self.soc_connected: # ensure RFSoC connection
-                if self.current_tab.experiment_obj is None: # ensure tab is not a data tab
+            if TESTING or self.soc_connected:  # ensure RFSoC connection
+                if self.current_tab.experiment_obj is None:  # ensure tab is not a data tab
                     qCritical("Attempted execution of a data tab (" + self.current_tab.tab_name +
                               ")rather than an experiment tab")
                     QMessageBox.critical(None, "Error", "Tab is a Data tab.")
@@ -625,80 +723,69 @@ class Desq(QMainWindow):
                 # print(inspect.getsourcelines(experiment_class))
 
                 experiment_type = self.current_tab.experiment_obj.experiment_type
-                if experiment_type == ExperimentClassPlus:
-                    # Retrieving hardware (ie. if voltage interface required, make sure it is included)
-                    collected_hardware = [self.soc, self.soccfg]
-                    hardware_req = self.current_tab.experiment_obj.experiment_hardware_req
 
-                    if any(issubclass(cls, VoltageInterface) for cls in hardware_req):
-                        if TESTING:
-                            pass
-                        elif not self.voltage_controller_panel.connected or self.voltage_controller_panel.voltage_interface is None:
-                            QMessageBox.critical(None, "Error", "Voltage Controller needed but not connected.")
-                            qCritical("Voltage Controller needed but not connected.")
-                            return
+                # TODO: This is a problem specific to triangle lattice
+                # Inject outerFolder variable manually for triangle lattice (this should be changed later to be more general)
+                # This solves the weird pycharm workspace issue
+                obj = object.__new__(experiment_class)  # runs without init
+                if self.soc_connected:  # inject before init
+                    setattr(
+                        obj,
+                        "outerFolder",
+                        self.workspace  # "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
+                    )
+                experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
+                self.experiment_instance = obj
 
-                        voltage_hardware = self.voltage_controller_panel.voltage_hardware # get the connected interface
-                        if TESTING:
-                            collected_hardware.append(voltage_hardware)
-                        elif not any(issubclass(type(voltage_hardware), cls) for cls in hardware_req): # check it is of the right type
-                            QMessageBox.critical(None, "Error", "Voltage Controller not of correct type.")
-                            qCritical("Voltage Controller not of right type. Requires, " + str(hardware_req))
-                            return
-                        else:
-                            collected_hardware.append(voltage_hardware)
+                # Start a new plot session BEFORE creating the worker
+                # This clears old plots, closes figures, and gets a new session_id for isolation
+                plot_session_id = self.current_tab.start_plot_session()
+                qInfo(f"Started plot session {plot_session_id} for {self.current_tab.tab_name}")
 
-                    self.experiment_instance = experiment_class(hardware=collected_hardware, cfg=experiment_format_config)
-
-                # Normal Experiments
-                else:
-                    # Inject outerFolder variable manually for triangle lattice (this should be changed later to be more general)
-                    # This solves the weird pycharm workspace issue
-                    obj = object.__new__(experiment_class) # runs without init
-                    if self.soc_connected: # inject before init
-                        setattr(
-                            obj,
-                            "outerFolder",
-                            "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
-                        )
-                    experiment_class.__init__(obj, soc=self.soc, soccfg=self.soccfg, cfg=experiment_format_config)
-                    self.experiment_instance = obj
-
-                ### Creating the experiment worker from ExperimentThread and Connecting Signals
-                self.experiment_worker = ExperimentThread(experiment_format_config, soccfg=self.soccfg,
-                                                          exp=self.experiment_instance, soc=self.soc)
-                self.experiment_worker.moveToThread(self.thread) # Move the ExperimentThread onto the actual QThread
+                # Creating the experiment worker from ExperimentThread and Connecting Signals
+                self.experiment_worker = ExperimentThread(
+                    experiment_format_config,
+                    soccfg=self.soccfg,
+                    exp=self.experiment_instance,
+                    soc=self.soc,
+                    plot_sink_manager=self.plot_sink_manager,
+                    target_tab=self.current_tab,
+                    session_id=plot_session_id  # Session ID for isolation
+                )
+                self.experiment_worker.moveToThread(self.thread)  # Move the ExperimentThread onto the actual QThread
 
                 # Connecting started and finished signals
                 self.thread.started.connect(self.current_tab.prepare_file_naming)
-                self.thread.started.connect(self.current_tab.clear_plots)
-                self.thread.started.connect(self.experiment_worker.run) # run experiment
-                self.experiment_worker.finished.connect(self.thread.quit) # stop thread
-                self.experiment_worker.finished.connect(self.experiment_worker.deleteLater) # delete worker
-                self.thread.finished.connect(self.thread.deleteLater) # delete thread
-                self.thread.finished.connect(self.finished_experiment) # update UI
+                # NOTE: clear_plots is now called by start_plot_session() above
+                self.thread.started.connect(self.experiment_worker.run)  # run experiment
+                self.experiment_worker.finished.connect(self.thread.quit)  # stop thread
+                self.experiment_worker.finished.connect(self.experiment_worker.deleteLater)  # delete worker
+                self.thread.finished.connect(self.thread.deleteLater)  # delete thread
+                self.thread.finished.connect(self.finished_experiment)  # update UI
 
                 # UI updates for tab
                 self.currently_running_tab = self.current_tab
                 idx = self.central_tabs.indexOf(self.currently_running_tab)
-                self.central_tabs.setTabText(idx, '✔ ' + self.currently_running_tab.tab_name + ".py")
+                self.central_tabs.setTabText(idx, '* ' + self.currently_running_tab.tab_name + ".py")
 
                 # Connecting data related slots
-                self.experiment_worker.updateData.connect(self.currently_running_tab.update_data) # update data & plot
-                self.experiment_worker.intermediateData.connect(self.currently_running_tab.intermediate_data) # intermediate data & plot
-                self.experiment_worker.updateRuntime.connect(self.currently_running_tab.update_runtime_estimation) # update runtime
+                self.experiment_worker.updateData.connect(self.currently_running_tab.update_data)  # update data & plot
+                self.experiment_worker.updateRuntime.connect(
+                    self.currently_running_tab.update_runtime_estimation)  # update runtime
 
-                self.experiment_worker.updateProgress.connect(self.update_progress) # update progress bar
-                self.experiment_worker.RFSOC_error.connect(self.RFSOC_error) # connect any RFSoC errors
+                self.experiment_worker.updateProgress.connect(self.update_progress)  # update progress bar
+                self.experiment_worker.RFSOC_error.connect(self.RFSOC_error)  # connect any RFSoC errors
 
-                ### button and GUI updates
+                # button and GUI updates
                 self.update_progress(0)
                 self.experiment_progress_bar.setValue(5)
 
                 self.start_experiment_button.setEnabled(False)
                 self.stop_experiment_button.setEnabled(True)
-                self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
-                self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
+                self.start_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/radio-tower.svg');")
+                self.stop_experiment_button.setStyleSheet(
+                    "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x-white.svg');")
 
                 self.central_tabs.setTabsClosable(False)  # Disable closing tabs
                 # self.central_tabs.tabBar().setEnabled(False)  # Disable tab bar interaction (safer but not needed)
@@ -717,49 +804,93 @@ class Desq(QMainWindow):
             qCritical(format_exc)
             print(format_exc)
 
-    def stop_experiment(self):
+    def show_stop_menu(self) -> None:
         """
-        Stop an Experiment if not auto-terminated and update respective UI for during stop.
-        """
+        Display the stop options context menu below the stop button.
 
+        Shows a menu with "Safe Stop" and "Force Stop" options for
+        stopping the currently running experiment.
+        """
+        pos = self.stop_experiment_button.mapToGlobal(
+            self.stop_experiment_button.rect().bottomLeft()
+        )
+        self.stop_menu.exec_(pos)
+
+    def safe_stop_experiment(self) -> None:
+        """
+        Initiate a safe stop of the running experiment.
+
+        Signals the experiment to complete the current set before stopping.
+        This allows for graceful termination with data integrity preserved.
+        """
         if self.experiment_worker:
             self.experiment_worker.stop()
-            qDebug("Stopping the experiment worker...")
+            qInfo("Safe stop initiated - completing current set...")
+        self._update_stop_ui()
 
+    def force_stop_experiment(self) -> None:
+        """
+        Initiate an immediate forced stop of the running experiment.
+
+        Interrupts the experiment immediately without waiting for the
+        current set to complete. Falls back to safe stop if force stop fails.
+        """
+        if self.experiment_worker:
+            success = self.experiment_worker.force_stop()
+            if success:
+                qInfo("Force stop initiated - interrupting...")
+            else:
+                qWarning("Force stop failed - using safe stop")
+        self._update_stop_ui()
+
+    def _update_stop_ui(self) -> None:
+        """
+        Update UI elements after a stop action is initiated.
+
+        Disables both start and stop buttons and updates their icons
+        to indicate the stopping state.
+        """
         self.stop_experiment_button.setEnabled(False)
         self.start_experiment_button.setEnabled(False)
-        self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-        self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/timer-off.svg');;")
-        # self.is_stopping = True
-        # self.stopping_dot_count = 0
-        # self.animate_stopping()
+        self.start_experiment_button.setStyleSheet(
+            "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+        self.stop_experiment_button.setStyleSheet(
+            "image: url('MasterProject/Client_modules/Desq_GUI/assets/timer-off.svg');")
 
-    def animate_stopping(self):
+    def finished_experiment(self) -> None:
         """
-        Small function to animate stopping to let the user know the experiment is actively being stopped.
-        """
-        if self.is_stopping:
-            # Update the label with the current number of dots
-            self.stop_experiment_button.setText(f"Stopping{'.' * (self.stopping_dot_count)}")
-            self.stopping_dot_count = (self.stopping_dot_count + 1) % 4  # Cycle through 0, 1, 2
-            QTimer.singleShot(500, self.animate_stopping)  # Repeat every 500 ms
+        Handle experiment completion and update UI accordingly.
 
-    def finished_experiment(self):
-        """
-        Finish an experiment by updating UI, this is called when Stop is complete.
+        Called when an experiment thread finishes (either normally or stopped).
+        Isolates matplotlib figures to prevent interference from future
+        experiments and restores UI controls to their idle state.
         """
         self.is_stopping = False
+
+        # IMPORTANT: Isolate matplotlib figures on the finished tab
+        # This creates copies of the figures that won't be affected by future experiments
+        # that might reuse the same figure numbers
+        if self.currently_running_tab is not None:
+            try:
+                if hasattr(self.currently_running_tab, 'isolate_matplotlib_figures'):
+                    self.currently_running_tab.isolate_matplotlib_figures()
+            except Exception as e:
+                qWarning(f"Failed to isolate matplotlib figures: {e}")
 
         if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
         else:
             self.start_experiment_button.setEnabled(True)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
 
         self.central_tabs.setTabsClosable(True)  # Enable closing tabs
         # self.central_tabs.tabBar().setEnabled(True)  # Enable tab bar interaction
@@ -771,50 +902,88 @@ class Desq(QMainWindow):
         self.central_tabs.setTabText(idx, self.currently_running_tab.tab_name + ".py")
 
         self.voltage_controller_panel.update_voltage_channels()  # update voltages
-        if hasattr(self.currently_running_tab, 'tab_name'): # dumb way to make sure not accessing empty tab_name
+        if hasattr(self.currently_running_tab, 'tab_name'):  # dumb way to make sure not accessing empty tab_name
             qInfo("Stopping Experiment: " + str(self.currently_running_tab.tab_name))
 
         self.currently_running_tab = None
 
-    def closeEvent(self, event):
+    def closeEvent(self, event) -> None:
         """
-        Overrides the default closeEvent() function in a PyQt widget by first ensuring all threads have stopped.
+        Handle application close event with proper cleanup.
 
-        :param event: The PyQt widget to close.
+        Ensures all threads are stopped and resources are released before
+        the application closes. Safe against double-shutdown and
+        already-deleted QObjects.
+
+        :param event: The close event to be handled.
         :type event: QCloseEvent
         """
+        # Ask the experiment to stop (async)
+        try:
+            self.safe_stop_experiment()
+        except Exception:
+            pass
 
-        self.stop_experiment()
-
-        if hasattr(self, 'aux_worker') and self.aux_worker is not None:
+        # Stop aux worker
+        if getattr(self, "aux_worker", None) is not None:
             try:
                 self.aux_worker.stop()
-            except:
+            except Exception:
                 pass
 
-        if getattr(self, "thread", None):
-            self.thread.requestInterruption()
-            self.thread.quit()
-            self.thread.wait(5000)  # avoid zombie threads
-            if self.worker:
-                self.worker.deleteLater()
-            self.thread.deleteLater()
+        # IMPORTANT: your worker attribute in this file is `experiment_worker`, not `worker`
+        # Don't explicitly delete worker/thread here because you already connected finished->deleteLater.
+        # Just try to shut down if still alive.
+        th = getattr(self, "thread", None)
+        if th is not None:
+            try:
+                # If it's already deleted, either of these can throw RuntimeError
+                if th.isRunning():
+                    th.quit()
+                    th.wait(5000)
+            except RuntimeError:
+                # Underlying C++ object already deleted
+                pass
+            except Exception:
+                pass
+            finally:
+                self.thread = None
 
-        self.settings_window.close()
+        wk = getattr(self, "experiment_worker", None)
+        if wk is not None:
+            try:
+                self.experiment_worker.deleteLater()
+            except RuntimeError:
+                pass
+            finally:
+                self.experiment_worker = None
 
-        # reassign plt.show
         try:
-            plt.show = self._original_show
+            if getattr(self, "settings_window", None) is not None:
+                self.settings_window.close()
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, "load_data_window", None) is not None:
+                self.load_data_window.close()
         except Exception:
             pass
 
         event.accept()
+        QApplication.processEvents()
+        QApplication.quit()
 
-    def load_experiment_file(self):
+    def load_experiment_file(self) -> None:
         """
-        Gets an .py experiment file per user input and calls the create_experiment_tab() function.
-        """
+        Open a file dialog to select and load a Python experiment file.
 
+        Prompts the user to select a ``.py`` file and creates experiment
+        tab(s) for the selected file.
+
+        .. seealso::
+            :meth:`create_experiment_tab`
+        """
         file = Helpers.open_file_dialog("Open Python Experiment File", "Python Files (*.py)",
                                         "load_experiment", self, file=True)
 
@@ -823,7 +992,7 @@ class Desq(QMainWindow):
         else:
             path = Path(file)
 
-            ### No longer needed as extract experiment now runs on a timeout thread
+            # No longer needed as extract experiment now runs on a timeout thread
             # imports = self.extract_direct_imports(str(path))
             # if "socProxy" in imports:
             #     qCritical("Do not import socProxy in your experiment files, connect to an RFSoc via the GUI (comment out that import line).")
@@ -831,19 +1000,24 @@ class Desq(QMainWindow):
             #     return
 
             qInfo("Loading experiment file: " + str(path))
-            self.create_experiment_tab(str(path)) # pass full path of the experiment file
+            self.create_experiment_tab(str(path))  # pass full path of the experiment file
 
-    def create_experiment_tab(self, path):
+    def create_experiment_tab(self, path: str) -> None:
         """
-        Creates one or more experiment tabs from an experiment file.
+        Create experiment tab(s) from a Python experiment file.
 
-        Searches for all ExperimentClass / ExperimentClassPlus subclasses inside the file,
-        prompts the user to select which to load, and creates a tab for each selected class.
+        Searches for all ExperimentClass subclasses in the file and prompts
+        the user to select which classes to load. Creates a separate tab
+        for each selected experiment class.
 
-        :param path: The path to the experiment file.
+        :param path: The full path to the Python experiment file.
         :type path: str
-        """
 
+        .. note::
+            Uses ExperimentLoader to dynamically find ExperimentClass subclasses.
+            Displays a MultiCheckboxDialog for class selection when multiple
+            classes are found.
+        """
         tab_count = self.central_tabs.count()
         file_name = os.path.splitext(os.path.basename(path))[0]  # just for tooltip/logging
 
@@ -909,21 +1083,25 @@ class Desq(QMainWindow):
                 self.central_tabs.removeTab(0)
             self.tabs_added = True
 
-    def update_tab(self):
+    def update_tab(self) -> None:
         """
-        Updates a tab UI, which currently just means the config and voltage panel.
+        Update tab UI elements after tab content changes.
+
+        Currently updates the voltage panel to reflect the current tab's
+        configuration.
         """
         self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
-        self.current_tab.setup_plotter_options()  # setup plotter options
 
-    def change_tab(self, idx):
+    def change_tab(self, idx: int) -> None:
         """
-        Called upon tab change of the central tab widget. Updates UI and current tab attributes.
+        Handle tab change events in the central tabs widget.
 
-        :param idx: The index of the newly selected tab widget.
+        Updates the current tab reference and adjusts UI elements
+        (buttons, voltage panel) based on the newly selected tab type.
+
+        :param idx: The index of the newly selected tab.
         :type idx: int
         """
-
         # update old tab
         if self.current_tab is not None:
             # before current_tab is changed
@@ -932,61 +1110,77 @@ class Desq(QMainWindow):
         # now handle new tab
         if self.central_tabs.count() != 0:
             self.current_tab = self.central_tabs.widget(idx)
-            self.voltage_controller_panel.changed_tabs(self.current_tab) # Important: update voltage panel
-            self.current_tab.setup_plotter_options() # setup plotter options
+            self.voltage_controller_panel.changed_tabs(self.current_tab)  # Important: update voltage panel
 
             if self.currently_running_tab is None:
-                if self.current_tab.experiment_obj is None: # check if tab is a data or experiment tab
+                if self.current_tab.experiment_obj is None:  # check if tab is a data or experiment tab
                     self.start_experiment_button.setEnabled(False)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+                    self.stop_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
                 else:
                     self.start_experiment_button.setEnabled(True)
                     self.stop_experiment_button.setEnabled(False)
-                    self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
-                    self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+                    self.start_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/play-white.svg');")
+                    self.stop_experiment_button.setStyleSheet(
+                        "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
 
-    def close_tab(self, idx):
+    def close_tab(self, idx: int) -> None:
         """
-        Called upon a user closing a central experiment or data tab. Updates tab list and UI.
+        Handle tab close requests from the central tabs widget.
 
-        :param idx: The index of the closed tab widget.
+        Removes the specified tab and cleans up resources. Updates
+        UI if no tabs remain.
+
+        :param idx: The index of the tab to be closed.
         :type idx: int
         """
-
         tab_to_delete = self.central_tabs.widget(idx)
         tab_name = tab_to_delete.tab_name
-        QDesqTab.custom_plot_methods.pop(tab_name, None)
 
-        self.central_tabs.removeTab(idx) # remove tab from widget
+        self.central_tabs.removeTab(idx)  # remove tab from widget
 
-        if self.central_tabs.count() == 0: # if no tabs remaining
+        if self.central_tabs.count() == 0:  # if no tabs remaining
             self.start_experiment_button.setEnabled(False)
             self.stop_experiment_button.setEnabled(False)
-            self.start_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
-            self.stop_experiment_button.setStyleSheet("image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
             self.current_tab = None
         else:
-            current_tab_idx = self.central_tabs.currentIndex() # get the tab changed to upon closure
+            current_tab_idx = self.central_tabs.currentIndex()  # get the tab changed to upon closure
             self.change_tab(current_tab_idx)
-            self.current_tab.setup_plotter_options()
 
-        tab_to_delete.deleteLater() # safely delete the tab
+        tab_to_delete.deleteLater()  # safely delete the tab
 
-    def update_config_workspaces(self, workspace):
+    def update_config_workspaces(self, workspace: str) -> None:
+        """
+        Update workspace path across all configuration panels.
+
+        :param workspace: The new workspace directory path.
+        :type workspace: str
+        """
         self.workspace = workspace
         self.global_config_panel.directory_tree.change_workspace(workspace)
 
-    def update_progress(self, sets_complete):
+    def update_progress(self, sets_complete: int) -> None:
         """
-        The function that updates the progress bar based on experiment progress. It retrieves the reps and sets fields
-        of the current tab's config to do so. Usually called via a signal from an ExperimentThread.
+        Update the experiment progress bar based on completion status.
 
-        :param sets_complete: The number of sets of the experiment that have been completed
+        Retrieves the reps and sets fields from the current tab's configuration
+        to calculate progress percentage.
+
+        :param sets_complete: The number of experiment sets that have been completed.
         :type sets_complete: int
-        """
 
+        .. note::
+            Usually called via a signal from ExperimentThread during experiment
+            execution.
+        """
         if self.currently_running_tab is None:
             self.experiment_progress_bar.setValue(0)
             self.experiment_progress_bar_label.setText("--/--")
@@ -1000,56 +1194,56 @@ class Desq(QMainWindow):
         reps, sets = 1, 1
         if 'reps' in unformatted_config and 'sets' in unformatted_config:
             reps, sets = unformatted_config['reps'], unformatted_config['sets']
-        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100)) # calculate completed %
-        self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps)) # set label
+        self.experiment_progress_bar.setValue(math.floor(float(sets_complete) / sets * 100))  # calculate completed %
+        self.experiment_progress_bar_label.setText(str(sets_complete * reps) + "/" + str(sets * reps))  # set label
 
-    def call_tab_runtime_prediction(self, config):
+    def call_tab_runtime_prediction(self, config: Dict[str, Any]) -> None:
         """
-        A function that calls the current tab's runtime prediction upon a config changed signal. This is needed since
-        the current tab changes, so the signal cannot be directly connected to any fixed tab.
+        Forward runtime prediction request to the current tab.
+
+        Called when the config changed signal is emitted. Routes the
+        prediction call to whichever tab is currently active.
+
+        :param config: The configuration dictionary to use for runtime estimation.
+        :type config: Dict[str, Any]
         """
         if self.current_tab is not None:
             self.current_tab.predict_runtime(config)
 
-    def RFSOC_error(self, e, traceback):
+    def RFSOC_error(self, e: Exception, traceback_str: str) -> None:
         """
-        The function called when RFSoC returns an error to display in the Log.
+        Handle and display RFSoC errors during experiment execution.
 
-        :param e: The error
+        :param e: The exception that was raised.
         :type e: Exception
-        :param traceback: The traceback
-        :type traceback: str
+        :param traceback_str: The formatted traceback string.
+        :type traceback_str: str
         """
-
         qCritical("RFSoC thew the error: " + str(e))
-        qCritical(traceback)
-        print(traceback)
+        qCritical(traceback_str)
+        print(traceback_str)
         QMessageBox.critical(None, "RFSOC error", "RfSoc has thrown an error (see log).")
 
-    def load_data_file(self):
+    def load_data_file(self) -> None:
         """
-        Gets an .h5 experiment file per user input. Then calls the create_data_tab() function with the file's path.
+        Show the LoadDataWindow for selecting data files.
+
+        Opens a dialog for the user to select an H5 data file and
+        optionally an experiment class for visualization.
         """
+        self.load_data_window.show()
+        self.load_data_window.raise_()
 
-        # load data file
-        file = Helpers.open_file_dialog("Open Data h5 File", "h5 Files (*.h5)",
-                                        "load_data_file", self, file=True)
-        if not file:
-            return
-        else:
-            path = Path(file)
-            qInfo("Loading dataset file: " + str(path))
-            self.create_data_tab(file)  # pass full path of the data file
-
-    def create_data_tab(self, file):
+    def create_data_tab(self, file: str) -> None:
         """
-        Creates a new QQuarkTab instance for the new tab of type dataset. See QQuarkTab class for how dataset
-        information is extracted via the given path. Also handles UI updates.
+        Create a new data viewing tab for an H5 file.
 
-        :param path: The path to the data file.
-        :type path: str
+        :param file: The path to the H5 data file.
+        :type file: str
+
+        .. seealso::
+            :class:`QDesqTab`
         """
-
         tab_count = self.central_tabs.count()
         file_name = os.path.basename(file)
         # Creates the new QQuarkTab instance specifying not an experiment tab
@@ -1066,9 +1260,214 @@ class Desq(QMainWindow):
                 self.central_tabs.removeTab(0)
         self.tabs_added = True
 
-    def check_log_read(self):
+    def create_image_tab(self, file_path: str) -> None:
         """
-        Check if the Log tab has been opened and set the Log to the state read.
+        Create a new image viewing tab for displaying image files.
+
+        :param file_path: The full path to the image file.
+        :type file_path: str
+
+        :raises Exception: Displays a QMessageBox if the image fails to load.
+        """
+        tab_count = self.central_tabs.count()
+        file_name = os.path.basename(file_path)
+
+        try:
+            new_image_tab = ImageViewTab(file_path, parent=self)
+
+            tab_idx = self.central_tabs.addTab(new_image_tab, file_name)
+            self.central_tabs.setCurrentIndex(tab_idx)
+            self.central_tabs.setTabToolTip(tab_idx, file_path)
+
+            # Image tabs can't run experiments
+            self.start_experiment_button.setEnabled(False)
+            self.stop_experiment_button.setEnabled(False)
+            self.start_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/play.svg');")
+            self.stop_experiment_button.setStyleSheet(
+                "image: url('MasterProject/Client_modules/Desq_GUI/assets/octagon-x.svg');")
+
+            self.current_tab = new_image_tab
+
+            if not self.tabs_added:
+                if tab_count == 1:
+                    self.central_tabs.removeTab(0)
+            self.tabs_added = True
+
+            qInfo(f"Created image tab for: {file_name}")
+
+        except Exception as e:
+            qCritical(f"Failed to create image tab: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to open image:\n{str(e)}")
+
+    def _on_load_data_requested(self, h5_path: str, experiment_path: str, class_name: str) -> None:
+        """
+        Handle load request signal from LoadDataWindow.
+
+        Creates a data tab and uses the specified experiment's display()
+        method for visualization.
+
+        :param h5_path: Path to the H5 data file.
+        :type h5_path: str
+        :param experiment_path: Path to the experiment Python file.
+        :type experiment_path: str
+        :param class_name: Name of the experiment class to use for display.
+        :type class_name: str
+        """
+        try:
+            qInfo(f"Loading data with experiment display: {h5_path} -> {class_name}")
+
+            # Load the experiment module
+            module_name, experiment_classes = ExperimentLoader.load_and_find(experiment_path)
+            if not experiment_classes:
+                QMessageBox.critical(self, "Error", "No experiment classes found in file.")
+                return
+
+            # Find the specified class
+            experiment_class = None
+            for name, cls in experiment_classes:
+                if name == class_name:
+                    experiment_class = cls
+                    break
+
+            if experiment_class is None:
+                QMessageBox.critical(self, "Error", f"Experiment class '{class_name}' not found.")
+                return
+
+            # Load the data from H5 file
+            data = Helpers.h5_to_dict(h5_path)
+            qInfo(f"Loaded data keys: {list(data.keys())}")
+
+            # Create the data tab
+            tab_count = self.central_tabs.count()
+            h5_filename = os.path.basename(h5_path)
+            # tab_name = f"{h5_filename} ({class_name})"
+            tab_name = f"{h5_filename}"
+
+            new_data_tab = QDesqTab(
+                experiment_id=(None, None),
+                tab_name=tab_name,
+                source_file_name=h5_filename,
+                is_experiment=False,
+                dataset_file=None,  # Don't auto-load, we'll handle it manually
+                app=self
+            )
+
+            # Store the data in the tab
+            new_data_tab.data = data
+
+            # Extract config if present
+            if "config" in data:
+                qInfo("Config in h5 metadata found")
+                temp_config = data["config"]
+                new_data_tab.experiment_config_panel.update_config_dict(temp_config, reset=True)
+                new_data_tab.data.pop("config", None)
+
+            # Add the tab to the UI
+            tab_idx = self.central_tabs.addTab(new_data_tab, tab_name)
+            self.central_tabs.setCurrentIndex(tab_idx)
+            self.start_experiment_button.setEnabled(False)
+            self.current_tab = new_data_tab
+
+            if not self.tabs_added:
+                if tab_count == 1:
+                    self.central_tabs.removeTab(0)
+            self.tabs_added = True
+
+            # Now call the experiment's display() method
+            self._call_experiment_display(new_data_tab, experiment_class, data)
+
+        except Exception as e:
+            qCritical(f"Error loading data with experiment display: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to load data:\n{str(e)}")
+
+    def _call_experiment_display(self, tab: 'QDesqTab', experiment_class: type, data: Dict[str, Any]) -> None:
+        """
+        Call an experiment's display() method to visualize data.
+
+        Creates a minimal experiment instance and invokes its display()
+        method to generate visualization figures. Routes generated figures
+        to the tab's carousel.
+
+        :param tab: The data tab to display the visualization in.
+        :type tab: QDesqTab
+        :param experiment_class: The experiment class containing the display() method.
+        :type experiment_class: type
+        :param data: The data dictionary to visualize.
+        :type data: Dict[str, Any]
+
+        .. note::
+            Falls back to auto-plotting if the experiment class has no display()
+            method or if display() raises an error.
+        """
+
+        try:
+            # Start a plot session for figure isolation
+            session_id = tab.start_plot_session()
+            qInfo(f"Started plot session {session_id} for data display")
+
+            # Create a minimal experiment instance for display
+            # We create the object without calling __init__ to avoid hardware requirements
+            exp_instance = object.__new__(experiment_class)
+
+            # Set minimal attributes that display() might need
+            exp_instance.cfg = data.get("config", {})
+            if hasattr(experiment_class, 'outerFolder'):
+                exp_instance.outerFolder = self.workspace
+
+            # Check if the class has a display method
+            if not hasattr(experiment_class, 'display'):
+                qWarning(f"Experiment class {experiment_class.__name__} has no display() method")
+                # Fall back to auto-plotting
+                tab.plot_data(exp_instance=None, data_to_plot=data)
+                return
+
+            # Record existing figure numbers BEFORE calling display()
+            existing_fig_nums = set(plt.get_fignums())
+
+            # Call display() - this may create new matplotlib figures
+            try:
+                experiment_class.display(exp_instance, data, plotDisp=True)
+            except TypeError:
+                # Some display methods might not take plotDisp argument
+                experiment_class.display(exp_instance, data)
+            except Exception as e:
+                qCritical(f"Error loading data with experiment display: {e}")
+                return
+
+            # Find NEW figures created during display()
+            new_fig_nums = set(plt.get_fignums()) - existing_fig_nums
+
+            if new_fig_nums:
+                qInfo(f"display() created {len(new_fig_nums)} new figure(s)")
+
+                # Route each new figure to the tab with session_id=-1 (trusted)
+                for fig_num in sorted(new_fig_nums):
+                    fig = plt.figure(fig_num)
+                    tab.receive_figure(fig, 'draw', session_id=-1)
+
+                qInfo(f"Routed {len(new_fig_nums)} figures to carousel")
+            else:
+                # display() didn't create new figures - fall back to auto_plot
+                qWarning("display() created no new figures, falling back to auto_plot")
+                tab.plot_data(exp_instance=None, data_to_plot=data)
+
+        except Exception as e:
+            qCritical(f"Error calling experiment display: {e}")
+            traceback.print_exc()
+
+            # Fall back to auto-plotting
+            qInfo("Falling back to auto_plot due to display() error")
+            tab.plot_data(exp_instance=None, data_to_plot=data)
+
+    def check_log_read(self) -> None:
+        """
+        Check if the Log tab is selected and mark it as read.
+
+        Resets the tab text to remove any unread notification indicator
+        when the user switches to the Log tab.
         """
         log_index = self.side_tabs.indexOf(self.log_panel)
 
@@ -1076,23 +1475,29 @@ class Desq(QMainWindow):
             self.side_tabs.setTabText(log_index, "Log")
             self.log_panel.logger.setFocus()
 
-    def show_settings(self):
+    def show_settings(self) -> None:
         """
-        Creates a SettingsWindow, displays it, and connects the appropriate signals.
+        Display the settings window.
+
+        Shows the SettingsWindow dialog and brings it to the foreground.
         """
         self.settings_window.show()
         self.settings_window.raise_()
 
-    def apply_settings(self, theme=None, font_size=None):
+    def apply_settings(self, theme: Optional[str] = None, font_size: Optional[int] = None) -> None:
         """
-        Applies the settings given in the parameter to the current window.
+        Apply theme and font settings to the application.
 
-        :param theme: Theme of the settings window.
-        :type theme: str
-        :param font_size: Font size of the settings window.
-        :type font_size: int
+        Loads the appropriate QSS stylesheet and applies color/font
+        substitutions based on the selected theme.
+
+        :param theme: The theme to apply ('Dark Mode' or 'Light Mode').
+            Uses current settings value if None.
+        :type theme: str or None
+        :param font_size: The base font size to apply.
+            Uses current settings value if None.
+        :type font_size: int or None
         """
-
         if theme is None:
             theme = self.settings_window.curr_theme
         if font_size is None:
@@ -1189,19 +1594,27 @@ class Desq(QMainWindow):
             style = style.replace('$FIND_BAR_COLOR', f"#E0E1E2")
             style = style.replace('$PROGRESS_BAR_BACKGROUND_COLOR', f"#090716")
 
-
-        ### Fonts
+        # Fonts
         style = style.replace('$GLOBAL_FONT_SIZE', f"{font_size}")
-        style = style.replace('$LARGER_FONT_SIZE', f"{(font_size+2)}")
-        style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size-1)}")
-        style = style.replace('$TAB_FONT_SIZE', f"{(font_size-2)}")
-        style = style.replace('$SMALL_FONT_SIZE', f"{(font_size-2)}")
+        style = style.replace('$LARGER_FONT_SIZE', f"{(font_size + 2)}")
+        style = style.replace('$MEDIUM_FONT_SIZE', f"{(font_size - 1)}")
+        style = style.replace('$TAB_FONT_SIZE', f"{(font_size - 2)}")
+        style = style.replace('$SMALL_FONT_SIZE', f"{(font_size - 2)}")
 
+        # Slightly fragile implementation here that relies on the main block's global app variable
         app.setStyleSheet(style)
 
-    def extracted_config(self, global_config, exp_config):
+    def extracted_config(self, global_config: Dict[str, Any], exp_config: Dict[str, Any]) -> None:
         """
-        Function called when a config is extracted. Calls the update config button of the config tree.
+        Handle extracted configuration from the config code editor.
+
+        Updates both the global and experiment configuration panels with
+        the extracted values.
+
+        :param global_config: The extracted global configuration dictionary.
+        :type global_config: Dict[str, Any]
+        :param exp_config: The extracted experiment-specific configuration dictionary.
+        :type exp_config: Dict[str, Any]
         """
         print(f"Global: {global_config}, Exp: {exp_config}")
         qInfo(f"Global: {str(global_config)}, Exp: {str(exp_config)}")
@@ -1214,14 +1627,25 @@ class Desq(QMainWindow):
         self.current_tab.experiment_config_panel.update_config_dict(exp_config)
         self.current_tab.experiment_config_panel.populate_config_view()
 
-    def extract_direct_imports(self, file_path):
+    def extract_direct_imports(self, file_path: str) -> List[str]:
         """
-        Extracts and returns the most direct module name from each import statement in a Python file.
+        Extract direct module names from import statements in a Python file.
 
-        :param file_path: Full path to the Python file.
+        Parses the AST of the given file and extracts the most direct
+        (rightmost) module name from each import statement.
+
+        :param file_path: Full path to the Python file to analyze.
         :type file_path: str
-        :returns: List of direct module names from the import statements.
-        :rtype: list[str]
+        :returns: List of direct module names from import statements.
+        :rtype: List[str]
+
+        Example::
+
+            # For a file containing:
+            # import os.path
+            # from collections.abc import Mapping
+
+            # Returns: ['path', 'abc']
         """
         with open(file_path, "r") as file:
             tree = ast.parse(file.read(), filename=file_path)
@@ -1242,91 +1666,49 @@ class Desq(QMainWindow):
 
         return direct_imports
 
-    # def _intercept_plt_show_wrapper(self):
-    #     """
-    #     Intercept plt.show() and forward the plot handling to the GUI thread.
-    #     Ensures thread-safety by dispatching off-main calls via QTimer.singleShot.
-    #     Also throttles excessive calls using self.intercept_delay.
-    #     """
-    #
-    #     def wrapper(*args, **kwargs):
-    #         now = time.monotonic()
-    #         with self._intercept_lock:
-    #             if now - self.last_intercept_time < self.intercept_delay:
-    #                 return
-    #             self.last_intercept_time = now
-    #
-    #         target = self.currently_running_tab or self.current_tab
-    #         if not target or not hasattr(target, 'handle_pltplot'):
-    #             return
-    #
-    #         def do_handle():
-    #             try:
-    #                 qInfo("Matplotlib plt.show intercepted; handling on GUI thread.")
-    #                 target.handle_pltplot(*args, **kwargs)
-    #             except Exception as e:
-    #                 qWarning(f"Error handling intercepted plt.show: {e}")
-    #
-    #         # If we're on the GUI thread, handle immediately; otherwise queue to GUI.
-    #         if threading.current_thread() is threading.main_thread():
-    #             return do_handle()
-    #         else:
-    #             QTimer.singleShot(0, do_handle)
-    #             return
-    #
-    #     return wrapper
+    def _on_figure_received(
+        self,
+        figure: Any,
+        target_tab: Optional['QDesqTab'],
+        event_type: str,
+        session_id: int
+    ) -> None:
+        """
+        Handle figures received from the backend-based plot sink.
 
-    def _intercept_plt_show_wrapper(self):
-        def wrapper(*args, **kwargs):
-            target = self.currently_running_tab or self.current_tab
-            if not target or not hasattr(target, "handle_pltplot"):
-                return
+        Called when any matplotlib figure is drawn in a worker thread.
+        The figure is automatically routed to the correct tab via Qt signals.
 
-            # Grab the ACTUAL figures at the call site (thread-safe Python objects)
-            managers = list(_pylab.Gcf.get_all_fig_managers())
-            captured_figures = [m.canvas.figure for m in managers if hasattr(m, "canvas")]
+        :param figure: The matplotlib Figure object to display.
+        :type figure: matplotlib.figure.Figure
+        :param target_tab: The tab that should display this figure.
+        :type target_tab: QDesqTab or None
+        :param event_type: The type of draw event, either 'draw' or 'draw_idle'.
+        :type event_type: str
+        :param session_id: The plot session ID for validation and figure isolation.
+        :type session_id: int
 
-            payload = {"_captured_figures": captured_figures, "args": args or (), "kwargs": kwargs or {}}
-
-            if threading.current_thread() is threading.main_thread():
-                # enqueue on GUI thread (immediate drain for single-call case)
-                self._enqueue_show_request(target, (), payload)
-            else:
-                # async hop to GUI thread
-                self._relay.showRequested.emit(target, ((), payload))
+        .. note::
+            The target tab validates the session_id and rejects figures from
+            old sessions to prevent cross-contamination between experiments.
+        """
+        if target_tab is None:
+            qWarning("Figure received but no valid target tab")
             return
 
-        return wrapper
-
-    def _on_show_requested_gui(self, target, payload):
-        args, kwargs = payload
-        self._enqueue_show_request(target, args, kwargs)
-
-    def _enqueue_show_request(self, target, args, kwargs):
-        with self._show_lock:
-            self._show_queue.append((target, args, kwargs))
-        if not self._show_timer.isActive():
-            self._show_timer.start(15)  # small coalesce window; set 0 if you want immediate
-
-    def _drain_show_queue(self):
-        if self._draining_shows:
+        # Check if the tab has the receive_figure method (carousel-aware)
+        if not hasattr(target_tab, 'receive_figure'):
+            qWarning("Target tab does not have receive_figure method")
             return
-        self._draining_shows = True
+
         try:
-            while True:
-                with self._show_lock:
-                    if not self._show_queue:
-                        break
-                    target, args, kwargs = self._show_queue.popleft()
-                if hasattr(target, "handle_pltplot"):
-                    try:
-                        target.handle_pltplot(*args, **kwargs)
-                    except Exception as e:
-                        qWarning(f"Error handling queued plt.show: {e}")
-        finally:
-            self._draining_shows = False
-            if self._show_queue and not self._show_timer.isActive():
-                self._show_timer.start(15)
+            # Pass figure to tab's carousel-aware receiver with session_id
+            # The tab validates session_id and rejects figures from old sessions
+            target_tab.receive_figure(figure, event_type, session_id)
+        except Exception as e:
+            qWarning(f"Error handling received figure: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # Creating the Desq GUI Main Window

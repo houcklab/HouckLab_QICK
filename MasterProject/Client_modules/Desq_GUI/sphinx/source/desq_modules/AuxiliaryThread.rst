@@ -1,5 +1,5 @@
-AuxiliaryThread Class
-======================
+AuxiliaryThread
+===============
 
 .. automodule:: scripts.AuxiliaryThread
    :members:

@@ -1,5 +1,5 @@
-QuarkTab Class
-==============
+DesqTab
+=======
 
 .. automodule:: scripts.DesqTab
    :members:

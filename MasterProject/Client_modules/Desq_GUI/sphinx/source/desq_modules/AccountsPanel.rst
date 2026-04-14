@@ -1,5 +1,5 @@
-AccountsPanel Class
-===================
+AccountsPanel
+=============
 
 .. automodule:: scripts.AccountsPanel
    :members:

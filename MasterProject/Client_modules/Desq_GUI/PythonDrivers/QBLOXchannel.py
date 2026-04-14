@@ -4,10 +4,6 @@ from spirack import D5a_module, SPI_rack
 import numpy as np
 import time
 
-"""
-NOT TESTED
-"""
-
 class QBLOXchannel(VoltageInterface):
     """
     A Qblox Driver for a single channel. Implemented as a fixed channel D5a_module.

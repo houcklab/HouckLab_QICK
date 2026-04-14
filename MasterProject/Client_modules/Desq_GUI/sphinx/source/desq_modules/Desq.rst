@@ -1,5 +1,5 @@
-Quarky Main
-===========
+Desq
+====
 
 .. automodule:: Desq
    :members:
