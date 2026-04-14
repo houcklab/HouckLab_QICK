@@ -84,12 +84,14 @@ class CalculateFFExperiment(ExperimentClass):
             gains_list = flux_changes * FF_flux_quanta
 
             gains_list = np.rint(gains_list).astype(int)
-
+            gains_list[1] = 0 #TODO fix Q2 issue
 
             bare_order_of_items = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q6_bare', 'Q7_bare', 'Q8_bare',
                                    'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
             bare_frequencies = [1000 * model_mapping[mapping].freq(flux) for mapping, flux in
                                 zip(bare_order_of_items, target_fluxes)]
+            bare_frequencies[1] = 4420 #TODO fix Q2 issue
+
 
             dressed_freqs, g_matrix = full_device_calib.dress_system(bare_frequencies, beta_matrix=beta_matrix,
                                                                      plot=False)
@@ -98,11 +100,12 @@ class CalculateFFExperiment(ExperimentClass):
 
 
         # Printing Summary
-        np.set_printoptions(linewidth=100000)
-        print('[' + ', '.join(str(g) for g in gains_list) + ']')
-        print('# (' + ', '.join(f"{d:.1f}" for d in dressed_freqs) + ')')
-        for j, gain, freq in zip(range(1, 1 + len(gains_list)), gains_list, dressed_freqs):
-            print(f"FF_gain{j}_{suffix} = {gain:>6}  # {freq:.1f}")
+        if plot_effective_system:
+            np.set_printoptions(linewidth=100000)
+            print('[' + ', '.join(str(g) for g in gains_list) + ']')
+            print('# (' + ', '.join(f"{d:.1f}" for d in dressed_freqs) + ')')
+            for j, gain, freq in zip(range(1, 1 + len(gains_list)), gains_list, dressed_freqs):
+                print(f"FF_gain{j}_{suffix} = {gain:>6}  # {freq:.1f}")
 
         # Return a tidy record for saving / plotting
         data = {
@@ -143,23 +146,24 @@ class CalculateFFExperiment(ExperimentClass):
         pass
 
 
-def main():
-
-    # TODO: I have noticed an issue (with both the old and current versions of Calculate_FF:
-    # For high frequencies of Qubit 3, (>4323), the rootfinding code will throw an error.
-    # It doesnt seem like it thinks those frequencies are allowable for Q3.
-
+def main(frequencies = None):
+    # (3725.0, 4060.0, 4240.0, 3835.0, 3621.0, 4139.0, 3953.0, 3512.0)
     # Frequencies
-    frequencies = {
-        'Q1': 3800,
-        'Q2': 3800,
-        'Q3': 3800,
-        'Q4': 3800,
-        'Q5': 3800,
-        'Q6': 3800,
-        'Q7': 3800,
-        'Q8': 3800,
-    }
+    if frequencies is None:
+        frequencies = {
+            'Q1': 3800,
+            'Q2': 3600,
+            'Q3': 3800,
+            'Q4': 3800,
+            'Q5': 3800,
+            'Q6': 3800,
+            'Q7': 3800,
+            'Q8': 3800,
+        }
+    else:
+        qubits = [f'Q{Q}' for Q in range(1,9)]
+        frequencies = dict(zip(qubits, frequencies))
+        print(frequencies)
 
 
     cfg = {
@@ -170,6 +174,20 @@ def main():
 
     expt = CalculateFFExperiment(path='', prefix='CalculateFF', soc=None, soccfg=None, cfg=cfg)
     expt.acquire() # Display determined by config field "plot_effective_system", can also call display manually
+
+# Josh's quick-use function
+def get_gains(frequencies):
+    qubits = [f'Q{Q}' for Q in range(1, 9)]
+    cfg = {
+        'plot_effective_system': False,
+        'suffix': 'BS',
+        'frequencies': dict(zip(qubits, frequencies)),
+    }
+
+    expt = CalculateFFExperiment(path='', prefix='CalculateFF', soc=None, soccfg=None, cfg=cfg)
+    d = expt.acquire()  # Display determined by config field "plot_effective_system", can also call display manually
+    return d['gains_list']
+
 
 if __name__ == '__main__':
     main()

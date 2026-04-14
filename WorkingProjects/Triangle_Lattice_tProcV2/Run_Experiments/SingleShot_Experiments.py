@@ -32,32 +32,9 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterizat
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
-Qubit_Readout = [5]
-Qubit_Pulse   = [5]
+Qubit_Readout = [4]
+Qubit_Pulse   = [4]
 
-
-
-
-# Qubit_Readout = [1,2,3,4,5,6,7,8]
-# Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
-
-# Qubit_Readout = [5]
-# Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
-
-# Qubit_Parameters = {
-#     '5': {'Readout': {'Frequency': 7363.4, 'Gain': 1057,
-#                       'FF_Gains': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395], 'Readout_Time': 3,
-#                       'ADC_Offset': 1},
-#           'Qubit': {'Frequency': 4139.0, 'sigma': 0.03, 'Gain': 7001},
-#           'Pulse_FF': [-26873, -29001, -25392, -27560, 2500, -28060, -25722, -24395]},
-# }
-
-# Qubit_Parameters |= {
-#     '6P': {'Readout': {'Frequency': 7442.1, 'Gain': 1057,
-#                       'FF_Gains': Readout_2345_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-#           'Qubit': {'Frequency': 4271.6, 'sigma': 0.03, 'Gain': 9914/4},
-#           'Pulse_FF': Readout_2345_FF},
-# }
 
 t = True
 f = False
@@ -76,11 +53,11 @@ Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
                         "readout_length": 3, 'cav_relax_delay': 10}
 Run2ToneSpec = False
 Spec_relevant_params = {
-                        'Gauss': True, "sigma": 0.015, "Gauss_gain": 11000,
+                        'Gauss': False, "sigma": 0.015, "Gauss_gain": 11000,
                       # "qubit_gain": 8000, "SpecSpan": 400, "SpecNumPoints": 71,
-                        "qubit_gain": 400, "SpecSpan": 200, "SpecNumPoints": 71,
+                      #   "qubit_gain": 400, "SpecSpan": 200, "SpecNumPoints": 71,
                         # "qubit_gain": 500, "SpecSpan": 50, "SpecNumPoints": 71,
-                      #   "qubit_gain": 100, "SpecSpan": 10, "SpecNumPoints": 71,
+                        "qubit_gain": 100, "SpecSpan": 100, "SpecNumPoints": 71,
                         'reps': 200, 'rounds': 1}
 
 Q = 8
@@ -88,9 +65,9 @@ Q = 8
 # Qubit_Pulse = [Q]
 # Qubit_Readout = [Q]
 
-Run_Spec_vs_FFgain = False # Inherit spec parameters from above
-FF_sweep_spec_relevant_params = {"qubit_FF_index": 5,
-                            "FF_gain_start": -10000, "FF_gain_stop": 0, "FF_gain_steps": 11,
+Run_Spec_vs_FFgain = True # Inherit spec parameters from above
+FF_sweep_spec_relevant_params = {"qubit_FF_index": 4,
+                            "FF_gain_start": -15000, "FF_gain_stop": 5000, "FF_gain_steps": 31,
                                  'relax_delay': 100}
 
 # center = Expt_FF[FF_sweep_spec_relevant_params['qubit_FF_index']-1]
@@ -98,7 +75,7 @@ FF_sweep_spec_relevant_params = {"qubit_FF_index": 5,
 # FF_sweep_spec_relevant_params['FF_gain_stop'] = center + 6000
 
 FluxStability = False # Repeat SpecSlice over time
-Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 60*60}
+Flux_Stability_params = {"delay_minutes": 1/60, "num_steps": 5*60}
 
 
 Run_Spec_vs_Qblox = False
@@ -149,8 +126,8 @@ T2R_params = {"stop_delay_us": 5, "expts": 125, "reps": 300,
 
 
 
-RunT1_TLS = True
-T1TLS_params = {"FF_gain_start": -20000, "FF_gain_stop": -8000, "FF_gain_steps": 101,
+RunT1_TLS = False
+T1TLS_params = {"FF_gain_start": -28000, "FF_gain_stop": -12000, "FF_gain_steps": 101,
                     "stop_delay_us": 10, "expts": 5, "reps": 300,
                     'qubitIndex': int(str(Qubit_Pulse[0])[0])}
 

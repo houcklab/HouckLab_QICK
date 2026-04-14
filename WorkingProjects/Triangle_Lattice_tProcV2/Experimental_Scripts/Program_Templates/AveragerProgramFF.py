@@ -18,8 +18,8 @@ from qick.asm_v2 import AveragerProgramV2
 class FFAveragerProgramV2(AveragerProgramV2):
     '''Averager Program but adds FF and acquire helpers'''
 
-    def FFPulses(self, list_of_gains, length_us, t_start='auto'):
-        FF.FFPulses(self, list_of_gains, length_us, t_start)
+    def FFPulses(self, list_of_gains, length_us, t_start='auto', **kwargs):
+        FF.FFPulses(self, list_of_gains, length_us, t_start, **kwargs)
 
 
     def FFPulses_direct(self, list_of_gains, length_dt, previous_gains, t_start='auto', IQPulseArray=None,

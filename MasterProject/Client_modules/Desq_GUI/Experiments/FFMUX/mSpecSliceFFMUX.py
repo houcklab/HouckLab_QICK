@@ -1,6 +1,6 @@
 """
 ==================
-mSpecSliceFFMUX.py
+mSpecSliceMulti.py
 ==================
 A Fast Flux Multiplex Spec slice experiment.
 Plots using pyqtgraph (recommended) but also provides a matplotlib display function.

@@ -334,7 +334,7 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
         self.cfg["Pulse"] = True
         prog = SingleShotProgram(self.soccfg, cfg=self.cfg, reps=self.cfg["Shots"], final_delay=self.cfg["relax_delay"], initial_delay=10.0)
         shots_ie,shots_qe = prog.acquire_shots(self.soc, load_envelopes=True, progress=False)
-        print("RO index:", self.Readout_Index)
+        # print("RO index:", self.Readout_Index)
         i_g = shots_ig[self.Readout_Index]
         q_g = shots_qg[self.Readout_Index]
         i_e = shots_ie[self.Readout_Index]

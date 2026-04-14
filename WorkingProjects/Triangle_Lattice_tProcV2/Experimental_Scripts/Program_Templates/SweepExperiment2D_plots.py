@@ -32,14 +32,20 @@ class SweepExperiment2D_plots(SweepExperimentND):
                   " have it return a tuple of arrays for this code to work (see my SpecSlice program)")
         X_step = X[1] - X[0]
         Y_step = Y[1] - Y[0]
-        Z_mat = data['data'][self.z_value]
+
+        ### hard-coded fudge to allow easy collecting of shots data in an experiment already written for
+        ### population, consider altering - Joshua 12/10/25
+        if self.z_value == 'population_shots':
+            Z_mat = data['data']['population_corrected']
+        else:
+            Z_mat = data['data'][self.z_value]
 
 
         if self.z_value == 'contrast':
             colorbar_label = 'IQ contrast (a.u.)'
         elif self.z_value == 'population':
             colorbar_label = 'Excited state population'
-        elif self.z_value == 'population_corrected':
+        elif self.z_value == 'population_corrected' or self.z_value == 'population_shots':
             colorbar_label = 'Excited state population (corrected)'
         else:
             colorbar_label = None
@@ -63,7 +69,11 @@ class SweepExperiment2D_plots(SweepExperimentND):
         return fig, axs
 
     def _update_fig(self, data, fig, axs):
-        Z_mat = data['data'][self.z_value]
+        if self.z_value == 'population_shots':
+            Z_mat = data['data']['population_corrected']
+        else:
+            Z_mat = data['data'][self.z_value]
+
         for ro_index in range(len(Z_mat)):
             # print(axs[ro_index].images[-1][-1])
             im = axs[ro_index].get_images()[-1],

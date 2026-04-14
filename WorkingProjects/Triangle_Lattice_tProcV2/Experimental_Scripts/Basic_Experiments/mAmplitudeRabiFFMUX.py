@@ -75,7 +75,7 @@ class AmplitudeRabiFFMUX(ExperimentClass):
 
     def acquire(self, progress=False):
         # You would overwrite these in the config if you wanted to
-        cfg_ARabi_defaults = {'start': 0, "expts": 31, "reps": 30, "rounds": 30,
+        cfg_ARabi_defaults = {'start': 0, "expts": 31, "reps": 900,
                                 "f_ge": self.cfg["qubit_freqs"][-1]}
         self.cfg = cfg_ARabi_defaults  | self.cfg
         self.cfg['step'] = int(self.cfg["max_gain"] / self.cfg['expts'])
@@ -118,54 +118,58 @@ class AmplitudeRabiFFMUX(ExperimentClass):
             print("Simple Fitting failed")
 
 
-
+        '''Complex fit doesn't seem to give the right result a lot, so I switched
+        back to the simple fit. - Josh 1/19/26'''
         ### Attempting more complex fit
         # initial guesses
-        pi_gain_guess = 1 / frequency_guess(x_pts, contrast) / 2  # your current guess
-        A_guess = 0.5 * (np.max(contrast) - np.min(contrast))
-        offset_guess = np.mean(contrast)
-        phi_guess = 0.0
+        # pi_gain_guess = 1 / frequency_guess(x_pts, contrast) / 2  # your current guess
+        # A_guess = 0.5 * (np.max(contrast) - np.min(contrast))
+        # offset_guess = np.mean(contrast)
+        # phi_guess = 0.0
+        #
+        # # restrict fit to moderate gains (first ~1–1.5 oscillations) - not sure if needed
+        # mask = x_pts <= 2 * pi_gain_guess  # don't use crazy-high gains
+        # x_fit = x_pts[mask]
+        # y_fit = contrast[mask]
+        #
+        # try:
+        #     # keep pi_gain near the FFT guess (e.g. within a factor of 2)
+        #     lower = [0.0, 0.5 * pi_gain_guess, -np.inf, -np.pi]
+        #     upper = [np.inf, 2.0 * pi_gain_guess, np.inf, np.pi]
+        #     popt, _ = curve_fit(
+        #         rabi_fit_func, x_fit, y_fit,
+        #         p0=[A_guess, pi_gain_guess, offset_guess, phi_guess],
+        #         bounds=(lower, upper),
+        #     )
+        #
+        #     A_fit, pi_gain_fit, offset_fit, phi_fit = popt
+        #     self.ampl_fit_complex = A_fit
+        #     self.pi_gain_fit_complex = np.abs(pi_gain_fit)
+        #     self.offset_fit_complex = offset_fit
+        #     self.phi_fit_complex = phi_fit
+        #
+        #     # Compare both fits:
+        #     resid = y_fit - rabi_fit_func(x_fit, *popt)
+        #     R2 = 1 - np.var(resid) / np.var(y_fit)
+        #     if R2 < 0.8:
+        #         print("Complex rabi fit looks bad, falling back to simple.")
+        #         if hasattr(self, 'ampl_fit_simple'):
+        #             self.ampl_fit = self.ampl_fit_simple
+        #             self.pi_gain_fit = self.pi_gain_fit_simple
+        #     else:
+        #         print("Complex rabi fit looks good.")
+        #         self.ampl_fit = self.ampl_fit_complex
+        #         self.pi_gain_fit = self.pi_gain_fit_complex
+        #
+        # except Exception as e:
+        #     print("Complex Fitting failed:", e)
+        #     # Resort to simple fit if succeeded
+        #     if hasattr(self, 'ampl_fit_simple'):
+        #         self.ampl_fit = self.ampl_fit_simple
+        #         self.pi_gain_fit = self.pi_gain_fit_simple
 
-        # restrict fit to moderate gains (first ~1–1.5 oscillations) - not sure if needed
-        mask = x_pts <= 2 * pi_gain_guess  # don't use crazy-high gains
-        x_fit = x_pts[mask]
-        y_fit = contrast[mask]
-
-        try:
-            # keep pi_gain near the FFT guess (e.g. within a factor of 2)
-            lower = [0.0, 0.5 * pi_gain_guess, -np.inf, -np.pi]
-            upper = [np.inf, 2.0 * pi_gain_guess, np.inf, np.pi]
-            popt, _ = curve_fit(
-                rabi_fit_func, x_fit, y_fit,
-                p0=[A_guess, pi_gain_guess, offset_guess, phi_guess],
-                bounds=(lower, upper),
-            )
-
-            A_fit, pi_gain_fit, offset_fit, phi_fit = popt
-            self.ampl_fit_complex = A_fit
-            self.pi_gain_fit_complex = np.abs(pi_gain_fit)
-            self.offset_fit_complex = offset_fit
-            self.phi_fit_complex = phi_fit
-
-            # Compare both fits:
-            resid = y_fit - rabi_fit_func(x_fit, *popt)
-            R2 = 1 - np.var(resid) / np.var(y_fit)
-            if R2 < 0.8:
-                print("Complex rabi fit looks bad, falling back to simple.")
-                if hasattr(self, 'ampl_fit_simple'):
-                    self.ampl_fit = self.ampl_fit_simple
-                    self.pi_gain_fit = self.pi_gain_fit_simple
-            else:
-                print("Complex rabi fit looks good.")
-                self.ampl_fit = self.ampl_fit_complex
-                self.pi_gain_fit = self.pi_gain_fit_complex
-
-        except Exception as e:
-            print("Complex Fitting failed:", e)
-            # Resort to simple fit if succeeded
-            if hasattr(self, 'ampl_fit_simple'):
-                self.ampl_fit = self.ampl_fit_simple
-                self.pi_gain_fit = self.pi_gain_fit_simple
+        self.ampl_fit = self.ampl_fit_simple
+        self.pi_gain_fit = self.pi_gain_fit_simple
 
         if hasattr(self, 'ampl_fit'):
             data['data']['ampl_fit'] = self.ampl_fit

@@ -12,7 +12,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templ
     ThreePartProgramTwoFF, ThreePartProgramOneFF
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampCurrentCorrelationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers, CorrelationAnalysis, SweepHelpers
+from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers, SweepHelpers
 from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensate
 
 
@@ -39,13 +39,15 @@ class RampBeamsplitterPopulationVsTime(SweepExperiment1D_plots):
             raise TypeError('t_offset must be an int or array like of ints')
 
         t_offset -= np.min(t_offset)
-        print("Actual offsets:", t_offset)
+        # print("Actual offsets:", t_offset)
 
         assert ((t_offset >= 0).all())
         ff_ro_pad = math.ceil(max(t_offset) / 16) * 16
 
         # Ramp
-        Ramps = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        # Ramps = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        Ramps = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+
         # BS jump then readout jump
         gain_pulse   = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Pulse')
         gain_expt    = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Expt')
@@ -93,6 +95,8 @@ class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
 
         # Ramp
         self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg,'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
         # BS jump then readout jump
         gain_expt    = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Expt')
@@ -190,64 +194,4 @@ class CleanTimingCorrelations(RampBeamsplitterCleanTiming, RampCurrentCorrelatio
         return fig, ax
 
 
-
-class CleanTimingCorrelationsDoubleJump(CleanTimingCorrelations):
-    def init_sweep_vars(self):
-        super().init_sweep_vars()
-        self.plotted_jumps = False
-        for j in range(len(self.cfg['intermediate_jump_gains'])):
-            if self.cfg['intermediate_jump_gains'][j] is None:
-                self.cfg['intermediate_jump_gains'][j] = self.cfg['FF_Qubits'][str(j+1)]['Gain_BS']
-                self.cfg['intermediate_jump_samples'][j] = 0
-
-    def set_up_instance(self):
-        t_offset = np.array(self.cfg['t_offset'], dtype=int)
-        if isinstance(t_offset, int):
-            # this won't do anything because we are offsetting every channel relative to the channel with the least offset
-            t_offset = np.array([t_offset] * len(self.cfg['fast_flux_chs']))
-        elif not isinstance(t_offset, (list, np.ndarray, tuple)):
-            raise TypeError('t_offset must be an int or array like of ints')
-
-        t_offset -= np.min(t_offset)
-        print("Actual offsets:", t_offset)
-
-        assert ((t_offset >= 0).all())
-
-        # Ramp
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain',
-                                                                           'Gain_Expt', self.cfg['ramp_time'])
-        self.cfg['expt_samples1'] = self.cfg['ramp_time']
-        # BS jump then readout jump
-        gain_expt = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Expt')
-        gain_bs = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_BS')
-        gain_readout = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Readout')
-
-        max_padded_length = max((t_off+t_ij for t_off, t_ij in zip(t_offset, self.cfg['intermediate_jump_samples'])))
-        IQArray = []
-        for j, (expt, bs, readout) in enumerate(zip(gain_expt, gain_bs, gain_readout)):
-            t_ijump = self.cfg['intermediate_jump_samples'][j]
-            ijump = self.cfg['intermediate_jump_gains'][j]
-            arr = np.concatenate((np.full(t_offset[j], expt), # t_offset, stay at ramp
-                                  np.full(t_ijump, ijump),    # intermediate (first) jump
-                                  np.full(self.cfg['expt_samples2'], bs),  # beamsplitter jump
-                                  # pad end with compensated readout jump
-                                  np.full(16 * 5 + max_padded_length - t_offset[j] - t_ijump, readout)))
-            arr = Compensate(arr - expt, expt, j + 1)
-            IQArray.append(arr)
-        self.cfg["IDataArray2"] = IQArray
-        print([len(arr) for arr in IQArray])
-        self.cfg['expt_samples2'] = len(IQArray[0])
-
-
-        # Currently this shows the beamsplitter_time = 0 sample, change this for it to be useful
-        # total_len = self.cfg['start'] + self.cfg['expts']*self.cfg['step'] + max_padded_length + 16*5
-        # if not self.plotted_jumps:
-        #     fig, ax = plt.subplots()
-        #     for i in range(len(self.cfg["IDataArray2"])):
-        #         ax.plot(self.cfg['IDataArray2'][i][:total_len], marker='o', label=f'Qubit {i + 1}')
-        #     ax.legend()
-        #     fig.canvas.draw()
-        #     fig.show()
-        #     # plt.show()
-        #     self.plotted_jumps = True
 

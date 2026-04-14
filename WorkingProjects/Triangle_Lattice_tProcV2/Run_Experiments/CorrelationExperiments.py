@@ -2,7 +2,6 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibration_SSMUX import \
     (RampCurrentCalibration1DShots)
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampExperiments import TimeVsPopulation
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCorrelationExperiments import PopulationShots, RampPopulationShots, OscillationPopulationShots, RampOscillationPopulationShots
 

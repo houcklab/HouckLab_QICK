@@ -2,7 +2,9 @@
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mBeamsplitterCorrelations_CleanTiming import \
-    CleanTimingCorrelations, CleanTimingCorrelationsDoubleJump, RampBeamsplitterPopulationVsTime
+    CleanTimingCorrelations, RampBeamsplitterPopulationVsTime
+from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mBSDoubleJump_CleanTiming import \
+    BSClean_Correlations as CleanTimingCorrelationsDoubleJump
 from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR, RampBeamsplitterR1D, RampCurrentCorrelationsR, RampDoubleJumpGainR, \
     RampDoubleJumpIntermediateSamplesR, RampDoubleJumpR1D, RampDoubleJumpCorrelations, SweepRampLengthCorrelations, \
@@ -26,17 +28,18 @@ Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 # Qubit_Pulse = ['4_4Q', '5_4Q', '8_4Q', '1_4Q']
 
 
-Q = 4
+Q = 6
 # Qubit_Pulse = [Q]
-# Qubit_Readout = [Q, Q+1]
+Qubit_Readout = [Q, Q+1]
 
-Sweep_BeamsplitterGain = False
-sweep_bs_gain_dict = {'swept_qubit': Q, 'reps': 200, 'ramp_time': 1000,
+Sweep_BeamsplitterGain = True
+sweep_bs_gain_dict = {'swept_qubit': Q, 'reps': 5*200, 'ramp_time': 1000,
                       # 't_offset': [13,15,4,15,10,10,6,0],
                       # 't_offset': [25,27,16,27,10,10,9,0],
-                      't_offset': [-1,1-3,3,6,5,-1,1,-2],
-                      'relax_delay': 120,
-                        'gainStart':  None, 'gainStop': None, 'gainNumPoints': 11,
+                      't_offset': #Qubit_Parameters[beamsplitter_point]['t_offset'],
+                          [-1,1-3,1,6,5,-1,-30,-2],
+                      'relax_delay': 180,
+                        'gainStart':  None, 'gainStop': None, 'gainNumPoints': 13,
                         'start': 50, 'step': 8, 'expts': 71}
 
 
@@ -57,12 +60,12 @@ sweep_bs_gain_dict['gainStop'] = center + 1000
 # "good" offsets = [22, 24, 13, 24, 8, 8, 9, 0]
 Sweep_BeamsplitterOffset = False
 # Think about how t_offset will cause some qubits to stay at FF_BS for longer than others
-sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 25*200, 'ramp_time': 1000,
+sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 1000, 'ramp_time': 1000,
                         't_offset': Qubit_Parameters[beamsplitter_point]['t_offset'],
                         'relax_delay': 180,
-                        'offsetStart': 10, 'offsetStop': 30,
+                        'offsetStart': -40, 'offsetStop': 0,
                         'offsetStep': 1,
-                        'start': 0, 'step': 12, 'expts': 71}
+                        'start': 0, 'step': 1, 'expts': 71}
 
 
 # Qubit_Pulse = [3,1]
@@ -70,13 +73,13 @@ sweep_bs_offset_dict = {'swept_qubit': Q, 'reps': 25*200, 'ramp_time': 1000,
 Beamsplitter1D = False
 Run_CurrentCorrelations = False
 
-ramp_beamsplitter_1d_dict = {'reps': 10000, 'ramp_time': 1000,
+ramp_beamsplitter_1d_dict = {'reps': 10_000, 'ramp_time': 1000,
                              't_offset':
                              # np.array([22, 24, 13, 24, 8, 8, 9, 0])
                               Qubit_Parameters[beamsplitter_point]['t_offset'],
-                             'relax_delay': 180,
+                             'relax_delay': 200,
                              'start': 0, 'step': 8, 'expts': 71,
-                             'readout_pair_1': [2,3],
+                             'readout_pair_1': [1,2],
                              'readout_pair_2': [4,5],
                              }
 
@@ -109,7 +112,7 @@ sweep_BS_gain_correlations_dict['gainStart'] = center - 1000
 sweep_BS_gain_correlations_dict['gainStop'] = center + 1000
 
 
-sweep_BS_offset_correlations = True
+sweep_BS_offset_correlations = False
 sweep_BS_offset_correlations_dict = {'swept_qubit': 4, 'reps': 1000,
                                      'offsetStart': 15, 'offsetStop': 30, 'offsetStep': 1,}
 
@@ -126,8 +129,8 @@ double_jump_base = {'reps': 400, 'ramp_time': 1000,
                         Qubit_Parameters[beamsplitter_point]['t_offset'],
                     'relax_delay': 180,
                     'start': 0, 'step': 16, 'expts': 71,
-                    'intermediate_jump_samples': Qubit_Parameters[ijump_point]['IJ']['samples'],
-                    'intermediate_jump_gains': Qubit_Parameters[ijump_point]['IJ']['gains'],}
+                    'intermediate_jump_samples': Qubit_Parameters[beamsplitter_point].get('ij_samples',[None]*8),
+                    'intermediate_jump_gains':   Qubit_Parameters[beamsplitter_point].get('ij_gains',[None]*8)}
 
 Sweep_DoubleJump_BS_Gain = False
 double_jump_BS_gain_dict = {'swept_qubit': Q,
@@ -217,7 +220,7 @@ if Beamsplitter1D:
 
 if Run_CurrentCorrelations:
     RampCurrentCorrelationsR(path="RampBeamsplitterCorrelationsR", outerFolder=outerFolder,
-                        cfg=config | ramp_beamsplitter_1d_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
+                        cfg=config | ramp_beamsplitter_1d_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 if Run_CurrentCorrelations_CleanTiming:
     CleanTimingCorrelations(path="RampBeamsplitterCleanTiming", outerFolder=outerFolder,
                         cfg=config | ramp_beamsplitter_1d_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)

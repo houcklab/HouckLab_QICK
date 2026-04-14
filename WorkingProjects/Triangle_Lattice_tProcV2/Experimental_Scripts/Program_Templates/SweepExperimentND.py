@@ -52,7 +52,7 @@ class SweepExperimentND(ExperimentClass):
         pass
 
 
-    def _display_plot(self, data, fig, axs, plot_fit):
+    def _display_plot(self, data, fig, axs):
         print("Display not implemented for this experiment: did you mean to inherit one of the plotting classes?")
     
     def _update_fig(self, data, fig, axs):
@@ -214,7 +214,7 @@ class SweepExperimentND(ExperimentClass):
             if (plotDisp or plotSave) and (len(self.sweep_shape) <= 1) or (sweep_indices[-1] == self.sweep_shape[-1] - 1):
                 if first_iteration: # Create figure
                     fig, axs = self.display(self.data, figNum=figNum,
-                                            plotDisp=plotDisp, block=False,plotSave=False)
+                                            plotDisp=plotDisp, block=False, plotSave=False)
                     first_iteration = False
                 else: # Update figure
                     self._update_fig(self.data, fig, axs)
@@ -223,7 +223,7 @@ class SweepExperimentND(ExperimentClass):
                     # fig.show()
                     # plt.pause(0.01)
 
-            if time.time() - self.last_saved_time > 5 * 60:  # Save data every 5 minutes
+            if time.time() - self.last_saved_time > 60 * 60:  # Save data every 60 minutes
                 self.last_saved_time = time.time()
                 self.save_data(data=self.data)
                 if plotSave:
@@ -263,7 +263,7 @@ class SweepExperimentND(ExperimentClass):
         # plt.show(block=True)
         pass
 
-    def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None, plot_fit=False):
+    def display(self, data=None, plotDisp=True, figNum=1, plotSave=True, block=True, fig_axs=None):
         readout_list = data["data"]["Qubit_Readout_List"]
 
         # Create a new figure if you did not pass in your own fig and axs.
@@ -274,7 +274,7 @@ class SweepExperimentND(ExperimentClass):
         
         # Run the corresponding display code
         if plotDisp or plotSave:
-            self._display_plot(data, fig_axs = (fig, axs), plot_fit = plot_fit)
+            self._display_plot(data, fig_axs = (fig, axs))
 
         if plotSave:
             plt.savefig(self.iname[:-4] + '.png')
@@ -283,7 +283,6 @@ class SweepExperimentND(ExperimentClass):
             plt.pause(0.1)
 
         return fig, axs
-
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

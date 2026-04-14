@@ -14,7 +14,7 @@ def characterize_readout(config, Qubit_Readout):
 
     new_config = config.copy()
     new_config["FF_Qubits"] = copy.deepcopy(new_config["FF_Qubits"])
-    new_config["Shots"] = 4000
+    new_config["Shots"] = 2*4000
     # new_config["Shots"] = 1
     print(f"Running single shot with {new_config['Shots']} shots.")
 

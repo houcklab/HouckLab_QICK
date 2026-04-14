@@ -45,7 +45,7 @@ class RampBeamsplitterBase(SweepExperimentND):
 
         # print(t_offset)
         t_offset -= np.min(t_offset)
-        print("Actual offsets:", t_offset)
+        # print("Actual offsets:", t_offset)
 
         assert((t_offset >= 0).all())
         self.cfg['max_t_offset'] = np.max(t_offset)
@@ -335,9 +335,9 @@ class RampDoubleJumpBase(RampBeamsplitterBase):
 
     def set_up_instance(self):
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
-        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['expt_samples1'])
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain',
-                                                                           'Gain_Expt', self.cfg['expt_samples1'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['expt_samples1'])
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain',
+        #                                                                    'Gain_Expt', self.cfg['expt_samples1'])
 
         self.cfg["IDataArray2"] = FFEnvelope_Helpers.StepPulseArrays(self.cfg, 'Gain_Expt', 'Gain_BS')
         # Add first jump
@@ -471,7 +471,13 @@ class RampDoubleJumpIntermediateSamplesR(RampDoubleJumpBase, SweepExperiment2D_p
         data_dict = data['data']
         Z = np.asarray(data_dict[self.z_value], float)  # (R, O, T)
         offsets = np.asarray(data_dict.get(SweepHelpers.key_savename(self.y_key), None), float)  # (O,)  # (O,)
-        wait_times = np.asarray(data_dict[self.loop_names[0]], float)  # (T,)
+
+        try:
+            x_key_name = self.x_key
+        except:
+            x_key_name = self.loop_names[0]
+
+        wait_times = np.asarray(data_dict[x_key_name], float)  # (T,)
 
         self.fit_params = fit_beamsplitter_offset(Z, offsets, wait_times)
         data_dict.update(self.fit_params)

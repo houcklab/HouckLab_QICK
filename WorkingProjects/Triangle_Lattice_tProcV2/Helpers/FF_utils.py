@@ -69,7 +69,10 @@ def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start
 
 
 # For constant FF pulses
-def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=None):
+def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=None, **kwargs):
+    if kwargs:
+        print("FFPulses: kwargs:", kwargs)
+
     if waveform_label is None:
         waveform_label = str(random())
 
@@ -88,7 +91,7 @@ def FFPulses(instance, list_of_gains, length_us, t_start='auto', waveform_label=
                            length=length_us,
                            freq=0,
                            phase=0,
-                           gain=gain / 32766,
+                           gain=gain / 32766, **kwargs
                            )
 
         if t_start != 'auto':

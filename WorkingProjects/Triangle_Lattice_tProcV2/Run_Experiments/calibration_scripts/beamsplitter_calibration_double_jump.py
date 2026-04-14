@@ -26,18 +26,25 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentC
 
 
 calibrate_gain                  = False
-calibrate_intermediate_offset   = False
+calibrate_intermediate_offset   = True
 calibrate_intermediate_gain     = True
 
 
 
-beamsplitter_point = '2356_correlations'
+beamsplitter_point = '1234_bonds'
 
 # rungs = ['34_dis', '78_dis']
 # rungs = ['23_dis', '45_dis', '67_dis']
 # rungs = ['23_dis', '67_dis']
-# rungs = ['12', '34', '56', '78']
-rungs = ['23','56']
+rungs = ['12', '34', '56', '78']
+# rungs = ['23','78']
+
+Override_ramp_state = None
+# Override_ramp_state = '2345_dis'
+
+Override_Qubit_Pulse = None
+Override_Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+Override_Qubit_Pulse = [2, 4, 6, 7]
 
 offset_pi_coeff_choice = 0.5 # Choices are 0, 0.5, 1, 2 corresponding to half-pi, pi, 2pi offset points
 
@@ -72,18 +79,28 @@ def calibrate_rung_gains(BS_FF, rungs):
 
     for i in range(len(rungs)):
         rung = rungs[i]
-
-        # redefine ramp initial and final point
-
-        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
-        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
-
         q1 = int(rung[0])
         q2 = int(rung[1])
 
+
+        # redefine ramp initial and final point
+        if Override_ramp_state == None:
+            rampstate = rung
+
+        else:
+            rampstate = Override_ramp_state
+
+        if Override_Qubit_Pulse == None:
+            Qubit_Pulse = [q1]
+        else:
+            Qubit_Pulse = Override_Qubit_Pulse
+
+        Init_FF = Qubit_Parameters[rampstate]['Ramp']['Init_FF']
+        Ramp_FF = Qubit_Parameters[rampstate]['Ramp']['Expt_FF']
+
+
         assert(abs(q1 - q2) == 1)
 
-        Qubit_Pulse = [q1]
         Qubit_Readout = [q1, q2]
 
 
@@ -157,17 +174,27 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
     for i in range(len(rungs)):
         rung = rungs[i]
 
-        # redefine ramp initial and final point
-
-        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
-        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
-
         q1 = int(rung[0])
         q2 = int(rung[1])
 
+        # redefine ramp initial and final point
+        if Override_ramp_state == None:
+            rampstate = rung
+
+        else:
+            rampstate = Override_ramp_state
+
+        if Override_Qubit_Pulse == None:
+            Qubit_Pulse = [q1]
+        else:
+            Qubit_Pulse = Override_Qubit_Pulse
+
+        Init_FF = Qubit_Parameters[rampstate]['Ramp']['Init_FF']
+        Ramp_FF = Qubit_Parameters[rampstate]['Ramp']['Expt_FF']
+
+
         assert(abs(q1 - q2) == 1)
 
-        Qubit_Pulse = [q1]
         Qubit_Readout = [q1, q2]
 
 

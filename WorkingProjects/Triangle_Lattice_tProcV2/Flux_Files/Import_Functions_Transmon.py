@@ -60,7 +60,14 @@ class Transmon:
         # flux -> freq
         self.freq = create_qubit_function(self.transmon_popt)
         # freq -> flux
-        self.flux = create_qubit_inverse_function(self.freq)
+        self._flux = create_qubit_inverse_function(self.freq)
+        def flux(f):
+            try:
+                return self._flux(f)
+            except ValueError:
+                print(f"Error in {self.name}: may be outside the frequency bounds?")
+                return self._flux(f)
+        self.flux = flux
 
         # functions using V, no crosstalk correction
         self.V_to_freq = lambda V: transmon_fit(V, *self.transmon_popt)
@@ -112,8 +119,8 @@ def create_qubit_function(_popt):
 
 def create_qubit_inverse_function(qubit_function):
     def find_root(f, __qubit_function):
-        bracket = (0, 0.5) # Increase this range due to some allowable qubit freqs failing
 
+        bracket = (0, 0.5) # Increase this range due to some allowable qubit freqs failing
         if isinstance(f, (list, np.ndarray)):
             fluxes = np.empty(len(f))
             for i in range(len(f)):
@@ -127,6 +134,7 @@ def create_qubit_inverse_function(qubit_function):
             return result.root
 
     return lambda f: find_root(f, qubit_function)
+
 
 
 def create_qubit_flux_to_voltage(_popt):

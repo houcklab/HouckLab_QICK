@@ -5,7 +5,7 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers i
 from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
 
 from .BS_Mux8_1234_Readout import BS1234_Readout, Readout_1234_FF
-from .BS_Mux8_1254_Readout import BS1254_Readout, Readout_1254_FF
+from .BS_Mux8_1245_Readout import BS1245_Readout, Readout_1245_FF
 from .BS_Mux8_1267_Readout import BS1267_Readout
 from .BS_Mux8_2356_Readout import BS2356_Readout, Readout_2356_FF
 from .BS_Mux8_2345_Readout import BS2345_Readout, Readout_2345_FF
@@ -17,7 +17,7 @@ from .BS_Mux8_4578_Readout_Josh import BS4578_Readout_Josh
 # 8Q Pi Flux parameters
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = FF_gains([-9379, -10100, -7653, -10226, -8994, -9423, -6355, -9142])
+Expt_FF = FF_gains([-9609, -10480, -7921, -10480, -9224, -9493, -6410, -9118])
 
 
 # nosiy
@@ -68,7 +68,7 @@ resonance = 3800
 
 Qps = QubitParams()
 
-ramsey_detuning = 6000
+ramsey_detuning = -6000
 
 Qps.add_pulse('1R', resonance, 4032, 0.03, ff_array = Expt_FF.subsys(1, det=ramsey_detuning))
 Qps.add_pulse('2R', resonance, 4032, 0.03, ff_array = Expt_FF.subsys(2, det=ramsey_detuning))
@@ -149,24 +149,24 @@ drive_params = {
 
     '1_4Q_readout': {'Readout': {'Frequency': 7121.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3941.0, 'sigma': 0.03, 'Gain': 5263},
+                     'Qubit': {'Frequency': 3944.1, 'sigma': 0.03, 'Gain': 2884},
                      'Pulse_FF': Readout_1234_FF},
     '4_4Q_readout': {'Readout': {'Frequency': 7568.4, 'Gain': 1228,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4194.6, 'sigma': 0.03, 'Gain': 6248},
+                     'Qubit': {'Frequency': 4192.7, 'sigma': 0.03, 'Gain': 3991},
                      'Pulse_FF': Readout_1234_FF},
     '8_4Q_readout': {'Readout': {'Frequency': 7309.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4005.0, 'sigma': 0.03, 'Gain': 5562},                     'Pulse_FF': Readout_1234_FF},
+                     'Qubit': {'Frequency': 4001.4, 'sigma': 0.03, 'Gain': 3631},                    'Pulse_FF': Readout_1234_FF},
     '5_4Q_readout': {'Readout': {'Frequency': 7364.1, 'Gain': 1400,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3829.0, 'sigma': 0.03, 'Gain': 12000},
+                     'Qubit': {'Frequency': 3828.1, 'sigma': 0.03, 'Gain': 8229},
                      'Pulse_FF': Readout_1234_FF},
     '6_4Q_readout': {'Readout': {'Frequency': 7364.1, 'Gain': 1400,
-                          'FF_Gains': Readout_1254_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
+                          'FF_Gains': Readout_1245_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
               # 'Qubit': {'Frequency': 3970.4, 'sigma': 0.03, 'Gain': 4833},
                 'Qubit': {'Frequency': 3973.4, 'sigma': 0.03, 'Gain': 5833},
-                'Pulse_FF': Readout_1254_FF},
+                'Pulse_FF': Readout_1245_FF},
 
     '2_4Q_readout': {'Readout': {'Frequency': 7077.8, 'Gain': 885,
                       'FF_Gains': [11035, 3643, 17468, -7500, -8500, -2400, 3665, 6214], 'Readout_Time': 3,
@@ -235,6 +235,7 @@ ramp_params = {
     '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, -12501, -13248, 6380, 2214]}},
     # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
 
+
     # (4020.0, 4020.0, 4380.0, 4245.0, 4245.0, 4095.0, 4095.0, 4418.0)
     # '1254_correlations': {'BS':{'BS_FF': [-752, -908, 25392, 8588, 9011, 3333, 5709, 24395]}},
 
@@ -280,25 +281,30 @@ ramp_params = {
 
     # (4415.2, 4424.4, 4389.6, 4000.0, 4000.0, 4392.0, 3600.0, 3600.0)
     '4578_correlations': {'BS': {'BS_FF': [26873, 29001, 25392, -2530, -1488, 28060, -13418, -16604]}},
+
+    '1234_bonds': {'BS': {'BS_FF': [-18390, -19389, 13545, 11625, -12502, -13102, 10782, 5697]},
+                   't_offset': np.array([22, 24, 13, 24, 8, 8, 8, 0]),
+                   'ij_samples': [0, 3, 2, 0, 2, 0, 2, 0],
+                   'ij_gains': [None, -6183, -400, None, 2000, None, -4000, None],
+                   'pad_bs':     [3, 0, 0, 2, 0, 2, 0, 0],
+      },
+
+    '2345_bonds': {'BS': {'BS_FF': [-26873, 13731, 13421, -16640, -15217, 8400, 11216, -24395]},
+                   't_offset': np.array([22, 24, 13, 24, 8, 8, 8, 0]),
+                   'ij_samples': [0, 0, 2, 2, 0, 0, 3, 0],
+                   'ij_gains': [None, None, 2680, 2525, None, None, -6100, None],
+                   'pad_bs':     [0, 2, 0, 0, 2, 3, 0, 0],
+      },
+
 }
 
 
-
-# readout_params = BS1234_Readout
-# readout_params = BS2356_Readout
-# readout_params = BS2378_Readout
-# readout_params = BS3467_Readout
-# readout_params = BS4578_Readout
-
-readout_params = BS2345_Readout
+readout_params = BS1234_Readout
 
 Ramp_state = '8Q_4815'
 # Ramp_state = '45'
 
-beamsplitter_point = '2345_correlations_double'
-# beamsplitter_point = '1234_correlations_double'
-# beamsplitter_point = '2356_correlations_double'
-# beamsplitter_point = '4578_correlations'
+beamsplitter_point = '2345_bonds'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d
@@ -340,7 +346,9 @@ FF_gain6_BS = BS_FF[5]
 FF_gain7_BS = BS_FF[6]
 FF_gain8_BS = BS_FF[7]
 
-gains = [Readout_1254_FF, Init_FF, Ramp_FF, BS_FF, Readout_1254_FF]
+Readout_4Q = Readout_1234_FF
+
+gains = [Readout_1245_FF, Init_FF, Ramp_FF, BS_FF, Readout_1245_FF]
 labels = ['pulse', 'init', 'ramp', 'beamsplitter', 'readout']
 for label, gain in zip(labels, gains):
     print(label, gain[3])

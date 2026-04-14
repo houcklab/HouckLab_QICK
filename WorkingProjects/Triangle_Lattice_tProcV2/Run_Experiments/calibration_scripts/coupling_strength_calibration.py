@@ -18,13 +18,16 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_fi
 rungs = ['12', '23', '34', '45', '56', '67', '78']
 legs = ['13', '24', '35', '46', '57', '68']
 
-pairs = rungs + legs
-
 pairs = legs
 
+# pairs = ['35', '46']
+# pairs = ['46','68']
+# pairs = ['68']
+# pairs = ['12', '23', '34', '45']
+
 oscillation_gain_dict = {'qubit_FF_index': None, 'reps': 200,
-                             'start': 1, 'step': 20, 'expts': 71,
-                             'gainRange': 1000, 'gainNumPoints': 11, 'relax_delay': 100,
+                             'start': 1, 'step': 7, 'expts': 71,
+                             'gainRange': 2000, 'gainNumPoints': 11, 'relax_delay': 150,
                              'fit': True}
 
 ###############################
@@ -35,10 +38,10 @@ def calibrate_coupling(pairs):
         q_i, q_j = [int(c) for c in pair]
 
         Qubit_Readout = [q_i, q_j]
-        Qubit_Pulse =   [f"{q_i}R"]
+        # Qubit_Pulse =   [f"{q_i}R"]
         Qubit_Pulse =   [q_i]
 
-        Expt_FF_subsys = Expt_FF.subsys(q_i, q_j, det=-10000)
+        Expt_FF_subsys = Expt_FF.subsys(q_i, q_j, det= -10000)
 
 
         FF_gain1_expt = Expt_FF_subsys[0]
@@ -50,7 +53,7 @@ def calibrate_coupling(pairs):
         FF_gain7_expt = Expt_FF_subsys[6]
         FF_gain8_expt = Expt_FF_subsys[7]
 
-        oscillation_gain_dict['qubit_FF_index'] = q_j
+        oscillation_gain_dict['qubit_FF_index'] = q_j if q_j != 7 else q_i
 
         oscillation_gain_dict['gainStart'] = Expt_FF[oscillation_gain_dict['qubit_FF_index']-1] - oscillation_gain_dict['gainRange']//2
         oscillation_gain_dict['gainStop'] = Expt_FF[oscillation_gain_dict['qubit_FF_index']-1] + oscillation_gain_dict['gainRange']//2
@@ -79,13 +82,16 @@ def calibrate_coupling(pairs):
 
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
-        center_gain_1 = data['data']['popt_list'][0][0]
-        center_gain_2 = data['data']['popt_list'][1][0]
+        try:
+            center_gain_1 = data['data']['popt_list'][0][0]
+            center_gain_2 = data['data']['popt_list'][1][0]
 
-        coupling_1 = data['data']['popt_list'][0][2]
-        coupling_2 = data['data']['popt_list'][1][2]
+            coupling_1 = data['data']['popt_list'][0][2]
+            coupling_2 = data['data']['popt_list'][1][2]
 
-        print(f'coupling strength {coupling_1:.2f} MHz found at gain {round(center_gain_1)}')
+            print(f'coupling strength {coupling_1:.2f} MHz found at gain {round(center_gain_1)}')
+        except:
+            print("Coupling strength could not be found.")
 
 
 

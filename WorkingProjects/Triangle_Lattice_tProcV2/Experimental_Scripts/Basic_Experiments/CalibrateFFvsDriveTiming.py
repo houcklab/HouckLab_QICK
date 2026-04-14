@@ -95,8 +95,10 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
                        length=cfg["res_length"])
 
         FF.FFDefinitions(self)
-        for FFreadout in self.FFReadouts:
-            assert FFreadout == 0, "Use 0 for FFReadouts for this experiment."
+        if cfg.get('invert') == True: # swap readouts and pulse, look for negative instead
+            self.FFPulse, self.FFReadouts = self.FFReadouts, self.FFPulse
+        # for FFreadout in self.FFReadouts:
+        #     assert FFreadout == 0, "Use 0 for FFReadouts for this experiment."
         # longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
         # FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
@@ -156,17 +158,24 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
 
         self.FFLoad16Waveforms(self.FFReadouts, self.FFReadouts, self.IQArray)
 
-        self.FFPulses(self.FFReadouts, 10, t_start=0)
+        self.FFPulses(self.FFReadouts, 10, t_start=0, stdysel='last')
         self.delay(10)
         self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive', t=self.cycles2us(cfg['qubit_delay_cycles']+2))
+
         self.delay_reg("delay_cycles")
         self.FFPulses_arb_predelay(t_start=0) # 2 cycle delay included here
-
-        # can't use delay auto since qick doesn't know about jumps (?)
+        # can't use delay auto since qick doesn't know about jumps
         self.delay(self.cycles2us(3 + self.us2cycles(self.qubit_length_us)))
 
+        # Ensure drive actually finishes before readout
+        self.FFPulses(self.FFReadouts, self.cycles2us(cfg['qubit_delay_cycles']) + 0.100, t_start=0)
+        self.delay(self.cycles2us(cfg['qubit_delay_cycles']) + 0.100)
+
         # 3: FFReadouts
-        self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
+        if self.cfg.get('invert'):
+            self.FFPulses(self.FFPulse, self.cfg["res_length"], t_start=0)
+        else:
+            self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
             self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
@@ -174,8 +183,12 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
         self.delay(self.cfg["res_length"] + 10)  # us
 
         # End: invert FF pulses to ensure pulses integrate to 0
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
-        self.delay(self.cfg["res_length"])
+        if self.cfg.get('invert'):
+            self.FFPulses(-1 * self.FFPulse, self.cfg["res_length"], t_start=0)
+        else:
+            self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"], t_start=0)
+        self.FFPulses(-1 * self.FFReadouts, self.cfg['qubit_delay_cycles']+0.1, t_start=0)
+        self.delay(self.cfg["res_length"]+self.cfg["qubit_delay_cycles"]+0.1)
         self.FFInvert_arb_predelay(t_start=0)
         self.delay(self.cycles2us(3 + self.us2cycles(self.qubit_length_us)))
         self.FFPulses(-1 * self.FFReadouts, 10, t_start=0)
@@ -210,19 +223,26 @@ class CalibrateFFvsDriveTiming(SweepExperiment1D_lines):
         # def lorentzian_fit(x, x0, a, b, c):
         #     return a / (1 + (x - x0) ** 2 / b ** 2) + c
 
-        def gaussian_fit(x, x0, a, b, c):
-            return a * np.exp(-(x - x0) ** 2 / b ** 2 / 2) + c
+        # Gaussian fit but truncated at > 2 sigma away (to match 4*sigma pi pulse)
+        def gaussian_fit_trunc(x, x0, a, b, c):
+            within_6_sigma = np.abs(x-x0) < 3*np.abs(b)
+            return  a * np.exp(-(x - x0) ** 2 / b ** 2 / 2) * within_6_sigma + c
 
         pop_vec = data['data'][self.z_value][0]
         x_vec = data['data'][self.x_name]
 
-        width_guess = self.cfg['sigma']/NS_PER_SAMPLE * 16
-        p0 = [x_vec[np.argmax(pop_vec)], np.max(pop_vec), width_guess, 0]
+        width_guess = 1000*self.cfg['sigma']/NS_PER_SAMPLE
+
+        if self.cfg.get('invert') is not True:
+            p0 = [x_vec[np.argmax(pop_vec)], np.max(pop_vec), width_guess, 0]
+        else:
+            p0 = [x_vec[np.argmin(pop_vec)], np.min(pop_vec)-1, width_guess, np.max(pop_vec)]
+        # print('width_guess',width_guess)
         try:
-            params, _ = curve_fit(gaussian_fit, x_vec, pop_vec, p0)
+            params, _ = curve_fit(gaussian_fit_trunc, x_vec, pop_vec, p0)
             print(params)
-            ax.plot(x_vec, gaussian_fit(x_vec, *params), color='black')
+            ax.plot(x_vec, gaussian_fit_trunc(x_vec, *params), color='black')
             ax.axvline(params[0], color='black', linestyle='--', label=f"x0 = {params[0]:.2f} samples = {params[0]*NS_PER_SAMPLE:.2f} ns")
             ax.legend(prop={'size': 14})
-        except:
+        except RuntimeError:
             print("No fit found.")

@@ -31,9 +31,12 @@ set_unused_to_zero = True
 
 DACs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
-
+spi_rack.close()
 
 def set_voltages(voltages):
+    spi_rack = SPIRack(port, COM_speed, timeout)
+    D5a = D5aModule(spi_rack, module=2, reset_voltages=False, ramp_step=0.003, ramp_interval=0.01)
+
     for DA, vol in zip(DACs, voltages):
         D5a.set_voltage_ramp(DA, vol)
 
@@ -45,6 +48,7 @@ def set_voltages(voltages):
     for i in range(D5a._num_dacs):
         print(f'{i}: {np.round(D5a.get_settings(i)[0], 4)} V')
 
+    spi_rack.close()
 
 # spi_rack.close()
 

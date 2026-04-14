@@ -11,8 +11,8 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCurrentCorre
 
 from qubit_parameter_files.Qubit_Parameters_Master import *
 
-Qubit_Readout = [1,2,3,4,5,6,7,8]
-Qubit_Pulse = ['1_4QB', '4_4QB', '8_4QB', '5_4QB']
+Qubit_Readout = [7,2,3,4,5,6,7,8]
+# Qubit_Pulse = ['1_4QB', '4_4QB', '8_4QB', '5_4QB']
 
 Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 # Qubit_Pulse = [1,4,8,5]
@@ -54,7 +54,7 @@ ramp_duration_calibration_dict = {'reps': 2000, 'duration_start': int(0), 'durat
 
 
 # can plot populations during and after ramp
-run_ramp_population_over_time = False
+run_ramp_population_over_time = True
 run_ramp_population_over_time_shots = False
 population_vs_delay_dict = {'ramp_duration' : 1000, 'ramp_shape': 'cubic',
                             'time_start': 0, 'time_end' : 1500, 'time_num_points' : 21, 'reps': 1000,
@@ -78,7 +78,7 @@ run_ramp_population_shots = False
 ramp_population_shots_dict = {'reps': 5000, 'ramp_duration': 1000, 'relax_delay': 200}
 
 run_ramp_density_correlations = False
-ramp_density_correlations_dict = {'reps': 1_000_000, 'ramp_duration': 1000, 'relax_delay': 200,
+ramp_density_correlations_dict = {'reps': 2_000_000, 'ramp_duration': 1000, 'relax_delay': 200,
                                   'pairs':[[1,2,3,4],[1,2,4,5],[1,2,5,6],[1,2,6,7],[1,2,7,8],
                                             [2,3,4,5],[2,3,5,6],[2,3,6,7],
                                             [3,4,5,6],

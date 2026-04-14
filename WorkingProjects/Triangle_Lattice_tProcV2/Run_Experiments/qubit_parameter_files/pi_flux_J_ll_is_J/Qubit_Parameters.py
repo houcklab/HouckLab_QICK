@@ -13,14 +13,15 @@ from .BS_Mux8_2345_Readout import BS2345_Readout, Readout_2345_FF
 from .BS_Mux8_2378_Readout import BS2378_Readout
 from .BS_Mux8_3467_Readout import BS3467_Readout
 from .BS_Mux8_4578_Readout import BS4578_Readout
-from .BS_Mux8_4578_Readout_Josh import BS4578_Readout_Josh
 
 # 8Q Pi Flux parameters
 
 # (3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0, 3800.0)
-Expt_FF = FF_gains([-9229, -9844, -7224, -9723, -8466, -8893, -6046, -7816])
+# Expt_FF = FF_gains([-9121, -9833, -6975, -8960, -8468, -8279, -5549, -8520])
+Expt_FF = FF_gains([-9081, -871, -6924, -8893, -6080, -8310, -5589, -8541])
 
-#disordered
+
+# disordered
 # Expt_FF = Expt_FF.add(Q2=125, Q4=125, Q6=125, Q8=125)
 # disordered
 # Expt_FF = FF_gains([-8332, -9820, -6088, -8973, -7072, -8393, -5027, -8877])
@@ -95,22 +96,22 @@ drive_params = {
 
     '1_4Q_readout': {'Readout': {'Frequency': 7121.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3937.4, 'sigma': 0.03, 'Gain': 5156},
+                     'Qubit': {'Frequency': 3938.4, 'sigma': 0.03, 'Gain': 3143},
                      'Pulse_FF': Readout_1234_FF},
     '4_4Q_readout': {'Readout': {'Frequency': 7568.4, 'Gain': 1228,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4186.8, 'sigma': 0.03, 'Gain': 6344},
+                     'Qubit': {'Frequency': 4186.8, 'sigma': 0.03, 'Gain': 3670},
                      'Pulse_FF': Readout_1234_FF},
     '8_4Q_readout': {'Readout': {'Frequency': 7309.5, 'Gain': 885,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 4028.4, 'sigma': 0.03, 'Gain': 6877},
+                     'Qubit': {'Frequency': 4029.4, 'sigma': 0.03, 'Gain': 4422},
                      'Pulse_FF': Readout_1234_FF},
     '5_4Q_readout': {'Readout': {'Frequency': 7364.1, 'Gain': 1400,
                           'FF_Gains': Readout_1234_FF, 'Readout_Time': 3, 'ADC_Offset': 1},
-                     'Qubit': {'Frequency': 3829.4, 'sigma': 0.03, 'Gain': 12660},
+                     'Qubit': {'Frequency': 3829.4, 'sigma': 0.03, 'Gain': 8214},
                      'Pulse_FF': Readout_1234_FF},
 }
-
+Readout_4Q = Readout_1234_FF
 ramp_params = {
     '12': {'Ramp':{'Init_FF': Expt_FF + [0,-5000, -12000, -12000, -12000, -12000, -12000, -12000],
                     'Expt_FF': Expt_FF + [0,0, -12000, -12000, -12000, -12000, -12000, -12000]}},
@@ -128,7 +129,7 @@ ramp_params = {
     '45': {'Ramp': {'Init_FF': Expt_FF + [-12000, -12000, -12000, 0, -5000, -12000, -12000, -12000],
                     'Expt_FF': Expt_FF + [-12000, -12000, -12000, 0, 0, -12000, -12000, -12000]}},
 
-    '56': {'Ramp':{'Init_FF': Expt_FF + [-12000, -12000, -12000, -12000,-5000,0, -12000, -12000],
+    '56': {'Ramp':{'Init_FF': Expt_FF + [-12000, -12000, -12000, -12000,0,-5000, -12000, -12000],
                         'Expt_FF': Expt_FF + [-8000, -8000, -8000, -8000,0,0, -8000, -8000]}},
 
     '67': {'Ramp':{'Init_FF': Expt_FF + [-12000,-12000,-12000,-12000,-12000, 0, -5000, -12000],
@@ -161,9 +162,9 @@ ramp_params = {
     '1234': {'Ramp': {'Init_FF': None,
                         'Expt_FF': Expt_FF + [0, 0, 0, 0, 8000, 8000, 8000, 8000]}},
     '1234_dis': {'Ramp': {'Init_FF': Init_4815_FF,
-                 'Expt_FF':Expt_FF.add(Q2=125, Q4=125, Q6=125, Q8=125)},},
+                 'Expt_FF':Expt_FF.add(Q2=150, Q4=-150, Q6=150, Q8=150)},},
     '2345_dis': {'Ramp': {'Init_FF': Init_4815_FF,
-                 'Expt_FF':Expt_FF.add(Q2=125, Q4=250, Q6=125)}},
+                 'Expt_FF':Expt_FF.add(Q2=150, Q4=150, Q6=150)}},
 
     '8Q_1854': {'Ramp':{'Init_FF': None,
                        'Expt_FF': Expt_FF}},
@@ -178,92 +179,121 @@ ramp_params = {
     # (3600.0, 3600.0, 4300.0, 4300.0, 3700.0, 3700.0, 4100.0, 4100.0)
     '1234_correlations_old': {'BS': {'BS_FF': [-18506, -19389, 13734, 11543, -12458, -13248, 5164, 2214]}},
 
+    '1234_correlations_34check': {'BS': {'BS_FF': [-18506, -19389, -345, -2185, -12458, -13248, 5164, 2214]}},
+
     # (3600.0, 3600.0, 4200.0, 4200.0, 3700.0, 3700.0, 4100.0, 4100.0)
     '1234_correlations': {'BS': {'BS_FF': [-18526, -19389, 8323, 6543, -12467, -13248, 5141, 2214]},
                           't_offset': np.array([21, 24, 13, 24, 8, 8, 9, 0]) # default values
                                                 -[2,2,2,2,2,0,0,0] # 56 offset correction
                                                 -[1,1,1,1,1,1,1,0] # 78 offset correction
                                                 -[1,0,1,0,0,0,1,0], # so that double jump gives 0 instead of 2pi},
+                          'ij_samples':[4, 0, 1, 0, 0, 0, 1, 0],
+                          'ij_gains':[-15530, None, -9058, None, None, None, -5000, None],
                           },
 
-
-    '1234_correlations_double': {'BS': {'BS_FF': [-18587, -19389, 13881, 11543, -12337, -13248, 6544, 2214]}},
-    # '1234_correlations_double': {'BS': {'BS_FF': [-18169, -19389, 13769, 11543, 12501, 13248, 13769, 13769]}},
-    '1234_intermediate': {'IJ':{'samples':[4, 0, 1, 0, 0, 0, 1, 0],
-                                'gains':[-15530, None, -9058, None, None, None, -5000, None]}},
-                                #'gains':[-14300, None, 1000, None, -20347, None, -2370, None]}},
-
-
-
+    # (3600.0, 3600.0, 4200.0, 4200.0, 3700.0, 3700.0, 4100.0, 4100.0)
+    '1234_bonds': {'BS': {'BS_FF': [-18563, -19389, 8302, 6543, -12500, -13248, 5158, 2214]},
+                          't_offset': np.array([18, 21, 10, 21,  5,  7,  8,  0])  # default values
+                                        + [0, 3, 2, 0, 0, 8, 2, 0], # padding to get close to pi/2 phase
+                          'ij_samples':   [0, 3, 3, 0, 0, 0, 3, 0],
+                          'ij_gains': [None, -15500, 10500, None, None, None, -2100, None],
+                          'pad_bs' :  np.array([3, 0, 0, 2, 8, 0, 0, 2]) # correct for additions to t_offset
+                                             + [3, 0, 0, 3, 0, 0, 0, 3] # correct for additions to ij_samples
+                          },
 
     # (3535.3, 4300.0, 4300.0, 3650.0, 3650.0, 4200.0, 4200.0, 3522.7)
-    '2345_correlations': {'BS': {'BS_FF': [-26873, 13458, 13421, -17041, -15217, 8332, 10782, -24395]},
-                          't_offset': np.array([22, 24, 13, 24, 8, 8, 9, 0])
-                                                - [0,0,0,0,0,0,0,0] # correct 4-5
-                                                + [1,1,0,0,0,0,0,0] # correct 2-3
-                                      - [0, 1, 0, 0, 0, 1, 0, 0],  # so that double jump gives 0 instead of 2pi}
+    '2345_correlations': {'BS': {'BS_FF': [-26873, 13220, 13421, -17192, -15319, 8012, 10782, -24395]},
+                          't_offset': np.array([22, 24, 12, 23, 7, 7, 7, 4]),
+                          'ij_samples':[0, 0, 1, 1, 0, 0, 1, 0],
+                          # 'ij_gains':[None, None, 4452, -12000, None, None, 5000, None],
+                          'ij_gains':[None, None, -8000, -21800, None, None, 17600, None],
+                          'pad_bs':np.array([0, 1, 0, 0, 1, 1, 0, 0]),
                           },
 
-    '2345_correlations_double': {'BS': {'BS_FF': [-26873, 13458, 13421, -17064, -15217, 9000, 10782, -24395]}},
+    '2345_correlations_67_check': {'BS': {'BS_FF': [-26873, 13399, 13421, -17240, -15217, 2373, 4782, -24395]}},
 
-    '2345_intermediate': {'IJ':{'samples':[0, 1, 0, 0, 0, 2, 0, 0],
-                                'gains':[None, -5220, None, None, None, -4130, None, None]}},
-
-    '2345_correlations_67_check': {'BS': {'BS_FF': [-26873, 13399, 13421, -17240, -15217, 1757, 4782, -24395]}},
-
-    # (3535.3, 4300.0, 4300.0, 3650.0, 3650.0, 4000.0, 4000.0, 3522.7)
-    # '2345_correlations': {'BS': {'BS_FF': [-26873, 12831, 13421, -17006, -15217, -1195, 1383, -24395]}},
-
-    # (3535.3, 4300.0, 4300.0, 3650.0, 3650.0, 3950.0, 3950.0, 3522.7)
-    # '2345_correlations': {'BS': {'BS_FF': [-26873, 12831, 13421, -17006, -15217, -3268, -590, -24395]}},
-
+    # (3535.3, 4300.0, 4300.0, 3650.0, 3650.0, 4200.0, 4200.0, 3522.7)
+    '2345_bonds': {'BS': {'BS_FF': [-26873, 13220, 13421, -17192, -15319, 8012, 10782, -24395]},
+                          't_offset': np.array([21, 23, 11, 22, 8, 8, 9, 0])
+                                             + [0, 0, 0, 5, 0, 0, 0, 0], # padding to get close to pi/2 phase
+                          'ij_samples':        [0, 6, 0, 0, 0, 6, 0, 0],
+                          'ij_gains': [None, -2900, None, None, None, None, 1000, None],
+                          'pad_bs' :  np.array([0, 0, 0, 0, 5, 0, 0, 0]) # correct for additions to t_offset
+                                             + [0, 0, 6, 0, 0, 0, 6, 0] # correct for additions to ij_samples
+                          },
     # (4400.0, 4400.0, 3496.5, 4000.0, 4000.0, 3534.5, 3460.3, 3522.7)
-    '1245_correlations': {'BS': {'BS_FF': [22268, 21904, -25392, -2473, -1488, -28060, -25722, -24395]},
-                                 't_offset': np.array([22, 24, 13, 24, 8, 8, 9, 0])},
+    '1245_correlations': {'BS': {'BS_FF': [-3667, -3800, 10959, -18794, -16892, 11696, 14450, 8551]},
+                                 #[22268, 21904, -25392, -2473, -1488, -28060, -25722, -24395]},
+                                 't_offset': np.array([21, 23, 12, 23, 10, 12, 12, 4])},
 
     # (4350.0, 4350.0, 3457.4, 3499.9, 3495.6, 4250.0, 4250.0, 3503.2)
-    '1267_correlations': {'BS': {'BS_FF': [19890, 20033, -25392, -27560, -25700, 14165, 16575, -24395]}},
+#       # (3790.0, 3790.0, 4380.0, 3520.0, 3520.0, 3810.0, 3810.0, 3520.0)
+    '1267_correlations': {'BS': {'BS_FF':#[-9757, -10312, 25392, -26783, -23537, -8126, -5572, -22064]},
+                                     [19275, 20033, -25392, -27560, -25700, 13010, 16575, -24395]},
+         't_offset': np.array([21, 23, 12, 23, 10, 12, 12, 4]),
+                'ij_samples': [0, 2, 0, 0, 0, 2, 0, 0],
+                'ij_gains': [None, 18085, None, None, None, -9500, None, None],
+                'pad_bs':   [2, 0, 2, 2, 2, 0, 2, 2],
+                          },
 
 
     # (3535.3, 4380.0, 4380.0, 3540.1, 4000.0, 4000.0, 3460.3, 3522.7)
-    '2356_correlations': {'BS': {'BS_FF': [-26873, 17380, 21495, -27560, -1325, -1233, -25722, -24395]}},
+    '2356_correlations': {'BS': {'BS_FF': [-26873, 20373, 21495, -27560, -1414, -1233, -25722, -24395]},
+                          't_offset': np.array([22, 24, 13, 24, 11, 12, 12, 4])
+                                             - [0,   0,  0,  0,  1,  0,  0, 0],
+                          'ij_samples':        [0,   0,  2,  0,   4,  0,  0, 0],
+                          'ij_gains':[None, None, 6600, None, -7500, None, None, None],
+                          'pad_bs':            [3, 2, 0, 3, 0, 3, 3, 3]
+                          },
 
-    '2378_correlations': {'BS': {'BS_FF': [-26873, 17112, 21495, -27560, -25722, -24395, 10170, 5000]}},
 
-
-
+    '2378_correlations': {'BS': {'BS_FF': [-26873, 20368, 21495, -27560, -25722, -24395, 8752, 5100]},
+                          't_offset': np.array([21, 23, 12, 23, 10, 12, 12, 4])
+                                              -[0, 0, 0, 0, 0, 0, 1, 0],
+                            'ij_samples': [0, 0, 2, 0, 0, 0, 4, 0],
+                            'ij_gains': [None, None, 12000, None, None, None, 4000, None],
+                            'pad_bs': [3, 2, 0, 3, 3, 3, 3, 0],
+                        },
 
     # (3535.3, 3527.2, 4380.0, 4380.0, 3534.4, 4000.0, 4000.0, 3522.7)
-    '3467_correlations': {'BS': {'BS_FF': [-26873, -29001, 21187, 16460, -25700, -410, 1383, -24395]}},
+    '3467_correlations': {'BS': {'BS_FF': [-26873, -29001, 20880, 16460, -25700, -846, 1383, -24395]},
+                         't_offset': np.array([21, 23, 12, 23, 10, 12, 12, 4]),
+                          'ij_samples': [0, 0, 0, 3, 0, 0, 3, 0],
+                          'ij_gains': [None, None, None, 19000, None, None, -8500, None],
+                          'pad_bs': [3, 3, 3, 0, 3, 3, 0, 3],
+                          },
 
-    # (3535.3, 4200.0, 4200.0, 3900.0, 3900.0, 4200.0, 3600.0, 3600.0)
-    '4578_correlations_Josh': {'BS':{'BS_FF': [-26873, 7050, 7799, -6188, -5192, 8140, -13491, -16604]}},
 
-    # (4415.2, 4424.4, 4389.6, 4000.0, 4000.0, 4392.0, 3600.0, 3600.0)
-    '4578_correlations': {'BS': {'BS_FF': [26873, 29001, 25392, -2609, -1488, 28060, -13600, -16604]}},
-
-    'single_jump':{'IJ':{'samples':[None]*8,'gains':[None]*8}},
-
+    # (3535.3, 4400.0, 4400.0, 3900.0, 3900.0, 4400.0, 3600.0, 3600.0)
+    '4578_correlations': {'BS':{'BS_FF': [-26873, 29001, 25392, -6254, -5192, 28060, -14709, -16604]},
+                          't_offset': np.array([21, 23, 12, 23, 10, 12, 12, 4]),
+                          'ij_samples': [0, 0, 0, 3, 0, 0, 0, 3],
+                          'ij_gains': [None, None, None, -8500, None, None, None, -14400],
+                          'pad_bs': [3, 3, 3, 0, 3, 3, 3, 0],
+                          },
 }
+
+
 
 
 
 # readout_params = BS1234_Readout
 # readout_params = BS2345_Readout
-readout_params = BS1245_Readout
+# readout_params = BS1245_Readout
 # readout_params = BS1267_Readout
 # readout_params = BS2356_Readout
 # readout_params = BS2378_Readout
 # readout_params = BS3467_Readout
 # readout_params = BS4578_Readout
 
-# readout_params = BS2345_Readout
+readout_params = BS1234_Readout
 
 
 Ramp_state = '8Q_4815'
 # Ramp_state = '8Q_4815_lowest_state'
 
 # Ramp_state = '2345_dis'
+# Ramp_state ='23'
 
 # beamsplitter_point = '2345_correlations_double'
 # beamsplitter_point = '1234_correlations_double'
@@ -271,20 +301,14 @@ Ramp_state = '8Q_4815'
 # beamsplitter_point = '4578_correlations'
 # beamsplitter_point = '2345_correlations'
 # beamsplitter_point = '2345_correlations'
-# beamsplitter_point = '1254_correlations'
 # beamsplitter_point = '1267_correlations'
 # beamsplitter_point = '2356_correlations'
 # beamsplitter_point = '2378_correlations'
 # beamsplitter_point = '4578_correlations'
-beamsplitter_point = '1245_correlations'
-
-ijump_point = 'single_jump'
+beamsplitter_point = '1234_bonds'
 
 Qps = Qps | readout_params | drive_params | ramp_params
 Qubit_Parameters = Qps.d
-
-# print(Qubit_Parameters)
-
 
 
 
@@ -292,7 +316,6 @@ Qubit_Parameters = Qps.d
 Init_FF = Qubit_Parameters[Ramp_state]['Ramp']['Init_FF']
 Ramp_FF = Qubit_Parameters[Ramp_state]['Ramp']['Expt_FF']
 
-# Ramp_FF[5] = -9089
 
 BS_FF = Qubit_Parameters[beamsplitter_point]['BS']['BS_FF']
 # BS_FF = Readout_1234_FF

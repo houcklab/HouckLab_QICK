@@ -30,6 +30,9 @@ class BaseRampExperiment(SweepExperiment1D_lines):
         '''Create the Ramp '''
         self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain', 'Gain_Expt',
                                               self.cfg['ramp_duration'])
+        # self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain',
+        #                                                                   'Gain_Expt',
+        #                                                                   self.cfg['ramp_duration'])
         # elif self.cfg['ramp_shape'] == 'linear':
         #     self.cfg["IDataArray"] = FFEnvelope_Helpers.LinearRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
         #                                                                 self.cfg['ramp_duration'])

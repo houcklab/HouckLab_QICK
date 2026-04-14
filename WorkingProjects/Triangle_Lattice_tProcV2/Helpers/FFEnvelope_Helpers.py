@@ -62,7 +62,7 @@ def CompensatedRampArrays(cfg, prev_key, initial_key, final_key, ramp_duration, 
         arr = Compensate(arr - prev_gains[j], prev_gains[j], Q)
         IQArray.append(arr)
         # Let's do compensated jumps and uncompensated ramps
-        # if np.abs(prev_gains[j] - initial_gains[j]) > 100:
+        # if np.abs(final_gains[j] - initial_gains[j]) < 100:
         #     arr = Compensated_Pulse(final_gains[j], prev_gains[j], Q)
         # else:
         #     arr = generate_cubic_ramp(initial_gains[j], final_gains[j], ramp_duration, reverse=reverse)

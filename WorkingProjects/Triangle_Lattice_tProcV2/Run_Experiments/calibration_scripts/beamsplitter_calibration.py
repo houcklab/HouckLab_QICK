@@ -18,21 +18,26 @@ from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_fi
 
 
 
-calibrate_gain = True
+calibrate_gain   = True
 calibrate_offset = True
 
 
+
 beamsplitter_point = '1245_correlations'
-# beamsplitter_point = '1267_correlations'
-# beamsplitter_point = '2356_correlations'
-# beamsplitter_point = '2378_correlations'
-# beamsplitter_point = '3467_correlations'
-# beamsplitter_point = '4578_correlations'
-# beamsplitter_point = '2345_correlations'
 
-rungs = ['45']
+# For gain sweep only, override the ramp state with the 8Q state if you'd like
+Override_ramp_state = None
+# Override_ramp_state = '2345_dis'
 
-sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
+Override_Qubit_Pulse = None
+# Override_Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
+# Override_Qubit_Pulse = [6, 1, 5, 8]
+
+rungs = ['12','45']
+
+# rungs = ['45','67']
+
+sweep_bs_gain_dict = {'reps': 2*200, 'ramp_time': 1000,
                       't_offset': [2, 1, 6, 9, 8, -1, 1, -2],
                       'relax_delay': 120,
                       'gainRange': 3000, 'gainNumPoints': 11,
@@ -45,12 +50,12 @@ sweep_bs_gain_dict = {'reps': 200, 'ramp_time': 1000,
 #                       'start': 50, 'step': 8, 'expts': 71}
 
 
-sweep_bs_offset_dict = {'reps': 200, 'ramp_time': 1000,
+sweep_bs_offset_dict = {'reps': 2*200, 'ramp_time': 1000,
                         't_offset': Qubit_Parameters[beamsplitter_point]['t_offset'],
-                        'relax_delay': 100,
-                        'offsetStart': 0, 'offsetStop': 30,
+                        'relax_delay': 150,
+                        'offset_span': 10, # Sweep +- this amount, e.g. -10 to +10
                         'offsetStep': 1,
-                        'start': 0, 'step': 1, 'expts': 71}
+                        'start': 0, 'step': 8, 'expts': 71}
 
 ###############################
 
@@ -66,18 +71,28 @@ def calibrate_rung_gains(BS_FF, rungs):
 
     for i in range(len(rungs)):
         rung = rungs[i]
-
-        # redefine ramp initial and final point
-
-        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
-        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
-
         q1 = int(rung[0])
         q2 = int(rung[1])
 
-        assert(abs(q1 - q2) == 1)
+        assert (abs(q1 - q2) == 1)
 
-        Qubit_Pulse = [q1]
+        # redefine ramp initial and final point
+        if Override_ramp_state == None:
+            rampstate = rung
+
+        else:
+            rampstate = Override_ramp_state
+
+        if Override_Qubit_Pulse == None:
+            Qubit_Pulse = [q1]
+        else:
+            Qubit_Pulse = Override_Qubit_Pulse
+        Init_FF = Qubit_Parameters[rampstate]['Ramp']['Init_FF']
+        Ramp_FF = Qubit_Parameters[rampstate]['Ramp']['Expt_FF']
+
+
+
+
         Qubit_Readout = [q1, q2]
 
 
@@ -155,23 +170,39 @@ def calibrate_rung_offset(BS_FF, rungs):
     for i in range(len(rungs)):
         rung = rungs[i]
 
-        # redefine ramp initial and final point
-
-        Init_FF = Qubit_Parameters[rung]['Ramp']['Init_FF']
-        Ramp_FF = Qubit_Parameters[rung]['Ramp']['Expt_FF']
-
         q1 = int(rung[0])
         q2 = int(rung[1])
 
+        # redefine ramp initial and final point
+        if Override_ramp_state == None:
+            rampstate = rung
+
+        else:
+            rampstate = Override_ramp_state
+
+        if Override_Qubit_Pulse == None:
+            Qubit_Pulse = [q1]
+        else:
+            Qubit_Pulse = Override_Qubit_Pulse
+
+
+
+        Init_FF = Qubit_Parameters[rampstate]['Ramp']['Init_FF']
+        Ramp_FF = Qubit_Parameters[rampstate]['Ramp']['Expt_FF']
+
+
+
         assert(abs(q1 - q2) == 1)
 
-        Qubit_Pulse = [q1]
         Qubit_Readout = [q1, q2]
 
 
         sweep_bs_offset_dict['swept_qubit'] = q1
         swept_qubits.append(sweep_bs_offset_dict['swept_qubit'])
 
+        center = sweep_bs_offset_dict['t_offset'][q1 - 1]
+        sweep_bs_offset_dict['offsetStart'] = center - sweep_bs_offset_dict['offset_span']
+        sweep_bs_offset_dict['offsetStop'] = center + sweep_bs_offset_dict['offset_span']
 
         FF_gain1_expt = Ramp_FF[0]  # resonance
         FF_gain2_expt = Ramp_FF[1]  # resonance

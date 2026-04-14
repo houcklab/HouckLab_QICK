@@ -48,8 +48,8 @@ iter_axs2 = iter(axs2.flatten())
 for Q in [1,2,3,4,5,6,7,8]:
 # for Q in [3]:
     Qubit_Readout = [Q]
-    Qubit_Pulse =   [f"{Q}R"]
-    # Qubit_Pulse = [Q]
+    # Qubit_Pulse =   [f"{Q}R"]
+    Qubit_Pulse = [Q]
 
     t = True
     f = False
@@ -59,9 +59,9 @@ for Q in [1,2,3,4,5,6,7,8]:
     RunT1 = True
     RunT2 = True
 
-    T1_params = {"stop_delay_us": 100, "expts": 40, "reps": 150}
+    T1_params = {"stop_delay_us": 100, "expts": 2*40, "reps": 150}
 
-    T2R_params = {"stop_delay_us": 5, "expts": 150, "reps": 300,
+    T2R_params = {"stop_delay_us": 4, "expts": 150, "reps": 300,
                   "freq_shift": 0.0, "phase_shift_cycles": 4, "relax_delay":200}
 
 

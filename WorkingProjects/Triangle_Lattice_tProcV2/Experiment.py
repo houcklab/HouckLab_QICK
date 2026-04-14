@@ -15,8 +15,10 @@ class MakeFile(h5py.File):
         try:
             data = np.array(data)
         except Exception as e:
-            print(f'Failed adding {key}: {data}')
-            raise e
+            print(f'Failed setting to array: {key}: {data}')
+            # raise e
+            print(str(e))
+            data = data
         # print(data)
         if key in self:
             del self[key]
@@ -28,10 +30,14 @@ class MakeFile(h5py.File):
             print(f'warning: type of ({key}: {data}) is not float')
             if key in ['readout_list', 'Qubit_Readout_List']:
                 data = np.array([int(qubit_str[0]) for qubit_str in data])
-            self.create_dataset(key, shape=data.shape,
+            try:
+                if type(data) in (list, tuple):
+                    data = np.array(data)
+                self.create_dataset(key, shape=data.shape,
                                 maxshape=tuple([None] * len(data.shape)),
                                 dtype=str(data.astype(np.float64).dtype))
-
+            except:
+                print(f"Adding data {key}:{data} failed")
         # if key not in self:
         #     try:
         #         self.create_dataset(key, shape=data.shape,
@@ -54,7 +60,6 @@ class MakeFile(h5py.File):
             self[key][...] = data
         except:
             print(f'failed adding {key}: {data}')
-            raise
 
 
 class NpEncoder(json.JSONEncoder):
@@ -200,5 +205,12 @@ class ExperimentClass:
         data = self.acquire()
         self.display(data, **kwargs)
         self.save_data(data)
+        self.save_config()
+        return data
+
+    def acquire_display(self, **kwargs):
+        '''Use if acquire() already calls save_data() to not repeat saves'''
+        data = self.acquire()
+        self.display(data, **kwargs)
         self.save_config()
         return data

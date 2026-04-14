@@ -72,8 +72,9 @@ class PlotFrequenciesExperiment(ExperimentClass):
 
 
         # Printing out frequencies
+        max_str_len = max(len(s) for s in self.cfg['labels'])
         for i in range(freqs.shape[0]):
-            print(list(int(x) for x in freqs[i, :]))
+            print(f'{self.cfg['labels'][i]:>{max_str_len}} :', list(int(x) for x in freqs[i, :]))
 
         data = {
             'gains': gains,
@@ -184,21 +185,22 @@ def main():
     # Setting gains
 
     # single jump
-    intermediate_jump_gains = Qubit_Parameters[ijump_point]['IJ']['gains']
+    intermediate_jump_gains = Qubit_Parameters[beamsplitter_point].get('ij_gains',[None]*8)
+    intermediate_jump_samples = Qubit_Parameters[beamsplitter_point].get('ij_samples', [0] * 8)
     # 1234 BOI
     # intermediate_jump_gains = [-14300, None, 4490, None, -20347, None, -2370, None]
     # 2345 BOI
     # intermediate_jump_gains = [None, -2040, None, -13730, None, -7300, None, None]
 
     for i in range(len(intermediate_jump_gains)):
-        if intermediate_jump_gains[i] is None:
+        if intermediate_jump_gains[i] is None or intermediate_jump_samples[i] == 0:
             intermediate_jump_gains[i] = BS_FF[i]
 
     readout_gains = readout_params['1']['Readout']['FF_Gains']
 
     # gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
-    gains = [readout_gains, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
-    labels = ['RO', 'Init', 'Expt', 'Double', 'BS', 'RO']
+    gains = [Readout_4Q, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
+    labels = ['Pulse', 'Init', 'Expt', 'Double', 'BS', 'RO']
 
     config = {'gains': gains, 'labels':labels, 'plot': True}
     expt = PlotFrequenciesExperiment(path='', prefix='PlotFrequencies', soc=None, soccfg=None, cfg=config)
