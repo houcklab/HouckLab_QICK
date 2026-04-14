@@ -16,7 +16,7 @@ import pyvisa as visa
 ###### define default configuration
 BaseConfig = {
     "res_ch": 0, # --Fixed
-    "qubit_ch": 1,  # --Fixed
+    "qubit_ch": 0,  # --Fixed
     "mixer_freq": 0.0,  # MHz
     "ro_chs": [0],  # --Fixed
     "reps": 1000,  # --Fixed

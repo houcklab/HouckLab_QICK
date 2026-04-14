@@ -118,9 +118,9 @@ Qubit_Readout = 1
 Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]["outerfoldername"]
 
-ConstantTone = False  # determine cavity frequency
+ConstantTone = True  # determine cavity frequency
 
-RunTransmissionSweep = True  # determine cavity frequency
+RunTransmissionSweep = False  # determine cavity frequency
 Run2ToneSpec = False
 Spec_relevant_params = {
     "qubit_gain": 500,
