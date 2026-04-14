@@ -1,0 +1,4 @@
+   '2': {'Readout': {'Frequency': 7077.4, 'Gain': 1500,
+                          'FF_Gains': Readout_1234_FF, 'Readout_Time': 2, 'ADC_Offset': 1},
+              'Qubit': {'Frequency': 4060.1, 'sigma': 0.03, 'Gain': 2922},
+              'Pulse_FF': Readout_1234_FF},
