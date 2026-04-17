@@ -2,7 +2,7 @@
 BaseConfig = {
     "res_ch": 0,  # --Fixed
     "qubit_ch": 1,  # --Fixed
-    "mixer_freq": 0.0,  # MHz
+    #"mixer_freq": 0.0,  # MHz
     "ro_chs": [0],  # --Fixed
     "reps": 1000,  # --Fixed
     "nqz": 2,  #### refers to cavity
