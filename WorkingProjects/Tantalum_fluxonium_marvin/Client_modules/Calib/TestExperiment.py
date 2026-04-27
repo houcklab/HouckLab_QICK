@@ -32,13 +32,13 @@ from matplotlib import pyplot as plt
 import datetime
 
 # Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_07_29_cooldown\\ADMV8818\\"
 
 # Print the start time
 print('starting time: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 
 # Only run this if no proxy already exists
-soc, soccfg = makeProxy()
+#soc, soccfg = makeProxy()
 
 SwitchConfig = {
     "trig_buffer_start": 0.035, # in us
@@ -50,36 +50,39 @@ BaseConfig = BaseConfig  | SwitchConfig
 #%%
 
 # TITLE: Loopback experiment
-config = {"res_ch": 0,  # --Fixed
+config = {"res_ch": 6,  # --Fixed
           "ro_chs": [0],  # --Fixed
           "reps": 1,  # --Fixed
           "relax_delay": 1.0,  # --us
           "res_phase": 0,  # --degrees
           "pulse_style": "const",  # --Fixed
 
-          "length": soc.us2cycles(0.3),  # [Clock ticks] # 1 us is around 430 cycles
+          "length": 50,#soc.us2cycles(0.3),  # [Clock ticks] # 1 us is around 430 cycles
           # Try varying length from 10-100 clock ticks
 
-          "readout_length": 200,  # [Clock ticks]
+          "readout_length": 1000,  # [Clock ticks]
           # Try varying readout_length from 50-1000 clock ticks
 
-          "pulse_gain": 30000,  # [DAC units]
+          "pulse_gain": 500,  # [DAC units]
           # Try varying pulse_gain from 500 to 30000 DAC units
 
-          "pulse_freq": 6250,  # [MHz]
+          "pulse_freq": 2250,  # [MHz]
           # In this program the signal is up and downconverted digitally so you won't see any frequency
           # components in the I/Q traces below. But since the signal gain depends on frequency,
           # if you lower pulse_freq you will see an increased gain.
 
-          "adc_trig_offset": 230,  # [Clock ticks]
+          "adc_trig_offset": 150,  # [Clock ticks]
           # Try varying adc_trig_offset from 100 to 220 clock ticks
 
-          "soft_avgs": 5000
+          "soft_avgs": 20
           # Try varying soft_avgs from 1 to 200 averages
           }
 
 prog = LoopbackProgram(soccfg, config)
-iq_list = prog.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+
+#n_transfers = 1
+#soc.arm_ddr4(ch=config['res_ch'], nt=n_transfers)
+iq_list = prog.acquire_decimated(soc, load_pulses=True, progress=True)#, debug=False)
 fff = plt.figure(1)
 for ii, iq in enumerate(iq_list):
     plt.plot(iq[0], label="I value, ADC %d"%(config['ro_chs'][ii]))
@@ -95,22 +98,23 @@ fff.show()
 # # TITLE: Transmission + Spectroscopy
 UpdateConfig_transmission = {
     # Parameters
-    "reps": 500,  # Number of repetitions
+    "res_ch": 6,
+    "reps": 101,  # Number of repetitions
 
     # cavity
     "read_pulse_style": "const",
     "read_length": 20,
     "read_pulse_gain": 1000,
-    "read_pulse_freq":  6672.8,
+    "read_pulse_freq":  3000,
 
     # Experiment Parameters
-    "TransSpan": 1,  # [MHz] span will be center frequency +/- this parameter
+    "TransSpan": 2000,  # [MHz] span will be center frequency +/- this parameter
     "TransNumPoints": 200,  # number of points in the transmission frequency
 }
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",  # Constant pulse
-    "qubit_gain": 7000,  # [DAC Units]
+    "qubit_gain": 0,  # [DAC Units]
     'sigma': 1,
     'flat_top_length': 10,
     "qubit_length": 10,  # [us]
@@ -132,7 +136,7 @@ UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig
 
 # Set the yoko frequency
-yoko1.SetVoltage(config["yokoVoltage"])
+#yoko1.SetVoltage(config["yokoVoltage"])
 
 
 #%%
@@ -147,8 +151,8 @@ plt.show()
 
 
 # Update the transmission frequency to be the peak
-config["read_pulse_freq"] = Instance_trans.peakFreq
-print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
+#config["read_pulse_freq"] = Instance_trans.peakFreq
+#print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
 #%%
 # TITLE Perform the spec slice experiment

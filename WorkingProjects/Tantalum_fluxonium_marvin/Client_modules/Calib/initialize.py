@@ -13,7 +13,7 @@ import pyvisa as visa
 from pathlib import Path
 
 path = r'C:\Users\pjatakia\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_marvin\Client_modules\PythonDrivers'
-os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
+#os.add_dll_directory(os.path.dirname(path) + '\\PythonDrivers')
 
 # sys.path.append('..\\ClientModules')
 
@@ -43,8 +43,8 @@ class attenuator:
 # qubitAtten = attenuator(27797)
 
 ##### define yoko
-yoko1 = YOKOGS200(VISAaddress = 'GPIB1::4::INSTR', rm = visa.ResourceManager())
-yoko1.SetMode('voltage')
+#yoko1 = YOKOGS200(VISAaddress = 'GPIB1::4::INSTR', rm = visa.ResourceManager())
+#yoko1.SetMode('voltage')
 
 
 ###### define default configuration
