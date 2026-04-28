@@ -1,20 +1,34 @@
 """
-Interactive calibration wizard for the triangle-lattice quench project.
+Interactive calibration wizard for superconducting-qubit experiments controlled
+by a QICK RFSoC over Pyro4.
 
-Walks a user through the canonical single-qubit / single-resonator calibration:
-    Transmission -> Spec slice -> Amplitude Rabi -> Single-shot -> T1 -> T2R
+Two stages:
 
-Each stage is a tab with editable parameters, an inline matplotlib plot, and an
-"Apply" button that pushes the result into the in-memory Qubit_Parameters dict.
-The dict can be loaded from / saved to a JSON file from the toolbar.
+1. ConnectionDialog (pre-step):
+   - Enter Pyro4 nameserver host/port.
+   - List nameserver entries (every name => uri pair the ns knows about).
+   - Pick the RFSoC proxy name and connect; the dialog acts as a thin client
+     for the nameserver and the soc proxy (no hidden hardcoded address).
+   - Inspect the soccfg description (DACs, ADCs, sample rates).
+   - Choose the number of qubits and map each qubit to its FF DAC channel,
+     plus the shared Readout-DAC / Qubit-DAC / ADC indices.
+
+2. MainWindow (calibration wizard):
+   - Tabs for Transmission -> Spec slice -> Amplitude Rabi -> Single-shot -> T1
+     -> T2R, each with editable parameters and an inline plot.
+   - "Apply" pushes a stage result into the in-memory Qubit_Parameters dict;
+     the dict can be loaded from / saved to JSON via the toolbar.
 
 Launch from the repo root:
 
     cd D:/Agentic_QSim_Measurement
     python -m WorkingProjects.triangle_lattice_quench.Run_Experiments.calibration_gui
 
-The first time you run a stage, click "Connect to RFSoC" first. The GUI lazy-
-imports socProxy so it won't try to talk to the nameserver until you ask.
+Pyro4 and qick are imported lazily inside ConnectionDialog, so the GUI opens
+fine even when the RFSoC nameserver is unreachable.
+
+Note: the underlying experiment classes are MUX-based (single shared res_ch /
+qubit_ch / ADC across qubits, per-qubit FF DAC). The dialog reflects that.
 """
 from __future__ import annotations
 
@@ -36,9 +50,11 @@ from matplotlib.figure import Figure
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QPushButton, QSpinBox, QStatusBar, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit,
+    QPushButton, QSpinBox, QSplitter, QStatusBar, QTableWidget, QTableWidgetItem,
+    QTabWidget, QVBoxLayout, QWidget,
 )
 
 
@@ -65,9 +81,49 @@ DEFAULT_BASE_CONFIG: dict = {
     "qubit_LO": 0,
 }
 
-DEFAULT_FF_QUBITS: dict = {
-    str(i + 1): {"channel": i, "delay_time": 0.0} for i in range(8)
-}
+def make_default_ff_qubits(n_qubits: int = 8,
+                           channels: Optional[list[int]] = None) -> dict:
+    """Return an FF_Qubits dict keyed by qubit index ('1','2',...).
+
+    `channels[i]` is the FF DAC channel index assigned to qubit i+1; defaults
+    to the identity map (qubit i+1 -> FF channel i).
+    """
+    if channels is None:
+        channels = list(range(n_qubits))
+    if len(channels) != n_qubits:
+        raise ValueError(
+            f"channels has length {len(channels)} but n_qubits={n_qubits}"
+        )
+    return {
+        str(i + 1): {"channel": int(channels[i]), "delay_time": 0.0}
+        for i in range(n_qubits)
+    }
+
+
+def make_default_qubit_parameters(n_qubits: int = 8) -> dict:
+    """Seed Qubit_Parameters dict with placeholder per-qubit values.
+
+    Real values come from loading a JSON setpoint file via the toolbar or by
+    running the calibration tabs.
+    """
+    return {
+        str(i + 1): {
+            "Readout": {
+                "Frequency": 7000.0 + 50 * i,
+                "Gain": 5000,
+                "FF_Gains": [0] * n_qubits,
+                "Readout_Time": 2.5,
+                "ADC_Offset": 0.75,
+                "cavmin": True,
+            },
+            "Qubit": {"Frequency": 4000.0, "sigma": 0.03, "Gain": 5000},
+            "Pulse_FF": [0] * n_qubits,
+        }
+        for i in range(n_qubits)
+    }
+
+
+DEFAULT_FF_QUBITS: dict = make_default_ff_qubits(8)
 
 # Sensible per-stage defaults distilled from Fast_calib.py
 STAGE_DEFAULTS: dict[str, dict] = {
@@ -105,23 +161,7 @@ STAGE_DEFAULTS: dict[str, dict] = {
     },
 }
 
-# Seed Qubit_Parameters: 8 qubits with placeholder freqs/gains. Real values
-# come from loading a JSON setpoint file via the toolbar.
-DEFAULT_QUBIT_PARAMETERS: dict = {
-    str(i + 1): {
-        "Readout": {
-            "Frequency": 7000.0 + 50 * i,
-            "Gain": 5000,
-            "FF_Gains": [0] * 8,
-            "Readout_Time": 2.5,
-            "ADC_Offset": 0.75,
-            "cavmin": True,
-        },
-        "Qubit": {"Frequency": 4000.0, "sigma": 0.03, "Gain": 5000},
-        "Pulse_FF": [0] * 8,
-    }
-    for i in range(8)
-}
+DEFAULT_QUBIT_PARAMETERS: dict = make_default_qubit_parameters(8)
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +177,12 @@ class CalibState:
     qubit_parameters: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_QUBIT_PARAMETERS))
     outer_folder: str = DEFAULT_OUTER_FOLDER
     target_qubit: int = 1            # the qubit currently being calibrated
-    soc: Any = None                  # set by Connect button
+    n_qubits: int = 8                # number of qubits being calibrated
+    soc: Any = None                  # set by ConnectionDialog
     soccfg: Any = None
+    ns_host: str = ""                # remembered for the status bar / reconnect
+    ns_port: int = 0
+    server_name: str = ""
     last_results: dict[str, dict] = field(default_factory=dict)
 
     def is_connected(self) -> bool:
@@ -169,13 +213,14 @@ class CalibState:
         ff_qubits = copy.deepcopy(self.ff_qubits)
         pulse_ff = qp["Pulse_FF"]
         readout_ff = qp["Readout"]["FF_Gains"]
-        for i, ff in enumerate(("1", "2", "3", "4", "5", "6", "7", "8")):
+        ff_keys = sorted(ff_qubits.keys(), key=int)
+        for i, ff in enumerate(ff_keys):
             ff_qubits[ff].update({
-                "Gain_Readout": readout_ff[i],
+                "Gain_Readout": readout_ff[i] if i < len(readout_ff) else 0,
                 "Gain_Expt": 0,
-                "Gain_Pulse": pulse_ff[i],
+                "Gain_Pulse": pulse_ff[i] if i < len(pulse_ff) else 0,
                 "Gain_BS": 0,
-                "ramp_initial_gain": pulse_ff[i],
+                "ramp_initial_gain": pulse_ff[i] if i < len(pulse_ff) else 0,
             })
 
         cfg = {
@@ -672,27 +717,387 @@ class T2RTab(StageTab):
 
 
 # ---------------------------------------------------------------------------
+# Connection dialog — Pyro4 nameserver / RFSoC proxy / channel mapping
+# ---------------------------------------------------------------------------
+
+
+# Defaults for the nameserver address. Edit here or override in the dialog.
+DEFAULT_NS_HOST = "192.168.1.114"
+DEFAULT_NS_PORT = 8888
+DEFAULT_SERVER_NAME = "myqick"
+
+
+class ConnectionDialog(QDialog):
+    """Pre-step dialog: nameserver lookup + RFSoC proxy + channel mapping.
+
+    Acts as a thin client over Pyro4 and the RFSoC's ``soc.get_cfg()``: nothing
+    is hardcoded, the user supplies the address. On accept, ``self.state`` holds
+    a fully populated :class:`CalibState` (soc, soccfg, channel map, n_qubits).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("RFSoC connection — nameserver & channel map")
+        self.resize(1000, 780)
+
+        self.soc: Any = None
+        self.soccfg: Any = None
+        self.ns: Any = None
+        self.state: Optional[CalibState] = None  # set on accept()
+
+        # cached so we know how many channels are available for the dropdowns
+        self.n_gens = 0
+        self.n_readouts = 0
+
+        # ---- Nameserver group ----
+        ns_box = QGroupBox("Pyro4 nameserver")
+        ns_form = QFormLayout()
+        self.host_edit = QLineEdit(DEFAULT_NS_HOST)
+        self.port_spin = QSpinBox()
+        self.port_spin.setRange(1, 65535)
+        self.port_spin.setValue(DEFAULT_NS_PORT)
+        self.list_btn = QPushButton("List nameserver entries")
+        self.list_btn.clicked.connect(self.on_list_ns)
+        self.ns_list = QListWidget()
+        self.ns_list.itemSelectionChanged.connect(self.on_ns_item_selected)
+        ns_form.addRow("Host:", self.host_edit)
+        ns_form.addRow("Port:", self.port_spin)
+        ns_form.addRow(self.list_btn)
+        ns_form_widget = QWidget()
+        ns_form_widget.setLayout(ns_form)
+        ns_layout = QVBoxLayout(ns_box)
+        ns_layout.addWidget(ns_form_widget)
+        ns_layout.addWidget(QLabel("Registered names (click to select):"))
+        ns_layout.addWidget(self.ns_list, 1)
+
+        # ---- Proxy group ----
+        proxy_box = QGroupBox("RFSoC proxy")
+        proxy_form = QFormLayout(proxy_box)
+        self.proxy_name_edit = QLineEdit(DEFAULT_SERVER_NAME)
+        self.connect_btn = QPushButton("Connect to RFSoC")
+        self.connect_btn.clicked.connect(self.on_connect)
+        self.disconnect_btn = QPushButton("Disconnect")
+        self.disconnect_btn.clicked.connect(self.on_disconnect)
+        self.disconnect_btn.setEnabled(False)
+        self.connection_status = QLabel("Not connected.")
+        self.connection_status.setWordWrap(True)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.connect_btn)
+        btn_row.addWidget(self.disconnect_btn)
+        btn_row.addStretch(1)
+        btn_row_widget = QWidget(); btn_row_widget.setLayout(btn_row)
+        proxy_form.addRow("Proxy name:", self.proxy_name_edit)
+        proxy_form.addRow(btn_row_widget)
+        proxy_form.addRow("Status:", self.connection_status)
+
+        # ---- soccfg description ----
+        cfg_box = QGroupBox("soccfg description (read-only)")
+        cfg_layout = QVBoxLayout(cfg_box)
+        self.cfg_view = QPlainTextEdit()
+        self.cfg_view.setReadOnly(True)
+        f = QFont(); f.setStyleHint(QFont.Monospace); f.setFamily("Consolas")
+        self.cfg_view.setFont(f)
+        cfg_layout.addWidget(self.cfg_view)
+
+        # ---- Channel mapping ----
+        chan_box = QGroupBox("Channel assignment")
+        chan_layout = QVBoxLayout(chan_box)
+
+        shared_form = QFormLayout()
+        self.res_ch_combo = QComboBox()
+        self.qubit_ch_combo = QComboBox()
+        self.adc_ch_combo = QComboBox()
+        shared_form.addRow("Readout DAC channel (shared, MUX):", self.res_ch_combo)
+        shared_form.addRow("Qubit DAC channel (shared, MUX):", self.qubit_ch_combo)
+        shared_form.addRow("ADC / readout channel:", self.adc_ch_combo)
+        shared_widget = QWidget(); shared_widget.setLayout(shared_form)
+        chan_layout.addWidget(shared_widget)
+
+        nq_row = QHBoxLayout()
+        nq_row.addWidget(QLabel("Number of qubits:"))
+        self.n_qubits_spin = QSpinBox()
+        self.n_qubits_spin.setRange(1, 32)
+        self.n_qubits_spin.setValue(8)
+        self.n_qubits_spin.valueChanged.connect(self.on_n_qubits_changed)
+        nq_row.addWidget(self.n_qubits_spin)
+        nq_row.addStretch(1)
+        nq_widget = QWidget(); nq_widget.setLayout(nq_row)
+        chan_layout.addWidget(nq_widget)
+
+        self.qubit_table = QTableWidget(0, 2)
+        self.qubit_table.setHorizontalHeaderLabels(["Qubit", "FF DAC channel"])
+        self.qubit_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.qubit_table.verticalHeader().setVisible(False)
+        chan_layout.addWidget(self.qubit_table, 1)
+
+        chan_hint = QLabel(
+            "Tip: the underlying experiment classes are MUX — all qubits share "
+            "one Readout DAC, one Qubit DAC, and one ADC. Each qubit has its own "
+            "FF DAC for slow flux pulses."
+        )
+        chan_hint.setWordWrap(True)
+        chan_hint.setStyleSheet("color: #555;")
+        chan_layout.addWidget(chan_hint)
+
+        # ---- Continue / Cancel ----
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        self.button_box.button(QDialogButtonBox.Ok).setText("Continue")
+        self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
+        self.button_box.accepted.connect(self.on_accept)
+        self.button_box.rejected.connect(self.reject)
+
+        # ---- Layout (left = ns/proxy, right = soccfg + channels) ----
+        left = QVBoxLayout()
+        left.addWidget(ns_box, 1)
+        left.addWidget(proxy_box)
+        left_w = QWidget(); left_w.setLayout(left)
+
+        right = QVBoxLayout()
+        right.addWidget(cfg_box, 1)
+        right.addWidget(chan_box, 1)
+        right_w = QWidget(); right_w.setLayout(right)
+
+        splitter = QSplitter()
+        splitter.addWidget(left_w)
+        splitter.addWidget(right_w)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+
+        outer = QVBoxLayout(self)
+        outer.addWidget(splitter, 1)
+        outer.addWidget(self.button_box)
+
+        # initial empty table
+        self.on_n_qubits_changed(self.n_qubits_spin.value())
+
+    # ------------------ nameserver / proxy actions ------------------
+
+    def _busy(self, msg: str):
+        self.connection_status.setText(msg)
+        QApplication.processEvents()
+
+    def on_list_ns(self):
+        host = self.host_edit.text().strip()
+        port = int(self.port_spin.value())
+        try:
+            import Pyro4
+        except ImportError as exc:
+            QMessageBox.critical(self, "Pyro4 missing", str(exc))
+            return
+        Pyro4.config.SERIALIZER = "pickle"
+        Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
+        self._busy(f"Locating nameserver at {host}:{port}...")
+        try:
+            ns = Pyro4.locateNS(host=host, port=port)
+            entries = ns.list()
+        except Exception as exc:
+            QMessageBox.critical(self, "Nameserver error",
+                                 f"Could not reach Pyro4 NS at {host}:{port}:\n{exc}")
+            self.connection_status.setText("Nameserver unreachable.")
+            return
+        self.ns = ns
+        self.ns_list.clear()
+        # Sort with likely-soc names on top
+        def rank(name: str) -> int:
+            n = name.lower()
+            if "qick" in n or "soc" in n:
+                return 0
+            if name.startswith("Pyro.NameServer"):
+                return 2
+            return 1
+        for name in sorted(entries, key=lambda n: (rank(n), n)):
+            uri = entries[name]
+            item = QListWidgetItem(f"{name}    =>    {uri}")
+            item.setData(Qt.UserRole, name)
+            self.ns_list.addItem(item)
+        self.connection_status.setText(
+            f"Nameserver OK — {len(entries)} entries. Pick one and Connect."
+        )
+
+    def on_ns_item_selected(self):
+        items = self.ns_list.selectedItems()
+        if not items:
+            return
+        name = items[0].data(Qt.UserRole)
+        if name and not name.startswith("Pyro.NameServer"):
+            self.proxy_name_edit.setText(name)
+
+    def on_connect(self):
+        name = self.proxy_name_edit.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Missing name",
+                                "Enter a Pyro4 proxy name (or pick one from the list).")
+            return
+        if self.ns is None:
+            # try to locate the nameserver implicitly
+            self.on_list_ns()
+            if self.ns is None:
+                return
+        try:
+            import Pyro4
+            from qick import QickConfig
+        except ImportError as exc:
+            QMessageBox.critical(self, "Import failed",
+                                 f"Pyro4 / qick not importable: {exc}")
+            return
+        self._busy(f"Looking up '{name}'...")
+        try:
+            uri = self.ns.lookup(name)
+            soc = Pyro4.Proxy(uri)
+            cfg_dict = soc.get_cfg()
+            soccfg = QickConfig(cfg_dict)
+        except Exception as exc:
+            QMessageBox.critical(self, "Connection failed",
+                                 f"Could not connect to '{name}':\n{exc}")
+            self.connection_status.setText("Connect failed.")
+            return
+
+        self.soc = soc
+        self.soccfg = soccfg
+        self.connection_status.setText(
+            f"Connected to '{name}' at {self.host_edit.text()}:{self.port_spin.value()}."
+        )
+        try:
+            self.cfg_view.setPlainText(soccfg.description())
+        except Exception:
+            self.cfg_view.setPlainText(repr(cfg_dict))
+        self.connect_btn.setEnabled(False)
+        self.disconnect_btn.setEnabled(True)
+        self.button_box.button(QDialogButtonBox.Ok).setEnabled(True)
+
+        # Populate channel dropdowns from the raw cfg dict (robust across QickConfig versions)
+        gens = cfg_dict.get("gens", []) or []
+        readouts = cfg_dict.get("readouts", []) or []
+        self.n_gens = len(gens)
+        self.n_readouts = len(readouts)
+
+        self.res_ch_combo.clear(); self.qubit_ch_combo.clear(); self.adc_ch_combo.clear()
+        for i, gen in enumerate(gens):
+            label = f"{i}: {gen.get('type', '?')} fs={gen.get('fs', '?')} MHz"
+            self.res_ch_combo.addItem(label, i)
+            self.qubit_ch_combo.addItem(label, i)
+        for i, ro in enumerate(readouts):
+            label = f"{i}: {ro.get('type', '?')} fs={ro.get('fs', '?')} MHz"
+            self.adc_ch_combo.addItem(label, i)
+
+        # Sensible defaults from the existing triangle-lattice config
+        self._select_combo_value(self.res_ch_combo, DEFAULT_BASE_CONFIG["res_ch"])
+        self._select_combo_value(self.qubit_ch_combo, DEFAULT_BASE_CONFIG["qubit_ch"])
+        self._select_combo_value(self.adc_ch_combo, DEFAULT_BASE_CONFIG["ro_chs"][0])
+
+        # Refresh the per-qubit FF dropdowns now that we know channel count.
+        self.on_n_qubits_changed(self.n_qubits_spin.value())
+
+    @staticmethod
+    def _select_combo_value(combo: QComboBox, value: int):
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
+    def on_disconnect(self):
+        # Pyro4 proxies clean up on garbage collection; just drop the references.
+        self.soc = None
+        self.soccfg = None
+        self.cfg_view.clear()
+        self.connection_status.setText("Disconnected.")
+        self.connect_btn.setEnabled(True)
+        self.disconnect_btn.setEnabled(False)
+        self.button_box.button(QDialogButtonBox.Ok).setEnabled(False)
+
+    def on_n_qubits_changed(self, n: int):
+        self.qubit_table.setRowCount(n)
+        for i in range(n):
+            label_item = QTableWidgetItem(f"Q{i + 1}")
+            label_item.setFlags(Qt.ItemIsEnabled)
+            self.qubit_table.setItem(i, 0, label_item)
+            existing = self.qubit_table.cellWidget(i, 1)
+            if existing is None:
+                combo = QComboBox()
+                self.qubit_table.setCellWidget(i, 1, combo)
+            else:
+                combo = existing
+            combo.blockSignals(True)
+            combo.clear()
+            if self.n_gens > 0:
+                for j in range(self.n_gens):
+                    combo.addItem(f"gen {j}", j)
+                default_ch = i if i < self.n_gens else 0
+                idx = combo.findData(default_ch)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            else:
+                # no soccfg yet — let user type-in (will be re-populated on connect)
+                combo.addItem("(connect first)", 0)
+            combo.blockSignals(False)
+
+    # ------------------ accept ------------------
+
+    def on_accept(self):
+        if self.soc is None or self.soccfg is None:
+            QMessageBox.warning(self, "Not connected",
+                                "Connect to the RFSoC before continuing.")
+            return
+
+        n_qubits = int(self.n_qubits_spin.value())
+        ff_channels: list[int] = []
+        for i in range(n_qubits):
+            combo = self.qubit_table.cellWidget(i, 1)
+            ff_channels.append(int(combo.currentData()))
+
+        if len(set(ff_channels)) != len(ff_channels):
+            res = QMessageBox.question(
+                self, "Duplicate FF channels",
+                "Two or more qubits are assigned to the same FF DAC channel. "
+                "Continue anyway?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if res != QMessageBox.Yes:
+                return
+
+        base = copy.deepcopy(DEFAULT_BASE_CONFIG)
+        base["res_ch"] = int(self.res_ch_combo.currentData())
+        base["qubit_ch"] = int(self.qubit_ch_combo.currentData())
+        base["ro_chs"] = [int(self.adc_ch_combo.currentData())]
+        base["fast_flux_chs"] = list(ff_channels)
+
+        self.state = CalibState(
+            base_config=base,
+            ff_qubits=make_default_ff_qubits(n_qubits, ff_channels),
+            qubit_parameters=make_default_qubit_parameters(n_qubits),
+            n_qubits=n_qubits,
+            soc=self.soc,
+            soccfg=self.soccfg,
+            ns_host=self.host_edit.text().strip(),
+            ns_port=int(self.port_spin.value()),
+            server_name=self.proxy_name_edit.text().strip(),
+        )
+        self.accept()
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, state: Optional[CalibState] = None):
         super().__init__()
-        self.state = CalibState()
-        self.setWindowTitle("Triangle-Lattice Calibration Wizard")
+        self.state = state if state is not None else CalibState()
+        self.setWindowTitle("Calibration Wizard")
         self.resize(1400, 800)
 
         # Toolbar (top row of controls)
         top = QWidget()
         top_layout = QHBoxLayout(top)
 
-        self.connect_btn = QPushButton("Connect to RFSoC")
+        self.connect_btn = QPushButton("Connection info...")
         self.connect_btn.clicked.connect(self.on_connect)
         top_layout.addWidget(self.connect_btn)
 
         self.qubit_combo = QComboBox()
-        self.qubit_combo.addItems([f"Q{i+1}" for i in range(8)])
+        self.qubit_combo.addItems([f"Q{i+1}" for i in range(self.state.n_qubits)])
         self.qubit_combo.currentIndexChanged.connect(self.on_qubit_changed)
         top_layout.addWidget(QLabel("Target qubit:"))
         top_layout.addWidget(self.qubit_combo)
@@ -743,30 +1148,55 @@ class MainWindow(QMainWindow):
 
         self.status = QStatusBar()
         self.setStatusBar(self.status)
-        self.status.showMessage(
-            "Ready. Connect to the RFSoC and load a Qubit_Parameters JSON to begin."
-        )
+        if self.state.is_connected():
+            self.conn_label.setText(
+                f"RFSoC: connected ({self.state.server_name or '?'} @ "
+                f"{self.state.ns_host or '?'}:{self.state.ns_port or '?'})"
+            )
+            self.status.showMessage(
+                f"Ready — {self.state.n_qubits} qubits configured. "
+                f"Load a Qubit_Parameters JSON or run a stage."
+            )
+        else:
+            self.status.showMessage(
+                "Not connected. Click 'Connection info...' to (re)open the connection dialog."
+            )
         self.refresh_qubit_summary()
 
     # --- handlers ---
 
     def on_connect(self):
         if self.state.is_connected():
-            QMessageBox.information(self, "Already connected", "Already connected.")
+            QMessageBox.information(
+                self, "Connection info",
+                f"Connected to '{self.state.server_name}' at "
+                f"{self.state.ns_host}:{self.state.ns_port}.\n\n"
+                f"Qubits configured: {self.state.n_qubits}\n"
+                f"Readout DAC: {self.state.base_config.get('res_ch')}\n"
+                f"Qubit DAC: {self.state.base_config.get('qubit_ch')}\n"
+                f"ADC channel: {self.state.base_config.get('ro_chs')}\n"
+                f"FF DACs: {self.state.base_config.get('fast_flux_chs')}\n\n"
+                f"Restart the GUI to change the channel map."
+            )
             return
-        try:
-            from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
-            soc, soccfg = makeProxy()
-            self.state.soc = soc
-            self.state.soccfg = soccfg
-        except Exception as exc:
-            QMessageBox.critical(self, "Connection failed",
-                                 f"makeProxy() failed: {exc}\n\n"
-                                 f"Check that the RFSoC nameserver is reachable "
-                                 f"(see socProxy.py for the IP).")
+        # No connection yet — open the dialog.
+        dlg = ConnectionDialog(self)
+        if dlg.exec_() != QDialog.Accepted or dlg.state is None:
             return
-        self.conn_label.setText("RFSoC: connected")
-        self.connect_btn.setEnabled(False)
+        # Replace state and rebuild qubit combo for the new n_qubits.
+        self.state = dlg.state
+        self.qubit_combo.blockSignals(True)
+        self.qubit_combo.clear()
+        self.qubit_combo.addItems([f"Q{i+1}" for i in range(self.state.n_qubits)])
+        self.qubit_combo.blockSignals(False)
+        for stage in self.stages:
+            stage.state = self.state
+        self.conn_label.setText(
+            f"RFSoC: connected ({self.state.server_name} @ "
+            f"{self.state.ns_host}:{self.state.ns_port})"
+        )
+        self.outer_edit.setText(self.state.outer_folder)
+        self.refresh_qubit_summary()
         self.status.showMessage("Connected.", 3000)
 
     def on_qubit_changed(self, idx: int):
@@ -826,7 +1256,13 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    win = MainWindow()
+
+    # Launch the connection / channel-mapping dialog first.
+    dlg = ConnectionDialog()
+    if dlg.exec_() != QDialog.Accepted or dlg.state is None:
+        sys.exit(0)
+
+    win = MainWindow(state=dlg.state)
     win.show()
     sys.exit(app.exec_())
 
