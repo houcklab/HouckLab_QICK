@@ -6,7 +6,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experimen
 import datetime
 from tqdm.notebook import tqdm
 import time
-
+from utils import *
 
 class QubitSpecSliceFFProg(RAveragerProgram):
     def initialize(self):
@@ -113,32 +113,96 @@ class QubitSpecSliceFF(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp=False, figNum=1, min_sep=0.01, **kwargs):
+    def display(self, data=None, plotDisp=False, figNum=1, min_sep=0.1, **kwargs):
+        def _lorentzian(x, y0, A, x0, gamma):
+            return y0 + A * (gamma ** 2 / ((x - x0) ** 2 + gamma ** 2))
+
+        def _fit_lorentzian_near_peak(x, y, peak_x, fit_window_mhz):
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+
+            mask = np.abs(x - peak_x) <= fit_window_mhz
+            if np.sum(mask) < 6:
+                return None
+
+            xf = x[mask]
+            yf = y[mask]
+
+            y0_guess = np.median(yf)
+            A_guess = np.max(yf) - y0_guess
+            gamma_guess = max((np.max(xf) - np.min(xf)) / 8, 1e-6)
+
+            p0 = [y0_guess, A_guess, peak_x, gamma_guess]
+
+            bounds = (
+                [-np.inf, 0, np.min(xf), 1e-9],
+                [np.inf, np.inf, np.max(xf), np.max(xf) - np.min(xf)]
+            )
+
+            try:
+                popt, pcov = curve_fit(
+                    _lorentzian,
+                    xf,
+                    yf,
+                    p0=p0,
+                    bounds=bounds,
+                    maxfev=50000
+                )
+
+                yfit = _lorentzian(xf, *popt)
+                ss_res = np.sum((yf - yfit) ** 2)
+                ss_tot = np.sum((yf - np.mean(yf)) ** 2)
+                r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+
+                y0, A, x0, gamma = popt
+
+                # reject bad/unphysical fits
+                if not np.isfinite(r2) or r2 < 0.60:
+                    return None
+                if gamma <= 0 or gamma >= (np.max(xf) - np.min(xf)):
+                    return None
+                if x0 < np.min(xf) or x0 > np.max(xf):
+                    return None
+
+                return {
+                    "popt": popt,
+                    "pcov": pcov,
+                    "x_fit": xf,
+                    "y_fit": yfit,
+                    "r2": r2,
+                    "center": x0,
+                    "gamma": gamma,
+                    "fwhm": 2 * gamma,
+                    "amplitude": A,
+                    "offset": y0,
+                }
+
+            except Exception:
+                return None
+
         if data is None:
             data = self.data
 
-        x_pts = np.array(data['data']['x_pts'])
-        avgi = np.array(data['data']['avgi'][0][0])
-        avgq = np.array(data['data']['avgq'][0][0])
+        x_pts = np.asarray(data['data']['x_pts'], dtype=float)
+        avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
+        avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
 
-        # complex signal and amplitude^2
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig) ** 2
 
-        # -----------------------------
-        # Find the two highest amplitude peaks
-        # with at least 0.1 MHz separation
-        # -----------------------------
-        min_sep_mhz = min_sep
+        min_sep_mhz = kwargs.get("min_sep_mhz", min_sep)
+        fit_window_mhz = kwargs.get("fit_window_mhz", 3 * min_sep_mhz)
+        prominent_ratio = kwargs.get("prominent_ratio", 0.35)
 
-        # candidate local maxima
+        # -----------------------------
+        # Find candidate local maxima
+        # -----------------------------
         candidate_inds = []
         n = len(avgamp0)
 
         if n == 1:
             candidate_inds = [0]
         else:
-            # include endpoints if they are peaks
             if avgamp0[0] > avgamp0[1]:
                 candidate_inds.append(0)
 
@@ -149,11 +213,9 @@ class QubitSpecSliceFF(ExperimentClass):
             if avgamp0[-1] > avgamp0[-2]:
                 candidate_inds.append(n - 1)
 
-        # fallback: if no strict local maxima found, use all points
         if len(candidate_inds) == 0:
             candidate_inds = list(range(n))
 
-        # sort candidates by descending amplitude
         candidate_inds = sorted(candidate_inds, key=lambda i: avgamp0[i], reverse=True)
 
         selected_peaks = []
@@ -162,65 +224,112 @@ class QubitSpecSliceFF(ExperimentClass):
                 selected_peaks.append(idx)
             else:
                 far_enough = all(abs(x_pts[idx] - x_pts[j]) >= min_sep_mhz for j in selected_peaks)
-                if far_enough:
+                strong_enough = avgamp0[idx] >= prominent_ratio * avgamp0[selected_peaks[0]]
+                if far_enough and strong_enough:
                     selected_peaks.append(idx)
 
             if len(selected_peaks) == 2:
                 break
 
-        # print peak info
+        selected_peaks = sorted(selected_peaks, key=lambda i: x_pts[i])
+
+        # -----------------------------
+        # Fit at most two Lorentzians
+        # -----------------------------
+        lorentz_fits = []
+        for idx in selected_peaks:
+            fit = _fit_lorentzian_near_peak(
+                x=x_pts,
+                y=avgamp0,
+                peak_x=x_pts[idx],
+                fit_window_mhz=fit_window_mhz
+            )
+            if fit is not None:
+                lorentz_fits.append(fit)
+
+        # -----------------------------
+        # Store fit results in data
+        # -----------------------------
+        data['data']['two_tone_peak_freqs'] = np.array([x_pts[i] for i in selected_peaks])
+        data['data']['two_tone_peak_amps'] = np.array([avgamp0[i] for i in selected_peaks])
+        data['data']['lorentz_num_fits'] = len(lorentz_fits)
+        data['data']['lorentz_centers'] = np.array([f["center"] for f in lorentz_fits])
+        data['data']['lorentz_fwhm'] = np.array([f["fwhm"] for f in lorentz_fits])
+        data['data']['lorentz_gamma'] = np.array([f["gamma"] for f in lorentz_fits])
+        data['data']['lorentz_amplitudes'] = np.array([f["amplitude"] for f in lorentz_fits])
+        data['data']['lorentz_offsets'] = np.array([f["offset"] for f in lorentz_fits])
+        data['data']['lorentz_r2'] = np.array([f["r2"] for f in lorentz_fits])
+
+        self.data = data
+
         print("I Max", x_pts[np.argmax(avgi)])
         print("Q Max", x_pts[np.argmax(avgq)])
         print("Max Amplitude ^2", x_pts[np.argmax(avgamp0)], "Amplitude ^2", np.max(avgamp0))
 
-        if len(selected_peaks) >= 1:
-            i0 = selected_peaks[0]
-            print(f"Peak 1: freq = {x_pts[i0]:.6f} MHz, amplitude^2 = {avgamp0[i0]:.6f}")
+        for k, idx in enumerate(selected_peaks):
+            print(f"Peak {k + 1}: freq = {x_pts[idx]:.6f} MHz, amplitude^2 = {avgamp0[idx]:.6f}")
 
-        if len(selected_peaks) >= 2:
-            i1 = selected_peaks[1]
-            print(f"Peak 2: freq = {x_pts[i1]:.6f} MHz, amplitude^2 = {avgamp0[i1]:.6f}")
-            print(f"Peak separation: {abs(x_pts[i1] - x_pts[i0]):.6f} MHz")
-        else:
-            print("Could not find a second peak at least 0.1 MHz away from the first.")
+        for k, fit in enumerate(lorentz_fits):
+            print(
+                f"Lorentzian {k + 1}: center={fit['center']:.6f} MHz, "
+                f"FWHM={fit['fwhm']:.6f} MHz, R2={fit['r2']:.3f}"
+            )
 
         # -----------------------------
-        # Plot I and Q
+        # Plot I/Q
         # -----------------------------
-        plt.figure(figNum)
+        fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color='Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color='Blue', label="Q")
 
-        # mark selected peaks on the amplitude trace if desired
         for k, idx in enumerate(selected_peaks):
             plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k + 1}: {x_pts[idx]:.6f} MHz")
 
         plt.ylabel("a.u.")
-        plt.xlabel("Qubit Frequency (GHz)")
+        plt.xlabel("Qubit Frequency")
         plt.title(self.titlename)
         plt.legend()
+        plt.tight_layout()
         plt.savefig(self.iname[:-4] + '_IQ.png')
 
         if plotDisp:
             plt.show()
+        else:
+            fig.clf(True)
+            plt.close(fig)
 
-            plt.figure(figNum + 1)
-            plt.plot(x_pts, avgamp0, '.-', color='Purple', label="|I+iQ|^2")
+        # -----------------------------
+        # Plot amplitude^2 + Lorentzian fits
+        # -----------------------------
+        fig = plt.figure(figNum + 1)
+        plt.plot(x_pts, avgamp0, '.-', color='Purple', label="|I+iQ|^2")
 
-            for k, idx in enumerate(selected_peaks):
-                plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k + 1}: {x_pts[idx]:.6f} MHz")
-                plt.plot(x_pts[idx], avgamp0[idx], 'o')
+        for k, idx in enumerate(selected_peaks):
+            plt.axvline(x_pts[idx], linestyle='--', alpha=0.7, label=f"Peak {k + 1}: {x_pts[idx]:.6f}")
+            plt.plot(x_pts[idx], avgamp0[idx], 'o')
 
-            plt.ylabel("a.u.")
-            plt.xlabel("Qubit Frequency (GHz)")
-            plt.title(self.titlename + " Amplitude^2")
-            plt.legend()
+        for k, fit in enumerate(lorentz_fits):
+            plt.plot(
+                fit["x_fit"],
+                fit["y_fit"],
+                '-',
+                linewidth=2,
+                label=f"Lorentz {k + 1}: center={fit['center']:.6f}, FWHM={fit['fwhm']:.4f}"
+            )
+
+        plt.ylabel("a.u.")
+        plt.xlabel("Qubit Frequency")
+        plt.title(self.titlename + " Amplitude^2 + Lorentzian Fits")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(self.iname[:-4] + '_Amp2_LorentzFits.png')
+
+        if plotDisp:
             plt.show()
             plt.pause(0.1)
-
-        plt.close(figNum)
-        if plotDisp:
-            plt.close(figNum + 1)
+        else:
+            fig.clf(True)
+            plt.close(fig)
 
 
     def get_amplitude_slice(self, data=None):

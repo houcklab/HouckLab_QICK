@@ -6,6 +6,58 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experimen
 import datetime
 from tqdm.notebook import tqdm
 import time
+from scipy.optimize import curve_fit
+
+def cos_func(x, y0, A, P, phi):
+    return y0 + A * np.cos(2 * np.pi * x / P + phi)
+
+
+def fit_rabi_cosine(x, y):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    # basic guesses
+    y0_guess = np.mean(y)
+    A_guess = 0.5 * (np.max(y) - np.min(y))
+
+    # estimate period from sweep span: assume at least ~half an oscillation is visible
+    x_span = np.max(x) - np.min(x)
+    P_guess = max(x_span, 1.0)
+
+    # phase guess from first point
+    phi_guess = 0.0
+
+    p0 = [y0_guess, A_guess, P_guess, phi_guess]
+
+    bounds = (
+        [-np.inf, -np.inf, 1e-9, -4 * np.pi],
+        [ np.inf,  np.inf, np.inf,  4 * np.pi]
+    )
+
+    popt, pcov = curve_fit(cos_func, x, y, p0=p0, bounds=bounds, maxfev=50000)
+    perr = np.sqrt(np.diag(pcov))
+
+    yfit = cos_func(x, *popt)
+
+    y0_fit, A_fit, P_fit, phi_fit = popt
+    dy0_fit, dA_fit, dP_fit, dphi_fit = perr
+
+    pi_gain = P_fit / 2.0
+
+    return {
+        "popt": popt,
+        "perr": perr,
+        "yfit": yfit,
+        "y0": y0_fit,
+        "A": A_fit,
+        "P": P_fit,
+        "phi": phi_fit,
+        "dy0": dy0_fit,
+        "dA": dA_fit,
+        "dP": dP_fit,
+        "dphi": dphi_fit,
+        "pi_gain": pi_gain,
+    }
 
 
 class AmplitudeRabiFFProg(AveragerProgram):
@@ -96,41 +148,54 @@ class AmplitudeRabiFF_N(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
+    def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         if data is None:
             data = self.data
 
-        x_pts = data['data']['x_pts']
-        avgi = data['data']['avgi'][0][0]
-        avgq = data['data']['avgq'][0][0]
+        x_pts = np.asarray(data['data']['x_pts'], dtype=float)
+        avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
+        avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
 
-        rotation_angle = Amplitude_IQ(avgi, avgq)
-        rotated_IQ = (avgi + 1j * avgq) * np.exp(1j * rotation_angle)
+        # fit I and Q separately
+        fit_i = fit_rabi_cosine(x_pts, avgi)
+        fit_q = fit_rabi_cosine(x_pts, avgq)
 
-        avgi = rotated_IQ.real
-        avgq = rotated_IQ.imag
+        print("Raw extrema:")
+        print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
+        print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
 
-        while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
+        print("\nCosine fit results:")
+        print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
+        print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
+        print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
+
+        print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
+        print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
+        print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
+
+        # store fit results on the object in case you want to inspect later
+        self.fit_i = fit_i
+        self.fit_q = fit_q
+
+        while plt.fignum_exists(num=figNum):
             figNum += 1
+
         fig = plt.figure(figNum)
-        plt.plot(x_pts, avgi, 'o-', label="i", color = 'orange')
-        plt.plot(x_pts, avgq, label="q", color = 'blue')
+        plt.plot(x_pts, avgi, 'o', label="I data", color='orange')
+        plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
+
+        plt.plot(x_pts, avgq, 'o', label="Q data", color='blue')
+        plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
+
+        plt.axvline(fit_i['pi_gain'], linestyle='--', color='orange', alpha=0.7, label="I pi gain")
+        plt.axvline(fit_q['pi_gain'], linestyle='--', color='blue', alpha=0.7, label="Q pi gain")
+
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()
         plt.title(self.titlename)
-
-        max_gain_i = x_pts[np.argmax(avgi)]
-        min_gain_i = x_pts[np.argmin(avgi)]
-        max_gain_q = x_pts[np.argmax(avgq)]
-        min_gain_q = x_pts[np.argmin(avgq)]
-
-        print("Max I gain: ", max_gain_i, "Max Q gain: ", max_gain_q)
-        print("Min I gain: ", min_gain_i, "Max Q gain: ", min_gain_q)
-        print("Max - Min I Gain / 2: ", (max_gain_i - min_gain_i)/ 2, "Max - Min Q Gain / 2: ", (max_gain_q - min_gain_q)/ 2)
-
+        plt.tight_layout()
         plt.savefig(self.iname)
-
 
         if plotDisp:
             plt.show(block=True)
@@ -138,8 +203,7 @@ class AmplitudeRabiFF_N(ExperimentClass):
         else:
             fig.clf(True)
             plt.close(fig)
-        print(rotation_angle, [avgi[0], np.min(avgi), np.max(avgi)])
-        return(rotation_angle, [avgi[0], avgi[-1]])
+
 
     def save_data(self, data=None):
         #print(f'Saving {self.fname}')

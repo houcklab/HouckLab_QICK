@@ -34,6 +34,102 @@ from sklearn.cluster import KMeans
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAutoCoherence import (
     run_auto_coherence, AUTO_COHERENCE_PARAMS, find_sweet_spot)
 
+def _extract_iq_from_singleshot_data(data_ss, state="g"):
+    """
+    Extracts SingleShotProgramFFMUX IQ arrays.
+
+    state="g" uses ground-prep IQ.
+    state="e" uses excited-prep IQ.
+    state="thermal" uses thermal IQ if available.
+    """
+    d = data_ss["data"]
+
+    key_pairs = {
+        "g": [
+            ("i_g0", "q_g0"),
+            ("i_g", "q_g"),
+            ("Ig", "Qg"),
+        ],
+        "e": [
+            ("i_e0", "q_e0"),
+            ("i_e", "q_e"),
+            ("Ie", "Qe"),
+        ],
+        "thermal": [
+            ("i_thermal0", "q_thermal0"),
+            ("i_thermal", "q_thermal"),
+        ],
+    }
+
+    for i_key, q_key in key_pairs.get(state, []):
+        if i_key in d and q_key in d:
+            return np.ravel(np.array(d[i_key])), np.ravel(np.array(d[q_key]))
+
+    print("[SingleShot MR Calib] Available data keys:", d.keys())
+    raise KeyError(f"Could not find raw I/Q arrays for state={state}.")
+def get_apriori_separator_from_singleshot(config, soc, soccfg, outerFolder):
+    """
+    Runs one SingleShot calibration using a pi pulse.
+    Uses the returned ground/excited blobs to define a fixed separator.
+    Also saves the SingleShot data/config/png through the normal SingleShot methods.
+    """
+
+    ss_shots = ModifiedRamsey_params.get("ss_calib_shots", 1000)
+
+    cfg_ss = config.copy()
+    cfg_ss["number_of_pulses"] = 1
+    cfg_ss["shots"] = ss_shots
+    cfg_ss["reps"] = ss_shots
+    cfg_ss["qubit_gain"] = qubit_gain
+    cfg_ss["f_ge"] = qubit_frequency_center
+    cfg_ss["sigma"] = qubit_sigma
+    cfg_ss["flattop_length"] = qubit_flattop
+    cfg_ss["Qubit_number"] = Qubit_Readout
+    cfg_ss["Read_Indeces"] = Qubit_Readout
+
+    inst_ss = SingleShotProgramFFMUX(
+        path="SingleShot_MRCalib",
+        outerFolder=outerFolder,
+        cfg=cfg_ss,
+        soc=soc,
+        soccfg=soccfg
+    )
+
+    data_ss = SingleShotProgramFFMUX.acquire(inst_ss)
+
+    # Save SingleShot data, config, and display png.
+    SingleShotProgramFFMUX.display(inst_ss, data_ss, plotDisp=False)
+    SingleShotProgramFFMUX.save_data(inst_ss, data_ss)
+    SingleShotProgramFFMUX.save_config(inst_ss)
+
+    d = data_ss["data"]
+
+    Ig = np.ravel(np.array(d["i_g0"]))
+    Qg = np.ravel(np.array(d["q_g0"]))
+    Ie = np.ravel(np.array(d["i_e0"]))
+    Qe = np.ravel(np.array(d["q_e0"]))
+
+    g_center = np.array([np.mean(Ig), np.mean(Qg)])
+    e_center = np.array([np.mean(Ie), np.mean(Qe)])
+
+    normal = e_center - g_center
+    midpoint = 0.5 * (g_center + e_center)
+
+    print("[ModifiedRamsey] A priori separator from saved SingleShot:")
+    print(f"  g_center = {g_center}")
+    print(f"  e_center = {e_center}")
+    print(f"  midpoint = {midpoint}")
+    print(f"  normal   = {normal}")
+    print(f"  separation = {np.linalg.norm(normal):.6f}")
+
+    return {
+        "g_center": g_center,
+        "e_center": e_center,
+        "normal": normal,
+        "midpoint": midpoint,
+        "data_ss": data_ss,
+    }
+
 
 # from q4diamond.Client_modules.Experiment_Scripts.mT2R import T2R
 # from q4diamond.Client_modules.Experiment_Scripts.mChiShift import ChiShift
@@ -52,20 +148,20 @@ soc, soccfg = makeProxy()
 temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-3-9_BC_Cooldown/CSTQ02/RFSOC/Q4//"
 ############## New TATQ03 (No Charge Lines) ############################
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6757.94, 'Gain': 510}, # 500 okay, 700 too much 520 maybe too much 530 too much
+    '1': {'Readout': {'Frequency': 6757.94, 'Gain': 500}, # 500 okay, 700 too much 520 maybe too much 530 too much
           'Qubit': {'Frequency': 1752, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.2, "flattop_length": None},
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q1//"},
     '2': {'Readout': {'Frequency': 7192.01, 'Gain': 4000}, # coarsely tuned to 4000, seeing behavior at 4500
           'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q2//"},
-    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 400},
+    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 130},
           'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q3//"},
-    '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1000}, # 1000 good 1500 too much i believe
-          'Qubit': {'Frequency':    2306.3, 'Gain': 5506,  "pi2_Gain": 5506 // 2,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey
+    '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
+          'Qubit': {'Frequency':    2306.308975, 'Gain': 7009,  "pi2_Gain": 7009 // 2 ,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
           'outerfoldername': "V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q4//"},
-    '5': {'Readout': {'Frequency': 6970.59, 'Gain': 4500}, # 3500 is okay, 5000 is maybe okay, 7000 is too much, 6500 is maybe too much
-          'Qubit': {'Frequency':  2758.397723, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
+    '5': {'Readout': {'Frequency': 6970.59, 'Gain': 1500}, # 4500 with directional coupler 1500 good without-
+          'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q5//"}, # qubit, T1 found
     '6': {'Readout': {'Frequency': 7070.917614, 'Gain': 390}, # 550 750 too much
           'Qubit': {'Frequency': 2100.3, 'Gain': 5000,  "pi2_Gain": 3975 // 2, "sigma": 1 , "flattop_length": 1}, # cant find
@@ -73,7 +169,7 @@ Qubit_Parameters = {
     }
 ############## End Can D ############################
 # yoko
-start_voltage = 0.002 # sets voltage for the entire experiment #0.0059 working for good T2Rs
+start_voltage = 0.000 # sets voltage for the entire experiment #0.0059 working for good T2Rs
 
 rm = pyvisa.ResourceManager()
 yoko = rm.open_resource('GPIB1::9::INSTR')
@@ -86,16 +182,16 @@ yoko_fixed = False # during a charge sweep; lazy way of sweeping two tone spec o
 
 # Readout
 
-Qubit_Readout = 5
-Qubit_Pulse = 5
+Qubit_Readout =4
+Qubit_Pulse = 4
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
-Constant2Tone = False
+Constant2Tone = True
 tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
 RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.75}
+Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.5}
 
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
@@ -104,12 +200,13 @@ Run2ToneSpec = False
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 5, "SpecNumPoints": 101, # 750 works Q5
-                        "qubit_length" : 100, # length of 50flattop pulse when gauss = False # 9.5 worked
+Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 1, "SpecNumPoints": 101, # 750 works Q5
+                        "qubit_length" : 20, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 10, 'rounds': 10,
-                        'Gauss': True, "sigma": 0.5, "gain": 750,
+                        'Gauss': True, "sigma": 2, "gain": 500,
                         'relax_delay' : 3500,
-                        "display": True} # 700 used for charge sweeps
+                        "display": True, 'min_sep_MHz':0.2,
+                        "fit_window_mhz": 0.5, "prominent_ratio": 0.1,} # 500 used for charge sweeps
 
 StabilizeTwoTone = False
 
@@ -142,21 +239,22 @@ TwoToneChargeDispersion_params = {
     "max_voltage_tries": 1000,    # max search steps per cycle
     "num_cycles": 1000,           # how many times to repeat: search -> quasiCW -> restart
     "use_upper_peak": True,     # True -> probe higher-frequency peak, False -> lower-frequency peak
+    "center_peak_tol_mhz": 0.05,
 
     # two-tone spec settings used during the search
     "SpecSpan": 1.0,
     "SpecNumPoints": 101,
     "reps": 10,
     "rounds": 10,
-    "relax_delay": 1500,
+    "relax_delay": 850,
     "Gauss": True,
     "sigma": 2,
-    "gain": 700,
+    "gain": 500,
     "qubit_length": 2,
 
     # quasi-CW settings once the peaks are separated enough
-    "qcw_repetitions": 100,
-    "qcw_relax_delay": 1500,
+    "qcw_repetitions": 1000,
+    "qcw_relax_delay": 850,
 }
 
 ModifiedRamsey_params = {
@@ -167,24 +265,30 @@ ModifiedRamsey_params = {
     "voltage_max": 0.010,       # absolute upper voltage bound [V]
     "max_voltage_tries": 1000,  # max search steps per cycle
     "num_cycles": 1000,         # how many search -> Ramsey cycles to run
+    "use_pi_pulse": False,
+    "center_peak_tol_mhz": 0.05,
+    "center_peak_df_for_tau": 0.5,
+    "use_apriori_separator": True,
+    "ss_calib_shots": 1000,
+    "ss_recalib_every_n_cycles": 10,
 
     # two-tone spec settings used during the voltage search
     "SpecSpan": 1.0,
-    "SpecNumPoints": 101,
+    "SpecNumPoints": 201,
     "reps": 10,
     "rounds": 10,
-    "relax_delay": 1500,
+    "relax_delay": 3500,
     "Gauss": True,
     "sigma": 2,
-    "gain": 700,
+    "gain": 500,
     "qubit_length": 2,
 
     # --- Modified Ramsey settings ---
     # tau is computed automatically as 1 / (2 * peak_sep_MHz)
     # f_ge is set automatically to the higher-frequency peak
     # No relax delay: the measurement collapses the qubit and acts as reset.
-    "mr_reps": 500,             # number of single-shot Ramsey measurements per cycle
-    # "mr_reps": 10000,             # number of single-shot Ramsey measurements per cycle
+    "mr_reps": 40000,             # number of single-shot Ramsey measurements per cycle
+    "average_n_shots": 400,
 }
 
 RunModifiedRamsey_Control = False  # two-tone search -> half-period step -> sweet-spot interpolation -> Ramsey
@@ -238,32 +342,32 @@ ChiShift_params = {"reps": 10,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 8000, 'number_of_steps': 101,
-                         "reps": 10, 'rounds': 10,
+                         "max_gain": 10000, 'number_of_steps': 501,
+                         "reps": 25, 'rounds': 25,
                          'relax_delay': 4500,
                          'fit' : True}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
-RunT1 = True
+RunT1 = False
 RunT2 = False
 T1T2_params = {"T1_step": 50, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
-               "T2_step": 1, "T2_expts": 300, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
-               "relax_delay": 5000, # 5000
+               "T2_step": 0.25, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
+               "relax_delay": 3500, # 5000
                'repetitions': 1000}
 
 RunT1T2E = False
 
-RunT1T2RT2E = False
+RunT1T2RT2E = True
 
 RunT2E = False
-T2E_params = {"T2_max_us": 1250, "T2_expts": 101, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,
+T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,
                "relax_delay": 3500, 'num_pi_pulses': 1, #need odd number of pulses
               "rotation_angle": None,
               "min_max": None,
               'repetitions': 3000}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 30, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 4500, "pi2_SS": False} # keep at 15
+SS_params = {"Shots": 1000, "Readout_Time": 25, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 1, 'relax_delay': 3500, "pi2_SS": False} # keep at 15
 
 RunT1SS = False
 T1SS_params = {"T1_step": 80, "T1_expts": 100,
@@ -274,10 +378,10 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'repetitions': 3000}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 2000, "gain_stop": 5000, "gain_pts": 30, "span": 0.1, "trans_pts": 7}
+SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 500, "q_gain_pts" : 50, "q_freq_span": 0.2, "q_freq_pts": 11,
+SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 50, "q_freq_span": 0.2, "q_freq_pts": 11,
                'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 # ── Automated T1 / T2 / T2Echo calibration ──────────────────────────────────
@@ -527,6 +631,7 @@ if Run2ToneSpec:
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]
         config["qubit_gain"] = Spec_relevant_params['gain']
+        config["qubit_gain"] = Spec_relevant_params['gain']
 
     config["qubit_length"] = Spec_relevant_params["qubit_length"]
     config["SpecSpan"] = Spec_relevant_params["SpecSpan"]
@@ -536,6 +641,7 @@ if Run2ToneSpec:
     config["expts"] = config["SpecNumPoints"]
     config['relax_delay'] = Spec_relevant_params['relax_delay']
     display = Spec_relevant_params['display']
+    min_sep = Spec_relevant_params['min_sep_MHz']
 
     Instance_specSlice = QubitSpecSliceFF(
         path="QubitSpecFF",
@@ -545,7 +651,8 @@ if Run2ToneSpec:
         outerFolder=outerFolder
     )
     data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-    QubitSpecSliceFF.display(Instance_specSlice, data_specSlice, plotDisp=display, figNum=2) # can change to True
+    QubitSpecSliceFF.display(Instance_specSlice, data_specSlice, plotDisp=display, figNum=2, min_sep=min_sep,
+                             fit_window_mhz = 0.5, prominent_ratio = 0.1) # can change to True
     QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
     QubitSpecSliceFF.save_config(Instance_specSlice)
 
@@ -620,6 +727,15 @@ if Run2ToneChargeDispersionQuasiCW:
                 outerFolder=outerFolder
             )
             data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
+            QubitSpecSliceFF.display(
+                Instance_specSlice,
+                data_specSlice,
+                plotDisp=False,
+                figNum=2,
+                min_sep=Spec_relevant_params["min_sep_MHz"],
+                fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
+                prominent_ratio=Spec_relevant_params["prominent_ratio"],
+            )
             QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
             QubitSpecSliceFF.save_config(Instance_specSlice)
 
@@ -629,7 +745,15 @@ if Run2ToneChargeDispersionQuasiCW:
             sig = avgi + 1j * avgq
             avgamp0 = np.abs(sig) ** 2
 
-            peak_info = find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1)
+            freq_choice = choose_two_tone_freqs_from_lorentz_or_peaks(
+                data_specSlice,
+                min_sep_mhz=Spec_relevant_params["min_sep_MHz"],
+            )
+
+            peak_info = freq_choice["peak_info_raw"]
+            peak_info["peak_freqs"] = freq_choice["freqs"]
+            peak_info["peak_sep"] = freq_choice["peak_sep"]
+            peak_info["source"] = freq_choice["source"]
 
             save_base = save_two_tone_plot(
                 x_pts=x_pts,
@@ -651,18 +775,55 @@ if Run2ToneChargeDispersionQuasiCW:
                 f.write(f"peak_sep: {peak_info['peak_sep']}\n")
                 f.write(f"df_required: {df_required}\n")
 
-            if peak_info["peak_sep"] is not None and peak_info["peak_sep"] >= df_required:
+            center_peak_tol_mhz = TwoToneChargeDispersion_params.get("center_peak_tol_mhz", 0.05)
+
+            peak_freqs = np.asarray(peak_info.get("peak_freqs", []), dtype=float)
+
+            highest_peak_freq = None
+            highest_peak_is_centered = False
+
+            if len(peak_freqs) > 0:
+                # Use the largest response in avgamp0 as the "highest peak".
+                peak_indices = [int(np.argmin(np.abs(x_pts - f))) for f in peak_freqs]
+                peak_heights = np.asarray([avgamp0[idx] for idx in peak_indices])
+                highest_peak_freq = float(peak_freqs[int(np.argmax(peak_heights))])
+
+                highest_peak_is_centered = (
+                        abs(highest_peak_freq - qubit_frequency_center) <= center_peak_tol_mhz
+                )
+
+            if highest_peak_is_centered:
+                # Calibration/centered mode: run quasi-CW on the centered strongest peak.
+                chosen_probe_freq = highest_peak_freq
+                chosen_peak_sep = float(peak_info["peak_sep"]) if peak_info["peak_sep"] is not None else 0.0
+
+                print(
+                    f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: centered highest peak found, "
+                    f"highest_peak={highest_peak_freq:.6f} MHz, "
+                    f"center={qubit_frequency_center:.6f} MHz, "
+                    f"|diff|={abs(highest_peak_freq - qubit_frequency_center):.6f} MHz <= "
+                    f"{center_peak_tol_mhz:.6f} MHz. Running quasi-CW with "
+                    f"probe_freq={chosen_probe_freq:.6f} MHz"
+                )
+
+                success = True
+                break
+
+            elif peak_info["peak_sep"] is not None and peak_info["peak_sep"] >= df_required:
+                # Normal mode: require two sufficiently separated peaks.
                 if TwoToneChargeDispersion_params["use_upper_peak"]:
                     chosen_probe_freq = float(np.max(peak_info["peak_freqs"]))
                 else:
                     chosen_probe_freq = float(np.min(peak_info["peak_freqs"]))
 
                 chosen_peak_sep = float(peak_info["peak_sep"])
+
                 print(
-                    f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: success, "
+                    f"[TwoToneChargeDispersion] Cycle {cycle_idx + 1}: separated peaks found, "
                     f"peak separation = {chosen_peak_sep:.6f} MHz, "
                     f"probe_freq = {chosen_probe_freq:.6f} MHz"
                 )
+
                 success = True
                 break
 
@@ -866,7 +1027,8 @@ if Run2ToneChargeDispersionQuasiCW:
         json.dump(cycle_summary, f, indent=2, default=float)
 
 if RunModifiedRamsey:
-    save_dir_mr = os.path.join(outerFolder, "ModifiedRamsey")
+    date_tag_mr = datetime.now().strftime("%Y_%m_%d")
+    save_dir_mr = os.path.join(outerFolder, "ModifiedRamsey", date_tag_mr)
     os.makedirs(save_dir_mr, exist_ok=True)
 
     df_required_mr = ModifiedRamsey_params["df"]
@@ -876,16 +1038,39 @@ if RunModifiedRamsey:
     max_tries_mr = ModifiedRamsey_params["max_voltage_tries"]
     num_cycles_mr = ModifiedRamsey_params["num_cycles"]
 
-    ModifiedRamsey_params.setdefault("hysteresis_low", 0.4)
-    ModifiedRamsey_params.setdefault("hysteresis_high", 0.6)
-    ModifiedRamsey_params.setdefault("window_ms", 0.1)
+    ModifiedRamsey_params.setdefault("hysteresis_low", 0.2)
+    ModifiedRamsey_params.setdefault("hysteresis_high", 0.8)
+    ModifiedRamsey_params.setdefault("window_ms", 0.05)
 
     current_voltage_mr = float(yoko.query(":SOUR:LEV?"))
     direction_mr = +1
 
     cycle_summary_mr = []
 
+    apriori_sep_mr = None
+
+    if ModifiedRamsey_params.get("use_apriori_separator", False):
+        apriori_sep_mr = get_apriori_separator_from_singleshot(
+            config=config,
+            soc=soc,
+            soccfg=soccfg,
+            outerFolder=outerFolder
+        )
+    ss_recalib_n_mr = ModifiedRamsey_params.get("ss_recalib_every_n_cycles", None)
     for cycle_idx_mr in range(num_cycles_mr):
+
+        if ModifiedRamsey_params.get("use_apriori_separator", False):
+            if apriori_sep_mr is None or (
+                    ss_recalib_n_mr is not None
+                    and ss_recalib_n_mr > 0
+                    and cycle_idx_mr % ss_recalib_n_mr == 0
+            ):
+                apriori_sep_mr = get_apriori_separator_from_singleshot(
+                    config=config,
+                    soc=soc,
+                    soccfg=soccfg,
+                    outerFolder=outerFolder
+                )
         print(f"\n================ ModifiedRamsey Cycle {cycle_idx_mr + 1}/{num_cycles_mr} ================")
 
         success_mr = False
@@ -924,6 +1109,15 @@ if RunModifiedRamsey:
                 outerFolder=outerFolder
             )
             data_specSlice_mr = QubitSpecSliceFF.acquire(Instance_specSlice_mr)
+            QubitSpecSliceFF.display(
+                Instance_specSlice_mr,
+                data_specSlice_mr,
+                plotDisp=False,
+                figNum=2,
+                min_sep=Spec_relevant_params["min_sep_MHz"],
+                fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
+                prominent_ratio=Spec_relevant_params["prominent_ratio"],
+            )
             QubitSpecSliceFF.save_data(Instance_specSlice_mr, data_specSlice_mr)
             QubitSpecSliceFF.save_config(Instance_specSlice_mr)
 
@@ -933,7 +1127,15 @@ if RunModifiedRamsey:
             sig_mr = avgi_mr + 1j * avgq_mr
             avgamp0_mr = np.abs(sig_mr) ** 2
 
-            peak_info_mr = find_two_tone_peaks(x_pts_mr, avgamp0_mr, min_sep_mhz=0.1)
+            freq_choice_mr = choose_two_tone_freqs_from_lorentz_or_peaks(
+                data_specSlice_mr,
+                min_sep_mhz=Spec_relevant_params["min_sep_MHz"],
+            )
+
+            peak_info_mr = freq_choice_mr["peak_info_raw"]
+            peak_info_mr["peak_freqs"] = freq_choice_mr["freqs"]
+            peak_info_mr["peak_sep"] = freq_choice_mr["peak_sep"]
+            peak_info_mr["source"] = freq_choice_mr["source"]
 
             save_base_mr = save_two_tone_plot(
                 x_pts=x_pts_mr,
@@ -954,16 +1156,55 @@ if RunModifiedRamsey:
                 f.write(f"peak_sep: {peak_info_mr['peak_sep']}\n")
                 f.write(f"df_required: {df_required_mr}\n")
 
-            if (peak_info_mr["peak_sep"] is not None
-                    and peak_info_mr["peak_sep"] >= df_required_mr):
-                # always use the higher-frequency peak as f_ge
+            center_peak_tol_mhz = ModifiedRamsey_params.get("center_peak_tol_mhz", 0.05)
+            center_peak_df_for_tau = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
+
+            peak_freqs_mr = np.asarray(peak_info_mr.get("peak_freqs", []), dtype=float)
+
+            highest_peak_freq_mr = None
+            highest_peak_is_centered_mr = False
+
+            if len(peak_freqs_mr) > 0:
+                # Use the largest response in avgamp0 as the "highest peak".
+                peak_indices_mr = [int(np.argmin(np.abs(x_pts_mr - f))) for f in peak_freqs_mr]
+                peak_heights_mr = np.asarray([avgamp0_mr[idx] for idx in peak_indices_mr])
+                highest_peak_freq_mr = float(peak_freqs_mr[int(np.argmax(peak_heights_mr))])
+
+                highest_peak_is_centered_mr = (
+                        abs(highest_peak_freq_mr - qubit_frequency_center) <= center_peak_tol_mhz
+                )
+
+            if highest_peak_is_centered_mr:
+                # Calibration mode: run MR even if there is not enough peak splitting.
+                chosen_probe_freq_mr = highest_peak_freq_mr
+                chosen_peak_sep_mr = float(center_peak_df_for_tau)
+
+                print(
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: centered highest peak found, "
+                    f"highest_peak={highest_peak_freq_mr:.6f} MHz, "
+                    f"center={qubit_frequency_center:.6f} MHz, "
+                    f"|diff|={abs(highest_peak_freq_mr - qubit_frequency_center):.6f} MHz <= "
+                    f"{center_peak_tol_mhz:.6f} MHz. Running calibration Ramsey with "
+                    f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                    f"df_for_tau={chosen_peak_sep_mr:.6f} MHz, "
+                    f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
+                )
+
+                success_mr = True
+                break
+
+            elif (peak_info_mr["peak_sep"] is not None
+                  and peak_info_mr["peak_sep"] >= df_required_mr):
+                # Normal parity mode: require two sufficiently separated peaks.
                 chosen_probe_freq_mr = float(np.max(peak_info_mr["peak_freqs"]))
                 chosen_peak_sep_mr = float(peak_info_mr["peak_sep"])
+
                 print(
-                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: peaks found, "
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: separated peaks found, "
                     f"sep={chosen_peak_sep_mr:.6f} MHz, f_ge={chosen_probe_freq_mr:.6f} MHz, "
                     f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
                 )
+
                 success_mr = True
                 break
 
@@ -1000,6 +1241,8 @@ if RunModifiedRamsey:
             "f_ge": chosen_probe_freq_mr,
             "df": chosen_peak_sep_mr,
             "pi2_gain": pi2_gain,
+            "pi_gain": qubit_gain,
+            "use_pi_pulse": ModifiedRamsey_params.get("use_pi_pulse", False),
             "sigma": qubit_sigma,
             "flattop_length": qubit_flattop,
             "reps": ModifiedRamsey_params["mr_reps"],
@@ -1021,36 +1264,40 @@ if RunModifiedRamsey:
         ModifiedRamsey.save_data(Instance_mr, data_mr)
         ModifiedRamsey.save_config(Instance_mr)
 
-        # ---------- classify shots and build parity trace ----------
+        # ---------- classify shots and build averaged 0-to-1 trace ----------
         raw_i_mr = np.ravel(np.array(data_mr["data"]["shots_i"]))
         raw_q_mr = np.ravel(np.array(data_mr["data"]["shots_q"]))
-        iq_mr = np.column_stack([raw_i_mr, raw_q_mr])
 
-        kmeans_mr = KMeans(n_clusters=2, random_state=0, n_init=20)
-        kmeans_mr.fit_predict(iq_mr)
-        centers_mr = kmeans_mr.cluster_centers_
+        if apriori_sep_mr is None:
+            raise RuntimeError("ModifiedRamsey now requires apriori_sep_mr from SingleShot calibration.")
 
-        c0_mr = centers_mr[0]
-        c1_mr = centers_mr[1]
-        normal_mr = c1_mr - c0_mr
-        midpoint_mr = 0.5 * (c0_mr + c1_mr)
-        scores_mr = (iq_mr - midpoint_mr) @ normal_mr
-        binary_states_mr = (scores_mr > 0).astype(int)
+        average_n_shots_mr = ModifiedRamsey_params.get("average_n_shots", 25)
 
-        # relabel so state 0 is the more-populated blob
-        n0_mr = np.sum(binary_states_mr == 0)
-        n1_mr = np.sum(binary_states_mr == 1)
-        if n1_mr > n0_mr:
-            binary_states_mr = 1 - binary_states_mr
-            c0_mr, c1_mr = c1_mr, c0_mr
-            normal_mr = c1_mr - c0_mr
-            midpoint_mr = 0.5 * (c0_mr + c1_mr)
-            scores_mr = (iq_mr - midpoint_mr) @ normal_mr
+        classification_mr = classify_and_average_iq(
+            raw_i=raw_i_mr,
+            raw_q=raw_q_mr,
+            g_center=apriori_sep_mr["g_center"],
+            e_center=apriori_sep_mr["e_center"],
+            average_n_shots=average_n_shots_mr,
+        )
 
-        # approximate time axis: pi/2 + tau + pi/2 + 0.05 sync + readout (no relax)
+        binary_states_mr = classification_mr["binary_states"]
+        excited_avg_mr = classification_mr["excited_avg"]
+        scores_mr = classification_mr["scores"]
+        normal_mr = classification_mr["normal"]
+        midpoint_mr = classification_mr["midpoint"]
+
+        c0_mr = apriori_sep_mr["g_center"]
+        c1_mr = apriori_sep_mr["e_center"]
+
         pulse_length_us = qubit_sigma * 4
-        rep_period_us = 2 * pulse_length_us + tau_us_mr + 0.05 + config_mr["readout_length"]
+        n_qubit_pulses_mr = 3 if config_mr.get("use_pi_pulse", False) else 2
+        rep_period_us = n_qubit_pulses_mr * pulse_length_us + tau_us_mr + 0.05 + config_mr["readout_length"]
+
         elapsed_ms_mr = np.arange(len(raw_i_mr)) * rep_period_us * 1e-3
+        elapsed_avg_ms_mr = (
+                np.arange(len(excited_avg_mr)) * average_n_shots_mr * rep_period_us * 1e-3
+        )
 
         timestamp_mr = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         base_mr = os.path.join(save_dir_mr, f"Cycle_{cycle_idx_mr:03d}_MR_{timestamp_mr}")
@@ -1065,18 +1312,20 @@ if RunModifiedRamsey:
         if not vertical_line_mr:
             Q_line_mr = midpoint_mr[1] - (normal_mr[0] / normal_mr[1]) * (I_line_mr - midpoint_mr[0])
 
-        # IQ scatter with separator
+        # IQ scatter with calibrated SingleShot separator
         plt.figure(figsize=(6, 6))
         plt.plot(raw_i_mr[binary_states_mr == 0], raw_q_mr[binary_states_mr == 0],
-                 ".", alpha=0.5, label="State 0 (upper parity)")
+                 ".", alpha=0.5, label="Assigned 0")
         plt.plot(raw_i_mr[binary_states_mr == 1], raw_q_mr[binary_states_mr == 1],
-                 ".", alpha=0.5, label="State 1 (lower parity)")
-        plt.plot(c0_mr[0], c0_mr[1], "o", markersize=10)
-        plt.plot(c1_mr[0], c1_mr[1], "o", markersize=10)
+                 ".", alpha=0.5, label="Assigned 1")
+        plt.plot(c0_mr[0], c0_mr[1], "o", markersize=10, label="SingleShot g center")
+        plt.plot(c1_mr[0], c1_mr[1], "o", markersize=10, label="SingleShot e center")
+
         if vertical_line_mr:
-            plt.axvline(midpoint_mr[0], linestyle="--", linewidth=2, label="Separator")
+            plt.axvline(midpoint_mr[0], linestyle="--", linewidth=2, label="g/e separator")
         else:
-            plt.plot(I_line_mr, Q_line_mr, "--", linewidth=2, label="Separator")
+            plt.plot(I_line_mr, Q_line_mr, "--", linewidth=2, label="g/e separator")
+
         plt.xlabel("I")
         plt.ylabel("Q")
         plt.xlim(I_min_mr - I_pad_mr, I_max_mr + I_pad_mr)
@@ -1089,128 +1338,51 @@ if RunModifiedRamsey:
         )
         plt.legend()
         plt.tight_layout()
-        plt.savefig(base_mr + "_iq_labeled.png", dpi=300, bbox_inches="tight")
+        plt.savefig(base_mr + "_iq_labeled_apriori.png", dpi=300, bbox_inches="tight")
         plt.close()
 
-        # raw parity binary trace
+        # Raw 0/1 shot trace
         plt.figure(figsize=(10, 4))
-        plt.step(elapsed_ms_mr, binary_states_mr, where="post", linewidth=1.5)
+        plt.step(elapsed_ms_mr, binary_states_mr, where="post", linewidth=1.2)
         plt.plot(elapsed_ms_mr, binary_states_mr, "o", markersize=2)
         plt.xlabel("Time since start (ms)")
-        plt.ylabel("Parity state (0=upper, 1=lower)")
+        plt.ylabel("Single-shot state")
         plt.yticks([0, 1])
         plt.ylim(-0.1, 1.1)
         plt.title(
-            f"Cycle {cycle_idx_mr + 1}: Modified Ramsey parity trace\n"
+            f"Cycle {cycle_idx_mr + 1}: Modified Ramsey single-shot state\n"
             f"tau={tau_us_mr:.4f} us, df={chosen_peak_sep_mr:.4f} MHz"
         )
         plt.tight_layout()
-        plt.savefig(base_mr + "_binary.png", dpi=300, bbox_inches="tight")
+        plt.savefig(base_mr + "_single_shot_binary.png", dpi=300, bbox_inches="tight")
         plt.close()
 
-        # ---------- moving-average + hysteresis smoothing of parity state ----------
-        window_ms_mr = ModifiedRamsey_params["window_ms"]
-        dt_ms_mr = rep_period_us * 1e-3
-        window_n_mr = max(1, int(round(window_ms_mr / dt_ms_mr)))
-
-        low_thresh_mr = ModifiedRamsey_params["hysteresis_low"]
-        high_thresh_mr = ModifiedRamsey_params["hysteresis_high"]
-
-        if not (0.0 <= low_thresh_mr < high_thresh_mr <= 1.0):
-            raise ValueError(
-                f"Invalid hysteresis thresholds: low={low_thresh_mr}, high={high_thresh_mr}"
-            )
-
-        state_avg_mr = None
-        state_hyst_mr = None
-        switches_hyst_mr = None
-        switch_time_ms_mr = elapsed_ms_mr[1:] if len(elapsed_ms_mr) > 1 else np.array([])
-
-        if len(binary_states_mr) >= 1:
-            kernel_mr = np.ones(window_n_mr, dtype=float) / window_n_mr
-            state_avg_mr = np.convolve(binary_states_mr.astype(float), kernel_mr, mode="same")
-
-            # hysteresis state classification
-            state_hyst_mr = np.empty_like(binary_states_mr)
-            current_state_mr = int(binary_states_mr[0])
-
-            for idx_mr, val_mr in enumerate(state_avg_mr):
-                if val_mr >= high_thresh_mr:
-                    current_state_mr = 1
-                elif val_mr <= low_thresh_mr:
-                    current_state_mr = 0
-                state_hyst_mr[idx_mr] = current_state_mr
-
-            switches_hyst_mr = (np.diff(state_hyst_mr) != 0).astype(int)
-
-            # moving average trace
-            plt.figure(figsize=(10, 4))
-            plt.plot(elapsed_ms_mr, state_avg_mr, linewidth=1.5, label="Moving average")
-            plt.axhline(high_thresh_mr, linestyle="--", linewidth=1.2,
-                        label=f"High threshold = {high_thresh_mr:.2f}")
-            plt.axhline(low_thresh_mr, linestyle="--", linewidth=1.2,
-                        label=f"Low threshold = {low_thresh_mr:.2f}")
-            plt.xlabel("Time since start (ms)")
-            plt.ylabel("Smoothed parity state")
-            plt.ylim(-0.05, 1.05)
-            plt.title(
-                f"Cycle {cycle_idx_mr + 1}: Moving-average parity trace\n"
-                f"window={window_n_mr * dt_ms_mr:.3f} ms, "
-                f"tau={tau_us_mr:.4f} us, df={chosen_peak_sep_mr:.4f} MHz"
-            )
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(base_mr + "_state_moving_avg.png", dpi=300, bbox_inches="tight")
-            plt.close()
-
-            # cleaned hysteresis state overlaid with raw binary points
-            plt.figure(figsize=(10, 4))
-            plt.step(elapsed_ms_mr, state_hyst_mr, where="post", linewidth=1.5, label="Hysteresis state")
-            plt.plot(elapsed_ms_mr, binary_states_mr, "o", markersize=2, alpha=0.35, label="Raw binary state")
-            plt.xlabel("Time since start (ms)")
-            plt.ylabel("Parity state")
-            plt.yticks([0, 1])
-            plt.ylim(-0.1, 1.1)
-            plt.title(
-                f"Cycle {cycle_idx_mr + 1}: Moving-average + hysteresis parity trace\n"
-                f"low={low_thresh_mr:.2f}, high={high_thresh_mr:.2f}, "
-                f"window={window_n_mr * dt_ms_mr:.3f} ms"
-            )
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(base_mr + "_state_hysteresis.png", dpi=300, bbox_inches="tight")
-            plt.close()
-
-            # jump events from cleaned state
-            if len(switches_hyst_mr) >= 1:
-                plt.figure(figsize=(10, 4))
-                plt.step(switch_time_ms_mr, switches_hyst_mr, where="post", linewidth=1.5)
-                plt.plot(switch_time_ms_mr, switches_hyst_mr, "o", markersize=2)
-                plt.xlabel("Time since start (ms)")
-                plt.ylabel("Jump detected")
-                plt.yticks([0, 1])
-                plt.ylim(-0.1, 1.1)
-                plt.title(
-                    f"Cycle {cycle_idx_mr + 1}: Jumps from hysteresis-cleaned parity state\n"
-                    f"low={low_thresh_mr:.2f}, high={high_thresh_mr:.2f}, "
-                    f"window={window_n_mr * dt_ms_mr:.3f} ms"
-                )
-                plt.tight_layout()
-                plt.savefig(base_mr + "_state_hysteresis_jumps.png", dpi=300, bbox_inches="tight")
-                plt.close()
+        # Averaged 0-to-1 population trace
+        plt.figure(figsize=(10, 4))
+        plt.plot(elapsed_avg_ms_mr, excited_avg_mr, "o-", linewidth=1.5)
+        plt.xlabel("Time since start (ms)")
+        plt.ylabel("Averaged excited-state population")
+        plt.ylim(-0.05, 1.05)
+        plt.title(
+            f"Cycle {cycle_idx_mr + 1}: Modified Ramsey averaged state\n"
+            f"{average_n_shots_mr} shots per point, tau={tau_us_mr:.4f} us"
+        )
+        plt.tight_layout()
+        plt.savefig(base_mr + "_averaged_population.png", dpi=300, bbox_inches="tight")
+        plt.close()
 
         np.savez(
             base_mr + ".npz",
             elapsed_ms=np.array(elapsed_ms_mr),
+            elapsed_avg_ms=np.array(elapsed_avg_ms_mr),
             raw_i=np.array(raw_i_mr),
             raw_q=np.array(raw_q_mr),
             scores=np.array(scores_mr),
             binary_states=np.array(binary_states_mr),
-            state_avg=np.array(state_avg_mr) if state_avg_mr is not None else np.array([]),
-            state_hysteresis=np.array(state_hyst_mr) if state_hyst_mr is not None else np.array([]),
-            hysteresis_switches=np.array(switches_hyst_mr) if switches_hyst_mr is not None else np.array([]),
-            switch_time_ms=np.array(switch_time_ms_mr),
-            centers=np.array([c0_mr, c1_mr]),
+            excited_avg=np.array(excited_avg_mr),
+            average_n_shots=np.array(average_n_shots_mr),
+            g_center=np.array(c0_mr),
+            e_center=np.array(c1_mr),
             midpoint=np.array(midpoint_mr),
             normal=np.array(normal_mr),
             chosen_probe_freq=np.array(chosen_probe_freq_mr),
@@ -1218,10 +1390,6 @@ if RunModifiedRamsey:
             tau_us=np.array(tau_us_mr),
             final_voltage=np.array(current_voltage_mr),
             cycle_idx=np.array(cycle_idx_mr),
-            hysteresis_low=np.array(low_thresh_mr),
-            hysteresis_high=np.array(high_thresh_mr),
-            moving_avg_window_n=np.array(window_n_mr),
-            moving_avg_window_ms=np.array(window_n_mr * dt_ms_mr),
             config=np.array(config_mr, dtype=object),
         )
 
@@ -2102,7 +2270,15 @@ if RunTrans_QubitSpec:
         Instance_specSlice = QubitSpecSliceFF(path="QubitSpecFF", cfg=config, soc=soc, soccfg=soccfg,
                                               outerFolder=outerFolder)
         data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
-        QubitSpecSliceFF.display(Instance_specSlice, data_specSlice, plotDisp=False, figNum=2)
+        QubitSpecSliceFF.display(
+            Instance_specSlice,
+            data_specSlice,
+            plotDisp=False,
+            figNum=2,
+            min_sep=Spec_relevant_params["min_sep_MHz"],
+            fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
+            prominent_ratio=Spec_relevant_params["prominent_ratio"],
+        )
         QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
         QubitSpecSliceFF.save_config(Instance_specSlice)
 
@@ -2140,6 +2316,15 @@ if RunChargeSweep:
             outerFolder=outerFolder
         )
         data_specSlice = QubitSpecSliceFF.acquire(Instance_specSlice)
+        QubitSpecSliceFF.display(
+            Instance_specSlice,
+            data_specSlice,
+            plotDisp=False,
+            figNum=2,
+            min_sep=Spec_relevant_params["min_sep_MHz"],
+            fit_window_mhz=Spec_relevant_params["fit_window_mhz"],
+            prominent_ratio=Spec_relevant_params["prominent_ratio"],
+        )
         QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
         QubitSpecSliceFF.save_config(Instance_specSlice)
         x_pts = np.array(data_specSlice['data']['x_pts'])

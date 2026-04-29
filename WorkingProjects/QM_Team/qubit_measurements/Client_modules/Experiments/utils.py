@@ -8,6 +8,101 @@ from datetime import datetime
 import os
 import json
 
+def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
+    x_pts = np.asarray(data_spec["data"]["x_pts"], dtype=float)
+    avgi = np.asarray(data_spec["data"]["avgi"][0][0], dtype=float)
+    avgq = np.asarray(data_spec["data"]["avgq"][0][0], dtype=float)
+    avgamp0 = np.abs(avgi + 1j * avgq) ** 2
+
+    peak_info = find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=min_sep_mhz)
+    peak_freqs = np.array(peak_info["peak_freqs"], dtype=float) if peak_info["peak_freqs"] is not None else np.array([])
+
+    lorentz_centers = np.array(
+        data_spec["data"].get("lorentz_centers", []),
+        dtype=float
+    )
+    lorentz_centers = lorentz_centers[np.isfinite(lorentz_centers)]
+
+    if len(lorentz_centers) >= 2:
+        chosen_freqs = np.sort(lorentz_centers[:2])
+        source = "two_lorentzian_centers"
+
+    elif len(lorentz_centers) == 1 and len(peak_freqs) >= 1:
+        lc = float(lorentz_centers[0])
+        other_peaks = [p for p in peak_freqs if abs(p - lc) >= min_sep_mhz]
+
+        if len(other_peaks) == 0:
+            other_peaks = [p for p in peak_freqs if abs(p - lc) > 1e-9]
+
+        if len(other_peaks) >= 1:
+            chosen_freqs = np.sort([lc, float(other_peaks[0])])
+            source = "one_lorentzian_center_plus_peak"
+        else:
+            chosen_freqs = np.array([lc])
+            source = "one_lorentzian_only"
+
+    else:
+        chosen_freqs = np.sort(peak_freqs[:2])
+        source = "two_highest_peaks"
+
+    if len(chosen_freqs) >= 2:
+        peak_sep = float(abs(chosen_freqs[-1] - chosen_freqs[0]))
+    else:
+        peak_sep = None
+
+    return {
+        "freqs": chosen_freqs,
+        "peak_sep": peak_sep,
+        "source": source,
+        "peak_info_raw": peak_info,
+    }
+
+def classify_and_average_iq(raw_i, raw_q, g_center, e_center, average_n_shots=25):
+    """
+    Projects IQ shots onto the calibrated ground/excited axis.
+
+    Returns:
+      binary_states: 0 or 1 per shot
+      excited_avg: averaged excited population in groups of average_n_shots
+      elapsed_idx_avg: group index for plotting
+      scores: raw projection scores
+      threshold_score: decision threshold
+    """
+
+    iq = np.column_stack([raw_i, raw_q])
+
+    g_center = np.asarray(g_center, dtype=float)
+    e_center = np.asarray(e_center, dtype=float)
+
+    normal = e_center - g_center
+    midpoint = 0.5 * (g_center + e_center)
+
+    # Projection coordinate along g -> e axis
+    scores = (iq - midpoint) @ normal
+
+    # By construction, scores > 0 is closer to excited center
+    binary_states = (scores > 0).astype(int)
+
+    average_n_shots = max(1, int(average_n_shots))
+
+    n_full = len(binary_states) // average_n_shots
+    if n_full > 0:
+        trimmed = binary_states[:n_full * average_n_shots]
+        excited_avg = trimmed.reshape(n_full, average_n_shots).mean(axis=1)
+        elapsed_idx_avg = np.arange(n_full)
+    else:
+        excited_avg = np.array([np.mean(binary_states)])
+        elapsed_idx_avg = np.array([0])
+
+    return {
+        "binary_states": binary_states,
+        "excited_avg": excited_avg,
+        "elapsed_idx_avg": elapsed_idx_avg,
+        "scores": scores,
+        "normal": normal,
+        "midpoint": midpoint,
+    }
+
 def hanger_model_db(f, f0, Qtot, Qext, asym, offset):
     """
     MATLAB-style hanger fit model:

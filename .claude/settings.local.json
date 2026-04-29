@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(ls -lh \"/c/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/WorkingProjects/QM_Team/qubit_measurements/Client_modules/Experiments/\"*Chi* \"/c/Users/ece-houck-j409/PycharmProjects/HouckLab_QICK/WorkingProjects/QM_Team/qubit_measurements/Client_modules/Experiments/\"*Charge*)"
+    ]
+  }
+}

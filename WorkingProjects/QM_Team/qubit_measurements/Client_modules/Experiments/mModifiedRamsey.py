@@ -8,21 +8,16 @@ class ModifiedRamseyProgram(AveragerProgram):
     """
     Fixed-tau Ramsey for charge-parity switching detection.
 
-    Sequence per shot:
-        pi/2 (phase=0, at f_ge=f_upper) -> wait tau -> pi/2 (phase=180 deg) -> readout
+    No-pi sequence:
+        pi/2 -> wait tau -> pi/2(180 deg) -> readout
 
-    tau = 1 / (2 * cfg["df"]),  df in MHz => tau in us.
+    Echo/pi sequence:
+        pi/2 -> wait tau/2 -> pi -> wait tau/2 -> pi/2(180 deg) -> readout
 
-    In the rotating frame locked to f_upper:
-      - Upper parity (freq = f_upper): accumulates 0 relative phase -> projected to |0>
-      - Lower parity (freq = f_lower): accumulates pi relative phase  -> projected to |1>
+    tau = 1 / (2 * cfg["df"]), df in MHz => tau in us.
 
-    cfg["f_ge"]    : higher qubit frequency (upper parity), in MHz
-    cfg["df"]      : peak separation |f_upper - f_lower|, in MHz
-    cfg["pi2_gain"]: DAC gain for the pi/2 pulse
-    cfg["sigma"]   : Gaussian pulse sigma, in us (pulse length = 4*sigma)
-    cfg["reps"]    : number of single-shot measurements to collect
-    No relax delay is used — the measurement projects the qubit and acts as reset.
+    cfg["use_pi_pulse"]: if True, inserts a pi pulse in the middle.
+    cfg["pi_gain"]     : DAC gain for the pi pulse, required if use_pi_pulse=True.
     """
 
     def initialize(self):
@@ -30,15 +25,15 @@ class ModifiedRamseyProgram(AveragerProgram):
 
         self.q_rp = self.ch_page(cfg["qubit_ch"])
         self.r_wait = 3
-        self.r_phase2 = 4
         self.r_phase = self.sreg(cfg["qubit_ch"], "phase")
 
-        # tau = 1 / (2 * df)
-        tau_us = 1.0 / (2.0 * cfg["df"])
-        self.regwi(self.q_rp, self.r_wait, self.us2cycles(tau_us))
-        # second pi/2 phase is fixed at 180 degrees for every shot
-        self.regwi(self.q_rp, self.r_phase2,
-                   self.deg2reg(180, gen_ch=cfg["qubit_ch"]))
+        # Total parity-mapping evolution time.
+        self.tau_us = 1.0 / (2.0 * cfg["df"])
+        self.use_pi_pulse = cfg.get("use_pi_pulse", False)
+
+        # If using echo, split the same total tau around the pi pulse.
+        wait_us = self.tau_us / 2.0 if self.use_pi_pulse else self.tau_us
+        self.regwi(self.q_rp, self.r_wait, self.us2cycles(wait_us))
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
@@ -51,27 +46,31 @@ class ModifiedRamseyProgram(AveragerProgram):
                 gen_ch=cfg["res_ch"]
             )
 
-        f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"],
-                              ro_ch=cfg["ro_chs"][0])
-        f_ge = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
+        f_res = self.freq2reg(
+            cfg["pulse_freq"],
+            gen_ch=cfg["res_ch"],
+            ro_ch=cfg["ro_chs"][0]
+        )
+        self.f_ge_reg = self.freq2reg(cfg["f_ge"], gen_ch=cfg["qubit_ch"])
 
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4,
-                                                  gen_ch=cfg["qubit_ch"])
+        self.pulse_qubit_length = self.us2cycles(
+            cfg["sigma"] * 4,
+            gen_ch=cfg["qubit_ch"]
+        )
+
         self.add_gauss(
             ch=cfg["qubit_ch"],
-            name="qubit",
+            name="qubit_pi2",
             sigma=self.pulse_sigma,
             length=self.pulse_qubit_length
         )
 
-        self.set_pulse_registers(
+        self.add_gauss(
             ch=cfg["qubit_ch"],
-            style="arb",
-            freq=f_ge,
-            phase=0,
-            gain=cfg["pi2_gain"],
-            waveform="qubit"
+            name="qubit_pi",
+            sigma=self.pulse_sigma,
+            length=self.pulse_qubit_length
         )
 
         self.set_pulse_registers(
@@ -86,25 +85,55 @@ class ModifiedRamseyProgram(AveragerProgram):
         self.sync_all(self.us2cycles(0.2))
 
     def body(self):
-        # First pi/2 at phase 0
-        self.regwi(self.q_rp, self.r_phase, 0)
-        self.pulse(ch=self.cfg["qubit_ch"])
+        cfg = self.cfg
 
-        # Load 180-degree phase for the second pi/2 pulse, then wait tau
-        self.mathi(self.q_rp, self.r_phase, self.r_phase2, "+", 0)
+        # First pi/2 at phase 0.
+        self.regwi(self.q_rp, self.r_phase, 0)
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.f_ge_reg,
+            phase=0,
+            gain=cfg["pi2_gain"],
+            waveform="qubit_pi2"
+        )
+        self.pulse(ch=cfg["qubit_ch"])
+
         self.sync_all()
         self.sync(self.q_rp, self.r_wait)
 
-        # Second pi/2 at phase 180 deg  (i.e. -pi/2)
-        self.pulse(ch=self.cfg["qubit_ch"])
+        if self.use_pi_pulse:
+            # Echo pi pulse in the middle.
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"],
+                style="arb",
+                freq=self.f_ge_reg,
+                phase=0,
+                gain=cfg["pi_gain"],
+                waveform="qubit_pi"
+            )
+            self.pulse(ch=cfg["qubit_ch"])
+
+            self.sync_all()
+            self.sync(self.q_rp, self.r_wait)
+
+        # Final pi/2 at phase 180 deg.
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"],
+            style="arb",
+            freq=self.f_ge_reg,
+            phase=self.deg2reg(180, gen_ch=cfg["qubit_ch"]),
+            gain=cfg["pi2_gain"],
+            waveform="qubit_pi2"
+        )
+        self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.05))
 
-        # Readout with no relax delay — the measurement itself acts as the reset
-        # by projecting the qubit to a definite state before the next shot.
+        # Readout with no relax delay.
         self.measure(
-            pulse_ch=self.cfg["res_ch"],
+            pulse_ch=cfg["res_ch"],
             adcs=self.ro_chs,
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
             wait=True,
             syncdelay=0
         )
@@ -125,26 +154,28 @@ class ModifiedRamseyProgram(AveragerProgram):
 class ModifiedRamsey(ExperimentClass):
     """
     Repeated fixed-tau Ramsey for charge-parity switching time-series.
-
-    Required cfg keys (in addition to BaseConfig):
-        f_ge       : higher qubit frequency from two-tone fit [MHz]
-        df         : charge-dispersion peak separation [MHz]; sets tau = 1/(2*df)
-        pi2_gain   : gain for the pi/2 Gaussian pulse
-        sigma      : Gaussian sigma [us]
-        reps       : number of single-shot measurements
-        relax_delay: wait between shots [us]; set to >= 3-5 * T1
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='',
                  prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path,
-                         outerFolder=outerFolder, prefix=prefix,
-                         cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(
+            soc=soc,
+            soccfg=soccfg,
+            path=path,
+            outerFolder=outerFolder,
+            prefix=prefix,
+            cfg=cfg,
+            config_file=config_file,
+            progress=progress
+        )
 
     def acquire(self, progress=False, debug=False):
         prog = ModifiedRamseyProgram(self.soccfg, self.cfg)
-        shots_i, shots_q = prog.acquire(self.soc, load_pulses=True,
-                                         progress=progress)
+        shots_i, shots_q = prog.acquire(
+            self.soc,
+            load_pulses=True,
+            progress=progress
+        )
 
         shots_i = np.asarray(shots_i).ravel()
         shots_q = np.asarray(shots_q).ravel()
@@ -155,8 +186,14 @@ class ModifiedRamsey(ExperimentClass):
                 'shots_i': shots_i,
                 'shots_q': shots_q,
                 'tau_us': 1.0 / (2.0 * self.cfg["df"]),
+                'wait_us': (
+                    1.0 / (4.0 * self.cfg["df"])
+                    if self.cfg.get("use_pi_pulse", False)
+                    else 1.0 / (2.0 * self.cfg["df"])
+                ),
                 'f_ge': self.cfg["f_ge"],
                 'df': self.cfg["df"],
+                'use_pi_pulse': self.cfg.get("use_pi_pulse", False),
             }
         }
         self.data = data
@@ -169,17 +206,24 @@ class ModifiedRamsey(ExperimentClass):
         shots_i = np.asarray(data['data']['shots_i'])
         shots_q = np.asarray(data['data']['shots_q'])
         tau_us = data['data']['tau_us']
+        wait_us = data['data']['wait_us']
         df = data['data']['df']
+        use_pi_pulse = data['data'].get('use_pi_pulse', False)
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
+
+        seq_label = "echo pi" if use_pi_pulse else "no pi"
 
         fig = plt.figure(figNum)
         plt.plot(shots_i, shots_q, '.', alpha=0.4, markersize=3)
         plt.xlabel("I (a.u.)")
         plt.ylabel("Q (a.u.)")
         plt.axis('equal')
-        plt.title(self.titlename + f"\ntau={tau_us:.4f} us, df={df:.4f} MHz")
+        plt.title(
+            self.titlename
+            + f"\n{seq_label}, tau={tau_us:.4f} us, wait={wait_us:.4f} us, df={df:.4f} MHz"
+        )
         plt.tight_layout()
         plt.savefig(self.iname[:-4] + '_IQ.png')
 

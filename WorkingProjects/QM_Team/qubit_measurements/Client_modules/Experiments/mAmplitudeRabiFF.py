@@ -11,55 +11,32 @@ from scipy.optimize import curve_fit
 def cos_func(x, y0, A, P, phi):
     return y0 + A * np.cos(2 * np.pi * x / P + phi)
 
+
 def fit_rabi_cosine(x, y):
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
 
-    order = np.argsort(x)
-    x = x[order]
-    y = y[order]
-
+    # basic guesses
     y0_guess = np.mean(y)
-    y_detrend = y - y0_guess
     A_guess = 0.5 * (np.max(y) - np.min(y))
 
-    dx = np.median(np.diff(x))
-    freqs = np.fft.rfftfreq(len(x), d=dx)
-    fft_mag = np.abs(np.fft.rfft(y_detrend))
-
-    # ignore DC
-    if len(freqs) > 1:
-        idx = np.argmax(fft_mag[1:]) + 1
-        f_guess = freqs[idx]
-        P_guess = 1.0 / f_guess if f_guess > 0 else np.max(x) - np.min(x)
-    else:
-        P_guess = np.max(x) - np.min(x)
+    # estimate period from sweep span: assume at least ~half an oscillation is visible
+    x_span = np.max(x) - np.min(x)
+    P_guess = max(x_span, 1.0)
 
     # phase guess from first point
-    arg = np.clip((y[0] - y0_guess) / A_guess, -1, 1) if A_guess != 0 else 1
-    phi_guess = np.arccos(arg) - 2 * np.pi * x[0] / P_guess
+    phi_guess = 0.0
 
     p0 = [y0_guess, A_guess, P_guess, phi_guess]
 
-    x_span = np.max(x) - np.min(x)
-    min_period = max(2 * dx, x_span / 20)   # allow up to ~20 oscillations
-    max_period = max(5 * x_span, min_period)
-
     bounds = (
-        [-np.inf, -np.inf, min_period, -4 * np.pi],
-        [ np.inf,  np.inf, max_period,  4 * np.pi]
+        [-np.inf, -np.inf, 1e-9, -4 * np.pi],
+        [ np.inf,  np.inf, np.inf,  4 * np.pi]
     )
 
-    popt, pcov = curve_fit(
-        cos_func,
-        x,
-        y,
-        p0=p0,
-        bounds=bounds,
-        maxfev=100000
-    )
-
+    popt, pcov = curve_fit(cos_func, x, y, p0=p0, bounds=bounds, maxfev=50000)
     perr = np.sqrt(np.diag(pcov))
+
     yfit = cos_func(x, *popt)
 
     y0_fit, A_fit, P_fit, phi_fit = popt
@@ -81,6 +58,7 @@ def fit_rabi_cosine(x, y):
         "dphi": dphi_fit,
         "pi_gain": pi_gain,
     }
+
 
 class AmplitudeRabiFFProg(RAveragerProgram):
     def initialize(self):
@@ -166,7 +144,6 @@ class AmplitudeRabiFF(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-
         #### pull the data from the amp rabi sweep
         # prog = PulseProbeSpectroscopyProgram(self.soccfg, self.cfg)
         prog = AmplitudeRabiFFProg(self.soccfg, self.cfg)
@@ -193,7 +170,8 @@ class AmplitudeRabiFF(ExperimentClass):
 
         return data
 
-    def display(self, data=None, plotDisp=False, figNum=1, fit=True, **kwargs):
+
+    def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
         if data is None:
             data = self.data
 
@@ -209,16 +187,14 @@ class AmplitudeRabiFF(ExperimentClass):
         print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
         print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
 
-        if fit:
+        print("\nCosine fit results:")
+        print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
+        print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
+        print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
 
-            print("\nCosine fit results:")
-            print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
-            print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
-            print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
-
-            print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
-            print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
-            print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
+        print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
+        print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
+        print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
 
         # store fit results on the object in case you want to inspect later
         self.fit_i = fit_i
@@ -229,16 +205,13 @@ class AmplitudeRabiFF(ExperimentClass):
 
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, 'o', label="I data", color='orange')
-        if fit:
-            plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
+        plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
 
         plt.plot(x_pts, avgq, 'o', label="Q data", color='blue')
-        if fit:
-            plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
+        plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
 
-        if fit:
-            plt.axvline(fit_i['pi_gain'], linestyle='--', color='orange', alpha=0.7, label="I pi gain")
-            plt.axvline(fit_q['pi_gain'], linestyle='--', color='blue', alpha=0.7, label="Q pi gain")
+        plt.axvline(fit_i['pi_gain'], linestyle='--', color='orange', alpha=0.7, label="I pi gain")
+        plt.axvline(fit_q['pi_gain'], linestyle='--', color='blue', alpha=0.7, label="Q pi gain")
 
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")

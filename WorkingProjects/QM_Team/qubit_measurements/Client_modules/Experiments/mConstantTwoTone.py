@@ -15,6 +15,9 @@ class ConstantTwoToneProg(AveragerProgram):
         res_len = min(self.us2cycles(cfg["tone_length"], gen_ch=cfg["res_ch"]), 65535)
         qub_len = min(self.us2cycles(cfg["tone_length"], gen_ch=cfg["qubit_ch"]), 65535)
 
+        print("Qubit Gain for constant two tone: ", cfg["qubit_gain"])
+        print("Resonator Gain for constant two tone: ", cfg["pulse_gain"])
+
         self.set_pulse_registers(
             ch=cfg["res_ch"],
             style="const",
