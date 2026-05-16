@@ -110,9 +110,9 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
     t_us          : array_like of float, shape (N,), monotonically increasing
     window_us     : float, window duration
     step_us       : float or None, window stride; default = window_us // 2 (50% overlap)
-    gap_indices   : list[int] or None, indices i marking an acquisition-gap boundary
-                    between bits[i] and bits[i+1]; the diff bits[i+1] - bits[i] is
-                    set to 0 so no spurious switch is counted across a gap.
+    gap_indices   : list[int] or None, indices i where bits[i] is the first sample
+                    after an acquisition-gap boundary; the diff bits[i] - bits[i-1]
+                    is set to 0 so no spurious switch is counted across a gap.
 
     Returns
     -------
@@ -142,8 +142,8 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
     diffs = np.abs(np.diff(bits))  # length N-1, value 0 or 1
     if gap_indices:
         for gi in gap_indices:
-            if 0 <= gi < bits.size - 1:
-                diffs[gi] = 0
+            if 1 <= gi < bits.size:
+                diffs[gi - 1] = 0
 
     # diffs[i] corresponds to a transition that occurred between t[i] and t[i+1];
     # assign that switch event the timestamp t[i+1].
@@ -225,13 +225,15 @@ if __name__ == "__main__":
     rel_err = abs(mean_rate - expected_rate_Hz) / expected_rate_Hz
     assert rel_err < 0.1, f"sliding rate off: expected {expected_rate_Hz:.1f}, got {mean_rate:.1f}"
 
-    # Gap indices should zero diffs across the gap.
+    # Gap indices should zero the cross-gap diff.
+    # bits2 = [0, 0, 1, 1, 0, 0], diffs = [0, 1, 0, 1, 0]
+    # gap_indices=[4] means bits[4] is the first sample after a gap, so the
+    # transition from bits[3] to bits[4] (= diffs[3] = 1) is zeroed.
+    # Remaining sum: |0| + |1| + |0| + 0 (zeroed) + |0| = 1.
     bits2 = np.array([0, 0, 1, 1, 0, 0])
     t2 = np.array([0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
     out_gap = sliding_window_switch_rate(bits2, t2, window_us=60.0, step_us=60.0,
-                                          gap_indices=[3])
-    # Diff array would be [0, 1, 0, -1, 0]; with gap at index 3, position 2 -> 3
-    # transition is zeroed. So switches in [0..50) = |0|+|1|+0+|-1 zeroed|+|0| = 1.
+                                          gap_indices=[4])
     assert out_gap["switches_per_window"][0] == 1, (
         f"expected 1 switch with gap, got {out_gap['switches_per_window']}"
     )
