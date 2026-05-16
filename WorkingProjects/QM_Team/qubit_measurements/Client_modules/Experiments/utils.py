@@ -496,8 +496,8 @@ def project_iq_onto_separator(I, Q, separator):
         Sample arrays (1-D or any shape that ravels to 1-D). Must be same length.
     separator : dict
         Must contain keys "g_center" and "e_center", each a length-2 array-like
-        (I, Q) coordinate. Keys "normal" and "midpoint" if present are recomputed
-        for consistency.
+        (I, Q) coordinate. Keys "normal" and "midpoint" if present are ignored;
+        they are recomputed from g_center and e_center.
 
     Returns
     -------
@@ -516,10 +516,16 @@ def project_iq_onto_separator(I, Q, separator):
         )
     normal = e - g
     midpoint = 0.5 * (g + e)
-    iq = np.column_stack([np.ravel(np.asarray(I, dtype=float)),
-                          np.ravel(np.asarray(Q, dtype=float))])
-    if iq.shape[0] == 0:
+    I_arr = np.ravel(np.asarray(I, dtype=float))
+    Q_arr = np.ravel(np.asarray(Q, dtype=float))
+    if I_arr.size != Q_arr.size:
+        raise ValueError(
+            f"I and Q must have the same length, got I.size={I_arr.size}, "
+            f"Q.size={Q_arr.size}"
+        )
+    if I_arr.size == 0:
         return np.zeros(0, dtype=float), np.zeros(0, dtype=int)
+    iq = np.column_stack([I_arr, Q_arr])
     scores = (iq - midpoint) @ normal
     binary_states = (scores > 0).astype(int)
     return scores, binary_states
@@ -545,7 +551,11 @@ if __name__ == "__main__":
     assert accuracy > 0.99, f"project_iq_onto_separator accuracy too low: {accuracy}"
     assert scores.shape == (2000,)
     assert bits.shape == (2000,)
-    assert bits.dtype == np.int64 or bits.dtype == np.int32
+    assert np.issubdtype(bits.dtype, np.integer)
+    # Sign convention: ground cluster (first 1000 samples) projects negative,
+    # excited cluster (last 1000) projects positive.
+    assert scores[0] < 0, f"expected ground sample to project negative, got {scores[0]}"
+    assert scores[1500] > 0, f"expected excited sample to project positive, got {scores[1500]}"
 
     # Empty input edge case
     scores0, bits0 = project_iq_onto_separator([], [], sep)
@@ -559,5 +569,13 @@ if __name__ == "__main__":
         pass
     else:
         raise AssertionError("expected ValueError on bad separator shape")
+
+    # Mismatched I/Q lengths raise with a clear message
+    try:
+        project_iq_onto_separator([1.0, 2.0], [1.0], sep)
+    except ValueError as ex:
+        assert "same length" in str(ex), f"unexpected error message: {ex}"
+    else:
+        raise AssertionError("expected ValueError on mismatched I/Q lengths")
 
     print("utils.py project_iq_onto_separator: OK")
