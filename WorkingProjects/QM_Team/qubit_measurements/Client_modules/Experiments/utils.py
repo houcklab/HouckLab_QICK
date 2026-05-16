@@ -572,6 +572,80 @@ def pick_parity_drive_freq(spec_data, which="lower"):
     }
 
 
+def chunked_acquire(experiment, n_chunks, progress=False):
+    """
+    Run experiment.acquire() n_chunks times back-to-back and stitch results.
+
+    Each acquire() must return a dict with keys "I", "Q", "t_us" (1-D arrays of
+    equal length per chunk) and optionally "wall_clock_start" (str).
+
+    The stitched time axis is monotonic: each subsequent chunk's t_us is shifted
+    by (previous_chunk_t_us[-1] + sample_period). Inter-chunk Python+tProc gaps
+    are NOT modeled in the stitched t_us; gap_indices marks where boundaries
+    occur so the analysis module can avoid counting switches across them.
+
+    Parameters
+    ----------
+    experiment : object with .acquire(progress=False) -> dict {I, Q, t_us, ...}
+    n_chunks   : int >= 1
+    progress   : bool
+
+    Returns
+    -------
+    dict:
+      I, Q, t_us               : concatenated arrays
+      gap_indices              : list of ints, first index of each chunk after the
+                                  first (length n_chunks - 1)
+      chunk_wall_clock_starts  : list of str (or None) per chunk
+      n_chunks                 : echoed int
+    """
+    if n_chunks < 1:
+        raise ValueError(f"n_chunks must be >= 1, got {n_chunks}")
+    I_parts, Q_parts, t_parts = [], [], []
+    wall_clocks = []
+    gap_indices = []
+    cum_offset_us = 0.0
+    cum_idx = 0
+    iterator = range(n_chunks)
+    if progress:
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(iterator, desc="chunked_acquire")
+        except ImportError:
+            pass
+    for ci in iterator:
+        out = experiment.acquire(progress=False)
+        I_c = np.asarray(out["I"], dtype=float).ravel()
+        Q_c = np.asarray(out["Q"], dtype=float).ravel()
+        t_c = np.asarray(out["t_us"], dtype=float).ravel()
+        if not (I_c.shape == Q_c.shape == t_c.shape):
+            raise RuntimeError(
+                f"chunk {ci} returned mismatched shapes: I={I_c.shape}, "
+                f"Q={Q_c.shape}, t_us={t_c.shape}"
+            )
+        if ci > 0:
+            # Stitch time: previous chunk's last + estimated sample period
+            if t_parts and t_parts[-1].size >= 2:
+                sp = float(t_parts[-1][1] - t_parts[-1][0])
+            else:
+                sp = 0.0
+            cum_offset_us = t_parts[-1][-1] + sp
+            gap_indices.append(cum_idx)
+        t_shifted = t_c + cum_offset_us
+        I_parts.append(I_c); Q_parts.append(Q_c); t_parts.append(t_shifted)
+        wall_clocks.append(out.get("wall_clock_start", None))
+        cum_idx += I_c.size
+
+    return {
+        "I": np.concatenate(I_parts),
+        "Q": np.concatenate(Q_parts),
+        "t_us": np.concatenate(t_parts),
+        "gap_indices": gap_indices,
+        "chunk_wall_clock_starts": wall_clocks,
+        "n_chunks": int(n_chunks),
+    }
+
+
 if __name__ == "__main__":
     # Unit tests for the helpers added by the zero-span-parity plan.
     rng = np.random.default_rng(0)
@@ -653,3 +727,37 @@ if __name__ == "__main__":
         raise AssertionError("expected ValueError for which='middle'")
 
     print("utils.py pick_parity_drive_freq: OK")
+
+    # --- chunked_acquire ------------------------------------------------------
+    class _FakeExp:
+        def __init__(self, n_per_chunk, sample_period_us=20.0):
+            self.n = int(n_per_chunk)
+            self.sp = float(sample_period_us)
+            self.cfg = {"sample_period_us": self.sp}
+            self.calls = 0
+
+        def acquire(self, progress=False):
+            self.calls += 1
+            # Each chunk produces IQ ramps offset by the call index for traceability.
+            I = np.arange(self.n, dtype=float) + 1000.0 * self.calls
+            Q = np.arange(self.n, dtype=float) + 2000.0 * self.calls
+            t = np.arange(self.n, dtype=float) * self.sp
+            return {"I": I, "Q": Q, "t_us": t,
+                    "wall_clock_start": f"2026-01-01T00:00:{self.calls:02d}"}
+
+    exp = _FakeExp(n_per_chunk=1000)
+    stitched = chunked_acquire(exp, n_chunks=5)
+    assert stitched["I"].shape == (5000,)
+    assert stitched["Q"].shape == (5000,)
+    assert stitched["t_us"].shape == (5000,)
+    # gap_indices marks first sample of each chunk after the first
+    assert list(stitched["gap_indices"]) == [1000, 2000, 3000, 4000]
+    # Time axis is monotonic
+    assert np.all(np.diff(stitched["t_us"]) > 0)
+    # Per-chunk wall clock timestamps are recorded
+    assert len(stitched["chunk_wall_clock_starts"]) == 5
+    # n_chunks == 1 case: gap_indices empty
+    one = chunked_acquire(_FakeExp(n_per_chunk=100), n_chunks=1)
+    assert list(one["gap_indices"]) == []
+
+    print("utils.py chunked_acquire: OK")
