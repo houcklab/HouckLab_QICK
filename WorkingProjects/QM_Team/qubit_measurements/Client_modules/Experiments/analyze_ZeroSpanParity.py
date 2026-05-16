@@ -99,6 +99,80 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         raise ValueError(f"Unknown method: {method!r}")
 
 
+def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
+                                gap_indices=None):
+    """
+    Sliding-window switch rate in Hz from a binary parity trace.
+
+    Parameters
+    ----------
+    binary_states : array_like of int (0 or 1), shape (N,)
+    t_us          : array_like of float, shape (N,), monotonically increasing
+    window_us     : float, window duration
+    step_us       : float or None, window stride; default = window_us // 2 (50% overlap)
+    gap_indices   : list[int] or None, indices i marking an acquisition-gap boundary
+                    between bits[i] and bits[i+1]; the diff bits[i+1] - bits[i] is
+                    set to 0 so no spurious switch is counted across a gap.
+
+    Returns
+    -------
+    dict with keys:
+      window_t_us         : array (M,), center time of each window
+      rate_Hz             : array (M,), switch rate per window
+      switches_per_window : array (M,) of int
+      window_us, step_us  : echoed scalars
+    """
+    bits = np.asarray(binary_states, dtype=int)
+    t = np.asarray(t_us, dtype=float)
+    if bits.shape != t.shape:
+        raise ValueError(f"binary_states shape {bits.shape} != t_us shape {t.shape}")
+
+    if step_us is None:
+        step_us = window_us / 2.0
+
+    if bits.size < 2:
+        return {
+            "window_t_us": np.zeros(0),
+            "rate_Hz": np.zeros(0),
+            "switches_per_window": np.zeros(0, dtype=int),
+            "window_us": float(window_us),
+            "step_us": float(step_us),
+        }
+
+    diffs = np.abs(np.diff(bits))  # length N-1, value 0 or 1
+    if gap_indices:
+        for gi in gap_indices:
+            if 0 <= gi < bits.size - 1:
+                diffs[gi] = 0
+
+    # diffs[i] corresponds to a transition that occurred between t[i] and t[i+1];
+    # assign that switch event the timestamp t[i+1].
+    t_event = t[1:]
+
+    # Build windows
+    t_start = t[0]
+    t_end = t[-1]
+    if t_end - t_start < window_us:
+        # Single window covering the whole trace
+        starts = np.array([t_start])
+    else:
+        starts = np.arange(t_start, t_end - window_us + step_us, step_us)
+    centers = starts + window_us / 2.0
+    counts = np.zeros(starts.size, dtype=int)
+    for i, s in enumerate(starts):
+        mask = (t_event >= s) & (t_event < s + window_us)
+        counts[i] = int(diffs[mask].sum())
+    rate_Hz = counts / (window_us * 1e-6)
+
+    return {
+        "window_t_us": centers,
+        "rate_Hz": rate_Hz,
+        "switches_per_window": counts,
+        "window_us": float(window_us),
+        "step_us": float(step_us),
+    }
+
+
 if __name__ == "__main__":
     rng = np.random.default_rng(1)
 
@@ -133,3 +207,33 @@ if __name__ == "__main__":
     assert label0_mean_I < label1_mean_I, "kmeans label remap not deterministic"
 
     print("classify_parity_trace kmeans: OK")
+
+    # --- sliding_window_switch_rate -------------------------------------------
+    # Build a 100 000-sample trace at 20 us/sample (record length 2 s).
+    # Inject a known switch probability per sample so we can check recovered rate.
+    n_samp = 100_000
+    sample_period_us = 20.0
+    t_us = np.arange(n_samp) * sample_period_us
+    p_switch = 0.001  # 0.1% per sample = 50 Hz at 20 us cadence
+    flips = rng.random(n_samp) < p_switch
+    bits = np.cumsum(flips) % 2
+
+    out_rate = sliding_window_switch_rate(bits, t_us, window_us=100_000, step_us=100_000)
+    # Non-overlapping 100 ms windows; expected rate ~ p_switch / (sample_period_us * 1e-6)
+    expected_rate_Hz = p_switch / (sample_period_us * 1e-6)
+    mean_rate = float(np.mean(out_rate["rate_Hz"]))
+    rel_err = abs(mean_rate - expected_rate_Hz) / expected_rate_Hz
+    assert rel_err < 0.1, f"sliding rate off: expected {expected_rate_Hz:.1f}, got {mean_rate:.1f}"
+
+    # Gap indices should zero diffs across the gap.
+    bits2 = np.array([0, 0, 1, 1, 0, 0])
+    t2 = np.array([0.0, 10.0, 20.0, 30.0, 40.0, 50.0])
+    out_gap = sliding_window_switch_rate(bits2, t2, window_us=60.0, step_us=60.0,
+                                          gap_indices=[3])
+    # Diff array would be [0, 1, 0, -1, 0]; with gap at index 3, position 2 -> 3
+    # transition is zeroed. So switches in [0..50) = |0|+|1|+0+|-1 zeroed|+|0| = 1.
+    assert out_gap["switches_per_window"][0] == 1, (
+        f"expected 1 switch with gap, got {out_gap['switches_per_window']}"
+    )
+
+    print("sliding_window_switch_rate: OK")
