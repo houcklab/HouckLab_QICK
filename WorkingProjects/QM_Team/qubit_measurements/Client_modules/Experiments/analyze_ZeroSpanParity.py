@@ -249,6 +249,96 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
     return bursts
 
 
+def dwell_time_statistics(binary_states, t_us, gap_indices=None):
+    """
+    Lengths of contiguous runs in state 0 and state 1, in microseconds.
+
+    Runs spanning a `gap_indices` boundary are split (not joined across it).
+
+    Returns
+    -------
+    dict with keys:
+      dwell_0_us, dwell_1_us : array of dwell durations (us)
+      mean_0, mean_1         : float, mean dwell time per state (nan if no runs)
+      n_runs_0, n_runs_1     : int, run counts
+      exp_fit_0, exp_fit_1   : dict {"tau_us": float, "A": float}; nans if fit fails
+    """
+    bits = np.asarray(binary_states, dtype=int)
+    t = np.asarray(t_us, dtype=float)
+    n = bits.size
+    if n == 0:
+        return {
+            "dwell_0_us": np.zeros(0), "dwell_1_us": np.zeros(0),
+            "mean_0": float("nan"), "mean_1": float("nan"),
+            "n_runs_0": 0, "n_runs_1": 0,
+            "exp_fit_0": {"tau_us": float("nan"), "A": float("nan")},
+            "exp_fit_1": {"tau_us": float("nan"), "A": float("nan")},
+        }
+
+    # Break trace into segments at gap_indices, run-length encode each segment.
+    breakpoints = sorted(set([0, n] + list(gap_indices or [])))
+    dwells_0, dwells_1 = [], []
+    for a, b in zip(breakpoints[:-1], breakpoints[1:]):
+        if b <= a:
+            continue
+        seg = bits[a:b]
+        seg_t = t[a:b]
+        # Run-length encode
+        change_idx = np.where(np.diff(seg) != 0)[0] + 1
+        run_starts = np.concatenate(([0], change_idx))
+        run_ends = np.concatenate((change_idx, [seg.size]))
+        for rs, re in zip(run_starts, run_ends):
+            state = int(seg[rs])
+            # Duration: time from first sample in run to first sample after run
+            if re < seg.size:
+                duration = float(seg_t[re] - seg_t[rs])
+            else:
+                # Last run in segment: extrapolate using sample period
+                if seg.size >= 2:
+                    sp = float(seg_t[1] - seg_t[0])
+                else:
+                    sp = 0.0
+                duration = float(seg_t[re - 1] - seg_t[rs]) + sp
+            if state == 0:
+                dwells_0.append(duration)
+            else:
+                dwells_1.append(duration)
+
+    dwells_0 = np.asarray(dwells_0, dtype=float)
+    dwells_1 = np.asarray(dwells_1, dtype=float)
+
+    def _fit_exp(dwells):
+        if dwells.size < 5:
+            return {"tau_us": float("nan"), "A": float("nan")}
+        try:
+            hist, edges = np.histogram(dwells, bins=min(30, max(5, dwells.size // 10)))
+            centers_h = 0.5 * (edges[:-1] + edges[1:])
+            mask = hist > 0
+            if mask.sum() < 3:
+                return {"tau_us": float("nan"), "A": float("nan")}
+            x = centers_h[mask]
+            y = np.log(hist[mask])
+            slope, intercept = np.polyfit(x, y, 1)
+            if slope >= 0:
+                return {"tau_us": float("nan"), "A": float("nan")}
+            tau = -1.0 / slope
+            A = float(np.exp(intercept))
+            return {"tau_us": float(tau), "A": A}
+        except Exception:
+            return {"tau_us": float("nan"), "A": float("nan")}
+
+    return {
+        "dwell_0_us": dwells_0,
+        "dwell_1_us": dwells_1,
+        "mean_0": float(np.mean(dwells_0)) if dwells_0.size else float("nan"),
+        "mean_1": float(np.mean(dwells_1)) if dwells_1.size else float("nan"),
+        "n_runs_0": int(dwells_0.size),
+        "n_runs_1": int(dwells_1.size),
+        "exp_fit_0": _fit_exp(dwells_0),
+        "exp_fit_1": _fit_exp(dwells_1),
+    }
+
+
 if __name__ == "__main__":
     rng = np.random.default_rng(1)
 
@@ -337,3 +427,41 @@ if __name__ == "__main__":
     assert bursts0 == [], f"expected no bursts, got {bursts0}"
 
     print("detect_bursts: OK")
+
+    # --- dwell_time_statistics ------------------------------------------------
+    # Generate a Markov-style binary trace with known mean dwell times
+    # tau_0 = 200 samples, tau_1 = 400 samples, at 20 us/sample.
+    n = 200_000
+    p01 = 1.0 / 200.0   # prob 0 -> 1 per sample
+    p10 = 1.0 / 400.0   # prob 1 -> 0 per sample
+    bits_mc = np.zeros(n, dtype=int)
+    state = 0
+    for i in range(n):
+        bits_mc[i] = state
+        if state == 0:
+            if rng.random() < p01:
+                state = 1
+        else:
+            if rng.random() < p10:
+                state = 0
+    t_mc = np.arange(n) * 20.0  # us
+    stats = dwell_time_statistics(bits_mc, t_mc)
+    # Expected mean dwell times in microseconds:
+    expected_tau_0_us = 200 * 20.0
+    expected_tau_1_us = 400 * 20.0
+    assert abs(stats["mean_0"] - expected_tau_0_us) / expected_tau_0_us < 0.15, (
+        f"mean_0 off: got {stats['mean_0']:.1f}, expected ~{expected_tau_0_us}"
+    )
+    assert abs(stats["mean_1"] - expected_tau_1_us) / expected_tau_1_us < 0.15, (
+        f"mean_1 off: got {stats['mean_1']:.1f}, expected ~{expected_tau_1_us}"
+    )
+    assert stats["n_runs_0"] > 0 and stats["n_runs_1"] > 0
+
+    # gap_indices splits runs across acquisition boundaries
+    bits_short = np.array([0, 0, 0, 0, 0, 0])
+    t_short = np.arange(6, dtype=float) * 10.0
+    stats_gap = dwell_time_statistics(bits_short, t_short, gap_indices=[3])
+    # Without gap: one run of length 6 in state 0; with gap: two runs of length 3
+    assert stats_gap["n_runs_0"] == 2
+
+    print("dwell_time_statistics: OK")
