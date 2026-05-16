@@ -117,7 +117,12 @@ def _validate_cfg(cfg, soccfg):
 
     # Rules 4 & 5: avg_maxlen / buf_maxlen
     ro_ch = cfg["ro_chs"][0]
-    ro_info = soccfg["readouts"][ro_ch]
+    try:
+        ro_info = soccfg["readouts"][ro_ch]
+    except (KeyError, IndexError, TypeError) as ex:
+        raise RuntimeError(
+            f"[ZeroSpanParity cfg] cannot read soccfg['readouts'][{ro_ch}]: {ex!r}"
+        )
     if mode == "strobe":
         avg_maxlen = int(ro_info["avg_maxlen"])
         reps = int(cfg["reps_per_chunk"])
@@ -140,17 +145,26 @@ def _validate_cfg(cfg, soccfg):
                 f"Reduce capture_length_us."
             )
 
-    # Rule 8: parity_drive_freq within DAC range
+    # Rule 8: parity_drive_freq within DAC range. Use try/except instead of
+    # `in soccfg` because QickConfig.__getitem__ exists but __contains__ does
+    # not, which makes `"gens" in soccfg` crash on KeyError.
     qch = cfg["qubit_ch"]
-    gen_info = soccfg["gens"][qch] if "gens" in soccfg else None
-    if gen_info is not None and "f_dds" in gen_info:
-        f_max = float(gen_info["f_dds"])
-        f_drive = float(cfg["parity_drive_freq"])
-        if not (0.0 <= f_drive <= f_max):
-            raise RuntimeError(
-                f"[ZeroSpanParity §5.3 rule 8] parity_drive_freq={f_drive} MHz "
-                f"outside qubit channel {qch} DDS range [0, {f_max}] MHz."
-            )
+    try:
+        gen_info = soccfg["gens"][qch]
+    except (KeyError, IndexError, TypeError):
+        gen_info = None
+    if gen_info is not None:
+        try:
+            f_max = float(gen_info["f_dds"])
+        except (KeyError, TypeError):
+            f_max = None
+        if f_max is not None:
+            f_drive = float(cfg["parity_drive_freq"])
+            if not (0.0 <= f_drive <= f_max):
+                raise RuntimeError(
+                    f"[ZeroSpanParity §5.3 rule 8] parity_drive_freq={f_drive} MHz "
+                    f"outside qubit channel {qch} DDS range [0, {f_max}] MHz."
+                )
 
     # Rules 6 & 7 are caller-level constraints (Recalibrate flags vs cached values).
     # The orchestrator enforces them before constructing cfg, so they are not
