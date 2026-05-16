@@ -37,7 +37,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
     method : {"apriori", "kmeans"}
         "apriori": project onto (e_center - g_center), threshold at 0.
         "kmeans": fit KMeans(n_clusters=2) on (I, Q); label 0 = cluster with
-        lower projection on the inter-cluster axis (deterministic remap).
+        the smaller I-coordinate centroid (deterministic remap).
 
     Returns
     -------
@@ -78,13 +78,9 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
         centers = km.cluster_centers_  # shape (2, 2)
 
-        # Define a separator dict consistent with apriori path:
-        # label 0 = cluster with lower projection on (centers[1] - centers[0]) axis
-        # before remap, then remap so label 0 has lower I-coordinate centroid.
-        axis = centers[1] - centers[0]
-        # Project both centers onto axis to confirm sign convention
-        proj = centers @ axis
-        # We want cluster with smaller I to be "0"; pick g/e accordingly.
+        # Remap so label 0 = cluster with the smaller I-coordinate centroid.
+        # This gives a stable, deterministic correspondence between cluster
+        # index and (g, e) regardless of KMeans' arbitrary internal ordering.
         if centers[0, 0] <= centers[1, 0]:
             g_idx, e_idx = 0, 1
         else:
