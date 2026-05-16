@@ -483,3 +483,81 @@ def fit_rabi_cosine(x, y):
         "pi_gain": pi_gain,
         "fit_error": best["err"],
     }
+
+
+def project_iq_onto_separator(I, Q, separator):
+    """
+    Project (I, Q) sample arrays onto the ground -> excited axis defined by a
+    single-shot calibration separator dict.
+
+    Parameters
+    ----------
+    I, Q : array_like
+        Sample arrays (1-D or any shape that ravels to 1-D). Must be same length.
+    separator : dict
+        Must contain keys "g_center" and "e_center", each a length-2 array-like
+        (I, Q) coordinate. Keys "normal" and "midpoint" if present are recomputed
+        for consistency.
+
+    Returns
+    -------
+    scores : np.ndarray, shape (N,)
+        Signed projection of each sample onto (e_center - g_center). Positive
+        scores are closer to the excited centroid.
+    binary_states : np.ndarray, shape (N,), dtype int
+        1 where score > 0 (excited side), 0 otherwise.
+    """
+    g = np.asarray(separator["g_center"], dtype=float)
+    e = np.asarray(separator["e_center"], dtype=float)
+    if g.shape != (2,) or e.shape != (2,):
+        raise ValueError(
+            f"separator g_center and e_center must each be length-2, "
+            f"got shapes {g.shape} and {e.shape}"
+        )
+    normal = e - g
+    midpoint = 0.5 * (g + e)
+    iq = np.column_stack([np.ravel(np.asarray(I, dtype=float)),
+                          np.ravel(np.asarray(Q, dtype=float))])
+    if iq.shape[0] == 0:
+        return np.zeros(0, dtype=float), np.zeros(0, dtype=int)
+    scores = (iq - midpoint) @ normal
+    binary_states = (scores > 0).astype(int)
+    return scores, binary_states
+
+
+if __name__ == "__main__":
+    # Unit tests for the helpers added by the zero-span-parity plan.
+    rng = np.random.default_rng(0)
+
+    # --- project_iq_onto_separator ----------------------------------------
+    g_center = np.array([0.0, 0.0])
+    e_center = np.array([10.0, 0.0])
+    sep = {"g_center": g_center, "e_center": e_center}
+
+    # Two clouds of 1000 samples each at the centers, plus tight Gaussian noise.
+    I_g = rng.normal(g_center[0], 0.5, 1000); Q_g = rng.normal(g_center[1], 0.5, 1000)
+    I_e = rng.normal(e_center[0], 0.5, 1000); Q_e = rng.normal(e_center[1], 0.5, 1000)
+    I = np.concatenate([I_g, I_e]); Q = np.concatenate([Q_g, Q_e])
+    labels_true = np.concatenate([np.zeros(1000, int), np.ones(1000, int)])
+
+    scores, bits = project_iq_onto_separator(I, Q, sep)
+    accuracy = np.mean(bits == labels_true)
+    assert accuracy > 0.99, f"project_iq_onto_separator accuracy too low: {accuracy}"
+    assert scores.shape == (2000,)
+    assert bits.shape == (2000,)
+    assert bits.dtype == np.int64 or bits.dtype == np.int32
+
+    # Empty input edge case
+    scores0, bits0 = project_iq_onto_separator([], [], sep)
+    assert scores0.shape == (0,)
+    assert bits0.shape == (0,)
+
+    # Bad separator shape raises
+    try:
+        project_iq_onto_separator([1.0], [1.0], {"g_center": [0, 0, 0], "e_center": [1, 1]})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError on bad separator shape")
+
+    print("utils.py project_iq_onto_separator: OK")
