@@ -365,19 +365,27 @@ class ZeroSpanParity(ExperimentClass):
         wall_clock_start = datetime.datetime.now().isoformat()
         # cfg["reps"] was already set to 1 in __init__ for decimated mode.
         prog = self.prog
+        # soft_avgs is handled by AveragerProgram.__init__ from cfg["soft_avgs"];
+        # passing it again here would collide with the kwarg that
+        # AveragerProgram.acquire_decimated injects internally.
         dec = prog.acquire_decimated(
             self.soc,
-            soft_avgs=int(cfg.get("soft_avgs", 1)),
             load_pulses=True,
             start_src=cfg["start_src"],
             progress=progress,
         )
-        # acquire_decimated returns a list with one (length, 2) array per ro_ch.
+        # acquire_decimated returns a list with one IQ array per ro_ch.
+        # Shape conventions vary by firmware:
+        #   (length, 2)         — I,Q is the trailing axis
+        #   (2, length)         — I,Q is the leading axis (observed on tprocv2 firmware)
+        #   (n_reps, length, 2) — multi-rep, flatten across reps
         arr = np.asarray(dec[0])
         if arr.ndim == 2 and arr.shape[1] == 2:
             I = arr[:, 0]; Q = arr[:, 1]
+        elif arr.ndim == 2 and arr.shape[0] == 2:
+            I = arr[0]; Q = arr[1]
         elif arr.ndim == 3:
-            # multi-rep/multi-read shape (n_reps, length, 2) — flatten to length
+            # multi-rep/multi-read shape (n_reps, length, 2) — flatten across reps
             I = arr.reshape(-1, 2)[:, 0]
             Q = arr.reshape(-1, 2)[:, 1]
         else:
