@@ -395,9 +395,9 @@ def _plot_switch_rate(rate_out, bursts, out_path):
         for b in bursts:
             ax.axvspan(b["t_start_us"] / 1e6, b["t_end_us"] / 1e6,
                        color="red", alpha=0.15)
+        ax.legend(loc="best")
     ax.set_xlabel("time (s)"); ax.set_ylabel("switch rate (Hz)")
     ax.set_title("Sliding-window switch rate")
-    ax.legend(loc="best")
     fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
 
 
