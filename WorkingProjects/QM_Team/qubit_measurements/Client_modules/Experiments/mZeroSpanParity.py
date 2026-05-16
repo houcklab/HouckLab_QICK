@@ -35,7 +35,7 @@ violated bound.
 """
 
 import numpy as np
-from qick import AveragerProgram, RAveragerProgram
+from qick import AveragerProgram
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import (
     ExperimentClass,
