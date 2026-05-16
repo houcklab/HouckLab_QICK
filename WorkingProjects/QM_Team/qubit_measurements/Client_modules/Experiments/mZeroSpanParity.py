@@ -214,6 +214,63 @@ class ZeroSpanParityProgStrobe(AveragerProgram):
         )
 
 
+class ZeroSpanParityProgDecimated(AveragerProgram):
+    """
+    Path B: decimated raw-ADC waveform acquisition for zero-span parity.
+
+    Both tones held on for the full capture window; ADC streams decimated samples
+    for the entire window. ExperimentClass wrapper calls prog.acquire_decimated()
+    instead of prog.acquire() to extract the (length, 2) IQ array.
+
+    Sample period = 1 / soccfg['readouts'][ro_ch]['f_output'] (us).
+    Total length = capture_length_us * f_output_MHz samples, capped by buf_maxlen.
+    """
+
+    def _setup_two_tones(self):
+        # Identical to strobe — could be hoisted to a mixin, but the spec calls
+        # for both classes to be self-contained for clarity. Duplication is
+        # bounded (~12 lines) and changes to one usually require revisiting both.
+        cfg = self.cfg
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+                          mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in cfg["ro_chs"]:
+            self.declare_readout(
+                ch=ch,
+                length=self.us2cycles(cfg["read_length"]),
+                freq=cfg["read_pulse_freq"],
+                gen_ch=cfg["res_ch"],
+            )
+        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+                              ro_ch=cfg["ro_chs"][0])
+        f_qub = self.freq2reg(cfg["parity_drive_freq"], gen_ch=cfg["qubit_ch"])
+        return f_res, f_qub
+
+    def initialize(self):
+        cfg = self.cfg
+        f_res, f_qub = self._setup_two_tones()
+        capture_cyc_q = self.us2cycles(cfg["capture_length_us"], gen_ch=cfg["qubit_ch"])
+        capture_cyc_r = self.us2cycles(cfg["capture_length_us"], gen_ch=cfg["res_ch"])
+
+        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=f_qub,
+                                  phase=0, gain=cfg["qubit_gain"],
+                                  length=capture_cyc_q)
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res,
+                                  phase=cfg["res_phase"], gain=cfg["pulse_gain"],
+                                  length=capture_cyc_r)
+        self.synci(200)
+
+    def body(self):
+        self.pulse(ch=self.cfg["qubit_ch"], t=0)
+        self.measure(
+            pulse_ch=self.cfg["res_ch"],
+            adcs=self.cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            wait=True,
+            syncdelay=0,
+        )
+
+
 if __name__ == "__main__":
     # Synthetic soccfg-like object for unit testing _validate_cfg without QICK hardware.
     class _FakeSocCfg:
