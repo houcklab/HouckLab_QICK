@@ -15,7 +15,13 @@ and are run with:
     python -m WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity
 """
 
+import os
+import json
 import numpy as np
+import h5py
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend safe in headless runs
+import matplotlib.pyplot as plt
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
     project_iq_onto_separator,
@@ -343,6 +349,173 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None):
     }
 
 
+def _plot_iq_scatter(I, Q, bits, separator, out_path):
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(np.asarray(I)[bits == 0], np.asarray(Q)[bits == 0],
+               s=1, alpha=0.3, label="state 0")
+    ax.scatter(np.asarray(I)[bits == 1], np.asarray(Q)[bits == 1],
+               s=1, alpha=0.3, label="state 1")
+    g = np.asarray(separator["g_center"], dtype=float)
+    e = np.asarray(separator["e_center"], dtype=float)
+    ax.plot([g[0], e[0]], [g[1], e[1]], "k--", lw=1)
+    ax.scatter([g[0], e[0]], [g[1], e[1]], c="k", marker="x", s=60, label="separator")
+    ax.set_xlabel("I"); ax.set_ylabel("Q"); ax.legend(loc="best", markerscale=4)
+    ax.set_title("Parity IQ scatter")
+    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def _plot_parity_vs_time(bits, t_us, out_path, max_pts=100_000):
+    fig, ax = plt.subplots(figsize=(10, 3))
+    n = bits.size
+    if n > max_pts:
+        # Downsample by histogram2d for speed
+        time_bins = np.linspace(t_us[0], t_us[-1], max_pts)
+        idx = np.clip(np.searchsorted(time_bins, t_us) - 1, 0, time_bins.size - 1)
+        avg_state = np.bincount(idx, weights=bits.astype(float), minlength=time_bins.size)
+        cnt = np.bincount(idx, minlength=time_bins.size).astype(float)
+        avg_state[cnt > 0] /= cnt[cnt > 0]
+        ax.plot(time_bins / 1e6, avg_state, lw=0.5)
+        ax.set_ylabel("mean state (downsampled)")
+    else:
+        ax.step(t_us / 1e6, bits, where="post", lw=0.5)
+        ax.set_ylabel("parity state")
+    ax.set_xlabel("time (s)")
+    ax.set_title("Parity vs time")
+    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def _plot_switch_rate(rate_out, bursts, out_path):
+    fig, ax = plt.subplots(figsize=(10, 3))
+    ax.plot(rate_out["window_t_us"] / 1e6, rate_out["rate_Hz"], lw=0.8)
+    if bursts:
+        baseline = bursts[0]["baseline_rate_Hz"]
+        threshold = bursts[0]["threshold_Hz"]
+        ax.axhline(baseline, color="gray", ls=":", label=f"baseline {baseline:.1f} Hz")
+        ax.axhline(threshold, color="red", ls="--", label=f"threshold {threshold:.1f} Hz")
+        for b in bursts:
+            ax.axvspan(b["t_start_us"] / 1e6, b["t_end_us"] / 1e6,
+                       color="red", alpha=0.15)
+    ax.set_xlabel("time (s)"); ax.set_ylabel("switch rate (Hz)")
+    ax.set_title("Sliding-window switch rate")
+    ax.legend(loc="best")
+    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def _plot_dwell_histograms(stats, out_path):
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(10, 4))
+    for ax, dwells, fit, title in [
+        (ax0, stats["dwell_0_us"], stats["exp_fit_0"], "state 0 dwells"),
+        (ax1, stats["dwell_1_us"], stats["exp_fit_1"], "state 1 dwells"),
+    ]:
+        if dwells.size > 0:
+            ax.hist(dwells, bins=30, log=True, alpha=0.7)
+            if np.isfinite(fit["tau_us"]):
+                xs = np.linspace(dwells.min(), dwells.max(), 200)
+                ax.plot(xs, fit["A"] * np.exp(-xs / fit["tau_us"]), "r-",
+                        label=f"tau={fit['tau_us']:.1f} us")
+                ax.legend()
+        ax.set_xlabel("dwell (us)")
+        ax.set_title(title)
+    fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
+
+
+def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
+                       classifier_method="apriori", step_us=None,
+                       min_burst_duration_us=None, save_plots=True, out_dir=None):
+    """
+    Load a ZeroSpanParity raw .h5, classify into parity bits, compute switch rate,
+    detect bursts, compute dwell statistics, save plots and a sidecar.
+
+    Parameters
+    ----------
+    h5_path           : str, path to raw .h5 written by ZeroSpanParity.save_data
+    separator         : dict or None; required for classifier_method="apriori"
+    window_us         : float, sliding-window size
+    k_sigma           : float, burst threshold
+    classifier_method : "apriori" | "kmeans"
+    step_us           : float or None, window stride
+    min_burst_duration_us : float or None
+    save_plots        : bool
+    out_dir           : str or None; defaults to directory of h5_path
+
+    Returns
+    -------
+    dict with scalar summary fields (matches sidecar JSON).
+    """
+    if out_dir is None:
+        out_dir = os.path.dirname(h5_path) or "."
+    base = os.path.splitext(os.path.basename(h5_path))[0]
+
+    with h5py.File(h5_path, "r") as f:
+        I = np.array(f["I"])
+        Q = np.array(f["Q"])
+        t_us = np.array(f["t_us"])
+        gap_indices = list(np.array(f["gap_indices"])) if "gap_indices" in f else []
+        sample_period_us = float(f.attrs.get("sample_period_us",
+                                              (t_us[1] - t_us[0]) if t_us.size > 1 else 0.0))
+
+    cls = classify_parity_trace(I, Q, separator=separator, method=classifier_method)
+    bits = cls["binary_states"]
+    sep_used = cls["separator_used"]
+
+    rate_out = sliding_window_switch_rate(bits, t_us, window_us=window_us,
+                                          step_us=step_us, gap_indices=gap_indices)
+    bursts = detect_bursts(rate_out["rate_Hz"], rate_out["window_t_us"],
+                           baseline_rate=None, k_sigma=k_sigma,
+                           min_duration_us=min_burst_duration_us)
+    stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
+
+    if save_plots:
+        _plot_iq_scatter(I, Q, bits, sep_used,
+                          os.path.join(out_dir, base + "_iq_scatter.png"))
+        _plot_parity_vs_time(bits, t_us,
+                              os.path.join(out_dir, base + "_parity_vs_time.png"))
+        _plot_switch_rate(rate_out, bursts,
+                           os.path.join(out_dir, base + "_switch_rate_vs_time.png"))
+        _plot_dwell_histograms(stats,
+                                os.path.join(out_dir, base + "_dwell_histograms.png"))
+
+    baseline_rate = (bursts[0]["baseline_rate_Hz"] if bursts
+                     else float(np.median(rate_out["rate_Hz"])
+                                if rate_out["rate_Hz"].size else 0.0))
+    summary = {
+        "h5_path": h5_path,
+        "sample_period_us": sample_period_us,
+        "n_samples": int(bits.size),
+        "n_bursts": len(bursts),
+        "baseline_rate_Hz": baseline_rate,
+        "mean_dwell_0_us": stats["mean_0"],
+        "mean_dwell_1_us": stats["mean_1"],
+        "n_runs_0": stats["n_runs_0"],
+        "n_runs_1": stats["n_runs_1"],
+        "exp_fit_tau_0_us": stats["exp_fit_0"]["tau_us"],
+        "exp_fit_tau_1_us": stats["exp_fit_1"]["tau_us"],
+        "classifier_method": cls["method"],
+    }
+
+    # Write sidecars
+    with open(os.path.join(out_dir, base + "_analysis.json"), "w") as f:
+        json.dump({**summary,
+                   "bursts": bursts,
+                   "window_us": rate_out["window_us"],
+                   "step_us": rate_out["step_us"]},
+                  f, indent=2, default=lambda x: x.tolist()
+                  if isinstance(x, np.ndarray) else float(x))
+    with h5py.File(os.path.join(out_dir, base + "_analysis.h5"), "w") as f:
+        f.create_dataset("binary_states", data=bits)
+        f.create_dataset("scores", data=cls["scores"])
+        f.create_dataset("window_t_us", data=rate_out["window_t_us"])
+        f.create_dataset("rate_Hz", data=rate_out["rate_Hz"])
+        f.create_dataset("dwell_0_us", data=stats["dwell_0_us"])
+        f.create_dataset("dwell_1_us", data=stats["dwell_1_us"])
+        for k, v in summary.items():
+            try:
+                f.attrs[k] = v
+            except TypeError:
+                f.attrs[k] = str(v)
+    return summary
+
+
 if __name__ == "__main__":
     rng = np.random.default_rng(1)
 
@@ -477,3 +650,58 @@ if __name__ == "__main__":
     )
 
     print("dwell_time_statistics: OK")
+
+    # --- analyze_parity_run end-to-end ----------------------------------------
+    import os, tempfile, h5py, json
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Build a synthetic raw .h5 mimicking what ZeroSpanParity.save_data writes.
+        n_syn = 50_000
+        sample_period_us_syn = 20.0
+        rng_syn = np.random.default_rng(7)
+        # Two IQ clouds, parity-modulated
+        labels_syn = (np.cumsum(rng_syn.random(n_syn) < 0.005) % 2).astype(int)
+        I_syn = np.where(labels_syn == 1,
+                         rng_syn.normal(10.0, 0.5, n_syn),
+                         rng_syn.normal(0.0, 0.5, n_syn))
+        Q_syn = rng_syn.normal(0.0, 0.5, n_syn)
+        t_syn = np.arange(n_syn) * sample_period_us_syn
+
+        h5_path = os.path.join(tmpdir, "ZeroSpanParity_synthetic.h5")
+        with h5py.File(h5_path, "w") as f:
+            f.create_dataset("I", data=I_syn)
+            f.create_dataset("Q", data=Q_syn)
+            f.create_dataset("t_us", data=t_syn)
+            f.create_dataset("gap_indices", data=np.array([], dtype=int))
+            f.attrs["sample_period_us"] = sample_period_us_syn
+            f.attrs["mode"] = "strobe"
+
+        sep_syn = {"g_center": np.array([0.0, 0.0]),
+                   "e_center": np.array([10.0, 0.0])}
+        results = analyze_parity_run(
+            h5_path=h5_path,
+            separator=sep_syn,
+            window_us=100_000.0,
+            k_sigma=5.0,
+            save_plots=True,
+            out_dir=tmpdir,
+        )
+        assert "n_bursts" in results
+        assert "baseline_rate_Hz" in results
+        assert "mean_dwell_0_us" in results and "mean_dwell_1_us" in results
+
+        base = os.path.splitext(os.path.basename(h5_path))[0]
+        for suffix in ["_iq_scatter.png", "_parity_vs_time.png",
+                       "_switch_rate_vs_time.png", "_dwell_histograms.png"]:
+            png = os.path.join(tmpdir, base + suffix)
+            assert os.path.exists(png), f"missing plot: {png}"
+
+        sidecar_json = os.path.join(tmpdir, base + "_analysis.json")
+        sidecar_h5   = os.path.join(tmpdir, base + "_analysis.h5")
+        assert os.path.exists(sidecar_json)
+        assert os.path.exists(sidecar_h5)
+        with open(sidecar_json) as f:
+            sj = json.load(f)
+        assert "baseline_rate_Hz" in sj
+
+    print("analyze_parity_run: OK")
