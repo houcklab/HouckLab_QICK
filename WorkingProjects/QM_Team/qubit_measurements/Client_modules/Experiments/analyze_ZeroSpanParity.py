@@ -276,7 +276,11 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None):
         }
 
     # Break trace into segments at gap_indices, run-length encode each segment.
-    breakpoints = sorted(set([0, n] + list(gap_indices or [])))
+    # Filter gap_indices to in-range positive values only — out-of-range entries
+    # (negative, 0, or >= n) are no-ops at the trace boundaries and are silently
+    # dropped to avoid IndexError from numpy slice wraparound.
+    valid_gaps = [int(g) for g in (gap_indices or []) if 0 < int(g) < n]
+    breakpoints = sorted(set([0, n] + valid_gaps))
     dwells_0, dwells_1 = [], []
     for a, b in zip(breakpoints[:-1], breakpoints[1:]):
         if b <= a:
@@ -463,5 +467,13 @@ if __name__ == "__main__":
     stats_gap = dwell_time_statistics(bits_short, t_short, gap_indices=[3])
     # Without gap: one run of length 6 in state 0; with gap: two runs of length 3
     assert stats_gap["n_runs_0"] == 2
+
+    # Out-of-range gap_indices are silently filtered (no IndexError).
+    stats_oor = dwell_time_statistics(bits_short, t_short, gap_indices=[100, -1, 0, 6])
+    # All four entries are out of valid range (0 < g < 6), so they're dropped;
+    # the trace is treated as one continuous segment with one run of length 6.
+    assert stats_oor["n_runs_0"] == 1, (
+        f"out-of-range gap_indices should yield 1 run, got {stats_oor['n_runs_0']}"
+    )
 
     print("dwell_time_statistics: OK")
