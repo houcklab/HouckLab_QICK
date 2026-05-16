@@ -531,6 +531,47 @@ def project_iq_onto_separator(I, Q, separator):
     return scores, binary_states
 
 
+def pick_parity_drive_freq(spec_data, which="lower"):
+    """
+    Pick one of the two parity-doublet peaks from a QubitSpecSliceFF-style
+    spec_data dict, using the existing choose_two_tone_freqs_from_lorentz_or_peaks
+    helper as the underlying peak-finder.
+
+    Parameters
+    ----------
+    spec_data : dict (output of QubitSpecSliceFF.acquire or compatible)
+    which     : "lower" or "higher" — which doublet peak to park at
+
+    Returns
+    -------
+    dict:
+      picked  : float, the chosen frequency (MHz)
+      lower   : float, the lower-frequency doublet peak (MHz)
+      higher  : float, the higher-frequency doublet peak (MHz)
+      peak_sep_MHz : float or None, peak separation
+      source  : str, provenance from choose_two_tone_freqs_from_lorentz_or_peaks
+    """
+    if which not in ("lower", "higher"):
+        raise ValueError(f"which must be 'lower' or 'higher', got {which!r}")
+    result = choose_two_tone_freqs_from_lorentz_or_peaks(spec_data)
+    freqs = np.asarray(result["freqs"], dtype=float)
+    if freqs.size < 2:
+        raise RuntimeError(
+            f"pick_parity_drive_freq: only {freqs.size} peak(s) found; "
+            f"need 2 for parity doublet. Source={result['source']}"
+        )
+    lower = float(np.min(freqs[:2]))
+    higher = float(np.max(freqs[:2]))
+    picked = lower if which == "lower" else higher
+    return {
+        "picked": picked,
+        "lower": lower,
+        "higher": higher,
+        "peak_sep_MHz": result.get("peak_sep"),
+        "source": result.get("source"),
+    }
+
+
 if __name__ == "__main__":
     # Unit tests for the helpers added by the zero-span-parity plan.
     rng = np.random.default_rng(0)
@@ -579,3 +620,36 @@ if __name__ == "__main__":
         raise AssertionError("expected ValueError on mismatched I/Q lengths")
 
     print("utils.py project_iq_onto_separator: OK")
+
+    # --- pick_parity_drive_freq ----------------------------------------------
+    # Build a fake QubitSpecSliceFF-style spec_data with two peaks at 3050 and 3052 MHz
+    x_pts = np.linspace(3045.0, 3055.0, 401)
+    def _lorentz(x, x0, A, g):
+        return A / (1.0 + ((x - x0) / g) ** 2)
+    amp = _lorentz(x_pts, 3050.0, 1.0, 0.15) + _lorentz(x_pts, 3052.0, 1.0, 0.15)
+    avgi = np.sqrt(amp)  # arbitrary, only avgamp0 = i^2 + q^2 is fit-relevant
+    avgq = np.zeros_like(avgi)
+    spec_data = {"data": {
+        "x_pts": x_pts.tolist(),
+        "avgi": [[avgi.tolist()]],
+        "avgq": [[avgq.tolist()]],
+        "lorentz_centers": [3050.0, 3052.0],
+    }}
+
+    picked_low = pick_parity_drive_freq(spec_data, which="lower")
+    assert abs(picked_low["picked"] - 3050.0) < 0.1, picked_low
+    assert abs(picked_low["lower"]  - 3050.0) < 0.1
+    assert abs(picked_low["higher"] - 3052.0) < 0.1
+
+    picked_high = pick_parity_drive_freq(spec_data, which="higher")
+    assert abs(picked_high["picked"] - 3052.0) < 0.1, picked_high
+
+    # Bad "which" raises
+    try:
+        pick_parity_drive_freq(spec_data, which="middle")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for which='middle'")
+
+    print("utils.py pick_parity_drive_freq: OK")
