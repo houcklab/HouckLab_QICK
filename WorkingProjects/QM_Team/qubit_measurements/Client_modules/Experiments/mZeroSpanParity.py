@@ -271,6 +271,142 @@ class ZeroSpanParityProgDecimated(AveragerProgram):
         )
 
 
+class ZeroSpanParity(ExperimentClass):
+    """
+    Dispatcher ExperimentClass for the zero-span parity measurement.
+
+    cfg["mode"] selects between strobe (Path A) and decimated (Path B). See
+    module docstring + spec §5 for the full configuration contract.
+
+    Saves data via the standard ExperimentClass HDF5 + JSON pattern:
+      .h5  : datasets I, Q, t_us, gap_indices; attrs sample_period_us, mode, etc.
+      .json: cfg dict (via save_config)
+      .png : optional, written by display() if called
+    """
+
+    def __init__(self, soc=None, soccfg=None, path="", outerFolder="",
+                 prefix="data", cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
+                         prefix=prefix, cfg=cfg, config_file=config_file,
+                         progress=progress)
+        _validate_cfg(self.cfg, self.soccfg)
+        mode = self.cfg["mode"]
+        # AveragerProgram.__init__ reads cfg["reps"] during make_program() —
+        # we must set it BEFORE constructing the program. For strobe mode,
+        # reps_per_chunk drives the loop; for decimated mode, reps=1 and the
+        # whole capture is one shot (averaged in software via soft_avgs).
+        if mode == "strobe":
+            self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
+            self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
+        elif mode == "decimated":
+            self.cfg["reps"] = 1
+            self.prog = ZeroSpanParityProgDecimated(self.soccfg, self.cfg)
+        else:
+            # _validate_cfg already raised, but keep defensive check.
+            raise ValueError(f"Unknown mode: {mode!r}")
+
+    def acquire(self, progress=False, **kwargs):
+        mode = self.cfg["mode"]
+        if mode == "strobe":
+            return self._acquire_strobe(progress=progress)
+        if mode == "decimated":
+            return self._acquire_decimated(progress=progress)
+        raise ValueError(f"Unknown mode: {mode!r}")
+
+    def _acquire_strobe(self, progress=False):
+        import datetime
+        cfg = self.cfg
+        wall_clock_start = datetime.datetime.now().isoformat()
+        # cfg["reps"] was already set to reps_per_chunk in __init__ before
+        # AveragerProgram.make_program() ran. No further mutation needed here.
+        prog = self.prog
+        # AveragerProgram.acquire returns (avg_di, avg_dq) along with filling
+        # prog.di_buf/prog.dq_buf with the raw per-rep stream.
+        prog.acquire(
+            self.soc,
+            load_pulses=True,
+            start_src=cfg["start_src"],
+            progress=progress,
+            readouts_per_experiment=1,
+            save_experiments=None,
+        )
+        ro_ch = cfg["ro_chs"][0]
+        I = np.asarray(prog.di_buf[ro_ch], dtype=float).ravel()
+        Q = np.asarray(prog.dq_buf[ro_ch], dtype=float).ravel()
+        sp = float(cfg["sample_period_us"])
+        t_us = np.arange(I.size, dtype=float) * sp
+        data = {
+            "I": I, "Q": Q, "t_us": t_us,
+            "gap_indices": np.array([], dtype=int),
+            "wall_clock_start": wall_clock_start,
+            "sample_period_us": sp,
+            "mode": "strobe",
+        }
+        self.data = {"data": data}
+        return data
+
+    def _acquire_decimated(self, progress=False):
+        import datetime
+        cfg = self.cfg
+        wall_clock_start = datetime.datetime.now().isoformat()
+        # cfg["reps"] was already set to 1 in __init__ for decimated mode.
+        prog = self.prog
+        dec = prog.acquire_decimated(
+            self.soc,
+            soft_avgs=int(cfg.get("soft_avgs", 1)),
+            load_pulses=True,
+            start_src=cfg["start_src"],
+            progress=progress,
+        )
+        # acquire_decimated returns a list with one (length, 2) array per ro_ch.
+        arr = np.asarray(dec[0])
+        if arr.ndim == 2 and arr.shape[1] == 2:
+            I = arr[:, 0]; Q = arr[:, 1]
+        elif arr.ndim == 3:
+            # multi-rep/multi-read shape (n_reps, length, 2) — flatten to length
+            I = arr.reshape(-1, 2)[:, 0]
+            Q = arr.reshape(-1, 2)[:, 1]
+        else:
+            raise RuntimeError(f"unexpected acquire_decimated shape: {arr.shape}")
+        ro_ch = cfg["ro_chs"][0]
+        decimated_fs_MHz = float(self.soccfg["readouts"][ro_ch]["f_output"])
+        sp = 1.0 / decimated_fs_MHz  # us per decimated sample
+        t_us = np.arange(I.size, dtype=float) * sp
+        data = {
+            "I": I, "Q": Q, "t_us": t_us,
+            "gap_indices": np.array([], dtype=int),
+            "wall_clock_start": wall_clock_start,
+            "sample_period_us": sp,
+            "decimated_fs_MHz": decimated_fs_MHz,
+            "mode": "decimated",
+        }
+        self.data = {"data": data}
+        return data
+
+    def save_data(self, data=None):
+        """Write IQ trace + metadata to self.fname (.h5)."""
+        import h5py
+        if data is None:
+            data = self.data["data"] if isinstance(self.data, dict) and "data" in self.data else self.data
+        with h5py.File(self.fname, "w") as f:
+            f.create_dataset("I", data=np.asarray(data["I"]))
+            f.create_dataset("Q", data=np.asarray(data["Q"]))
+            f.create_dataset("t_us", data=np.asarray(data["t_us"]))
+            f.create_dataset("gap_indices",
+                             data=np.asarray(data.get("gap_indices", []), dtype=int))
+            for k in ("wall_clock_start", "sample_period_us", "mode",
+                      "decimated_fs_MHz"):
+                if k in data:
+                    try:
+                        f.attrs[k] = data[k]
+                    except TypeError:
+                        f.attrs[k] = str(data[k])
+
+    def display(self, data=None, plotDisp=False, **kwargs):
+        """No-op for live display; analysis module generates plots from the .h5."""
+        return None
+
+
 if __name__ == "__main__":
     # Synthetic soccfg-like object for unit testing _validate_cfg without QICK hardware.
     class _FakeSocCfg:
