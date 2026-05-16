@@ -173,6 +173,82 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
     }
 
 
+def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
+                  min_duration_us=None):
+    """
+    Identify contiguous high-rate windows as bursts above a robust baseline.
+
+    Parameters
+    ----------
+    rate_Hz       : array (M,) of switch rates per window (output of
+                    sliding_window_switch_rate)
+    window_t_us   : array (M,) of window center times
+    baseline_rate : float or None; defaults to median(rate_Hz) (robust)
+    k_sigma       : float; threshold = baseline + k_sigma * (1.4826 * MAD)
+    min_duration_us : float or None; filter bursts shorter than this
+
+    Returns
+    -------
+    list of dicts, one per burst, with keys:
+      t_start_us, t_end_us, duration_us,
+      peak_rate_Hz, mean_rate_Hz, integrated_excess_switches,
+      baseline_rate_Hz, threshold_Hz
+    """
+    rate = np.asarray(rate_Hz, dtype=float)
+    centers = np.asarray(window_t_us, dtype=float)
+    if rate.shape != centers.shape:
+        raise ValueError(f"rate {rate.shape} and centers {centers.shape} differ")
+    if rate.size == 0:
+        return []
+
+    if baseline_rate is None:
+        baseline_rate = float(np.median(rate))
+    mad = float(np.median(np.abs(rate - baseline_rate)))
+    sigma = 1.4826 * mad
+    threshold = baseline_rate + k_sigma * sigma
+
+    above = rate > threshold
+    if not np.any(above):
+        return []
+
+    # Find contiguous runs of True
+    edges = np.diff(above.astype(int))
+    starts = list(np.where(edges == 1)[0] + 1)
+    ends = list(np.where(edges == -1)[0] + 1)
+    if above[0]:
+        starts = [0] + starts
+    if above[-1]:
+        ends = ends + [above.size]
+
+    # Window stride for duration calculation
+    if centers.size >= 2:
+        stride = float(np.median(np.diff(centers)))
+    else:
+        stride = 0.0
+
+    bursts = []
+    for s, e in zip(starts, ends):
+        t_start = float(centers[s] - stride / 2.0)
+        t_end = float(centers[e - 1] + stride / 2.0)
+        duration = t_end - t_start
+        if min_duration_us is not None and duration < min_duration_us:
+            continue
+        seg = rate[s:e]
+        bursts.append({
+            "t_start_us": t_start,
+            "t_end_us": t_end,
+            "duration_us": duration,
+            "peak_rate_Hz": float(np.max(seg)),
+            "mean_rate_Hz": float(np.mean(seg)),
+            "integrated_excess_switches": float(
+                np.sum((seg - baseline_rate)) * (stride * 1e-6)
+            ),
+            "baseline_rate_Hz": baseline_rate,
+            "threshold_Hz": threshold,
+        })
+    return bursts
+
+
 if __name__ == "__main__":
     rng = np.random.default_rng(1)
 
@@ -239,3 +315,25 @@ if __name__ == "__main__":
     )
 
     print("sliding_window_switch_rate: OK")
+
+    # --- detect_bursts --------------------------------------------------------
+    # Baseline rate ~50 Hz over 100 windows; inject one window with 10 kHz.
+    rate = np.full(100, 50.0)
+    rate[50] = 10_000.0
+    centers = np.arange(100) * 100_000.0  # 100 ms per window in us
+
+    bursts = detect_bursts(rate, centers, baseline_rate=None, k_sigma=5,
+                           min_duration_us=None)
+    assert len(bursts) == 1, f"expected 1 burst, got {len(bursts)}"
+    b = bursts[0]
+    assert b["t_start_us"] <= centers[50] <= b["t_end_us"], (
+        f"burst window does not contain injection: {b}"
+    )
+    assert b["peak_rate_Hz"] == 10_000.0
+    assert b["baseline_rate_Hz"] == 50.0  # median is robust to one outlier
+
+    # No bursts when everything is at baseline
+    bursts0 = detect_bursts(np.full(100, 50.0), centers, k_sigma=5)
+    assert bursts0 == [], f"expected no bursts, got {bursts0}"
+
+    print("detect_bursts: OK")
