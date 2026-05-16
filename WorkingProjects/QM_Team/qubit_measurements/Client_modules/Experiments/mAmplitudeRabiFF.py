@@ -7,6 +7,7 @@ import datetime
 from tqdm.notebook import tqdm
 import time
 from scipy.optimize import curve_fit
+from utils import *
 
 def cos_func(x, y0, A, P, phi):
     return y0 + A * np.cos(2 * np.pi * x / P + phi)
@@ -170,48 +171,76 @@ class AmplitudeRabiFF(ExperimentClass):
 
         return data
 
-
-    def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
+    def display(self, data=None, plotDisp=True, figNum=1, fit=False, **kwargs):
         if data is None:
             data = self.data
 
-        x_pts = np.asarray(data['data']['x_pts'], dtype=float)
-        avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
-        avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
+        x_pts = np.asarray(data["data"]["x_pts"], dtype=float).ravel()
+        avgi = np.asarray(data["data"]["avgi"][0][0], dtype=float).ravel()
+        avgq = np.asarray(data["data"]["avgq"][0][0], dtype=float).ravel()
 
-        # fit I and Q separately
-        fit_i = fit_rabi_cosine(x_pts, avgi)
-        fit_q = fit_rabi_cosine(x_pts, avgq)
+        fit_i = None
+        fit_q = None
 
         print("Raw extrema:")
         print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
         print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
 
-        print("\nCosine fit results:")
-        print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
-        print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
-        print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
+        if fit:
+            try:
+                fit_i = fit_rabi_cosine(x_pts, avgi)
+                data["data"]["fit_i_popt"] = np.asarray(fit_i["popt"])
+                data["data"]["fit_i_pi_gain"] = np.asarray(fit_i["pi_gain"])
+                print(f"I fit: P={fit_i['P']:.3f}, pi={fit_i['pi_gain']:.3f}")
+            except Exception as err:
+                print(f"I fit failed: {err}")
 
-        print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
-        print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
-        print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
+            try:
+                fit_q = fit_rabi_cosine(x_pts, avgq)
+                data["data"]["fit_q_popt"] = np.asarray(fit_q["popt"])
+                data["data"]["fit_q_pi_gain"] = np.asarray(fit_q["pi_gain"])
+                print(f"Q fit: P={fit_q['P']:.3f}, pi={fit_q['pi_gain']:.3f}")
+            except Exception as err:
+                print(f"Q fit failed: {err}")
 
-        # store fit results on the object in case you want to inspect later
         self.fit_i = fit_i
         self.fit_q = fit_q
+        self.data = data
 
         while plt.fignum_exists(num=figNum):
             figNum += 1
 
         fig = plt.figure(figNum)
-        plt.plot(x_pts, avgi, 'o', label="I data", color='orange')
-        plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
+        plt.plot(x_pts, avgi, "o", color="orange", label="I data")
+        plt.plot(x_pts, avgq, "o", color="blue", label="Q data")
 
-        plt.plot(x_pts, avgq, 'o', label="Q data", color='blue')
-        plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
+        if fit_i is not None:
+            if "x_fit_dense" not in fit_i:
+                fit_i["x_fit_dense"] = np.linspace(np.min(x_pts), np.max(x_pts), 5000)
+                fit_i["y_fit_dense"] = cos_func(fit_i["x_fit_dense"], *fit_i["popt"])
 
-        plt.axvline(fit_i['pi_gain'], linestyle='--', color='orange', alpha=0.7, label="I pi gain")
-        plt.axvline(fit_q['pi_gain'], linestyle='--', color='blue', alpha=0.7, label="Q pi gain")
+            plt.plot(
+                fit_i["x_fit_dense"],
+                fit_i["y_fit_dense"],
+                "-",
+                color="orange",
+                label=f"I fit, pi={fit_i['pi_gain']:.1f}"
+            )
+            plt.axvline(fit_i["pi_gain"], linestyle="--", color="orange", alpha=0.7)
+
+        if fit_q is not None:
+            if "x_fit_dense" not in fit_q:
+                fit_q["x_fit_dense"] = np.linspace(np.min(x_pts), np.max(x_pts), 5000)
+                fit_q["y_fit_dense"] = cos_func(fit_q["x_fit_dense"], *fit_q["popt"])
+
+            plt.plot(
+                fit_q["x_fit_dense"],
+                fit_q["y_fit_dense"],
+                "-",
+                color="blue",
+                label=f"Q fit, pi={fit_q['pi_gain']:.1f}"
+            )
+            plt.axvline(fit_q["pi_gain"], linestyle="--", color="blue", alpha=0.7)
 
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")

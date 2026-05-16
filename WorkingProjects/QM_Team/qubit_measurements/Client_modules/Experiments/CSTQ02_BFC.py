@@ -148,13 +148,13 @@ soc, soccfg = makeProxy()
 temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-3-9_BC_Cooldown/CSTQ02/RFSOC/Q4//"
 ############## New TATQ03 (No Charge Lines) ############################
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6757.94, 'Gain': 500}, # 500 okay, 700 too much 520 maybe too much 530 too much
+    '1': {'Readout': {'Frequency': 6757.94, 'Gain': 200}, # 500 okay, 700 too much 520 maybe too much 530 too much
           'Qubit': {'Frequency': 1752, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.2, "flattop_length": None},
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q1//"},
     '2': {'Readout': {'Frequency': 7192.01, 'Gain': 4000}, # coarsely tuned to 4000, seeing behavior at 4500
           'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q2//"},
-    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 130},
+    '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 550}, # 600 too much
           'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q3//"},
     '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
@@ -163,7 +163,7 @@ Qubit_Parameters = {
     '5': {'Readout': {'Frequency': 6970.59, 'Gain': 1500}, # 4500 with directional coupler 1500 good without-
           'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q5//"}, # qubit, T1 found
-    '6': {'Readout': {'Frequency': 7070.917614, 'Gain': 390}, # 550 750 too much
+    '6': {'Readout': {'Frequency': 7070.917614, 'Gain': 390}, #390 good 550 750 too much
           'Qubit': {'Frequency': 2100.3, 'Gain': 5000,  "pi2_Gain": 3975 // 2, "sigma": 1 , "flattop_length": 1}, # cant find
           'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ02/RFSOC/Q6//"},
     }
@@ -182,16 +182,16 @@ yoko_fixed = False # during a charge sweep; lazy way of sweeping two tone spec o
 
 # Readout
 
-Qubit_Readout =4
-Qubit_Pulse = 4
+Qubit_Readout =6
+Qubit_Pulse = 6
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
-Constant2Tone = True
+Constant2Tone = False
 tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
 RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.5}
+Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.75}
 
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
@@ -200,10 +200,10 @@ Run2ToneSpec = False
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 500, "SpecSpan": 1, "SpecNumPoints": 101, # 750 works Q5
-                        "qubit_length" : 20, # length of 50flattop pulse when gauss = False # 9.5 worked
+Spec_relevant_params = {"qubit_gain": 750, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
+                        "qubit_length" : 100, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 10, 'rounds': 10,
-                        'Gauss': True, "sigma": 2, "gain": 500,
+                        'Gauss': True, "sigma": 2, "gain": 10000,
                         'relax_delay' : 3500,
                         "display": True, 'min_sep_MHz':0.2,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1,} # 500 used for charge sweeps
@@ -356,7 +356,7 @@ T1T2_params = {"T1_step": 50, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 
 
 RunT1T2E = False
 
-RunT1T2RT2E = True
+RunT1T2RT2E = False
 
 RunT2E = False
 T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25, "freq_shift": 0.0,

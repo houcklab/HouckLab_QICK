@@ -393,3 +393,93 @@ def choose_next_voltage(current_v, dv, vmin, vmax, direction):
     proposed = min(max(proposed, vmin), vmax)
     return proposed, direction
 
+def cos_func(x, y0, A, P, phi):
+    return y0 + A * np.cos(2 * np.pi * x / P + phi)
+
+
+def fit_rabi_cosine(x, y):
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+
+    x_span = np.max(x) - np.min(x)
+    dx = np.median(np.diff(x))
+    y0_guess = np.mean(y)
+    A_guess = 0.5 * (np.max(y) - np.min(y))
+
+    if A_guess == 0 or x_span <= 0:
+        raise RuntimeError("Flat or invalid Rabi data.")
+
+    # Try many initial period guesses; this is much more robust than one FFT guess.
+    period_guesses = np.linspace(max(4 * dx, x_span / 8), 4 * x_span, 40)
+
+    best = None
+    for P_guess in period_guesses:
+        for phi_guess in np.linspace(-np.pi, np.pi, 9):
+            for A_sign in [1, -1]:
+                p0 = [y0_guess, A_sign * A_guess, P_guess, phi_guess]
+
+                try:
+                    popt, pcov = curve_fit(
+                        cos_func,
+                        x,
+                        y,
+                        p0=p0,
+                        bounds=(
+                            [-np.inf, -np.inf, 2 * dx, -8 * np.pi],
+                            [ np.inf,  np.inf, 8 * x_span,  8 * np.pi],
+                        ),
+                        maxfev=20000,
+                    )
+
+                    yfit = cos_func(x, *popt)
+                    err = np.mean((y - yfit) ** 2)
+
+                    if best is None or err < best["err"]:
+                        best = {
+                            "popt": popt,
+                            "pcov": pcov,
+                            "err": err,
+                            "yfit": yfit,
+                        }
+                except Exception:
+                    pass
+
+    if best is None:
+        raise RuntimeError("All Rabi cosine fits failed.")
+
+    popt = best["popt"]
+    pcov = best["pcov"]
+    perr = np.sqrt(np.diag(pcov))
+
+    y0_fit, A_fit, P_fit, phi_fit = popt
+
+    x_dense = np.linspace(np.min(x), np.max(x), 5000)
+    y_dense = cos_func(x_dense, *popt)
+
+    # Pi gain = first opposite extremum relative to starting point.
+    if y_dense[0] > y0_fit:
+        pi_gain = x_dense[np.argmin(y_dense)]
+    else:
+        pi_gain = x_dense[np.argmax(y_dense)]
+
+    return {
+        "popt": popt,
+        "perr": perr,
+        "yfit": best["yfit"],
+        "x_fit_dense": x_dense,
+        "y_fit_dense": y_dense,
+        "y0": y0_fit,
+        "A": A_fit,
+        "P": P_fit,
+        "phi": phi_fit,
+        "dy0": perr[0],
+        "dA": perr[1],
+        "dP": perr[2],
+        "dphi": perr[3],
+        "pi_gain": pi_gain,
+        "fit_error": best["err"],
+    }
