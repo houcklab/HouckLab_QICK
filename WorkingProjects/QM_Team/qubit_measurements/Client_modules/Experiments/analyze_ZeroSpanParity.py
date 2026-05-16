@@ -61,8 +61,44 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
             "method": "apriori",
         }
     elif method == "kmeans":
-        # Implemented in Task 3
-        raise NotImplementedError("kmeans method added in next task")
+        from sklearn.cluster import KMeans
+        I = np.ravel(np.asarray(I, dtype=float))
+        Q = np.ravel(np.asarray(Q, dtype=float))
+        if I.size == 0:
+            return {
+                "binary_states": np.zeros(0, dtype=int),
+                "scores": np.zeros(0, dtype=float),
+                "separator_used": {
+                    "g_center": np.array([0.0, 0.0]),
+                    "e_center": np.array([0.0, 0.0]),
+                },
+                "method": "kmeans_fallback",
+            }
+        iq = np.column_stack([I, Q])
+        km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
+        centers = km.cluster_centers_  # shape (2, 2)
+
+        # Define a separator dict consistent with apriori path:
+        # label 0 = cluster with lower projection on (centers[1] - centers[0]) axis
+        # before remap, then remap so label 0 has lower I-coordinate centroid.
+        axis = centers[1] - centers[0]
+        # Project both centers onto axis to confirm sign convention
+        proj = centers @ axis
+        # We want cluster with smaller I to be "0"; pick g/e accordingly.
+        if centers[0, 0] <= centers[1, 0]:
+            g_idx, e_idx = 0, 1
+        else:
+            g_idx, e_idx = 1, 0
+        g_center = centers[g_idx]
+        e_center = centers[e_idx]
+        synth_sep = {"g_center": g_center, "e_center": e_center}
+        scores, bits = project_iq_onto_separator(I, Q, synth_sep)
+        return {
+            "binary_states": bits,
+            "scores": scores,
+            "separator_used": synth_sep,
+            "method": "kmeans_fallback",
+        }
     else:
         raise ValueError(f"Unknown method: {method!r}")
 
@@ -87,3 +123,17 @@ if __name__ == "__main__":
     assert accuracy > 0.99, f"apriori accuracy too low: {accuracy}"
 
     print("classify_parity_trace apriori: OK")
+
+    # --- classify_parity_trace kmeans fallback --------------------------------
+    out_km = classify_parity_trace(I, Q, separator=None, method="kmeans")
+    assert out_km["method"] == "kmeans_fallback"
+    assert "separator_used" in out_km
+    accuracy_km = np.mean(out_km["binary_states"] == labels_true)
+    assert accuracy_km > 0.99, f"kmeans accuracy too low: {accuracy_km}"
+
+    # Deterministic remap: label 0 should be the lower-I cluster.
+    label0_mean_I = np.mean(np.asarray(I)[out_km["binary_states"] == 0])
+    label1_mean_I = np.mean(np.asarray(I)[out_km["binary_states"] == 1])
+    assert label0_mean_I < label1_mean_I, "kmeans label remap not deterministic"
+
+    print("classify_parity_trace kmeans: OK")
