@@ -36,24 +36,24 @@ soc, soccfg = makeProxy()
 
 ############## New TATQ03 (No Charge Lines) ############################
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 4700.41823, 'Gain': 1000}, #900 seems to be consistent # res found again # 400 okay for good transmission
+    '1': {'Readout': {'Frequency': 4699.14, 'Gain': 1000}, #900 seems to be consistent # res found again # 400 okay for good transmission
           'Qubit': {'Frequency': 1263.035171, 'Gain': 6020,'pi2_Gain' : 6020//2, "sigma": 1.5, "flattop_length": None}, # qubit found again previous frequency 1263.228
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/LFTM01/RFSOC/Q1//"},# 2840
+          'outerfoldername':"V:/t1Team/Data/2026-05-20_BFC_cooldown/LFTM01/RFSOC/Q1//"},# 2840
     '2': {'Readout': {'Frequency': 4909.554495, 'Gain': 148}, # 148 okay for good transmission, 250 too much.
           'Qubit': {'Frequency': 1144.787819, 'Gain': 1300, 'pi2_Gain' : 1300 // 2, "sigma": 0.1, "flattop_length": None}, # pi pulse gain: 4164  'Gain': 1300, 'pi2_Gain' : 1300 // 2, "sigma": 0.1, "flattop_length": None
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/LFTM01/RFSOC/Q2//"},
+          'outerfoldername':"V:/t1Team/Data/2026-05-20_BFC_cooldown/LFTM01/RFSOC/Q2//"},
     }
 ############## End Can D ############################
 
 # Readout
-Qubit_Readout = 2
-Qubit_Pulse = 2
+Qubit_Readout = 1
+Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency
 
-RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.5}
+RunTransmissionSweep = True # determine cavity frequency
+Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 501, 'span': 100}
 
 Run2ToneSpec =  False
 RunTrans_QubitSpec = False
@@ -86,7 +86,7 @@ RB_params = {
     "display": False,
 }
 
-RunRBLengthSweep = True
+RunRBLengthSweep = False
 RBLengthSweep_params = {
     "qubits": ["1", "2"], # ["1", "2"]
     "full_sweep_repetitions": 1,
@@ -205,8 +205,8 @@ trans_config = {
     "readout_length": 30,  # 15 [us]
     "pulse_gain": cavity_gain,  # [DAC units]
     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransSpan": 0.75,  ### 0.75 MHz, span will be center+/- this parameter
-    "TransNumPoints": 301,  ### number of points in the transmission frequecny
+    "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter
+    "TransNumPoints": Transmission_params['num_points'],  ### number of points in the transmission frequecny
     "cav_relax_delay": 30
 }
 qubit_config = {
