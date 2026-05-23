@@ -141,24 +141,33 @@ StartSrc = "internal"        # "internal" | "external"
 # --- Strobe-mode params (Path A) ---------------------------------------------
 # sample_period_us : temporal resolution; floor = adc_trig_offset + read_length + 1.0 us
 # reps_per_chunk   : capped at runtime by soccfg['readouts'][ro_ch]['avg_maxlen']
+#                    (commonly 16384 on PYNQ; validation will fail if exceeded)
 # n_chunks         : total record (s) = reps_per_chunk*n_chunks*sample_period_us*1e-6
 StrobeParams = {
     "sample_period_us": 20.0,
-    "reps_per_chunk":   50000,
-    "n_chunks":         12,
+    "reps_per_chunk":   10000,   # safe default; raise toward avg_maxlen if board allows
+    "n_chunks":         60,      # ~60 * 10000 * 20us = 12 s total record
     "read_length":      5.0,
     "adc_trig_offset":  0.488,
 }
 
 # --- Decimated-mode params (Path B) ------------------------------------------
-# capture_length_us : capped at runtime by buf_maxlen / decimated_fs
-# soft_avgs         : 1 = burst-resolved single shot; >1 = software-averaged
-# n_captures        : outer loop, useful for triggered campaigns
+# capture_length_us : duration the const tones are held; must cover the readout
+#                     window (adc_trig_offset + read_length). Const pulse cycles
+#                     are 16-bit-capped: at 384 MHz fabric, capture_length_us
+#                     must stay under ~170 us per acquisition. For longer
+#                     records, raise n_captures.
+# read_length       : capped at runtime by buf_maxlen / decimated_fs
+# soft_avgs         : 1 = burst-resolved single shot; >1 averages across
+#                     captures and destroys parity trajectories (requires
+#                     allow_soft_avgs=True to opt in).
+# n_captures        : outer loop, useful for triggered campaigns. >1 captures
+#                     are concatenated with gap_indices marking the boundaries.
 DecimatedParams = {
-    "capture_length_us": 1000.0,
+    "capture_length_us": 100.0,
     "soft_avgs":         1,
     "n_captures":        1,
-    "read_length":       1000.0,
+    "read_length":       80.0,
     "adc_trig_offset":   0.488,
 }
 

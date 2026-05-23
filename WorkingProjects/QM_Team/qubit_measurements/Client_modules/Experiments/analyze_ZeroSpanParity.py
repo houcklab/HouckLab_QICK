@@ -419,9 +419,54 @@ def _plot_dwell_histograms(stats, out_path):
     fig.tight_layout(); fig.savefig(out_path, dpi=150); plt.close(fig)
 
 
+def _bin_iq_time(I, Q, t_us, bin_us, gap_indices=None):
+    """
+    Mean-bin (I, Q, t_us) into windows of `bin_us` microseconds.
+
+    Bins are split across `gap_indices` so a bin never spans an acquisition
+    boundary. Returns (I_b, Q_b, t_b, gap_indices_b, n_dropped) where
+    n_dropped is the total number of raw samples discarded because they
+    didn't fill a complete trailing bin in any segment.
+    """
+    I = np.ravel(np.asarray(I, dtype=float))
+    Q = np.ravel(np.asarray(Q, dtype=float))
+    t = np.ravel(np.asarray(t_us, dtype=float))
+    if I.size == 0:
+        return I, Q, t, [], 0
+    sp = float(t[1] - t[0]) if t.size > 1 else float(bin_us)
+    if sp <= 0:
+        sp = float(bin_us)
+    bin_samples = max(1, int(round(float(bin_us) / sp)))
+    valid_gaps = sorted({int(g) for g in (gap_indices or []) if 0 < int(g) < I.size})
+    segment_edges = [0] + valid_gaps + [I.size]
+    I_parts, Q_parts, t_parts = [], [], []
+    new_gaps = []
+    cum = 0
+    n_dropped = 0
+    for seg_idx, (a, b) in enumerate(zip(segment_edges[:-1], segment_edges[1:])):
+        n_in_seg = b - a
+        n_bins = n_in_seg // bin_samples
+        n_dropped += n_in_seg - n_bins * bin_samples
+        if n_bins == 0:
+            continue
+        keep = n_bins * bin_samples
+        I_seg = I[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        Q_seg = Q[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        t_seg = t[a:a + keep].reshape(n_bins, bin_samples).mean(axis=1)
+        I_parts.append(I_seg); Q_parts.append(Q_seg); t_parts.append(t_seg)
+        if seg_idx > 0:
+            new_gaps.append(cum)
+        cum += n_bins
+    if not I_parts:
+        return (np.zeros(0), np.zeros(0), np.zeros(0), [], int(n_dropped))
+    return (np.concatenate(I_parts), np.concatenate(Q_parts),
+            np.concatenate(t_parts), new_gaps, int(n_dropped))
+
+
 def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
                        classifier_method="apriori", step_us=None,
-                       min_burst_duration_us=None, save_plots=True, out_dir=None):
+                       min_burst_duration_us=None, save_plots=True, out_dir=None,
+                       analysis_bin_us=None):
     """
     Load a ZeroSpanParity raw .h5, classify into parity bits, compute switch rate,
     detect bursts, compute dwell statistics, save plots and a sidecar.
@@ -437,6 +482,15 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
     min_burst_duration_us : float or None
     save_plots        : bool
     out_dir           : str or None; defaults to directory of h5_path
+    analysis_bin_us   : float or None
+        Mean-bin the trace into this many microseconds before classification.
+        Default: None (no binning). Per-sample SNR in a decimated trace is
+        much lower than a strobe sample; if the apriori separator is in
+        single-shot units, pass an explicit `analysis_bin_us` (e.g. equal
+        to one read_length, or a fraction of it for finer time resolution).
+        Real decimated captures cover a single `read_length` end-to-end,
+        so binning by the full read_length collapses the capture to one
+        point — choose a fraction.
 
     Returns
     -------
@@ -453,6 +507,24 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
         gap_indices = list(np.array(f["gap_indices"])) if "gap_indices" in f else []
         sample_period_us = float(f.attrs.get("sample_period_us",
                                               (t_us[1] - t_us[0]) if t_us.size > 1 else 0.0))
+        mode = str(f.attrs.get("mode", "strobe"))
+
+    raw_sample_period_us = sample_period_us
+    n_raw_samples = int(I.size)
+    n_binned_samples = int(I.size)
+    n_dropped = 0
+    # Do NOT auto-bin: the spec's Path B intent is a raw decimated waveform.
+    # Binning by the declared `read_length_us` would collapse the whole
+    # capture to a single point (decimated mode captures one read_length
+    # end-to-end). Callers that need integrated bins must pass
+    # `analysis_bin_us` explicitly.
+    if analysis_bin_us and float(analysis_bin_us) > 0:
+        I, Q, t_us, gap_indices, n_dropped = _bin_iq_time(
+            I, Q, t_us, float(analysis_bin_us), gap_indices=gap_indices
+        )
+        n_binned_samples = int(I.size)
+        if t_us.size > 1:
+            sample_period_us = float(t_us[1] - t_us[0])
 
     cls = classify_parity_trace(I, Q, separator=separator, method=classifier_method)
     bits = cls["binary_states"]
@@ -481,7 +553,13 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
     summary = {
         "h5_path": h5_path,
         "sample_period_us": sample_period_us,
+        "raw_sample_period_us": raw_sample_period_us,
         "n_samples": int(bits.size),
+        "n_raw_samples": n_raw_samples,
+        "n_binned_samples": n_binned_samples,
+        "n_samples_dropped_by_binning": int(n_dropped),
+        "analysis_bin_us": float(analysis_bin_us) if analysis_bin_us else 0.0,
+        "mode": mode,
         "n_bursts": len(bursts),
         "baseline_rate_Hz": baseline_rate,
         "mean_dwell_0_us": stats["mean_0"],
@@ -705,3 +783,235 @@ if __name__ == "__main__":
         assert "baseline_rate_Hz" in sj
 
     print("analyze_parity_run: OK")
+
+    # --- Markov-trace dwell recovery at two cadences -------------------------
+    # Same continuous-time Markov chain sampled at 20 us and 100 us must yield
+    # consistent recovered dwell times (within statistical noise). This guards
+    # against accidental scaling errors (Hz <-> MHz, us <-> samples) in the
+    # sliding-rate or dwell-statistics code.
+    def _markov_trace(n, p01, p10, rng_):
+        bits_ = np.zeros(n, dtype=int)
+        st = 0
+        for k in range(n):
+            bits_[k] = st
+            if st == 0 and rng_.random() < p01: st = 1
+            elif st == 1 and rng_.random() < p10: st = 0
+        return bits_
+
+    rng_mc = np.random.default_rng(42)
+    # Continuous-time rates: lambda01 = 1/2ms, lambda10 = 1/4ms.
+    # At 20 us cadence: p01 = 20e-6/2e-3 = 0.01; at 100 us cadence: p01 = 0.05.
+    for sample_us, n in [(20.0, 200_000), (100.0, 40_000)]:
+        p01 = sample_us * 1e-6 / 2e-3
+        p10 = sample_us * 1e-6 / 4e-3
+        bits_mc = _markov_trace(n, p01, p10, rng_mc)
+        t_mc = np.arange(n) * sample_us
+        st = dwell_time_statistics(bits_mc, t_mc)
+        # Expected mean dwells: 2 ms (state 0), 4 ms (state 1).
+        assert abs(st["mean_0"] - 2000.0) / 2000.0 < 0.2, (
+            f"sample_us={sample_us}: mean_0={st['mean_0']:.1f} vs 2000")
+        assert abs(st["mean_1"] - 4000.0) / 4000.0 < 0.2, (
+            f"sample_us={sample_us}: mean_1={st['mean_1']:.1f} vs 4000")
+    print("markov dwell at 20us and 100us cadence: OK")
+
+    # --- _bin_iq_time correctness --------------------------------------------
+    # Mean-binning a known ramp by 5x should give the per-bin means.
+    I_ramp = np.arange(100, dtype=float)
+    Q_ramp = np.zeros(100)
+    t_ramp = np.arange(100, dtype=float) * 1.0  # 1 us per sample
+    I_b, Q_b, t_b, gaps_b, n_drop = _bin_iq_time(I_ramp, Q_ramp, t_ramp, bin_us=5.0)
+    assert I_b.size == 20, f"expected 20 bins, got {I_b.size}"
+    assert n_drop == 0, f"expected 0 dropped, got {n_drop}"
+    # Bin 0 contains samples 0..4 mean = 2.0; last bin samples 95..99 mean = 97.0.
+    assert abs(I_b[0] - 2.0) < 1e-9
+    assert abs(I_b[-1] - 97.0) < 1e-9
+    # Bins must not cross gap boundaries.
+    I_b2, Q_b2, t_b2, gaps_b2, n_drop2 = _bin_iq_time(
+        I_ramp, Q_ramp, t_ramp, bin_us=5.0, gap_indices=[50]
+    )
+    assert 50 // 5 == 10
+    assert gaps_b2 == [10], f"expected gap at bin 10, got {gaps_b2}"
+    assert n_drop2 == 0
+    # Bin straddling the gap must not exist; bin 9 ends at sample 49, bin 10 starts at 50.
+    assert abs(I_b2[9] - np.mean(I_ramp[45:50])) < 1e-9
+    assert abs(I_b2[10] - np.mean(I_ramp[50:55])) < 1e-9
+    # Trailing samples that don't fill a full bin are dropped and counted.
+    I_short = np.arange(13, dtype=float)
+    Q_short = np.zeros(13)
+    t_short_b = np.arange(13, dtype=float) * 1.0
+    _, _, _, _, n_drop3 = _bin_iq_time(I_short, Q_short, t_short_b, bin_us=5.0)
+    assert n_drop3 == 3, f"expected 3 dropped trailing samples, got {n_drop3}"
+    print("_bin_iq_time: OK")
+
+    # --- decimated analysis with explicit analysis_bin_us --------------------
+    # Synthesize a decimated-style trace: very high sample rate, per-sample
+    # noise so loud the apriori separator can't classify per-sample, but
+    # binning at the integration window resolves parity bits reliably.
+    # NOTE: the prior implementation auto-binned by `read_length_us`; that's
+    # been removed because in a real decimated capture the entire trace IS one
+    # read_length, so auto-binning collapsed every capture to a single point.
+    # Callers must now pass `analysis_bin_us` when they want integrated bins.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rng_dec = np.random.default_rng(11)
+        # 500 parity samples, 200 raw decimated samples per integration window
+        n_bins = 500
+        bin_size = 200
+        n_raw = n_bins * bin_size
+        # Underlying parity (one bit per bin)
+        labels_bins = (np.cumsum(rng_dec.random(n_bins) < 0.01) % 2).astype(int)
+        labels_raw = np.repeat(labels_bins, bin_size)
+        # Loud per-raw-sample noise; mean per integration window resolves it.
+        I_dec = np.where(labels_raw == 1, 10.0, 0.0) + rng_dec.normal(0, 8.0, n_raw)
+        Q_dec = rng_dec.normal(0.0, 8.0, n_raw)
+        sp_dec = 0.01  # us per raw sample (nominal)
+        t_dec = np.arange(n_raw, dtype=float) * sp_dec
+        bin_us = bin_size * sp_dec  # 2.0 us — synthetic "integration window"
+
+        h5_dec = os.path.join(tmpdir, "ZeroSpanParity_dec_synth.h5")
+        with h5py.File(h5_dec, "w") as f:
+            f.create_dataset("I", data=I_dec)
+            f.create_dataset("Q", data=Q_dec)
+            f.create_dataset("t_us", data=t_dec)
+            f.create_dataset("gap_indices", data=np.array([], dtype=int))
+            f.attrs["sample_period_us"] = sp_dec
+            f.attrs["mode"] = "decimated"
+            f.attrs["read_length_us"] = bin_us
+
+        sep_dec = {"g_center": np.array([0.0, 0.0]),
+                   "e_center": np.array([10.0, 0.0])}
+        # Caller-supplied analysis_bin_us recovers parity bits at >95% accuracy.
+        res_dec = analyze_parity_run(
+            h5_path=h5_dec, separator=sep_dec,
+            window_us=100.0, k_sigma=5.0, save_plots=False, out_dir=tmpdir,
+            analysis_bin_us=bin_us,
+        )
+        # Sidecar records the binning provenance so post-hoc readers can
+        # tell raw rate from analysis rate apart.
+        assert res_dec["analysis_bin_us"] == bin_us, res_dec
+        assert res_dec["n_raw_samples"] == n_raw, res_dec
+        assert res_dec["n_binned_samples"] == n_bins, res_dec
+        assert res_dec["raw_sample_period_us"] == sp_dec
+        assert res_dec["mode"] == "decimated"
+        # Read back the binned bits from sidecar and check accuracy
+        with h5py.File(os.path.join(tmpdir, "ZeroSpanParity_dec_synth_analysis.h5"), "r") as f:
+            bits_out = np.array(f["binary_states"])
+        # Bins are aligned to the underlying labels_bins
+        assert bits_out.size == n_bins, (
+            f"expected {n_bins} binned bits, got {bits_out.size}"
+        )
+        acc = np.mean(bits_out == labels_bins)
+        assert acc > 0.95, f"decimated bin accuracy too low: {acc}"
+    print("analyze_parity_run decimated with explicit analysis_bin_us: OK")
+
+    # --- strobe-vs-decimated equivalence (synthetic) -------------------------
+    # Build the same underlying parity trace, integrate it two ways:
+    #   (a) one integrated sample per "rep" at sample_period_us (strobe-like)
+    #   (b) raw decimated waveform at much higher rate, then bin by read_length
+    # Recovered binary bits should agree where the cadences align.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rng_eq = np.random.default_rng(99)
+        n_samples = 2000
+        sample_period_us_eq = 5.0  # strobe cadence
+        labels_eq = (np.cumsum(rng_eq.random(n_samples) < 0.01) % 2).astype(int)
+        # Strobe: one integrated sample per rep with small noise
+        I_strobe = np.where(labels_eq == 1, 10.0, 0.0) + rng_eq.normal(0, 0.3, n_samples)
+        Q_strobe = rng_eq.normal(0.0, 0.3, n_samples)
+        t_strobe = np.arange(n_samples) * sample_period_us_eq
+        h5_strobe = os.path.join(tmpdir, "eq_strobe.h5")
+        with h5py.File(h5_strobe, "w") as f:
+            f.create_dataset("I", data=I_strobe)
+            f.create_dataset("Q", data=Q_strobe)
+            f.create_dataset("t_us", data=t_strobe)
+            f.create_dataset("gap_indices", data=np.array([], dtype=int))
+            f.attrs["sample_period_us"] = sample_period_us_eq
+            f.attrs["mode"] = "strobe"
+
+        # Decimated: 50 raw samples per cadence period (per "sample window"),
+        # noisy per-raw-sample but mean-equivalent to strobe.
+        raw_per_period = 50
+        raw_sp = sample_period_us_eq / raw_per_period
+        n_raw = n_samples * raw_per_period
+        labels_raw = np.repeat(labels_eq, raw_per_period)
+        I_dec = np.where(labels_raw == 1, 10.0, 0.0) + rng_eq.normal(
+            0, 0.3 * np.sqrt(raw_per_period), n_raw)
+        Q_dec = rng_eq.normal(0.0, 0.3 * np.sqrt(raw_per_period), n_raw)
+        t_dec = np.arange(n_raw, dtype=float) * raw_sp
+        h5_dec = os.path.join(tmpdir, "eq_dec.h5")
+        with h5py.File(h5_dec, "w") as f:
+            f.create_dataset("I", data=I_dec)
+            f.create_dataset("Q", data=Q_dec)
+            f.create_dataset("t_us", data=t_dec)
+            f.create_dataset("gap_indices", data=np.array([], dtype=int))
+            f.attrs["sample_period_us"] = raw_sp
+            f.attrs["mode"] = "decimated"
+            f.attrs["read_length_us"] = sample_period_us_eq  # auto-bin
+
+        sep_eq = {"g_center": np.array([0.0, 0.0]),
+                  "e_center": np.array([10.0, 0.0])}
+        analyze_parity_run(h5_path=h5_strobe, separator=sep_eq, window_us=100.0,
+                           save_plots=False, out_dir=tmpdir)
+        # Caller asks for explicit binning at sample_period_us_eq to match the
+        # strobe cadence; without it, raw decimated noise dominates per sample.
+        analyze_parity_run(h5_path=h5_dec, separator=sep_eq, window_us=100.0,
+                           save_plots=False, out_dir=tmpdir,
+                           analysis_bin_us=sample_period_us_eq)
+        with h5py.File(os.path.join(tmpdir, "eq_strobe_analysis.h5"), "r") as f:
+            bits_s = np.array(f["binary_states"])
+        with h5py.File(os.path.join(tmpdir, "eq_dec_analysis.h5"), "r") as f:
+            bits_d = np.array(f["binary_states"])
+        assert bits_s.size == bits_d.size == n_samples, (
+            f"strobe vs dec lengths differ: {bits_s.size} vs {bits_d.size} vs {n_samples}"
+        )
+        agreement = float(np.mean(bits_s == bits_d))
+        assert agreement > 0.95, f"strobe-vs-decimated agreement too low: {agreement}"
+    print("strobe-vs-decimated equivalence on synthetic data: OK")
+
+    # --- decimated analysis preserves rate-provenance metadata ---------------
+    # The previous t_us[-1] check was tautological: it wrote t_us=arange*sp
+    # then verified the same relation after reload, exercising neither the
+    # acquisition path nor the binning logic. The real concern surfaced in
+    # review is that the *nominal* decimated rate from soccfg may not be the
+    # true firmware rate; consumers must therefore be able to reconstruct
+    # the time axis from saved metadata after a post-hoc rate calibration.
+    # Verify that analyze_parity_run preserves raw_sample_period_us,
+    # n_raw_samples, n_binned_samples, analysis_bin_us, and mode in the
+    # sidecar — those are exactly the fields needed for that reconstruction.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        N = 1024
+        sp_attr = 1.0 / 307.2  # nominal QICK decimated period
+        t_dec = np.arange(N) * sp_attr
+        rng_meta = np.random.default_rng(13)
+        I_meta = rng_meta.normal(5.0, 0.5, N)
+        Q_meta = rng_meta.normal(0.0, 0.5, N)
+        h5_t = os.path.join(tmpdir, "t_axis.h5")
+        with h5py.File(h5_t, "w") as f:
+            f.create_dataset("I", data=I_meta)
+            f.create_dataset("Q", data=Q_meta)
+            f.create_dataset("t_us", data=t_dec)
+            f.create_dataset("gap_indices", data=np.array([], dtype=int))
+            f.attrs["sample_period_us"] = sp_attr
+            f.attrs["mode"] = "decimated"
+            f.attrs["read_length_us"] = N * sp_attr
+            f.attrs["decimated_fs_source"] = "soccfg.f_output_unverified"
+
+        sep_meta = {"g_center": np.array([0.0, 0.0]),
+                    "e_center": np.array([10.0, 0.0])}
+        bin_us_meta = 32 * sp_attr  # bin 32 raw samples together
+        summary = analyze_parity_run(
+            h5_path=h5_t, separator=sep_meta, window_us=10.0,
+            save_plots=False, out_dir=tmpdir,
+            analysis_bin_us=bin_us_meta,
+        )
+        assert summary["mode"] == "decimated"
+        assert summary["raw_sample_period_us"] == sp_attr
+        assert summary["n_raw_samples"] == N
+        assert summary["n_binned_samples"] == N // 32
+        assert summary["analysis_bin_us"] == bin_us_meta
+        assert summary["n_samples_dropped_by_binning"] == 0
+        # Sidecar JSON carries the same fields
+        with open(os.path.join(tmpdir, "t_axis_analysis.json")) as f:
+            sj = json.load(f)
+        for k in ("raw_sample_period_us", "n_raw_samples", "n_binned_samples",
+                  "analysis_bin_us", "mode"):
+            assert k in sj, f"sidecar missing {k}: {sj.keys()}"
+    print("analyze_parity_run preserves rate-provenance metadata: OK")

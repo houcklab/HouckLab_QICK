@@ -606,6 +606,16 @@ def chunked_acquire(experiment, n_chunks, progress=False):
     gap_indices = []
     cum_offset_us = 0.0
     cum_idx = 0
+    first_meta = {}
+    # Keys that describe the acquisition mode/units, propagated from the first
+    # chunk to the stitched output so save_data persists them verbatim.
+    _META_KEYS = (
+        "mode", "sample_period_us",
+        "read_length_us", "adc_trig_offset_us", "ro_norm_cycles",
+        "decimated_fs_MHz", "decimated_fs_source",
+        "capture_length_us", "samples_per_capture",
+        "soft_avgs", "n_captures",
+    )
     iterator = range(n_chunks)
     if progress:
         try:
@@ -623,6 +633,10 @@ def chunked_acquire(experiment, n_chunks, progress=False):
                 f"chunk {ci} returned mismatched shapes: I={I_c.shape}, "
                 f"Q={Q_c.shape}, t_us={t_c.shape}"
             )
+        if ci == 0:
+            for k in _META_KEYS:
+                if k in out:
+                    first_meta[k] = out[k]
         if ci > 0:
             # Stitch time: previous chunk's last + estimated sample period
             if t_parts and t_parts[-1].size >= 2:
@@ -636,14 +650,17 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         wall_clocks.append(out.get("wall_clock_start", None))
         cum_idx += I_c.size
 
-    return {
+    stitched = {
         "I": np.concatenate(I_parts),
         "Q": np.concatenate(Q_parts),
         "t_us": np.concatenate(t_parts),
         "gap_indices": gap_indices,
         "chunk_wall_clock_starts": wall_clocks,
         "n_chunks": int(n_chunks),
+        "wall_clock_start": wall_clocks[0] if wall_clocks else None,
     }
+    stitched.update(first_meta)
+    return stitched
 
 
 if __name__ == "__main__":
@@ -761,3 +778,74 @@ if __name__ == "__main__":
     assert list(one["gap_indices"]) == []
 
     print("utils.py chunked_acquire: OK")
+
+    # --- chunked_acquire propagates per-chunk metadata to stitched dict ------
+    # Regression guard for Codex round-2 finding: the real chunked path must
+    # carry sample_period_us, mode, read_length_us, adc_trig_offset_us, and
+    # ro_norm_cycles into the stitched output so save_data sees them.
+    class _MetaFakeExp:
+        def __init__(self, n_per_chunk, sp_us=20.0):
+            self.n = int(n_per_chunk)
+            self.sp = float(sp_us)
+            self.calls = 0
+        def acquire(self, progress=False):
+            self.calls += 1
+            return {
+                "I": np.arange(self.n, dtype=float),
+                "Q": np.arange(self.n, dtype=float),
+                "t_us": np.arange(self.n, dtype=float) * self.sp,
+                "wall_clock_start": f"2026-05-16T12:00:{self.calls:02d}",
+                "sample_period_us": self.sp,
+                "read_length_us": 5.0,
+                "adc_trig_offset_us": 0.488,
+                "ro_norm_cycles": 1920.0,
+                "mode": "strobe",
+            }
+    meta_exp = _MetaFakeExp(n_per_chunk=500)
+    meta_stitched = chunked_acquire(meta_exp, n_chunks=3)
+    for k, v in [("mode", "strobe"), ("sample_period_us", 20.0),
+                 ("read_length_us", 5.0), ("adc_trig_offset_us", 0.488),
+                 ("ro_norm_cycles", 1920.0), ("n_chunks", 3)]:
+        assert meta_stitched.get(k) == v, (
+            f"chunked_acquire did not propagate {k}: got {meta_stitched.get(k)}, expected {v}"
+        )
+    assert meta_stitched["wall_clock_start"] == "2026-05-16T12:00:01"
+    print("utils.py chunked_acquire propagates per-chunk metadata: OK")
+
+    # --- save_data persists real chunked_acquire output ----------------------
+    # Stronger regression guard: drive the actual chunked_acquire helper with
+    # a fake that returns realistic per-chunk metadata, then hand the stitched
+    # dict to ZeroSpanParity.save_data and reload. Previously this test built
+    # the stitched dict by hand, which silently sidestepped the question of
+    # whether chunked_acquire itself propagates metadata.
+    import tempfile, h5py, os
+    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mZeroSpanParity import ZeroSpanParity
+
+    real_stitched = chunked_acquire(_MetaFakeExp(n_per_chunk=10), n_chunks=3)
+    # Sanity: the helper returns the metadata we expect to save.
+    assert real_stitched["mode"] == "strobe"
+    assert real_stitched["sample_period_us"] == 20.0
+    assert real_stitched["read_length_us"] == 5.0
+
+    class _SavingDouble:
+        """Mimics enough of ZeroSpanParity to exercise save_data() in-isolation."""
+        save_data = ZeroSpanParity.save_data
+        def __init__(self, fname, data):
+            self.fname = fname
+            self.data = {"data": data}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fname = os.path.join(tmpdir, "stitched_test.h5")
+        _SavingDouble(fname, real_stitched).save_data()
+        with h5py.File(fname, "r") as f:
+            assert list(np.array(f["gap_indices"])) == [10, 20]
+            wcs = [s.decode("utf-8") if isinstance(s, bytes) else str(s)
+                   for s in np.array(f["chunk_wall_clock_starts"])]
+            assert len(wcs) == 3 and all(w.startswith("2026-05-16T") for w in wcs), wcs
+            assert int(f.attrs["n_chunks"]) == 3
+            assert float(f.attrs["sample_period_us"]) == 20.0
+            assert str(f.attrs["mode"]) == "strobe"
+            assert float(f.attrs["read_length_us"]) == 5.0
+            assert float(f.attrs["adc_trig_offset_us"]) == 0.488
+            assert float(f.attrs["ro_norm_cycles"]) == 1920.0
+    print("utils.py save_data persists real chunked_acquire metadata: OK")

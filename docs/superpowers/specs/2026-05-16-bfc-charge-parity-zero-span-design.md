@@ -480,6 +480,87 @@ Run time: <30 s total. Pass before real qubit.
 
 ---
 
+## §7 — Implementation notes (post-spec changes)
+
+The implementation has been adjusted from the spec sketch in §2/§3/§5 during
+review. These changes are deliberate and treated as part of the
+contract from here on; the spec sections above remain authoritative for the
+architecture, but the specifics below override the example code in §2 and
+the parameter list in §5 where they conflict.
+
+### §7.1 — Strobe I/Q normalization (Path A)
+
+`ZeroSpanParity._acquire_strobe` divides the raw `prog.di_buf` /
+`prog.dq_buf` accumulated values by `us2cycles(read_length, ro_ch=ro_ch)`
+before returning. This puts I/Q in per-cycle units, matching the scale
+returned by `mSingleShotProgramFFMUX.collect_shots` so an apriori separator
+calibrated from single-shot data classifies the strobe trace correctly.
+
+Persisted in the .h5: `ro_norm_cycles` (the divisor actually applied),
+`read_length_us`, `adc_trig_offset_us`.
+
+### §7.2 — Decimated soft_avgs gate and `n_captures` stitching (Path B)
+
+- `soft_avgs > 1` averages across independent parity captures and destroys
+  the time-resolved trajectory. `_acquire_decimated` now rejects this unless
+  the caller explicitly sets `cfg["allow_soft_avgs"] = True`.
+- `n_captures` (optional, default 1) runs the decimated acquisition outer
+  loop N times back-to-back. Captures are concatenated with `gap_indices`
+  marking the boundaries, mirroring `chunked_acquire` semantics for strobe
+  mode. Per-capture wall-clock starts are saved as `chunk_wall_clock_starts`.
+
+### §7.3 — Decimated time-axis caveat
+
+`t_us` is built from `soccfg["readouts"][ro_ch]["f_output"]`. Loopback
+checks empirically observed that this is not necessarily the true firmware
+decimation rate. The acquisition therefore persists:
+
+- `decimated_fs_MHz` — the value read from soccfg
+- `decimated_fs_source` — `"soccfg.f_output_unverified"` provenance tag
+- `samples_per_capture` — actual returned sample count per capture
+- `read_length_us`, `capture_length_us`, `adc_trig_offset_us`
+
+This is sufficient to reconstruct a corrected time axis post-hoc after a
+hardware-loopback rate calibration. Until that calibration is performed,
+`t_us` should be treated as nominal.
+
+### §7.4 — Analysis binning is opt-in (not auto)
+
+`analyze_parity_run(analysis_bin_us=...)` no longer auto-bins decimated
+traces by `read_length_us`. Auto-binning was incorrect because a real
+decimated capture covers exactly one `read_length` end-to-end — auto-binning
+by the full read_length would collapse each capture to a single point. The
+analysis function now defaults to no binning; callers that need integrated
+bins to match an apriori single-shot separator's SNR pass an explicit
+`analysis_bin_us` smaller than `read_length_us`.
+
+The analysis sidecar records `analysis_bin_us`, `raw_sample_period_us`,
+`n_raw_samples`, `n_binned_samples`, `n_samples_dropped_by_binning`, and
+`mode` so post-hoc readers can disambiguate raw rate from analysis rate.
+
+### §7.5 — Validation rule 5 caveat
+
+Rule 5 estimates the decimated buffer occupancy as
+`read_length_us * f_output_MHz` decimated samples. The actual buffer length
+depends on QICK's internal conversion of `us2cycles(read_length)` (called
+without `ro_ch`) into readout-clock cycles, then decimation. On firmware
+where tProc and readout clocks differ, the exact returned sample count may
+disagree by O(1) sample. The pre-flight check is still a sufficient bound,
+just not an exact one; hardware loopback should confirm the actual count.
+
+### §7.6 — Cfg keys added by implementation
+
+Beyond the §5.2 list:
+
+- `allow_soft_avgs` (optional, decimated mode) — bool, opt-in to
+  `soft_avgs > 1`.
+- `n_captures` (optional, decimated mode) — int, outer-loop count.
+
+These are documented in `mZeroSpanParity.py`'s module docstring and
+`test_BTQ_BFC.py`'s `DecimatedParams` comment block.
+
+---
+
 ## Glossary
 
 - **Parity doublet:** the two charge-dispersion peaks of a transmon's f₀₁ separated by `ε₀₁`; the qubit's frequency hops between them on charge-parity tunneling events.
