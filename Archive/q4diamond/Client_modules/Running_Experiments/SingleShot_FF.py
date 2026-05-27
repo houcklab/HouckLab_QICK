@@ -1,6 +1,9 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
 
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+
 from q4diamond.Client_modules.initialize import *
 
 from q4diamond.Client_modules.Experiment_Scripts.mTransmissionFF import CavitySpecFF

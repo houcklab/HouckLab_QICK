@@ -5,7 +5,9 @@ import os
 
 
 # os.add_dll_directory(os.path.dirname(path)+'\\PythonDrivers')
-path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+#path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+path = r'C:\Users\newforce\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+
 os.add_dll_directory(path)
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShotProgram import SingleShotProgram
@@ -21,10 +23,10 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mT1_PS
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mRepeatReadout import RepeatReadout
 
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_07_29_cooldown\ADMV8818\\"
 
 # Only run this if no proxy already exists
-soc, soccfg = makeProxy()
+#soc, soccfg = makeProxy()
 
 # Define the switch cofidg
 SwitchConfig = {
@@ -63,7 +65,7 @@ UpdateConfig = {
 }
 config = BaseConfig | UpdateConfig
 
-yoko1.SetVoltage(config["yokoVoltage"])
+#yoko1.SetVoltage(config["yokoVoltage"])
 
 #%%
 # TITLE: Single shot experiment

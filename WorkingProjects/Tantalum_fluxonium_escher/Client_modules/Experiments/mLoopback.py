@@ -38,7 +38,10 @@ class LoopbackProgram(AveragerProgram):
         elif style == "arb":
             self.set_pulse_registers(ch=res_ch, style=style, waveform="measure")
 
-        self.synci(200)  # give processor some time to configure pulses
+        #self.synci(200)  # give processor some time to configure pulses
+        self.synci(100)  # give processor some time to configure pulses
+        self.trigger(ddr4=True, mr=True, adc_trig_offset=self.cfg["adc_trig_offset"])
+        self.synci(100)  # give the buffers a little time
 
     def body(self):
         # fire the pulse

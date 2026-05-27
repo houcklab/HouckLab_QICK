@@ -7,11 +7,13 @@ import numpy as np
 
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mLoopback import LoopbackProgram
 
-path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+#path = r'C:\Users\escher\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
+path = r'C:\Users\newforce\Documents\GitHub\HouckLab_QICK\WorkingProjects\Tantalum_fluxonium_escher\Client_modules\PythonDrivers'
 os.add_dll_directory(path)
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Calib_escher.initialize import *
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mQubit_Pulse_Test import Qubit_Pulse_Test
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mTransmission_SaraTest import Transmission
+from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mContinuousSingleShotProgram import ContinuousSingleShotProgram
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_bkg_subtracted import SpecSlice_bkg_sub
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice import SpecSlice
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecSlice_shots import SpecSlice_shots
@@ -33,15 +35,17 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingl
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSingleShot_individual_state import SingleShotProgram_ef
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mQubit_EF_Rabi import Qubit_ef_RPM
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.ConstantTone import ConstantTone_Experiment
+#import matplotlib
 from matplotlib import pyplot as plt
 import datetime
 from tqdm import tqdm
 
+#matplotlib.use('Qt5Agg')
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2024_06_29_cooldown\HouckCage_dev\\"
+outerFolder = r"Z:\TantalumFluxonium\Data\2024_07_29_cooldown\ADMV8818\\"
 
 # Only run this if no proxy already exists
-soc, soccfg = makeProxy()
+#soc, soccfg = makeProxy()
 # print(soccfg)
 
 plt.ioff()
@@ -54,6 +58,55 @@ SwitchConfig = {
 }
 
 BaseConfig = BaseConfig | SwitchConfig
+#%%
+# TITLE: Continuous Single Shot Experiment DDR4
+
+# Define the switch cofidg
+SwitchConfig = {
+    "trig_buffer_start": 0.035, # in us
+    "trig_buffer_end": 0.024, # in us
+    "trig_delay": 0.07, # in us
+}
+BaseConfig = BaseConfig | SwitchConfig
+
+# TITLE: code for running basic single shot experiment
+UpdateConfig = {
+    # set yoko
+    "yokoVoltage": 0.12,
+
+    "res_ch": 6,  # --Fixed
+    "ro_chs": [0],
+
+    # cavity
+    "reps": 1000,
+    "read_pulse_style": "const",
+    "read_length": 30,
+    "read_pulse_gain":  5000,
+    "read_pulse_freq": 6423.375,
+
+    # qubit spec parameters
+    "qubit_pulse_style": "arb",
+    "qubit_gain": 1,
+    "qubit_length": 32,
+    "sigma": 0.05,
+    "flat_top_length": 5,
+    "qubit_freq": 600,
+    "relax_delay": 5,
+
+    # define shots
+    "shots": 100000,
+    "use_switch": True,
+}
+config = BaseConfig | UpdateConfig
+
+plt.close('all')
+
+Instance_ContinuousSingleShotProgram = ContinuousSingleShotProgram(path="dataTestSingleShotProgram", outerFolder=outerFolder, cfg=config,
+                                               soc=soc, soccfg=soccfg)
+data_ContinuousSingleShot = ContinuousSingleShotProgram.acquire(Instance_ContinuousSingleShotProgram)
+ContinuousSingleShotProgram.save_data(Instance_ContinuousSingleShotProgram, data_ContinuousSingleShot)
+ContinuousSingleShotProgram.save_config(Instance_ContinuousSingleShotProgram)
+ContinuousSingleShotProgram.display(Instance_ContinuousSingleShotProgram, data_ContinuousSingleShot, plotDisp=True, save_fig=True)
 
 #%%
 # TITLE: Constant Tone Experiment
@@ -77,23 +130,23 @@ ConstantTone_Experiment.save_config(ConstantTone_Instance)
 
 #%%
 # TITLE: Loopback experiment
-config = {"res_ch": 0,  # --Fixed
+config = {"res_ch": 6,  # --Fixed
           "ro_chs": [0],  # --Fixed
           "reps": 1,  # --Fixed
           "relax_delay": 1.0,  # --us
           "res_phase": 0,  # --degrees
           "pulse_style": "const",  # --Fixed
 
-          "length": soc.us2cycles(0.1),  # [Clock ticks] # 1 us is around 430 clock ticks
+          "length": soc.us2cycles(0.5),  # [Clock ticks] # 1 us is around 430 clock ticks
           # Try varying length from 10-100 clock ticks
 
-          "readout_length": 70,  # [Clock ticks]
+          "readout_length": 500,  # [Clock ticks]
           # Try varying readout_length from 50-1000 clock ticks
 
-          "pulse_gain": 30000,  # [DAC units]
+          "pulse_gain": 500,  # [DAC units]
           # Try varying pulse_gain from 500 to 30000 DAC units
 
-          "pulse_freq": 6204,  # [MHz]
+          "pulse_freq": 2500,  # [MHz]
           # In this program the signal is up and downconverted digitally so you won't see any frequency
           # components in the I/Q traces below. But since the signal gain depends on frequency,
           # if you lower pulse_freq you will see an increased gain.
@@ -101,12 +154,12 @@ config = {"res_ch": 0,  # --Fixed
           "adc_trig_offset": 220,  # [Clock ticks] NOTE: the rest of the code accepts this number in us, not clock cycles!
           # Try varying adc_trig_offset from 100 to 220 clock ticks
 
-          "soft_avgs": 10000
+          "soft_avgs": 1
           # Try varying soft_avgs from 1 to 200 averages
           }
 
 prog =LoopbackProgram(soccfg, config)
-iq_list = prog.acquire_decimated(soc, load_pulses=True, progress=True, debug=False)
+iq_list = prog.acquire_decimated(soc, load_pulses=True, progress=True)#, debug=False)
 fff = plt.figure(1)
 for ii, iq in enumerate(iq_list):
     plt.plot(iq[0], label="I value, ADC %d"%(config['ro_chs'][ii]))
@@ -119,19 +172,81 @@ plt.legend()
 fff.show()
 
 #%%
+# TITLE: Loopback with DDR4
+config = {"res_ch": 6,  # --Fixed
+          "ro_chs": [0],  # --Fixed
+          "reps": 1,  # --Fixed
+          "relax_delay": 1.0,  # --us
+          "res_phase": 0,  # --degrees
+          "pulse_style": "const",  # --Fixed
+
+          #pulse register length for const, flat_top pulses
+          "length": soc.us2cycles(2.5),  # [Clock ticks] # 1 us is around 430 clock ticks
+          # Try varying length from 10-100 clock ticks
+
+          # readout channel length set by declare_readout
+          "readout_length": 1000,  # [Clock ticks]
+          # Try varying readout_length from 50-1000 clock ticks
+
+          "pulse_gain": 500,  # [DAC units]
+          # Try varying pulse_gain from 500 to 30000 DAC units
+
+          "pulse_freq": 2500,  # [MHz]
+          # In this program the signal is up and downconverted digitally so you won't see any frequency
+          # components in the I/Q traces below. But since the signal gain depends on frequency,
+          # if you lower pulse_freq you will see an increased gain.
+
+          "adc_trig_offset": 220,  # [Clock ticks] NOTE: the rest of the code accepts this number in us, not clock cycles!
+          # Try varying adc_trig_offset from 100 to 220 clock ticks
+
+          "soft_avgs": 1
+          # Try varying soft_avgs from 1 to 200 averages
+          }
+
+prog =LoopbackProgram(soccfg, config)
+prog.config_all(soc)
+
+n_transfers = 100000 # each transfer (aka burst) is 256 decimated samples
+
+# Arm the buffers
+soc.arm_ddr4(ch=config['ro_chs'][0], nt=n_transfers)
+
+iq_list = prog.acquire_decimated(soc, load_pulses=True, progress=True)#, debug=False)
+fff = plt.figure(1)
+for ii, iq in enumerate(iq_list):
+    plt.plot(iq[0], label="I value, ADC %d"%(config['ro_chs'][ii]))
+    plt.plot(iq[1], label="Q value, ADC %d"%(config['ro_chs'][ii]))
+    plt.plot(np.abs(iq[0]+1j*iq[1]), label="mag, ADC %d"%(config['ro_chs'][ii]))
+plt.ylabel("a.u.")
+plt.xlabel("Clock ticks")
+plt.title("DDR4 - Averages = " + str(config["soft_avgs"]))
+plt.legend()
+fff.show()
+
+iq_ddr4 = soc.get_ddr4(10) # arg is the duration read out, 1
+iq2_ddr4 = soc.get_ddr4(2000)
+print(np.shape(iq_ddr4))
+print(np.shape(iq2_ddr4))
+plt.plot(iq2_ddr4[:,0],label="I")
+plt.plot(iq2_ddr4[:,1],label="Q")
+plt.xlabel("sample number [fabric ticks]")
+plt.legend()
+plt.show()
+
+#%%
 
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 10000,
+    "reps": 100,
     "read_pulse_style": "const",
     "readout_length": 30,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 6423.375,
+    "read_pulse_gain": 1000,
+    "read_pulse_freq": 2500,
 
     # Transmission Experiment
-    "TransSpan": 2, # MHz
-    "TransNumPoints": 201,
+    "TransSpan": 1, # MHz
+    "TransNumPoints": 51,
 
     "relax_delay": 1,
 
@@ -142,7 +257,7 @@ UpdateConfig_transmission = {
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",
     "qubit_freq": 200,
-    "qubit_gain": 30000,
+    "qubit_gain": 0,
 
     # Constant Pulse Tone
     "qubit_length": 20,
@@ -174,7 +289,7 @@ UpdateConfig_qubit = {
 UpdateConfig = UpdateConfig_transmission | UpdateConfig_qubit
 config = BaseConfig | UpdateConfig
 
-yoko1.SetVoltage(config["yokoVoltage"])
+#yoko1.SetVoltage(config["yokoVoltage"])
 
 #%%
 # TITLE: Performing the Cavity Transmission Experiment
@@ -187,6 +302,7 @@ Transmission.save_data(Instance_trans, data_trans)
 config["read_pulse_freq"] = Instance_trans.peakFreq
 print("Cavity freq IF [MHz] = ", Instance_trans.peakFreq)
 
+
 #%%
 # TITLE: Performing background subtracted spec slice
 plt.close("all")
@@ -198,7 +314,7 @@ Instance_specSlice.save_data(data_specSlice)
 
 #%%
 # TITLE: Performing the Amplitude Rabi Experiment
-config["qubit_pulse_style"]= "arb" #"arb"
+config["qubit_pulse_style"]= "arb"
 config["sigma"] = 0.2
 
 Instance_AmplitudeRabi = AmplitudeRabi(path="dataTestAmplitudeRabi", cfg=config,soc=soc,soccfg=soccfg, outerFolder = outerFolder)
