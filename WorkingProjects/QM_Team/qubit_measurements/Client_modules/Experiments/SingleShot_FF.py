@@ -1,11 +1,14 @@
 # import os
 # # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
+import numpy as np
+import matplotlib.pyplot as plt
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q import *
 import time
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mTransmissionFF import CavitySpecFF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleTone import SingleTone
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleTone_qubit import SingleTone_qubit
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSpecSliceFF import QubitSpecSliceFF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAmplitudeRabiFF import AmplitudeRabiFF
@@ -18,6 +21,11 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT2EF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgramFFMUX
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1_SS import T1_SS
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mOptimizeReadoutandPulse_FF import ReadOpt_wSingleShotFF, QubitPulseOpt_wSingleShotFF
+
+# new for AC Stark
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mACStarkCalibration import ACStarkCalibration
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mACStarkCalibration_2 import ACStarkCalibration_2
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1ACStark import T1ACStark
 
 
 # from q4diamond.Client_modules.Experiment_Scripts.mT2R import T2R
@@ -92,10 +100,10 @@ soc, soccfg = makeProxy()
 
 ############## Start Can C ############################
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6824.33, 'Gain': int(4000)},
-          'Qubit': {'Frequency': 3862.9, 'Gain': int(6500), "sigma": 0.03, "flattop_length": 0.3},
+    '1': {'Readout': {'Frequency': 6824.28, 'Gain': int(7000)}, # resonator frequency 6824.28,gain = 7000
+          'Qubit': {'Frequency': 3377.3487, 'Gain': int(3550), "sigma": 0.15, "flattop_length": None},
           'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATAl01-Si_01/Q1_6p7//"},
+          'outerfoldername':"Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8//"},
     '3': {'Readout': {'Frequency': 6922.7, 'Gain': 4000},
           'Qubit': {'Frequency': 4255.497, 'Gain': 8000, "sigma": 0.2, "flattop_length": 7}, #0.03 sigma
           'Pulse_FF': [0, 0, 0, 0],
@@ -147,12 +155,13 @@ Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency
+ConstantTone_qubit = False # For testing the qubit amplification & filtering
 
-RunTransmissionSweep = True  # determine cavity frequency
+RunTransmissionSweep = False  # determine cavity frequency
 Run2ToneSpec = False
-Spec_relevant_params = {"qubit_gain": 3000, "SpecSpan": 0.3, "SpecNumPoints": 101,
+Spec_relevant_params = {"qubit_gain": 300, "SpecSpan": 1, "SpecNumPoints": 101,
                         "reps": 10, 'rounds': 20,
-                        'Gauss': True, "sigma": 1, "gain": 10000} # False -- no pulse #If you don't see RabiAmp but with Gauss True see the qubit, the next thing to check is gain, you might not have the right pi pulse
+                        'Gauss': False, "sigma": 1, "gain": 10000} # False -- no pulse #If you don't see RabiAmp but with Gauss True see the qubit, the next thing to check is gain, you might not have the right pi pulse
 
 RunChiShift = False
 ChiShift_params = {"reps": 1000,
@@ -164,29 +173,81 @@ ChiShift_params = {"reps": 1000,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 3000, 'number_of_steps': 31,
-                         "reps": 10, 'rounds': 20,
-                         'relax_delay': 10000,}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+                         "min_gain":0, "max_gain": 8000, 'number_of_steps': 51,
+                         "reps": 10, 'rounds': 10,
+                         'relax_delay': 1000,}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
-T1T2_params = {"T1_step": 50, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
-               "T2_step": 2, "T2_expts": 50, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.1,
-               "relax_delay": 5000,
+T1T2_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
+               "T2_step": 1, "T2_expts": 2, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.1,
+               "relax_delay": 1000,
                'repetitions': 1}
 # T1T2_params = {"T1_step": 50, "T1_expts": 30, "T1_reps": 10, "T1_rounds": 10,
 #                "T2_step": 1.7, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.25,
 #                "relax_delay": 2000}
-RunT2E = False
-T2E_params = {"T2_max_us": 200, "T2_expts": 400, "T2_reps": 1, "T2_rounds": 200, "freq_shift": 0.08,
-               "relax_delay": 4000, 'num_pi_pulses': 0, #need odd number of pulses
-               "pi2_gain": 2580,
-              "rotation_angle": 0.31478884,
-              "min_max": [7.066475706582131, 0.4586852251182118]}
+RunT2E = True
+T2E_params = {"T2_max_us": 100, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.08,
+               "relax_delay": 500, 'num_pi_pulses': 1, #need odd number of pulses
+               "pi2_gain": 3550 // 2,
+              "rotation_angle": None,
+              "min_max": None
+              # "rotation_angle": 0.31478884,
+              # "min_max": [7.066475706582131, 0.4586852251182118]}
+              }
 
-SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 5, "ADC_Offset": 0.5, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 5000}
+RunACStarkCalibration = False
+ACStark_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
+               "T2_step": 2, "T2_expts": 2, "T2_reps": 100, "T2_rounds": 40, "freq_shift": 0.1,
+               "relax_delay": 500,
+               'repetitions': 10000,
+
+               # additional AC Stark arguments
+               "ACStark_detuning": 50, # PLACEHOLDER
+               "ACStark_amplitude": 2000 # PLACEHOLDER
+               }
+RunACStarkCalibration_loop = False
+
+RunACStarkCalibration_2 = False
+ACStark_2_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
+                  "T2_step": 0.1, "T2_expts": 201, "T2_reps": 50, "T2_rounds": 40, "freq_shift": 0.1,
+                  "relax_delay": 500,
+                  'repetitions': 1,
+
+                  # additional AC Stark arguments
+                  "ACStark_detuning": 50,  # PLACEHOLDER
+                  "ACStark_amplitude_start": 0,  # PLACEHOLDER
+                  "ACStark_amplitude_step": 550,  # PLACEHOLDER
+                  "ACStark_amplitude_expts": 11,  # PLACEHOLDER
+                  }
+
+RunT1ACStark = False
+RunT1ACStark_withSS = False
+B = 89.1187
+A = 2.8043e-5
+f_max = A*5500**2+B
+f_list = B + np.arange(0, 56)*(f_max-B)/55
+acstark_amp_list = np.sqrt((f_list-B)/A)
+T1ACStark_params = {"T1_start": 2, "T1_step": 1, "T1_expts": 1, "T1_reps": 500000, "T1_rounds": 20,
+                  "T2_step": 1, "T2_expts": 1, "T2_reps": 100, "T2_rounds": 20, "freq_shift": 0.1,
+                  "relax_delay": 500,
+                  'repetitions': 10000000,
+
+                  # additional AC Stark arguments
+                  "ACStark_detuning": 50,  # PLACEHOLDER
+                  "ACStark_amplitude_start": 2000,  # PLACEHOLDER
+                  "ACStark_amplitude_step": 100,  # PLACEHOLDER
+                  "ACStark_amplitude_expts": 1,  # PLACEHOLDER
+                  "ACStark_amplitude_list": None, # customized amplitude list
+                  'reps_per_SS_cal': 3,
+                  }
+
+
+
+
+SingleShot = True
+SS_params = {"Shots": 2000, "Readout_Time": 8, "ADC_Offset": 0.5, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 2, 'relax_delay': 1000}
 
 RunT1SS = False
 T1SS_params = {"T1_step": 75, "T1_expts": 40,
@@ -197,12 +258,12 @@ T1SS_params = {"T1_step": 75, "T1_expts": 40,
                'repetitions': 120}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 200, "gain_stop": 7000, "gain_pts": 9, "span": 0.6, "trans_pts": 7}
+SS_R_params = {"gain_start": 6500, "gain_stop": 7500, "gain_pts": 5, "span": 4, "trans_pts": 7}
 
 SingleShot_QubitOptimize = False
 #gain_span is now in percent
-SS_Q_params = {"q_gain_span": 0.5, "q_gain_pts": 11, "q_freq_span": 0.5, "q_freq_pts": 11,
-               'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
+SS_Q_params = {"q_gain_span": 0.1, "q_gain_pts": 11, "q_freq_span": 0.4, "q_freq_pts": 11,
+               'number_of_pulses': 7} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 
 cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
@@ -217,10 +278,10 @@ qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 trans_config = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
-    "readout_length": 5,  # [us]
+    "readout_length": 10,  # [us]
     "pulse_gain": cavity_gain,  # [DAC units]
     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransSpan": 5,  ### MHz, span will be center+/- this parameter
+    "TransSpan": 3,  ### MHz, span will be center+/- this parameter
     "TransNumPoints": 61,  ### number of points in the transmission frequecny
     "cav_relax_delay": 30
 }
@@ -249,13 +310,17 @@ if ConstantTone:
     Instance_trans = SingleTone(path="TransmissionFF", cfg=config, soc=soc, soccfg=soccfg,
                                   outerFolder=outerFolder)
     data_trans = SingleTone.acquire(Instance_trans)
+if ConstantTone_qubit:
+    Instance_trans = SingleTone_qubit(path="TransmissionFF_qubit", cfg=config, soc=soc, soccfg=soccfg,
+                                  outerFolder=outerFolder)
+    data_trans = SingleTone_qubit.acquire(Instance_trans)
 
 cavity_min = True
 config["cavity_min"] = cavity_min  # look for dip, not peak
 # perform the cavity transmission experiment
 if RunTransmissionSweep:
     config["reps"] = 20  # fast axis number of points
-    config["rounds"] = 20  # slow axis number of points
+    config["rounds"] = 50  # slow axis number of points
     Instance_trans = CavitySpecFF(path="TransmissionFF", cfg=config, soc=soc, soccfg=soccfg,
                                   outerFolder=outerFolder)
     data_trans = CavitySpecFF.acquire(Instance_trans)
@@ -308,8 +373,8 @@ if RunChiShift:
 
 if RunAmplitudeRabi:
     number_of_steps = Amplitude_Rabi_params["number_of_steps"]
-    step = int(Amplitude_Rabi_params["max_gain"] / number_of_steps)
-    ARabi_config = {'start': 0, 'step': step, "expts": number_of_steps, "reps": Amplitude_Rabi_params['reps'],
+    step = int((Amplitude_Rabi_params["max_gain"]-Amplitude_Rabi_params["min_gain"])/ number_of_steps)
+    ARabi_config = {'start': Amplitude_Rabi_params["min_gain"], 'step': step, "expts": number_of_steps, "reps": Amplitude_Rabi_params['reps'],
                     "rounds": Amplitude_Rabi_params['rounds'],
                     "sigma": qubit_sigma, "f_ge": Amplitude_Rabi_params["qubit_freq"],
                     "relax_delay": Amplitude_Rabi_params["relax_delay"],
@@ -365,19 +430,207 @@ if RunT1:
 
 
 if RunT2:
-    T2R_cfg = {"start": 0, "step": T1T2_params["T2_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=2),
-               "expts": T1T2_params["T2_expts"], "reps": T1T2_params["T2_reps"], "rounds": T1T2_params["T2_rounds"],
+    for i in range(T1T2_params['repetitions']):
+        if T1T2_params['repetitions'] > 1:
+            plot_disp = False
+        else:
+            plot_disp = True
+        T2R_cfg = {"start": 0, "step": T1T2_params["T2_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=2),
+                   "expts": T1T2_params["T2_expts"], "reps": T1T2_params["T2_reps"], "rounds": T1T2_params["T2_rounds"],
+                   "pi_gain": qubit_gain,
+                   "pi2_gain": qubit_gain // 2, "relax_delay": T1T2_params["relax_delay"],
+                   'f_ge': qubit_frequency_center + T1T2_params["freq_shift"],
+                   "sigma": qubit_sigma, "flattop_length": qubit_flattop
+                   }
+        config = config | T2R_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+        iT2R = T2R(path="T2R", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+        dT2R = T2R.acquire(iT2R)
+        T2R.display(iT2R, dT2R, plotDisp=plot_disp, figNum=2)
+        T2R.save_data(iT2R, dT2R)
+        T2R.save_config(iT2R)
+
+# AC Stark calibration
+if RunACStarkCalibration:
+    for i in range(ACStark_params['repetitions']):
+        if ACStark_params['repetitions'] > 1:
+            plot_disp = False
+        else:
+            plot_disp = True
+        ACStarkCalibration_cfg = {"start": 0.01, "step": ACStark_params["T2_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+                   "expts": ACStark_params["T2_expts"], "reps": ACStark_params["T2_reps"], "rounds": ACStark_params["T2_rounds"],
+                   "pi_gain": qubit_gain,
+                   "pi2_gain": qubit_gain // 2, "relax_delay": ACStark_params["relax_delay"],
+                   'f_ge': qubit_frequency_center + ACStark_params["freq_shift"],
+                   "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                    # AC Stark
+                    "ACStark_detuning": ACStark_params["ACStark_detuning"],
+                    "ACStark_amplitude": ACStark_params["ACStark_amplitude"]
+                   }
+        config = config | ACStarkCalibration_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+        iACStarkCalibration = ACStarkCalibration(path="ACStarkCalibration", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+        dACStarkCalibration = ACStarkCalibration.acquire(iACStarkCalibration)
+        ACStarkCalibration.display(iACStarkCalibration, dACStarkCalibration, plotDisp=plot_disp, figNum=2)
+        ACStarkCalibration.save_data(iACStarkCalibration, dACStarkCalibration)
+        ACStarkCalibration.save_config(iACStarkCalibration)
+
+acstark_calibration_data = []
+if RunACStarkCalibration_loop:
+    acstark_amp_list = np.linspace(0,1500,61)
+    for amp in acstark_amp_list:
+        ACStarkCalibration_cfg = {"start": 0.01, "step": ACStark_params["T2_step"],
+                                  "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+                                  "expts": ACStark_params["T2_expts"], "reps": ACStark_params["T2_reps"],
+                                  "rounds": ACStark_params["T2_rounds"],
+                                  "pi_gain": qubit_gain,
+                                  "pi2_gain": qubit_gain // 2, "relax_delay": ACStark_params["relax_delay"],
+                                  'f_ge': qubit_frequency_center + ACStark_params["freq_shift"],
+                                  "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                                  # AC Stark
+                                  "ACStark_detuning": ACStark_params["ACStark_detuning"],
+                                  "ACStark_amplitude": int(amp)
+                                  }
+        config = config | ACStarkCalibration_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+        iACStarkCalibration = ACStarkCalibration(path="ACStarkCalibration", cfg=config, soc=soc, soccfg=soccfg,
+                                                 outerFolder=outerFolder)
+        dACStarkCalibration = ACStarkCalibration.acquire(iACStarkCalibration)
+        acstark_calibration_data.append(ACStarkCalibration.display(iACStarkCalibration, dACStarkCalibration, plotDisp=False, figNum=2))
+        ACStarkCalibration.save_data(iACStarkCalibration, dACStarkCalibration)
+        ACStarkCalibration.save_config(iACStarkCalibration)
+
+    import os
+    import json
+    import datetime
+
+    data_array = np.array(acstark_calibration_data)
+    Rfreq_list = data_array[:, 2]
+    save_dir = os.path.dirname(iACStarkCalibration.iname)
+    timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+
+    # quadratic fit
+    Rfreq_list_kHz = Rfreq_list * 1e3
+    coeffs = np.polyfit(acstark_amp_list, Rfreq_list_kHz, 2)
+    a, b, c = coeffs
+    x_fit = np.linspace(acstark_amp_list[0], acstark_amp_list[-1], 300)
+    y_fit = np.polyval(coeffs, x_fit)
+    date_str = datetime.datetime.now().strftime("%Y_%m_%d")
+    title_str = f"ACStarkCalibration_{date_str}_{a:.4f}x^2+{b:.4f}x+{c:.4f}"
+    with open(os.path.join(save_dir, f'ACStarkCalibration_amp_sweep_{timestamp}.json'), 'w') as f:
+        json.dump({'acstark_amp_list': acstark_amp_list.tolist(), 'data_array': data_array.tolist()}, f)
+
+    plt.figure()
+    plt.plot(acstark_amp_list, Rfreq_list*1e3, 'o', label="data", color='orange')
+    plt.plot(x_fit, y_fit, '-', label=f"fit", color='black')
+    plt.xlabel("AC Stark Amplitude (a.u.)")
+    plt.ylabel("Ramsey Frequency (kHz)")
+    plt.title(title_str)
+    plt.legend()
+    plt.savefig(os.path.join(save_dir, f'ACStarkCalibration_amp_sweep_{timestamp}.png'))
+    plt.show()
+
+
+
+if RunACStarkCalibration_2:
+    ACStarkCalibration_2_cfg = {"start": 0.01, "step": ACStark_2_params["T2_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+               "expts": ACStark_2_params["T2_expts"], "reps": ACStark_2_params["T2_reps"], "rounds": ACStark_2_params["T2_rounds"],
                "pi_gain": qubit_gain,
-               "pi2_gain": qubit_gain // 2, "relax_delay": T1T2_params["relax_delay"],
-               'f_ge': qubit_frequency_center + T1T2_params["freq_shift"],
-               "sigma": qubit_sigma, "flattop_length": qubit_flattop
+               "pi2_gain": qubit_gain // 2, "relax_delay": ACStark_2_params["relax_delay"],
+               'f_ge': qubit_frequency_center + ACStark_2_params["freq_shift"],
+               "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                # AC Stark
+                "ACStark_detuning": ACStark_2_params["ACStark_detuning"],
+                # IMPORTANT: RFSOC only accepts integer amplitudes
+                "ACStark_amplitude_start": ACStark_2_params["ACStark_amplitude_start"],
+                "ACStark_amplitude_step": ACStark_2_params["ACStark_amplitude_step"],
+                "ACStark_amplitude_expts": ACStark_2_params["ACStark_amplitude_expts"],
                }
-    config = config | T2R_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
-    iT2R = T2R(path="T2R", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-    dT2R = T2R.acquire(iT2R)
-    T2R.display(iT2R, dT2R, plotDisp=True, figNum=2)
-    T2R.save_data(iT2R, dT2R)
-    T2R.save_config(iT2R)
+    config = config | ACStarkCalibration_2_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+    iACStarkCalibration_2 = ACStarkCalibration_2(path="ACStarkCalibration_2", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+    dACStarkCalibration_2 = ACStarkCalibration_2.acquire(iACStarkCalibration_2)
+    ACStarkCalibration_2.display(iACStarkCalibration_2, dACStarkCalibration_2, plotDisp=True, figNum=2)
+    ACStarkCalibration_2.save_data(iACStarkCalibration_2, dACStarkCalibration_2)
+    ACStarkCalibration_2.save_config(iACStarkCalibration_2)
+
+if RunT1ACStark:
+    for i in range(T1ACStark_params['repetitions']):
+        T1ACStark_cfg = {"start": T1ACStark_params["T1_start"], "step": T1ACStark_params["T1_step"], "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+                   "expts": T1ACStark_params["T1_expts"], "reps": T1ACStark_params["T1_reps"], "rounds": T1ACStark_params["T1_rounds"],
+                   "pi_gain": qubit_gain,
+                   "pi2_gain": qubit_gain // 2, "relax_delay": T1ACStark_params["relax_delay"],
+                   'f_ge': qubit_frequency_center, # + T1ACStark_params["freq_shift"],
+                   "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                    # AC Stark
+                    "ACStark_detuning": T1ACStark_params["ACStark_detuning"],
+                    # IMPORTANT: RFSOC only accepts integer amplitudes
+                    "ACStark_amplitude_start": T1ACStark_params["ACStark_amplitude_start"],
+                    "ACStark_amplitude_step": T1ACStark_params["ACStark_amplitude_step"],
+                    "ACStark_amplitude_expts": T1ACStark_params["ACStark_amplitude_expts"],
+                    "ACStark_amplitude_list": T1ACStark_params["ACStark_amplitude_list"],
+                   }
+        config = config | T1ACStark_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+        iT1ACStark = T1ACStark(path="T1ACStark", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+
+        if T1ACStark_params['repetitions'] > 1:
+            plot_disp = False
+        else:
+            plot_disp = True
+        dT1ACStark = T1ACStark.acquire(iT1ACStark)
+        T1ACStark.display(iT1ACStark, dT1ACStark, plotDisp=plot_disp, figNum=2)
+        T1ACStark.save_data(iT1ACStark, dT1ACStark)
+        T1ACStark.save_config(iT1ACStark)
+
+'''if RunT1ACStark_withSS:
+    for i in range(T1ACStark_params['repetitions']):
+        # first do SS and remember rotation angle
+        config['shots'] = 1000
+        config['number_of_pulses'] = SS_params['number_of_pulses']
+        Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,
+                                                            soc=soc, soccfg=soccfg)
+        data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
+        # print(data_SingleShotProgram)
+        SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True)
+
+        SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
+        SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
+        print('Angle: ', data_SingleShotProgram['data']['angle'][0])
+        print('threshold: ', data_SingleShotProgram['data']['threshold'][0])
+
+        angle = data_SingleShotProgram['data']['angle'][0]
+
+        for j in range(T1ACStark_params['reps_per_SS_cal']):
+            T1ACStark_cfg = {"start": T1ACStark_params["T1_start"], "step": T1ACStark_params["T1_step"],
+                             "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+                             "expts": T1ACStark_params["T1_expts"], "reps": T1ACStark_params["T1_reps"],
+                             "rounds": T1ACStark_params["T1_rounds"],
+                             "pi_gain": qubit_gain,
+                             "pi2_gain": qubit_gain // 2, "relax_delay": T1ACStark_params["relax_delay"],
+                             'f_ge': qubit_frequency_center,  # + T1ACStark_params["freq_shift"],
+                             "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                             # AC Stark
+                             "ACStark_detuning": T1ACStark_params["ACStark_detuning"],
+                             # IMPORTANT: RFSOC only accepts integer amplitudes
+                             "ACStark_amplitude_start": T1ACStark_params["ACStark_amplitude_start"],
+                             "ACStark_amplitude_step": T1ACStark_params["ACStark_amplitude_step"],
+                             "ACStark_amplitude_expts": T1ACStark_params["ACStark_amplitude_expts"],
+                             "ACStark_amplitude_list": T1ACStark_params["ACStark_amplitude_list"],
+                             "rotation_angle": angle
+                             }
+            config = config | T1ACStark_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+            iT1ACStark = T1ACStark(path="T1ACStark", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+
+            if T1ACStark_params['repetitions'] > 1:
+                plot_disp = False
+            else:
+                plot_disp = True
+            dT1ACStark = T1ACStark.acquire(iT1ACStark)
+            T1ACStark.display(iT1ACStark, dT1ACStark, plotDisp=plot_disp, figNum=2)
+            T1ACStark.save_data(iT1ACStark, dT1ACStark)
+            T1ACStark.save_config(iT1ACStark)'''
+
 
 
 if RunT2E:
@@ -443,6 +696,59 @@ UpdateConfig = {
 config = BaseConfig | UpdateConfig
 config["FF_Qubits"] = FF_Qubits
 config['Read_Indeces'] = Qubit_Readout
+
+# Moved this below UpdateConfig
+if RunT1ACStark_withSS:
+    for i in range(T1ACStark_params['repetitions']):
+        # first do SS and remember rotation angle
+        # config['shots'] = 1000
+        config['number_of_pulses'] = SS_params['number_of_pulses']
+        Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,
+                                                            soc=soc, soccfg=soccfg)
+        data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
+        # print(data_SingleShotProgram)
+        SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True)
+
+        SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
+        SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
+        print('Angle: ', data_SingleShotProgram['data']['angle'][0])
+        print('threshold: ', data_SingleShotProgram['data']['threshold'][0])
+
+        angle = data_SingleShotProgram['data']['angle'][0]
+
+        for j in range(T1ACStark_params['reps_per_SS_cal']):
+            T1ACStark_cfg = {"start": T1ACStark_params["T1_start"], "step": T1ACStark_params["T1_step"],
+                             "phase_step": soccfg.deg2reg(0 * 360 / 50, gen_ch=config["qubit_ch"]),
+                             "expts": T1ACStark_params["T1_expts"], "reps": T1ACStark_params["T1_reps"],
+                             "rounds": T1ACStark_params["T1_rounds"],
+                             "pi_gain": qubit_gain,
+                             "pi2_gain": qubit_gain // 2, "relax_delay": T1ACStark_params["relax_delay"],
+                             'f_ge': qubit_frequency_center,  # + T1ACStark_params["freq_shift"],
+                             "sigma": qubit_sigma, "flattop_length": qubit_flattop,
+
+                             # AC Stark
+                             "ACStark_detuning": T1ACStark_params["ACStark_detuning"],
+                             # IMPORTANT: RFSOC only accepts integer amplitudes
+                             "ACStark_amplitude_start": T1ACStark_params["ACStark_amplitude_start"],
+                             "ACStark_amplitude_step": T1ACStark_params["ACStark_amplitude_step"],
+                             "ACStark_amplitude_expts": T1ACStark_params["ACStark_amplitude_expts"],
+                             "ACStark_amplitude_list": T1ACStark_params["ACStark_amplitude_list"],
+                             "rotation_angle": angle
+                             }
+            config = config | T1ACStark_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
+            iT1ACStark = T1ACStark(path="T1ACStark", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+
+            if T1ACStark_params['repetitions'] > 1:
+                plot_disp = False
+            else:
+                plot_disp = True
+            dT1ACStark = T1ACStark.acquire(iT1ACStark)
+            T1ACStark.display(iT1ACStark, dT1ACStark, plotDisp=plot_disp, figNum=2)
+            T1ACStark.save_data(iT1ACStark, dT1ACStark)
+            T1ACStark.save_config(iT1ACStark)
+
+
+
 
 
 if SingleShot:

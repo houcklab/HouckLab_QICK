@@ -119,11 +119,21 @@ class AmplitudeRabiFF(ExperimentClass):
         avgi = data['data']['avgi'][0][0]
         avgq = data['data']['avgq'][0][0]
 
+        rotation_angle = Amplitude_IQ(avgi, avgq)
+        rotated_IQ = (avgi + 1j * avgq) * np.exp(1j * rotation_angle)
+
+        avgi = rotated_IQ.real
+        avgq = rotated_IQ.imag
+
+        amp_max = x_pts[np.argmax(avgi)]
+        print(f"Amplitude with maximum avgi: {amp_max} MHz")
+
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, 'o-', label="i", color = 'orange')
         plt.plot(x_pts, avgq, label="q", color = 'blue')
+        plt.axvline(x=amp_max, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()
@@ -159,4 +169,19 @@ class AmplitudeRabiFF(ExperimentClass):
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
+def Amplitude_IQ(I, Q, phase_num_points=500):
+    '''
+    IQ data is inputted and it will multiply by a phase such that all of the
+    information is in I
+    :param I:
+    :param Q:
+    :param phase_num_points:
+    :return:
+    '''
+    complex = I + 1j * Q
+    phase_values = np.linspace(0, np.pi, phase_num_points)
+    multiplied_phase = [complex * np.exp(1j * phase) for phase in phase_values]
+    Q_range = np.array([np.max(IQPhase.imag) - np.min(IQPhase.imag) for IQPhase in multiplied_phase])
+    phase_index = np.argmin(Q_range)
+    return (phase_values[phase_index])
 

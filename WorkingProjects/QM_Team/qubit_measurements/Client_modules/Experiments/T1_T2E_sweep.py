@@ -40,10 +40,10 @@ soc, soccfg = makeProxy()
 # }
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6803.5, 'Gain': 4000},
-          'Qubit': {'Frequency': 2875.68, 'Gain': 1900, "sigma": 0.08, "flattop_length": None},  # pi: 1900, pi/2: 950,
-          'outerfoldername': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T1_T2E/",
-          'outerfoldernameT2': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T1_T2E/"},  # readout_time:
+    '1': {'Readout': {'Frequency': 6824.28, 'Gain': 7000},
+          'Qubit': {'Frequency': 3377.3487, 'Gain': 3550, "sigma": 0.15, "flattop_length": None},  # pi: 1900, pi/2: 950,
+          'outerfoldername': "Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8/T1_T2E/",
+          'outerfoldernameT2': "Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8/T1_T2E/"},  # readout_time:
 
     '2': {'Readout': {'Frequency': 6984.54, 'Gain': 3500},
           'Qubit': {'Frequency': 2616.7, 'Gain': 2450, "sigma": 0.05, "flattop_length": None}, # pi: 6000, pi/2: ,
@@ -59,17 +59,17 @@ Qubit_Parameters = {
 T1_qubitsweep = False
 T1_T2E_sweep = True
 
-T1T2_params = {"qubit_swept": [1, 4],
-               "T1_step_list": [20, 20],
-               "T1_expts_list": [100, 100],
-               "T1_reps_list": [15, 15],
-               "T1_rounds_list": [15, 15],
-               "T2E_max_list": [2000, 2000],
-               "T2E_expts_list": [100, 100],
-               "T2E_reps_list": [20, 20],
-               "T2E_rounds_list": [20, 20],
-               "pi2_gain_list": [950, 1425],
-               "relax_delay": 2000}
+T1T2_params = {"qubit_swept": [1],
+               "T1_step_list": [5],
+               "T1_expts_list": [100],
+               "T1_reps_list": [15],
+               "T1_rounds_list": [15],
+               "T2E_max_list": [100],
+               "T2E_expts_list": [100],
+               "T2E_reps_list": [20],
+               "T2E_rounds_list": [20],
+               "pi2_gain_list": [1775],
+               "relax_delay": 1000}
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"reps": 200,

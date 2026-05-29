@@ -7,27 +7,27 @@ import datetime
 from tqdm.notebook import tqdm
 import time
 
-class ConstantTone(AveragerProgram):
+class ConstantTone_qubit(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
         cfg['reps'] = 100000
         cfg['rounds'] = 1000
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])  # Readout
-        freq = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"],
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])  # Readout
+        freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"],
                              ro_ch=cfg["ro_chs"][0])  # convert frequency to dac frequency (ensuring it is an available adc frequency)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=freq, phase=0, gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
-        print(cfg["pulse_gain"])
+        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=freq, phase=0, gain=cfg["qubit_gain"],
+                                 length=self.us2cycles(cfg["qubit_length"]))
+        print(cfg["qubit_gain"])
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):
-        self.pulse(ch = self.cfg["res_ch"])
+        self.pulse(ch = self.cfg["qubit_ch"])
         self.sync_all()
         print('oh yeah')
 
     # ====================================================== #
 
-class SingleTone(ExperimentClass):
+class SingleTone_qubit(ExperimentClass):
     """
     Transmission Experiment basic
     """
@@ -37,7 +37,7 @@ class SingleTone(ExperimentClass):
 
     def acquire(self, progress=False):
         for i in range(100):
-            prog = ConstantTone(self.soccfg, self.cfg)
+            prog = ConstantTone_qubit(self.soccfg, self.cfg)
             a, b = prog.acquire(self.soc, load_pulses=True)
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):

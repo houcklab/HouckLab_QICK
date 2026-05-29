@@ -364,6 +364,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
             if plotDisp:
                 plt.show(block=True)
                 plt.pause(0.1)
+
         # else:
             # fig.clf(True)
             # plt.close(fig)
