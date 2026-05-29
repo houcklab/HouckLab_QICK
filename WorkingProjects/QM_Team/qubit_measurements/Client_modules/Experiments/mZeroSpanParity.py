@@ -179,13 +179,17 @@ def _validate_cfg(cfg, soccfg):
         floor = float(cfg["adc_trig_offset"]) + float(cfg["read_length"])
         if cap_us < floor:
             raise RuntimeError(
-                f"[ZeroSpanParity §5.3 rule 5b] capture_length_us={cap_us} us "
+                f"[ZeroSpanParity §5.3 rule 9] capture_length_us={cap_us} us "
                 f"< adc_trig_offset + read_length = {floor:.3f} us. "
                 f"Pulse ends before readout window closes. Increase "
                 f"capture_length_us or shorten read_length."
             )
 
-    # Rule 8: parity_drive_freq within DAC range. Use try/except instead of
+    # Rule 8: parity_drive_freq within the qubit DDS range. QICK's valid DDS
+    # band is [-f_dds/2, +f_dds/2] (see qick_asm.py freq2reg / the
+    # "outside of [-range/2, range/2]" check), NOT [0, f_dds]. The qubit
+    # channel is declared without a mixer (declare_gen, no mixer_freq), so no
+    # mixer_freq subtraction is needed here. Use try/except instead of
     # `in soccfg` because QickConfig.__getitem__ exists but __contains__ does
     # not, which makes `"gens" in soccfg` crash on KeyError.
     qch = cfg["qubit_ch"]
@@ -195,15 +199,16 @@ def _validate_cfg(cfg, soccfg):
         gen_info = None
     if gen_info is not None:
         try:
-            f_max = float(gen_info["f_dds"])
+            f_dds = float(gen_info["f_dds"])
         except (KeyError, TypeError):
-            f_max = None
-        if f_max is not None:
+            f_dds = None
+        if f_dds is not None:
+            half = f_dds / 2.0
             f_drive = float(cfg["parity_drive_freq"])
-            if not (0.0 <= f_drive <= f_max):
+            if not (-half <= f_drive <= half):
                 raise RuntimeError(
                     f"[ZeroSpanParity §5.3 rule 8] parity_drive_freq={f_drive} MHz "
-                    f"outside qubit channel {qch} DDS range [0, {f_max}] MHz."
+                    f"outside qubit channel {qch} DDS range [-{half}, {half}] MHz."
                 )
 
     # Rules 6 & 7 are caller-level constraints (Recalibrate flags vs cached values).
@@ -394,8 +399,13 @@ class ZeroSpanParity(ExperimentClass):
         ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=ro_ch))
         if ro_cycles <= 0:
             ro_cycles = 1.0
-        I = np.asarray(prog.di_buf[ro_ch], dtype=float).ravel() / ro_cycles
-        Q = np.asarray(prog.dq_buf[ro_ch], dtype=float).ravel() / ro_cycles
+        # di_buf/dq_buf are indexed by readout DECLARATION ORDER, not absolute
+        # channel number (QICK builds one entry per declared ro_ch). Use
+        # positional index 0 for the single declared readout. ro_ch above is
+        # kept for the soccfg.us2cycles(..., ro_ch=ro_ch) call and any
+        # soccfg["readouts"][ro_ch] lookups, which ARE keyed by absolute channel.
+        I = np.asarray(prog.di_buf[0], dtype=float).ravel() / ro_cycles
+        Q = np.asarray(prog.dq_buf[0], dtype=float).ravel() / ro_cycles
         sp = float(cfg["sample_period_us"])
         t_us = np.arange(I.size, dtype=float) * sp
         data = {
@@ -460,19 +470,23 @@ class ZeroSpanParity(ExperimentClass):
                 start_src=cfg["start_src"],
                 progress=progress,
             )
-            # acquire_decimated returns a list with one IQ array per ro_ch.
-            # Shape conventions vary by firmware:
-            #   (length, 2)         — I,Q is the trailing axis
-            #   (2, length)         — I,Q is the leading axis (observed on tprocv2 firmware)
-            #   (n_reps, length, 2) — multi-rep, flatten across reps
+            # AveragerProgram.acquire_decimated returns a list with one ndarray
+            # per ro_ch, with the I/Q axis as the SECOND-TO-LAST axis (it applies
+            # np.moveaxis(buf, -1, -2)):
+            #   (2, length)       — reps=1: (I/Q, sample)   [our case; reps pinned to 1]
+            #   (reps, 2, length) — reps>1: (rep, I/Q, sample)
+            # Some other firmware/paths return I/Q on the trailing axis
+            #   (length, 2)       — handled below for robustness.
             arr = np.asarray(dec[0])
-            if arr.ndim == 2 and arr.shape[1] == 2:
-                I_c = arr[:, 0]; Q_c = arr[:, 1]
-            elif arr.ndim == 2 and arr.shape[0] == 2:
+            if arr.ndim == 2 and arr.shape[0] == 2:
                 I_c = arr[0]; Q_c = arr[1]
+            elif arr.ndim == 2 and arr.shape[1] == 2:
+                I_c = arr[:, 0]; Q_c = arr[:, 1]
             elif arr.ndim == 3:
-                I_c = arr.reshape(-1, 2)[:, 0]
-                Q_c = arr.reshape(-1, 2)[:, 1]
+                # (reps, 2, length): I/Q is axis -2, NOT the trailing axis, so
+                # reshape(-1, 2) would interleave samples. Split on axis -2.
+                I_c = arr[:, 0, :].ravel()
+                Q_c = arr[:, 1, :].ravel()
             else:
                 raise RuntimeError(f"unexpected acquire_decimated shape: {arr.shape}")
             sp = 1.0 / decimated_fs_MHz  # us per decimated sample (nominal)
@@ -512,22 +526,27 @@ class ZeroSpanParity(ExperimentClass):
         import h5py
         if data is None:
             data = self.data["data"] if isinstance(self.data, dict) and "data" in self.data else self.data
-        with h5py.File(self.fname, "w") as f:
-            f.create_dataset("I", data=np.asarray(data["I"]))
-            f.create_dataset("Q", data=np.asarray(data["Q"]))
-            f.create_dataset("t_us", data=np.asarray(data["t_us"]))
-            f.create_dataset("gap_indices",
-                             data=np.asarray(data.get("gap_indices", []), dtype=int))
+        # Append mode ("a", not "w") so a config attr written by the base
+        # ExperimentClass.save_config into the same .h5 is not truncated,
+        # regardless of save_data/save_config call order. Delete-then-recreate
+        # each dataset so re-saving the same file is idempotent.
+        with h5py.File(self.fname, "a") as f:
+            def _put(name, arr):
+                if name in f:
+                    del f[name]
+                f.create_dataset(name, data=arr)
+            _put("I", np.asarray(data["I"]))
+            _put("Q", np.asarray(data["Q"]))
+            _put("t_us", np.asarray(data["t_us"]))
+            _put("gap_indices", np.asarray(data.get("gap_indices", []), dtype=int))
             # Per-chunk wall-clock starts (when chunked_acquire was used, or
             # when n_captures > 1 in decimated mode) — needed to reconstruct
             # actual inter-chunk gaps post-hoc.
             if "chunk_wall_clock_starts" in data:
                 wcs = [str(s) if s is not None else "" for s in
                        data["chunk_wall_clock_starts"]]
-                f.create_dataset(
-                    "chunk_wall_clock_starts",
-                    data=np.asarray(wcs, dtype=h5py.string_dtype("utf-8")),
-                )
+                _put("chunk_wall_clock_starts",
+                     np.asarray(wcs, dtype=h5py.string_dtype("utf-8")))
             # Scalar metadata. Keep this list in sync with whatever the
             # acquire-path dicts return; missing keys are silently skipped.
             scalar_keys = (
@@ -608,20 +627,29 @@ if __name__ == "__main__":
     bad = dict(dec_base); bad["read_length"] = 90.0  # 9000 samples > 8192
     bad["capture_length_us"] = 100.0                  # keep capture >= read+offset
     try: _validate_cfg(bad, sc)
-    except RuntimeError as ex: assert "rule 5" in str(ex) and "rule 5b" not in str(ex), ex
+    except RuntimeError as ex: assert "rule 5]" in str(ex), ex
     else: raise AssertionError("expected rule 5 to fire")
 
-    # Rule 5b: pulse shorter than readout window — pulse ends before readout closes.
+    # Rule 9: pulse shorter than readout window — pulse ends before readout closes.
     bad = dict(dec_base); bad["capture_length_us"] = 3.0  # < adc_trig_offset + read_length = 5.5
     try: _validate_cfg(bad, sc)
-    except RuntimeError as ex: assert "rule 5b" in str(ex), ex
-    else: raise AssertionError("expected rule 5b to fire")
+    except RuntimeError as ex: assert "rule 9" in str(ex), ex
+    else: raise AssertionError("expected rule 9 to fire")
 
-    # Rule 8: parity_drive_freq out of range
+    # Rule 8: parity_drive_freq out of range (above f_dds)
     bad = dict(base); bad["parity_drive_freq"] = 9000.0
     try: _validate_cfg(bad, sc)
     except RuntimeError as ex: assert "rule 8" in str(ex), ex
     else: raise AssertionError("expected rule 8 to fire")
+
+    # Rule 8: parity_drive_freq in (f_dds/2, f_dds] must be rejected. f_dds=6144
+    # for the fake gens, so 5000 MHz passes the old [0, f_dds] bound but is
+    # outside QICK's true [-3072, 3072] DDS band. Regression guard for the
+    # half-bandwidth fix.
+    bad = dict(base); bad["parity_drive_freq"] = 5000.0
+    try: _validate_cfg(bad, sc)
+    except RuntimeError as ex: assert "rule 8" in str(ex), ex
+    else: raise AssertionError("expected rule 8 to fire for 5000 MHz > f_dds/2")
 
     # Missing key
     bad = dict(base); del bad["qubit_gain"]
