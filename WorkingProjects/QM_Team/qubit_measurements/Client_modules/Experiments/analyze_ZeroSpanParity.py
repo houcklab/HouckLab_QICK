@@ -43,7 +43,9 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
     method : {"apriori", "kmeans"}
         "apriori": project onto (e_center - g_center), threshold at 0.
         "kmeans": fit KMeans(n_clusters=2) on (I, Q); label 0 = cluster with
-        the smaller I-coordinate centroid (deterministic remap).
+        the lower projection on the e-g (inter-centroid) axis, with a canonical
+        axis sign so the remap is independent of KMeans' arbitrary centroid
+        order and of the g/e separation direction (I, Q, or diagonal).
 
     Returns
     -------
@@ -84,13 +86,26 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
         km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
         centers = km.cluster_centers_  # shape (2, 2)
 
-        # Remap so label 0 = cluster with the smaller I-coordinate centroid.
-        # This gives a stable, deterministic correspondence between cluster
-        # index and (g, e) regardless of KMeans' arbitrary internal ordering.
-        if centers[0, 0] <= centers[1, 0]:
-            g_idx, e_idx = 0, 1
+        # Remap so label 0 = cluster with the lower projection on the e-g
+        # (inter-centroid) axis, per spec §3.1. Ordering by raw I-coordinate
+        # (the previous rule) is meaningless when the g/e separation lies along
+        # Q (or any non-I direction). Projecting the centroids onto the
+        # inter-centroid axis is the right idea, but the raw axis sign depends
+        # on KMeans' arbitrary centroid order (proj[1]-proj[0] = |axis|^2 > 0
+        # always, so argmin would just echo that order). Canonicalize the axis
+        # sign — point it along its dominant +component (I-dominant -> +I,
+        # Q-dominant -> +Q) — so the assignment is deterministic and
+        # orientation-independent.
+        axis = centers[1] - centers[0]
+        if abs(axis[0]) >= abs(axis[1]):
+            if axis[0] < 0:
+                axis = -axis
         else:
-            g_idx, e_idx = 1, 0
+            if axis[1] < 0:
+                axis = -axis
+        proj = centers @ axis
+        g_idx = int(np.argmin(proj))
+        e_idx = 1 - g_idx
         g_center = centers[g_idx]
         e_center = centers[e_idx]
         synth_sep = {"g_center": g_center, "e_center": e_center}
@@ -622,10 +637,24 @@ if __name__ == "__main__":
     accuracy_km = np.mean(out_km["binary_states"] == labels_true)
     assert accuracy_km > 0.99, f"kmeans accuracy too low: {accuracy_km}"
 
-    # Deterministic remap: label 0 should be the lower-I cluster.
+    # Deterministic remap: label 0 should be the lower-projection cluster. For
+    # these I-axis-separated clouds that is the lower-I cluster.
     label0_mean_I = np.mean(np.asarray(I)[out_km["binary_states"] == 0])
     label1_mean_I = np.mean(np.asarray(I)[out_km["binary_states"] == 1])
     assert label0_mean_I < label1_mean_I, "kmeans label remap not deterministic"
+
+    # Q-axis-separated clouds: the remap must be orientation-independent (the
+    # old I-coordinate rule was arbitrary when the g/e split lies along Q).
+    # label 0 should be the lower-Q cluster.
+    Ig_q = rng.normal(0.0, 0.5, 1000); Qg_q = rng.normal(0.0, 0.5, 1000)
+    Ie_q = rng.normal(0.0, 0.5, 1000); Qe_q = rng.normal(10.0, 0.5, 1000)
+    I_q = np.concatenate([Ig_q, Ie_q]); Q_q = np.concatenate([Qg_q, Qe_q])
+    out_q = classify_parity_trace(I_q, Q_q, separator=None, method="kmeans")
+    label0_mean_Q = np.mean(np.asarray(Q_q)[out_q["binary_states"] == 0])
+    label1_mean_Q = np.mean(np.asarray(Q_q)[out_q["binary_states"] == 1])
+    assert label0_mean_Q < label1_mean_Q, (
+        "kmeans remap not orientation-independent for Q-separated clouds"
+    )
 
     print("classify_parity_trace kmeans: OK")
 
@@ -944,7 +973,8 @@ if __name__ == "__main__":
             f.create_dataset("gap_indices", data=np.array([], dtype=int))
             f.attrs["sample_period_us"] = raw_sp
             f.attrs["mode"] = "decimated"
-            f.attrs["read_length_us"] = sample_period_us_eq  # auto-bin
+            # No read_length_us attr: analyze_parity_run does not auto-bin by it
+            # (binning is opt-in via the explicit analysis_bin_us arg below).
 
         sep_eq = {"g_center": np.array([0.0, 0.0]),
                   "e_center": np.array([10.0, 0.0])}
