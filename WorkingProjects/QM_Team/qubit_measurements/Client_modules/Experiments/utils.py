@@ -638,11 +638,17 @@ def chunked_acquire(experiment, n_chunks, progress=False):
                 if k in out:
                     first_meta[k] = out[k]
         if ci > 0:
-            # Stitch time: previous chunk's last + estimated sample period
+            # Stitch time: previous chunk's last + estimated sample period.
             if t_parts and t_parts[-1].size >= 2:
                 sp = float(t_parts[-1][1] - t_parts[-1][0])
             else:
-                sp = 0.0
+                # Degenerate single-sample chunk: the intra-chunk diff is
+                # unavailable, so fall back to a real sample period (from chunk
+                # metadata or the experiment cfg) instead of 0.0 — otherwise the
+                # next chunk's first timestamp would duplicate this one and
+                # break the strictly-increasing t_us guarantee (spec §6.2).
+                sp = float(first_meta.get("sample_period_us", 0.0)
+                           or getattr(experiment, "cfg", {}).get("sample_period_us", 0.0))
             cum_offset_us = t_parts[-1][-1] + sp
             gap_indices.append(cum_idx)
         t_shifted = t_c + cum_offset_us
@@ -776,6 +782,14 @@ if __name__ == "__main__":
     # n_chunks == 1 case: gap_indices empty
     one = chunked_acquire(_FakeExp(n_per_chunk=100), n_chunks=1)
     assert list(one["gap_indices"]) == []
+
+    # Degenerate single-sample chunks: t_us must stay strictly increasing (no
+    # duplicate timestamp at chunk boundaries). The fallback derives the sample
+    # period from experiment.cfg when the intra-chunk diff is unavailable.
+    deg = chunked_acquire(_FakeExp(n_per_chunk=1, sample_period_us=20.0), n_chunks=3)
+    assert deg["t_us"].shape == (3,)
+    assert np.all(np.diff(deg["t_us"]) > 0), deg["t_us"]
+    assert list(deg["gap_indices"]) == [1, 2]
 
     print("utils.py chunked_acquire: OK")
 
