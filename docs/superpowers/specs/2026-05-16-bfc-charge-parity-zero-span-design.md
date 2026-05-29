@@ -357,8 +357,11 @@ The script raises immediately if cached values are `None` and the corresponding 
 4. `reps_per_chunk ≤ soccfg['readouts'][ro_ch]['avg_maxlen']`.
 5. `us2cycles(capture_length_us) × decimated_fs ≤ soccfg['readouts'][ro_ch]['buf_maxlen']`.
 6. If `RecalibrateParityFreqs=False`, the cached freq selected by `which_to_park` must be a finite float.
-7. If `RecalibrateSeparator=False` AND `classifier_method="apriori"`, all four `Separator_Cached` fields must be `np.ndarray`.
-8. `parity_drive_freq` must lie inside the qubit channel's frequency range from `soccfg`.
+7. If `RecalibrateSeparator=False` AND `classifier_method="apriori"`, all four `Separator_Cached` fields must be `np.ndarray` of shape `(2,)`.
+8. `parity_drive_freq` must lie inside the qubit channel's DDS band `[-f_dds/2, +f_dds/2]` (QICK's `freq2reg` valid range), read from `soccfg['gens'][qubit_ch]['f_dds']`. NOT `[0, f_dds]`.
+9. `capture_length_us ≥ adc_trig_offset + read_length` (decimated mode) — the const pulse must cover the entire readout window, otherwise the pulse ends before the readout closes.
+
+**Enforcement layer.** Rules 1–5, 8, and 9 validate cfg keys present at construction and are enforced fail-fast in `ZeroSpanParity.__init__` (via `_validate_cfg`). Rules 6–7 validate *orchestrator* state — the `Recalibrate*` flags and the cached parking freq / separator — that is resolved **before** `cfg` is built: by the time `ZeroSpanParity` is constructed, the picked frequency is already a plain `parity_drive_freq` (re-checked by rule 8) and the separator is an analysis-time argument that never enters `cfg`. Rules 6–7 are therefore enforced in the orchestrator (see §4.3), not in `__init__`.
 
 Errors include the rule number and the offending value vs. the violated bound. Example:
 
