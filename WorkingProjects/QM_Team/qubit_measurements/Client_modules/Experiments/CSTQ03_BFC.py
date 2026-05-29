@@ -2723,13 +2723,25 @@ if RunZeroSpanParity:
         ZSP_Separator_Cached["normal"]   = sep["normal"]
         ZSP_Separator_Cached["midpoint"] = sep["midpoint"]
     elif ZSP_AnalysisParams["classifier_method"] == "apriori":
+        # Spec §5.3 rule 7: with RecalibrateSeparator=False and apriori
+        # classification, all four cached fields must be np.ndarray of shape
+        # (2,). Validate fail-fast (a copy-pasted list is coerced; wrong shapes
+        # are rejected).
         for _k in ("g_center", "e_center", "normal", "midpoint"):
-            if ZSP_Separator_Cached[_k] is None:
+            _v = ZSP_Separator_Cached[_k]
+            if _v is None:
                 raise RuntimeError(
-                    f"[ZeroSpanParity] ZSP_Separator_Cached['{_k}'] is None and "
-                    f"classifier_method='apriori'. Populate ZSP_Separator_Cached, "
-                    f"set ZSP_RecalibrateSeparator=True, or use "
-                    f"classifier_method='kmeans'.")
+                    f"[ZeroSpanParity §5.3 rule 7] ZSP_Separator_Cached['{_k}'] "
+                    f"is None and classifier_method='apriori'. Populate "
+                    f"ZSP_Separator_Cached, set ZSP_RecalibrateSeparator=True, or "
+                    f"use classifier_method='kmeans'.")
+            _arr = np.asarray(_v, dtype=float)
+            if _arr.shape != (2,):
+                raise RuntimeError(
+                    f"[ZeroSpanParity §5.3 rule 7] ZSP_Separator_Cached['{_k}'] "
+                    f"has shape {_arr.shape}, expected (2,) — an (I, Q) "
+                    f"coordinate.")
+            ZSP_Separator_Cached[_k] = _arr  # normalize to ndarray
 
     # ---- Step 3: build the ZeroSpanParity cfg -------------------------------
     zsp_mode_params = (ZSP_StrobeParams if ZSP_RunMode == "strobe"
