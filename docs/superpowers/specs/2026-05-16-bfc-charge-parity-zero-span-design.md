@@ -211,10 +211,11 @@ Returns `{binary_states, scores, separator_used, method}`.
 
 Returns `{window_t_us, rate_Hz, switches_per_window, window_us, step_us}`.
 
-### 3.3 `detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5, min_duration_us=None)`
+### 3.3 `detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5, min_duration_us=None, window_us=None)`
 
 - `baseline_rate`: defaults to `median(rate_Hz)`.
-- `sigma`: robust = `1.4826 * MAD(rate_Hz)`.
+- `sigma`: robust = `max(1.4826 * MAD(rate_Hz), sigma_floor)`. `MAD` is always taken about `median(rate_Hz)` (the distribution's scale), independent of any caller-supplied `baseline_rate`.
+- `sigma_floor`: Poisson counting floor `q * sqrt(max(baseline_counts, 1))`, where `q = 1/(window_us × 1e-6)` is the rate of one switch per window and `baseline_counts = baseline_rate / q`. In the normal regime most windows hold zero switches, so >50% of rates are identical and `MAD → 0`; without the floor a bare `baseline + k_sigma·0` threshold would flag every window holding a single switch as a burst. The floor keeps the threshold a statistically meaningful margin above baseline tunneling. (`window_us` is passed through from `sliding_window_switch_rate`; if absent it is estimated from the smallest nonzero rate.)
 - `threshold = baseline_rate + k_sigma * sigma`.
 - Contiguous-windows-above-threshold; optionally filtered by `min_duration_us`.
 
@@ -224,7 +225,7 @@ Returns list of dicts: `{t_start_us, t_end_us, duration_us, peak_rate_Hz, mean_r
 
 Lengths of contiguous runs in state 0 and state 1, in μs. Runs spanning `gap_indices` are split, not joined.
 
-Returns `{dwell_0_us, dwell_1_us, mean_0, mean_1, n_runs_0, n_runs_1, exp_fit_0, exp_fit_1}`. Exponential fits return `{tau_us, A}` (or `{tau: nan, A: nan}` if fit fails). Two reasons to track this: (a) the parity-tunneling rate is `1 / mean_dwell` per state; (b) large asymmetric dwell between state 0 and 1 is diagnostic of a miscalibrated parking frequency.
+Returns `{dwell_0_us, dwell_1_us, mean_0, mean_1, n_runs_0, n_runs_1, exp_fit_0, exp_fit_1}`. Exponential fits return `{tau_us, A, bins_used}` (or nans if the fit fails). The log-linear fit is weighted by `sqrt(count)` (Poisson weighting in log space) so the sparse tail bins don't bias `tau` high; `A` is calibrated to `bins_used` bins so a histogram re-binned with `bins_used` overlays the fitted curve consistently. Two reasons to track this: (a) the parity-tunneling rate is `1 / mean_dwell` per state; (b) large asymmetric dwell between state 0 and 1 is diagnostic of a miscalibrated parking frequency.
 
 ### 3.5 `analyze_parity_run(h5_path, separator=None, window_us=1000, k_sigma=5, save_plots=True, out_dir=None)`
 
@@ -239,7 +240,7 @@ Plot outputs (same naming convention as `save_two_tone_plot` in `utils.py`):
 
 ### Performance and correctness guards
 
-- **Plot downsampling:** parity-vs-time plot with > 100k samples rendered via `np.histogram2d` (time bin × state bin) so PNG generation stays under ~1 s even for 10M-sample runs.
+- **Plot downsampling:** parity-vs-time plot with > 100k samples is downsampled to ≤ `max_pts` time bins (mean parity state per bin, via `searchsorted` + `bincount`) so PNG generation stays under ~1 s even for 10M-sample runs.
 - **Chunk gaps respected:** `gap_indices` propagates into 3.2 and 3.4.
 - **Empty / degenerate inputs:** all functions return sensible structures (zero rates, empty burst list, nan exponential fits) without exceptions.
 - **Pure functions:** 3.1–3.4 take arrays and return dicts; no file I/O. Only 3.5 touches disk. Testable on synthetic data.
