@@ -73,7 +73,7 @@ _SHARED_REQUIRED = (
 
 def _validate_cfg(cfg, soccfg):
     """
-    Fail-fast validation of a ZeroSpanParity cfg dict (spec §5.3 rules 1-8).
+    Fail-fast validation of a ZeroSpanParity cfg dict (spec §5.3 rules 1-5, 8, 9).
 
     Raises RuntimeError on the first violation found. Each error message names
     the rule number, the offending value, and the violated bound.
@@ -466,6 +466,7 @@ class ZeroSpanParity(ExperimentClass):
                 )
 
         I_parts, Q_parts, t_parts = [], [], []
+        capture_sizes = []
         chunk_wall_clocks = []
         gap_indices = []
         cum_offset_us = 0.0
@@ -507,6 +508,7 @@ class ZeroSpanParity(ExperimentClass):
                 gap_indices.append(cum_idx)
             t_shifted = t_c + cum_offset_us
             I_parts.append(I_c); Q_parts.append(Q_c); t_parts.append(t_shifted)
+            capture_sizes.append(int(I_c.size))
             cum_idx += I_c.size
 
         I = np.concatenate(I_parts)
@@ -525,7 +527,12 @@ class ZeroSpanParity(ExperimentClass):
             "read_length_us": float(cfg["read_length"]),
             "capture_length_us": float(cfg["capture_length_us"]),
             "adc_trig_offset_us": float(cfg["adc_trig_offset"]),
-            "samples_per_capture": int(I.size // max(n_captures, 1)),
+            # Actual returned sample count per capture (spec §7.3) — the real
+            # first-capture length, not total/n_captures, so an O(1) firmware
+            # disagreement or a short final capture can't turn this into a
+            # rounded average that matches no actual capture.
+            "samples_per_capture": int(capture_sizes[0]) if capture_sizes else 0,
+            "capture_sizes": np.asarray(capture_sizes, dtype=int),
             "soft_avgs": soft_avgs,
             "mode": "decimated",
         }
@@ -550,6 +557,11 @@ class ZeroSpanParity(ExperimentClass):
             _put("Q", np.asarray(data["Q"]))
             _put("t_us", np.asarray(data["t_us"]))
             _put("gap_indices", np.asarray(data.get("gap_indices", []), dtype=int))
+            # Per-capture sample counts (decimated mode) — preserves the actual
+            # length of every capture for post-hoc time-axis reconstruction even
+            # if captures ever return unequal counts (spec §7.3/§7.5).
+            if "capture_sizes" in data:
+                _put("capture_sizes", np.asarray(data["capture_sizes"], dtype=int))
             # Per-chunk wall-clock starts (when chunked_acquire was used, or
             # when n_captures > 1 in decimated mode) — needed to reconstruct
             # actual inter-chunk gaps post-hoc.

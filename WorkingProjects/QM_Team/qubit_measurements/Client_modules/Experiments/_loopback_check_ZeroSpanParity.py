@@ -16,6 +16,7 @@ import numpy as np
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mZeroSpanParity import ZeroSpanParity
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import chunked_acquire
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import analyze_parity_run
 
 
 def _base_cfg():
@@ -120,6 +121,40 @@ def test_run_static_contrast(soc, soccfg):
     print("loopback run_static_contrast: OK")
 
 
+def test_save_analyze_roundtrip(soc, soccfg):
+    """Exercise the real producer->HDF5->consumer contract (spec §6.2/§3.5).
+
+    Acquire, persist via ZeroSpanParity.save_data, then run analyze_parity_run
+    on the produced .h5. This is the only test that binds the saved dataset
+    names/dtypes/attrs to what the analysis module reads back; a schema drift
+    (renamed dataset, gap_indices dtype, missing attr) fails here rather than
+    silently on the next real measurement.
+    """
+    cfg = _base_cfg()
+    cfg.update({"mode": "strobe", "sample_period_us": 5.0, "reps_per_chunk": 1000})
+    exp = ZeroSpanParity(soc=soc, soccfg=soccfg, path="Loopback_RoundTrip",
+                         outerFolder="./_loopback_tmp/", cfg=cfg)
+    exp.acquire(progress=False)
+    exp.save_data()
+    exp.save_config()
+    assert os.path.exists(exp.fname), f"save_data wrote no file at {exp.fname}"
+
+    # kmeans needs no prior calibration — loopback IQ has no real parity
+    # structure, so this only asserts the pipeline runs end-to-end and writes
+    # its sidecars from a genuine save_data .h5.
+    summary = analyze_parity_run(
+        h5_path=exp.fname, separator=None, classifier_method="kmeans",
+        window_us=1000.0, save_plots=False,
+        out_dir=os.path.dirname(exp.fname),
+    )
+    for key in ("n_bursts", "baseline_rate_Hz", "mean_dwell_0_us", "mode"):
+        assert key in summary, f"analysis summary missing {key}"
+    base = os.path.splitext(os.path.basename(exp.fname))[0]
+    sidecar = os.path.join(os.path.dirname(exp.fname), base + "_analysis.json")
+    assert os.path.exists(sidecar), f"no analysis sidecar at {sidecar}"
+    print("loopback save_data -> analyze_parity_run round-trip: OK")
+
+
 def test_validation_rules_fire(soc, soccfg):
     from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mZeroSpanParity import _validate_cfg
     bad = _base_cfg()
@@ -142,4 +177,5 @@ if __name__ == "__main__":
     test_modulated_strobe_acquire(soc, soccfg)
     test_run_static_contrast(soc, soccfg)
     test_decimated_shape(soc, soccfg)
+    test_save_analyze_roundtrip(soc, soccfg)
     print("All loopback checks passed.")

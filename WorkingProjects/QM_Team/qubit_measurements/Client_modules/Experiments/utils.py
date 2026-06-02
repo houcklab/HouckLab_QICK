@@ -610,6 +610,12 @@ def chunked_acquire(experiment, n_chunks, progress=False):
                                   first (length n_chunks - 1)
       chunk_wall_clock_starts  : list of str (or None) per chunk
       n_chunks                 : echoed int
+
+    Side effect: sets ``experiment.data = {"data": stitched}`` before returning
+    so a subsequent ``experiment.save_data()`` persists the full stitched record.
+    Without this the inner ``acquire()`` calls leave only the final chunk in
+    ``experiment.data``, and a bare ``save_data()`` would silently write just
+    that last chunk. Callers may still pass the returned dict explicitly.
     """
     if n_chunks < 1:
         raise ValueError(f"n_chunks must be >= 1, got {n_chunks}")
@@ -669,6 +675,12 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         "wall_clock_start": wall_clocks[0] if wall_clocks else None,
     }
     stitched.update(first_meta)
+    # Wire the stitched record into experiment.data so save_data() persists the
+    # full trace, not the last chunk the inner acquire() left behind.
+    try:
+        experiment.data = {"data": stitched}
+    except AttributeError:
+        pass
     return stitched
 
 
@@ -851,6 +863,16 @@ if __name__ == "__main__":
     assert deg["t_us"].shape == (3,)
     assert np.all(np.diff(deg["t_us"]) > 0), deg["t_us"]
     assert list(deg["gap_indices"]) == [1, 2]
+
+    # chunked_acquire wires the stitched record into experiment.data so a bare
+    # save_data() persists the full trace, not just the final chunk that the
+    # inner acquire() calls leave behind.
+    wired = _FakeExp(n_per_chunk=50)
+    wired.data = {"data": None}  # would otherwise hold only the last chunk
+    ws = chunked_acquire(wired, n_chunks=4)
+    assert isinstance(wired.data, dict) and "data" in wired.data
+    assert wired.data["data"] is ws
+    assert wired.data["data"]["I"].shape == (200,)
 
     print("utils.py chunked_acquire: OK")
 

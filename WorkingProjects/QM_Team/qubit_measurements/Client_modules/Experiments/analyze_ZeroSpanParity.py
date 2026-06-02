@@ -149,7 +149,7 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
         raise ValueError(f"binary_states shape {bits.shape} != t_us shape {t.shape}")
 
     if step_us is None:
-        step_us = window_us / 2.0
+        step_us = window_us // 2  # spec §3.2: 50% overlap, integer floor division
 
     if bits.size < 2:
         return {
@@ -180,8 +180,16 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
         starts = np.arange(t_start, t_end - window_us + step_us, step_us)
     centers = starts + window_us / 2.0
     counts = np.zeros(starts.size, dtype=int)
+    last = starts.size - 1
     for i, s in enumerate(starts):
-        mask = (t_event >= s) & (t_event < s + window_us)
+        # Half-open [s, s+window) so overlapping windows never double-count a
+        # boundary event. The final window closes its right edge so a switch
+        # landing exactly at t_end (possible when the record length is an exact
+        # multiple of the window) is counted rather than silently dropped.
+        if i == last:
+            mask = (t_event >= s) & (t_event <= s + window_us)
+        else:
+            mask = (t_event >= s) & (t_event < s + window_us)
         counts[i] = int(diffs[mask].sum())
     rate_Hz = counts / (window_us * 1e-6)
 
@@ -195,7 +203,7 @@ def sliding_window_switch_rate(binary_states, t_us, window_us, step_us=None,
 
 
 def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
-                  min_duration_us=None):
+                  min_duration_us=None, window_us=None):
     """
     Identify contiguous high-rate windows as bursts above a robust baseline.
 
@@ -205,8 +213,23 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
                     sliding_window_switch_rate)
     window_t_us   : array (M,) of window center times
     baseline_rate : float or None; defaults to median(rate_Hz) (robust)
-    k_sigma       : float; threshold = baseline + k_sigma * (1.4826 * MAD)
+    k_sigma       : float; threshold = baseline + k_sigma * sigma
     min_duration_us : float or None; filter bursts shorter than this
+    window_us     : float or None; the sliding-window duration used to produce
+                    `rate_Hz`. Used to derive the rate quantum (one switch per
+                    window) for the Poisson sigma floor. If None it is estimated
+                    from the smallest nonzero rate.
+
+    Threshold model
+    ---------------
+    sigma is the larger of the robust scale `1.4826 * MAD(rate_Hz)` (MAD taken
+    about the *median* of rate_Hz, per spec §3.3) and a Poisson counting floor.
+    In the normal regime most windows contain zero switches, so >50% of the
+    rates are identical and MAD collapses to 0; a bare `baseline + k_sigma*0`
+    threshold would then flag every window holding even one switch as a burst.
+    The Poisson floor `sigma_floor = q * sqrt(max(baseline_counts, 1))`, where
+    `q = 1/(window_us*1e-6)` is the rate per single switch, keeps the threshold
+    a statistically meaningful margin above baseline tunneling.
 
     Returns
     -------
@@ -222,10 +245,25 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
     if rate.size == 0:
         return []
 
+    median_rate = float(np.median(rate))
     if baseline_rate is None:
-        baseline_rate = float(np.median(rate))
-    mad = float(np.median(np.abs(rate - baseline_rate)))
+        baseline_rate = median_rate
+    # MAD is a property of the rate distribution: always centered on the median,
+    # independent of the (possibly caller-supplied) baseline (spec §3.3).
+    mad = float(np.median(np.abs(rate - median_rate)))
     sigma = 1.4826 * mad
+
+    # Rate quantum: the rate corresponding to a single switch in one window.
+    if window_us is not None and window_us > 0:
+        q = 1.0 / (float(window_us) * 1e-6)
+    else:
+        positive = rate[rate > 0]
+        q = float(np.min(positive)) if positive.size else 0.0
+    if q > 0:
+        baseline_counts = max(baseline_rate, 0.0) / q
+        sigma_floor = q * np.sqrt(max(baseline_counts, 1.0))
+        sigma = max(sigma, sigma_floor)
+
     threshold = baseline_rate + k_sigma * sigma
 
     above = rate > threshold
@@ -343,6 +381,10 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
     # dropped to avoid IndexError from numpy slice wraparound.
     valid_gaps = [int(g) for g in (gap_indices or []) if 0 < int(g) < n]
     breakpoints = sorted(set([0, n] + valid_gaps))
+    # Global sample period, recoverable from the whole trace even when an
+    # individual segment is a single sample. Used to extrapolate the duration
+    # of the last run in each segment.
+    global_sp = float(t[1] - t[0]) if n >= 2 else 0.0
     dwells_0, dwells_1 = [], []
     for a, b in zip(breakpoints[:-1], breakpoints[1:]):
         if b <= a:
@@ -359,11 +401,13 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
             if re < seg.size:
                 duration = float(seg_t[re] - seg_t[rs])
             else:
-                # Last run in segment: extrapolate using sample period
+                # Last run in segment: extrapolate using the sample period.
+                # Prefer the segment's own period; fall back to the global
+                # period so a single-sample segment yields ~one period, not 0.
                 if seg.size >= 2:
                     sp = float(seg_t[1] - seg_t[0])
                 else:
-                    sp = 0.0
+                    sp = global_sp
                 duration = float(seg_t[re - 1] - seg_t[rs]) + sp
             if state == 0:
                 dwells_0.append(duration)
@@ -373,26 +417,6 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
     dwells_0 = np.asarray(dwells_0, dtype=float)
     dwells_1 = np.asarray(dwells_1, dtype=float)
 
-    def _fit_exp(dwells):
-        if dwells.size < 5:
-            return {"tau_us": float("nan"), "A": float("nan")}
-        try:
-            hist, edges = np.histogram(dwells, bins=min(30, max(5, dwells.size // 10)))
-            centers_h = 0.5 * (edges[:-1] + edges[1:])
-            mask = hist > 0
-            if mask.sum() < 3:
-                return {"tau_us": float("nan"), "A": float("nan")}
-            x = centers_h[mask]
-            y = np.log(hist[mask])
-            slope, intercept = np.polyfit(x, y, 1)
-            if slope >= 0:
-                return {"tau_us": float("nan"), "A": float("nan")}
-            tau = -1.0 / slope
-            A = float(np.exp(intercept))
-            return {"tau_us": float(tau), "A": A}
-        except Exception:
-            return {"tau_us": float("nan"), "A": float("nan")}
-
     return {
         "dwell_0_us": dwells_0,
         "dwell_1_us": dwells_1,
@@ -400,9 +424,55 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
         "mean_1": float(np.mean(dwells_1)) if dwells_1.size else float("nan"),
         "n_runs_0": int(dwells_0.size),
         "n_runs_1": int(dwells_1.size),
-        "exp_fit_0": _fit_exp(dwells_0),
-        "exp_fit_1": _fit_exp(dwells_1),
+        "exp_fit_0": _fit_exp_dwell(dwells_0),
+        "exp_fit_1": _fit_exp_dwell(dwells_1),
     }
+
+
+def _fit_exp_dwell(dwells, bins=None):
+    """
+    Fit an exponential to a dwell-time histogram via log-linear regression.
+
+    Parameters
+    ----------
+    dwells : array of dwell durations (us)
+    bins   : int or None; histogram bin count. None -> adaptive
+             min(30, max(5, size // 10)).
+
+    Returns
+    -------
+    dict {tau_us, A, bins_used}. tau_us/A are nan if the fit fails. `A` is the
+    count-amplitude calibrated to `bins_used` bins so a caller that re-histograms
+    `dwells` with `bins_used` can overlay `A * exp(-x / tau_us)` consistently.
+
+    The log-counts are heteroscedastic (var(log N) ~ 1/N), so the regression is
+    weighted by sqrt(count) — unweighted OLS overweights the sparse tail bins
+    and biases tau high (~10%, failing the spec §6 ±5% criterion).
+    """
+    dwells = np.asarray(dwells, dtype=float)
+    fail = {"tau_us": float("nan"), "A": float("nan"), "bins_used": 0}
+    if dwells.size < 5:
+        return fail
+    try:
+        if bins is None:
+            bins = min(30, max(5, dwells.size // 10))
+        bins = int(bins)
+        hist, edges = np.histogram(dwells, bins=bins)
+        centers_h = 0.5 * (edges[:-1] + edges[1:])
+        mask = hist > 0
+        if mask.sum() < 3:
+            return fail
+        x = centers_h[mask]
+        y = np.log(hist[mask])
+        w = np.sqrt(hist[mask].astype(float))  # Poisson weighting in log space
+        slope, intercept = np.polyfit(x, y, 1, w=w)
+        if slope >= 0:
+            return fail
+        tau = -1.0 / slope
+        A = float(np.exp(intercept))
+        return {"tau_us": float(tau), "A": A, "bins_used": bins}
+    except Exception:
+        return fail
 
 
 def _plot_iq_scatter(I, Q, bits, separator, out_path):
@@ -424,7 +494,8 @@ def _plot_parity_vs_time(bits, t_us, out_path, max_pts=100_000):
     fig, ax = plt.subplots(figsize=(10, 3))
     n = bits.size
     if n > max_pts:
-        # Downsample by histogram2d for speed
+        # Downsample to max_pts time bins (mean state per bin) so PNG generation
+        # stays well under ~1 s even for multi-million-sample records.
         time_bins = np.linspace(t_us[0], t_us[-1], max_pts)
         idx = np.clip(np.searchsorted(time_bins, t_us) - 1, 0, time_bins.size - 1)
         avg_state = np.bincount(idx, weights=bits.astype(float), minlength=time_bins.size)
@@ -464,7 +535,11 @@ def _plot_dwell_histograms(stats, out_path):
         (ax1, stats["dwell_1_us"], stats["exp_fit_1"], "state 1 dwells"),
     ]:
         if dwells.size > 0:
-            ax.hist(dwells, bins=30, log=True, alpha=0.7)
+            # Use the same bin count the fit was computed on so the overlaid
+            # exponential (whose amplitude A is calibrated to that bin width)
+            # lines up with the plotted bars.
+            nb = fit.get("bins_used") or min(30, max(5, dwells.size // 10))
+            ax.hist(dwells, bins=int(nb), log=True, alpha=0.7)
             if np.isfinite(fit["tau_us"]):
                 xs = np.linspace(dwells.min(), dwells.max(), 200)
                 ax.plot(xs, fit["A"] * np.exp(-xs / fit["tau_us"]), "r-",
@@ -590,7 +665,8 @@ def analyze_parity_run(h5_path, separator=None, window_us=1000.0, k_sigma=5.0,
                                           step_us=step_us, gap_indices=gap_indices)
     bursts = detect_bursts(rate_out["rate_Hz"], rate_out["window_t_us"],
                            baseline_rate=None, k_sigma=k_sigma,
-                           min_duration_us=min_burst_duration_us)
+                           min_duration_us=min_burst_duration_us,
+                           window_us=rate_out["window_us"])
     stats = dwell_time_statistics(bits, t_us, gap_indices=gap_indices)
 
     if save_plots:
@@ -891,6 +967,23 @@ if __name__ == "__main__":
         f"expected 1 switch with gap, got {out_gap['switches_per_window']}"
     )
 
+    # Default step is window_us // 2 (integer floor, spec §3.2/§3.5).
+    out_step = sliding_window_switch_rate(np.array([0, 1, 0, 1]),
+                                          np.array([0.0, 1.0, 2.0, 3.0]),
+                                          window_us=1001.0)
+    assert out_step["step_us"] == 500.0, (
+        f"default step_us={out_step['step_us']} (expected 500.0 = 1001 // 2)"
+    )
+
+    # A switch landing exactly at t_end (record length an exact multiple of the
+    # window) must be counted by the closed final window, not dropped.
+    out_edge = sliding_window_switch_rate(np.array([0, 0, 0, 1]),
+                                          np.array([0.0, 30.0, 60.0, 90.0]),
+                                          window_us=30.0, step_us=30.0)
+    assert int(out_edge["switches_per_window"].sum()) == 1, (
+        f"boundary switch dropped: {out_edge['switches_per_window']}"
+    )
+
     print("sliding_window_switch_rate: OK")
 
     # --- detect_bursts --------------------------------------------------------
@@ -912,6 +1005,35 @@ if __name__ == "__main__":
     # No bursts when everything is at baseline
     bursts0 = detect_bursts(np.full(100, 50.0), centers, k_sigma=5)
     assert bursts0 == [], f"expected no bursts, got {bursts0}"
+
+    # Sparse-baseline regime (the normal operating point): most windows have
+    # 0 switches, a minority have exactly one. The MAD collapses to 0, so the
+    # Poisson sigma floor must prevent every single-switch window from being
+    # flagged as a burst.
+    rng_b = np.random.default_rng(0)
+    win_us = 1000.0
+    q_rate = 1.0 / (win_us * 1e-6)        # one switch per window, in Hz
+    sparse = np.zeros(400)
+    sparse[rng_b.random(400) < 0.10] = q_rate
+    sparse_cen = np.arange(400) * (win_us / 2.0)
+    assert detect_bursts(sparse, sparse_cen, k_sigma=5, window_us=win_us) == [], (
+        "sparse baseline produced false bursts (sigma floor regression)"
+    )
+    # A genuine impact burst (many switches in one window) is still detected.
+    sparse[200] = 60 * q_rate
+    b_impact = detect_bursts(sparse, sparse_cen, k_sigma=5, window_us=win_us)
+    assert len(b_impact) == 1, f"real burst missed: {len(b_impact)}"
+
+    # MAD is centered on the median, independent of an explicit baseline_rate.
+    # Here median-centered MAD is 0, so the threshold is set by the Poisson
+    # floor (q*k_sigma = 5000 Hz), NOT by a baseline-0-centered MAD (~74132 Hz).
+    rate_mc = np.array([10000.0] * 8 + [30000.0, 200000.0])
+    cen_mc = np.arange(rate_mc.size) * 500.0
+    b_mc = detect_bursts(rate_mc, cen_mc, baseline_rate=0.0, k_sigma=5,
+                         window_us=win_us)
+    assert b_mc and abs(b_mc[0]["threshold_Hz"] - 5000.0) < 1.0, (
+        f"MAD not centered on median: threshold {b_mc[0]['threshold_Hz'] if b_mc else None}"
+    )
 
     print("detect_bursts: OK")
 
@@ -957,6 +1079,40 @@ if __name__ == "__main__":
     # the trace is treated as one continuous segment with one run of length 6.
     assert stats_oor["n_runs_0"] == 1, (
         f"out-of-range gap_indices should yield 1 run, got {stats_oor['n_runs_0']}"
+    )
+
+    # A single-sample segment (e.g. split off by a gap) yields ~one sample
+    # period of dwell, not 0.0 (which would bias mean dwell times down).
+    s_single = dwell_time_statistics(np.array([0, 0, 1]),
+                                     np.array([0.0, 10.0, 20.0]),
+                                     gap_indices=[2])
+    assert abs(s_single["mean_1"] - 10.0) < 1e-9, (
+        f"single-sample dwell = {s_single['mean_1']} (expected ~10 us)"
+    )
+
+    # Exponential dwell-time fit is unbiased within +/-5% (spec §6 validation),
+    # via sqrt(count) Poisson weighting in log space.
+    rng_fit = np.random.default_rng(0)
+    fitted = [
+        _fit_exp_dwell(np.random.default_rng(s).exponential(200.0, 5000))["tau_us"]
+        for s in range(20)
+    ]
+    mean_fit_tau = float(np.mean(fitted))
+    assert abs(mean_fit_tau - 200.0) / 200.0 < 0.05, (
+        f"fitted tau biased: mean {mean_fit_tau:.1f} vs 200"
+    )
+
+    # The fit amplitude A is calibrated to bins_used so the plotted overlay
+    # (which re-histograms with bins_used) lines up with the bars.
+    dwells_cal = np.random.default_rng(3).exponential(150.0, 240)  # <300 -> <30 bins
+    fit_cal = _fit_exp_dwell(dwells_cal)
+    assert fit_cal["bins_used"] > 0
+    hist_cal, edges_cal = np.histogram(dwells_cal, bins=fit_cal["bins_used"])
+    cen_cal = 0.5 * (edges_cal[:-1] + edges_cal[1:])
+    m_cal = hist_cal > 0
+    pred_cal = fit_cal["A"] * np.exp(-cen_cal[m_cal] / fit_cal["tau_us"])
+    assert 0.5 < float(np.median(pred_cal / hist_cal[m_cal])) < 2.0, (
+        "dwell-histogram overlay mis-scaled relative to its own bins"
     )
 
     print("dwell_time_statistics: OK")
