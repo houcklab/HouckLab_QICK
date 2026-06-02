@@ -364,6 +364,17 @@ class ZeroSpanParity(ExperimentClass):
             # _validate_cfg already raised, but keep defensive check.
             raise ValueError(f"Unknown mode: {mode!r}")
 
+    def set_qubit_gain(self, gain):
+        """Update qubit drive gain and rebuild the strobe program in place.
+
+        Used by modulated_strobe_acquire to square-wave the drive across blocks.
+        Strobe mode only.
+        """
+        if self.cfg.get("mode", "strobe") != "strobe":
+            raise RuntimeError("set_qubit_gain is strobe-mode only")
+        self.cfg["qubit_gain"] = gain
+        self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
+
     def acquire(self, progress=False, **kwargs):
         mode = self.cfg["mode"]
         if mode == "strobe":

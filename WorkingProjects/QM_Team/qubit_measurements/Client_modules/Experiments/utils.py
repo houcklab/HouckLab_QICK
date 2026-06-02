@@ -572,6 +572,18 @@ def pick_parity_drive_freq(spec_data, which="lower"):
     }
 
 
+# Keys that describe the acquisition mode/units, propagated from the first chunk
+# to the stitched output so save_data persists them verbatim. Module-level so both
+# chunked_acquire and modulated_strobe_acquire share the same set.
+_META_KEYS = (
+    "mode", "sample_period_us",
+    "read_length_us", "adc_trig_offset_us", "ro_norm_cycles",
+    "decimated_fs_MHz", "decimated_fs_source",
+    "capture_length_us", "samples_per_capture",
+    "soft_avgs", "n_captures",
+)
+
+
 def chunked_acquire(experiment, n_chunks, progress=False):
     """
     Run experiment.acquire() n_chunks times back-to-back and stitch results.
@@ -607,15 +619,6 @@ def chunked_acquire(experiment, n_chunks, progress=False):
     cum_offset_us = 0.0
     cum_idx = 0
     first_meta = {}
-    # Keys that describe the acquisition mode/units, propagated from the first
-    # chunk to the stitched output so save_data persists them verbatim.
-    _META_KEYS = (
-        "mode", "sample_period_us",
-        "read_length_us", "adc_trig_offset_us", "ro_norm_cycles",
-        "decimated_fs_MHz", "decimated_fs_source",
-        "capture_length_us", "samples_per_capture",
-        "soft_avgs", "n_captures",
-    )
     iterator = range(n_chunks)
     if progress:
         try:
@@ -664,6 +667,64 @@ def chunked_acquire(experiment, n_chunks, progress=False):
         "chunk_wall_clock_starts": wall_clocks,
         "n_chunks": int(n_chunks),
         "wall_clock_start": wall_clocks[0] if wall_clocks else None,
+    }
+    stitched.update(first_meta)
+    return stitched
+
+
+def modulated_strobe_acquire(experiment, gain_schedule, reps_per_block, progress=False):
+    """Run strobe acquisition in blocks, setting qubit_gain per block, and stitch.
+
+    gain_schedule : list of gain values, one per block (e.g. [G_on, 0, G_on, 0, ...]).
+    reps_per_block : reps (= time samples) per block; must satisfy avg_maxlen (rule 4).
+
+    Returns the chunked_acquire contract plus:
+      modulation_reference : per-sample 1.0 where the block gain > 0 else 0.0
+      block_labels         : the gains actually applied, per block
+      reps_per_block, sample_period_us, modulation_freq_hz
+    """
+    I_parts, Q_parts, t_parts = [], [], []
+    ref_parts, gaps, wall_starts = [], [], []
+    cum_idx = 0
+    cum_offset_us = 0.0
+    sample_period = float(experiment.cfg.get("sample_period_us", 0.0))
+    first_meta = {}
+    for bi, gain in enumerate(gain_schedule):
+        experiment.set_qubit_gain(gain)
+        data = experiment.acquire(progress=False)
+        I_c = np.asarray(data["I"]).ravel()
+        Q_c = np.asarray(data["Q"]).ravel()
+        t_c = np.asarray(data["t_us"], dtype=float).ravel()
+        if bi == 0:
+            for k in _META_KEYS:
+                if k in data:
+                    first_meta[k] = data[k]
+            sample_period = float(data.get("sample_period_us", sample_period) or sample_period)
+        if bi > 0:
+            gaps.append(cum_idx)
+        t_parts.append(t_c + cum_offset_us)
+        if t_c.size >= 2:
+            cum_offset_us = t_parts[-1][-1] + (t_c[1] - t_c[0])
+        else:
+            cum_offset_us = t_parts[-1][-1] + sample_period
+        I_parts.append(I_c)
+        Q_parts.append(Q_c)
+        ref_parts.append(np.full(I_c.size, 1.0 if gain > 0 else 0.0))
+        wall_starts.append(data.get("wall_clock_start"))
+        cum_idx += I_c.size
+    stitched = {
+        "I": np.concatenate(I_parts),
+        "Q": np.concatenate(Q_parts),
+        "t_us": np.concatenate(t_parts),
+        "modulation_reference": np.concatenate(ref_parts),
+        "gap_indices": gaps,
+        "block_labels": list(gain_schedule),
+        "chunk_wall_clock_starts": wall_starts,
+        "n_chunks": len(gain_schedule),
+        "reps_per_block": int(reps_per_block),
+        "sample_period_us": sample_period,
+        "modulation_freq_hz": (1.0 / (2.0 * reps_per_block * sample_period * 1e-6))
+                              if reps_per_block > 0 and sample_period > 0 else float("nan"),
     }
     stitched.update(first_meta)
     return stitched
@@ -863,3 +924,38 @@ if __name__ == "__main__":
             assert float(f.attrs["adc_trig_offset_us"]) == 0.488
             assert float(f.attrs["ro_norm_cycles"]) == 1920.0
     print("utils.py save_data persists real chunked_acquire metadata: OK")
+
+    # --- Task 3: modulated_strobe_acquire ---
+    class _ModFakeExp:
+        def __init__(self, n_per_block, sample_period_us):
+            self.cfg = {"qubit_gain": 0, "reps_per_chunk": n_per_block,
+                        "reps": n_per_block, "sample_period_us": sample_period_us}
+            self._n = n_per_block
+            self._sp = sample_period_us
+        def set_qubit_gain(self, gain):
+            self.cfg["qubit_gain"] = gain
+            self.cfg["reps_per_chunk"] = self._n
+            self.cfg["reps"] = self._n
+        def acquire(self, progress=False):
+            g = self.cfg["qubit_gain"]
+            I = np.full(self._n, 5.0 if g > 0 else 0.0)
+            Q = np.zeros(self._n)
+            t = np.arange(self._n) * self._sp
+            return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
+                    "sample_period_us": self._sp, "read_length_us": 5.0,
+                    "wall_clock_start": "2026-01-01T00:00:00"}
+
+    n_per, sp = 500, 20.0
+    exp = _ModFakeExp(n_per, sp)
+    schedule = [100, 0] * 4   # 4 periods, on=100/off=0
+    acq = modulated_strobe_acquire(exp, schedule, n_per)
+    assert acq["I"].shape == (n_per * len(schedule),), acq["I"].shape
+    assert acq["modulation_reference"].shape == acq["I"].shape
+    # reference must be 1 exactly where the on-blocks are (I==5.0)
+    assert np.array_equal((acq["modulation_reference"] > 0.5), (acq["I"] > 2.5)), "ref/gain misaligned"
+    assert acq["gap_indices"] == [n_per * k for k in range(1, len(schedule))], acq["gap_indices"]
+    assert np.all(np.diff(acq["t_us"]) > 0), "t_us not monotonic"
+    assert acq["block_labels"] == schedule, acq["block_labels"]
+    # 500 reps/half-period at 20 us -> half=10 ms -> period 20 ms -> 50 Hz
+    assert abs(acq["modulation_freq_hz"] - 50.0) < 1.0, acq["modulation_freq_hz"]
+    print("utils.py modulated_strobe_acquire: OK")
