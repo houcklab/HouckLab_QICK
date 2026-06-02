@@ -270,7 +270,45 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
     return bursts
 
 
-def dwell_time_statistics(binary_states, t_us, gap_indices=None):
+def _debounce_bits(bits, min_len):
+    """Merge runs shorter than min_len into the neighbouring run (single segment)."""
+    bits = np.asarray(bits).astype(int).copy()
+    if bits.size == 0 or min_len <= 1:
+        return bits
+    changed = True
+    while changed:
+        changed = False
+        edges = np.flatnonzero(np.diff(bits)) + 1
+        starts = np.concatenate(([0], edges))
+        ends = np.concatenate((edges, [bits.size]))
+        lengths = ends - starts
+        for i in range(starts.size):
+            if lengths[i] < min_len:
+                if i > 0:
+                    bits[starts[i]:ends[i]] = bits[starts[i - 1]]
+                elif i + 1 < starts.size:
+                    bits[starts[i]:ends[i]] = bits[starts[i + 1]]
+                changed = True
+                break
+    return bits
+
+
+def _debounce_bits_segmented(bits, gap_indices, min_dwell_bins):
+    """Apply _debounce_bits within each gap-delimited segment (never across a gap)."""
+    bits = np.asarray(bits).astype(int)
+    n = bits.size
+    if min_dwell_bins <= 1 or n == 0:
+        return bits.copy()
+    valid = sorted({int(g) for g in (gap_indices or []) if 0 < int(g) < n})
+    edges = [0] + valid + [n]
+    out = bits.copy()
+    for a, b in zip(edges[:-1], edges[1:]):
+        out[a:b] = _debounce_bits(bits[a:b], min_dwell_bins)
+    return out
+
+
+def dwell_time_statistics(binary_states, t_us, gap_indices=None,
+                          merge_short_segments=False, min_dwell_bins=1):
     """
     Lengths of contiguous runs in state 0 and state 1, in microseconds.
 
@@ -284,6 +322,9 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None):
       n_runs_0, n_runs_1     : int, run counts
       exp_fit_0, exp_fit_1   : dict {"tau_us": float, "A": float}; nans if fit fails
     """
+    binary_states = np.asarray(binary_states).astype(int)
+    if merge_short_segments and min_dwell_bins > 1:
+        binary_states = _debounce_bits_segmented(binary_states, gap_indices, min_dwell_bins)
     bits = np.asarray(binary_states, dtype=int)
     t = np.asarray(t_us, dtype=float)
     n = bits.size
@@ -757,6 +798,37 @@ if __name__ == "__main__":
     )
 
     print("dwell_time_statistics: OK")
+
+    # --- Task 1: dwell debounce ---
+    rng = np.random.default_rng(0)
+    # Clean telegraph: 50 us sample period, runs of ~40 samples (2 ms) per state
+    sp_us = 50.0
+    runs = []
+    state = 0
+    for _ in range(400):
+        L = max(2, int(rng.exponential(40)))
+        runs.append(np.full(L, state))
+        state ^= 1
+    clean = np.concatenate(runs).astype(int)
+    t = np.arange(clean.size) * sp_us
+    # Inject single-sample flickers (flip 3% of samples) -> fake fast switches
+    noisy = clean.copy()
+    flip = rng.random(noisy.size) < 0.03
+    noisy[flip] ^= 1
+
+    stats_clean = dwell_time_statistics(clean, t)
+    stats_nodb = dwell_time_statistics(noisy, t)
+    stats_db = dwell_time_statistics(noisy, t, merge_short_segments=True, min_dwell_bins=2)
+
+    mean_clean = 0.5 * (stats_clean["mean_0"] + stats_clean["mean_1"])
+    mean_nodb = 0.5 * (stats_nodb["mean_0"] + stats_nodb["mean_1"])
+    mean_db = 0.5 * (stats_db["mean_0"] + stats_db["mean_1"])
+    assert mean_nodb < 0.5 * mean_clean, f"expected flickers to bias mean low, got {mean_nodb} vs {mean_clean}"
+    assert abs(mean_db - mean_clean) / mean_clean < 0.30, f"debounced mean {mean_db} far from clean {mean_clean}"
+    # Debounce must respect gaps: a gap index must never merge across the boundary
+    g = [clean.size // 2]
+    _ = dwell_time_statistics(noisy, t, gap_indices=g, merge_short_segments=True, min_dwell_bins=2)
+    print("dwell_time_statistics debounce: OK")
 
     # --- analyze_parity_run end-to-end ----------------------------------------
     import os, tempfile, h5py, json
