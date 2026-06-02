@@ -39,6 +39,10 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mAuto
 # via `from utils import *` above.
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mZeroSpanParity import ZeroSpanParity
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import analyze_parity_run
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.validate_ZeroSpanParity import (
+    run_static_contrast, run_contrast_vs_qubit_freq, run_modulation_check,
+    run_control_suite, run_environment_sweep, build_evidence_report,
+)
 
 def _extract_iq_from_singleshot_data(data_ss, state="g"):
     """
@@ -525,6 +529,23 @@ ZSP_AnalysisParams = {
     "analysis_bin_us":       None,        # set < read_length for decimated apriori
     "save_plots":            True,
 }
+
+# ============================ VALIDATION HARNESS (spec 2026-06-01) ============================
+# Strobe-only. Each block reuses ZSP_Separator_Cached / ZSP_ParityFreqs_Cached and the
+# zsp_cfg already built for ZeroSpanParity. Run order: stage1 -> stage2 -> stage1 refine ->
+# stage3 (gate) -> stage4 -> 5/6 -> 8 -> 7 -> 9.  See spec 6.3.
+Validate_StaticContrast      = False
+Validate_ContrastVsQubitFreq = False
+Validate_ModulationCheck     = True     # pipeline-sanity gate -- run first
+Validate_ControlSuite        = False
+Validate_EnvironmentSweep    = False
+Build_EvidenceReport         = False
+
+StaticContrast_params = {"freq_span_mhz": 2.0, "n_points": 41, "reps_per_point": 2000}
+ContrastVsQubit_params = {"qfreq_span_mhz": 10.0, "n_points": 81}
+Modulation_params = {"modulation_freq_hz": 25, "n_periods": 10}
+Control_params = {"variants": ["A", "B", "C", "D"], "detune_mhz": 50.0}
+Environment_params = {"param_name": "power_dB", "values": [-10, -8, -6, -4]}
 
 cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
 resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Frequency']
@@ -2805,6 +2826,54 @@ if RunZeroSpanParity:
         out_dir=os.path.dirname(zsp_exp.fname),
     )
     print(f"[ZeroSpanParity] complete. Raw data: {zsp_exp.fname}")
+
+    # --- Validation harness execution ---
+    _val_out_dir = zsp_exp.outerFolder if hasattr(zsp_exp, "outerFolder") else os.path.dirname(zsp_exp.fname)
+
+    if Validate_StaticContrast:
+        if ZSP_Separator_Cached.get("g_center") is None:
+            raise RuntimeError("Validate_StaticContrast needs a calibrated separator (set RecalibrateSeparator)")
+        _f0 = zsp_cfg["read_pulse_freq"]
+        _span = StaticContrast_params["freq_span_mhz"]
+        _flist = np.linspace(_f0 - _span / 2, _f0 + _span / 2, StaticContrast_params["n_points"])
+        zsp_exp.cfg["reps_per_chunk"] = StaticContrast_params["reps_per_point"]
+        _sc = run_static_contrast(zsp_exp, _flist, qubit_gain_on=zsp_cfg["qubit_gain"], out_dir=_val_out_dir)
+        print(f"[stage 1] best read_pulse_freq = {_sc['best_freq']:.4f} MHz  (contrast SNR {_sc['contrast_snr']:.1f})")
+
+    if Validate_ContrastVsQubitFreq:
+        _q0 = zsp_cfg["parity_drive_freq"]
+        _qspan = ContrastVsQubit_params["qfreq_span_mhz"]
+        _qlist = np.linspace(_q0 - _qspan / 2, _q0 + _qspan / 2, ContrastVsQubit_params["n_points"])
+        _s2 = run_contrast_vs_qubit_freq(zsp_exp, _qlist, out_dir=_val_out_dir)
+        print(f"[stage 2] parity peak sep = {_s2['peaks'].get('peak_sep')}")
+
+    if Validate_ModulationCheck:
+        _m = run_modulation_check(zsp_exp, separator=zsp_separator,
+                                  modulation_freq_hz=Modulation_params["modulation_freq_hz"],
+                                  n_periods=Modulation_params["n_periods"], out_dir=_val_out_dir)
+        print(f"[stage 3] modulation corr={_m['correlation']:.2f} depth={_m['modulation_depth']:.2f} "
+              f"snr={_m['snr']:.2f}  (gate: proceed only if recovered)")
+
+    if Validate_ControlSuite:
+        _pf = {"lower": ZSP_ParityFreqs_Cached.get("lower_peak_MHz"),
+               "higher": ZSP_ParityFreqs_Cached.get("higher_peak_MHz")}
+        _c = run_control_suite(zsp_exp, separator=zsp_separator, variants=tuple(Control_params["variants"]),
+                               detune_mhz=Control_params["detune_mhz"], parity_freqs=_pf, out_dir=_val_out_dir)
+        print(f"[stage 8] controls: {[(k, v.get('separation_snr', v.get('separation_snr_lower'))) for k, v in _c['variants'].items()]}")
+
+    if Validate_EnvironmentSweep:
+        def _set_power(_exp, _val):
+            _exp.cfg["pulse_gain"] = _val  # NOTE: replace with attenuator/YOKO call for real power sweep
+            _exp.prog = type(_exp.prog)(_exp.soccfg, _exp.cfg)
+        _e = run_environment_sweep(zsp_exp, separator=zsp_separator,
+                                   param_name=Environment_params["param_name"],
+                                   param_values=Environment_params["values"],
+                                   set_param=_set_power, out_dir=_val_out_dir)
+        print(f"[stage 7] swept {Environment_params['param_name']}: {_e['table']}")
+
+    if Build_EvidenceReport:
+        _rep = build_evidence_report(_val_out_dir, os.path.join(_val_out_dir, "EVIDENCE.md"))
+        print(f"[stage 9] evidence report written: {_rep}")
 
 # ramp_to(yoko, 0.0)
 # yoko.write(":OUTP OFF")
