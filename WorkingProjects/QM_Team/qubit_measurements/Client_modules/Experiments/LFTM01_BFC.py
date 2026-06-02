@@ -36,30 +36,30 @@ soc, soccfg = makeProxy()
 
 ############## New TATQ03 (No Charge Lines) ############################
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 4699.14, 'Gain': 1000}, #900 seems to be consistent # res found again # 400 okay for good transmission
-          'Qubit': {'Frequency': 1263.035171, 'Gain': 6020,'pi2_Gain' : 6020//2, "sigma": 1.5, "flattop_length": None}, # qubit found again previous frequency 1263.228
-          'outerfoldername':"V:/t1Team/Data/2026-05-20_BFC_cooldown/LFTM01/RFSOC/Q1//"},# 2840
-    '2': {'Readout': {'Frequency': 4909.554495, 'Gain': 148}, # 148 okay for good transmission, 250 too much.
-          'Qubit': {'Frequency': 1144.787819, 'Gain': 1300, 'pi2_Gain' : 1300 // 2, "sigma": 0.1, "flattop_length": None}, # pi pulse gain: 4164  'Gain': 1300, 'pi2_Gain' : 1300 // 2, "sigma": 0.1, "flattop_length": None
-          'outerfoldername':"V:/t1Team/Data/2026-05-20_BFC_cooldown/LFTM01/RFSOC/Q2//"},
+    '1': {'Readout': {'Frequency': 4700.36, 'Gain': 2200}, #2000 too much
+          'Qubit': {'Frequency': 1227.715, 'Gain': 3132,'pi2_Gain' : 3132//2, "sigma": 0.6, "flattop_length": None}, # qubit found again previous frequency 1263.228 3242
+          'outerfoldername':"V:/t1Team/Data/2026-05-29_BFC_cooldown/LFTM01/RFSOC/Q1/"},# 2840
+    '2': {'Readout': {'Frequency': 4909.531, 'Gain': 1400}, # 148 okay for good transmission, 250 too much. 2000 too mcuh
+          'Qubit': {'Frequency': 1111.79, 'Gain': 2106, 'pi2_Gain' : 2106 // 2, "sigma": 0.3, "flattop_length": None}, # pi pulse gain: 4164  'Gain': 1300, 'pi2_Gain' : 1300 // 2, "sigma": 0.1, "flattop_length": None
+          'outerfoldername':"V:/t1Team/Data/2026-05-29_BFC_cooldown/LFTM01/RFSOC/Q2/"},
     }
 ############## End Can D ############################
 
 # Readout
-Qubit_Readout = 1
-Qubit_Pulse = 1
+Qubit_Readout = 2
+Qubit_Pulse = 2
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency
 
-RunTransmissionSweep = True # determine cavity frequency
-Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 501, 'span': 100}
+RunTransmissionSweep = False # determine cavity frequency
+Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 301, 'span': 0.75}
 
 Run2ToneSpec =  False
 RunTrans_QubitSpec = False
-Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 0.75, "SpecNumPoints": 101,
+Spec_relevant_params = {"qubit_gain": 2000, "SpecSpan": 5, "SpecNumPoints": 101,
                         "reps": 10, 'rounds': 10,
-                        'Gauss': True, "sigma": 2, "gain": 90,
+                        'Gauss': False, "sigma": 2, "gain": 8000,
                         'relax_delay': 5000, 'qubit_length' : 100,
                         "display": True, 'min_sep_MHz': 1,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1,
@@ -67,10 +67,10 @@ Spec_relevant_params = {"qubit_gain": 100, "SpecSpan": 0.75, "SpecNumPoints": 10
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 3000, 'number_of_steps': 101,
+                         "max_gain": 4000, 'number_of_steps': 101,
                          "reps": 10, 'rounds': 10,
-                         'relax_delay': 5000,
-                         "fit": False}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+                         'relax_delay': 8000,
+                         "fit": True}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunRB = False
 RB_params = {
@@ -152,7 +152,7 @@ ACStark_params = {
     "display": True,
 }
 
-RunT1 = False
+RunT1 = True
 RunT2 = False
 T1T2_params = {"T1_step": 60, "T1_expts": 60, "T1_reps": 20, "T1_rounds": 20, # 80 100 30 30
                "T2_step": 2, "T2_expts": 300, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.0,
@@ -171,8 +171,8 @@ T2E_params = {"T2_max_us": 3600, "T2_expts": 101, "T2_reps": 25, "T2_rounds": 25
               'repetitions': 3000}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 25, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 5000}
+SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 1, 'relax_delay': 8000}
 
 RunT1SS = False
 T1SS_params = {"T1_step": 80, "T1_expts": 100,
@@ -183,11 +183,11 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'repetitions': 11}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 100, "gain_stop": 500, "gain_pts": 50, "span": 0.01, "trans_pts": 3}
+SS_R_params = {"gain_start": 100, "gain_stop": 2500, "gain_pts": 20, "span": 0.1, "trans_pts": 11}
 
 SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 100, "q_gain_pts": 201, "q_freq_span": 0.05, "q_freq_pts": 5,
-               'number_of_pulses': 5} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
+SS_Q_params = {"q_gain_span": 300, "q_gain_pts": 21, "q_freq_span": 0.3, "q_freq_pts": 7,
+               'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 
 cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']

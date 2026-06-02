@@ -10,7 +10,7 @@ Purpose
   Flat S21 vs current ⇒ the DC line is open / not delivering bias to the TWPA.
 
 Safety
-  * Pump generator MUST be OFF.
+  * Pump generator (Holzworth HS9004A) MUST be OFF.
   * Ramp rate is enforced ≤ 300 nA/s by slow_ramp_to_current from twpa_set_bias.
   * On exit (success OR exception OR Ctrl-C) the bias is ramped back to 0.
   * This script overrides the 12 uA safety cap because the calibration sweep
@@ -51,20 +51,20 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.twpa_
 PNAX_ADDRESS         = "GPIB0::16::INSTR"   # TODO: PNA-X VISA address
 
 # Bias sweep
-I_START_uA           = 0.0
-I_STOP_uA            = 25.0      # full first flux period — calibration only
+I_START_uA           = -10.0
+I_STOP_uA            = 10.0      # full first flux period — calibration only
 N_BIAS_POINTS        = 51        # 51 points → 0.5 uA spacing across 0–25 uA
 SETTLE_AFTER_RAMP_S  = 0.5       # post-ramp dwell before each PNA-X read
 
 # PNA-X CW measurement
-PNAX_CW_FREQ_HZ      = 4.900e9   # TODO: readout band — set near the cavity / chip transmission
+PNAX_CW_FREQ_HZ      = 7e9   # TODO: readout band — set near the cavity / chip transmission
 PNAX_IF_BW_HZ        = 100.0
 PNAX_POWER_dBm       = 0.0     # keep low: TWPA is unbiased much of the sweep
 PNAX_N_AVG           = 4
 PNAX_TIMEOUT_MS      = 30000
 
 # Output
-SAVE_DIR             = r"V:/t1Team/Data/2026-05-20-BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-05-29_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "first_period_sweep"
 
 
@@ -133,7 +133,7 @@ def main():
     print(f"  save dir        : {SAVE_DIR}")
     print()
     print("CONFIRM:")
-    print("  [ ] TWPA pump generator RF output is OFF.")
+    print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")
     print("  [ ] PNA-X RF output safe at {:+.1f} dBm into the line.".format(PNAX_POWER_dBm))
     print("  [ ] R_SERIES_OHMS and addresses match the physical wiring.")
     print("=" * 72)

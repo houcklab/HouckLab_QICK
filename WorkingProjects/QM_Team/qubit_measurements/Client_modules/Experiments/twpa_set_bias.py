@@ -22,7 +22,7 @@ Wiring assumption:
   level directly (set R_SERIES_OHMS = 1.0 for the math to still work).
 
 Usage:
-  1. Verify the TWPA pump generator output is OFF.
+  1. Verify the TWPA pump generator (Holzworth HS9004A) output is OFF.
   2. Set TWPA_YOKO_ADDRESS, R_SERIES_OHMS, TARGET_CURRENT_uA below.
   3. Run.
 """
@@ -39,7 +39,7 @@ import pyvisa
 TWPA_YOKO_ADDRESS   = "GPIB1::9::INSTR"   # TODO: dedicated TWPA YOKO address (NOT the charge-line yoko at ::9::)
 R_SERIES_OHMS       = 10.0e3                # TODO: series resistor V→I, in ohms
 
-TARGET_CURRENT_uA   = 0.0             # optimum from 20260521_144734 flux sweep (max |S21|, broad 3.5–5.5 uA plateau); datasheet nominal ≈ 11 uA
+TARGET_CURRENT_uA   = 4.5             # optimum from 20260521_144734 flux sweep (max |S21|, broad 3.5–5.5 uA plateau); datasheet nominal ≈ 11 uA
 MAX_RATE_nA_per_s   = 300.0                # datasheet ceiling — do not raise
 
 SAFETY_CAP_uA       = 12.0                 # script refuses targets above this in normal operation
@@ -150,7 +150,7 @@ def main():
           f"({'CALIBRATION OVERRIDE — cap lifted to 25 uA' if ALLOW_CALIBRATION else 'enforced'})")
     print()
     print("BEFORE PROCEEDING, CONFIRM:")
-    print("  [ ] TWPA pump generator RF output is OFF.")
+    print("  [ ] TWPA pump generator (Holzworth HS9004A) RF output is OFF.")
     print("  [ ] No other process is writing to this YOKO.")
     print("  [ ] R_SERIES_OHMS and TWPA_YOKO_ADDRESS match the physical wiring.")
     print("=" * 72)
