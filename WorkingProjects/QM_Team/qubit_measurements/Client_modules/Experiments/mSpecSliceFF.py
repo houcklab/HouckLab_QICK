@@ -106,9 +106,13 @@ class QubitSpecSliceFF(ExperimentClass):
         avgq = data['data']['avgq']
 
         #### find the frequency corresponding to the qubit dip
-        sig = avgi + 1j * avgq
-        avgamp0 = np.abs(sig)
-        peak_loc = np.argmax(avgamp0)
+        #### index [0][0] -> first readout channel, first experiment (matches display()),
+        #### otherwise argmax flattens across both declared ADC channels and overruns x_pts
+        #### project onto the signal-bearing IQ axis (background-subtracted + rotated)
+        #### rather than the raw magnitude, which is dominated by the large, noisy
+        #### background quadrature and misses the qubit feature.
+        signal_trace = project_iq_signal(avgi[0][0], avgq[0][0])
+        peak_loc = np.argmax(signal_trace)
         self.qubitFreq = x_pts[peak_loc]
 
         return data
@@ -187,8 +191,11 @@ class QubitSpecSliceFF(ExperimentClass):
         avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
         avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
 
-        sig = avgi + 1j * avgq
-        avgamp0 = np.abs(sig) ** 2
+        # Project onto the signal-bearing IQ axis (background-subtracted + rotated)
+        # instead of the raw magnitude |I+iQ|^2. The magnitude is dominated by the
+        # large, noisy background quadrature, which buries the qubit feature and
+        # makes peak-finding lock onto background noise spikes.
+        avgamp0 = project_iq_signal(avgi, avgq)
 
         min_sep_mhz = kwargs.get("min_sep_mhz", min_sep)
         fit_window_mhz = kwargs.get("fit_window_mhz", 3 * min_sep_mhz)
@@ -264,7 +271,7 @@ class QubitSpecSliceFF(ExperimentClass):
 
         print("I Max", x_pts[np.argmax(avgi)])
         print("Q Max", x_pts[np.argmax(avgq)])
-        print("Max Amplitude ^2", x_pts[np.argmax(avgamp0)], "Amplitude ^2", np.max(avgamp0))
+        print("Max Rotated Projection", x_pts[np.argmax(avgamp0)], "value", np.max(avgamp0))
 
         for k, idx in enumerate(selected_peaks):
             print(f"Peak {k + 1}: freq = {x_pts[idx]:.6f} MHz, amplitude^2 = {avgamp0[idx]:.6f}")
@@ -274,6 +281,15 @@ class QubitSpecSliceFF(ExperimentClass):
                 f"Lorentzian {k + 1}: center={fit['center']:.6f} MHz, "
                 f"FWHM={fit['fwhm']:.6f} MHz, R2={fit['r2']:.3f}"
             )
+
+        # Build a subtitle with pulse parameters for easy identification in saved PNGs
+        q_gain = self.cfg.get("qubit_gain", "?")
+        if self.cfg.get("Gauss", False):
+            sigma_us = self.cfg.get("sigma", "?")
+            pulse_info = f"gain={q_gain}  Gauss σ={sigma_us} µs"
+        else:
+            q_len = self.cfg.get("qubit_length", "?")
+            pulse_info = f"gain={q_gain}  length={q_len} µs"
 
         # -----------------------------
         # Plot I/Q
@@ -287,22 +303,21 @@ class QubitSpecSliceFF(ExperimentClass):
 
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency")
-        plt.title(self.titlename)
+        plt.title(f"{self.titlename}\n{pulse_info}")
         plt.legend()
         plt.tight_layout()
         plt.savefig(self.iname[:-4] + '_IQ.png')
 
         if plotDisp:
             plt.show()
-        else:
-            fig.clf(True)
-            plt.close(fig)
+        fig.clf(True)
+        plt.close(fig)
 
         # -----------------------------
         # Plot amplitude^2 + Lorentzian fits
         # -----------------------------
         fig = plt.figure(figNum + 1)
-        plt.plot(x_pts, avgamp0, '.-', color='Purple', label="|I+iQ|^2")
+        plt.plot(x_pts, avgamp0, '.-', color='Purple', label="rotated IQ projection")
 
         for k, idx in enumerate(selected_peaks):
             plt.axvline(x_pts[idx], linestyle='--', alpha=0.7, label=f"Peak {k + 1}: {x_pts[idx]:.6f}")
@@ -319,7 +334,7 @@ class QubitSpecSliceFF(ExperimentClass):
 
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency")
-        plt.title(self.titlename + " Amplitude^2 + Lorentzian Fits")
+        plt.title(f"{self.titlename} Rotated IQ Projection + Lorentzian Fits\n{pulse_info}")
         plt.legend()
         plt.tight_layout()
         plt.savefig(self.iname[:-4] + '_Amp2_LorentzFits.png')
@@ -327,9 +342,8 @@ class QubitSpecSliceFF(ExperimentClass):
         if plotDisp:
             plt.show()
             plt.pause(0.1)
-        else:
-            fig.clf(True)
-            plt.close(fig)
+        fig.clf(True)
+        plt.close(fig)
 
 
     def get_amplitude_slice(self, data=None):

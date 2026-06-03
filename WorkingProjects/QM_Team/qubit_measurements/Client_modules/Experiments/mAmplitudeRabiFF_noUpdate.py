@@ -148,7 +148,7 @@ class AmplitudeRabiFF_N(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp=False, figNum=1, **kwargs):
+    def display(self, data=None, plotDisp=False, figNum=1, fit=True, **kwargs):
         if data is None:
             data = self.data
 
@@ -156,22 +156,26 @@ class AmplitudeRabiFF_N(ExperimentClass):
         avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
         avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
 
-        # fit I and Q separately
-        fit_i = fit_rabi_cosine(x_pts, avgi)
-        fit_q = fit_rabi_cosine(x_pts, avgq)
+        x_min, x_max = float(np.min(x_pts)), float(np.max(x_pts))
 
-        print("Raw extrema:")
-        print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
-        print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
+        fit_i = fit_q = None
+        if fit:
+            # fit I and Q separately
+            fit_i = fit_rabi_cosine(x_pts, avgi)
+            fit_q = fit_rabi_cosine(x_pts, avgq)
 
-        print("\nCosine fit results:")
-        print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
-        print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
-        print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
+            print("Raw extrema:")
+            print("  Max I gain:", x_pts[np.argmax(avgi)], " Max Q gain:", x_pts[np.argmax(avgq)])
+            print("  Min I gain:", x_pts[np.argmin(avgi)], " Min Q gain:", x_pts[np.argmin(avgq)])
 
-        print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
-        print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
-        print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
+            print("\nCosine fit results:")
+            print(f"  I fit period P       = {fit_i['P']:.3f} ± {fit_i['dP']:.3f}")
+            print(f"  I fit phase phi      = {fit_i['phi']:.3f} ± {fit_i['dphi']:.3f}")
+            print(f"  I-derived pi gain    = {fit_i['pi_gain']:.3f}")
+
+            print(f"  Q fit period P       = {fit_q['P']:.3f} ± {fit_q['dP']:.3f}")
+            print(f"  Q fit phase phi      = {fit_q['phi']:.3f} ± {fit_q['dphi']:.3f}")
+            print(f"  Q-derived pi gain    = {fit_q['pi_gain']:.3f}")
 
         # store fit results on the object in case you want to inspect later
         self.fit_i = fit_i
@@ -182,14 +186,23 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, 'o', label="I data", color='orange')
-        plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
-
         plt.plot(x_pts, avgq, 'o', label="Q data", color='blue')
-        plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
 
-        plt.axvline(fit_i['pi_gain'], linestyle='--', color='orange', alpha=0.7, label="I pi gain")
-        plt.axvline(fit_q['pi_gain'], linestyle='--', color='blue', alpha=0.7, label="Q pi gain")
+        if fit:
+            plt.plot(x_pts, fit_i['yfit'], '-', label=f"I fit, pi={fit_i['pi_gain']:.1f}", color='orange')
+            plt.plot(x_pts, fit_q['yfit'], '-', label=f"Q fit, pi={fit_q['pi_gain']:.1f}", color='blue')
 
+            # Only draw the pi-gain marker if the fit landed inside the swept range.
+            # A failed cosine fit (no visible oscillation) returns a runaway period,
+            # which would otherwise autoscale the x-axis out to ~1e9.
+            for f, color, lbl in ((fit_i, 'orange', "I pi gain"), (fit_q, 'blue', "Q pi gain")):
+                if x_min <= f['pi_gain'] <= x_max:
+                    plt.axvline(f['pi_gain'], linestyle='--', color=color, alpha=0.7, label=lbl)
+                else:
+                    print(f"  [warn] {lbl} = {f['pi_gain']:.3g} outside swept range "
+                          f"[{x_min:.0f}, {x_max:.0f}] -- fit likely failed, marker hidden.")
+
+        plt.xlim(x_min, x_max)
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()

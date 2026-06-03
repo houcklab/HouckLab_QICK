@@ -8,11 +8,64 @@ from datetime import datetime
 import os
 import json
 
+def project_iq_signal(avgi, avgq):
+    """Project complex IQ data onto its signal-bearing axis for peak finding.
+
+    Two-tone spec frequently lands almost the entire qubit response in one
+    quadrature, sitting on top of a large constant offset in the other. Taking
+    |I + iQ| (or its square) then buries the feature: the magnitude is dominated
+    by the big, noisy background quadrature, so peak-finding and Lorentzian fits
+    lock onto background noise spikes instead of the qubit (see e.g. the
+    2026-06-02 Q6 QubitSpecFF traces, where the real feature in I at ~3054 MHz
+    was missed in favour of Q-noise spikes at 3038/3069 MHz).
+
+    This removes the off-resonant background and rotates the deviation onto its
+    principal axis, returning a real-valued trace in which the qubit feature
+    appears as a positive peak rising from a ~0 baseline.
+
+    Parameters
+    ----------
+    avgi, avgq : array_like
+        Real and imaginary readout quadratures (1-D, same length).
+
+    Returns
+    -------
+    np.ndarray
+        Real-valued, background-subtracted, principal-axis-projected trace,
+        oriented so the dominant excursion is positive.
+    """
+    avgi = np.asarray(avgi, dtype=float)
+    avgq = np.asarray(avgq, dtype=float)
+    sig = avgi + 1j * avgq
+
+    # Off-resonant background: most points are off-resonance, so the per-quadrature
+    # median is a robust estimate of the constant complex offset.
+    bg = np.median(sig.real) + 1j * np.median(sig.imag)
+    dev = sig - bg
+
+    # Principal axis of the deviation. sum(dev**2) has argument 2*theta, where
+    # theta is the axis the signal varies along; half its angle recovers theta
+    # (and resolves the 180-degree fold). Projecting onto exp(-i*theta) puts the
+    # variation into the real part.
+    if np.allclose(dev, 0):
+        return np.zeros_like(avgi)
+    ang = 0.5 * np.angle(np.sum(dev ** 2))
+    proj = (dev * np.exp(-1j * ang)).real
+
+    # Orient so the dominant excursion is a positive peak (peak-finding/Lorentzian
+    # fitting expect maxima rising from the baseline).
+    if abs(proj.min()) > abs(proj.max()):
+        proj = -proj
+    return proj
+
+
 def choose_two_tone_freqs_from_lorentz_or_peaks(data_spec, min_sep_mhz=0.1):
     x_pts = np.asarray(data_spec["data"]["x_pts"], dtype=float)
     avgi = np.asarray(data_spec["data"]["avgi"][0][0], dtype=float)
     avgq = np.asarray(data_spec["data"]["avgq"][0][0], dtype=float)
-    avgamp0 = np.abs(avgi + 1j * avgq) ** 2
+    # Rotate onto the signal-bearing axis instead of taking the raw magnitude,
+    # so the fallback peak search sees the qubit rather than background noise.
+    avgamp0 = project_iq_signal(avgi, avgq)
 
     peak_info = find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=min_sep_mhz)
     peak_freqs = np.array(peak_info["peak_freqs"], dtype=float) if peak_info["peak_freqs"] is not None else np.array([])
@@ -363,7 +416,7 @@ def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_
     plt.close()
 
     plt.figure(figsize=(8, 5))
-    plt.plot(x_pts, avgamp0, '.-', label="|I+iQ|^2")
+    plt.plot(x_pts, avgamp0, '.-', label="rotated IQ projection")
     for k, idx in enumerate(peak_info["peak_inds"]):
         plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
         plt.plot(x_pts[idx], avgamp0[idx], 'o')
