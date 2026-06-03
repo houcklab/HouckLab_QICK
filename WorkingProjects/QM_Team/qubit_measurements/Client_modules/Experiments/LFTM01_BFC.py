@@ -46,8 +46,8 @@ Qubit_Parameters = {
 ############## End Can D ############################
 
 # Readout
-Qubit_Readout = 2
-Qubit_Pulse = 2
+Qubit_Readout = 1
+Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency

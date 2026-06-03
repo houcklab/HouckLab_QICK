@@ -155,27 +155,44 @@ soc, soccfg = makeProxy()
 ^ with Q4 charge line 
 """
 
-temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-3-9_BC_Cooldown/CSTQ03/RFSOC/Q4//"
+temp_dir_Q4 = "C:/Users/ece-houck-j409/Documents/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC/Q4//"
+
+# ── Output folder root — edit this one line ────────────────────────────────
+_QubitFolderRoot = "V:/t1Team/Data/2026-05-29_BFC_Cooldown/CSTQ03/RFSOC"
+QubitFolders = {str(q): f"{_QubitFolderRoot}/Q{q}//" for q in range(1, 7)}
+
 ############## CSTQ03 (clone of CSTQ02_BFC.py + zero-span parity) ######
 Qubit_Parameters = {
+    # TODO
     '1': {'Readout': {'Frequency': 6757.94, 'Gain': 200}, # 500 okay, 700 too much 520 maybe too much 530 too much
           'Qubit': {'Frequency': 1752, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 0.2, "flattop_length": None},
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q1//"},
+          'outerfoldername': QubitFolders['1']},
+
+    # TODO
     '2': {'Readout': {'Frequency': 7192.01, 'Gain': 4000}, # coarsely tuned to 4000, seeing behavior at 4500
           'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q2//"},
+          'outerfoldername': QubitFolders['2']},
+
+    # TODO
     '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 550}, # 600 too much
           'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q3//"},
+          'outerfoldername': QubitFolders['3']},
+
+
+    # TODO
     '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
           'Qubit': {'Frequency':    2306.308975, 'Gain': 7009,  "pi2_Gain": 7009 // 2 ,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
-          'outerfoldername': "V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q4//"},
+          'outerfoldername': QubitFolders['4']},
+    
+    # TODO
     '5': {'Readout': {'Frequency': 6970.59, 'Gain': 1500}, # 4500 with directional coupler 1500 good without-
           'Qubit': {'Frequency':  2758.3, 'Gain': 4000, "pi2_Gain": 4000 // 2, "sigma": 1, "flattop_length": None}, #2756.685
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q5//"}, # qubit, T1 found
-    '6': {'Readout': {'Frequency': 7070.917614, 'Gain': 390}, #390 good 550 750 too much
-          'Qubit': {'Frequency': 2100.3, 'Gain': 5000,  "pi2_Gain": 3975 // 2, "sigma": 1 , "flattop_length": 1}, # cant find
-          'outerfoldername':"V:/t1Team/Data/2026-3-9_BFC_Cooldown/CSTQ03/RFSOC/Q6//"},
+          'outerfoldername': QubitFolders['5']}, # qubit, T1 found
+
+    # currently working on
+    '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800}, 
+          'Qubit': {'Frequency': 3055.2, 'Gain': 5100,  "pi2_Gain": 5100 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
+          'outerfoldername': QubitFolders['6']},
     }
 ############## End Can D ############################
 # yoko
@@ -192,7 +209,7 @@ yoko_fixed = False # during a charge sweep; lazy way of sweeping two tone spec o
 
 # Readout
 
-Qubit_Readout =6
+Qubit_Readout = 6
 Qubit_Pulse = 6
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
@@ -201,22 +218,27 @@ tl = {"tone_length": 151}
 ConstantTone = False  # determine cavity frequency
 
 RunTransmissionSweep = False # determine cavity frequency
-Transmission_params = {'reps': 20, 'rounds': 20, 'num_points' : 301, 'span': 0.75}
+Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 5}
 
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
 
 Run2ToneSpec = False
+RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 750, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
-                        "qubit_length" : 100, # length of 50flattop pulse when gauss = False # 9.5 worked
+Spec_relevant_params = {"qubit_gain": 4000, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
+                        "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 10, 'rounds': 10,
-                        'Gauss': True, "sigma": 2, "gain": 10000,
+                        'Gauss': False, "sigma": 2, "gain": 4000,
                         'relax_delay' : 3500,
                         "display": True, 'min_sep_MHz':0.2,
-                        "fit_window_mhz": 0.5, "prominent_ratio": 0.1,} # 500 used for charge sweeps
+                        "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
+                        # ── RunSpecGainLengthSweep controls ──────────────────────────────────
+                        "sweep_lengths": list(range(10,101,10)),         # qubit_length values to sweep
+                        "sweep_gains":   list(range(200, 5001, 100)),  # qubit_gain values to sweep
+                        }
 
 StabilizeTwoTone = False
 
@@ -352,9 +374,9 @@ ChiShift_params = {"reps": 10,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "max_gain": 10000, 'number_of_steps': 501,
-                         "reps": 25, 'rounds': 25,
-                         'relax_delay': 4500,
+                         "max_gain": 10000, 'number_of_steps': 101,
+                         "reps": 20, 'rounds': 20,
+                         'relax_delay': 3000,
                          'fit' : True}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
@@ -387,7 +409,7 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'calibrate_SS': True,
                'repetitions': 3000}
 
-SingleShot_ReadoutOptimize = False
+SingleShot_ReadoutOptimize = True
 SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
 
 SingleShot_QubitOptimize = False
@@ -536,7 +558,7 @@ ZSP_AnalysisParams = {
 # stage3 (gate) -> stage4 -> 5/6 -> 8 -> 7 -> 9.  See spec 6.3.
 Validate_StaticContrast      = False
 Validate_ContrastVsQubitFreq = False
-Validate_ModulationCheck     = True     # pipeline-sanity gate -- run first
+Validate_ModulationCheck     = False     # pipeline-sanity gate -- run first
 Validate_ControlSuite        = False
 Validate_EnvironmentSweep    = False
 Build_EvidenceReport         = False
@@ -746,7 +768,8 @@ if Run2ToneSpec:
     if Spec_relevant_params['Gauss']:
         config['sigma'] = Spec_relevant_params["sigma"]
         config["qubit_gain"] = Spec_relevant_params['gain']
-        config["qubit_gain"] = Spec_relevant_params['gain']
+        
+    config["qubit_gain"] = Spec_relevant_params['gain']
 
     config["qubit_length"] = Spec_relevant_params["qubit_length"]
     config["SpecSpan"] = Spec_relevant_params["SpecSpan"]
@@ -770,6 +793,50 @@ if Run2ToneSpec:
                              fit_window_mhz = 0.5, prominent_ratio = 0.1) # can change to True
     QubitSpecSliceFF.save_data(Instance_specSlice, data_specSlice)
     QubitSpecSliceFF.save_config(Instance_specSlice)
+
+# Nested gain × qubit_length sweep.
+# For each length in sweep_lengths, runs a full qubit spec at every gain in sweep_gains.
+# qubit_gain and qubit_length appear in every saved plot title for easy identification.
+if RunSpecGainLengthSweep:
+    sweep_lengths = Spec_relevant_params['sweep_lengths']
+    sweep_gains   = Spec_relevant_params['sweep_gains']
+
+    _disp  = Spec_relevant_params['display']
+    _minsep = Spec_relevant_params['min_sep_MHz']
+    _fw    = Spec_relevant_params.get('fit_window_mhz', 0.5)
+    _pr    = Spec_relevant_params.get('prominent_ratio', 0.1)
+
+    for q_length in sweep_lengths:
+        for q_gain in sweep_gains:
+            print(f"\n=== GainLengthSweep: qubit_length={q_length} µs  qubit_gain={q_gain} ===")
+
+            config["reps"]          = Spec_relevant_params['reps']
+            config["rounds"]        = Spec_relevant_params['rounds']
+            config["Gauss"]         = Spec_relevant_params['Gauss']
+            config["qubit_gain"]    = q_gain
+            config["qubit_length"]  = q_length
+            config["SpecSpan"]      = Spec_relevant_params["SpecSpan"]
+            config["SpecNumPoints"] = Spec_relevant_params["SpecNumPoints"]
+            config["step"]          = 2 * config["SpecSpan"] / config["SpecNumPoints"]
+            config["start"]         = qubit_frequency_center - config["SpecSpan"]
+            config["expts"]         = config["SpecNumPoints"]
+            config["relax_delay"]   = Spec_relevant_params['relax_delay']
+            if Spec_relevant_params['Gauss']:
+                config['sigma'] = Spec_relevant_params["sigma"]
+
+            _inst = QubitSpecSliceFF(
+                path="QubitSpecFF",
+                cfg=config,
+                soc=soc,
+                soccfg=soccfg,
+                outerFolder=outerFolder,
+            )
+            _data = QubitSpecSliceFF.acquire(_inst)
+            QubitSpecSliceFF.display(_inst, _data, plotDisp=_disp, figNum=2,
+                                     min_sep=_minsep, fit_window_mhz=_fw,
+                                     prominent_ratio=_pr)
+            QubitSpecSliceFF.save_data(_inst, _data)
+            QubitSpecSliceFF.save_config(_inst)
 
 if RunChiShift:
     updated_params = {
@@ -857,8 +924,10 @@ if Run2ToneChargeDispersionQuasiCW:
             x_pts = np.array(data_specSlice["data"]["x_pts"])
             avgi = np.array(data_specSlice["data"]["avgi"][0][0])
             avgq = np.array(data_specSlice["data"]["avgq"][0][0])
-            sig = avgi + 1j * avgq
-            avgamp0 = np.abs(sig) ** 2
+            # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
+            # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
+            # background quadrature and buries the qubit feature.
+            avgamp0 = project_iq_signal(avgi, avgq)
 
             freq_choice = choose_two_tone_freqs_from_lorentz_or_peaks(
                 data_specSlice,
@@ -1239,8 +1308,10 @@ if RunModifiedRamsey:
             x_pts_mr = np.array(data_specSlice_mr["data"]["x_pts"])
             avgi_mr = np.array(data_specSlice_mr["data"]["avgi"][0][0])
             avgq_mr = np.array(data_specSlice_mr["data"]["avgq"][0][0])
-            sig_mr = avgi_mr + 1j * avgq_mr
-            avgamp0_mr = np.abs(sig_mr) ** 2
+            # Rotate onto the signal-bearing IQ axis (background-subtracted) instead
+            # of the raw magnitude |I+iQ|^2, which is dominated by the large, noisy
+            # background quadrature and buries the qubit feature.
+            avgamp0_mr = project_iq_signal(avgi_mr, avgq_mr)
 
             freq_choice_mr = choose_two_tone_freqs_from_lorentz_or_peaks(
                 data_specSlice_mr,
@@ -2107,7 +2178,7 @@ if RunAmplitudeRabi:
         iAmpRabi = AmplitudeRabiFF_N(path="AmplitudeRabi", cfg=config, soc=soc, soccfg=soccfg,
                                    outerFolder=outerFolder)
         dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
-        AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2)
+        AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=True, figNum=2, fit=fit)
         AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
         AmplitudeRabiFF_N.save_config(iAmpRabi)
     else:
@@ -2445,8 +2516,12 @@ if RunChargeSweep:
         x_pts = np.array(data_specSlice['data']['x_pts'])
         avgi = np.array(data_specSlice['data']['avgi'][0][0])
         avgq = np.array(data_specSlice['data']['avgq'][0][0])
-        sig = avgi + 1j * avgq
-        avgamp0 = np.abs(sig) **2
+        # Rotate onto the signal-bearing IQ axis (background-subtracted) instead of
+        # the raw magnitude |I+iQ|^2: the magnitude is dominated by the large, noisy
+        # background quadrature, which both buries per-slice peaks and washes out the
+        # charge-sweep heatmap. The projection gives each slice a ~0 baseline with the
+        # qubit feature as a positive bump.
+        avgamp0 = project_iq_signal(avgi, avgq)
         # find up to two peaks with a minimum spacing in x-units
         min_spacing = 0.05  # same units as x_pts
         dx = np.mean(np.diff(x_pts))
@@ -2486,7 +2561,7 @@ if RunChargeSweep:
                 ]
             )
             cbar = fig.colorbar(im, ax=ax)
-            cbar.set_label("|I + iQ|^2")
+            cbar.set_label("rotated IQ projection")
 
             ax.set_xlabel("Frequency")
             ax.set_ylabel("Voltage")
