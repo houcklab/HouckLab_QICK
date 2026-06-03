@@ -191,7 +191,7 @@ Qubit_Parameters = {
 
     # currently working on
     '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800}, 
-          'Qubit': {'Frequency': 3055.2, 'Gain': 5100,  "pi2_Gain": 5100 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
+          'Qubit': {'Frequency': 3055.2, 'Gain': 5010,  "pi2_Gain": 5010 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
           'outerfoldername': QubitFolders['6']},
     }
 ############## End Can D ############################
@@ -228,10 +228,10 @@ RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 4000, "SpecSpan": 20, "SpecNumPoints": 101, # 750 works Q5
+Spec_relevant_params = {"qubit_gain": 8000, "SpecSpan": 100, "SpecNumPoints": 101, # 750 works Q5
                         "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
                         "reps": 10, 'rounds': 10,
-                        'Gauss': False, "sigma": 2, "gain": 4000,
+                        'Gauss': False, "sigma": 2, "gain": 8000,
                         'relax_delay' : 3500,
                         "display": True, 'min_sep_MHz':0.2,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
@@ -398,7 +398,7 @@ T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25,
               'repetitions': 3000}
 
 SingleShot = False
-SS_params = {"Shots": 1000, "Readout_Time": 25, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
+SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
              'number_of_pulses': 1, 'relax_delay': 3500, "pi2_SS": False} # keep at 15
 
 RunT1SS = False
@@ -409,11 +409,11 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
                'calibrate_SS': True,
                'repetitions': 3000}
 
-SingleShot_ReadoutOptimize = True
+SingleShot_ReadoutOptimize = False
 SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
 
-SingleShot_QubitOptimize = False
-SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 50, "q_freq_span": 0.2, "q_freq_pts": 11,
+SingleShot_QubitOptimize = True
+SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 11, "q_freq_span": 2, "q_freq_pts": 21,
                'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 # ── Automated T1 / T2 / T2Echo calibration ──────────────────────────────────

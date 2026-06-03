@@ -148,13 +148,23 @@ class AmplitudeRabiFF_N(ExperimentClass):
         return data
 
 
-    def display(self, data=None, plotDisp=False, figNum=1, fit=True, **kwargs):
+    def display(self, data=None, plotDisp=False, figNum=1, fit=True, rotate=True, **kwargs):
         if data is None:
             data = self.data
 
         x_pts = np.asarray(data['data']['x_pts'], dtype=float)
         avgi = np.asarray(data['data']['avgi'][0][0], dtype=float)
         avgq = np.asarray(data['data']['avgq'][0][0], dtype=float)
+
+        # Rotate the IQ blobs so the Rabi oscillation lands in I and Q is flat.
+        # Amplitude_IQ finds the phase that minimizes the Q range; multiplying the
+        # complex signal by exp(i*phase) collapses the contrast onto I.
+        if rotate:
+            rot_phase = Amplitude_IQ(avgi, avgq)
+            rotated = (avgi + 1j * avgq) * np.exp(1j * rot_phase)
+            avgi, avgq = rotated.real, rotated.imag
+            self.rotation_phase = rot_phase
+            print(f"IQ rotation phase = {rot_phase:.4f} rad")
 
         x_min, x_max = float(np.min(x_pts)), float(np.max(x_pts))
 
