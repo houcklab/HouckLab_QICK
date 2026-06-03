@@ -57,11 +57,11 @@ SC5510A_SERVER_HOST = "192.168.0.102"            # server PC LAN IP running the 
 PUMP_DEVICE_IDS     = ["10002D34", "10002D35"]   # TODO: SC5510A device ids (see sc.list_instruments())
 
 # --- Operating point --------------------------------------------------------
-PUMP_FREQ_GHz       = 12.7      # TODO: pump frequency at the chosen operating point
-PUMP_POWER_dBm      = -15.0     # TODO: pump power at the chosen operating point
+PUMP_FREQ_GHz       = 10.9262      # TODO: pump frequency at the chosen operating point
+PUMP_POWER_dBm      = -18.3     # TODO: pump power at the chosen operating point
 PUMP_POWER_MAX_dBm  = 0.0       # hard ceiling — script refuses power above this
 
-DISABLE_PUMP        = True     # True (or pass '--off') to RF-disable the pumps and exit
+DISABLE_PUMP        = False     # True (or pass '--off') to RF-disable the pumps and exit
 
 
 # ---------------------------------------------------------------------------

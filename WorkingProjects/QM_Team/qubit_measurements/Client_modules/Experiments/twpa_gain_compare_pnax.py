@@ -57,23 +57,26 @@ PUMP_DEVICE_IDS     = ["10002D34", "10002D35"]  # TODO: the two SC5510A device i
 
 # --- Pump ON operating point (THE knobs to set for the "on" state) ----------
 # Use the optimum found in twpa_pump_sweep_pnax.py for this signal band.
-PUMP_ON_FREQ_GHz    = 12.66                    # TODO: pump frequency for the ON state
-PUMP_ON_POWER_dBm   = -17.0                    # TODO: pump power for the ON state (per device, identical)
+# PUMP_ON_FREQ_GHz    = 10.9187                    # TODO: pump frequency for the ON state
+# PUMP_ON_POWER_dBm   = -18.0                    # TODO: pump power for the ON state (per device, identical)
+
+PUMP_ON_FREQ_GHz    = 10.9262                    # TODO: pump frequency for the ON state
+PUMP_ON_POWER_dBm   = -18.3                    # TODO: pump power for the ON state (per device, identical)
 PUMP_POWER_MAX_dBm  = 0.0                       # hard ceiling — script refuses ON power above this
 
 # --- Signal band swept on the PNA-X (where we want to see TWPA gain) --------
 F_SIGNAL_START_GHz  = 2.0                       # TODO: signal-band start (near the cavity / readout band)
-F_SIGNAL_STOP_GHz   = 12.0                       # TODO: signal-band stop
+F_SIGNAL_STOP_GHz   = 10.0                       # TODO: signal-band stop
 N_SIGNAL_POINTS     = 401                       # PNA-X linear-sweep points across the band
 
 # --- Repeats / timing -------------------------------------------------------
-N_REPEATS            = 5                         # OFF/ON trace pairs to average (drift suppression)
+N_REPEATS            = 10                         # OFF/ON trace pairs to average (drift suppression)
 SETTLE_AFTER_PUMP_S  = 0.30                      # PLL lock + thermal settle after toggling pump state
 
 # --- PNA-X measurement ------------------------------------------------------
 PNAX_ADDRESS         = "GPIB0::16::INSTR"
 PNAX_IF_BW_HZ        = 1000.0
-PNAX_POWER_dBm       = -30.0                    # keep low — signal must not saturate the TWPA
+PNAX_POWER_dBm       = -50.0                    # keep low — signal must not saturate the TWPA
 PNAX_TIMEOUT_MS      = 60000
 
 # --- Output -----------------------------------------------------------------
