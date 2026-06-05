@@ -81,13 +81,10 @@ class ExperimentClass:
         #     self.plotter = LivePlotClient()
         # self.dataserver= dataserver_client()
 
-        ##### check to see if the file path exists
-        DataFolderBool = Path(self.outerFolder + self.path).is_dir()
-        if DataFolderBool == False:
-            os.mkdir(self.outerFolder + self.path)
-        DataSubFolderBool = Path(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring)).is_dir()
-        if DataSubFolderBool == False:
-            os.mkdir(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring))
+        ##### make sure the data directory exists, creating any missing parent
+        ##### folders too. os.makedirs (unlike os.mkdir) builds the whole tree
+        ##### and exist_ok=True makes it a no-op if the folders already exist.
+        os.makedirs(os.path.join(self.outerFolder + self.path, self.path + "_" + datestring), exist_ok=True)
 
         self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
