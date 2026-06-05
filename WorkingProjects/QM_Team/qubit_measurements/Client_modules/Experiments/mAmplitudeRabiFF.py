@@ -9,6 +9,24 @@ import time
 from scipy.optimize import curve_fit
 from utils import *
 
+def iq_rotation_angle(signal_trace):
+    """
+    Angle (rad) of the principal axis of an IQ trajectory.
+
+    Rotating the trace by -angle aligns the direction of maximum variance (the
+    qubit g->e displacement axis swept out during the Rabi) with the I
+    quadrature, so the oscillation lands in a single quadrature and the other
+    stays flat. This is the data-driven alternative to the cavity_winding_*
+    phase, which is a frequency-dependent cable-delay correction, not a
+    quadrature alignment.
+    """
+    i = np.real(signal_trace).astype(float)
+    q = np.imag(signal_trace).astype(float)
+    i = i - np.mean(i)
+    q = q - np.mean(q)
+    return 0.5 * np.arctan2(2.0 * np.mean(i * q), np.mean(i * i) - np.mean(q * q))
+
+
 def cos_func(x, y0, A, P, phi):
     return y0 + A * np.cos(2 * np.pi * x / P + phi)
 
@@ -163,10 +181,19 @@ class AmplitudeRabiFF(ExperimentClass):
         phase = 2 * np.pi * self.cfg['cavity_winding_freq'] * self.cfg["pulse_freq"] + self.cfg['cavity_winding_offset']
         signal = (avgi + 1j * avgq) * np.exp(1j * phase)
 
+        # Data-driven principal-axis IQ rotation layered on top of the
+        # cavity-winding phase: aligns the Rabi oscillation with one quadrature
+        # so the downstream cosine fit sees full contrast. (Stored for display;
+        # does NOT replace the fit.)
+        rot_angle = iq_rotation_angle(np.ravel(signal))
+        signal = signal * np.exp(-1j * rot_angle)
+        print(f'[AmplitudeRabiFF] IQ rotation angle = {np.rad2deg(rot_angle):.2f} deg')
+
         avgi = signal.real
         avgq = signal.imag
 
-        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq}}
+        data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq,
+                                             'iq_rotation_rad': rot_angle}}
         self.data = data
 
         return data
