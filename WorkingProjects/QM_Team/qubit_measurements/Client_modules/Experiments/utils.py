@@ -398,9 +398,299 @@ def find_two_tone_peaks(x_pts, avgamp0, min_sep_mhz=0.1,
         }
 
 
-def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_dir, current_voltage=0):
+def estimate_noise_floor(y):
+    """Robust baseline and noise sigma of a 1-D trace.
+
+    Uses the median as the baseline and the median-absolute-deviation (MAD)
+    scaled to a Gaussian sigma. Unlike (max - min), this is insensitive to a
+    handful of tall qubit peaks or single-sample spikes, so it gives a stable
+    noise estimate to threshold against.
+
+    Returns
+    -------
+    (baseline, sigma) : tuple of float
+    """
+    y = np.asarray(y, dtype=float)
+    baseline = float(np.median(y))
+    mad = float(np.median(np.abs(y - baseline)))
+    sigma = 1.4826 * mad  # MAD -> Gaussian-equivalent std
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = float(np.std(y))
+        if not np.isfinite(sigma) or sigma <= 0:
+            sigma = 1e-12
+    return baseline, sigma
+
+
+def _refine_peak_lorentzian(x_pts, y, idx, fit_window_mhz):
+    """Lorentzian-refine a single peak near sample ``idx``.
+
+    Fits a positive Lorentzian to the data within +/- fit_window_mhz of the bin
+    peak (widened to >= 5 samples if the window is too narrow). Returns a dict
+    with the sub-bin centre ``freq``, ``fwhm``, and the fitted curve
+    (``x_fit`` / ``y_fit``) for plotting, or None if the fit fails or runs away
+    outside the fit window.
+    """
+    x_pts = np.asarray(x_pts, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n = x_pts.size
+    f_peak = float(x_pts[idx])
+
+    mask = np.abs(x_pts - f_peak) <= fit_window_mhz
+    if np.count_nonzero(mask) < 5:
+        lo = max(0, idx - 3)
+        hi = min(n, idx + 4)
+        mask = np.zeros(n, dtype=bool)
+        mask[lo:hi] = True
+
+    xx = x_pts[mask]
+    yy = y[mask]
+    if xx.size < 4:
+        return None
+
+    try:
+        res = fit_lorentzian_feature(xx, yy, fit_dip=False)
+        f0 = float(res["popt"][2])
+        gamma = float(res["popt"][3])
+        if not (xx.min() <= f0 <= xx.max()):
+            return None
+        x_fit = np.linspace(float(xx.min()), float(xx.max()), 200)
+        y_fit = lorentzian_peak(x_fit, *res["popt"])
+        return {
+            "freq": f0,
+            "fwhm": 2.0 * abs(gamma),
+            "x_fit": x_fit,
+            "y_fit": y_fit,
+        }
+    except Exception:
+        return None
+
+
+def find_parity_doublet(
+    x_pts,
+    avgamp0,
+    center_freq,
+    min_sep_mhz=0.02,
+    max_sep_mhz=None,
+    prominence_snr=5.0,
+    smooth_window=5,
+    symmetry_tol_mhz=None,
+    min_height_balance=0.3,
+    fit_window_mhz=0.1,
+    refine=True,
+):
+    """Locate a charge-parity doublet in a (rotated) two-tone spectrum.
+
+    Designed for the Modified-Ramsey voltage search, where the qubit appears as
+    TWO peaks (one per charge parity) sitting roughly symmetrically about the
+    spec centre ``center_freq``. The algorithm:
+
+      1. Savitzky-Golay smooth to suppress single-sample noise.
+      2. Estimate the noise floor robustly (median + MAD, see
+         :func:`estimate_noise_floor`) and set the peak-prominence bar at
+         ``prominence_snr * sigma`` -- an ABSOLUTE, noise-referenced threshold,
+         so a lone tall feature or a noise spike no longer raises the bar and
+         suppresses the real second peak (the failure mode of the old
+         fraction-of-dynamic-range threshold).
+      3. Detect all peaks clearing that bar.
+      4. Among every candidate pair, keep those that (a) are separated by
+         ``[min_sep_mhz, max_sep_mhz]``, (b) have midpoint within
+         ``symmetry_tol_mhz`` of ``center_freq``, and (c) are balanced in height
+         (weaker >= ``min_height_balance`` * stronger). Score the survivors by
+         ``combined_prominence * balance / (1 + (sym_err / symmetry_tol)^2)`` so
+         the strongest, most balanced, most symmetric pair wins.
+      5. If no pair qualifies, fall back to the single most-prominent peak
+         (``mode="single"``) -- used by the caller's centred-calibration path.
+      6. Optionally Lorentzian-refine each chosen peak for sub-bin frequencies.
+
+    Parameters
+    ----------
+    x_pts : array
+        Qubit frequency axis [MHz].
+    avgamp0 : array
+        Signal-bearing, background-subtracted trace (see project_iq_signal),
+        oriented so the qubit feature is a positive peak.
+    center_freq : float
+        Expected centre of the doublet [MHz] (e.g. qubit_frequency_center).
+    min_sep_mhz, max_sep_mhz : float
+        Allowed peak separation window [MHz]. This is the RESOLUTION limit, NOT
+        the parity threshold ``df`` -- keep it small; the caller compares the
+        returned ``peak_sep`` against its own df requirement. ``max_sep_mhz``
+        defaults to the full swept span.
+    prominence_snr : float
+        Peak prominence threshold in units of the noise sigma.
+    smooth_window : int
+        Savitzky-Golay window length in samples (odd; <3 disables smoothing).
+    symmetry_tol_mhz : float or None
+        Max allowed |doublet midpoint - center_freq| [MHz]. None -> half the
+        swept span (lenient; tighten to enforce the symmetric-pair assumption).
+    min_height_balance : float
+        Minimum (weaker / stronger) peak-height ratio for an accepted pair.
+    fit_window_mhz : float
+        Half-width of the Lorentzian refinement window around each peak [MHz].
+    refine : bool
+        If True, Lorentzian-refine peak centres for sub-bin accuracy.
+
+    Returns
+    -------
+    dict with keys:
+        mode        : "doublet" | "single" | "none"
+        lower, upper: chosen peak frequencies [MHz] (equal in single mode)
+        center      : doublet midpoint, or the single peak frequency [MHz]
+        peak_sep    : |upper - lower| [MHz], or None in single/none mode
+        peak_inds   : nearest-bin indices of the chosen peak(s) (for plotting)
+        peak_freqs  : chosen peak frequencies (refined if refine=True)
+        peak_vals   : trace value at the chosen peak bins
+        fit         : list of per-peak Lorentzian fit dicts (or None)
+        noise_sigma : estimated noise sigma
+        candidates  : list of (freq, height, prominence) for all detected peaks
+    """
+    x_pts = np.asarray(x_pts, dtype=float)
+    y = np.asarray(avgamp0, dtype=float)
+    n = y.size
+
+    out = {
+        "mode": "none",
+        "lower": None,
+        "upper": None,
+        "center": None,
+        "peak_sep": None,
+        "peak_inds": [],
+        "peak_freqs": np.array([]),
+        "peak_vals": np.array([]),
+        "fit": None,
+        "noise_sigma": None,
+        "candidates": [],
+    }
+
+    def _finish_single(idx):
+        out["mode"] = "single"
+        out["peak_inds"] = [int(idx)]
+        out["peak_vals"] = y[[idx]]
+        f = float(x_pts[idx])
+        fit = _refine_peak_lorentzian(x_pts, y, idx, fit_window_mhz) if refine else None
+        if fit is not None:
+            f = fit["freq"]
+            out["fit"] = [fit]
+        out["lower"] = out["upper"] = out["center"] = f
+        out["peak_freqs"] = np.array([f])
+        return out
+
+    if n < 3:
+        if n:
+            return _finish_single(int(np.argmax(y)))
+        return out
+
+    # 1. smooth
+    sw = max(3, int(smooth_window) | 1)
+    sw = min(sw, n if n % 2 == 1 else n - 1)
+    sig = savgol_filter(y, window_length=sw, polyorder=2) if sw >= 3 else y.copy()
+
+    # 2. noise-referenced prominence threshold
+    _, sigma = estimate_noise_floor(sig)
+    out["noise_sigma"] = sigma
+    prom_thresh = prominence_snr * sigma
+
+    dx = abs(float(x_pts[1] - x_pts[0]))
+    span = float(x_pts.max() - x_pts.min())
+    if max_sep_mhz is None:
+        max_sep_mhz = span
+    if symmetry_tol_mhz is None:
+        symmetry_tol_mhz = 0.5 * span
+    min_dist = max(1, int(round(min_sep_mhz / dx))) if dx > 0 else 1
+
+    # 3. detect candidate peaks above the noise bar
+    inds, props = find_peaks(sig, prominence=prom_thresh, distance=min_dist)
+    if inds.size == 0:
+        return _finish_single(int(np.argmax(sig)))
+
+    proms = np.asarray(props["prominences"], dtype=float)
+    cand = [
+        (int(idx), float(x_pts[idx]), float(sig[idx]), float(pr))
+        for idx, pr in zip(inds, proms)
+    ]
+    cand.sort(key=lambda c: c[3], reverse=True)  # most prominent first
+    out["candidates"] = [(c[1], c[2], c[3]) for c in cand]
+
+    # 4. best symmetric, balanced, prominent pair
+    sym_norm = max(symmetry_tol_mhz, dx)
+    best = None  # (score, lo_cand, hi_cand)
+    for a in range(len(cand)):
+        for b in range(a + 1, len(cand)):
+            ca, cb = cand[a], cand[b]
+            lo, hi = (ca, cb) if ca[1] < cb[1] else (cb, ca)
+            sep = hi[1] - lo[1]
+            if sep < min_sep_mhz or sep > max_sep_mhz:
+                continue
+            midpoint = 0.5 * (lo[1] + hi[1])
+            sym_err = abs(midpoint - center_freq)
+            if sym_err > symmetry_tol_mhz:
+                continue
+            h_lo, h_hi = lo[2], hi[2]
+            denom = max(abs(h_lo), abs(h_hi))
+            balance = (min(h_lo, h_hi) / denom) if denom > 0 else 0.0
+            if balance < min_height_balance:
+                continue
+            combined_prom = lo[3] + hi[3]
+            score = combined_prom * balance / (1.0 + (sym_err / sym_norm) ** 2)
+            if best is None or score > best[0]:
+                best = (score, lo, hi)
+
+    if best is None:
+        # No qualifying pair -> single most-prominent peak.
+        return _finish_single(cand[0][0])
+
+    _, lo, hi = best
+    i_lo, i_hi = lo[0], hi[0]
+    f_lo, f_hi = lo[1], hi[1]
+    fits = []
+    if refine:
+        for idx in (i_lo, i_hi):
+            fits.append(_refine_peak_lorentzian(x_pts, y, idx, fit_window_mhz))
+        if fits[0] is not None:
+            f_lo = fits[0]["freq"]
+        if fits[1] is not None:
+            f_hi = fits[1]["freq"]
+        # Refinement can re-order the pair; keep lower < upper.
+        if f_lo > f_hi:
+            f_lo, f_hi = f_hi, f_lo
+            i_lo, i_hi = i_hi, i_lo
+            fits = [fits[1], fits[0]]
+        out["fit"] = [f for f in fits if f is not None] or None
+
+    out["mode"] = "doublet"
+    out["peak_inds"] = [int(i_lo), int(i_hi)]
+    out["peak_vals"] = np.array([y[i_lo], y[i_hi]])
+    out["peak_freqs"] = np.array([f_lo, f_hi])
+    out["lower"] = float(f_lo)
+    out["upper"] = float(f_hi)
+    out["center"] = 0.5 * (float(f_lo) + float(f_hi))
+    out["peak_sep"] = abs(float(f_hi) - float(f_lo))
+    return out
+
+
+def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_dir, current_voltage=0,
+                       qubit_gain=None, qubit_length=None, center_freq=None, fit=None,
+                       live_display=False, live_fignum=77, live_pause=0.05):
+    """Save the two-tone IQ and amplitude plots; optionally live-refresh the latter.
+
+    When ``live_display`` is True, the amplitude figure (with peak markers, the
+    expected-centre line, and the Lorentzian fits) is drawn into a single
+    persistent window (figure number ``live_fignum``) that is cleared and
+    redrawn in place on every call and shown NON-BLOCKING via ``plt.pause``. The
+    PNG is still written either way. Live display requires an interactive
+    matplotlib backend (e.g. TkAgg/QtAgg); under a non-interactive backend
+    (Agg) it is a harmless no-op beyond saving the file.
+    """
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     base = os.path.join(save_dir, f"TwoTone_{attempt_idx:03d}_{timestamp}")
+
+    # Common label identifying bias voltage and (optionally) the drive gain/length.
+    label_bits = [f"V={current_voltage:.6f} V"]
+    if qubit_gain is not None:
+        label_bits.append(f"gain={qubit_gain}")
+    if qubit_length is not None:
+        label_bits.append(f"len={qubit_length} us")
+    label_suffix = ", ".join(label_bits)
 
     plt.figure(figsize=(8, 5))
     plt.plot(x_pts, avgi, '.-', label="I")
@@ -409,27 +699,169 @@ def save_two_tone_plot(x_pts, avgi, avgq, avgamp0, peak_info, attempt_idx, save_
         plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
     plt.xlabel("Qubit Frequency (MHz)")
     plt.ylabel("a.u.")
-    plt.title(f"Two-tone IQ, V={current_voltage:.6f} V")
+    plt.title(f"Two-tone IQ, {label_suffix}")
     plt.legend()
     plt.tight_layout()
     plt.savefig(base + "_IQ.png", dpi=300, bbox_inches="tight")
     plt.close()
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(x_pts, avgamp0, '.-', label="rotated IQ projection")
+    # Amplitude figure (authoritative). For live display, reuse a single
+    # persistent window (constant figure number) cleared and redrawn per call;
+    # otherwise use a throwaway figure that is closed after saving.
+    if live_display:
+        # Reuse the persistent window: only pass figsize when first creating it,
+        # otherwise matplotlib warns that the size argument is ignored.
+        if plt.fignum_exists(live_fignum):
+            fig_amp = plt.figure(num=live_fignum)
+        else:
+            fig_amp = plt.figure(num=live_fignum, figsize=(8, 5))
+        fig_amp.clf()
+    else:
+        fig_amp = plt.figure(figsize=(8, 5))
+    ax = fig_amp.gca()
+    ax.plot(x_pts, avgamp0, '.-', label="rotated IQ projection")
     for k, idx in enumerate(peak_info["peak_inds"]):
-        plt.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
-        plt.plot(x_pts[idx], avgamp0[idx], 'o')
-    plt.xlabel("Qubit Frequency (MHz)")
-    plt.ylabel("a.u.")
+        ax.axvline(x_pts[idx], linestyle='--', label=f"Peak {k+1}: {x_pts[idx]:.6f} MHz")
+        ax.plot(x_pts[idx], avgamp0[idx], 'o')
+    # Optional overlays: expected doublet centre and sub-bin Lorentzian fits.
+    if center_freq is not None:
+        ax.axvline(center_freq, color="k", linestyle=":", alpha=0.7,
+                   label=f"center {center_freq:.6f} MHz")
+    if fit:
+        for fpk in fit:
+            if fpk is None:
+                continue
+            ax.plot(fpk["x_fit"], fpk["y_fit"], '-', color="red", alpha=0.8)
+            ax.axvline(fpk["freq"], color="red", linestyle="-", alpha=0.5,
+                       label=f"fit {fpk['freq']:.6f} MHz")
+    ax.set_xlabel("Qubit Frequency (MHz)")
+    ax.set_ylabel("a.u.")
     sep_txt = "None" if peak_info["peak_sep"] is None else f"{peak_info['peak_sep']:.6f} MHz"
-    plt.title(f"Two-tone amplitude, V={current_voltage:.6f} V, sep={sep_txt}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(base + "_amp.png", dpi=300, bbox_inches="tight")
-    plt.close()
+    ax.set_title(f"Two-tone amplitude, {label_suffix}, sep={sep_txt}")
+    ax.legend()
+    fig_amp.tight_layout()
+    fig_amp.savefig(base + "_amp.png", dpi=300, bbox_inches="tight")
+    if live_display:
+        # Non-blocking refresh: process GUI events and return immediately.
+        fig_amp.canvas.draw_idle()
+        plt.pause(live_pause)
+    else:
+        plt.close(fig_amp)
 
     return base
+
+
+def analyze_charge_dispersion(avgamp_map, x_pts, voltage_pts,
+                              save_base=None, plotDisp=False):
+    """
+    Build a charge-dispersion curve from a two-tone charge-sweep heatmap.
+
+    For each gate-voltage row of ``avgamp_map`` (expected to already be projected
+    onto the signal-bearing IQ axis via :func:`project_iq_signal`, so the qubit
+    feature is a positive peak on a ~0 baseline), locate the qubit frequency and
+    return it as a function of voltage. A Lorentzian peak fit
+    (:func:`fit_lorentzian_feature`) gives sub-bin centres; the per-row argmax is
+    the fallback when the fit fails or lands outside the swept window.
+
+    Parameters
+    ----------
+    avgamp_map : array (n_voltage, n_freq)
+        Projected two-tone amplitude, one row per gate voltage.
+    x_pts : array (n_freq,)
+        Qubit frequency axis [MHz].
+    voltage_pts : array (n_voltage,)
+        Gate voltages [V].
+    save_base : str or None
+        Path stem. If given, writes ``save_base + 'ChargeDispersionCurve.png'``
+        and ``... .npz``.
+    plotDisp : bool
+        Show the figure interactively (always saved when ``save_base`` is given).
+
+    Returns
+    -------
+    dict with keys: voltage_V, f_argmax, f_lorentz, fwhm_MHz, f_mean,
+    dispersion_pp_MHz (peak-to-peak of the fitted curve).
+    """
+    avgamp_map = np.asarray(avgamp_map, dtype=float)
+    x_pts = np.asarray(x_pts, dtype=float).ravel()
+    voltage_pts = np.asarray(voltage_pts, dtype=float).ravel()
+    nv = avgamp_map.shape[0]
+
+    f_argmax = np.full(nv, np.nan)
+    f_lorentz = np.full(nv, np.nan)
+    fwhm = np.full(nv, np.nan)
+
+    for i in range(nv):
+        y = avgamp_map[i]
+        if not np.any(np.isfinite(y)):
+            continue  # row never populated (sweep cut short)
+        fa = x_pts[int(np.nanargmax(y))]
+        f_argmax[i] = fa
+        ff, fw = fa, np.nan
+        try:
+            res = fit_lorentzian_feature(x_pts, y, fit_dip=False)
+            cand = float(res["popt"][2])          # f0
+            if x_pts.min() <= cand <= x_pts.max():  # reject runaway fits
+                ff = cand
+                fw = 2.0 * abs(float(res["popt"][3]))  # FWHM = 2*gamma
+        except Exception:
+            pass
+        f_lorentz[i] = ff
+        fwhm[i] = fw
+
+    f_mean = float(np.nanmean(f_lorentz))
+    disp_pp = float(np.nanmax(f_lorentz) - np.nanmin(f_lorentz))
+
+    # ---- two-panel figure: heatmap + overlay, and extracted curve ----
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5))
+    xs = (x_pts[1] - x_pts[0]) if x_pts.size > 1 else 1.0
+    ys = (voltage_pts[1] - voltage_pts[0]) if voltage_pts.size > 1 else 1.0
+    im = a1.imshow(avgamp_map, aspect="auto", origin="lower", interpolation="none",
+                   extent=[x_pts[0] - xs / 2, x_pts[-1] + xs / 2,
+                           (voltage_pts[0] - ys / 2) * 1e3,
+                           (voltage_pts[-1] + ys / 2) * 1e3])
+    a1.plot(f_lorentz, voltage_pts * 1e3, color="w", marker="o", ls="-",
+            ms=5, lw=1.2, label="fitted peak")
+    a1.set_xlabel("Qubit frequency (MHz)")
+    a1.set_ylabel("Gate voltage (mV)")
+    a1.set_title("Charge sweep (rotated IQ projection)")
+    a1.legend(loc="upper right")
+    fig.colorbar(im, ax=a1, label="projection (a.u.)")
+
+    a2.plot(voltage_pts * 1e3, f_lorentz, "o-", label="Lorentzian fit")
+    a2.plot(voltage_pts * 1e3, f_argmax, "s--", alpha=0.5, label="argmax")
+    a2.axhline(f_mean, color="gray", ls=":", label=f"mean {f_mean:.4f} MHz")
+    a2.set_xlabel("Gate voltage (mV)")
+    a2.set_ylabel("Qubit frequency (MHz)")
+    a2.set_title(f"Charge dispersion curve (p-p = {disp_pp*1e3:.1f} kHz)")
+    a2.legend()
+    fig.tight_layout()
+
+    if save_base is not None:
+        fig.savefig(save_base + "ChargeDispersionCurve.png", dpi=200, bbox_inches="tight")
+        np.savez(save_base + "ChargeDispersionCurve.npz",
+                 voltage_V=voltage_pts, f_argmax=f_argmax,
+                 f_lorentz=f_lorentz, fwhm_MHz=fwhm)
+        print(f"[analyze_charge_dispersion] saved {save_base}ChargeDispersionCurve.png/.npz")
+
+    if plotDisp:
+        plt.show(block=False)
+        plt.pause(0.1)
+    else:
+        plt.close(fig)
+
+    print(f"[analyze_charge_dispersion] mean f = {f_mean:.5f} MHz, "
+          f"peak-to-peak dispersion (fit) = {disp_pp*1e3:.2f} kHz, "
+          f"median FWHM = {np.nanmedian(fwhm)*1e3:.1f} kHz")
+
+    return {
+        "voltage_V": voltage_pts,
+        "f_argmax": f_argmax,
+        "f_lorentz": f_lorentz,
+        "fwhm_MHz": fwhm,
+        "f_mean": f_mean,
+        "dispersion_pp_MHz": disp_pp,
+    }
 
 
 def choose_next_voltage(current_v, dv, vmin, vmax, direction):
