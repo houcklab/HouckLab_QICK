@@ -78,7 +78,12 @@ AUTO_COHERENCE_PARAMS = {
     "spec_qubit_length":  2.0,   # us  flat-top length (unused when Gauss=True)
 
     # ── sweet-spot voltage search ────────────────────────────────────────────
-    # Strategy:
+    # Set skip_sweet_spot_search=True to bypass Stage 1 entirely: the qubit
+    # frequency is taken straight from qubit_params and the yoko is left at its
+    # current voltage (no two-tone sweep / voltage walk).  Useful when the sweet
+    # spot is already known and parked.
+    "skip_sweet_spot_search": False,
+    # Strategy (when not skipped):
     #   1. If we already see a single peak (sep < ss_accept_sep) → done.
     #   2. If we see two peaks separated by ≥ ss_search_df_trigger →
     #      step by cd_period_mv/2 (if known) or walk toward minimum sep.
@@ -90,6 +95,22 @@ AUTO_COHERENCE_PARAMS = {
     "ss_voltage_max":       0.010,
     "ss_max_tries":         200,
     "cd_period_mv":         None,  # mV  – if known; enables half-period step
+
+    # ── Qubit-frequency calibration (Stage 1.5) ─────────────────────────────
+    # Runs one two-tone spec at the current voltage and re-centres f_ge on the
+    # measured peak(s) before AmplitudeRabi.  Unlike the sweet-spot search it
+    # does NOT move the yoko.  Reuses the spec_* parameters above.
+    "calibrate_qubit_freq":    True,
+    # If the two-tone peak is not clearly above the noise floor
+    # (SNR < freqcal_min_snr), the spec is re-run at higher gain
+    # (×freqcal_gain_growth each time) up to freqcal_max_gain or
+    # freqcal_max_gain_retries attempts.  Set freqcal_auto_gain=False to keep
+    # spec_gain fixed (just warn when the peak is weak).
+    "freqcal_auto_gain":        True,
+    "freqcal_min_snr":          4.0,    # peak SNR below this triggers a gain bump
+    "freqcal_gain_growth":      1.8,    # spec_gain multiplier per retry
+    "freqcal_max_gain":         30000,  # DAC units; stays under the 32767 ceiling
+    "freqcal_max_gain_retries": 5,
 
     # ── AmplitudeRabi ────────────────────────────────────────────────────────
     "rabi_max_gain":           12000,
@@ -611,6 +632,109 @@ def _stage_sweet_spot_search(soc, soccfg, cfg, auto_folder,
     )
 
     return qfreq, current_voltage, peak_info
+
+
+def _spec_peak_snr(avgamp0, peak_info):
+    """
+    Robust signal-to-noise estimate for a two-tone spec peak.
+
+    Uses the median as the baseline and the MAD (scaled to a Gaussian sigma) as
+    the noise level, so a single sharp peak does not inflate the noise estimate.
+    Returns (peak - baseline) / noise for the strongest detected peak.
+    """
+    avgamp0 = np.asarray(avgamp0, dtype=float)
+    if avgamp0.size == 0:
+        return 0.0
+
+    baseline = float(np.median(avgamp0))
+    mad      = float(np.median(np.abs(avgamp0 - baseline)))
+    noise    = 1.4826 * mad
+    if noise < 1e-12:
+        noise = float(np.std(avgamp0)) or 1e-12
+
+    peak_vals = peak_info.get("peak_vals") if peak_info else None
+    if peak_vals is not None and len(peak_vals) > 0:
+        peak = float(np.max(peak_vals))
+    else:
+        peak = float(np.max(avgamp0))
+
+    return (peak - baseline) / noise
+
+
+def _stage_calibrate_qubit_freq(soc, soccfg, cfg, auto_folder,
+                                qubit_freq_center, qubit_readout,
+                                params, log):
+    """
+    Stage 1.5 – Two-tone spec at the current voltage to refine the qubit
+    frequency before AmplitudeRabi.
+
+    Unlike the sweet-spot search (Stage 1) this does NOT move the yoko voltage;
+    it only re-centres f_ge on the measured two-tone peak(s).  When two peaks
+    are present (charge-split) the midpoint is used; otherwise the single peak.
+
+    If freqcal_auto_gain is enabled and the peak is not clearly above the noise
+    floor (SNR < freqcal_min_snr), the spec is re-run at progressively higher
+    drive gain until a peak is visible, the gain cap is hit, or the retry budget
+    is exhausted.
+
+    Returns
+    -------
+    qubit_frequency : float (MHz)
+    peak_info       : dict
+    """
+    log.append("")
+    log.append("=" * 60)
+    log.append("STAGE 1.5 – Two-tone qubit-frequency calibration")
+    log.append("=" * 60)
+
+    auto_gain   = params.get("freqcal_auto_gain", True)
+    gain        = int(params["spec_gain"])
+    gain_growth = float(params.get("freqcal_gain_growth", 1.8))
+    gain_cap    = int(params.get("freqcal_max_gain", 30000))
+    max_retries = int(params.get("freqcal_max_gain_retries", 5))
+    min_snr     = float(params.get("freqcal_min_snr", 4.0))
+
+    peak_info = None
+    snr = 0.0
+    for attempt in range(max_retries + 1):
+        spec_params = {**params, "spec_gain": gain}
+        x_pts, avgi, avgq, avgamp0, peak_info = _acquire_spec(
+            soc, soccfg, cfg, auto_folder, qubit_freq_center, spec_params
+        )
+        snr = _spec_peak_snr(avgamp0, peak_info)
+        log.append(f"  Attempt {attempt + 1}: spec_gain={gain}, peak SNR={snr:.2f}")
+
+        if not auto_gain or snr >= min_snr:
+            break
+
+        next_gain = min(gain_cap, int(round(gain * gain_growth)))
+        if next_gain <= gain:
+            log.append(f"    Peak weak (SNR {snr:.2f} < {min_snr}) but spec_gain "
+                       f"capped at {gain}; stopping.")
+            break
+
+        log.append(f"    Peak not clearly visible (SNR {snr:.2f} < {min_snr}); "
+                   f"raising spec_gain {gain} -> {next_gain}")
+        gain = next_gain
+
+    if auto_gain and snr < min_snr:
+        log.append(f"  WARNING: no clear two-tone peak (best SNR {snr:.2f} < "
+                   f"{min_snr}) up to spec_gain={gain}. f_ge may be unreliable -- "
+                   f"check spec_span / drive power.")
+
+    if len(peak_info["peak_freqs"]) == 2:
+        qfreq = float(np.mean(peak_info["peak_freqs"]))
+        log.append(f"  Two peaks at {peak_info['peak_freqs']} -> midpoint")
+    else:
+        qfreq = float(peak_info["peak_freqs"][0])
+        log.append(f"  Single peak at {qfreq:.6f} MHz")
+
+    log.append(
+        f"  Calibrated f_ge = {qfreq:.6f} MHz "
+        f"(was {qubit_freq_center:.6f} MHz, shift {qfreq - qubit_freq_center:+.6f} MHz) "
+        f"at spec_gain={gain}"
+    )
+    return qfreq, peak_info
 
 
 def _stage_amplitude_rabi(soc, soccfg, cfg, auto_folder,
@@ -1500,17 +1624,44 @@ def run_auto_coherence(soc, soccfg, config, outerFolder,
     )
 
     # ── Stage 1: Sweet-spot search ───────────────────────────────────────────
-    qubit_freq, sweet_spot_voltage, peak_info = _stage_sweet_spot_search(
-        soc=soc,
-        soccfg=soccfg,
-        cfg=base_cfg,
-        auto_folder=auto_folder,
-        qubit_freq_center=qubit_freq_init,
-        qubit_readout=qubit_readout,
-        params=params,
-        yoko=yoko,
-        log=log,
-    )
+    if params.get("skip_sweet_spot_search", False):
+        qubit_freq = qubit_freq_init
+        sweet_spot_voltage = float(yoko.query(":SOUR:LEV?")) if yoko is not None else None
+        peak_info = None
+        log.append("")
+        log.append("=" * 60)
+        log.append("STAGE 1 – Sweet-spot search SKIPPED (skip_sweet_spot_search=True)")
+        log.append("=" * 60)
+        log.append(f"  Using qubit_frequency from qubit_params: {qubit_freq:.6f} MHz")
+        log.append(f"  Holding yoko voltage at: {sweet_spot_voltage}")
+    else:
+        qubit_freq, sweet_spot_voltage, peak_info = _stage_sweet_spot_search(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq_center=qubit_freq_init,
+            qubit_readout=qubit_readout,
+            params=params,
+            yoko=yoko,
+            log=log,
+        )
+
+    # ── Stage 1.5: Two-tone qubit-frequency calibration ─────────────────────
+    if params.get("calibrate_qubit_freq", True):
+        qubit_freq, _ = _stage_calibrate_qubit_freq(
+            soc=soc,
+            soccfg=soccfg,
+            cfg=base_cfg,
+            auto_folder=auto_folder,
+            qubit_freq_center=qubit_freq,
+            qubit_readout=qubit_readout,
+            params=params,
+            log=log,
+        )
+    else:
+        log.append("")
+        log.append("STAGE 1.5 – Qubit-frequency calibration skipped (calibrate_qubit_freq=False)")
 
     # ── Stage 2: AmplitudeRabi ───────────────────────────────────────────────
     pi_gain, rabi_sigma = _stage_amplitude_rabi(
