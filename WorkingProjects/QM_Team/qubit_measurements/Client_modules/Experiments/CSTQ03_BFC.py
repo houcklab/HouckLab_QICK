@@ -312,12 +312,41 @@ ModifiedRamsey_params = {
     "gain": 500,
     "qubit_length": 2,
 
+    # --- parity-doublet peak-finder (utils.find_parity_doublet) ---
+    # The voltage search now uses the noise-floor-referenced doublet finder:
+    # symmetric-pair-about-center selection with sub-bin Lorentzian refinement.
+    "prominence_snr": 5.0,        # peak prominence threshold in units of noise sigma
+    "min_sep_MHz": 0.02,          # resolution limit for the doublet (NOT df)
+    "max_sep_MHz": None,          # None -> full swept span
+    "symmetry_tol_MHz": None,     # None -> half span; tighten to enforce symmetry
+    "min_height_balance": 0.3,    # min (weaker/stronger) peak-height ratio
+    "smooth_window": 5,           # Savitzky-Golay window (odd; <3 disables)
+    "fit_window_mhz": 0.1,        # half-width of the Lorentzian refinement window
+
+    # --- live, non-blocking two-tone plotting (utils.save_two_tone_plot) ---
+    "live_display": False,        # True -> refresh a persistent figure each attempt
+    "live_pause": 0.05,           # plt.pause() seconds per live refresh
+
     # --- Modified Ramsey settings ---
     # tau is computed automatically as 1 / (2 * peak_sep_MHz)
     # f_ge is set automatically to the higher-frequency peak
     # No relax delay: the measurement collapses the qubit and acts as reset.
     "mr_reps": 40000,             # number of single-shot Ramsey measurements per cycle
     "average_n_shots": 400,
+    # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
+    # off preserves the original standard-scheme behavior.
+    "flip_final_pi2": False,      # add 180 deg to closing pi/2 (swap parity->state)
+    "symmetric_ramsey": False,    # drive at midpoint f_avg=f_ge-df/2 instead of upper
+    # Hardware active reset to |g> per shot (opt-in). Requires readout_threshold
+    # (single-shot I threshold in normalized units) AND res_phase rotated so g/e
+    # separate ALONG I; our default workflow discriminates via a 2D KMeans
+    # separator, so leave this OFF unless you have set up an I-axis threshold.
+    "use_active_reset": False,
+    "readout_threshold": None,    # required (normalized I units) if use_active_reset
+    "reset_cycles": 1,
+    "reset_ground_below_threshold": True,
+    "reset_readout_relax_delay": 1.0,
+    "post_reset_wait": 0.0,
 }
 
 RunModifiedRamsey_Control = False  # two-tone search -> half-period step -> sweet-spot interpolation -> Ramsey
@@ -1323,15 +1352,30 @@ if RunModifiedRamsey:
             # background quadrature and buries the qubit feature.
             avgamp0_mr = project_iq_signal(avgi_mr, avgq_mr)
 
-            freq_choice_mr = choose_two_tone_freqs_from_lorentz_or_peaks(
-                data_specSlice_mr,
-                min_sep_mhz=Spec_relevant_params["min_sep_MHz"],
+            # Robust parity-doublet finder: noise-floor-referenced peak detection,
+            # symmetric-pair-about-center selection, sub-bin Lorentzian refinement.
+            doublet_mr = find_parity_doublet(
+                x_pts_mr,
+                avgamp0_mr,
+                center_freq=qubit_frequency_center,
+                min_sep_mhz=ModifiedRamsey_params.get("min_sep_MHz", 0.02),
+                max_sep_mhz=ModifiedRamsey_params.get("max_sep_MHz", None),
+                prominence_snr=ModifiedRamsey_params.get("prominence_snr", 5.0),
+                smooth_window=ModifiedRamsey_params.get("smooth_window", 5),
+                symmetry_tol_mhz=ModifiedRamsey_params.get("symmetry_tol_MHz", None),
+                min_height_balance=ModifiedRamsey_params.get("min_height_balance", 0.3),
+                fit_window_mhz=ModifiedRamsey_params.get("fit_window_mhz", 0.1),
+                refine=True,
             )
 
-            peak_info_mr = freq_choice_mr["peak_info_raw"]
-            peak_info_mr["peak_freqs"] = freq_choice_mr["freqs"]
-            peak_info_mr["peak_sep"] = freq_choice_mr["peak_sep"]
-            peak_info_mr["source"] = freq_choice_mr["source"]
+            # peak_info compatible with save_two_tone_plot and the summary file.
+            peak_info_mr = {
+                "peak_inds": doublet_mr["peak_inds"],
+                "peak_freqs": doublet_mr["peak_freqs"],
+                "peak_vals": doublet_mr["peak_vals"],
+                "peak_sep": doublet_mr["peak_sep"],
+                "source": doublet_mr["mode"],
+            }
 
             save_base_mr = save_two_tone_plot(
                 x_pts=x_pts_mr,
@@ -1341,63 +1385,69 @@ if RunModifiedRamsey:
                 peak_info=peak_info_mr,
                 current_voltage=current_voltage_mr,
                 attempt_idx=attempt_idx_mr + cycle_idx_mr * max_tries_mr,
-                save_dir=save_dir_mr
+                save_dir=save_dir_mr,
+                qubit_gain=config.get("qubit_gain"),
+                qubit_length=config.get("qubit_length"),
+                center_freq=qubit_frequency_center,
+                fit=doublet_mr.get("fit"),
+                live_display=ModifiedRamsey_params.get("live_display", False),
+                live_pause=ModifiedRamsey_params.get("live_pause", 0.05),
             )
 
             with open(save_base_mr + "_summary.txt", "w") as f:
                 f.write(f"cycle_idx: {cycle_idx_mr}\n")
                 f.write(f"attempt_idx: {attempt_idx_mr}\n")
                 f.write(f"current_voltage: {current_voltage_mr:.9f}\n")
-                f.write(f"peak_freqs: {peak_info_mr['peak_freqs']}\n")
-                f.write(f"peak_sep: {peak_info_mr['peak_sep']}\n")
+                f.write(f"mode: {doublet_mr['mode']}\n")
+                f.write(f"lower: {doublet_mr['lower']}\n")
+                f.write(f"upper: {doublet_mr['upper']}\n")
+                f.write(f"center: {doublet_mr['center']}\n")
+                f.write(f"peak_sep: {doublet_mr['peak_sep']}\n")
+                f.write(f"noise_sigma: {doublet_mr['noise_sigma']}\n")
+                f.write(f"candidates: {doublet_mr['candidates']}\n")
                 f.write(f"df_required: {df_required_mr}\n")
 
             center_peak_tol_mhz = ModifiedRamsey_params.get("center_peak_tol_mhz", 0.05)
             center_peak_df_for_tau = ModifiedRamsey_params.get("center_peak_df_for_tau", df_required_mr)
 
-            peak_freqs_mr = np.asarray(peak_info_mr.get("peak_freqs", []), dtype=float)
+            doublet_centered_mr = (
+                doublet_mr["center"] is not None
+                and abs(doublet_mr["center"] - qubit_frequency_center) <= center_peak_tol_mhz
+            )
 
-            highest_peak_freq_mr = None
-            highest_peak_is_centered_mr = False
-
-            if len(peak_freqs_mr) > 0:
-                # Use the largest response in avgamp0 as the "highest peak".
-                peak_indices_mr = [int(np.argmin(np.abs(x_pts_mr - f))) for f in peak_freqs_mr]
-                peak_heights_mr = np.asarray([avgamp0_mr[idx] for idx in peak_indices_mr])
-                highest_peak_freq_mr = float(peak_freqs_mr[int(np.argmax(peak_heights_mr))])
-
-                highest_peak_is_centered_mr = (
-                        abs(highest_peak_freq_mr - qubit_frequency_center) <= center_peak_tol_mhz
-                )
-
-            if highest_peak_is_centered_mr:
-                # Calibration mode: run MR even if there is not enough peak splitting.
-                chosen_probe_freq_mr = highest_peak_freq_mr
-                chosen_peak_sep_mr = float(center_peak_df_for_tau)
+            if (
+                doublet_mr["mode"] == "doublet"
+                and doublet_mr["peak_sep"] is not None
+                and doublet_mr["peak_sep"] >= df_required_mr
+            ):
+                # Parity mode: a resolved doublet split widely enough for Ramsey.
+                chosen_probe_freq_mr = float(doublet_mr["upper"])
+                chosen_peak_sep_mr = float(doublet_mr["peak_sep"])
 
                 print(
-                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: centered highest peak found, "
-                    f"highest_peak={highest_peak_freq_mr:.6f} MHz, "
-                    f"center={qubit_frequency_center:.6f} MHz, "
-                    f"|diff|={abs(highest_peak_freq_mr - qubit_frequency_center):.6f} MHz <= "
-                    f"{center_peak_tol_mhz:.6f} MHz. Running calibration Ramsey with "
-                    f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
-                    f"df_for_tau={chosen_peak_sep_mr:.6f} MHz, "
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: doublet found, "
+                    f"lower={doublet_mr['lower']:.6f} MHz, "
+                    f"upper={doublet_mr['upper']:.6f} MHz, "
+                    f"sep={chosen_peak_sep_mr:.6f} MHz, f_ge={chosen_probe_freq_mr:.6f} MHz, "
                     f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
                 )
 
                 success_mr = True
                 break
 
-            elif (peak_info_mr["peak_sep"] is not None
-                  and peak_info_mr["peak_sep"] >= df_required_mr):
-                # Normal parity mode: require two sufficiently separated peaks.
-                chosen_probe_freq_mr = float(np.max(peak_info_mr["peak_freqs"]))
-                chosen_peak_sep_mr = float(peak_info_mr["peak_sep"])
+            elif doublet_centered_mr:
+                # Calibration mode: feature centered but not split enough; run MR at
+                # the center with the configured df-for-tau.
+                chosen_probe_freq_mr = float(doublet_mr["center"])
+                chosen_peak_sep_mr = float(center_peak_df_for_tau)
 
                 print(
-                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: separated peaks found, "
-                    f"sep={chosen_peak_sep_mr:.6f} MHz, f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                    f"[ModifiedRamsey] Cycle {cycle_idx_mr + 1}: centered feature "
+                    f"(mode={doublet_mr['mode']}), center={doublet_mr['center']:.6f} MHz, "
+                    f"|diff|={abs(doublet_mr['center'] - qubit_frequency_center):.6f} MHz <= "
+                    f"{center_peak_tol_mhz:.6f} MHz. Running calibration Ramsey with "
+                    f"f_ge={chosen_probe_freq_mr:.6f} MHz, "
+                    f"df_for_tau={chosen_peak_sep_mr:.6f} MHz, "
                     f"tau={1.0 / (2.0 * chosen_peak_sep_mr):.4f} us"
                 )
 
@@ -1439,6 +1489,17 @@ if RunModifiedRamsey:
             "pi2_gain": pi2_gain,
             "pi_gain": qubit_gain,
             "use_pi_pulse": ModifiedRamsey_params.get("use_pi_pulse", False),
+            # Parity -> state mapping and drive scheme (opt-in; defaults preserve
+            # the original standard-scheme behavior).
+            "flip_final_pi2": ModifiedRamsey_params.get("flip_final_pi2", False),
+            "symmetric_ramsey": ModifiedRamsey_params.get("symmetric_ramsey", False),
+            # Hardware active reset to |g> per shot (opt-in). See ModifiedRamsey
+            # docstring: requires readout_threshold + I-axis g/e separation.
+            "use_active_reset": ModifiedRamsey_params.get("use_active_reset", False),
+            "reset_cycles": ModifiedRamsey_params.get("reset_cycles", 1),
+            "reset_ground_below_threshold": ModifiedRamsey_params.get("reset_ground_below_threshold", True),
+            "reset_readout_relax_delay": ModifiedRamsey_params.get("reset_readout_relax_delay", 1.0),
+            "post_reset_wait": ModifiedRamsey_params.get("post_reset_wait", 0.0),
             "sigma": qubit_sigma,
             "flattop_length": qubit_flattop,
             "reps": ModifiedRamsey_params["mr_reps"],
@@ -1446,6 +1507,10 @@ if RunModifiedRamsey:
             "current_voltage": current_voltage_mr,
             "Qubit_number": Qubit_Readout,
         }
+        # Only forward readout_threshold when set, so the ModifiedRamsey active-reset
+        # validation (which requires a real value) isn't tripped by a None default.
+        if ModifiedRamsey_params.get("readout_threshold") is not None:
+            mr_cfg["readout_threshold"] = ModifiedRamsey_params["readout_threshold"]
         config_mr = config | mr_cfg
 
         Instance_mr = ModifiedRamsey(
