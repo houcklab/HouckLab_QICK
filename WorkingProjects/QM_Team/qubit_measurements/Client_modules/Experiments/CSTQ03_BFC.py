@@ -173,13 +173,10 @@ Qubit_Parameters = {
           'Qubit': {'Frequency': 3052.389307, 'Gain': 2055, "pi2_Gain": 2055 // 2, "sigma": 1 , "flattop_length": None}, # qubit, T1 found
           'outerfoldername': QubitFolders['2']},
 
-    # TODO
     '3': {'Readout': {'Frequency': 6879.490105, 'Gain': 550}, # 600 too much
           'Qubit': {'Frequency': 1746, 'Gain': 5000,  "pi2_Gain": 3975 // 2,"sigma": 1 , "flattop_length": 1}, # qubit found 1719.8273
           'outerfoldername': QubitFolders['3']},
 
-
-    # TODO
     '4': {'Readout': {'Frequency': 7288.48, 'Gain': 1180}, #7288.48 1180 400 good, 420 too much i think 600 too much. with directional coupler: 1400 good 1500maybe too much
           'Qubit': {'Frequency':    2306.308975, 'Gain': 7009,  "pi2_Gain": 7009 // 2 ,"sigma": 0.22, "flattop_length": None}, # qubit, 7468 was the previous pi pulse with sigma = 0.15, 5396 0.225 6435 2603.33 used for ramsey 7009 // 2
           'outerfoldername': QubitFolders['4']},
@@ -191,7 +188,7 @@ Qubit_Parameters = {
 
     # currently working on
     '6': {'Readout': {'Frequency': 7285.11, 'Gain': 800}, 
-          'Qubit': {'Frequency': 3055.2, 'Gain': 5010,  "pi2_Gain": 5010 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
+          'Qubit': {'Frequency': 3055.2, 'Gain': 4600,  "pi2_Gain": 4750 // 2, "sigma": 0.1 , "flattop_length": None}, # cant find
           'outerfoldername': QubitFolders['6']},
     }
 ############## End Can D ############################
@@ -223,16 +220,16 @@ Transmission_params = {'reps': 10, 'rounds': 10, 'num_points' : 101, 'span': 5}
 RunTransmissionSweeps = False
 ts = {"start_ts_gain": 500, "end_ts_gain": 8000, "ts_step" : 500}
 
-Run2ToneSpec = False
+Run2ToneSpec = True
 RunSpecGainLengthSweep = False  # nested gain × length sweep (see block below)
 RunTrans_QubitSpec = False
 RunChargeSweep = False
 charge_params = {"voltage_start" : 0.0, "voltage_end" : 0.01, "voltage_step": 0.0005, } # 0.0001 has two periods in it
-Spec_relevant_params = {"qubit_gain": 8000, "SpecSpan": 100, "SpecNumPoints": 101, # 750 works Q5
+Spec_relevant_params = {"qubit_gain": 6000, "SpecSpan": 1000, "SpecNumPoints": 101, # 750 works Q5
                         "qubit_length" : 50, # length of 50flattop pulse when gauss = False # 9.5 worked
-                        "reps": 10, 'rounds': 10,
-                        'Gauss': False, "sigma": 2, "gain": 8000,
-                        'relax_delay' : 3500,
+                        "reps": 20, 'rounds': 10,
+                        'Gauss': False, "sigma": 2, "gain": 6000,
+                        'relax_delay' : 1500,
                         "display": True, 'min_sep_MHz':0.2,
                         "fit_window_mhz": 0.5, "prominent_ratio": 0.1, # 500 used for charge sweeps
                         # ── RunSpecGainLengthSweep controls ──────────────────────────────────
@@ -376,8 +373,8 @@ RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
                          "max_gain": 10000, 'number_of_steps': 101,
                          "reps": 20, 'rounds': 20,
-                         'relax_delay': 3000,
-                         'fit' : True}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+                         'relax_delay': 1500,
+                         'fit' : False}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
@@ -399,7 +396,7 @@ T2E_params = {"T2_max_us": 120, "T2_expts": 121, "T2_reps": 25, "T2_rounds": 25,
 
 SingleShot = False
 SS_params = {"Shots": 1000, "Readout_Time": 15, "ADC_Offset": 1, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 3500, "pi2_SS": False} # keep at 15
+             'number_of_pulses': 1, 'relax_delay': 2500, "pi2_SS": False} # keep at 15
 
 RunT1SS = False
 T1SS_params = {"T1_step": 80, "T1_expts": 100,
@@ -412,7 +409,7 @@ T1SS_params = {"T1_step": 80, "T1_expts": 100,
 SingleShot_ReadoutOptimize = False
 SS_R_params = {"gain_start": 400, "gain_stop": 2000, "gain_pts": 41, "span": 0.1, "trans_pts": 21}
 
-SingleShot_QubitOptimize = True
+SingleShot_QubitOptimize = False
 SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 11, "q_freq_span": 2, "q_freq_pts": 21,
                'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
@@ -420,7 +417,20 @@ SS_Q_params = {"q_gain_span": 250, "q_gain_pts" : 11, "q_freq_span": 2, "q_freq_
 # Set RunAutoCoherence = True to run the full automated calibration pipeline.
 # Override any entry in AUTO_COHERENCE_PARAMS by adding it to the dict below.
 RunAutoCoherence = False
+
+# Skip the Stage 1 sweet-spot search (two-tone sweep + yoko voltage walk).
+# True  -> use the qubit frequency from Qubit_Parameters and hold the current
+#          yoko voltage; go straight to Rabi / SingleShot / T1 / T2 / T2E.
+# False -> run the full sweet-spot search before calibration.
+SkipSweetSpotSearch = True
+
+# Stage 1.5: re-centre f_ge with one two-tone spec at the current voltage
+# (no yoko move) before AmplitudeRabi.  Default: run.
+CalibrateQubitFreq = True
+
 AutoCoherence_override_params = {
+    "skip_sweet_spot_search": SkipSweetSpotSearch,
+    "calibrate_qubit_freq":   CalibrateQubitFreq,
     # Examples (uncomment and edit to override defaults):
     # "spec_span":        1.0,    # MHz, ±span for two-tone spec
     # "spec_sigma":       2.0,    # us,  Gaussian sigma for spec drive
@@ -432,10 +442,10 @@ AutoCoherence_override_params = {
     # "cd_period_mv":     4.37,   # mV, charge-dispersion period if known
 
     # "extended_pi_pi2_opt":  False, # use extended pi and pi/2 optimization
-    # "ss_gain_span_frac": 0.05, # how much of single shot to search
-    # "ss_gain_pts": 20, # how many points in single shot space to search
+    "ss_gain_span_frac": 0.6, # how much of single shot to search
+    "ss_gain_pts": 100, # how many points in single shot space to search
 
-    # "auto_readout_opt":      True,
+    "auto_readout_opt":      True,
 
         # ── T1 ──────────────────────────────────────────────────────────────────
     # "T1_step":         40,        # us – wait-time step
@@ -443,25 +453,25 @@ AutoCoherence_override_params = {
     # "T1_reps":         20,
     # "T1_rounds":       20,
     # "T1_relax_delay":  3500,      # us
-    "T1_repetitions":  5,         # number of consecutive T1 runs
+    "T1_repetitions":  3,         # number of consecutive T1 runs
 
     # ── T2 Ramsey ───────────────────────────────────────────────────────────
-    "T2_step":         0.5,       # us – Ramsey delay step
+    "T2_step":         0.1,       # us – Ramsey delay step
     "T2_expts":        401,
     # "T2_reps":         20,
     # "T2_rounds":       20,
     # "T2_relax_delay":  3500,      # us
-    "T2_repetitions":  5,
+    "T2_repetitions":  3,
     # "T2_freq_shift":   0.0,       # MHz – artificial detuning from f_ge
 
     # ── T2Echo ──────────────────────────────────────────────────────────────
-    "T2E_max_us":       1000,      # us – maximum echo time
+    "T2E_max_us":       500,      # us – maximum echo time
     # "T2E_expts":        201,
     # "T2E_reps":         25,
     # "T2E_rounds":       25,
     # "T2E_relax_delay":  3500,     # us
     # "T2E_num_pi_pulses": 1,       # must be odd
-    "T2E_repetitions":  5,
+    "T2E_repetitions":  3,
 }
 
 # ── Zero-span charge-parity switching measurement ───────────────────────────
