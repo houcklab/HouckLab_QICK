@@ -358,6 +358,7 @@ class SingleShotProgramFFMUX(ExperimentClass):
             self.fid = fid
             self.threshold = threshold
             self.angle = angle
+            print(angle)
 
             plt.savefig(self.iname)
 

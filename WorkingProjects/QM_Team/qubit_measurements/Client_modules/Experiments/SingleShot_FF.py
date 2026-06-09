@@ -180,13 +180,13 @@ Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit
 RunT1 = False
 RunT2 = False
 T1T2_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
-               "T2_step": 1, "T2_expts": 2, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.1,
+               "T2_step": 0.25, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.1,
                "relax_delay": 1000,
                'repetitions': 1}
 # T1T2_params = {"T1_step": 50, "T1_expts": 30, "T1_reps": 10, "T1_rounds": 10,
 #                "T2_step": 1.7, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.25,
 #                "relax_delay": 2000}
-RunT2E = True
+RunT2E = False
 T2E_params = {"T2_max_us": 100, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.08,
                "relax_delay": 500, 'num_pi_pulses': 1, #need odd number of pulses
                "pi2_gain": 3550 // 2,
@@ -228,17 +228,17 @@ A = 2.8043e-5
 f_max = A*5500**2+B
 f_list = B + np.arange(0, 56)*(f_max-B)/55
 acstark_amp_list = np.sqrt((f_list-B)/A)
-T1ACStark_params = {"T1_start": 2, "T1_step": 1, "T1_expts": 1, "T1_reps": 500000, "T1_rounds": 20,
+T1ACStark_params = {"T1_start": 50, "T1_step": 1, "T1_expts": 1, "T1_reps": 25, "T1_rounds": 25,
                   "T2_step": 1, "T2_expts": 1, "T2_reps": 100, "T2_rounds": 20, "freq_shift": 0.1,
                   "relax_delay": 500,
-                  'repetitions': 10000000,
+                  'repetitions': 100,
 
                   # additional AC Stark arguments
                   "ACStark_detuning": 50,  # PLACEHOLDER
-                  "ACStark_amplitude_start": 2000,  # PLACEHOLDER
-                  "ACStark_amplitude_step": 100,  # PLACEHOLDER
-                  "ACStark_amplitude_expts": 1,  # PLACEHOLDER
-                  "ACStark_amplitude_list": None, # customized amplitude list
+                  "ACStark_amplitude_start": 0,  # PLACEHOLDER
+                  "ACStark_amplitude_step": 500,  # PLACEHOLDER
+                  "ACStark_amplitude_expts": 11,  # PLACEHOLDER
+                  "ACStark_amplitude_list": acstark_amp_list, # customized amplitude list
                   'reps_per_SS_cal': 3,
                   }
 
@@ -247,7 +247,7 @@ T1ACStark_params = {"T1_start": 2, "T1_step": 1, "T1_expts": 1, "T1_reps": 50000
 
 SingleShot = True
 SS_params = {"Shots": 2000, "Readout_Time": 8, "ADC_Offset": 0.5, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 2, 'relax_delay': 1000}
+             'number_of_pulses': 1, 'relax_delay': 1000}
 
 RunT1SS = False
 T1SS_params = {"T1_step": 75, "T1_expts": 40,
@@ -278,7 +278,7 @@ qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 trans_config = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
-    "readout_length": 10,  # [us]
+    "readout_length": 8,  # [us]
     "pulse_gain": cavity_gain,  # [DAC units]
     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
     "TransSpan": 3,  ### MHz, span will be center+/- this parameter
@@ -703,11 +703,11 @@ if RunT1ACStark_withSS:
         # first do SS and remember rotation angle
         # config['shots'] = 1000
         config['number_of_pulses'] = SS_params['number_of_pulses']
-        Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,
+        Instance_SingleShotProgram = SingleShotProgramFFMUX(path="T1ACStark_SS", outerFolder=outerFolder, cfg=config,
                                                             soc=soc, soccfg=soccfg)
         data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
         # print(data_SingleShotProgram)
-        SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=True)
+        SingleShotProgramFFMUX.display(Instance_SingleShotProgram, data_SingleShotProgram, plotDisp=False)
 
         SingleShotProgramFFMUX.save_data(Instance_SingleShotProgram, data_SingleShotProgram)
         SingleShotProgramFFMUX.save_config(Instance_SingleShotProgram)
@@ -736,14 +736,9 @@ if RunT1ACStark_withSS:
                              "rotation_angle": angle
                              }
             config = config | T1ACStark_cfg  ### note that UpdateConfig will overwrite elements in BaseConfig
-            iT1ACStark = T1ACStark(path="T1ACStark", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
-
-            if T1ACStark_params['repetitions'] > 1:
-                plot_disp = False
-            else:
-                plot_disp = True
+            iT1ACStark = T1ACStark(path="T1ACStark_SS", cfg=config, soc=soc, soccfg=soccfg, outerFolder=outerFolder)
             dT1ACStark = T1ACStark.acquire(iT1ACStark)
-            T1ACStark.display(iT1ACStark, dT1ACStark, plotDisp=plot_disp, figNum=2)
+            T1ACStark.display(iT1ACStark, dT1ACStark, plotDisp=False, figNum=2)
             T1ACStark.save_data(iT1ACStark, dT1ACStark)
             T1ACStark.save_config(iT1ACStark)
 

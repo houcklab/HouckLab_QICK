@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="81ed4b4e-7780-47cb-af5a-ee45a88a838d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Calib/initialize4Q.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/MUXInitialize.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/SingleShot_FF_MUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mAmplitudeRabiFFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mOptimizeReadoutandPulse_FFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mSingleShotProgramFFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mSingleTone.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mSpecSliceFFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mT1MUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/MUX_Files/mTransmissionFFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/OnlyT1_FF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/OnlyT2E.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/SingleShot_FF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/SwitchTest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/initialize4Q.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mAmplitudeRabiFF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mAmplitudeRabiFF_noUpdate.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mChiShift.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mOptimizeReadoutandPulse_FF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mSingleShotProgramFFMUX.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mSingleTone.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mSpecSliceFF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT1FF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT1FF_NoUpdate.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT1_SS.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT2CPMG.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT2EFF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mT2R.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mTestSwitch.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mTransmissionFF.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Helpers/MixedShots_analysis.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Helpers/rotate_SS_data.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Experiments/mContinuousSingleShotProgram.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Calib/runExperiments2.py" beforeDir="false" afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Calib/runExperiments2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib/Experiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib/Experiment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib/socProxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib/socProxy.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mAmplitudeRabi.py" beforeDir="false" afterPath="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/mAmplitudeRabi.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/TestExperiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/TestExperiment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/Test_SingleShot.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/Test_SingleShot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/initialize.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Calib_escher/initialize.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/CoreLib/socProxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/CoreLib/socProxy.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Experiments/mLoopback.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Experiments/mLoopback.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Experiments/mSingleShotProgram.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_escher/Client_modules/Experiments/mSingleShotProgram.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Calib/TestExperiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Calib/TestExperiment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Calib/initialize.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Calib/initialize.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/CoreLib/socProxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/CoreLib/socProxy.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Experiments/mLoopback.py" beforeDir="false" afterPath="$PROJECT_DIR$/Tantalum_fluxonium_marvin/Client_modules/Experiments/mLoopback.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 3
+}</component>
+  <component name="ProjectId" id="2jw2JLNeLzw0lbpaZ2rcFg8I7ay" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.SingleShot_FF.executor": "Run",
+    "Python.initialize.executor": "Run",
+    "Python.socProxy.executor": "Run",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "C:/Users/newforce/Documents/GitHub/HouckLab_QICK",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager" selected="Python.SingleShot_FF">
+    <configuration name="SingleShot_FF" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="WorkingProjects" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments/SingleShot_FF.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="socProxy" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="WorkingProjects" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib/socProxy.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.SingleShot_FF" />
+        <item itemvalue="Python.socProxy" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-python-sdk-67fca87a943a-c986f194a52a-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-233.11799.259" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="81ed4b4e-7780-47cb-af5a-ee45a88a838d" name="Changes" comment="" />
+      <created>1722283745147</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1722283745147</updated>
+      <workItem from="1722283746190" duration="70000" />
+      <workItem from="1722283870885" duration="1344000" />
+      <workItem from="1726166846390" duration="461000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/WorkingProjects$initialize.coverage" NAME="initialize Coverage Results" MODIFIED="1722283781641" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Tantalum_fluxonium/Client_modules/Calib" />
+    <SUITE FILE_PATH="coverage/WorkingProjects$socProxy.coverage" NAME="socProxy Coverage Results" MODIFIED="1726166958676" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/CoreLib" />
+    <SUITE FILE_PATH="coverage/WorkingProjects$SingleShot_FF.coverage" NAME="SingleShot_FF Coverage Results" MODIFIED="1726167185002" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/QM_Team/qubit_measurements/Client_modules/Experiments" />
+  </component>
+</project>
