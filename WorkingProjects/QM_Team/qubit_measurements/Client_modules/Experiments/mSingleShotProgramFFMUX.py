@@ -93,7 +93,7 @@ class SingleShotProgramWITHUPDATE(RAveragerProgram):
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
         end = time.time()
 
-        print(end - start)
+        print('time', end - start)
         return self.collect_shots()
 
     def collect_shots(self):
@@ -171,7 +171,7 @@ class SingleShotProgram(AveragerProgram):
         super().acquire(soc, load_pulses=load_pulses, progress=progress, debug=debug)
         end = time.time()
 
-        # print(end - start)
+        print('time', end - start)
         return self.collect_shots()
 
     def collect_shots(self):
