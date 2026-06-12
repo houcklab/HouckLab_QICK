@@ -42,10 +42,14 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
         return_bounds = True, 
         fname = "Wait_Arr_0_0", loc = "plots_QND/")
     
-    # Extract the sigma 
+    # Extract the fitted centers and sigma from the initial 2D Gaussian fit.
+    fit_centers = []
     sigma = []
     for i in range(cen_num):
+        fit_centers.append([popt[i*4+1], popt[i*4+2]])
         sigma.append(popt[i*4+3])
+    fit_centers = np.array(fit_centers)
+    fit_sigma = np.array(sigma)
     
     # Calculate the probability function
     pdf = sse2.calcPDF(gaussians)
@@ -151,6 +155,8 @@ def QND_analysis(i_0_arr, q_0_arr, i_1_arr, q_1_arr, centers,
     ### return all values
     return (state0_probs, state0_probs_err, len(i0_shots), 
             state1_probs, state1_probs_err, len(i1_shots),
-            i0_shots, q0_shots, i1_shots, q1_shots)
+            i0_shots, q0_shots, i1_shots, q1_shots,
+            fit_centers, fit_sigma,
+            i0_0_shots, q0_0_shots, i0_1_shots, q0_1_shots)
 
 

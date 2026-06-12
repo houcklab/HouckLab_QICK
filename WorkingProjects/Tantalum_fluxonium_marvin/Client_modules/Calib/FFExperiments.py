@@ -21,8 +21,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFTra
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFPopulateProbe import FFPopulateProbe
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mFFSpecSlice_wPulsePreDist import FFSpecSlice_Experiment_wPPD
 
-# Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\" # end in \\
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2026_03_31_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -75,12 +74,13 @@ UpdateConfig = {
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
     "pre_meas_delay": 2,
 
-    "yokoVoltage": -0.1235,           # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": 0.106,           # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 20,               # [us]
     "qubit_freq_expts": 401,         # number of points
     "reps": 100000,
     "use_switch": False,
     'negative_pulse': False,
+
 }
 
 config = BaseConfig | UpdateConfig
@@ -106,45 +106,47 @@ plt.show()
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",     # --Fixed
-    "read_length": 25,                # [us]
-    "read_pulse_gain": 9000,         # [DAC units]
-    "read_pulse_freq": 6671.25,      # [MHz]
+    "read_length": 30,
+    "read_pulse_gain": 900,
+    "read_pulse_freq": 7077.56,  # 6253.8,
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 900,        # [MHz]
-    "qubit_freq_stop": 1250,         # [MHz]
+    "qubit_freq_start": 2800,        # [MHz]
+    "qubit_freq_stop": 3000,         # [MHz]
     "qubit_pulse_style": "const", # one of ["const", "flat_top", "arb"]
     "sigma": 0.02,                  # [us], used with "arb" and "flat_top"
-    "qubit_length": 0.5,               # [us], used with "const"
+    "qubit_length": 15,               # [us], used with "const"
     "flat_top_length": 0.050,        # [us], used with "flat_top"
-    "qubit_gain": 30000,             # [DAC units]
-    "qubit_ch": 1,                   # RFSOC output channel of qubit drive
+    "qubit_gain": 20000,             # [DAC units]
+    "qubit_ch": 1,                   # RFSOC output channel of qubiwt drive
     "qubit_nqz": 1,                  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,    # Currently unused, applies to "const" drive
 
     # Fast flux pulse parameters
-    "ff_gain": 10000,                  # [DAC units] Gain for fast flux pulse
+    "ff_gain": -5000,                  # [DAC units] Gain for fast flux pulse
     "ff_length": 2000,                  # [us] Total length of positive fast flux pulse
     "pre_ff_delay": 0,               # [us] Delay before the fast flux pulse
     "ff_pulse_style": "ramp",
-    "ff_ramp_length" : 0.05,
+    "ff_ramp_length" : 0.2,
     "ff_ch": 6,                      # RFSOC output channel of fast flux drive
     "ff_nqz": 1,                     # Nyquist zone to use for fast flux drive
 
-    "yokoVoltage": -0.1235,           # [V] Yoko voltage for DC component of fast flux
-    "relax_delay": 50,               # [us]
+    "yokoVoltage": -0.8,           # [V] Yoko voltage for DC component of fast flux
+    "relax_delay": 2000,               # [us]
     "qubit_freq_expts": 101,         # number of points
-    "reps": 300,
+    "reps": 800,
     "use_switch": False,
     "pre_meas_delay": 2,
 
     # post_ff_delay sweep parameters: delay after fast flux pulse (before qubit pulse)
     "qubit_spec_delay_start": 2000,  # [us] Initial value
-    "qubit_spec_delay_stop": 3600,      # [us] Final value
+    "qubit_spec_delay_stop": 4000,      # [us] Final value
     "qubit_spec_delay_steps": 21,# number of post_ff_delay points to take
-    "spacing": 'log',
+    "spacing": 'linear',
     "negative_pulse": False,
+
+    #
 }
 
 config = BaseConfig | UpdateConfig
@@ -180,16 +182,24 @@ plt.show()
 import time
 start_delay = 1
 stop_delay = config["qubit_spec_delay_stop"] - config["qubit_spec_delay_start"] + 1
-custom_delay_array = np.logspace(np.log10(start_delay), np.log10(stop_delay), config["qubit_spec_delay_steps"]) + config["qubit_spec_delay_start"] - 1
+# custom_delay_array = np.logspace(np.log10(start_delay), np.log10(stop_delay), config["qubit_spec_delay_steps"]) + config["qubit_spec_delay_start"] - 1
+zoom_span = 60
+custom_delay_array = np.concatenate(
+    (np.linspace(config["qubit_spec_delay_start"], config["qubit_spec_delay_start"] + zoom_span, int(config["qubit_spec_delay_steps"]*2/3)),
+        np.linspace(config["qubit_spec_delay_start"] + zoom_span, config["qubit_spec_delay_stop"],
+                    config["qubit_spec_delay_steps"] - int(config["qubit_spec_delay_steps"]*2/3)))
+    )
 
 sweep_var = "ff_gain"
-sweep_arr = np.linspace(10000,-10000, 4)
+sweep_arr = np.linspace(-5000, 5000, 6, dtype = int)
 update_qubit_freq = False
 dac2qubitfreq = -0.058  # MHz per DAC unit
 zerodacfreq = 1140
 span = 200
 outerFolder_sweep = outerFolder + f"FFSpecSlice_sweep\\"
 curr_date_time = time.strftime("%Y_%m_%d_%H%M%S")
+print(custom_delay_array)
+#%%
 for val in sweep_arr:
     config[sweep_var] = val
     print(f"Running for {sweep_var} = {val}")
@@ -214,19 +224,19 @@ for val in sweep_arr:
 UpdateConfig = {
     # Readout section
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 60,  # [us]
-    "read_pulse_gain": 5000,  # [DAC units]
-    "read_pulse_freq": 6671.61,  # [MHz]
+    "read_length": 10,  # [us]
+    "read_pulse_gain": 9000,  # [DAC units]
+    "read_pulse_freq": 6258.5,  # [MHz]
     "ro_mode_periodic": False,  # currently unused
 
     # Qubit spec parameters
-    "qubit_freq_start": 900,  # [MHz]
-    "qubit_freq_stop": 2000,  # [MHz]
+    "qubit_freq_start": 1400,  # [MHz]
+    "qubit_freq_stop": 2100,  # [MHz]
     "qubit_pulse_style": "const",  # one of ["const", "flat_top", "arb"]
     "sigma": 0.02,  # [us], used with "arb" and "flat_top"
-    "qubit_length": 4,  # [us], used with "const"
+    "qubit_length": 2,  # [us], used with "const"
     "flat_top_length": 0.050,  # [us], used with "flat_top"
-    "qubit_gain": 7000,  # [DAC units]
+    "qubit_gain": 20000,  # [DAC units]
     "qubit_ch": 1,  # RFSOC output channel of qubit drive
     "qubit_nqz": 1,  # Nyquist zone to use for qubit drive
     "qubit_mode_periodic": False,  # Currently unused, applies to "const" drive
@@ -243,15 +253,15 @@ UpdateConfig = {
     "ff_ch": 6,  # RFSOC output channel of fast flux drive
     "ff_nqz": 1,  # Nyquist zone to use for fast flux drive
 
-    "yokoVoltage": -0.1235,  # [V] Yoko voltage for DC component of fast flux
+    "yokoVoltage": -0.1,  # [V] Yoko voltage for DC component of fast flux
     "relax_delay": 30,  # [us]
-    "qubit_freq_expts": 301,  # number of points
+    "qubit_freq_expts": 351,  # number of points
     "reps": 2000,
     "use_switch": False,
 
     # Sweep through the dac values for ff
     "ff_gain_start": 0,
-    "ff_gain_stop": -10000,
+    "ff_gain_stop": 100,
     "ff_gain_num_points": 5,
     "negative_pulse": False,
 }

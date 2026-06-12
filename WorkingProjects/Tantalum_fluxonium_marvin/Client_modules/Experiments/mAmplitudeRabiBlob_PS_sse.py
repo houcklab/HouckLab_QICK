@@ -103,6 +103,7 @@ class LoopbackProgramAmplitudeRabi_PS_sse(RAveragerProgram):
                                          length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
 
+        self.sync_all(self.us2cycles(0.010))
         ### Post Selection Measurement
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=[0],
@@ -320,8 +321,7 @@ class AmplitudeRabi_PS_sse(ExperimentClass):
                     pdf = sse2.calcPDF(gaussians_1)
                     # Get the expected values of probability and error
                     num_samples_1 = sse2.calcNumSamplesInGaussian(hist2d, pdf, cen_num)
-                    num_std_1 = sse2.calcNumSamplesInGaussianSTD(hist2d, pdf, cen_num)
-                    prob_1, std_1 = sse2.calcProbability(num_samples_1, num_std_1, cen_num)
+                    prob_1, std_1 = sse2.calcProbability(num_samples_1, cen_num)
                     pop[i, :, indx_gain, indx_freq] = prob_1
 
         update_data = {"data" : {"pdf_0": pdf_0, "gaussians_0": gaussians_0, "x_points_0": x_points_0,

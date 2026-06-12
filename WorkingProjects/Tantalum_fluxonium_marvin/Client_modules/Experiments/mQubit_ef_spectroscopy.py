@@ -65,11 +65,12 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style=cfg["qubit_pulse_style"], freq=qubit_ge_freq,
                                      phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_ge_gain"],
                                      waveform="qubit",  length=self.us2cycles(self.cfg["flat_top_length"]))
+            self.qubit_pulseLength = self.us2cycles(self.cfg["sigma"]) * 4 + self.us2cycles(self.cfg["flat_top_length"])
         elif cfg["qubit_pulse_style"] == "const":
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_ge_freq, phase=0,
                                      gain=cfg["qubit_ge_gain"],
-                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]),
-                                     mode="periodic")
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
+
         # Don't know what kind of pulse we want
         else:
             print("define gaussian or flat top pulse")
@@ -94,14 +95,14 @@ class LoopbackProgramQubit_ef_spectroscopy(RAveragerProgram):
                          width=self.cfg["trig_len"])
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-                                 waveform="qubit")
+                                 length = self.us2cycles(self.cfg['flat_top_length']), waveform="qubit")
         self.pulse(ch=self.cfg["qubit_ch"])  # play ge pi pulse
         self.sync_all(self.us2cycles(0.005))  # align channels and wait /
 
         # Apply e-f gaussian pulse with increasing amplitude
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
                                  phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
-                                 waveform="qubit")
+                                 length = self.us2cycles(self.cfg['flat_top_length']),waveform="qubit")
         self.mathi(self.q_rp, self.r_freq, self.r_freq_ef, '+', 0) # Hack to set the r_freq register page to r_freq_ef (+0)
         if self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
@@ -139,7 +140,7 @@ class Qubit_ef_spectroscopy(ExperimentClass):
         start = time.time()
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
 
         #### Background data
         qubit_ef_gain = self.cfg["qubit_ef_gain"]
@@ -149,7 +150,7 @@ class Qubit_ef_spectroscopy(ExperimentClass):
         prog = LoopbackProgramQubit_ef_spectroscopy(self.soccfg, self.cfg)
         x_pts_bkg, avgi_bkg, avgq_bkg = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                                      readouts_per_experiment=1, save_experiments=None,
-                                                     start_src="internal", progress=False, debug=False)
+                                                     start_src="internal", progress=False)
         self.cfg["qubit_ef_gain"] = qubit_ef_gain
         self.cfg["qubit_ge_gain"] = qubit_ge_gain
         # Subtracting
@@ -189,13 +190,13 @@ class Qubit_ef_spectroscopy(ExperimentClass):
         fig, axs = plt.subplots(4, 1, figsize=(12, 12), num=figNum)
 
         axs[0].scatter(x_pts, avgi, c='b', label='data')
-        axs[0].set_xlabel('Frequency (GHz)')
+        axs[0].set_xlabel('Frequency (MHz)')
         axs[0].set_ylabel('I (a.u.)')
         axs[0].set_title('I vs Frequency')
         # Add a text box with the fit parameters
 
         axs[1].scatter(x_pts, avgq, c='b', label='data')
-        axs[1].set_xlabel('Frequency (GHz)')
+        axs[1].set_xlabel('Frequency (MHz)')
         axs[1].set_ylabel('Q (a.u.)')
         axs[1].set_title('Q vs Frequency')
 

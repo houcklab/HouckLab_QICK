@@ -12,8 +12,8 @@ from matplotlib import pyplot as plt
 import datetime
 from tqdm import tqdm
 
-# Define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2024_06_29_cooldown\\QCage_dev\\Cavity_characterize\\"
+# define the saving path
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2026_06_07_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()

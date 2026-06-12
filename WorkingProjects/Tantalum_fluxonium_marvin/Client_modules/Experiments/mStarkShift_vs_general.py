@@ -98,7 +98,7 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         # Configure the cavity pulse for populating the cavity
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
                                  gain=self.cfg["cavity_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["read_length"], gen_ch=self.cfg["res_ch"]))
+                                 length=self.us2cycles(self.cfg["cavity_pulse_length"], gen_ch=self.cfg["res_ch"]))
 
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
@@ -109,7 +109,7 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         self.pulse(ch=self.cfg["res_ch"])  # Play a cavity tone
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
         self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone
-        self.sync_all(self.us2cycles(10))  # align channels and wait 10ns
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         # Configure the cavity pulse for readout
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,

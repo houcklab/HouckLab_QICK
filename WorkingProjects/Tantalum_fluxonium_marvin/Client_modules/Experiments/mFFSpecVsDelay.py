@@ -129,6 +129,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
                 qm = ax.pcolormesh(Xe, Ye, Z.T, shading='auto', cmap='viridis')
                 artists[key] = qm
                 _ensure_colorbar(key, ax, qm)
+                ax.set_xscale("log")
 
         # timing/info -------------------------------------------------------
         print()
@@ -280,6 +281,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
             self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
         elif self.cfg.get("spacing", "linear") == "log":
             self.delays = np.logspace(np.log10(self.cfg["qubit_spec_delay_start"] + 1e-12), np.log10(self.cfg["qubit_spec_delay_stop"] + 1e-12), self.cfg["qubit_spec_delay_steps"]) - 1e-12
+
         else:
             raise ValueError(f"Unknown spacing {self.cfg['spacing']}")
         # Create array of spectroscopy frequency points

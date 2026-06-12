@@ -317,8 +317,10 @@ class FFRampTest_Experiment(ExperimentClass):
             # Calculate the probability
             (state0_probs, state0_probs_err, state0_num,
              state1_probs, state1_probs_err, state1_num,
-             i0_shots, q0_shots, i1_shots, q1_shots) = QND_analysis(i_0, q_0, i_1, q_1, centers,
-                                                                    confidence_selection=confidence_selection)
+             i0_shots, q0_shots, i1_shots, q1_shots,
+             fit_centers, fit_sigma,
+             i0_0_shots, q0_0_shots, i0_1_shots, q0_1_shots) = QND_analysis(
+                i_0, q_0, i_1, q_1, centers, confidence_selection=confidence_selection)
             qnd = (state0_probs[0] + state1_probs[1]) / 2
             fid_list.append(qnd)
             qnd_err = np.sqrt(state0_probs_err[0] ** 2 + state1_probs_err[0] ** 2)
@@ -421,8 +423,10 @@ class FFRampTest_Experiment(ExperimentClass):
         # Calculate the probability
         (state1_0_probs, state0_probs_err, state0_num,
          state1_1_probs, state1_probs_err, state1_num,
-         i_1_0, q_1_0, i_1_1, q_1_1) = QND_analysis(i_0, q_0, i_1, q_1, centers,
-                                                                confidence_selection=confidence_selection)
+         i_1_0, q_1_0, i_1_1, q_1_1,
+         fit_centers, fit_sigma,
+         i0_0_shots, q0_0_shots, i0_1_shots, q0_1_shots) = QND_analysis(
+            i_0, q_0, i_1, q_1, centers, confidence_selection=confidence_selection)
 
         fig, axs = plt.subplots(nrows=1, ncols=3, figsize=[15, 6], width_ratios=[1.2, 1, 1])
         # Plot histogram of the initial measurement

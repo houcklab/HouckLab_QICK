@@ -67,6 +67,12 @@ class SingleShotExperiment(RAveragerProgram):
         self.qreg_freq = self.sreg(self.cfg["qubit_ch"], "freq")  # frequency register on qubit channel
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
         qubit_ge_freq = self.freq2reg(cfg["qubit_ge_freq"], gen_ch=cfg["qubit_ch"])
+        self.qubit_ge_freq = qubit_ge_freq
+        self.declare_gen(ch=cfg["qubit_gf_ch"], nqz=cfg["qubit_gf_nqz"])
+        self.qubit_gf_freq = self.freq2reg(cfg["qubit_gf_freq"], gen_ch=cfg['qubit_gf_ch'] )
+        self.set_pulse_registers(ch=cfg["qubit_gf_ch"], style="const", freq=self.qubit_gf_freq, phase=0,
+                                 gain=cfg["qubit_gf_gain"],
+                                 length=self.us2cycles(self.cfg["qubit_gf_length"], gen_ch=cfg["qubit_gf_ch"]))
         # Define qubit pulse: gaussian
         if cfg["qubit_pulse_style"] == "arb":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -110,10 +116,21 @@ class SingleShotExperiment(RAveragerProgram):
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                              width=self.cfg["trig_len"])  # trigger for switch
-            # self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ge_freq,
-            #                          phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ge_gain"],
-            #                          waveform="qubit")
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=self.qubit_ge_freq, phase=0,
+                                     gain=self.cfg["qubit_ge_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]))
             self.pulse(ch=self.cfg["qubit_ch"])
+            self.sync_all(self.us2cycles(0.005))
+
+        # Apply g-e pi pulse
+        if self.cfg["apply_gf"]:
+            if self.cfg["use_switch"]:
+                self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
+                             width=self.cfg["trig_len"])  # trigger for switch
+            self.set_pulse_registers(ch=self.cfg["qubit_gf_ch"], style="const", freq=self.qubit_gf_freq, phase=0,
+                                     gain=self.cfg["qubit_gf_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_gf_length"], gen_ch=self.cfg["qubit_gf_ch"]))
+            self.pulse(ch=self.cfg["qubit_gf_ch"])
             self.sync_all(self.us2cycles(0.005))
 
         # Apply e-f pi pulse
@@ -121,8 +138,8 @@ class SingleShotExperiment(RAveragerProgram):
             if self.cfg["use_switch"]:
                 self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                              width=self.cfg["trig_len"])  # trigger for switch
-            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style=self.cfg["qubit_pulse_style"], freq=ef_freq,
-                                     phase=self.deg2reg(0, gen_ch=self.cfg["qubit_ch"]), gain=self.cfg["qubit_ef_gain"],
+            self.set_pulse_registers(ch=self.cfg['qubit_ch'], style=self.cfg["qubit_pulse_style"], freq=ef_freq,
+                                     phase=self.deg2reg(0, gen_ch=self.cfg['qubit_ch']), gain=self.cfg["qubit_ef_gain"],
                                      waveform="qubit")
             self.pulse(ch=self.cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.005))

@@ -103,6 +103,7 @@ class SpecOnRepeat(ExperimentClass):
             y_pts.append(i)
             ### take the transmission data
             data_I, data_Q = self._aquireTransData()
+            time.sleep(0.5)
             self.data['data']['trans_Imat'][i,:] = data_I
             self.data['data']['trans_Qmat'][i,:] = data_Q
 
@@ -143,10 +144,16 @@ class SpecOnRepeat(ExperimentClass):
 
             if plotDisp:
                 plt.show(block=False)
-                plt.pause(0.1)
+                plt.pause(1)
 
             ### take the spec data
+            if "use_same_freq" in self.cfg :
+                if self.cfg["use_same_freq"] == True:
+                    print("Using the same frequency")
+                    self.cfg["read_pulse_freq"] = self.cfg["read_pulse_freq_const"]
+
             data_I, data_Q = self._aquireSpecData()
+            time.sleep(0.5)
 
             data_I = np.array(
                 data_I)  # This broke after the qick update to 0.2.287. Returns I, Q as lists instead of np arrays
@@ -316,11 +323,12 @@ class SpecOnRepeat(ExperimentClass):
         fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         results = []
         start = time.time()
-        for f in tqdm(fpts, position=0, disable=True):
+        for f in fpts:
             self.cfg["read_pulse_freq"] = f
             prog = LoopbackProgramTrans(self.soccfg, self.cfg)
             # prog = LoopbackProgramTransFF(self.soccfg, self.cfg)
-            results.append(prog.acquire(self.soc, load_pulses=True))
+            results.append(prog.acquire(self.soc, load_pulses=True,progress=False))
+            time.sleep(0.01)
         results = np.transpose(results)
         #### pull out I and Q data
         data_I = results[0][0][0]

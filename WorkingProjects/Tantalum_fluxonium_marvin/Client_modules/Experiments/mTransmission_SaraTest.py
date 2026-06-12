@@ -19,8 +19,24 @@ class LoopbackProgramTrans(AveragerProgram):
 
         freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        # self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0, gain=cfg["read_pulse_gain"],
+        #                          length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+
+        # Adding the resonator pulse
+        if 'ro_periodic' in self.cfg:
+            if self.cfg['ro_periodic'] == True:
+                self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0,
+                                         gain=cfg["read_pulse_gain"],
+                                         length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]), mode="periodic")
+            else:
+                self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0,
+                                         gain=cfg["read_pulse_gain"],
+                                         length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        else:
+            self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=freq, phase=0,
+                                     gain=cfg["read_pulse_gain"],
+                                     length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+
         self.synci(200)  # give processor some time to configure pulses
 
     def body(self):

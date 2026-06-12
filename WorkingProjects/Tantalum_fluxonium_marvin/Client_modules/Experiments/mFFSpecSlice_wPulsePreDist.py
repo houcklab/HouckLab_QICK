@@ -195,14 +195,10 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             print("!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
             print("Using 4 tail distortion model with default parameters unless specified otherwise in the config.")
-            model = PulseFunctions.SimpleFourTailDistortion(A1 = self.cfg.get("A1", -0.02),
-                                                      tau1 = self.cfg.get("tau1", 17.9),
-                                                      A2 = self.cfg.get("A2", 0.128),
-                                                      tau2 = self.cfg.get("tau2", 417.5),
-                                                      A3=self.cfg.get("A3", 0.0608),
-                                                      tau3=self.cfg.get("tau3", 6850.47),
-                                                      A4 = self.cfg.get("A4", -0.0269),
-                                                      tau4 = self.cfg.get("tau4", 1076.0),
+            model = PulseFunctions.SimpleTwoTailDistortion(A1 = self.cfg.get("A1", -0.008),
+                                                      tau1 = self.cfg.get("tau1", 2.063),
+                                                      A2 = self.cfg.get("A2", 0.044),
+                                                      tau2 = self.cfg.get("tau2", 231.071),
                                                       x_val = dt_pulsedef)
 
         # Case 1 : if the qubit tone is played before the fast flux pulse
@@ -324,7 +320,7 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
 
         if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
             x_pulse = waveform
-            T_opt, amps, edges = model.design_four_tail_zeroing_with_amax(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
+            T_opt, amps, edges = model.design_two_tail_zeroing_with_amax(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
             self.t_opt = T_opt
             # print("Zeroing pulse parameters:")
             print(f"Optimal zeroing time: {T_opt} us")
@@ -334,12 +330,12 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             self.amps = amps
 
             # Making it plottable if needed
-            taus = np.array([model.params.tau1, model.params.tau2, model.params.tau3, model.params.tau4])
+            taus = np.array([model.params.tau1, model.params.tau2])
             t_zeroing = np.arange(0, T_opt + 100, model.dt)
             x_full = np.zeros_like(t_zeroing)
             x_full[:len(x_pulse)] = waveform
 
-            for j in range(4):
+            for j in range(2):
                 start_idx = int(round(edges[j] / model.dt))
                 end_idx = int(round(edges[j + 1] / model.dt))
                 x_full[start_idx:end_idx] = amps[j]
@@ -353,6 +349,21 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             axs[0].plot(time_axis, pb.waveform(), label="Ideal Fast flux pulse")
             if self.cfg.get("pulse_pre_dist", False):
                 axs[0].plot(time_axis, waveform, label="Pre-distorted Fast flux pulse")
+
+            # Plot averaged play segments (seg1/seg2/seg3)
+            if self.seg1_play is not None or self.seg2_play is not None or self.seg3_play is not None:
+                t_cursor = 0
+                for idx, seg in enumerate([self.seg1_play, self.seg2_play, self.seg3_play], start=1):
+                    if seg is None or len(seg) == 0:
+                        continue
+
+                    t_seg = t_cursor + np.arange(len(seg)) * dt_pulseplay
+                    axs[0].step(t_seg, seg, where="post", linewidth=1.5, label=f"seg{idx}_play")
+
+                    t_cursor = t_seg[-1] + dt_pulseplay
+                    if idx in (1, 2):
+                        t_cursor += self.cfg["ff_ramp_length"]
+
             axs[0].set_xlabel("Time (us)")
             axs[0].set_ylabel("Amplitude (DAC units)")
             axs[0].set_title("Fast flux pulse shape")
@@ -369,6 +380,53 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
             plt.tight_layout()
             plt.show(block=False)
             plt.pause(1)
+
+    def get_ff_qubit_timing_metadata(self):
+        """
+        Return QICK-rounded timing metadata for the gap between the full FF pulse and qubit tone.
+
+        The FF playback starts with seg1_play, which already includes the pre-FF zero segment, so the FF end time is
+        computed from the same played segments and ramp durations without adding pre_ff_delay separately.
+        """
+        metadata = {
+            "timing_case": self.case,
+            "qubit_start_us": np.nan,
+            "ff_end_us": np.nan,
+            "actual_post_ff_delay_us": np.nan,
+            "ideal_post_ff_delay_us": (
+                self.cfg["qubit_spec_delay"]
+                - (self.cfg["pre_ff_delay"] + 2 * self.cfg["ff_ramp_length"] + self.cfg["ff_length"])
+            ),
+        }
+
+        if self.case != 3:
+            print(
+                "FF/qubit timing diagnostic is only finite for case 3 "
+                "(qubit after full FF pulse); returning NaN for this delay."
+            )
+            return metadata
+
+        dt_pulseplay_cycles = self.us2cycles(self.cfg.get('dt_pulseplay', 5), gen_ch=self.cfg["ff_ch"])
+        seg1_cycles = len(self.seg1_play) * dt_pulseplay_cycles
+        seg2_cycles = len(self.seg2_play) * dt_pulseplay_cycles
+        ramp_cycles = self.us2cycles(self.cfg["ff_ramp_length"], gen_ch=self.cfg["ff_ch"])
+
+        qubit_start_cycles = self.us2cycles(self.cfg["qubit_spec_delay"], gen_ch=self.cfg["qubit_ch"])
+        ff_end_cycles = seg1_cycles + ramp_cycles + seg2_cycles + ramp_cycles
+        qubit_start_us = self.cycles2us(qubit_start_cycles, gen_ch=self.cfg["qubit_ch"])
+        ff_end_us = self.cycles2us(ff_end_cycles, gen_ch=self.cfg["ff_ch"])
+
+        metadata.update({
+            "qubit_start_us": qubit_start_us,
+            "ff_end_us": ff_end_us,
+            "actual_post_ff_delay_us": qubit_start_us - ff_end_us,
+            "seg1_cycles": seg1_cycles,
+            "seg2_cycles": seg2_cycles,
+            "ramp_cycles": ramp_cycles,
+            "qubit_start_cycles": qubit_start_cycles,
+            "ff_end_cycles": ff_end_cycles,
+        })
+        return metadata
 
     def initialize(self):
 
@@ -397,8 +455,16 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         # Qubit pulse
         self.qubit_pulse_length = PulseFunctions.create_qubit_pulse(self, self.cfg["qubit_freq_start"])
 
+        # Initialize pulse
+        if self.cfg.get("init_w_f", False):
+            self.declare_gen(ch=self.cfg["init_ch"], nqz=self.cfg["init_nqz"])  # Fast flux
+            freq_init_f = self.freq2reg(self.cfg["init_freq"], gen_ch=self.cfg["init_ch"])
+            self.set_pulse_registers(ch=self.cfg["init_ch"], style="const", freq=freq_init_f, phase=0,
+                               gain=self.cfg["init_gain"], length=self.cfg["init_length"], mode= "oneshot")
+
         # Building the pulses
         self.build_ff_pulse(dt_pulsedef = self.cfg.get('dt_pulsedef', 0.002), dt_pulseplay = self.cfg.get('dt_pulseplay', 5))
+        self.ff_qubit_timing = self.get_ff_qubit_timing_metadata()
 
         self.sync_all(self.us2cycles(10))
 
@@ -415,6 +481,11 @@ class FFSpecSlice_wPPD(NDAveragerProgram):
         # Some sync time to let the code settle on the instructions (I havent seen this affect RFSOC, but suggested
         # by the documentation)
         self.sync_all(self.us2cycles(10))
+
+        # initialize the qubit
+        if self.cfg.get("init_w_f", False):
+            self.pulse(ch = self.cfg["init_ch"])
+            self.sync_all(self.us2cycles(0.1))
 
         # play qubit spec pulse
         self.pulse(ch=self.cfg["qubit_ch"], t=qubit_spec_delay_cycles)

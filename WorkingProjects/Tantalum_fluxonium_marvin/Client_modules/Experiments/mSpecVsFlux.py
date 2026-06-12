@@ -175,25 +175,53 @@ class SpecVsFlux(ExperimentClass):
         ### create the figure and subplots that data will be plotted on
         while plt.fignum_exists(num = figNum):
             figNum += 1
-        fig, axs = plt.subplot_mosaic([['a','a'],['b','c'],['d','e']], figsize = (8,10), num = figNum)
+        fig, axs = plt.subplot_mosaic(
+            [['b', 'b', 'b'], ['a', 'a', 'a'], ['c', 'd', 'e']],
+            figsize=(12, 10),
+            num=figNum,
+        )
+
+        def _plot_extent(x_values, y_values):
+            x_step = abs(x_values[1] - x_values[0]) if len(x_values) > 1 else 1.0
+            y_step = abs(y_values[1] - y_values[0]) if len(y_values) > 1 else 1.0
+            return [
+                np.min(x_values) - x_step / 2,
+                np.max(x_values) + x_step / 2,
+                np.min(y_values) - y_step / 2,
+                np.max(y_values) + y_step / 2,
+            ]
+
+        def _update_image(image, colorbar, z_data):
+            image.set_data(z_data)
+            finite_data = z_data[np.isfinite(z_data)]
+            if finite_data.size > 0:
+                vmin = np.min(finite_data)
+                vmax = np.max(finite_data)
+                if vmin == vmax:
+                    delta = abs(vmin) * 1e-9 if vmin != 0 else 1e-9
+                    vmin -= delta
+                    vmax += delta
+                image.set_clim(vmin=vmin, vmax=vmax)
+                colorbar.update_normal(image)
+
         ### create the frequency arrays for both transmission and spec
         ### also create empty array to fill with transmission and spec data
         self.trans_fpts = np.linspace(expt_cfg["trans_freq_start"], expt_cfg["trans_freq_stop"], expt_cfg["TransNumPoints"])
         self.spec_fpts = np.linspace(expt_cfg["qubit_freq_start"], expt_cfg["qubit_freq_stop"], expt_cfg["SpecNumPoints"])
         X_trans = (self.trans_fpts + self.cfg["cavity_LO"]/1e6) /1e3
-        X_trans_step = X_trans[1] - X_trans[0]
         X_spec = self.spec_fpts/1e3
-        X_spec_step = X_spec[1] - X_spec[0]
         Y = np.copy(voltVec)
         if "yoko2" in self.cfg.keys():
             Y += self.cfg["yoko2"]
-        Y_step = Y[1] - Y[0]
+        trans_extent = _plot_extent(Y, X_trans)
+        spec_extent = _plot_extent(Y, X_spec)
         Z_trans = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["TransNumPoints"]), np.nan)
         Z_specamp = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specphase = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specI = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         Z_specQ = np.full((expt_cfg["yokoVoltageNumPoints"], expt_cfg["SpecNumPoints"]), np.nan)
         cavity_freq = np.full((expt_cfg["yokoVoltageNumPoints"]), np.nan)
+        read_freq_scatter = None
 
         ### create an initial data dictionary that will be filled with data as it is taken during sweeps
         self.trans_Imat = np.zeros((expt_cfg["yokoVoltageNumPoints"], expt_cfg["TransNumPoints"]))
@@ -235,10 +263,9 @@ class SpecVsFlux(ExperimentClass):
 
             if i ==0: #### if first sweep add a colorbar
                 ax_plot_0 = axs['b'].imshow(
-                    Z_trans,
+                    Z_trans.T,
                     aspect='auto',
-                    extent=[np.min(X_trans) - X_trans_step / 2, np.max(X_trans) + X_trans_step / 2,
-                            np.min(Y) - Y_step / 2, np.max(Y) + Y_step / 2],
+                    extent=trans_extent,
                     origin='lower',
                     interpolation='none',
                 )
@@ -246,21 +273,26 @@ class SpecVsFlux(ExperimentClass):
                 cbar0.set_label('a.u.', rotation=90)
                 # sc = axs['b'].scatter(cavity_freq, Y, s = 20)
             else:
-                ax_plot_0.set_data(Z_trans)
-                ax_plot_0.set_clim(vmin=np.nanmin(Z_trans))
-                ax_plot_0.set_clim(vmax=np.nanmax(Z_trans))
-                cbar0.remove()
-                cbar0 = fig.colorbar(ax_plot_0, ax=axs['b'], extend='both')
-                cbar0.set_label('a.u.', rotation=90)
+                _update_image(ax_plot_0, cbar0, Z_trans.T)
                 # sc.set_offsets(np.c_[cavity_freq, Y])
 
-            axs['b'].set_ylabel("yoko voltage (V)")
-            axs['b'].set_xlabel("Cavity Frequency (GHz)")
+            axs['b'].set_ylabel("Cavity Frequency (GHz)")
+            axs['b'].set_xlabel("yoko voltage (V)")
             axs['b'].set_title("Cavity Transmission")
 
             # Draw the chosen frequency point
-            if self.cfg["draw_read_freq"]:
-                axs['b'].scatter(self.cfg["read_pulse_freq"] / 1000, voltVec[i], 50, 'red', marker='*')
+            if self.cfg.get("draw_read_freq", False):
+                read_freq_points = np.c_[Y[:i + 1], cavity_freq[:i + 1] / 1000]
+                if read_freq_scatter is None:
+                    read_freq_scatter = axs['b'].scatter(
+                        read_freq_points[:, 0],
+                        read_freq_points[:, 1],
+                        50,
+                        'red',
+                        marker='*',
+                    )
+                else:
+                    read_freq_scatter.set_offsets(read_freq_points)
 
             if plotDisp:
                 plt.show(block=False)
@@ -282,25 +314,19 @@ class SpecVsFlux(ExperimentClass):
 
             if i ==0: #### if first sweep add a colorbar
                 ax_plot_1 = axs['a'].imshow(
-                    Z_specamp,
+                    Z_specamp.T,
                     aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
+                    extent=spec_extent,
                     origin='lower',
                     interpolation='none',
                 )
                 cbar1 = fig.colorbar(ax_plot_1, ax=axs['a'], extend='both')
                 cbar1.set_label('a.u.', rotation=90)
             else:
-                ax_plot_1.set_data(Z_specamp)
-                ax_plot_1.set_clim(vmin=np.nanmin(Z_specamp))
-                ax_plot_1.set_clim(vmax=np.nanmax(Z_specamp))
-                cbar1.remove()
-                cbar1 = fig.colorbar(ax_plot_1, ax=axs['a'], extend='both')
-                cbar1.set_label('a.u.', rotation=90)
+                _update_image(ax_plot_1, cbar1, Z_specamp.T)
 
-            axs['a'].set_ylabel("yoko voltage (V)")
-            axs['a'].set_xlabel("Spec Frequency (GHz)")
+            axs['a'].set_ylabel("Spec Frequency (GHz)")
+            axs['a'].set_xlabel("yoko voltage (V)")
             axs['a'].set_title("Qubit Spec : Amplitude")
 
             ## Phase
@@ -308,25 +334,19 @@ class SpecVsFlux(ExperimentClass):
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_2 = axs['c'].imshow(
-                    Z_specphase,
+                    Z_specphase.T,
                     aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
+                    extent=spec_extent,
                     origin='lower',
                     interpolation='none',
                 )
                 cbar2 = fig.colorbar(ax_plot_2, ax=axs['c'], extend='both')
                 cbar2.set_label('Phase', rotation=90)
             else:
-                ax_plot_2.set_data(Z_specphase)
-                ax_plot_2.set_clim(vmin=np.nanmin(Z_specphase))
-                ax_plot_2.set_clim(vmax=np.nanmax(Z_specphase))
-                cbar2.remove()
-                cbar2 = fig.colorbar(ax_plot_2, ax=axs['c'], extend='both')
-                cbar2.set_label('Phase', rotation=90)
+                _update_image(ax_plot_2, cbar2, Z_specphase.T)
 
-            axs['c'].set_ylabel("yoko voltage (V)")
-            axs['c'].set_xlabel("Spec Frequency (GHz)")
+            axs['c'].set_ylabel("Spec Frequency (GHz)")
+            axs['c'].set_xlabel("yoko voltage (V)")
             axs['c'].set_title("Qubit Spec : Phase")
 
             ## I
@@ -334,25 +354,19 @@ class SpecVsFlux(ExperimentClass):
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_3 = axs['d'].imshow(
-                    Z_specI,
+                    Z_specI.T,
                     aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
+                    extent=spec_extent,
                     origin='lower',
                     interpolation='none',
                 )
                 cbar3 = fig.colorbar(ax_plot_3, ax=axs['d'], extend='both')
                 cbar3.set_label('I', rotation=90)
             else:
-                ax_plot_3.set_data(Z_specI)
-                ax_plot_3.set_clim(vmin=np.nanmin(Z_specI))
-                ax_plot_3.set_clim(vmax=np.nanmax(Z_specI))
-                cbar3.remove()
-                cbar3 = fig.colorbar(ax_plot_3, ax=axs['d'], extend='both')
-                cbar3.set_label('I', rotation=90)
+                _update_image(ax_plot_3, cbar3, Z_specI.T)
 
-            axs['d'].set_ylabel("yoko voltage (V)")
-            axs['d'].set_xlabel("Spec Frequency (GHz)")
+            axs['d'].set_ylabel("Spec Frequency (GHz)")
+            axs['d'].set_xlabel("yoko voltage (V)")
             axs['d'].set_title("Qubit Spec : I")
 
             ## Q
@@ -360,25 +374,19 @@ class SpecVsFlux(ExperimentClass):
 
             if i == 0:  #### if first sweep add a colorbar
                 ax_plot_4 = axs['e'].imshow(
-                    Z_specQ,
+                    Z_specQ.T,
                     aspect='auto',
-                    extent=[np.min(X_spec) - X_spec_step / 2, np.max(X_spec) + X_spec_step / 2, np.min(Y) - Y_step / 2,
-                            np.max(Y) + Y_step / 2],
+                    extent=spec_extent,
                     origin='lower',
                     interpolation='none',
                 )
                 cbar4 = fig.colorbar(ax_plot_4, ax=axs['e'], extend='both')
                 cbar4.set_label('Q', rotation=90)
             else:
-                ax_plot_4.set_data(Z_specQ)
-                ax_plot_4.set_clim(vmin=np.nanmin(Z_specQ))
-                ax_plot_4.set_clim(vmax=np.nanmax(Z_specQ))
-                cbar4.remove()
-                cbar4 = fig.colorbar(ax_plot_4, ax=axs['e'], extend='both')
-                cbar4.set_label('Q', rotation=90)
+                _update_image(ax_plot_4, cbar4, Z_specQ.T)
 
-            axs['e'].set_ylabel("yoko voltage (V)")
-            axs['e'].set_xlabel("Spec Frequency (GHz)")
+            axs['e'].set_ylabel("Spec Frequency (GHz)")
+            axs['e'].set_xlabel("yoko voltage (V)")
             axs['e'].set_title("Qubit Spec : Q")
             plt.tight_layout()
 

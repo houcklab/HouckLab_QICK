@@ -16,7 +16,7 @@ def hist_process(data=None, plot=True, ran=None, figNum = 1, title = '', alpha =
     xe, ye = np.median(ie), np.median(qe)
 
     if plot == True:
-        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(16, 8), num=figNum)
+        fig, axs = plt.subplots(nrows=1, ncols=3, figsize=(18, 8), num=figNum)
 
         # fig.tight_layout()
         fig.suptitle(title)

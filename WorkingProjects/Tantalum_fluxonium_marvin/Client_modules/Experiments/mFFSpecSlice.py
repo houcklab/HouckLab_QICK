@@ -127,10 +127,10 @@ class FFSpecSlice(NDAveragerProgram):
             ramp_length_cycles = self.us2cycles(self.cfg["ff_ramp_length"])
             qubit_length_cycles = self.us2cycles(self.qubit_pulse_length)
 
-            ff_ramp_down_cycles = max(pre_ff_delay_cycles + ramp_length_cycles ,
-                                      min(qubit_spec_delay_cycles + 2*qubit_length_cycles,
+            ff_ramp_down_cycles = max(pre_ff_delay_cycles + 2*ramp_length_cycles ,
+                                      min(qubit_spec_delay_cycles + qubit_length_cycles,
                                           pre_ff_delay_cycles + ff_length_cycles+ramp_length_cycles))
-            # The + 2 cycles are to ensure there is no overlap. Ideally it shouldn't be there but it is what it is.
+            print(f"Qubit Spec delay cycles: {qubit_spec_delay_cycles}, qubit pulse length cycles: {qubit_length_cycles}, pre-ff delay cycles: {pre_ff_delay_cycles}, ff ramp length cycles: {ramp_length_cycles}, ff length cycles: {ff_length_cycles}, ff ramp down start cycle: {ff_ramp_down_cycles}")
 
             self.pulse(ch=self.cfg["qubit_ch"], t=qubit_spec_delay_cycles)
 

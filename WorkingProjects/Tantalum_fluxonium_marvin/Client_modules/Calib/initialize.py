@@ -40,8 +40,8 @@ if is_yoko2:
     yoko2.SetMode('voltage')
 
 # TITLE: Connect to MLBF
-if is_mlbf_filter:
-    mlbf_filter = MLBFDriver("192.168.1.11")
+# if is_mlbf_filter:
+#     mlbf_filter = MLBFDriver("192.168.1.11")
 
 
 # TITLE : default configuration

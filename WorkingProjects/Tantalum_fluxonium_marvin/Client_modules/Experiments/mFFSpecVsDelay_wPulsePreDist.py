@@ -37,17 +37,22 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
                 fig_num += 1
 
         mosaic = [['amp', 'phase'],
-                  ['i', 'q']]
-        fig, axs = plt.subplot_mosaic(mosaic, figsize=(14, 10), num=fig_num)
+                  ['timing', 'timing'],
+                  ['resid', 'resid']]
+        fig, axs = plt.subplot_mosaic(mosaic, figsize=(14, 11), num=fig_num)
 
         # state
         artists, cbar_by_key = {}, {}
+        timing_artists = {}
 
         # Predeclare arrays (sets self.delays, self.spec_fpts, and preallocs)
         self.__predeclare_arrays(delay_arr=custom_delay_array)
 
-        # axis vectors in physical units
-        delays_ns = np.asarray(self.delays, dtype=float) * 1000.0  # x
+        # axis vectors for plotting
+        if custom_delay_array is not None:
+            delays_plot = np.asarray(self.delays, dtype=float) - float(self.delays[0]) + 1.0
+        else:
+            delays_plot = np.asarray(self.delays, dtype=float) * 1000.0
         freqs_mhz = np.asarray(self.spec_fpts, dtype=float)  # y
         print(self.delays)
         # helpers -----------------------------------------------------------
@@ -78,14 +83,28 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
         def _set_titles_and_labels():
             axs['amp'].set_title('Amplitude')
             axs['phase'].set_title('Phase (rad)')
-            axs['i'].set_title('I')
-            axs['q'].set_title('Q')
-            for ax in axs.values():
+            for key in ['amp', 'phase']:
+                ax = axs[key]
                 ax.set_ylabel('Spec freq (MHz)')
-                if self.cfg['spacing'] == 'log' and custom_delay_array is None:
+                if custom_delay_array is not None:
+                    ax.set_xlabel('relative post-FF delay (us)')
+                    ax.set_xscale('log')
+                elif self.cfg['spacing'] == 'log':
                     ax.set_xlabel('log10(post-FF delay (ns))')
                 else:
                     ax.set_xlabel('post-FF delay (ns)')
+            axs['timing'].set_title('Actual FF End to Qubit Start Delay')
+            axs['timing'].set_ylabel('actual delay (us)')
+            axs['timing'].set_xlabel('qubit_spec_delay (us)')
+            axs['timing'].grid(True, alpha=0.3)
+            axs['resid'].set_title('Linear Fit Residual')
+            axs['resid'].set_ylabel('residual (ns)')
+            axs['resid'].set_xlabel('qubit_spec_delay (us)')
+            axs['resid'].axhline(0, color='0.5', linewidth=0.8)
+            axs['resid'].grid(True, alpha=0.3)
+            if custom_delay_array is not None or self.cfg.get('spacing') == 'log':
+                axs['timing'].set_xscale('log')
+                axs['resid'].set_xscale('log')
 
         def _draw_panel(key, Z, x_centers, y_centers, prefer_uniform=True):
             """
@@ -130,6 +149,37 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
                 artists[key] = qm
                 _ensure_colorbar(key, ax, qm)
 
+        def _update_timing_panels():
+            x_all = np.asarray(self.delays, dtype=float)
+            y_all = np.asarray(self.actual_post_ff_delays_us, dtype=float)
+            finite = np.isfinite(x_all) & np.isfinite(y_all)
+
+            self.post_ff_delay_fit_us[:] = np.nan
+            self.post_ff_delay_residuals_us[:] = np.nan
+
+            if np.count_nonzero(finite) >= 2:
+                coeffs = np.polyfit(x_all[finite], y_all[finite], 1)
+                self.post_ff_delay_fit_us[finite] = np.polyval(coeffs, x_all[finite])
+                self.post_ff_delay_residuals_us[finite] = y_all[finite] - self.post_ff_delay_fit_us[finite]
+
+            if 'actual' not in timing_artists:
+                actual_line, = axs['timing'].plot(x_all, y_all, 'o', label='actual')
+                fit_line, = axs['timing'].plot(x_all, self.post_ff_delay_fit_us, '-', label='linear fit')
+                resid_line, = axs['resid'].plot(x_all, self.post_ff_delay_residuals_us * 1000, 'o-')
+                timing_artists['actual'] = actual_line
+                timing_artists['fit'] = fit_line
+                timing_artists['resid'] = resid_line
+                axs['timing'].legend()
+            else:
+                timing_artists['actual'].set_data(x_all, y_all)
+                timing_artists['fit'].set_data(x_all, self.post_ff_delay_fit_us)
+                timing_artists['resid'].set_data(x_all, self.post_ff_delay_residuals_us * 1000)
+
+            axs['timing'].relim()
+            axs['timing'].autoscale_view()
+            axs['resid'].relim()
+            axs['resid'].autoscale_view()
+
         # timing/info -------------------------------------------------------
         print()
         print('starting date time: ' + datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
@@ -140,7 +190,7 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
             # update config
             self.cfg["qubit_spec_delay"] = delay
             if self.cfg.get('dt_set_auto', False):
-                self.cfg['dt_pulseplay'] = max(0.1, delay/ 500)
+                self.cfg['dt_pulseplay'] = int(max(0.1, delay/ 2000)/self.cfg['dt_pulsedef'])*self.cfg['dt_pulsedef']
                 print("Auto-setting dt_pulseplay to %.3f us" % self.cfg['dt_pulseplay'])
 
             # acquire
@@ -155,12 +205,16 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
             self.Qs[i, :] = avgq[0][0]
             self.amps[i, :] = np.hypot(self.Is[i, :], self.Qs[i, :])
             self.phases[i, :] = np.angle(self.Is[i, :] + 1j * self.Qs[i, :])
+            timing_metadata = getattr(prog, "ff_qubit_timing", None)
+            if timing_metadata is None:
+                timing_metadata = prog.get_ff_qubit_timing_metadata()
+            self.actual_post_ff_delays_us[i] = timing_metadata["actual_post_ff_delay_us"]
+            self.ideal_post_ff_delays_us[i] = timing_metadata["ideal_post_ff_delay_us"]
 
             # draw/update
-            _draw_panel('amp', self.amps, delays_ns, freqs_mhz)
-            _draw_panel('phase', self.phases, delays_ns, freqs_mhz)
-            _draw_panel('i', self.Is, delays_ns, freqs_mhz)
-            _draw_panel('q', self.Qs, delays_ns, freqs_mhz)
+            _draw_panel('amp', self.amps, delays_plot, freqs_mhz)
+            _draw_panel('phase', self.phases, delays_plot, freqs_mhz)
+            _update_timing_panels()
 
             if i == 0:
                 _set_titles_and_labels()
@@ -295,10 +349,18 @@ class FFSpecVsDelay_wPPD_Experiment(ExperimentClass):
         self.Qs = np.zeros((self.delays.size, self.cfg["qubit_freq_expts"]))
         self.amps = np.full((self.delays.size, self.cfg["qubit_freq_expts"]), np.nan)
         self.phases = np.full((self.delays.size, self.cfg["qubit_freq_expts"]), np.nan)
+        self.actual_post_ff_delays_us = np.full(self.delays.size, np.nan)
+        self.ideal_post_ff_delays_us = np.full(self.delays.size, np.nan)
+        self.post_ff_delay_fit_us = np.full(self.delays.size, np.nan)
+        self.post_ff_delay_residuals_us = np.full(self.delays.size, np.nan)
         self.data = {
             'config': self.cfg,
             'data': {'spec_Imat': self.Is, 'spec_Qmat': self.Qs, 'spec_fpts': self.spec_fpts,
-                     'delays_vec': self.delays
+                     'delays_vec': self.delays,
+                     'actual_post_ff_delays_us': self.actual_post_ff_delays_us,
+                     'ideal_post_ff_delays_us': self.ideal_post_ff_delays_us,
+                     'post_ff_delay_fit_us': self.post_ff_delay_fit_us,
+                     'post_ff_delay_residuals_us': self.post_ff_delay_residuals_us,
                      }
         }
 

@@ -91,6 +91,13 @@ class LoopbackProgramSingleShot(RAveragerProgram):
                                      gain=cfg["read_pulse_gain"],
                                      length=self.us2cycles(self.cfg["read_length"], gen_ch=res_ch))
 
+        if self.cfg.get('apply_gf', False):
+            self.declare_gen(ch=cfg["qubit_gf_ch"], nqz=cfg["qubit_gf_nqz"])
+            self.qubit_gf_freq = self.freq2reg(cfg["qubit_gf_freq"], gen_ch=cfg['qubit_gf_ch'])
+            self.set_pulse_registers(ch=cfg["qubit_gf_ch"], style="const", freq=self.qubit_gf_freq, phase=0,
+                                     gain=cfg["qubit_gf_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_gf_length"], gen_ch=cfg["qubit_gf_ch"]))
+
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
                                               gen_ch=cfg["qubit_ch"]) + self.qubit_pulseLength  ####
@@ -105,10 +112,13 @@ class LoopbackProgramSingleShot(RAveragerProgram):
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
 
-
         self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05)) # wait 10ns after pulse ends
+        self.sync_all(self.us2cycles(0.05))  # wait 10ns after pulse ends
 
+        if self.cfg.get('apply_gf', False):
+            print("Applying gf pulse")
+            self.pulse(ch = self.cfg["qubit_gf_ch"])
+            self.sync_all(self.us2cycles(0.05))  # wait 10ns after pulse ends
 
         self.measure(pulse_ch=self.cfg["res_ch"],
              adcs=self.cfg["ro_chs"],
@@ -201,7 +211,7 @@ class SingleShotProgram(ExperimentClass):
 
 
         if save_fig:
-            plt.savefig(self.iname)
+            plt.savefig(self.iname, dpi = 150)
 
         if plotDisp:
             plt.show(block=False)

@@ -9,7 +9,7 @@ from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.Experiments.mSpecV
 from WorkingProjects.Tantalum_fluxonium_marvin.Client_modules.PythonDrivers.agilent33250a import Agilent33250A
 
 # define the saving path
-outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\"
+outerFolder = "Z:\\TantalumFluxonium\\Data\\2026_06_07_cooldown\\QCage_dev\\"
 
 # Only run this if no proxy already exists
 # soc, soccfg = makeProxy()
@@ -19,40 +19,44 @@ plt.ioff()
 # Defining changes to the config
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.01,
-    "yokoVoltageStop": 0.05,
-    "yokoVoltageNumPoints": 101,
+    "yokoVoltageStart": 0.05,
+    "yokoVoltageStop": 0.15,
+    "yokoVoltageNumPoints": 51,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
-    "trans_reps": 800,
+    "trans_reps": 300,
     "read_pulse_style": "const",
-    "read_length": 20,  # us
-    "read_pulse_gain": 5000,  # [DAC units]
-    "trans_freq_start" : 6669,
-    "trans_freq_stop": 6673,
-    "TransNumPoints": 101,
+    "read_length": 30,  # us
+    "read_pulse_gain": 500,  # [DAC units]
+    "trans_freq_start" : 7077.2,
+    "trans_freq_stop": 7077.85,
+    "TransNumPoints": 151,
+
+    # TITLE : CHECKING FOR SOMETHINGS
+    "qubit_ch": 1,  # --Fixed
+    # "qubit_nqz": 1,
 
     # qubit spec parameters
-    "spec_reps": 1000,
+    "spec_reps": 2000,
     "qubit_pulse_style": "const",
-    "qubit_gain": 6000,
-    "qubit_length": 5,
+    "qubit_gain": 20000,
+    "qubit_length": 15,
     "flat_top_length" : 10,
-    "qubit_freq_start": 100,
-    "qubit_freq_stop": 2500,
-    "SpecNumPoints": 301,
+    "qubit_freq_start": 2700,
+    "qubit_freq_stop": 3500,
+    "SpecNumPoints": 201,
     "sigma": 1,
-    "relax_delay": 20,
+    "relax_delay": 40,
     'use_switch': False,
     'initialize_pulse': False,
     'fridge_temp': 420,
-    "mode_periodic": False,
+    "mode_periodic":False,
     'ro_periodic': False,
     "measurement_style": "std", # std : standard, bkg : background subtracted, ps : post-selected
-    "magnet_relax": 1, # [s] wait time after each magnet change
+    "magnet_relax": 2, # [s] wait time after each magnet change
 
-    "trans_method": "std", # Seitch between using pphase
+    "trans_method": "phase", # Seitch between using pphase
     "meas_config": 'Hanger',
     "draw_read_freq": False,
 }
@@ -61,6 +65,9 @@ config = BaseConfig | UpdateConfig
 # Check if the start is less than stop
 if config["yokoVoltageStart"] > config['yokoVoltageStop']:
     print("The start is greater than the stop. ALERT !!!")
+else:
+    print("Setting yoko voltage to start value: ", config["yokoVoltageStart"], " V")
+    yoko1.SetVoltage(config["yokoVoltageStart"])
 #%%
 # Run the experiment
 soc.reset_gens()
@@ -74,6 +81,7 @@ Instance_SpecVsFlux = SpecVsFlux(path="dataTestSpecVsFlux", outerFolder=outerFol
 data_SpecVsFlux = SpecVsFlux.acquire(Instance_SpecVsFlux, individ_fit = False)
 SpecVsFlux.save_data(Instance_SpecVsFlux, data_SpecVsFlux)
 SpecVsFlux.save_config(Instance_SpecVsFlux)
+soc.reset_gens()
 plt.show()
 
 #%%
@@ -94,6 +102,7 @@ plt.title('Transmission Magnitude vs Voltage and Frequency')
 plt.tight_layout()
 plt.show()
 
+
 #%%
 # TITLE : For multiple scans
 
@@ -102,16 +111,16 @@ outerFolder = "Z:\\TantalumFluxonium\\Data\\2025_07_25_cooldown\\QCage_dev\\Tran
 
 UpdateConfig = {
     # define the yoko voltage
-    "yokoVoltageStart": -0.16,
-    "yokoVoltageStop": -0.11,
-    "yokoVoltageNumPoints": 501,
+    "yokoVoltageStart": 0.5,
+    "yokoVoltageStop": -0.5,
+    "yokoVoltageNumPoints": 101,
     # "yoko2": yoko2.GetVoltage(),
 
     # cavity and readout
     "trans_reps": 2000,
     "read_pulse_style": "const",
     "read_length": 20,  # us
-    "read_pulse_gain": 500,  # [DAC units]
+    "read_pulse_gain": 5000,  # [DAC units]
     "trans_freq_start": 6668,
     "trans_freq_stop": 6673.5,
     "TransNumPoints": 201,
