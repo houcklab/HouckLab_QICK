@@ -132,7 +132,7 @@ class SpecVsFlux(ExperimentClass):
 
             # Draw the chosen frequency point
             if self.cfg["draw_read_freq"]:
-                axs['b'].scatter(self.cfg["read_pulse_freq"]/1000, voltVec[i], 50, 'red', marker = '*')
+                axs['b'].scatter(self.cfg["read_pulse_freq"]/1000, voltVec[i], 10, 'red', marker = '*')
 
             axs['b'].set_ylabel("yoko voltage (V)")
             axs['b'].set_xlabel("Cavity Frequency (GHz)")
@@ -326,7 +326,7 @@ class SpecVsFlux(ExperimentClass):
         sig = data_I + 1j * data_Q
         avgamp0 = np.abs(sig)
         # peak_loc = np.argmin(avgamp0)
-        peak_loc = np.argmax(avgamp0)
+        peak_loc = np.argmin(avgamp0)
 
         #TODO we need a better way of finding the resonance frequency, e.g. circle fitting. Finding the max/min point results in noise
         self.cfg["read_pulse_freq"] = self.trans_fpts[peak_loc]

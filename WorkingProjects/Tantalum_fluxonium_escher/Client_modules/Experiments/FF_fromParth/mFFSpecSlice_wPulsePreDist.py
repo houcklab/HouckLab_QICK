@@ -621,7 +621,7 @@ class FFSpecSlice_Experiment_wPPD(ExperimentClass):
 
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
+        # print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 
     # Used in the GUI, returns estimated runtime in seconds

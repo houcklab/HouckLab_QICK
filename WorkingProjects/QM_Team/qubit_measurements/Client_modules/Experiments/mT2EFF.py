@@ -141,7 +141,7 @@ class T2EMUX(ExperimentClass):
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
                                          start_src="internal", progress=False)
-        #print(x_pts, )
+        print(x_pts, )
         data = {'config': self.cfg, 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq, 'qfreq': self.cfg["f_ge"]}}
         if 'rotation_angle' in self.cfg:
             if self.cfg['min_max'] != None:
@@ -198,7 +198,7 @@ class T2EMUX(ExperimentClass):
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig = plt.figure(figNum)
-        plt.plot(x_pts, avgi, 'o', label="i", color = 'orange')
+        plt.plot(x_pts, avgi, 'o-', label="i", color = 'orange')
         plt.ylabel("a.u.")
         plt.xlabel("Wait time (us)")
         plt.legend()
@@ -221,7 +221,7 @@ class T2EMUX(ExperimentClass):
         fig = plt.figure(figNum+1)
         # sig = avgi + 1j * avgq
         # avgamp0 = np.abs(sig)
-        plt.plot(x_pts, avgq, 'o', label="q")
+        plt.plot(x_pts, avgq, 'o-', label="q")
         plt.ylabel("a.u.")
         plt.xlabel("Wait time (us)")
         plt.legend()
@@ -239,10 +239,9 @@ class T2EMUX(ExperimentClass):
             plt.close(fig)
 
     def save_data(self, data=None):
-        new_name = self.fname[:-3] + '_n' + str(self.cfg["num_pi_pulses"]) + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
+        new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '_n' + str(self.cfg["num_pi_pulses"]) + '.h5'
         self.fname = new_name
         print(f'Saving {self.fname}')
-        print(' ')
         super().save_data(data=data['data'])
 
 def Amplitude_IQ(I, Q, phase_num_points = 200):

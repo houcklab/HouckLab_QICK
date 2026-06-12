@@ -9,17 +9,13 @@ import time
 
 
 class QubitSpecSliceFFProg(RAveragerProgram):
-
-    def __init__(self, soccfg, cfg):
-        super().__init__(soccfg, cfg)
-
     def initialize(self):
         cfg = self.cfg
 
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])  # Readout
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        for ch in self.cfg['ro_chs']:  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["length"], ro_ch = self.cfg["res_ch"]),
+        for ch in [0, 1]:  # configure the readout lengths and downconversion frequencies
+            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
                                  freq=cfg["pulse_freq"], gen_ch=cfg["res_ch"])
 
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
@@ -42,53 +38,26 @@ class QubitSpecSliceFFProg(RAveragerProgram):
                                      waveform="qubit")
             self.qubit_length_us = cfg["sigma"] * 4
         else:
-            if 'qb_periodic' in self.cfg.keys():
-                if self.cfg['qb_periodic']:
-                    print("Qubit tone is periodic")
-                    self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
-                                             length=self.us2cycles(cfg["qubit_length"]), mode='periodic')
-                    self.qubit_length_us = cfg["qubit_length"]
-                else:
-                    self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
-                                             gain=cfg["qubit_gain"],
-                                             length=self.us2cycles(cfg["qubit_length"]))
-                    self.qubit_length_us = cfg["qubit_length"]
-            else:
-                self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
-                                         gain=cfg["qubit_gain"],
-                                         length=self.us2cycles(cfg["qubit_length"]))
-                self.qubit_length_us = cfg["qubit_length"]
+            self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0, gain=cfg["qubit_gain"],
+                                     length=self.us2cycles(cfg["qubit_length"]))
+            self.qubit_length_us = cfg["qubit_length"]
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=cfg["res_phase"],
+                                 gain=cfg["pulse_gain"],
+                                 length=self.us2cycles(cfg["length"]))
 
-        if 'ro_periodic' in self.cfg.keys():
-            if self.cfg['ro_periodic']:
-                print("Readout periodic")
-                self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=0,
-                                         gain=cfg["pulse_gain"],
-                                         length=self.us2cycles(cfg["length"], gen_ch=cfg["res_ch"]) , mode='periodic')
-            else:
-                self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=cfg["res_phase"],
-                                         gain=cfg["pulse_gain"],
-                                         length=self.us2cycles(cfg["length"]))  # , mode='periodic')
-        else:
-            self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=cfg["res_phase"],
-                                     gain=cfg["pulse_gain"],
-                                     length=self.us2cycles(cfg["length"]))#, mode='periodic')
-        self.sync_all(self.us2cycles(1))
 
     def body(self):
-        self.sync_all(self.us2cycles(0.05))
-        # self.pulse(ch=self.cfg["res_ch"])
-        # self.sync_all(self.us2cycles(0.01))
-        self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
+        self.sync_all()
+        self.pulse(ch=self.cfg["qubit_ch"], t = self.us2cycles(1))  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
-        self.sync_all(self.us2cycles(0.05))
+        self.sync_all(self.us2cycles(0.5))
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=[0],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     adcs=[0, 1],
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
-                     syncdelay=self.us2cycles(self.cfg["relax_delay"]))
+                     syncdelay=self.us2cycles(10))
 
-
+        self.sync_all(self.us2cycles(self.cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)  # update frequency list index
@@ -107,7 +76,8 @@ class QubitSpecSliceFF(ExperimentClass):
         prog = QubitSpecSliceFFProg(self.soccfg, self.cfg)
         x_pts, avgi, avgq = prog.acquire(self.soc, threshold=None, angle=None, load_pulses=True,
                                          readouts_per_experiment=1, save_experiments=None,
-                                         start_src="internal", progress=False, debug=False)
+                                         start_src="internal", progress=False)
+        avgi, avgq = np.array(avgi), np.array(avgq)
         signal = (avgi + 1j * avgq) * np.exp(1j * (2 * np.pi * self.cfg['cavity_winding_freq'] *
                                                    self.cfg["pulse_freq"] + self.cfg['cavity_winding_offset']))
         avgi = signal.real
@@ -123,9 +93,8 @@ class QubitSpecSliceFF(ExperimentClass):
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmax(avgamp0)
-        self.qubitFreq = x_pts[peak_loc]
-
+        peak_loc = np.argmax(avgamp0, axis=2)
+        self.qubitFreq = np.mean(x_pts[peak_loc])
         return data
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
@@ -138,50 +107,17 @@ class QubitSpecSliceFF(ExperimentClass):
         #### find the frequency corresponding to the qubit dip
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
-        avgphase = np.unwrap(np.angle(sig))
 
-        # Create figure and set up subplots (2x2 grid)
-        plt.figure(figNum, figsize=(10, 8))
+        # plt.plot(x_pts, results[0][0][0],label="I value; ADC 0")
+        # plt.plot(x_pts, results[0][0][1],label="Q value; ADC 0")
 
-        # Plot I (Real part)
-        plt.subplot(2, 2, 1)  # 2x2 grid, 1st subplot
-        plt.plot(x_pts, avgi, '.-', color='Orange', label="I")
-        plt.xlabel("Qubit Frequency (GHz)")
+        plt.figure(figNum)
+        plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
+        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.ylabel("a.u.")
-        plt.title("I Component")
-        plt.legend()
-        plt.grid(True)
-
-        # Plot Q (Imaginary part)
-        plt.subplot(2, 2, 2)  # 2x2 grid, 2nd subplot
-        plt.plot(x_pts, avgq, '.-', color='Blue', label="Q")
         plt.xlabel("Qubit Frequency (GHz)")
-        plt.ylabel("a.u.")
-        plt.title("Q Component")
+        plt.title(self.titlename)
         plt.legend()
-        plt.grid(True)
-
-        # Plot Amplitude
-        plt.subplot(2, 2, 3)  # 2x2 grid, 3rd subplot
-        plt.plot(x_pts, avgamp0, '.-', color='Green', label="Amplitude")
-        plt.xlabel("Qubit Frequency (GHz)")
-        plt.ylabel("Amplitude (a.u.)")
-        plt.title("Amplitude")
-        plt.legend()
-        plt.grid(True)
-
-        # Plot Phase
-        plt.subplot(2, 2, 4)  # 2x2 grid, 4th subplot
-        plt.plot(x_pts, avgphase, '.-', color='Red', label="Phase")
-        plt.xlabel("Qubit Frequency (GHz)")
-        plt.ylabel("Phase (radians)")
-        plt.title("Phase")
-        plt.legend()
-        plt.grid(True)
-
-        # Adjust layout to prevent overlap
-        plt.tight_layout()
-
 
         plt.savefig(self.iname[:-4] + '_IQ.png')
         if plotDisp:

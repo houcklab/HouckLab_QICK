@@ -82,7 +82,7 @@ class LoopbackProgramAmplitudeRabi(RAveragerProgram):
         # If we're calibrating a pi/2 pulse:
         if self.cfg["two_pulses"]:
             self.pulse(ch=self.cfg["qubit_ch"])  # play probe pulse
-        self.sync_all(self.us2cycles(0.05))  # align channels and wait 50ns
+        self.sync_all(self.us2cycles(0.01))  # align channels and wait 50ns
 
         #trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],

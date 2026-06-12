@@ -15,19 +15,19 @@ import pyvisa as visa
 
 ###### define default configuration
 BaseConfig = {
-    "res_ch": 0,  # --Fixed
-    "qubit_ch": 1,  # --Fixed
+    "res_ch": 0, # --Fixed
+    "qubit_ch": 0,  # --Fixed
     "mixer_freq": 0.0,  # MHz
     "ro_chs": [0],  # --Fixed
     "reps": 1000,  # --Fixed
     "nqz": 2, #1,  #### refers to cavity
-    "qubit_nqz": 1,
-    "relax_delay": 3000 * 0 + 1000,  # --Fixed
+    "qubit_nqz": 2,
+    "relax_delay": 3000,  # --Fixed
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed
     "length": 30,  # [Clock ticks]
     "pulse_gain": 30000,  # [DAC units]
-    "adc_trig_offset": 1,  # [us]
+    "adc_trig_offset": 0.1,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks
     "cavity_LO": 0, #6.5e9
     # "cavity_winding_freq": 0.45917414, #1.0903695 * 0,
@@ -36,7 +36,8 @@ BaseConfig = {
     'cavity_winding_offset': 0,
     'trig_buffer_start': 0.02,
     "trig_buffer_end": 0.02,
-    'trig_delay': 0.082}
+    'trig_delay': 0.082
+    }
 
 FF_channel1 = 2
 FF_channel2 = 4

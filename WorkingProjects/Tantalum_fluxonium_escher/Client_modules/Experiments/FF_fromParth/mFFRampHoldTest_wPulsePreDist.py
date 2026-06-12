@@ -190,9 +190,9 @@ class FFRampHoldTest(NDAveragerProgram):
 
         # BUILDING THE PULSE
         if self.cfg.get("pulse_pre_dist", False):
-            print("!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
-            print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
-            print(f"A1 = {self.cfg.get('A1', -0.00499)}, tau1 = {self.cfg.get('tau1', 50.6)}, dt_pulsedef = {self.cfg.get('dt_pulsedef', 0.002)}")
+            # print("!!! WARNING: pulse pre-distortion is enabled. Make sure the pre-distortion parameters are set correctly. !!!")
+            # print("Using 1 tail distortion model with default parameters unless specified otherwise in the config.")
+            # print(f"A1 = {self.cfg.get('A1', -0.00499)}, tau1 = {self.cfg.get('tau1', 50.6)}, dt_pulsedef = {self.cfg.get('dt_pulsedef', 0.002)}")
             model = PulseFunctions.SimpleSingleTailDistortion(A=self.cfg.get("A1", -0.00499),
                                                               tau=self.cfg.get("tau1", 50.6),
                                                               x_val=self.cfg.get("dt_pulsedef", 0.002))
@@ -259,7 +259,7 @@ class FFRampHoldTest(NDAveragerProgram):
             T_opt, amps, edges = model.design_single_tail_zeroing(x_pulse, a_max=self.cfg.get("zeroing_a_max", 30000))
             self.t_opt = T_opt
             # print("Zeroing pulse parameters:")
-            print(f"Optimal zeroing time: {T_opt} us")
+            # print(f"Optimal zeroing time: {T_opt} us")
             # print(f"Edges: {edges}")
             # print(f"Amplitudes: {amps}")
             self.length = edges[-1] - edges[-2]
@@ -328,8 +328,8 @@ class FFRampHoldTest(NDAveragerProgram):
 
         if 'pre_meas_delay' not in self.cfg.keys():
             self.cfg['pre_meas_delay'] = 1
-        else:
-            print(f"Pre Meas Delay = {self.cfg['pre_meas_delay']}")
+        # else:
+            # print(f"Pre Meas Delay = {self.cfg['pre_meas_delay']}")
 
         # Building the pulses
         self.build_ff_pulse(dt_pulsedef=self.cfg.get('dt_pulsedef', 0.002), dt_pulseplay=self.cfg.get('dt_pulseplay', 5))
@@ -346,7 +346,7 @@ class FFRampHoldTest(NDAveragerProgram):
         # print(f"Read1 length (cycles): {read1_length_cycles}, Read2 length (cycles): {read2_length_cycles}")
         read2_length_cycles = self.us2cycles(self.seg1_play_length + self.seg2_play_length
                                              + 2*self.cfg["ff_ramp_length"] +  self.cfg['pre_meas_delay'])
-        print(f"Updated Read2 length (cycles): {read2_length_cycles}")
+        # print(f"Updated Read2 length (cycles): {read2_length_cycles}")
 
         self.pulse(ch = self.cfg["qubit_ch"], t = 0)
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,

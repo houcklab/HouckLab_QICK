@@ -649,6 +649,9 @@ class FFStarkShift_Experiment_wPPD(ExperimentClass):
                 fig.canvas.draw(); fig.canvas.flush_events()
                 time.sleep(0.02)
 
+        # Save the figure
+        fig.savefig(self.iname.replace(".png", "_2d.png"))
+
         # Build return object (and stash on self)
         data2d = {
             "config": dict(self.cfg),

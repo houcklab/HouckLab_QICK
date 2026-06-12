@@ -84,6 +84,135 @@ class FFPopulateProbe(ExperimentClass):
 
         return self.data
 
+    def process_v2(self, data=None, cen_num=None, centers=None, confidence=0.95, bin_size=101):
+        """
+        Post-selected version of process().
+
+        Uses the pre-measurement shots (i_0, q_0) to cluster the qubit state via
+        Gaussian fitting, then selects only the main-measurement shots (i_arr, q_arr)
+        whose pre-measurement reading falls above a probability confidence threshold
+        for each cluster. Populations are then estimated from those selected shots.
+
+        Adapted from SpecSlice_PS_sse.process_data() in mSpecSlice_PS_sse.py.
+
+        Parameters
+        ----------
+        data       : data dict (defaults to self.data)
+        cen_num    : number of clusters / qubit states
+        centers    : optional initial cluster centers
+        confidence : minimum PDF value used as a post-selection threshold (default 0.8)
+        bin_size   : number of histogram bins along each axis (default 101)
+
+        Returns
+        -------
+        self.data  : updated with 'pop', 'centers', and per-state population arrays
+        """
+        from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Helpers import SingleShot_ErrorCalc_2 as sse2
+
+        if data is None:
+            data = self.data
+
+        if cen_num is None:
+            cen_num = self.cfg.get("cen_num", 2)
+
+        i_0   = data['data']['i_0']    # pre-measurement shots, shape (n_shots,)
+        q_0   = data['data']['q_0']
+        i_arr = data['data']['i_arr']  # main measurement shots, shape (n_shots,)
+        q_arr = data['data']['q_arr']
+
+        # Stack into (2, n_shots) arrays expected by sse2 helpers
+        iq_data_0 = np.stack((i_0, q_0), axis=0)    # pre-measurement
+        iq_data_1 = np.stack((i_arr, q_arr), axis=0) # main measurement
+
+        # ----- Fit Gaussians to the pre-measurement distribution -----
+        if centers is None:
+            centers = sse2.getCenters(iq_data_0, cen_num)
+        print("Centers are ", centers)
+
+        hist2d = sse2.createHistogram(iq_data_0, bin_size)
+        no_of_params = 4
+        gaussians_0, popt, x_points_0, y_points_0 = sse2.findGaussians(hist2d, centers, cen_num)
+
+        # Build tight bounds around the fit so the second-pass fits stay anchored
+        bound = [popt - 1e-5, popt + 1e-5]
+        for idx_bound in range(cen_num):
+            bound[0][0 + int(idx_bound * no_of_params)] = 0
+            bound[1][0 + int(idx_bound * no_of_params)] = np.inf
+
+        pdf_0 = sse2.calcPDF(gaussians_0)
+
+        # ----- Calculate per-shot probability of belonging to each cluster -----
+        n_shots = iq_data_0.shape[1]
+        probability = np.zeros((cen_num, n_shots))
+        for i in range(cen_num):
+            for j in range(n_shots):
+                indx_i = np.argmin(np.abs(x_points_0 - iq_data_0[0, j]))
+                indx_q = np.argmin(np.abs(y_points_0 - iq_data_0[1, j]))
+                probability[i, j] = pdf_0[i][indx_i, indx_q]
+
+        # ----- Sort shots by descending probability for each cluster -----
+        sorted_prob   = np.zeros((cen_num, n_shots))
+        sorted_data_0 = np.zeros((cen_num,) + iq_data_0.shape)
+        sorted_data_1 = np.zeros((cen_num,) + iq_data_1.shape)
+
+        for i in range(cen_num):
+            sorted_indx = np.argsort(-probability[i, :])
+            sorted_prob[i, :]    = probability[i, sorted_indx]
+            sorted_data_0[i, :, :] = iq_data_0[:, sorted_indx]
+            sorted_data_1[i, :, :] = iq_data_1[:, sorted_indx]
+
+        # ----- Post-select and estimate populations for each starting state -----
+        # pop[i, j] = probability of ending in state j given pre-measurement said state i
+        pop = np.zeros((cen_num, cen_num))
+        std = np.zeros((cen_num, cen_num))
+
+        for i in range(cen_num):
+            indx_confidence = np.argmin(np.abs(sorted_prob[i, :] - confidence))
+            selected_data_1 = sorted_data_1[i, :, 0:indx_confidence + 1]
+
+            hist2d_1 = sse2.createHistogram(selected_data_1, bin_size)
+            gaussians_1, popt_1, x_points_1, y_points_1 = sse2.findGaussians(
+                hist2d_1, centers, cen_num, input_bounds=bound, p_guess=popt
+            )
+
+            pdf_1 = sse2.calcPDF(gaussians_1)
+            num_samples_1 = sse2.calcNumSamplesInGaussian(hist2d_1, pdf_1, cen_num)
+            prob_1, std_1 = sse2.calcProbability(num_samples_1, cen_num)
+            pop[i, :] = prob_1
+            std[i, :] = std_1
+
+        #Plot the data and save the figure
+        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
+        # Pre-measurement distribution
+        sse2.plotFitAndData(pdf_0, gaussians_0, x_points_0, y_points_0, centers, iq_data_0, fig, axs[0], cen_num = 2)
+        axs[0].set_title("Pre-measurement Distribution with Gaussian Fits")
+        # Post-measurement distribution (using shots above confidence threshold for first cluster as example)
+        sse2.plotFitAndData(pdf_1, gaussians_1, x_points_1, y_points_1, centers, selected_data_1, fig, axs[1], cen_num = 2)
+        axs[1].set_title(f"Post-measurement Distribution (Confidence = {confidence})")
+        plt.tight_layout()
+        import os
+        save_path = os.path.abspath(self.path_only + "\\data_dist.png")
+        if not save_path.startswith("\\\\?\\"):
+            save_path = "\\\\?\\" + save_path
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=200)
+        plt.close(fig)
+
+
+        # ----- Store results -----
+        update = {
+            "mean_pop":   pop,
+            "std_pop":    std,
+            "centers":   centers,
+            "pdf_0":     pdf_0,
+            "gaussians_0": gaussians_0,
+            "x_points_0":  x_points_0,
+            "y_points_0":  y_points_0,
+        }
+        self.data["data"] = self.data["data"] | update
+        return self.data
+
+
     def calculate_distinctness(self, read_param):
         for i in range(len(self.keys)):
             self.cfg[self.keys[i]] = read_param[i]*self.base_factor[self.keys[i]]

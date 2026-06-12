@@ -61,7 +61,6 @@ class ExperimentClass:
             @param **kwargs - by default kwargs are updated to class dict
             also loads InstrumentManager, LivePlotter, and other helpers
         """
-
         self.__dict__.update(kwargs)
         self.path = path
         self.outerFolder = outerFolder
@@ -91,6 +90,7 @@ class ExperimentClass:
 
         self.fname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.h5')
         self.iname = os.path.join(self.outerFolder + self.path, self.path + "_" + datestring, self.path + "_"+datetimestring + "_" + self.prefix + '.png')
+        #self.titlename = self.path + "_"+ str(self.cfg["Qubit_number"])+ "_" +datetimestring
         self.titlename = self.path + "_" +datetimestring
 
         ### define name for the config file

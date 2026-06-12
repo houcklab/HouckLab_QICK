@@ -17,3 +17,5 @@
 /WorkingProjects/QM_Team/resonator_measurements/dBm_lookup
 /Personal/
 /.vscode/
+.venv
+.claude/

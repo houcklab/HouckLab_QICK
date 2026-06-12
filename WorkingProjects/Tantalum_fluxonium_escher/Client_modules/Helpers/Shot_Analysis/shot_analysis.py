@@ -500,7 +500,7 @@ class SingleShotAnalysis:
         plt.close()
 
     # Calculate the populations
-    def calculate_populations(self, fit_results, max_iter = 1000, num_trials = 50000):
+    def calculate_populations(self, fit_results, max_iter = 200, num_trials = 10000):
         """
         Calculate the populations
         """
@@ -509,7 +509,7 @@ class SingleShotAnalysis:
             keys = ['g' + str(idx) + '_amplitude' for idx in range(self.cen_num)]
 
             # define and array of the percentages to calculate
-            percentages = np.linspace(0.01, 0.99, 101)
+            percentages = np.linspace(0.01, 0.99, 21)
 
             # Get the confidence intervals
             self.logger.info('Calculating confidence intervals for calculating populations')
