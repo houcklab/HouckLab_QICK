@@ -90,6 +90,14 @@ class ModifiedRamseyProgram(AveragerProgram):
         # condj jumps (skips the corrective pi) when the qubit is already in |g>.
         # If |g> sits below threshold in I, the "already ground" test is I < thresh.
         self.reset_skip_op = "<" if cfg.get("reset_ground_below_threshold", True) else ">"
+        # Sign-safe comparison offset. ActiveResetVerify data on TATQ01/BFE
+        # (2026-06-05/06) showed the corrective pi firing on every shot whose
+        # accumulated I is NEGATIVE (the deployed tProc compares as if
+        # unsigned, so negative two's-complement I reads as a huge positive).
+        # Adding the same large positive constant to BOTH operands keeps them
+        # strictly positive, so signed and unsigned comparison agree. 2^24 >>
+        # any |raw I| and offset+|raw| << 2^30 (immediate sign-bit limit).
+        self.cmp_offset = 1 << 24
 
         # Total parity-mapping evolution time. tau = 1/(2*df) for both schemes:
         # the |relative phase| accumulated between the two parity branches is pi.
@@ -184,7 +192,14 @@ class ModifiedRamseyProgram(AveragerProgram):
             # the threshold back up by the same window length here.
             ro_norm = self.us2cycles(cfg["readout_length"], ro_ch=0)
             raw_threshold = int(round(cfg["readout_threshold"] * ro_norm))
-            self.regwi(self.q_rp, self.r_thresh, raw_threshold)
+            if abs(raw_threshold) >= self.cmp_offset:
+                raise ValueError(
+                    f"raw_threshold {raw_threshold} exceeds the sign-safe "
+                    f"comparison offset {self.cmp_offset}; increase cmp_offset."
+                )
+            # r_thresh holds threshold + offset; r_read gets the same offset
+            # added (mathi) right after each read, before the condj.
+            self.regwi(self.q_rp, self.r_thresh, raw_threshold + self.cmp_offset)
 
         self.sync_all(self.us2cycles(0.2))
 
@@ -214,6 +229,11 @@ class ModifiedRamseyProgram(AveragerProgram):
 
             # 2) Read the accumulated in-phase value (lower = I) into r_read.
             self.read(ro_ch, self.q_rp, "lower", self.r_read)
+
+            # Offset I into strictly positive territory so the comparison is
+            # sign-safe (see cmp_offset in initialize()); r_thresh already
+            # carries the same offset.
+            self.mathi(self.q_rp, self.r_read, self.r_read, "+", self.cmp_offset)
 
             # 3) If already in |g>, skip the corrective pi. Otherwise flip e -> g.
             self.condj(self.q_rp, self.r_read, self.reset_skip_op,

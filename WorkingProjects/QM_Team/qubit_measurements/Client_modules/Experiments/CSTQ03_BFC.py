@@ -345,7 +345,12 @@ ModifiedRamsey_params = {
     "readout_threshold": None,    # required (normalized I units) if use_active_reset
     "reset_cycles": 1,
     "reset_ground_below_threshold": True,
-    "reset_readout_relax_delay": 1.0,
+    # Delay between the conditioning readout (tone end) and the corrective pi.
+    # Must be >= ~6/kappa of THIS readout resonator so the pi fires on a
+    # photon-free (un-Stark-shifted) qubit. 5 us = 6/kappa for the TATQ01/BFE
+    # Q2 resonator (kappa/2pi = 190 kHz measured 2026-06-06); verify kappa for
+    # the CSTQ03 readout and trim if it is wider.
+    "reset_readout_relax_delay": 5.0,
     "post_reset_wait": 0.0,
 }
 
