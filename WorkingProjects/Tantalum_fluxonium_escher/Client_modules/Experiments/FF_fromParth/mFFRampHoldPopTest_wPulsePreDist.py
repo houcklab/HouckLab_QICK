@@ -289,34 +289,34 @@ class FFRampHoldPopTest(NDAveragerProgram):
 
             y_full = model.simulate(x_full)
 
-        # Plotting the pulse with and without zeroing
-        fig, axs = plt.subplots(2, 1, figsize=(12, 12))
-        # Plot the full waveform and pre-distorted waveform if applicable
-        time_axis = pb.t
-        axs[0].plot(time_axis, pb.waveform(), label="Ideal Fast flux pulse")
-        if self.cfg.get("pulse_pre_dist", False):
-            axs[0].plot(time_axis, waveform, label="Pre-distorted Fast flux pulse")
-        axs[0].set_xlabel("Time (us)")
-        axs[0].set_ylabel("Amplitude (DAC units)")
-        axs[0].set_title("Fast flux pulse shape")
-        axs[0].legend()
-
-        # Plot y_full vs t_zeroing
-        if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
-            axs[1].plot(t_zeroing, y_full, label="Simulated Zeroing Pulse")
-            axs[1].set_xlabel("Time (us)")
-            axs[1].set_ylabel("Amplitude (DAC units)")
-            axs[1].set_title("Zeroing Pulse Simulation")
-            axs[1].legend()
-
-        plt.tight_layout()
-        if self.save_loc is not None:
-            plt.savefig(self.save_loc + "FF_pulse_shape.png")
-        if self.plot_debug:
-            plt.show(block=False)
-            plt.pause(1)
-        else:
-            plt.close(fig)
+        # # Plotting the pulse with and without zeroing
+        # fig, axs = plt.subplots(2, 1, figsize=(12, 12))
+        # # Plot the full waveform and pre-distorted waveform if applicable
+        # time_axis = pb.t
+        # axs[0].plot(time_axis, pb.waveform(), label="Ideal Fast flux pulse")
+        # if self.cfg.get("pulse_pre_dist", False):
+        #     axs[0].plot(time_axis, waveform, label="Pre-distorted Fast flux pulse")
+        # axs[0].set_xlabel("Time (us)")
+        # axs[0].set_ylabel("Amplitude (DAC units)")
+        # axs[0].set_title("Fast flux pulse shape")
+        # axs[0].legend()
+        #
+        # # Plot y_full vs t_zeroing
+        # if self.cfg.get('zeroing_pulse', False) and self.cfg.get("pulse_pre_dist", False):
+        #     axs[1].plot(t_zeroing, y_full, label="Simulated Zeroing Pulse")
+        #     axs[1].set_xlabel("Time (us)")
+        #     axs[1].set_ylabel("Amplitude (DAC units)")
+        #     axs[1].set_title("Zeroing Pulse Simulation")
+        #     axs[1].legend()
+        #
+        # plt.tight_layout()
+        # if self.save_loc is not None:
+        #     plt.savefig(self.save_loc + "FF_pulse_shape.png")
+        # if self.plot_debug:
+        #     plt.show(block=False)
+        #     plt.pause(1)
+        # else:
+        #     plt.close(fig)
 
     def initialize(self):
         # Declare channels

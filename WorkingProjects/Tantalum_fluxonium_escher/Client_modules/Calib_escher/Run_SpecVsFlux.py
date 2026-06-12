@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.Experiments.mSpecVsFlux import SpecVsFlux
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf_driver import *
 # define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\\HouckCage_dev\\" # end in '\\'
+outerFolder = r"Z:\\TantalumFluxonium\\Data\\2026_03_31_cooldown\\HouckCage_dev\\" # end in '\\'
 
 
 
@@ -26,46 +26,45 @@ BaseConfig = BaseConfig | SwitchConfig
 
 UpdateConfig = {
     # set yoko
-    "yokoVoltageStart": -1.45,  # 1.06, #-1,
-    "yokoVoltageStop": -1.25,  # 1,
-    "yokoVoltageNumPoints": 101,  # 5001,
+    "yokoVoltageStart": -10,  # 1.06, #-1,
+    "yokoVoltageStop": 10,  # 1,
+    "yokoVoltageNumPoints":101,  # 5001,
 
     # Readout parameters
-    "trans_reps": 2000,
+    "trans_reps": 300,
     "read_pulse_style": "const",
-    "read_length": 13,
-    "read_pulse_gain": 3000,
+    "read_length": 20,
+    "read_pulse_gain": 1000,
     # "read_pulse_freq": 6723.5,
-    "trans_freq_start": 7390.5,
-    "trans_freq_stop": 7393.5,
+    "trans_freq_start": 6826.3,
+    "trans_freq_stop": 6827.4,
     'TransNumPoints': 101,
 
     # qubit spec parameters
-    "spec_reps":2000,# 10000,  # 10000,#22000,
+    "spec_reps": 20,
     "qubit_pulse_style": "const",  # "flat_top", "const", "arb"
-    "qubit_gain": 16000,#25000,  # 3000,
-    "qubit_length": 3,
+    "qubit_gain": 2,
+    "qubit_length": 10,
     "flat_top_length": 1,
-    "qubit_freq_start": 100,
-    "qubit_freq_stop": 1000,
-    "SpecNumPoints": 301 ,#101,  # 101,#101
+    "qubit_freq_start":500,
+    "qubit_freq_stop": 2500,
+    "SpecNumPoints": 2,#901,#301 ,#101,  # 101,#101
     "sigma": 0.5,
-    "relax_delay": 5,  # 150,
+    "relax_delay": 20,  # 150,
     "use_switch": False,
 
     # Changing qubit channel ( not the standard way !!! )
-    "qubit_ch": 1,
+    "qubit_ch": 2,
     "qubit_nqz": 1,
 
     # Do we subtract the average of each voltage slice from the spectroscopy data?
     "subtract_avg": False,
-    "qubit_mode_periodic": False,  # Is the const qubit tone mode periodic or not
+    "qubit_mode_periodic": True,  # Is the const qubit tone mode periodic or not
     "ro_mode_periodic": False,
 
     # Do we draw the point picked out for spectroscopy?
     "draw_read_freq": False,
 }
-
 config = BaseConfig | UpdateConfig
 #
 #mlbf_filter = MLBFDriver("192.168.1.11")

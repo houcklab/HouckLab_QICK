@@ -65,7 +65,7 @@ import Pyro4.util
 import json
 from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.CoreLib.Experiment import MakeFile
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\HouckCage_dev\WTF\\" # end in \\
+outerFolder = r"Z:\\TantalumFluxonium\\Data\\2026_03_31_cooldown\\HouckCage_dev\\" # end in '\\'
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -82,9 +82,9 @@ SwitchConfig = {
 
 BaseConfig = BaseConfig | SwitchConfig
 
-#mlbf_filter = MLBFDriver("192.168.1.10")
+mlbf_filter = MLBFDriver("192.168.1.10")
 #mlbf_filter = MLBFDriver("192.168.1.11")
-print('Warning: NOT connecting to filter!', file = sys.stderr)
+#print('Warning: NOT connecting to filter!', file = sys.stderr)
 
 #yoko = yoko
 
@@ -95,10 +95,10 @@ UpdateConfig = {
     "read_pulse_style": "const",  # --Fixed
     "gain": 0,  # [DAC units]
 
-    "freq": 7391.9, #3713,  # [MHz]
+    "freq": 1000, #3713,  # [MHz]
 
-    "channel": 0, #0,  # TODO default value # 0 is resonator, 1 is qubit
-    "nqz": 2, #2,#1,  # TODO default value
+    "channel": 1, #0,  # TODO default value # 0 is resonator, 1 is qubit
+    "nqz": 1, #2,#1,  # TODO default value
 }
 
 config = BaseConfig | UpdateConfig
@@ -123,31 +123,32 @@ ConstantTone_Experiment.save_config(ConstantTone_Instance)
 #TITLE: Transmission + SpecSlice + AmplitudeRabi
 
 UpdateConfig_transmission = {
-    "reps": 1000,
+    "reps": 200,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
     "read_length": 30,
-    "read_pulse_gain": 3000,
-    "read_pulse_freq": 7392.03178807947,
+    "read_pulse_gain": 2500,
+    "read_pulse_freq":  6826.943,#523,#6827.0333,#6826.900,#6827.507,
 
     # Transmission Experiment
-    "TransSpan": 1.6,
-    "TransNumPoints": 151,
+    "TransSpan": 1.0,
+    "TransNumPoints": 101,
     "ro_mode_periodic": False,
 
+
     # define the yoko voltage
-    "yokoVoltage": -1.25,
+    "yokoVoltage": -0.622,
 
 }
 
 UpdateConfig_qubit = {
     "qubit_pulse_style": "const",
-    "qubit_freq": 950, #940.8,
-    "qubit_gain": 30000,
+    "qubit_freq": 2432.787, #940.8,
+    "qubit_gain": 25000,
 
     # Constant Pulse Tone
-    "qubit_length": 3,
+    "qubit_length": 5,
 
     # Flat top or gaussian pulse tone
     "sigma": 0.05,#0.3,
@@ -156,18 +157,19 @@ UpdateConfig_qubit = {
     # define spec slice experiment parameters
     "qubit_ch": 1,
     "qubit_nqz": 1,
-    "qubit_freq_start": 300, #2105,
-    "qubit_freq_stop": 900,#2120,
-    "SpecNumPoints": 201,
-    'spec_reps': 4000,#10000, #20000,
+    "qubit_freq_start": 2600, #2105,
+    "qubit_freq_stop": 2900,#2120,
+    "SpecNumPoints": 101,
+    'spec_reps':3000,#10000, #20000,
 
     # amplitude rabi parameters
     "qubit_gain_start": 0,
-    "qubit_gain_step": 10000,
-    "qubit_gain_expts": 5,
+    "qubit_gain_step": 20000,
+    "qubit_gain_expts": 6,
     "AmpRabi_reps": 1000,
     # Experiment parameters
-    "relax_delay": 75, #2000,
+    "relax_delay": 20, #2000,
+
     "fridge_temp": 10,
     "two_pulses": False, # Do e-f pulse
     "use_switch": False,
@@ -213,6 +215,7 @@ Instance_trans.save_config()
 # TITLE: Performing regular ole' `spec slice`
 
 soc.reset_gens()
+
 
 # Estimate Time
 time = config["spec_reps"]*config["SpecNumPoints"]*(config["relax_delay"] + config["qubit_length"] + config["read_length"])*1e-6
@@ -287,24 +290,20 @@ AmplitudeRabi.save_config(Instance_AmplitudeRabi)
 ##TITLE: Transmission vs Power
 ###region Trans vs Power Config
 UpdateConfig = {
-    "yokoVoltage": -1.25, #0.09473, #3.1
+    "yokoVoltage": -0.63,
     ##### change gain instead option
     "trans_gain_start": 100,
-    "trans_gain_stop": 20000,
-    "trans_gain_num": 101,
+    "trans_gain_stop": 8000,
+    "trans_gain_num": 31,
     ###### cavity
     "reps": 500,
-    "trans_reps": 500,  # this will be used for all experiments below unless otherwise changed in between trials
+    "trans_reps": 1000,  # this will be used for all experiments below unless otherwise changed in between trials
     "read_pulse_style": "const",  # --Fixed
-    #"readout_length": 35,  # [us] 1/7/2025 JL
-    "read_length": 30,  # [us] 1/7/2025 JL
-    # "read_pulse_gain": 10000,  # [DAC units]
-    # "trans_freq_start": 7229.8 - 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    # "trans_freq_stop": 7229.8 + 5.0,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_start": 7391,  # [MHz] actual frequency is this number + "cavity_LO"
-    "trans_freq_stop": 7394,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransNumPoints": 201,  ### number of points in the transmission frequecny
-    "relax_delay": 2, # us
+    "read_length": 30,  # [us]
+    "trans_freq_start": 6826.5,  # [MHz]
+    "trans_freq_stop": 6827.5,  # [MHz]
+    "TransNumPoints": 121,
+    "relax_delay": 10, # us
     "units": "DAC",         # in dB or DAC
     "ro_mode_periodic": False,
 }
@@ -325,44 +324,50 @@ TransVsGain.save_config(Instance_TransVsGain)
  #%%
 ## TITLE: Stark Shift (Sweep gain on the readout while doing spec)
 UpdateConfig = {
-    "yokoVoltage": -0.105,
+    "yokoVoltage": -1.3461,
 
     # Experiment Parameter
-    "trans_gain_start": 300,
-    "trans_gain_stop": 2300,
-    "trans_gain_num": 21,
-    "change_ro_gain": True, # If true even the gain of the readout pulse will change.
+    "trans_gain_start": 0,
+    "trans_gain_stop": 3000,
+    "trans_gain_num": 11,
+    "pop_pulse_length": 5, #us
+    "change_ro_gain": False, # If true even the gain of the readout pulse will change.
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 30,  # [us]
-    "read_pulse_freq":  7392, # [MHz]
-    "read_pulse_gain": 8000,
+    "read_length": 1,  # [us]
+    "read_pulse_freq":  6826.97, # [MHz]
+    "read_pulse_gain": 7500,
     "units": "DAC",         # in dB or DAC
 
     # qubit spec parameters
     "qubit_pulse_style": "const",
-    "qubit_gain": 30000,
-    "qubit_length": 30,
+    "qubit_gain": 2000,
+    "qubit_length": 0.5,
 
     # define spec slice experiment parameters
-    "qubit_freq_start": 1000,
-    "qubit_freq_stop": 2000,
-    "SpecNumPoints": 501,
-    'spec_reps': 1000,
+    "qubit_freq_start": 2428,
+    "qubit_freq_stop": 2434,
+    "SpecNumPoints": 51,
+    'spec_reps': 50000,
 
     # Experiment parameters
-    "relax_delay": 20,
+    "relax_delay": 5,
     "use_switch": False, # On the qubit drive
     "mode_periodic": False, # On the qubit drive
-    "ro_mode_periodic": True,
+    "ro_mode_periodic": False,
 }
 config = BaseConfig | UpdateConfig
 
 import matplotlib
 matplotlib.use('Qt5Agg')
+soc.reset_gens()
 Instance_StarkShift = StarkShift(path="dataTestStarkShift", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
-data_StarkShift = StarkShift.acquire(Instance_StarkShift)
+try:
+    data_StarkShift = StarkShift.acquire(Instance_StarkShift)
+except Exception:
+    print("Pyro traceback:")
+    print("".join(Pyro4.util.getPyroTraceback()))
 StarkShift.save_data(Instance_StarkShift, data_StarkShift)
 StarkShift.save_config(Instance_StarkShift)
 
@@ -407,26 +412,26 @@ TransVsRelaxDelay.save_config(Instance_TransVsRelaxDelay)
 
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -1.25,
+    "yokoVoltage": -0.624,
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 20,  # us
-    "read_pulse_gain": 4000,  # [DAC units]
-    "read_pulse_freq":  7392.031, #6664.53,  # MHz
+    "read_length": 40,  # us
+    "read_pulse_gain": 2500,  # [DAC units]
+    "read_pulse_freq":  6826.943,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 200, #2106.7,
-    "qubit_freq_stop": 1000, #2106.9,
-    "RabiNumPoints": 201,  ### number of points
+    "qubit_freq_start": 2760-50, #2106.7,
+    "qubit_freq_stop": 2760+50, #2106.9,
+    "RabiNumPoints": 25,  ### number of points
     "qubit_pulse_style": "const",
     "sigma": 0.15,  ### units us, define a 20ns sigm
-    "flat_top_length": 30.0, ### in us
-    "qubit_length": 10,
+    "flat_top_length": 10.0, ### in us
+    "qubit_length": 0.5,
     "relax_delay": 5,  ### turned into us inside the run function
     ##### amplitude rabi parameters
     "qubit_gain_start": 1000,
-    "qubit_gain_step": 3000,  ### stepping amount of the qubit gain
-    "qubit_gain_expts": 11,  ### number of steps
-    "AmpRabi_reps": 5000,  # number of averages for the experiment
+    "qubit_gain_step": 1000,  ### stepping amount of the qubit gain
+    "qubit_gain_expts": 25,  ### number of steps
+    "AmpRabi_reps": 1000,  # number of averages for the experiment
     "two_pulses": False, # Pulse twice for calibrating a pi/2 pulse
     'use_switch': False,
 }
@@ -775,28 +780,28 @@ AmplitudeRabi_PS.save_config(Instance_AmplitudeRabi_PS)
 # region Spec on repeat Config
 UpdateConfig = {
     ##### define attenuators
-    "yokoVoltage": -1.125,
+    "yokoVoltage": -0.253,
     ###### cavity
     "read_pulse_style": "const", # --Fixed
-    "read_length": 15, # us
-    "read_pulse_gain": 5000, # [DAC units]
-    "read_pulse_freq": 7391.9,
+    "read_length": 10, # us
+    "read_pulse_gain": 2500, # [DAC units]
+    "read_pulse_freq":  6826.85,
     ##### spec parameters for finding the qubit frequency
-    "qubit_freq_start": 900, #1167-10
-    "qubit_freq_stop": 1000,
-    "SpecNumPoints": 51,  ### number of points
-    "qubit_pulse_style": "flat_top",
-    "qubit_length": 1, # us, changes experiment time but is necessary for "const" style
+    "qubit_freq_start": 1250, #1167-10
+    "qubit_freq_stop": 1330,
+    "SpecNumPoints": 151,  ### number of points
+    "qubit_pulse_style": "const",
+    "qubit_length": 5, # us, changes experiment time but is necessary for "const" style
     "sigma": 0.05,  ### units us, define a 20ns sigma
     # "qubit_length": 1, ### units us, doesnt really get used though
     "flat_top_length": 0.5, ### in us
     "relax_delay": 10,  ### turned into us inside the run function
-    "qubit_gain": 32000, # Constant gain to use
+    "qubit_gain": 10000, # Constant gain to use
     # "qubit_gain_start": 18500, # shouldn't need this...
     "reps": 3000, # number of averages of every experiment
     ##### time parameters
     "delay":  10, # s
-    "repetitions": 30,  ### number of steps
+    "repetitions": 2000,  ### number of steps
 }
 config = BaseConfig | UpdateConfig
 

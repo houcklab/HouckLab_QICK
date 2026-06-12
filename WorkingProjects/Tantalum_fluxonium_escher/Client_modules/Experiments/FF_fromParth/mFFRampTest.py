@@ -433,7 +433,7 @@ class FFRampTest_Experiment(ExperimentClass):
         if not (prob_0.shape == prob_1.shape):
             raise ValueError('Shapes of prob_0 and prob_1 are not the same!')
         if confidence <= 0:
-            raise ValueError('Confidence should be at least 0%') # < 50% makes sense for > 2 clusters, maybe?
+            raise ValueError('Confidence should be at least 0%') # < 50% make_s sense for > 2 clusters, maybe?
         elif confidence > 1:
             raise ValueError('Confidence should be no more than 100%')
 

@@ -203,10 +203,10 @@ class mFFTransmission(NDAveragerProgram):
                                                               x_val=self.cfg.get("dt_pulsedef", 0.002))
 
 
-        total_time = ( self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] +  self.cfg['post_meas_delay'] + self.cfg["ff_ramp_length"] )  # in us
+        total_time = ( self.cfg["qubit_length"] + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] +  self.cfg['post_meas_delay'] + self.cfg["ff_ramp_length"] )  # in us
         pb = PulseFunctions.PulseBuilder(dt_pulsedef, total_time)
         pb.add_trapezoid(
-            start=0,
+            start=self.cfg["qubit_length"] ,
             rise=self.cfg["ff_ramp_length"],
             flat=self.cfg['pre_meas_delay'] + self.cfg["read_length"] +  self.cfg['post_meas_delay'],
             fall=self.cfg["ff_ramp_length"], amp=self.cfg["ff_gain"])
@@ -216,10 +216,10 @@ class mFFTransmission(NDAveragerProgram):
         if self.cfg.get("pulse_pre_dist", False):
             waveform = model.predistort(waveform)
 
-        seg1_end = 0
-        seg2_beg = int((self.cfg["ff_ramp_length"]) / dt_pulsedef) + 1
-        seg2_end = int((self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + self.cfg['post_meas_delay']) / dt_pulsedef) + 1
-        seg3_beg = int((self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + self.cfg["ff_ramp_length"] +  self.cfg['post_meas_delay']) / dt_pulsedef) + 1
+        seg1_end = int((self.cfg["qubit_length"] ) / dt_pulsedef) + 1
+        seg2_beg = int((self.cfg["qubit_length"] + self.cfg["ff_ramp_length"]) / dt_pulsedef) + 1
+        seg2_end = int((self.cfg["qubit_length"] + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + self.cfg['post_meas_delay']) / dt_pulsedef) + 1
+        seg3_beg = int((self.cfg["qubit_length"] + self.cfg["ff_ramp_length"] + self.cfg['pre_meas_delay'] + self.cfg["read_length"] + self.cfg["ff_ramp_length"] +  self.cfg['post_meas_delay']) / dt_pulsedef) + 1
         seg1 = waveform[0:seg1_end]
         seg2 = waveform[seg2_beg:seg2_end]
         seg3 = waveform[seg3_beg:]
@@ -326,11 +326,30 @@ class mFFTransmission(NDAveragerProgram):
         self.build_ff_pulse(dt_pulsedef=self.cfg.get('dt_pulsedef', 0.002),
                             dt_pulseplay=self.cfg.get('dt_pulseplay', 5))
 
+        # Qubit pulse
+        qubit_ch = self.cfg["qubit_ch"]  # Get the qubit channel
+        self.declare_gen(ch=qubit_ch, nqz=self.cfg["qubit_nqz"])  # Declare the qubit channel
+        qubit_freq = self.freq2reg(self.cfg["qubit_freq"],
+                                   gen_ch=self.cfg["qubit_ch"])  # Convert qubit length to clock ticks
+        self.qubit_freq = qubit_freq
+        # Define the qubit pulse
+        if self.cfg["qubit_pulse_style"] == 'const':
+            self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="const", freq=qubit_freq, phase=0,
+                                     gain=self.cfg["qubit_gain"],
+                                     length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"]),
+                                     mode="periodic")
+            self.qubit_pulseLength = self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["qubit_ch"])
+        else:
+            print("define const")
+
+
         self.sync_all(self.us2cycles(1))
 
     def body(self):
         adc_trig_offset_cycles = self.us2cycles(self.cfg["adc_trig_offset"])
-        read_length_cycles = self.us2cycles(self.cfg["ff_ramp_length"] + self.cfg["pre_meas_delay"])
+        read_length_cycles = self.us2cycles(self.cfg["qubit_length"] + self.cfg["ff_ramp_length"] + self.cfg["pre_meas_delay"])
+        if self.cfg.get("initialize_pulse", False):
+            self.pulse(ch=self.cfg["qubit_ch"], t = 0)
 
         self.measure(pulse_ch=self.cfg["res_ch"], adcs=self.cfg["ro_chs"], adc_trig_offset=adc_trig_offset_cycles,
                      t=read_length_cycles, wait=False, syncdelay=None)
@@ -392,7 +411,7 @@ class FFTransmission(ExperimentClass):
         avgq = np.array([elem[2] for elem in results])[:,0,0]
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
-        peak_loc = np.argmax(avgamp0)
+        peak_loc = np.argmin(avgamp0)
         self.peakFreq = fpts[peak_loc]
 
         self.cfg["read_pulse_freq"] = expt_cfg["center"] # reset to original value

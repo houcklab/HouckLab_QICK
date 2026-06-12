@@ -45,7 +45,7 @@ class FF_T1_wPulsePreDist(ExperimentClass):
         q_1_arr = np.full((self.cfg["wait_num"], int(self.cfg["reps"])), np.nan)
 
         ### loop over all wait times and collect raw data
-        for idx_wait in tqdm(range(self.cfg["wait_num"])):
+        for idx_wait in range(self.cfg["wait_num"]):
             self.cfg["ff_hold"] = wait_vec[idx_wait]
 
             if 'auto_dt_pulseplay' in self.cfg :
@@ -79,7 +79,7 @@ class FF_T1_wPulsePreDist(ExperimentClass):
         self.data = data
         return data
 
-    def process_data(self, data=None, **kwargs):
+    def process_data(self, data=None, centers = None, **kwargs):
         '''
         kwargs :
         1. cen_num : number of centers
@@ -96,7 +96,7 @@ class FF_T1_wPulsePreDist(ExperimentClass):
 
         data_to_process = [i_0, i_1, q_0, q_1, wait_vec]
 
-        gammafit = gf.GammaFit(data_to_process, freq_01=data['config']["qubit_ge_freq"] * 1e6, verbose=False)
+        gammafit = gf.GammaFit(data_to_process, freq_01=data['config']["qubit_ge_freq"] * 1e6, verbose=False, centers=centers)
         pop = gammafit.pops_vec
         pop_err = gammafit.pops_err_vec
         centers_list = gammafit.centers
@@ -208,6 +208,8 @@ class FF_T1_wPulsePreDist(ExperimentClass):
             subplot_right[idx_start].set_ylabel("Population in Blob")
             subplot_right[idx_start].set_title("Start Blob = " + str(idx_start) + "\n" + T1_str)
             subplot_right[idx_start].legend()
+            if self.cfg['wait_type'] == 'log':
+                subplot_right[idx_start].set_xscale('log')
 
         data_information = ("Fridge Temperature = " + str(self.cfg["fridge_temp"]) + "mK, Yoko_Volt = "
                             + str(self.cfg["yokoVoltage_freqPoint"]) + "V, relax_delay = " + str(
@@ -271,5 +273,5 @@ class FF_T1_wPulsePreDist(ExperimentClass):
             plt.close()
 
     def save_data(self, data=None):
-        print(f'Saving {self.fname}')
+        # print(f'Saving {self.fname}')
         super().save_data(data=data['data'])

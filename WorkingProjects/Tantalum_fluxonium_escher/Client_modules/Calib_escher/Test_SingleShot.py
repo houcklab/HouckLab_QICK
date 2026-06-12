@@ -29,7 +29,7 @@ from WorkingProjects.Tantalum_fluxonium_escher.Client_modules.PythonDrivers.mlbf
 import Pyro4.util
 
 # Define the saving path
-outerFolder = r"Z:\TantalumFluxonium\Data\2025_07_25_cooldown\HouckCage_dev\WTF\\"
+outerFolder = r"Z:\\TantalumFluxonium\\Data\\2026_03_31_cooldown\\HouckCage_dev\\" # end in '\\'
 
 # Only run this if no proxy already exists
 soc, soccfg = makeProxy()
@@ -47,27 +47,28 @@ BaseConfig = BaseConfig | SwitchConfig
 # TITLE: code for running basic single shot experiment
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.25, #1079, #0.093277, #816 , #0.09473, #25,
+    "yokoVoltage": -0.622, #1079, #0.093277, #816 , #0.09473, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 30,  # us
-    "read_pulse_gain": 8000, #1025,  # [DAC units]
-    "read_pulse_freq": 7392, #6723.55
+    "read_length": 35,  # us
+    "read_pulse_gain": 2500, #1025,  # [DAC units]
+    "read_pulse_freq": 6826.943, #6723.55
     # qubit spec parameters
     "qubit_pulse_style": "const",
 
-    "qubit_gain": 30000,
-    "qubit_length": 2,
+    "qubit_ch": 2,
+    "qubit_nqz": 1,
+    "qubit_gain": 32000,
+    "qubit_length": 10,
     "sigma": 1,
     "flat_top_length": 1,
-    "qubit_freq": 530, #1255,
-    "relax_delay": 20, #2500,
+    "qubit_freq": 1627,#1123, #1255,
+    "relax_delay": 500, #2500,
 
     # define shots
-    "shots": int(3e4),
+    "shots": int(1e4),
     "use_switch": False,
-    #"adc_trig_offset": 0, ################
 }
 config = BaseConfig | UpdateConfig
 
@@ -427,39 +428,39 @@ print('end of scan: ' + datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
 #%%
 # TITLE : Amplitude rabi Blob with post selection
 UpdateConfig = {
-    "yokoVoltage": -1.25,
+    "yokoVoltage": -0.624,
 
     # cavity
     "read_pulse_style": "const",
     "read_length": 30,
-    "read_pulse_gain": 8000,
-    "read_pulse_freq": 7392,
+    "read_pulse_gain": 2500,
+    "read_pulse_freq": 6826.943,
 
     # spec parameters for finding the qubit frequency
-    "qubit_freq_start": 350, # Is also the qubit frequency if Rabi Num Points is 1
-    "qubit_freq_stop": 650,
-    "RabiNumPoints": 61,
+    "qubit_freq_start": 2760-40, # Is also the qubit frequency if Rabi Num Points is 1
+    "qubit_freq_stop": 2760+40,
+    "RabiNumPoints": 21,
     "qubit_pulse_style": "const",
     "sigma": 0.1,
     "flat_top_length": 2.0,
-    "qubit_length": 3,
+    "qubit_length": 2,
     "relax_delay": 50,
 
     # amplitude rabi parameters
-    "qubit_gain_start": 100, # Is also the qubit gain if the qubit gain expts is 1
-    "qubit_gain_step": 3000,
+    "qubit_gain_start": 1000, # Is also the qubit gain if the qubit gain expts is 1
+    "qubit_gain_step": 2500,
     "qubit_gain_expts": 11,
     "AmpRabi_reps": 1000,
 
     # Experiment parameters
     "cen_num": 2,
-    "shots": 10000,
+    "shots": 5000,
     "use_switch": True,
     "initialize_pulse": True,
     "initialize_qubit_gain": 30000,
-    "qubit_freq_base": 550,
+    "qubit_freq_base": 2760,
     "fridge_temp": 10,
-    "yokoVoltage_freqPoint": -1.128,
+    "yokoVoltage_freqPoint": -0.624,
 }
 config = BaseConfig | UpdateConfig
 
@@ -575,29 +576,29 @@ inst_t2r_ps.save_config()
 # Parth-approved
 UpdateConfig = {
     # define yoko
-    "yokoVoltage": -1.128, #25,
+    "yokoVoltage": -1.349, #25,
 
     # cavity
     "read_pulse_style": "const",  # --Fixed
-    "read_length": 13,  # us
-    "read_pulse_gain": 4000,  # [DAC units]
-    "read_pulse_freq": 7392, #6422.81,#7, #6422.757, #6423.025,
+    "read_length": 30,  # us
+    "read_pulse_gain": 1800,  # [DAC units]
+    "read_pulse_freq": 6826.91, #6422.81,#7, #6422.757, #6423.025,
 
     # qubit spec
-    "qubit_pulse_style": "flat_top",
-    "flat_top_length": 5,
-    "qubit_ge_gain": 0,
+    "qubit_pulse_style": "const",
+    "flat_top_length": 10,
+    "qubit_ge_gain": 2000,
     "qubit_ef_gain": 0,
-    "qubit_ge_freq": 950.0,
+    "qubit_ge_freq": 1123,
     "qubit_ef_freq": 2110,
-    "apply_ge": False,
+    "apply_ge": True,
     "apply_ef": False,
-    "qubit_length": 2,
+    "qubit_length": 10,
     "sigma": 0.5,
     "relax_delay": 10,
 
     # Experiment
-    "cen_num": 2,
+    "cen_num": 3,
     "keys": ['kl'],           # Possible keys ["mahalanobis", "bhattacharyya", "kl", "hellinger"]
     "shots": 20000,
     "use_switch": False,
@@ -623,8 +624,8 @@ step_size = {
 
 keys = ["read_pulse_freq"]
 
-config["shots"] = 5000
-inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_6p75", outerFolder=outerFolder, cfg=config,
+config["shots"] = 12000
+inst_singleshotopt = SingleShotMeasure(path="SingleShotOpt_vary_WTF", outerFolder=outerFolder, cfg=config,
                                        soc=soc, soccfg=soccfg, fast_analysis=True, max_iter = 1000, num_trials = 1000, pop_perc = 11)
 opt_param = inst_singleshotopt.brute_search( keys, param_bounds, step_size, )
 inst_singleshotopt.display_opt(plotDisp=True)
@@ -651,22 +652,22 @@ inst_singleshotopt.save_config()
 # TITLE :QNDness measurement
 UpdateConfig = {
     # yoko
-    "yokoVoltage": -1.127,
-    "yokoVoltage_freqPoint": -1.127,
+    "yokoVoltage": -0.624,
+    "yokoVoltage_freqPoint": -0.624,
 
     # cavity
     "read_pulse_style": "const",
-    "read_length": 8,
-    "read_pulse_gain": 5000,
-    "read_pulse_freq": 7391.96,
+    "read_length": 30,
+    "read_pulse_gain": 2500,
+    "read_pulse_freq": 6826.943,
 
     # qubit tone
     "qubit_pulse_style": "flat_top",
-    "qubit_gain": 32000,
-    "qubit_length": 10,
+    "qubit_gain": 30000,
+    "qubit_length": 1,
     "sigma": 0.5,
-    "flat_top_length": 3,
-    "qubit_freq": 972,
+    "flat_top_length": 20,
+    "qubit_freq": 2765,
 
     # Experiment
     "shots": 300000,  #1000000
@@ -675,7 +676,7 @@ UpdateConfig = {
     "fridge_temp": 10,
     'use_switch': False,
 
-    'confidence': 0.999,
+    'confidence': 0.99,
 }
 config = BaseConfig | UpdateConfig
 
@@ -689,7 +690,7 @@ inst_qnd = QNDmeas(path="QND_Meas_temp_" + str(config["fridge_temp"]), outerFold
 
 try:
     data_QNDmeas = inst_qnd.acquire()
-    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=0.99)
+    data_QNDmeas = inst_qnd.process_data(data_QNDmeas, toPrint=True, confidence_selection=config['confidence'])
     inst_qnd.save_data(data_QNDmeas)
     inst_qnd.save_config()
     inst_qnd.display(data_QNDmeas, plotDisp=True)
@@ -699,16 +700,16 @@ except Exception:
 #%%
 # TITLE : Brute Search best parameters
 param_bounds ={
-    "read_pulse_freq" : (config["read_pulse_freq"] - 0.2, config["read_pulse_freq"] + 0.2),
-    'read_length': (5,15),
-    'read_pulse_gain': (4000, 9000)
+    "read_pulse_freq" : (config["read_pulse_freq"] - 0.02, config["read_pulse_freq"] + 0.1 ),
+    'read_length': (20,80),
+    'read_pulse_gain': (1000, 2000)
 }
 step_size = {
-    "read_pulse_freq" : 0.04,
-    'read_length': 2,
-    'read_pulse_gain': 1000,
+    "read_pulse_freq" : 0.02,
+    'read_length': 10,
+    'read_pulse_gain': 250,
 }
-keys = ["read_pulse_freq", "read_pulse_gain"]
+keys = [ "read_pulse_gain", "read_length"]
 config["shots"] = 50000
 inst_qndopt = QNDmeas(path="QND_Optimization", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
 opt_results = inst_qndopt.brute_search(keys, param_bounds, step_size, store = True)

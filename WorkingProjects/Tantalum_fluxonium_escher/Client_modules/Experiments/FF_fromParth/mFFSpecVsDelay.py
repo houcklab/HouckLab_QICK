@@ -279,6 +279,7 @@ class FFSpecVsDelay_Experiment(ExperimentClass):
         elif self.cfg.get("spacing", "linear") == "linear":
             self.delays = np.linspace(self.cfg["qubit_spec_delay_start"], self.cfg["qubit_spec_delay_stop"], self.cfg["qubit_spec_delay_steps"])
         elif self.cfg.get("spacing", "linear") == "log":
+            print("Log spacing")
             self.delays = np.logspace(np.log10(self.cfg["qubit_spec_delay_start"] + 1e-12), np.log10(self.cfg["qubit_spec_delay_stop"] + 1e-12), self.cfg["qubit_spec_delay_steps"]) - 1e-12
         else:
             raise ValueError(f"Unknown spacing {self.cfg['spacing']}")

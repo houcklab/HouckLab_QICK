@@ -23,7 +23,7 @@ kb = sp.constants.k
 ##### define a class for fitting and storing the gamma matrix
 
 class GammaFit:
-    def __init__(self, data, freq_01 = 0.815e9, verbose = False):
+    def __init__(self, data, freq_01 = 0.815e9, verbose = False, centers = None, confidence = 0.95):
         #### extract out the data
         self.i_0_arr = np.array(data[0])
         self.i_1_arr = np.array(data[1])
@@ -32,6 +32,8 @@ class GammaFit:
         self.wait_arr = np.array(data[4])
         self.freq_01 = freq_01
         self.verbose = verbose
+        self.centers_passed = centers
+        self.confidence = confidence
         #### write local arrays
         i_0_arr  = self.i_0_arr 
         i_1_arr  = self.i_1_arr 
@@ -62,7 +64,7 @@ class GammaFit:
             # Get centers of the data
             cen_num = 2
             if idx_t == 0:
-                self.centers.append(sse2.getCenters(iq_data, cen_num))
+                self.centers.append(sse2.getCenters(iq_data, cen_num, init_guess=self.centers_passed))
             else:
                 self.centers.append(sse2.getCenters(iq_data, cen_num, init_guess=self.centers[0]))
 
@@ -130,7 +132,7 @@ class GammaFit:
             i1_shots = []
             q1_shots = []
 
-            confidence = 0.95
+            confidence = self.confidence
 
             for idx in range(len(sorted_shots_0)):
                 if sorted_shots_0[idx] > confidence:

@@ -74,7 +74,7 @@ class FFRampTest(NDAveragerProgram):
 
         # Check that the flux ramps finish after the first readout. Otherwise, the sync_all will insert extra delay.
         # This can be fixed by using the t argument everywhere in the body, but I think it's not a good idea
-        print(f"FF ramp length is {self.cfg['ff_ramp_length']} us")
+        # print(f"FF ramp length is {self.cfg['ff_ramp_length']} us")
         if self.cfg["relax_delay_1"] + self.cfg['cycle_number'] * (self.cfg['ff_ramp_length'] * 2 + self.cfg['ff_delay'] +
                                                                   self.cfg['cycle_delay']) < self.cfg['adc_trig_offset']:
            print('Warning: readout will not complete before flux ramps. Expect a delay before 2nd readout', file = sys.stderr)

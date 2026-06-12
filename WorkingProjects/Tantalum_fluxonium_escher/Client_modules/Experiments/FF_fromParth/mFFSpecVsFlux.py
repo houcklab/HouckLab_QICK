@@ -109,7 +109,7 @@ class FFSpecVsFlux_Experiment(ExperimentClass):
 
             if plot_disp:
                 plt.show(block=False)
-                plt.pause(0.2)
+                plt.pause(1)
 
             # # Create new plot the first time, change data in the future; matplotlib is too slow.
             # if i == 0:

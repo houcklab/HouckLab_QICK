@@ -38,7 +38,7 @@ class attenuator:
         setatten(attenu = attenuation, serial = self.serialNum, printv = printOut)
 
 # ##### define the attenuators
-cavityAtten = attenuator(27784)
+# cavityAtten = attenuator(27784)
 
 # qubitAtten = attenuator(27797)
 

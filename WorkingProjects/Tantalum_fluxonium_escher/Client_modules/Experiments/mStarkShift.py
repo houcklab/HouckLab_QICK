@@ -76,7 +76,7 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         elif not self.cfg['ro_mode_periodic']:
             self.set_pulse_registers(ch=cfg["res_ch"], style=cfg["read_pulse_style"], freq=f_res, phase=0,
                                      gain=cfg["cavity_pulse_gain"],
-                                     length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["res_ch"]))
+                                     length=self.us2cycles(cfg["pop_pulse_length"], gen_ch=cfg["res_ch"]))
 
         # Calculate length of trigger pulse
         self.cfg["trig_len"] = self.us2cycles(self.cfg["trig_buffer_start"] + self.cfg["trig_buffer_end"],
@@ -91,16 +91,24 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         # Configure the cavity pulse for populating the cavity
         self.set_pulse_registers(ch=self.cfg["res_ch"], style=self.cfg["read_pulse_style"], freq=self.f_res, phase=0,
                                  gain=self.cfg["cavity_pulse_gain"],
-                                 length=self.us2cycles(self.cfg["qubit_length"], gen_ch=self.cfg["res_ch"]))
+                                 length=self.us2cycles(self.cfg["pop_pulse_length"], gen_ch=self.cfg["res_ch"]))
 
+        delay_qubit_tone = self.us2cycles(self.cfg['pop_pulse_length'] - self.cfg["qubit_length"])
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         if self.cfg["qubit_gain"] != 0 and self.cfg["use_switch"]:
             self.trigger(pins=[0], t=self.us2cycles(self.cfg["trig_delay"]),
                          width=self.cfg["trig_len"])  # trigger for switch
-
+        print(self.get_timestamp(gen_ch=self.cfg['res_ch']))
+        print(self.get_timestamp(gen_ch=self.cfg['qubit_ch']))
         self.pulse(ch=self.cfg["res_ch"])   # Play a cavity populating tone
-        self.pulse(ch=self.cfg["qubit_ch"])  # Play a qubit tone simultaneously
+        print(self.get_timestamp(gen_ch=self.cfg['res_ch']))
+        print(self.get_timestamp(gen_ch=self.cfg['qubit_ch']))
+        # self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
+        self.pulse(ch=self.cfg["qubit_ch"], t = delay_qubit_tone)  # Play a qubit tone simultaneously
+        print(delay_qubit_tone)
+        print(self.get_timestamp(gen_ch=self.cfg['res_ch']))
+        print(self.get_timestamp(gen_ch=self.cfg['qubit_ch']))
         self.sync_all(self.us2cycles(0.01))  # align channels and wait 10ns
 
         # Configure the cavity pulse for readout
@@ -113,7 +121,7 @@ class LoopbackProgramStarkSlice(RAveragerProgram):
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"], ro_ch=self.cfg["ro_chs"][0]),
+                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
