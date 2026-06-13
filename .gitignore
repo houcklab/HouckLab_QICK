@@ -19,3 +19,6 @@
 /.vscode/
 .venv
 .claude/
+/__init__.py
+/requirements.txt
+/setup.py
