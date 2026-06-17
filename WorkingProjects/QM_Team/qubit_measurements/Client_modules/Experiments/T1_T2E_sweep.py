@@ -40,42 +40,48 @@ soc, soccfg = makeProxy()
 # }
 
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6824.28, 'Gain': 7000},
-          'Qubit': {'Frequency': 3377.3487, 'Gain': 3550, "sigma": 0.15, "flattop_length": None},  # pi: 1900, pi/2: 950,
-          'outerfoldername': "Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8/T1_T2E/",
-          'outerfoldernameT2': "Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8/T1_T2E/"},  # readout_time:
+    "1": {"Readout": {"Frequency": 6649.4, "Gain": 6000},
+          "Qubit": {"Frequency": 1724.135, "Gain": 10000, "sigma": 2.2, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q1/",
+          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q1/"},
 
-    '2': {'Readout': {'Frequency': 6984.54, 'Gain': 3500},
-          'Qubit': {'Frequency': 2616.7, 'Gain': 2450, "sigma": 0.05, "flattop_length": None}, # pi: 6000, pi/2: ,
-          'outerfoldername': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T1/",
-          'outerfoldernameT2': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T2/"},  # readout_time:
+    "2": {"Readout": {"Frequency": 6767, "Gain": 10000},
+          "Qubit": {"Frequency": 1862.65, "Gain": 18000, "sigma": 2.2, "flattop_length": None},  # 0.03 sigma
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q2/",
+          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q2/"},
 
-    '4': {'Readout': {'Frequency': 7372.65, 'Gain': 5500},
-          'Qubit': {'Frequency': 2376.82, 'Gain': 2850, "sigma": 0.1, "flattop_length": None},  # pi: 2850, pi/2: 1425,
-          'outerfoldername': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T1_T2E/",
-          'outerfoldernameT2': "Z:/t1Team/Data/2026-04-01_BFF_cooldown/TAT3DP01-01/RFSOC/T1_T2E/"}  # readout_time:
+    "3": {"Readout": {"Frequency": 6853.4, "Gain": 9000},
+          "Qubit": {"Frequency": 2106.9739, "Gain": 4200, "sigma": 1.5, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q3/",
+          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q3/"},
+
+    "4": {"Readout": {"Frequency": 6946.126, "Gain": 6000},
+          "Qubit": {"Frequency": 2248.97, "Gain": 1218, "sigma": 1, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q4/",
+          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q4/"},
 }
 
 T1_qubitsweep = False
 T1_T2E_sweep = True
 
-T1T2_params = {"qubit_swept": [1],
-               "T1_step_list": [5],
-               "T1_expts_list": [100],
-               "T1_reps_list": [15],
-               "T1_rounds_list": [15],
-               "T2E_max_list": [100],
-               "T2E_expts_list": [100],
-               "T2E_reps_list": [20],
-               "T2E_rounds_list": [20],
-               "pi2_gain_list": [1775],
-               "relax_delay": 1000}
+T1T2_params = {"qubit_swept": [1,2,3,4],
+               "T1_step_list": [110, 10, 10, 70],
+               "T1_expts_list": [100,100,100,100],
+               "T1_reps_list": [15,15,15,15],
+               "T1_rounds_list": [15,15,15,15],
+               "T2E_max_list": [1550,1550,1550,1550],
+               "T2E_expts_list": [100,100,100,100],
+               "T2E_reps_list": [20,20,20,20],
+               "T2E_rounds_list": [20,20,20,20],
+               "pi2_gain_list": [5000,9000,2100,609],
+               "T1_relax_delay": [11000,1000,1000,7000],
+               "T2E_relax_delay": [11000,1000,1000,7000]}
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"reps": 200,
                          'rounds': 5,
                          'relax_delay': 5000,}
-repetition_number = 1000
+repetition_number = 100000
 
 
 if T1_qubitsweep:
@@ -230,6 +236,7 @@ if T1_T2E_sweep:
             T1expts = T1T2_params["T1_expts_list"][idx]
             T1reps = T1T2_params["T1_reps_list"][idx]
             T1rounds = T1T2_params["T1_rounds_list"][idx]
+            T1relax = T1T2_params["T1_relax_delay"][idx]
 
             expt_cfg = {
                 "start": 0,
@@ -238,7 +245,7 @@ if T1_T2E_sweep:
                 "reps": T1reps,
                 "rounds": T1rounds,
                 "pi_gain": qubit_gain,
-                "relax_delay": T1T2_params["relax_delay"],
+                "relax_delay": T1relax,
                 "f_ge": qubit_frequency_center,
                 "Qubit_number": Qubit_Readout,
                 "sigma": qubit_sigma,
@@ -260,6 +267,7 @@ if T1_T2E_sweep:
             T2Ereps = T1T2_params["T2E_reps_list"][idx]
             T2Erounds = T1T2_params["T2E_rounds_list"][idx]
             qubit_gain_pi2 = T1T2_params["pi2_gain_list"][idx]
+            T2Erelax = T1T2_params["T2E_relax_delay"][idx]
 
             num_pulses = 1
             int_steps = T2Emax // (0.00232515 * (num_pulses + 1) * T2Eexpts)
@@ -272,7 +280,7 @@ if T1_T2E_sweep:
                 "rounds": T2Erounds,
                 "pi_gain": qubit_gain,
                 "pi2_gain": qubit_gain_pi2,
-                "relax_delay": T1T2_params["relax_delay"],
+                "relax_delay": T2Erelax,
                 "f_ge": qubit_frequency_center,
                 "num_pi_pulses": num_pulses,
                 "sigma": qubit_sigma,

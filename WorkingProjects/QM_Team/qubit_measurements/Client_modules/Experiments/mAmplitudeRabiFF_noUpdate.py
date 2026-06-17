@@ -110,11 +110,18 @@ class AmplitudeRabiFF_N(ExperimentClass):
         avgi = rotated_IQ.real
         avgq = rotated_IQ.imag
 
+        amp_max = x_pts[np.argmax(avgi)]
+        amp_min = x_pts[np.argmin(avgi)]
+        print(f"Amplitude at maximum avgi: {amp_max}")
+        print(f"Amplitude at minimum avgi: {amp_min}")
+
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
         fig = plt.figure(figNum)
         plt.plot(x_pts, avgi, 'o-', label="i", color = 'orange')
         plt.plot(x_pts, avgq, label="q", color = 'blue')
+        plt.axvline(x=amp_max, color='r', linestyle='--')
+        plt.axvline(x=amp_min, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()
@@ -134,8 +141,8 @@ class AmplitudeRabiFF_N(ExperimentClass):
 
     def save_data(self, data=None):
         #print(f'Saving {self.fname}')
-        new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
-        self.fname = new_name
+        # new_name = self.fname[:-3] + '_Q' + str(self.cfg["Qubit_number"]) + '.h5'
+        # self.fname = new_name
         print(f'Saving {self.fname}')
         super().save_data(data=data['data'])
 

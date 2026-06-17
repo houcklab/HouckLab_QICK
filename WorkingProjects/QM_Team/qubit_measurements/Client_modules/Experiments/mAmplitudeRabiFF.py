@@ -126,7 +126,9 @@ class AmplitudeRabiFF(ExperimentClass):
         avgq = rotated_IQ.imag
 
         amp_max = x_pts[np.argmax(avgi)]
-        print(f"Amplitude with maximum avgi: {amp_max} MHz")
+        amp_min = x_pts[np.argmin(avgi)]
+        print(f"Amplitude at maximum avgi: {amp_max}")
+        print(f"Amplitude at minimum avgi: {amp_min}")
 
         while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
             figNum += 1
@@ -134,6 +136,7 @@ class AmplitudeRabiFF(ExperimentClass):
         plt.plot(x_pts, avgi, 'o-', label="i", color = 'orange')
         plt.plot(x_pts, avgq, label="q", color = 'blue')
         plt.axvline(x=amp_max, linestyle='--', color='r')
+        plt.axvline(x=amp_min, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("qubit gain")
         plt.legend()

@@ -1,6 +1,12 @@
-# import os
-# # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
+import os
+# os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
+
+import sys, os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../../.."))
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -36,118 +42,43 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1AC
 
 soc, soccfg = makeProxy()
 
-#### define the saving path
-
-#Readout Qubit Params
-# ############### Start Can A ############################
+# # Device 2
 # Qubit_Parameters = {
-#     '1': {'Readout': {'Frequency': 6675.5, 'Gain': int(4000)},
-#           'Qubit': {'Frequency': 3010.3, 'Gain': int(9000), "sigma": 0.1, "flattop_length": 1.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q1_6p67//"},
-#     '2': {'Readout': {'Frequency': 6818.2, 'Gain': 2900},
-#           'Qubit': {'Frequency': 3315.9, 'Gain': 6200, "sigma": 0.01, "flattop_length": 0.07}, #0.03 sigma
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q2_6p82//"},
-#     '3': {'Readout': {'Frequency': 6898.6, 'Gain': 3500 },
-#           'Qubit': {'Frequency': 3390.8, 'Gain': 7400, "sigma": 0.1, "flattop_length": 0.7},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q3_6p899//"},
-#     '4': {'Readout': {'Frequency': 6966.7, 'Gain': 3000},
-#           'Qubit': {'Frequency': 3701, 'Gain': 3100, "sigma": 0.1, "flattop_length": 1.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q4_6p967//"},
-#     '5': {'Readout': {'Frequency': 7101.65, 'Gain': 2500},
-#           'Qubit': {'Frequency': 3708.98, 'Gain': 6000, "sigma": 0.1, "flattop_length": 20.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q5_7p107//"},
-#     '6': {'Readout': {'Frequency': 7142.58, 'Gain': 3800},
-#           'Qubit': {'Frequency': 4020, 'Gain': 7300, "sigma": 0.03, "flattop_length": 0.3},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATP01-Si_01/Q6_7p143//"},
-#     }
-# ############### End Can A ############################
+#     "1": {"Readout": {"Frequency": 6628.785, "Gain": 3500},
+#           "Qubit": {"Frequency": 1340.82376, "Gain": 9000, "sigma": 2.2, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1_6p63//"},
+#
+#     "2": {"Readout": {"Frequency": 6720, "Gain": 3000},
+#           "Qubit": {"Frequency": 1434.62189, "Gain": 6020, "sigma": 2.2, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q2_6p72//"},
+#
+#     "3": {"Readout": {"Frequency": 6818.7, "Gain": 2500},
+#           "Qubit": {"Frequency": 1663, "Gain": 15000, "sigma": 2.2, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3_6p82//"},
+#
+#     "4": {"Readout": {"Frequency": 6913.22, "Gain": 4400},
+#           "Qubit": {"Frequency":  2047.375, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4_6p91//"},
+# }
 
-
-############## Start Can B ############################
-# Qubit_Parameters = {
-#     '1': {'Readout': {'Frequency': 6513.8, 'Gain': int(1000)},
-#           'Qubit': {'Frequency': 2979.5, 'Gain': int(9000), "sigma": 0.3, "flattop_length": 2.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q1_6p5//"},
-#     '2': {'Readout': {'Frequency': 6631.049, 'Gain': 3200},
-#           'Qubit': {'Frequency': 3197.64, 'Gain': 6020, "sigma": 0.3, "flattop_length": 2.0}, #0.03 sigma
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q2_6p6//"},
-#     '3': {'Readout': {'Frequency': 6766.6666, 'Gain': 2000},
-#           'Qubit': {'Frequency': 3523.887, 'Gain': 5690, "sigma": 0.3, "flattop_length": 2.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q3_6p7//"},
-#     '4': {'Readout': {'Frequency': 6839.835, 'Gain': 1000},
-#           'Qubit': {'Frequency': 3577.69, 'Gain': 888, "sigma": 0.3, "flattop_length": 0.6},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q4_6p8//"},
-#     '5': {'Readout': {'Frequency': 7019.173, 'Gain': 1000},
-#           'Qubit': {'Frequency': 3893.55, 'Gain': 1021, "sigma": 0.3, "flattop_length": 0.6},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q5_7p0//"},
-#     '6': {'Readout': {'Frequency': 7077.93, 'Gain': 2000},
-#           'Qubit': {'Frequency': 4025.668, 'Gain': 7300, "sigma": 0.3, "flattop_length": 2},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ02-Si_01/Q6_7p1//"},
-#     }
-############# End Can B ############################
-
-############## Start Can C ############################
+# Device 4 KOH Stats
 Qubit_Parameters = {
-    '1': {'Readout': {'Frequency': 6824.28, 'Gain': int(7000)}, # resonator frequency 6824.28,gain = 7000
-          'Qubit': {'Frequency': 3377.3487, 'Gain': int(3550), "sigma": 0.15, "flattop_length": None},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername':"Z:/t1Team/Data/2026-05-22_BFF_cooldown/TAT3D02-ADT/Q1_6p8//"},
-    '3': {'Readout': {'Frequency': 6922.7, 'Gain': 4000},
-          'Qubit': {'Frequency': 4255.497, 'Gain': 8000, "sigma": 0.2, "flattop_length": 7}, #0.03 sigma
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATAl01-Si_01/Q3_6p9//"},
-    '5': {'Readout': {'Frequency': 7131.8, 'Gain': 4000},
-          'Qubit': {'Frequency': 4558.925, 'Gain': 14000, "sigma": 0.2, "flattop_length": 140},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATAl01-Si_01/Q5_7p1//"},
-    '6': {'Readout': {'Frequency': 7203.9, 'Gain': 3000},
-          'Qubit': {'Frequency': 4964.64, 'Gain': 9500, "sigma": 0.3, "flattop_length": 7},
-          'Pulse_FF': [0, 0, 0, 0],
-          'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATAl01-Si_01/Q6_7p2//"},
-    }
-############## End Can C ############################
+    "1": {"Readout": {"Frequency": 6649.4, "Gain": 7500},
+          "Qubit": {"Frequency": 1723.4209400990, "Gain": 15000, "sigma": 2.2, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q1/"},
 
-# ############## Start Can D ############################
-# Qubit_Parameters = {
-#     '1': {'Readout': {'Frequency': 6709.94, 'Gain': int(3000)},
-#           'Qubit': {'Frequency': 3438.74, 'Gain': int(9000), "sigma": 0.3, "flattop_length": 1.0},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q1_6p71//"},
-#     '2': {'Readout': {'Frequency': 6818.78, 'Gain': 2300},
-#           'Qubit': {'Frequency': 3702, 'Gain': 9000, "sigma": 0.3, "flattop_length": 2.5}, #0.03 sigma
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername':"Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q2_6p82//"},
-#     '3': {'Readout': {'Frequency': 6920.4, 'Gain': 3500 },
-#           'Qubit': {'Frequency': 3775, 'Gain': 7400, "sigma": 0.1, "flattop_length": 0.7},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q3_6p92//"},
-#     '4': {'Readout': {'Frequency': 7000.8, 'Gain': 1000},
-#           'Qubit': {'Frequency': 3949, 'Gain': 6400, "sigma": 0.01, "flattop_length": 0.04},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q4_7p00//"},
-#     '5': {'Readout': {'Frequency': 7123.3, 'Gain': 1600},
-#           'Qubit': {'Frequency': 4060, 'Gain': 7850, "sigma": 0.03, "flattop_length": 0.3},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q5_7p12//"},
-#     '6': {'Readout': {'Frequency': 7206.58, 'Gain': 3000},
-#           'Qubit': {'Frequency': 4415, 'Gain': 7300, "sigma": 0.03, "flattop_length": 1.3},
-#           'Pulse_FF': [0, 0, 0, 0],
-#           'outerfoldername': "Z:/t1Team/Data/2024-09-11_cooldown/TATQ01-Si_03/Q6_7p21//"},
-#     }
-# ############### End Can D ############################
+    "2": {"Readout": {"Frequency": 6767, "Gain": 10000},
+          "Qubit": {"Frequency": 1862.65, "Gain": 18000, "sigma": 2.2, "flattop_length": None},  # 0.03 sigma
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q2/"},
 
+    "3": {"Readout": {"Frequency": 6853.4, "Gain": 9000},
+          "Qubit": {"Frequency": 2106.9739, "Gain": 4200, "sigma": 1.5, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q3/"},
+
+    "4": {"Readout": {"Frequency": 6946.126, "Gain": 6000},
+          "Qubit": {"Frequency": 2248.97, "Gain": 1218, "sigma": 1, "flattop_length": None},
+          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q4/"},
+}
 
 # Readout
 Qubit_Readout = 1
@@ -155,14 +86,16 @@ Qubit_Pulse = 1
 outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
 
 ConstantTone = False  # determine cavity frequency
-ConstantTone_qubit = False # For testing the qubit amplification & filtering
+ConstantTone_qubit = False  # For testing the qubit amplification & filtering
 
-RunTransmissionSweep = False  # determine cavity frequency
+RunTransmissionSweep = False   # determine cavity frequency
 Run2ToneSpec = False
-Spec_relevant_params = {"qubit_gain": 300, "SpecSpan": 1, "SpecNumPoints": 101,
-                        "reps": 10, 'rounds': 20,
-                        'Gauss': False, "sigma": 1, "gain": 10000} # False -- no pulse #If you don't see RabiAmp but with Gauss True see the qubit, the next thing to check is gain, you might not have the right pi pulse
-
+Spec_relevant_params = {"qubit_gain": 5000, "SpecSpan": 10, "SpecNumPoints": 101,
+                        "reps": 10, 'rounds': 10,
+                        'Gauss': False, "sigma": 1.2, "gain": 5000}  # False -- no pulse #If you don't see RabiAmp but with Gauss True see the qubit, the next thing to check is gain, you might not have the right pi pulse
+                        # The last 3 params are for the qubit tone. Default readout length is 30 us.
+                        # Gauss: True => 4 sigma Gaussian pulse with "sigma" and "gain" from Spec_relevant_params
+                        # Gauss: False => Constant tone with default pulse length = 100 us and "qubit_gain" from Spec_relevant_params
 RunChiShift = False
 ChiShift_params = {"reps": 1000,
                     'rounds': 1,# this will used for all experiements below unless otherwise changed in between trials
@@ -173,23 +106,21 @@ ChiShift_params = {"reps": 1000,
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"qubit_freq": Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency'],
-                         "min_gain":0, "max_gain": 8000, 'number_of_steps': 51,
-                         "reps": 10, 'rounds': 10,
-                         'relax_delay': 1000,}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
+                         "min_gain": 0, "max_gain": 30000, 'number_of_steps': 201,
+                         "reps": 15, 'rounds': 15,
+                         'relax_delay': 11000}  #Always change the max gain if you don't see it, also compare what you get with Transmission data
 
 RunT1 = False
 RunT2 = False
-T1T2_params = {"T1_step": 5, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
-               "T2_step": 0.25, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.1,
-               "relax_delay": 1000,
+T1T2_params = {"T1_step": 110, "T1_expts": 100, "T1_reps": 10, "T1_rounds": 10,
+               "T2_step": 5, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.02,
+               "relax_delay": 11000,
                'repetitions': 1}
-# T1T2_params = {"T1_step": 50, "T1_expts": 30, "T1_reps": 10, "T1_rounds": 10,
-#                "T2_step": 1.7, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.25,
-#                "relax_delay": 2000}
+
 RunT2E = False
-T2E_params = {"T2_max_us": 100, "T2_expts": 100, "T2_reps": 10, "T2_rounds": 10, "freq_shift": 0.08,
-               "relax_delay": 500, 'num_pi_pulses': 1, #need odd number of pulses
-               "pi2_gain": 3550 // 2,
+T2E_params = {"T2_max_us": 200, "T2_expts": 100, "T2_reps": 20, "T2_rounds": 20, "freq_shift": 0.01,
+               "relax_delay": 3000, 'num_pi_pulses': 1, #need odd number of pulses
+               "pi2_gain": 5000,
               "rotation_angle": None,
               "min_max": None
               # "rotation_angle": 0.31478884,
@@ -242,12 +173,9 @@ T1ACStark_params = {"T1_start": 50, "T1_step": 1, "T1_expts": 1, "T1_reps": 25, 
                   'reps_per_SS_cal': 3,
                   }
 
-
-
-
-SingleShot = True
-SS_params = {"Shots": 2000, "Readout_Time": 8, "ADC_Offset": 0.5, "Qubit_Pulse": [Qubit_Pulse],
-             'number_of_pulses': 1, 'relax_delay': 1000}
+SingleShot = False
+SS_params = {"Shots": 500, "Readout_Time": 25, "ADC_Offset": 0.5, "Qubit_Pulse": [Qubit_Pulse],
+             'number_of_pulses': 1, 'relax_delay': 11000}
 
 RunT1SS = False
 T1SS_params = {"T1_step": 75, "T1_expts": 40,
@@ -258,13 +186,12 @@ T1SS_params = {"T1_step": 75, "T1_expts": 40,
                'repetitions': 120}
 
 SingleShot_ReadoutOptimize = False
-SS_R_params = {"gain_start": 6500, "gain_stop": 7500, "gain_pts": 5, "span": 4, "trans_pts": 7}
+SS_R_params = {"gain_start": 5000, "gain_stop": 9000, "gain_pts": 7, "span": 0.2, "trans_pts": 5}
 
-SingleShot_QubitOptimize = False
+SingleShot_QubitOptimize = True
 #gain_span is now in percent
-SS_Q_params = {"q_gain_span": 0.1, "q_gain_pts": 11, "q_freq_span": 0.4, "q_freq_pts": 11,
-               'number_of_pulses': 7} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
-
+SS_Q_params = {"q_gain_span": 1.4, "q_gain_pts": 28, "q_freq_span": 0.1, "q_freq_pts": 5,
+               'number_of_pulses': 1} # for optimizing pi/2 pulse, set the gain to the half of its value and optimize for n=2
 
 cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
 resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Frequency']
@@ -278,11 +205,11 @@ qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 trans_config = {
     "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
     "pulse_style": "const",  # --Fixed
-    "readout_length": 8,  # [us]
+    "readout_length": 15,  # [us]
     "pulse_gain": cavity_gain,  # [DAC units]
     "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
-    "TransSpan": 3,  ### MHz, span will be center+/- this parameter
-    "TransNumPoints": 61,  ### number of points in the transmission frequecny
+    "TransSpan": 0.5,  ### MHz, span will be center+/- this parameter
+    "TransNumPoints": 101,  ### number of points in the transmission frequecny
     "cav_relax_delay": 30
 }
 qubit_config = {
@@ -320,7 +247,7 @@ config["cavity_min"] = cavity_min  # look for dip, not peak
 # perform the cavity transmission experiment
 if RunTransmissionSweep:
     config["reps"] = 20  # fast axis number of points
-    config["rounds"] = 50  # slow axis number of points
+    config["rounds"] = 20  # slow axis number of points
     Instance_trans = CavitySpecFF(path="TransmissionFF", cfg=config, soc=soc, soccfg=soccfg,
                                   outerFolder=outerFolder)
     data_trans = CavitySpecFF.acquire(Instance_trans)
@@ -748,6 +675,7 @@ if RunT1ACStark_withSS:
 
 if SingleShot:
     config['number_of_pulses'] = SS_params['number_of_pulses']
+    # print(config)
     Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=config,soc=soc,soccfg=soccfg)
     data_SingleShotProgram = SingleShotProgramFFMUX.acquire(Instance_SingleShotProgram)
     # print(data_SingleShotProgram)

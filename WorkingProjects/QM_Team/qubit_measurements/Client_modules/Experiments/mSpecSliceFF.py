@@ -108,12 +108,16 @@ class QubitSpecSliceFF(ExperimentClass):
         sig = avgi + 1j * avgq
         avgamp0 = np.abs(sig)
 
+        amp_max = x_pts[np.argmax(avgamp0)]
+        print(f"Amplitude at maximum avgamp0: {amp_max} MHz")
         # plt.plot(x_pts, results[0][0][0],label="I value; ADC 0")
         # plt.plot(x_pts, results[0][0][1],label="Q value; ADC 0")
 
         plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+        plt.plot(x_pts, avgamp0, color='Magenta', label="Amp")
+        plt.axvline(x=amp_max, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("Qubit Frequency (GHz)")
         plt.title(self.titlename)

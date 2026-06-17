@@ -78,10 +78,14 @@ class CavitySpecFF(ExperimentClass):
         avgq = signal.imag
         avgamp0 = np.abs(signal)
 
+        amp_min = x_pts[np.argmin(avgamp0)]
+        print(f"Amplitude at minimum avgamp0: {amp_min*1e3} MHz")
+
         plt.figure(figNum)
         plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
         plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
         plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+        plt.axvline(x=amp_min, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
         plt.title(self.iname)
