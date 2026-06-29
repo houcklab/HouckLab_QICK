@@ -1,58 +1,53 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
+import numpy as np
+import matplotlib.pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Qubit_Parameters_Helpers import QubitConfig
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
+from WorkingProjects.triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
-from qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.MUXInitialize import outerFolder
+from WorkingProjects.triangle_lattice_quench.build_config import build_config
+from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 
+soc, soccfg = makeProxy()
 
 f = False
 t = True
 
-readouts_list = [BS1234_Readout,
-                 BS1245_Readout,
-                 BS1267_Readout,
-                 BS2345_Readout,
-                 BS2356_Readout,
-                 BS2378_Readout,
-                 BS3467_Readout,
-                 BS4578_Readout,
-                 BSTEST_Readout]
+# readouts_list = [quench_readout_params]
 
-names = ["Readout_1234_FF", #0
-         "Readout_1245_FF", #1
-         "Readout_1267_FF", #2
-         "Readout_2345_FF", #3
-         "Readout_2356_FF", #4
-         "Readout_2378_FF", #5
-         "Readout_3467_FF", #6
-         "Readout_4578_FF", #7
-         "Readout_TEST_FF", #8
-]
+names = ["Readout_FF"]
 
-for i in [8]:
+for Readout_Point in [None]:
     Qubit_configs = []
 
-    Qubit_Parameters |= readouts_list[i]
-    varname_FF = names[i]
-    # varname_FF = None
-    for Q in [3,4,5,6,7,8]:
+    # varname_FF = names[i]
+    varname_FF = None
+    for Q in [4,8,5]:
         # Qubit_Readout = [1,2,3,4,5,6,7,8]
-        Qubit_Readout = [Q]
+        Qubit_Readout = [3,4,5,6,7,8]
         Qubit_Pulse = [Q]
         # Qubit_Pulse = [f'{Q}R']
         # Qubit_Pulse = ['1_4Q_readout', '4_4Q_readout', '8_4Q_readout', '5_4Q_readout']
 
-        # Qubit_Pulse = [f'{Q}_4Q_readout']
+        Qubit_Pulse = [f'{Q}_4Q_readout']
+
+        config = build_config(
+            Qubit_Readout=Qubit_Readout,  # required: list of readout-entry labels
+            Readout_Point=Readout_Point,
+            Qubit_Pulse=Qubit_Pulse,  # optional: list of drive-entry labels
+            Ramp_State=None,  # optional: key in ramp_groups
+            Dynamics_Point=None,  # optional: key in dynamics_groups
+        )
 
         pulse_numbers = [int(label[0]) if isinstance(label, str) else label for label in Qubit_Readout]
         OptReadout_index = pulse_numbers.index(Q) # Which readout index OptReadout should sweep
@@ -61,20 +56,20 @@ for i in [8]:
 
         print(f'OptQubit_index = {OptQubit_index}')
 
-        RunTransmissionSweep =       t
+        RunTransmissionSweep =       f
         RunFirst2ToneSpec =          t
         RunSecond2ToneSpec =         t
         RunAmplitudeRabi =           t
-        SingleShot_ReadoutOptimize = t
-        SingleShot_QubitOptimize =   f
+        SingleShot_ReadoutOptimize = f
+        SingleShot_QubitOptimize =   t
         SingleShot =                 f
 
 
         Trans_relevant_params = {"reps": 200, "TransSpan": 1.5, "TransNumPoints": 61,
                                 "readout_length": 2.5, 'cav_relax_delay': 10}
 
-        First_Spec_params = {   "qubit_gain": 350, "SpecSpan": 1.5*2*100, "SpecNumPoints": 101,
-                                'Gauss': False, "sigma": 0.007, "Gauss_gain": 3350,
+        First_Spec_params = {   "qubit_gain": 400, "SpecSpan": 100, "SpecNumPoints": 101,
+                                'Gauss': False, "sigma": 0.05, "Gauss_gain": 3350,
                                 'reps': 2*144}
 
 
@@ -110,17 +105,6 @@ for i in [8]:
                      'number_of_pulses': 1, 'relax_delay': 200}
 
 
-        # This ends the working section of the file.
-        #----------------------------------------
-        FF_gain1_BS = -5000
-        FF_gain2_BS = -15000
-        FF_gain3_BS = 0
-        FF_gain4_BS = 0
-        FF_gain5_BS = 0
-        FF_gain6_BS = 0
-        FF_gain7_BS = 0
-        FF_gain8_BS = 0
-        exec(open("UPDATE_CONFIG.py").read())
         #--------------------------------------------------
         # This begins the booleans
         bool_array = [RunTransmissionSweep, RunFirst2ToneSpec, RunSecond2ToneSpec,
@@ -140,7 +124,7 @@ for i in [8]:
 
             #update the transmission frequency to be the peak
             config["res_freqs"][0] = Instance_trans.peakFreq_min
-            print("Cavity frequency found at: ", config["res_freqs"][0] + BaseConfig["res_LO"])
+            print("Cavity frequency found at: ", config["res_freqs"][0] + config["res_LO"])
 
         if RunFirst2ToneSpec:
             Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | First_Spec_params,
@@ -180,13 +164,13 @@ for i in [8]:
             config["res_freqs"][ro_opt_index] = trans_fpts[ind[1]]
 
             best_gain = int(round(gain_pts[ind[0]]))
-            best_freq = round(trans_fpts[ind[1]] + BaseConfig["res_LO"],2)
+            best_freq = round(trans_fpts[ind[1]] + config["res_LO"],2)
             ax.text(best_freq,best_gain,f"({best_freq}, {best_gain})", zorder=3,ha='center',va='center', color='black')
             fig.canvas.draw()
             fig.canvas.flush_events()
 
             print(f"Q{Qubit_Readout[ro_opt_index]} cavity gain found at: ", config["res_gains"][ro_opt_index] * 32766)
-            print("Cavity frequency found at: ", config["res_freqs"][ro_opt_index] + BaseConfig["res_LO"])
+            print("Cavity frequency found at: ", config["res_freqs"][ro_opt_index] + config["res_LO"])
 
         if SingleShot_QubitOptimize:
             ax = next(iter_axs)

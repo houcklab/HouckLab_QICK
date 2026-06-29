@@ -1,8 +1,8 @@
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
 
 
 class CurrentCorrelationMeasurement(ExperimentClass):

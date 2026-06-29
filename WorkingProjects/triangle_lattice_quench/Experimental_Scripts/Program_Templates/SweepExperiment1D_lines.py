@@ -1,10 +1,10 @@
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
+from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
 
 '''This class plots 1D data of multiple readouts all on the same plot, as opposed to 1D_plots which
 creates a separate plot for each readout.'''

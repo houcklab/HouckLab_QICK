@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from qick.asm_v2 import QickSweep1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, omega_guess
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class T2EProgram(FFAveragerProgramV2):
@@ -38,7 +38,7 @@ class T2EProgram(FFAveragerProgramV2):
         else:
             self.phase_loop = 180
         # add qubit pulse
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_1', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=0, gain=cfg["pi2_gain"])
@@ -48,7 +48,7 @@ class T2EProgram(FFAveragerProgramV2):
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_echo', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=0, gain=cfg["pi_gain"])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_length_us = cfg["sigma"][0] * 4
 
     def _body(self, cfg):
         expt_length = self.qubit_length_us + 10.05 + self.delay_loop + 2*self.qubit_length_us + 1

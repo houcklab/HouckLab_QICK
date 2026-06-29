@@ -3,14 +3,14 @@ from scipy.optimize import curve_fit
 
 from qick.asm_v2 import QickSweep1D
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast
 
 class QubitSpecSlice2ndProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -37,19 +37,18 @@ class QubitSpecSlice2ndProg(FFAveragerProgramV2):
                                     start=cfg["qubit_freqs"][1] - cfg["SpecSpan"],
                                     end=cfg["qubit_freqs"][1] + cfg["SpecSpan"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-        # add ge qubit pulse
-        # self.add_gauss(ch=cfg["qubit_ch"], name="qubit01", sigma=cfg["sigma01"], length=4 * cfg["sigma01"])
-        self.add_pulse(ch=cfg["qubit_ch"], name='qubit01_drive', style="arb", envelope="qubit",
+        # add ge qubit pulse (uses qubit_pulse[0] sigma)
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit0", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit01_drive', style="arb", envelope="qubit0",
                        freq=cfg['qubit_freqs'][0],
                        phase=90, gain=cfg["qubit_gains"][0])
         print(cfg["qubit_gains"])
-        # add ef qubit pulse
-        # self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-        self.add_pulse(ch=cfg["qubit_ch"], name='qubit12_drive', style="arb", envelope="qubit",
+        # add ef qubit pulse (uses qubit_pulse[1] sigma)
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit1", sigma=cfg["sigma"][1], length=4 * cfg["sigma"][1])
+        self.add_pulse(ch=cfg["qubit_ch"], name='qubit12_drive', style="arb", envelope="qubit1",
                        freq=qubit_freq_sweep,
                        phase=90, gain=cfg["qubit_gains"][1])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
         # print(self.FFPulse)
 
@@ -57,9 +56,9 @@ class QubitSpecSlice2ndProg(FFAveragerProgramV2):
     def _body(self, cfg):
         # print(self.FFPulse)
         FF_pulse_delay = 1
-        self.FFPulses(self.FFPulse, self.qubit_length_us + FF_pulse_delay + 0.05)
+        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_pulse_delay + 0.05)
         self.pulse(ch=cfg["qubit_ch"], name="qubit01_drive", t = FF_pulse_delay)
-        self.pulse(ch=cfg["qubit_ch"], name="qubit12_drive", t = FF_pulse_delay+4*cfg["sigma"])  # play probe pulse
+        self.pulse(ch=cfg["qubit_ch"], name="qubit12_drive", t = FF_pulse_delay+4*cfg["sigma"][0])  # play probe pulse
         # trigger measurement, play measurement pulse, wait for qubit to relax
         self.delay_auto()
 
@@ -71,7 +70,7 @@ class QubitSpecSlice2ndProg(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.qubit_length_us + FF_pulse_delay + 0.05)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_pulse_delay + 0.05)
 
     def loop_pts(self):
         return (self.get_pulse_param("qubit12_drive", "freq", as_array=True) + self.cfg.get('qubit_LO', 0),)

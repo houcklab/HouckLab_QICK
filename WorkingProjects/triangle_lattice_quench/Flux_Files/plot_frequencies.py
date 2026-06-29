@@ -2,12 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Any, Dict, List
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 from Initialize_Qubit_Information import model_mapping
 from Whole_system_to_Voltages import flux_vector, beta_matrix
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
+from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 
 
 class PlotFrequenciesExperiment(ExperimentClass):
@@ -199,8 +199,8 @@ def main():
     readout_gains = readout_params['1']['Readout']['FF_Gains']
 
     # gains = [Readout_1234_FF, Init_FF, Ramp_FF, BS_FF, readout_gains]
-    gains = [Readout_4Q, Init_FF, Ramp_FF, intermediate_jump_gains, BS_FF, readout_gains]
-    labels = ['Pulse', 'Init', 'Expt', 'Double', 'BS', 'RO']
+    gains = [readout_gains, Init_FF, Ramp_FF, BS_FF, Ramp_FF, readout_gains]
+    labels = ['Pulse', 'Init', 'Ramp', 'Quench', 'Dynamics', 'RO']
 
     config = {'gains': gains, 'labels':labels, 'plot': True}
     expt = PlotFrequenciesExperiment(path='', prefix='PlotFrequencies', soc=None, soccfg=None, cfg=config)
@@ -222,11 +222,11 @@ if __name__ == '__main__':
 #
 #
 # # import qubit parameters from this file
-# from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+# from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 #
 # from Initialize_Qubit_Information import model_mapping
 # from Whole_system_to_Voltages import flux_vector, beta_matrix
-# from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
+# from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 #
 # def ff_gains_to_freqs(ff_gains):
 #     mappings = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q6_bare', 'Q7_bare', 'Q8_bare']

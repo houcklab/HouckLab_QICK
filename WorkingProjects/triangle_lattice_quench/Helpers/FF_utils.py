@@ -2,8 +2,8 @@ import numpy as np
 from random import random
 from math import ceil
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FF_Crosstalk_Helper
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
 
 
 def FFPulses_direct(instance, list_of_gains, length_dt,  previous_gains, t_start='auto', IQPulseArray=None, waveform_label = "FF"):
@@ -189,21 +189,10 @@ def FFDefinitions(instance):
         instance.FFBS = np.array([instance.cfg["FF_Qubits"][q]["Gain_BS"] for q in instance.FFQubits])
         instance.FFBS = FF_Crosstalk_Helper.correct(instance.FFBS)
 
-    # FFDelays = np.array([instance.cfg["FF_Channels"][str(c)]["delay_time"] for c in instance.FFChannels])
-    FFDelays = np.array([instance.cfg["FF_Qubits"][q]["delay_time"] for q in instance.FFQubits])
 
-    if 'Additional_Delays' not in instance.cfg:
-        # print('not there')
-        instance.cfg['Additional_Delays'] = {}
-    # print()
-    additional_delay_keys = instance.cfg['Additional_Delays'].keys()
-    Additional_delay_channels = [instance.cfg['Additional_Delays'][k]['channel'] for k in additional_delay_keys]
-    Additional_delay_times = [instance.us2cycles(instance.cfg['Additional_Delays'][k]['delay_time']) for k in additional_delay_keys]
-    # print(additional_delay_keys, Additional_delay_channels, Additional_delay_times)
-    instance.gen_t0 = np.array([0] * len(instance._gen_ts))
-    instance.gen_t0[instance.FFChannels] = [instance.us2cycles(d) for d in FFDelays]
-    instance.gen_t0[Additional_delay_channels] = Additional_delay_times
-    instance.gen_t0 = list(instance.gen_t0)
+    # Additional delay added to every non-"auto" t value for each channel
+    FFDelays = np.array([instance.cfg["FF_Qubits"][q]["Additional_Delay_Time"] for q in instance.FFQubits])
+    instance.gen_t0 = FFDelays
 
     # print(instance.gen_t0)
 

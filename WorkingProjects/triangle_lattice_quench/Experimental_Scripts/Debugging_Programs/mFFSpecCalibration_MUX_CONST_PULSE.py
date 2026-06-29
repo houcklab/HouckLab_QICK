@@ -4,12 +4,12 @@ import qick.helpers
 from matplotlib import pyplot as plt
 from qick.asm_v2 import QickSweep1D
 
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
 
 import numpy as np
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class FFSpecCalCONSTProgram(FFAveragerProgramV2):
@@ -36,11 +36,11 @@ class FFSpecCalCONSTProgram(FFAveragerProgramV2):
                                        end=cfg["SpecEnd"])
 
         # qubit clock twice as fast as delay clock, and has one sample per clk of its clock
-        self.add_shifted_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=3.5 * cfg["sigma"],
+        self.add_shifted_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=3.5 * cfg["sigma"][0],
                                offset=round(cfg["delay"]%1 * 2))
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
                        freq=qubit_freq_sweep, phase=90, gain=cfg["Gauss_gain"] / 32766)
-        self.qubit_length_us = cfg["sigma"] * 3.5
+        self.qubit_length_us = cfg["sigma"][0] * 3.5
         self.qubit_length_cycles = self.us2cycles(self.qubit_length_us) + int(math.ceil(cfg["delay"]%1)) + 2
         self.cfg['delay'] = int(cfg["delay"])
 

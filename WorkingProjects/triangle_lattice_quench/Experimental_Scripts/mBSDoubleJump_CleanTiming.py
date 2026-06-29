@@ -4,23 +4,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FF_Crosstalk_Helper
+from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensate
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampDoubleJumpGainR, RampDoubleJumpIntermediateSamplesR, RampCurrentCorrelationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
+from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
 
 class BSClean(SweepExperimentND):
     def init_sweep_vars(self):
@@ -56,8 +56,8 @@ class BSClean(SweepExperimentND):
         inter_samples = self.cfg['intermediate_jump_samples']
 
         # Ramp
-        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt', self.cfg['ramp_time'])
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain', 'Gain_Expt',
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_RampInit','Gain_Expt', self.cfg['ramp_time'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'Gain_RampInit', 'Gain_Expt',
                                               self.cfg['ramp_time'])
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
 
@@ -95,7 +95,8 @@ class BSClean(SweepExperimentND):
             self.plotted_jumps = True
 
 
-
+class BSClean1D(BSClean, SweepExperiment1D_lines):
+    pass
 
 class BSClean_offset(BSClean, SweepExperiment2D_plots):
     def init_sweep_vars(self):

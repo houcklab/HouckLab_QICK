@@ -9,11 +9,11 @@ import numpy as np
 
 
 # import qubit parameters from this file
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 from Initialize_Qubit_Information import model_mapping
 from Whole_system_to_Voltages import flux_vector, beta_matrix
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
+from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 
 def ff_gains_to_freqs(ff_gains):
     mappings = ['Q1_bare', 'Q2_bare', 'Q3_bare', 'Q4_bare', 'Q5_bare', 'Q6_bare', 'Q7_bare', 'Q8_bare']
@@ -35,7 +35,7 @@ def ff_gains_to_freqs(ff_gains):
 
 for key in bs_params:
 
-    gains = bs_params[key]['BS']['BS_FF']
+    gains = bs_params[key]['BS_FF']
 
     if len(gains) == 8:
         freqs = np.round(ff_gains_to_freqs(gains),1)

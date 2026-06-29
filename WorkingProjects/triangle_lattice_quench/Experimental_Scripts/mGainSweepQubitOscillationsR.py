@@ -1,10 +1,9 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Coupling_strength_fit import fit_chevron, freqfit
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FFEnvelope_Helpers import StepPulseArrays
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram_SweepWaveform import ThreePartProgram_SweepOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.triangle_lattice_quench.Helpers.Coupling_strength_fit import fit_chevron, freqfit
+from WorkingProjects.triangle_lattice_quench.Helpers.FFEnvelope_Helpers import StepPulseArrays
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram_SweepWaveform import ThreePartProgram_SweepOneFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import soc
 
 class GainSweepOscillationsR(SweepExperiment2D_plots):
     # {'reps': 1000, 'start': int(0), 'step': int(0.25 * 64), 'expts': 121, 'gainStart': 1000,
@@ -34,7 +33,7 @@ class GainSweepOscillationsR(SweepExperiment2D_plots):
     def set_up_instance(self):
         '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
         # print(self.cfg['FF_Qubits'][str(self.cfg["qubit_FF_index"])]['Gain_Expt'])
-        soc.reset_gens()
+        self.soc.reset_gens()
         self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
 
         # fig, ax = plt.subplots()

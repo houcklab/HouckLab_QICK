@@ -8,15 +8,13 @@ def makeProxy():
     Pyro4.config.SERIALIZER = "pickle"
     Pyro4.config.PICKLE_PROTOCOL_VERSION=4
 
-    # if 'Euler' in socket.gethostname() or 'euler' in socket.gethostname():
-    #     ns_host = "128.112.49.105"
-    # else:
-    #     ns_host = "192.168.1.107" #Mac address is C6
 
-    ns_host = "192.168.1.114"
+    ns_host = "192.168.1.104"
+
     ns_port = 8888
     server_name = "myqick"
 
+    print(f"Looking for namesever {server_name}@{ns_host}:{ns_port}...")
     ns = Pyro4.locateNS(host=ns_host, port=ns_port)
 
     # print the nameserver entries: you should see the QickSoc proxy
@@ -27,5 +25,3 @@ def makeProxy():
     soccfg = QickConfig(soc.get_cfg())
     return(soc, soccfg)
 
-soc, soccfg = makeProxy()
-#print("debug")

@@ -38,13 +38,13 @@ class ChiProgram(AveragerProgram):
 
         FF.FFDefinitions(self)
         #FF End
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
-        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+        self.pulse_sigma = self.us2cycles(cfg["sigma"][0], gen_ch=self.cfg["qubit_ch"])
+        self.pulse_qubit_lenth = self.us2cycles(cfg["sigma"][0] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_lenth)
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=self.freq_01,
                                  phase=self.deg2reg(90, gen_ch=cfg["qubit_ch"]), gain=cfg["qubit_gain"],
                                  waveform="qubit")
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_length_us = cfg["sigma"][0] * 4
 
     def body(self):
         self.sync_all(gen_t0=self.gen_t0)

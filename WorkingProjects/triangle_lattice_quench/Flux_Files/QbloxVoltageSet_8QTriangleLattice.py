@@ -1,4 +1,4 @@
-from WorkingProjects.Inductive_Coupler.Client_modules.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
+from WorkingProjects.triangle_lattice_quench.PythonDrivers.SPIRackvoltage import SPIRack, D5aModule
 import numpy as np
 COM_speed = 1e6  # Baud rate, doesn't matter much
 timeout = 1  # In seconds
@@ -46,6 +46,8 @@ voltages = [-1, 0, -0.6, 0, 0, 0, 0, 0,
 
 voltages = [0.0743, 1.4213, -0.1825, 1.3751, 1.2473, 1.3359, 1.2115, 1.1834,
             0.5, 1.5641, 1.4432, 1.6475, 1.4175, 1.4889]
+
+voltages = [0]* 14
 
 print(len(DACs))
 print(len(voltages))

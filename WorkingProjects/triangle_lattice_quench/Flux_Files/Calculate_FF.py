@@ -6,12 +6,12 @@ from typing import Any, Dict, List, Tuple, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Import_Functions_Transmon import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Initialize_Qubit_Information import flux_sign, model_mapping
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
+from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Import_Functions_Transmon import *
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Initialize_Qubit_Information import flux_sign, model_mapping
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Whole_system_to_Voltages import flux_vector, dressed_qubit_freqs, coupler_freqs, beta_matrix
 
 
 class CalculateFFExperiment(ExperimentClass):
@@ -151,14 +151,14 @@ def main(frequencies = None):
     # Frequencies
     if frequencies is None:
         frequencies = {
-            'Q1': 3800,
-            'Q2': 3600,
-            'Q3': 3800,
+            'Q1': 0,
+            'Q2': 0,
+            'Q3': 3500,
             'Q4': 3800,
-            'Q5': 3800,
-            'Q6': 3800,
-            'Q7': 3800,
-            'Q8': 3800,
+            'Q5': 4100,
+            'Q6': 3550,
+            'Q7': 3850,
+            'Q8': 4150,
         }
     else:
         qubits = [f'Q{Q}' for Q in range(1,9)]
@@ -202,7 +202,7 @@ if __name__ == '__main__':
 # import numpy as np
 # from matplotlib import pyplot as plt
 #
-# from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
+# from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 # from Import_Functions_Transmon import *
 # from Initialize_Qubit_Information import flux_sign, model_mapping
 #

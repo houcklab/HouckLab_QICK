@@ -3,12 +3,12 @@
 
 # from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.MixedShots_analysis import *
 
-# from WorkingProjects.Triangle_Lattice_tProcV2.mTransmissionFF import SingleToneSpectroscopyProgramFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
+# from WorkingProjects.triangle_lattice_quench.mTransmissionFF import SingleToneSpectroscopyProgramFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+# from WorkingProjects.triangle_lattice_quench.Experimental_Scripts_MUX.mSingleShotProgramFF_HigherLevelsMUX import SingleShotProgramFF_2StatesMUX
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Helpers.hist_analysis import *
 
 import matplotlib; matplotlib.use('Qt5Agg')
 

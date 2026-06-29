@@ -10,56 +10,23 @@ class MakeFile(h5py.File):
         h5py.File.__init__(self, *args, **kwargs)
         self.flush()
 
-    def add(self, key, data):
-        # print(f'Adding {key}: {data}')
-        try:
-            data = np.array(data)
-        except Exception as e:
-            print(f'Failed setting to array: {key}: {data}')
-            # raise e
-            print(str(e))
-            data = data
-        # print(data)
+    def add(self, key, data):                                                                                                                                                     
+        """Write `data` to `self[key]`, overwriting if the key already exists.
+        Preserves natural dtype — int/float/complex/bool/string each store as
+        themselves rather than force-cast to float64. Object dtypes (ragged                                                                                                       
+        arrays) are not supported.
+        """
+        data = np.asarray(data)
+        if data.dtype.kind in 'iufcb':         # int / uint / float / complex / bool
+            h5_dtype = data.dtype
+        elif data.dtype.kind in 'USO':         # unicode / bytes / object → strings
+            h5_dtype = h5py.string_dtype()
+            data = data.astype(object)         # object-of-str: h5py's vlen string path
+        else:
+            raise TypeError(f"add({key!r}): unsupported dtype {data.dtype}")
         if key in self:
             del self[key]
-        try:
-            self.create_dataset(key, shape=data.shape,
-                            maxshape=tuple([None] * len(data.shape)),
-                            dtype=str(data.astype(np.float64).dtype))
-        except:
-            print(f'warning: type of ({key}: {data}) is not float')
-            if key in ['readout_list', 'Qubit_Readout_List']:
-                data = np.array([int(qubit_str[0]) for qubit_str in data])
-            try:
-                if type(data) in (list, tuple):
-                    data = np.array(data)
-                self.create_dataset(key, shape=data.shape,
-                                maxshape=tuple([None] * len(data.shape)),
-                                dtype=str(data.astype(np.float64).dtype))
-            except:
-                print(f"Adding data {key}:{data} failed")
-        # if key not in self:
-        #     try:
-        #         self.create_dataset(key, shape=data.shape,
-        #                         maxshape=tuple([None] * len(data.shape)),
-        #                         dtype=str(data.astype(np.float64).dtype))
-        #     except:
-        #         print(f'warning: type of ({key}: {data}) is not float')
-        #         if key in ['readout_list', 'Qubit_Readout_List']:
-        #             data = np.array([int(qubit_str[0]) for qubit_str in data])
-        #         self.create_dataset(key, shape=data.shape,
-        #                             maxshape=tuple([None] * len(data.shape)),
-        #                             dtype=str(data.astype(np.float64).dtype))
-        # else:
-        #     del self[key]
-        #     self.create_dataset(key, shape=data.shape,
-        #                         maxshape=tuple([None] * len(data.shape)),
-        #                         dtype=str(data.astype(np.float64).dtype))
-
-        try:
-            self[key][...] = data
-        except:
-            print(f'failed adding {key}: {data}')
+        self.create_dataset(key, data=data, dtype=h5_dtype)
 
 
 class NpEncoder(json.JSONEncoder):
@@ -77,10 +44,12 @@ class NpEncoder(json.JSONEncoder):
 class ExperimentClass:
     """Base class for all experiments"""
 
-    def __init__(self, path='', prefix='data', soc=None, soccfg=None, cfg = None, config_file=None,
-                 liveplot_enabled=False, **kwargs):
+    def __init__(self, path=None, prefix='data', soc=None, soccfg=None, cfg = None, config_file=None,
+                 **kwargs):
         """ Initializes experiment class
-            @param path - directory where data will be stored
+            @param path - directory where data will be stored. Default = None
+                          falls back to type(self).__name__.
+                          Pass path='' explicitly to save to outerFolder root.
             @param prefix - prefix to use when creating data files
             @param config_file - parameters for config file specified are loaded into the class dict
                                  (name relative to expt_directory if no leading /)
@@ -90,6 +59,10 @@ class ExperimentClass:
         """
 
         self.__dict__.update(kwargs)
+        if not path:
+            print('updating_path')
+            path = type(self).__name__
+        print("PATH:", type(self).__name__)
         self.path = path
         datetimenow = datetime.datetime.now()
         datetimestring = datetimenow.strftime("%Y_%m_%d_%H_%M_%S")
@@ -165,7 +138,12 @@ class ExperimentClass:
 
         with self.datafile() as f:
             for k, d in data.items():
-                f.add(k, d)
+                try:
+                    f.add(k, d)
+                except Exception as e:
+                    # Don't let one bad key abort the rest of the save —
+                    # surface the failure and keep going.
+                    print(f"[save_data] failed key {k!r}: {e}")
                 # try:
                 #     print(f'd: {d}')
                 #     print(type(d))

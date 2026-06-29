@@ -1,82 +1,77 @@
 # os.add_dll_directory(os.getcwd() + '\\PythonDrivers')
 # os.add_dll_directory(os.getcwd() + '.\..\\')
-import itertools
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.CalibrateFFvsDriveTiming import \
     CalibrateFFvsDriveTiming
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.Readout_Crosstalk_Population import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.Readout_Crosstalk_Population import \
     ReadoutCrosstalkPopulation
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotDecimated import \
     SingleShotDecimated
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import \
     QubitSpecSliceFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mChiShift import ChiShift
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2EMUX import T2EMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mChiShift import ChiShift
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeSNR_TWPAPumpParams import \
     SNROpt_wSingleShot
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mFluxStabilitySpec import \
     FluxStabilitySpec
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsGain import SpecVsGain
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsGain import SpecVsGain
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsQblox import SpecVsQblox
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mSpecVsFF import SpecVsFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import \
     ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mTransmissionVsPower_MUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mTransmissionVsPower_MUX import \
     TransmissionVsPower
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Second_Excited_State_Experiments.mSpecSliceMulti import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Second_Excited_State_Experiments.mSpecSliceMulti import \
     QubitSpecSlice2nd
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillations import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillations import \
     GainSweepOscillations
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mAmplitudeRabiFFMUX import AmplitudeRabiFFMUX
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX, SingleShot_2QFFMUX
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mT1vsFF import T1vsFF
 
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import *
+import matplotlib.pyplot as plt
 
-from qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.build_config import build_config, outerFolder
+from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+
+
+soc, soccfg = makeProxy()
+
 
 # for det,Q in itertools.product([+20000, -20000],[1,2,3,4,5,6,7,8]):
-for Q in [2]:
+for Q in [5]:
     Qubit_Readout = [Q]
-    # Qubit_Pulse =   [f"{Q}R"]
-    Qubit_Pulse = [Q]
-    # Qubit_Pulse = [f'{Q}R', f'{Q}ef']
-    Pulse_FF = Qubit_Parameters[str(Qubit_Pulse[0])]['Pulse_FF']
-    Expt_FF_subsys = Expt_FF.subsys(Q, det=-10000)
+    # Qubit_Pulse = [Q]
+    Qubit_Pulse =   [f"{Q}_3800+"]
 
-    Expt_FF_subsys = Expt_FF.subsys(Q, det=-20000)
-    # Expt_FF_subsys = Expt_FF.subsys(Q, det=det)
+    config = build_config(
+        Qubit_Readout=Qubit_Readout,  # required: list of readout-entry labels
+        Qubit_Pulse=Qubit_Pulse,  # optional: list of drive-entry labels
+        Ramp_State=None,  # optional: key in ramp_groups
+        Dynamics_Point=None,  # optional: key in dynamics_groups
+    )
 
-    FF_gain1_expt = Expt_FF_subsys[0]
-    FF_gain2_expt = Expt_FF_subsys[1]
-    FF_gain3_expt = Expt_FF_subsys[2]
-    FF_gain4_expt = Expt_FF_subsys[3]
-    FF_gain5_expt = Expt_FF_subsys[4]
-    FF_gain6_expt = Expt_FF_subsys[5]
-    FF_gain7_expt = Expt_FF_subsys[6]
-    FF_gain8_expt = Expt_FF_subsys[7]
-
-    # print(f'pulse gains: {Qubit_Parameters[prepared_state]['Pulse_FF']}')
 
     t = True
     f = False
 
     Run_FF_v_Ramsey = False
-    FF_sweep_Ramsey_relevant_params = {"stop_delay_us": 3, "expts": 61, "reps": 400,
+    FF_sweep_Ramsey_relevant_params = {"stop_delay_us": 3, "expts": 61, "reps": 200,
                                         "qubit_FF_index": int(str(Qubit_Readout[0])[0]),
-                                        "FF_gain_start": Expt_FF[int(str(Qubit_Readout[0])[0])-1] - 100,
-                                        "FF_gain_stop": Expt_FF[int(str(Qubit_Readout[0])[0])-1] + 100,
-                                        "FF_gain_steps": 7,
+                                        "FF_gain_start": config["FF_Qubits"][str(Q)]["Gain_Expt"] - 100,
+                                        "FF_gain_stop": config["FF_Qubits"][str(Q)]["Gain_Expt"] + 100,
+                                        "FF_gain_steps": 11,
                                         "relax_delay":100, 'populations':False# "qubit_drive_freq":3950.0
                                        }
 
@@ -94,14 +89,14 @@ for Q in [2]:
 
 
 
-    Run2ToneSpec = True
+    Run2ToneSpec = False
     Spec_relevant_params = {
                           # "qubit_gain": 200, "SpecSpan": 800, "SpecNumPoints": 1601,
-                            "qubit_gain": 200, "SpecSpan": 50, "SpecNumPoints": 71,
-                          #    "qubit_gain": 200, "SpecSpan": 150, "SpecNumPoints": 2*71,
+                          #   "qubit_gain": 200, "SpecSpan": 50, "SpecNumPoints": 71,
+                             "qubit_gain": 200, "SpecSpan": 150, "SpecNumPoints": 2*71,
                           #   "qubit_gain": 199, "SpecSpan": 50, "SpecNumPoints": 71,
                             # "qubit_gain": 10, "SpecSpan": 10, "SpecNumPoints": 71,
-                            'Gauss': False, "sigma": 0.03, "Gauss_gain": Qubit_Parameters[str(Qubit_Pulse[0])]['Qubit']['Gain'],
+                            'Gauss': False, "sigma": 0.03, "Gauss_gain": 32766*config['qubit_gains'][0],
                             'reps': 2*155, 'rounds': 1}
 
     Run_Spec_vs_FFgain = False # Inherit spec parameters from above
@@ -109,24 +104,24 @@ for Q in [2]:
     RunSpecSliceSecond = False # Utilizes the first two drives in the qubit list, sweeps around the second drive
 
     FF_sweep_spec_relevant_params = {"qubit_FF_index": int(str(Qubit_Readout[0])[0]),
-                                "FF_gain_start": Pulse_FF[int(str(Qubit_Readout[0])[0])-1] - 8000,
-                                "FF_gain_stop": Pulse_FF[int(str(Qubit_Readout[0])[0])-1] + 8000,
+                                "FF_gain_start": config["FF_Qubits"][str(Q)]["Gain_Pulse"] - 8000,
+                                "FF_gain_stop": config["FF_Qubits"][str(Q)]["Gain_Pulse"] + 8000,
                                      "FF_gain_steps": 7,
                                      'relax_delay':100}
-
-    FF_sweep_spec_relevant_params = {"qubit_FF_index": int(str(Qubit_Readout[0])[0]),
-                                    "FF_gain_start": -25000,
-                                    "FF_gain_stop": 25000,
-                                         "FF_gain_steps": 7,
-                                         'relax_delay':100}
+    #
+    # FF_sweep_spec_relevant_params = {"qubit_FF_index": int(str(Qubit_Readout[0])[0]),
+    #                                 "FF_gain_start": -25000,
+    #                                 "FF_gain_stop": 25000,
+    #                                      "FF_gain_steps": 7,
+    #                                      'relax_delay':100}
     Run_Spec_vs_Qubit_gain = False
     gain_sweep_spec_params = {"qubit_gain_start": 100,
                                      "qubit_gain_stop": 3000,
                                      "qubit_gain_steps": 11,
                                      'relax_delay': 100}
 
-    FluxStability = False # Repeat SpecSlice over time
-    Flux_Stability_params = {"delay_minutes": 10, "num_steps": 6 * 8}
+    FluxStability = True # Repeat SpecSlice over time
+    Flux_Stability_params = {"delay_minutes": 10, "num_steps": 6 * 8} # 8 hours since 10*6*8, every 10 minutes
 
 
     Run_Spec_v_Qblox = False
@@ -174,8 +169,8 @@ for Q in [2]:
 
 
     RunT1_TLS = False
-    T1TLS_params = {"FF_gain_start": max(-32766, Readout_FF[Q-1]-10000),
-                    "FF_gain_stop": min(32766, Readout_FF[Q-1]+10000),
+    T1TLS_params = {"FF_gain_start": max(-32766, config["FF_Qubits"][str(Q)]["Gain_Readout"]-10000),
+                    "FF_gain_stop": min(32766, config["FF_Qubits"][str(Q)]["Gain_Readout"]+10000),
                     "FF_gain_steps": 101,
                     "stop_delay_us": 5, "expts": 5, "reps": 2*300,
                     'qubitIndex': int(str(Qubit_Readout[0])[0])}
@@ -203,7 +198,7 @@ for Q in [2]:
     Oscillation_Gain_QICK_sweep = True
 
     try:
-        center = Ramp_FF[oscillation_gain_dict['qubit_FF_index']-1]
+        center = config["FF_Qubits"][str(Q)]["Gain_Expt"]
         # center = -13000
         oscillation_gain_dict['gainStart'] = center - 1000
         oscillation_gain_dict['gainStop'] = center + 1000
@@ -240,34 +235,16 @@ for Q in [2]:
 
     # This ends the working section of the file.
     #----------------------------------------
-    # Not used
-    FF_gain1_BS = 0
-    FF_gain2_BS = 0
-    FF_gain3_BS = 0
-    FF_gain4_BS = 0
-    FF_gain5_BS = 0
-    FF_gain6_BS = 0
-    FF_gain7_BS = 0
-    FF_gain8_BS = 0
-    exec(open("UPDATE_CONFIG.py").read())
-    #--------------------------------------------------
+
     # This begins the booleans
-    soc.reset_gens()
+
     if RunTransmissionSweep:
         Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
                                          soc=soc, soccfg=soccfg, outerFolder=outerFolder)
         Instance_trans.acquire_display_save(plotDisp=True, block=False)
 
-        #update the transmission frequency to be the peak
-        if Qubit_Parameters[str(Qubit_Readout[0])]['Readout'].get('cavmin', False):
-            config["res_freqs"][0] = Instance_trans.peakFreq_min
-        else:
-            config["res_freqs"][0] = Instance_trans.peakFreq_max
-
-        print("Cavity frequency found at: ", config["res_freqs"][0] + BaseConfig["res_LO"])
-    else:
-        print("Cavity frequency set to: ", config["res_freqs"][0] + BaseConfig["res_LO"])
-        pass
+        config["res_freqs"][0] = Instance_trans.peakFreq_min
+        print("Cavity frequency found at: ", config["res_freqs"][0] + config["res_LO"])
 
     if RunTransmissionVsPower:
         TransmissionVsPower(path="TransmissionVsPower", cfg=config | Trans_relevant_params | transmission_v_power_params,
@@ -339,7 +316,7 @@ for Q in [2]:
     #                              cfg=config | SS_params | SS_Timing_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if Run_Readout_Crosstalk or Oscillation_Single or Calib_FF_vs_drive_delay or RunT1_TLS or Run_FF_v_Ramsey and FF_sweep_Ramsey_relevant_params['populations']:
-        exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())
+        exec(open("Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
     if Run_FF_v_Ramsey:
         RamseyVsFF(path="FF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params,

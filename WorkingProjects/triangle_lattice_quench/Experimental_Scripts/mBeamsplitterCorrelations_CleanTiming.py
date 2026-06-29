@@ -2,18 +2,18 @@ import numpy as np
 from matplotlib import pyplot as plt
 import math
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import \
     SweepExperiment1D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
     SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import \
     ThreePartProgramTwoFF, ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampCurrentCorrelationsR
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers, SweepHelpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensate
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers, SweepHelpers
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensate
 
 
 class RampBeamsplitterPopulationVsTime(SweepExperiment1D_plots):
@@ -45,8 +45,8 @@ class RampBeamsplitterPopulationVsTime(SweepExperiment1D_plots):
         ff_ro_pad = math.ceil(max(t_offset) / 16) * 16
 
         # Ramp
-        # Ramps = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
-        Ramps = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        # Ramps = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_RampInit','Gain_Expt',self.cfg['ramp_time'])
+        Ramps = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','Gain_RampInit','Gain_Expt',self.cfg['ramp_time'])
 
         # BS jump then readout jump
         gain_pulse   = FFEnvelope_Helpers.get_gains(self.cfg, 'Gain_Pulse')
@@ -94,8 +94,8 @@ class RampBeamsplitterCleanTiming(SweepExperiment2D_plots):
         # print("RampBeamsplitterCleanTiming: ff_ro_pad =", ff_ro_pad)
 
         # Ramp
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg,'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
-        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg,'Gain_Pulse', 'Gain_RampInit','Gain_Expt',self.cfg['ramp_time'])
+        # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_RampInit','Gain_Expt',self.cfg['ramp_time'])
 
         self.cfg['expt_samples1'] = self.cfg['ramp_time']
         # BS jump then readout jump

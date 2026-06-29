@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from qick.asm_v2 import QickSweep1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, omega_guess
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class T2RProgram(FFAveragerProgramV2):
@@ -38,14 +38,14 @@ class T2RProgram(FFAveragerProgramV2):
         else:
             self.phase_loop = 180
         # add qubit pulse
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_1', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=0, gain=cfg["pi2_gain"])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_2', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=self.phase_loop, gain=cfg["pi2_gain"])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_length_us = cfg["sigma"][0] * 4
 
     def _body(self, cfg):
         expt_length = self.qubit_length_us + 10.05 + self.delay_loop + self.qubit_length_us + 1
@@ -77,6 +77,54 @@ class T2RMUX(ExperimentClass):
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
+    @staticmethod
+    def _t2r_fit_func(t, T2, A, y0, omega, phi):
+        return A * np.exp(-t / T2) * np.cos(omega * t - phi) + y0
+
+    @staticmethod
+    def _t2r_envelope(t, T2, A, y0):
+        return A * np.exp(-t / T2) + y0
+
+    def _fit_t2r(self, x_pts, Contrast):
+        """Fit Contrast(t) to a damped cosine. Stash result on self.
+
+        Sets ``self.T2``, ``self.t2_A``, ``self.t2_y0``, ``self.t2_omega``,
+        ``self.t2_phi``, ``self.t2_fit_curve`` on success; on failure leaves
+        them None and prints a message. Run from ``acquire`` so on_apply has
+        the result without needing display()."""
+        self.T2 = None
+        self.t2_A = None
+        self.t2_y0 = None
+        self.t2_omega = None
+        self.t2_phi = None
+        self.t2_fit_curve = None
+        if len(x_pts) < 5:
+            return
+        p0_guess = [
+            x_pts[-1] / 5,
+            (np.max(Contrast) - np.min(Contrast)) / 2,
+            Contrast[-1],
+            omega_guess(x_pts, Contrast),
+            1e-2,
+        ]
+        try:
+            (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(
+                self._t2r_fit_func, x_pts, Contrast, p0=p0_guess
+            )
+        except Exception as exc:
+            print(f"T2R fit failed: {exc}")
+            return
+        max_t = float(x_pts[-1])
+        if not np.isfinite(T2) or T2 <= 0 or T2 > 50 * max_t:
+            print(f"T2R fit rejected: T2 = {T2}")
+            return
+        self.T2 = float(T2)
+        self.t2_A = float(A)
+        self.t2_y0 = float(y0)
+        self.t2_omega = float(omega)
+        self.t2_phi = float(phi)
+        self.t2_fit_curve = self._t2r_fit_func(x_pts, T2, A, y0, omega, phi)
+
     def acquire(self, progress=False):
         self.cfg.setdefault('qubit_drive_freq',     self.cfg['qubit_freqs'][0] + self.cfg["freq_shift"])
         self.cfg.setdefault('pi_gain',  self.cfg['qubit_gains'][0])
@@ -95,8 +143,14 @@ class T2RMUX(ExperimentClass):
         avgi, avgq = iq_list[0][0, :, 0], iq_list[0][0, :, 1]
         x_pts = prog.get_time_param("swept_delay", "t", as_array=True)
 
+        # Fit T2R here so on_apply / display / auto-cal all see the result.
+        Contrast = IQ_contrast(avgi, avgq)
+        self._fit_t2r(np.asarray(x_pts), np.asarray(Contrast))
+
         data = {'config': self.cfg,
                 'data': {'x_pts': x_pts, 'avgi': avgi, 'avgq': avgq, 'qfreq': self.cfg["qubit_freqs"][0], }}
+        if self.T2 is not None:
+            data['data']['T2'] = self.T2
         self.data = data
 
         return data
@@ -110,58 +164,43 @@ class T2RMUX(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
 
-        while plt.fignum_exists(num=figNum):  ###account for if figure with number already exists
-            figNum += 1
-        # fig, (ax_i, ax_q) = plt.subplots(1, 2, figsize=(12.8, 4.8), num=figNum, tight_layout=True)
-        #
-        # ax_i.plot(x_pts, avgi, 'o-', label="i", color='orange')
-        # ax_i.set_ylabel("a.u.")
-        # ax_i.set_xlabel("Wait time (us)")
-        # ax_i.legend()
-        # ax_q.plot(x_pts, avgq, 'o-', label="q")
-        # ax_q.set_ylabel("a.u.")
-        # ax_q.set_xlabel("Wait time (us)")
-        # ax_q.legend()
-
         if ax is None:
+            while plt.fignum_exists(num=figNum):  # avoid clobbering existing pyplot figs
+                figNum += 1
             fig, ax = plt.subplots(figsize=(7.2, 4.8), num=figNum)
             ax.set_title("Read:" + str(self.cfg["Qubit_Readout_List"]))
-            plt.suptitle(self.titlename)
+            fig.suptitle(self.titlename)
+            own_fig = True
         else:
             fig = ax.get_figure()
             ax.set_title(self.titlename + " Read:" + str(self.cfg["Qubit_Readout_List"]))
+            own_fig = False
 
         Contrast = IQ_contrast(avgi, avgq)
-        ax.plot(x_pts, Contrast, 'o-', color='blue', label=f'qfreq = {self.cfg["qubit_drive_freq"]}')
+        ax.plot(x_pts, Contrast, 'o-', color='blue',
+                label=f'qfreq = {self.cfg["qubit_drive_freq"]}')
         ax.set_ylabel("a.u.")
         ax.set_xlabel("Wait time (us)")
 
-        def exp_fit(t, T1, A, y0):
-            return A * np.exp(-t / T1) + y0
-        def fit(t, T2, A, y0, omega, phi):
-            return A * np.exp(-t / T2) * np.cos(omega*t - phi) + y0
-
-        p0_guess = [x_pts[-1] / 5, (np.max(Contrast) - np.min(Contrast))/2, Contrast[-1], omega_guess(x_pts, Contrast), 1e-2]
-        try:
-            (T2, A, y0, omega, phi), _ = scipy.optimize.curve_fit(fit, x_pts, Contrast, p0=p0_guess)
-            ax.plot(x_pts, fit(x_pts, T2, A, y0, omega, phi), color='black')
-            # ax.autoscale(False)
-            ax.plot(x_pts, exp_fit(x_pts, T2, A, y0), color='black',ls='--', label=f'T2 = {T2:.3f} us')
-            ax.plot(x_pts, exp_fit(x_pts, T2, -A, y0), color='black', ls='--')
+        T2 = getattr(self, "T2", None)
+        if T2 is not None and getattr(self, "t2_fit_curve", None) is not None:
+            ax.plot(x_pts, self.t2_fit_curve, color='black')
+            ax.plot(x_pts, self._t2r_envelope(x_pts, T2, self.t2_A, self.t2_y0),
+                    color='black', ls='--', label=f'T2 = {T2:.3f} us')
+            ax.plot(x_pts, self._t2r_envelope(x_pts, T2, -self.t2_A, self.t2_y0),
+                    color='black', ls='--')
             ax.legend(prop={'size': 14})
-            self.T2 = T2
-        except:
-            print("No fit found.")
 
-
-        plt.savefig(self.iname[:-4] + '.png')
+        fig.savefig(self.iname[:-4] + '.png')
 
         if plotDisp:
-            plt.show(block=block)
-            plt.pause(0.01)
+            if own_fig:
+                plt.show(block=block)
+                plt.pause(0.01)
         else:
-            fig.clf(True)
-            plt.close(fig)
+            if own_fig:
+                fig.clf(True)
+                plt.close(fig)
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')

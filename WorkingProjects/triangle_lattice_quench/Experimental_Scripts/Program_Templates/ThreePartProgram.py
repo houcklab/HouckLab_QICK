@@ -1,11 +1,11 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 
 class ThreePartProgramOneFF(FFAveragerProgramV2):
     def _initialize(self, cfg):
-        # Qubit (Equal sigma for all)
+        # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
 
         # Readout (MUX): resonator DAC gen and readout ADCs
@@ -22,18 +22,17 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
 
         FF.FFDefinitions(self)
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-
         for i in range(len(self.cfg["qubit_gains"])):
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=4 * cfg["sigma"][i])
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90, gain=cfg["qubit_gains"][i])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
     def _body(self, cfg):
         # 1: FFPulses
         FF_Delay_time = 9
-        self.FFPulses(self.FFPulse, 1.01 + len(self.cfg["qubit_gains"]) * self.qubit_length_us + FF_Delay_time)
+        self.FFPulses(self.FFPulse, 1.01 + self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
@@ -64,7 +63,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in self.cfg["IDataArray"]]
         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time+1.1)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time + 1.1)
         self.delay_auto()
 
 class ThreePartProgramTwoFF(ThreePartProgramOneFF):
@@ -72,7 +71,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         # 1: FFPulses
         FF_Delay_time = 9
         self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, self.qubit_total_length_us + 1.01 + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             time_ = 1.0 + FF_Delay_time if i==0 else 'auto'
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_ )
@@ -107,7 +106,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         IQ_Array_Negative = [None if array is None else -1 * np.array(array) for array in concat_IQarray]
         self.FFPulses_direct(-1 * self.FFExpts, self.cfg["expt_samples1"]+self.cfg["expt_samples2"], -1 * self.FFReadouts, IQPulseArray = IQ_Array_Negative,
                             waveform_label='FF2')
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01 + FF_Delay_time)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + 1.01 + FF_Delay_time)
         self.delay_auto()
 
 # class ThreePartProgramTwoFF(ThreePartProgramOneFF):

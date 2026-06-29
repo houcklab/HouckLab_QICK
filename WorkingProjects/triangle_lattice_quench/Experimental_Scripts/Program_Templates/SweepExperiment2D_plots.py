@@ -1,10 +1,12 @@
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import SweepHelpers
+import numpy as np
+
+from WorkingProjects.triangle_lattice_quench.Helpers import SweepHelpers
 
 # import matplotlib; matplotlib.use('Qt5Agg')
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import SweepExperimentND
 
 
 class SweepExperiment2D_plots(SweepExperimentND):
@@ -51,6 +53,15 @@ class SweepExperiment2D_plots(SweepExperimentND):
             colorbar_label = None
 
         readout_list = data['data']['readout_list']
+        # Shared color scale across all readouts: same color == same population
+        # everywhere, with a single colorbar for the whole figure.
+        zs = [np.asarray(Z_mat[i], float) for i in range(len(readout_list))]
+        fin = [z[np.isfinite(z)] for z in zs]
+        fin = np.concatenate(fin) if any(f.size for f in fin) else np.array([0.0, 1.0])
+        vmin, vmax = float(fin.min()), float(fin.max())
+        if vmin == vmax:
+            vmax = vmin + 1e-9
+        ims = []
         for ro_index, ro_ch in enumerate(readout_list):
             ax_im = axs[ro_index].imshow(
                 Z_mat[ro_index],
@@ -58,12 +69,16 @@ class SweepExperiment2D_plots(SweepExperimentND):
                 extent=[X[0] - X_step / 2, X[-1] + X_step / 2,
                         Y[0] - Y_step / 2, Y[-1] + Y_step / 2],
                 origin='lower',
-                interpolation='none')
+                interpolation='none',
+                vmin=vmin, vmax=vmax)
             axs[ro_index].set_ylabel(self.ylabel)
             axs[ro_index].set_xlabel(self.xlabel)
             axs[ro_index].set_title(f"Read: {ro_ch}")
-            cbar = fig.colorbar(ax_im, ax=axs[ro_index], extend='both')
-            cbar.set_label(colorbar_label, rotation=90)
+            ims.append(ax_im)
+        cbar = fig.colorbar(ims[-1], ax=[axs[i] for i in range(len(readout_list))],
+                            extend='both')
+        cbar.set_label(colorbar_label, rotation=90)
+        self._shared_cbar_2d = cbar
 
         fig.show()
         return fig, axs
@@ -74,11 +89,20 @@ class SweepExperiment2D_plots(SweepExperimentND):
         else:
             Z_mat = data['data'][self.z_value]
 
+        # Recompute one shared color scale across all readouts each update.
+        zs = [np.asarray(Z_mat[i], float) for i in range(len(Z_mat))]
+        fin = [z[np.isfinite(z)] for z in zs]
+        fin = np.concatenate(fin) if any(f.size for f in fin) else np.array([0.0, 1.0])
+        vmin, vmax = float(fin.min()), float(fin.max())
+        if vmin == vmax:
+            vmax = vmin + 1e-9
         for ro_index in range(len(Z_mat)):
-            # print(axs[ro_index].images[-1][-1])
-            im = axs[ro_index].get_images()[-1],
-            im = im[-1]
-            cbar = im.colorbar
+            im = axs[ro_index].get_images()[-1]
             im.set_data(Z_mat[ro_index])
-            im.autoscale()
-            cbar.update_normal()
+            im.set_clim(vmin, vmax)
+        cbar = getattr(self, '_shared_cbar_2d', None)
+        if cbar is not None:
+            try:
+                cbar.update_normal(axs[0].get_images()[-1])
+            except Exception:
+                pass

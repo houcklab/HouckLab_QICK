@@ -1,19 +1,19 @@
 import time
 from itertools import product
 
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experiment_Scripts.mRabiOscillations import WalkFFProg
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpers
+# from WorkingProjects.triangle_lattice_quench.Experiment_Scripts.mRabiOscillations import WalkFFProg
+import WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers as RampHelpers
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperimentND import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import SweepExperiment1D_lines
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperimentND import \
     SweepExperimentND
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCorrelationExperiments import generate_counts
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers, CorrelationAnalysis
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FFEnvelope_Helpers import get_gains
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mCorrelationExperiments import generate_counts
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers, CorrelationAnalysis
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Helpers.FFEnvelope_Helpers import get_gains
 
 
 class BaseRampExperiment(SweepExperiment1D_lines):
@@ -28,9 +28,9 @@ class BaseRampExperiment(SweepExperiment1D_lines):
 
     def set_up_instance(self):
         '''Create the Ramp '''
-        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain', 'Gain_Expt',
+        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'Gain_RampInit', 'Gain_Expt',
                                               self.cfg['ramp_duration'])
-        # self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'ramp_initial_gain',
+        # self.cfg["IDataArray"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_RampInit',
         #                                                                   'Gain_Expt',
         #                                                                   self.cfg['ramp_duration'])
         # elif self.cfg['ramp_shape'] == 'linear':
@@ -171,7 +171,7 @@ class RampDurationVsPopulation(BaseRampExperiment):
         for i, Q in zip([0, 1, 2, 3, 4, 5, 6, 7], ['1', '2', '3', '4', '5', '6', '7', '8']):
 
             ramp_on = RampHelpers.generate_cubic_ramp(
-                initial_gain=self.cfg['FF_Qubits'][Q]['ramp_initial_gain'],
+                initial_gain=self.cfg['FF_Qubits'][Q]['Gain_RampInit'],
                 final_gain=self.cfg['FF_Qubits'][Q]['Gain_Expt'],
                 ramp_duration=self.cfg['ramp_duration'])
             ramp_delay = np.full(self.cfg['ramp_wait_timesteps'], self.cfg['FF_Qubits'][Q]['Gain_Expt'])
@@ -198,7 +198,7 @@ class PopulationVsTime(BaseRampExperiment):
         self.xlabel = 'Time (4.65 ns/16)'
 
         # Ramp + constant gain after the ramp
-        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','ramp_initial_gain', 'Gain_Expt',
+        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse','Gain_RampInit', 'Gain_Expt',
                                                                     self.cfg['ramp_duration'])
         Gain_Expts = get_gains(self.cfg, 'Gain_Expt')
         for i in range(len(self.cfg["IDataArray"])):
@@ -338,7 +338,7 @@ class PopulationVsTime_GainSweep(BaseRampExperiment, SweepExperiment2D_plots):
             self.cfg['FF_Qubits'][str(i+1)]['Gain_Expt'] = self.initial_ramp_gains[i] + self.cfg['ramp_gain_offset']
 
         # Ramp + constant gain after the ramp
-        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'ramp_initial_gain', 'Gain_Expt',
+        self.cfg["IDataArray"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_RampInit', 'Gain_Expt',
                                                                     self.cfg['ramp_duration'])
         for i in range(len(self.cfg["IDataArray"])):
             ramp_part = self.cfg["IDataArray"][i]

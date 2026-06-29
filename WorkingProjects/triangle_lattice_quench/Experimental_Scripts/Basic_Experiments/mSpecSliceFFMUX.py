@@ -3,12 +3,12 @@ from scipy.optimize import curve_fit
 
 from qick.asm_v2 import QickSweep1D
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast
 
 class QubitSpecSliceFFProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -37,11 +37,11 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
         # add qubit pulse
         # print(cfg["qubit_gain"])
         if cfg['Gauss']:
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+            self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
             self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
                            freq=qubit_freq_sweep,
                            phase=90, gain=cfg["Gauss_gain"] / 32766.)
-            self.qubit_length_us = cfg["sigma"] * 4
+            self.qubit_length_us = cfg["sigma"][0] * 4
         else:
             self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="const", freq=qubit_freq_sweep,
                            phase=0, gain=cfg["qubit_gain"] / 32766., length=cfg["qubit_length"])
@@ -60,7 +60,7 @@ class QubitSpecSliceFFProg(FFAveragerProgramV2):
 
         self.FFPulses(self.FFReadouts, cfg["res_length"])
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+            self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -176,30 +176,32 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         avgamp0 = np.abs(sig)
 
         if ax is None:
-            plt.figure()
+            fig, ax = plt.subplots()
+            own_fig = True
         else:
-            plt.sca(ax)
-        plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
-        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+            fig = ax.figure
+            own_fig = False
+
+        ax.plot(x_pts, avgi, '.-', color='Orange', label="I")
+        ax.plot(x_pts, avgq, '.-', color='Blue', label="Q")
 
         if hasattr(self, 'qubitFreq_lorentz') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
-            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
+            ax.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
             chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_lorentz else ""
-            plt.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"{chosen_text}Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
+            ax.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"{chosen_text}Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
         if hasattr(self, 'qubitFreq_argmax'):
             chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_argmax else ""
-            plt.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"{chosen_text}Argmax: {self.qubitFreq_argmax:.2f} MHz")
+            ax.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"{chosen_text}Argmax: {self.qubitFreq_argmax:.2f} MHz")
 
-        plt.ylabel("a.u.")
-        plt.xlabel("Qubit Frequency (GHz)")
-        plt.title(self.titlename)
-        plt.legend()
+        ax.set_ylabel("a.u.")
+        ax.set_xlabel("Qubit Frequency (GHz)")
+        ax.set_title(self.titlename)
+        ax.legend()
 
-        plt.savefig(self.iname[:-4] + '_IQ.png')
-        if plotDisp:
+        fig.savefig(self.iname[:-4] + '_IQ.png')
+        if plotDisp and own_fig:
             plt.show(block=block)
             plt.pause(0.1)
-        # plt.close(figNum)
 
 
 

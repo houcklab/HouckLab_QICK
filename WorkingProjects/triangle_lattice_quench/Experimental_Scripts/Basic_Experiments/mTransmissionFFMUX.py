@@ -1,15 +1,15 @@
 
-# from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+# from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 # from tqdm.notebook import tqdm
 import time
 import traceback
 from tqdm import tqdm
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 class CavitySpecFFProg(FFAveragerProgramV2):
@@ -145,34 +145,36 @@ class CavitySpecFFMUX(ExperimentClass):
         avgamp0 = np.abs(sig)
 
         if ax is None:
-            plt.figure()
+            fig, ax = plt.subplots()
+            own_fig = True
         else:
-            plt.sca(ax)
-        plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
-        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-        plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+            fig = ax.figure
+            own_fig = False
+
+        ax.plot(x_pts, avgi, '.-', color='Green', label="I")
+        ax.plot(x_pts, avgq, '.-', color='Blue', label="Q")
+        ax.plot(x_pts, avgamp0, color='Magenta', label="Amp")
 
         if hasattr(self, 'peakFreq_lorentz_min') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
-            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
+            ax.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
             freq_min = (self.peakFreq_lorentz_min + self.cfg["res_LO"]) / 1e3
             chosen_text = "[Used] " if self.peakFreq_min == self.peakFreq_lorentz_min else ""
-            plt.axvline(freq_min, color='black', linestyle='--', label=f"{chosen_text}Lorentz Min: {1e3 * freq_min:.2f} MHz")
+            ax.axvline(freq_min, color='black', linestyle='--', label=f"{chosen_text}Lorentz Min: {1e3 * freq_min:.2f} MHz")
         if hasattr(self, 'peakFreq_argmin'):
             freq_argmin = (self.peakFreq_argmin + self.cfg["res_LO"]) / 1e3
             chosen_text = "[Used] " if self.peakFreq_min == self.peakFreq_argmin else ""
-            plt.axvline(freq_argmin, color='gray', linestyle=':', label=f"{chosen_text}Argmin: {1e3 * freq_argmin:.2f} MHz")
+            ax.axvline(freq_argmin, color='gray', linestyle=':', label=f"{chosen_text}Argmin: {1e3 * freq_argmin:.2f} MHz")
 
-        plt.ylabel("a.u.")
-        plt.xlabel("Cavity Frequency (GHz)")
-        plt.title(self.titlename)
-        plt.legend()
+        ax.set_ylabel("a.u.")
+        ax.set_xlabel("Cavity Frequency (GHz)")
+        ax.set_title(self.titlename)
+        ax.legend()
 
-        plt.savefig(self.iname)
+        fig.savefig(self.iname)
 
-        if plotDisp:
+        if plotDisp and own_fig:
             plt.show(block=block)
             plt.pause(0.1)
-        # plt.close(figNum)
 
 
     def save_data(self, data=None):

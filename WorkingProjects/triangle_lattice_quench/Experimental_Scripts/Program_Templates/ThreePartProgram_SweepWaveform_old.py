@@ -1,8 +1,8 @@
 from qick.asm_v2 import AsmV2
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 from math import ceil
 
@@ -46,11 +46,12 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
         # print(longest_length)
         FF.FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
-        # Qubit (Equal sigma for all)
+        # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
         for i in range(len(self.cfg["qubit_gains"])):
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=4 * cfg["sigma"][i])
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90, gain=cfg["qubit_gains"][i])
 
@@ -90,11 +91,11 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
     def _body(self, cfg):
         # 1: FFPulses
         # self.delay_auto()
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, self.qubit_total_length_us + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
-            time_ = 1 if i==0 else 1 + i*4*self.cfg["sigma"]
+            time_ = 1 if i==0 else 1 + 4 * sum(self.cfg["sigma"][:i])
             self.pulse(ch=self.cfg["qubit_ch"], name=f'qubit_drive{i}', t=time_)
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.delay(self.qubit_total_length_us + 1.01)
 
         # 2: FFExpt
         # Special case: 0 samples, so skip directly to readout (no FFExpt)
@@ -135,8 +136,8 @@ class ThreePartProgram_SweepOneFF(FFAveragerProgramV2):
             self.jump("finish_inv")
         self.label("finish_inv")
         self.asm_inst(inst={'CMD': 'TIME', 'C_OP': 'inc_ref', 'R1': self._get_reg("cycle_counter")}, addr_inc=1)
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01, t_start=0)
-        self.delay(len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 10.01)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + 1.01, t_start=0)
+        self.delay(self.qubit_total_length_us + 10.01)
 
     def loop_pts(self):
         return (self.cfg['start'] + self.cfg['step'] * np.arange(self.cfg['expts']) ,)

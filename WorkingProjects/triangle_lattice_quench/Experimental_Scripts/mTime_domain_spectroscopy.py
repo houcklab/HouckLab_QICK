@@ -1,16 +1,16 @@
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+from WorkingProjects.triangle_lattice_quench.Basic_Experiments_Programs.AveragerProgramFF import RAveragerProgramFF
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils_NEW as FF
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils_NEW as FF
 
 '''Variation on ThreePartRProgramOneFF. Performs the time-domain spectroscopy experiment of Figure 1 in 
 Roushan et al. 2017, "Spectral signatures of many-body localization with interacting photons",
@@ -39,11 +39,12 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
         for page in self.ff_rps:
             self.regwi(page, self.r_length, cfg["start"] + THREE)
 
-        # Qubit (Equal sigma for all)
+        # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
+        self.pulse_sigma = [self.us2cycles(s, gen_ch=self.cfg["qubit_ch"]) for s in cfg["sigma"]]
+        self.pulse_qubit_length = [self.us2cycles(s * 4, gen_ch=self.cfg["qubit_ch"]) for s in cfg["sigma"]]
+        for i in range(len(cfg["qubit_gains"])):
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=self.pulse_sigma[i], length=self.pulse_qubit_length[i])
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
@@ -62,14 +63,14 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
     def body(self):
         # 1: FFPulses
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
             time_ = self.us2cycles(1) if i == 0 else 'auto'
 
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
-                                 gain=gain_, waveform="qubit", t=time_)
+                                 gain=gain_, waveform=f"qubit{i}", t=time_)
         # 2: FFExpt
         self.sync_all(gen_t0=self.gen_t0)
 
@@ -92,14 +93,14 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
         self.sync(self.ff_rps[0], self.r_length)
 
         # Pre-measurement Pi/2 pulse to measure in either X or Y basis
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["qubit_freqs"][i], gen_ch=self.cfg["qubit_ch"])
             time_ = self.us2cycles(1) if i == 0 else 'auto'
 
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=self.cfg['second_qubit_phase'],
-                                 gain=gain_, waveform="qubit", t=time_)
+                                 gain=gain_, waveform=f"qubit{i}", t=time_)
 
         # 3: FFReadouts
         # self.FFPulses(self.FFExpts + 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3) # Overshoot to freeze dynamics
@@ -114,7 +115,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
         # End: invert FF pulses to ensure pulses integrate to 0
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         # self.FFPulses(-self.FFExpts - 2*(self.FFReadouts - self.FFExpts), 4.65515/1e3*3)
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
         inverted_IDataArray = [-1 * np.flip(arr) for arr in padded_IDataArray]
         FF.FFPulses_directSET_REGS(self, self.FFExpts,
                                    16 * (THREE + self.cfg["start"] + self.cfg["step"] * self.cfg["expts"]),
@@ -126,7 +127,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
             self.bitwi(ff_page, mode_reg, mode_reg, '^', 0b0_1111_1111_1111_1111)
             self.mathi(ff_page, mode_reg, mode_reg, '+', self.r_length)
         FF.FFPulses_directPULSE(self)
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
 
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]), gen_t0=self.gen_t0)
 

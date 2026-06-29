@@ -3,17 +3,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy
 from qick.asm_v2 import QickSweep1D, AsmV2
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepCyclesAveragerProgram import \
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mRamseyVsFF import RamseyVsFF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepCyclesAveragerProgram import \
     SweepCyclesAveragerProgram
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import \
     SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, omega_guess
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import Compensated_Pulse
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, omega_guess
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 '''Same as T2R experiment except you use a compensated pulse for QubitPulse'''
 class RamseyVsRampProgram(SweepCyclesAveragerProgram):
@@ -22,14 +22,14 @@ class RamseyVsRampProgram(SweepCyclesAveragerProgram):
         # Qubit (Equal sigma for all)
         self.phase_loop = 180
         # add qubit pulse
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_1', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=0, gain=cfg["pi2_gain"])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive_2', style="arb", envelope="qubit",
                        freq=cfg["qubit_drive_freq"],
                        phase=self.phase_loop, gain=cfg["pi2_gain"])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_length_us = cfg["sigma"][0] * 4
         self.qubit_length_cycles = self.us2cycles(self.qubit_length_us)  # in master clock units
         print('cycles:', self.qubit_length_cycles)
 
@@ -71,7 +71,7 @@ class RamseyVsFF_Ramp(RamseyVsFF):
         self.cfg.setdefault('pi_gain', self.cfg['qubit_gains'][0])
         self.cfg.setdefault('pi2_gain', self.cfg['qubit_gains'][0] / 2)
 
-        qubit_cycles = self.soccfg.us2cycles(4*self.cfg['sigma']) # Length of qubit drive in cycles
+        qubit_cycles = self.soccfg.us2cycles(4*self.cfg['sigma'][0]) # Length of qubit drive in cycles
         ramp_duration_cycles = int(np.ceil(self.cfg["ramp_duration"] / 16))
         self.cfg['start'] = 2*qubit_cycles + self.soccfg.us2cycles(0.100) + ramp_duration_cycles
         self.cfg['step'] = self.soccfg.us2cycles(self.cfg['stop_delay_us'])//self.cfg['expts']

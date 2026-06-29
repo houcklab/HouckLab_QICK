@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import frequency_guess
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import frequency_guess
 
 
 def cosfit(t, freq, A, y0, tau, phi):

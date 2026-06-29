@@ -4,8 +4,8 @@ import datetime
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
 import Pyro4.util
 
 class RamseyFFCalRProg(RAveragerProgram):
@@ -14,8 +14,8 @@ class RamseyFFCalRProg(RAveragerProgram):
         cfg = self.cfg
 
         self.declare_gen(ch=self.cfg["qubit_ch"], nqz=self.cfg["qubit_nqz"])
-        self.pulse_sigma = self.us2cycles(self.cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(self.cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
+        self.pulse_sigma = self.us2cycles(self.cfg["sigma"][0], gen_ch=self.cfg["qubit_ch"])
+        self.pulse_qubit_length = self.us2cycles(self.cfg["sigma"][0] * 4, gen_ch=self.cfg["qubit_ch"])
         self.add_gauss(ch=self.cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
         self.f_ge = self.freq2reg(self.cfg["f_ge"], gen_ch=self.cfg["qubit_ch"])
 
@@ -46,7 +46,7 @@ class RamseyFFCalRProg(RAveragerProgram):
             self.r_modes.append(self.sreg(gen_ch=channel, name="mode"))  # length reg in last 16 bits of mode register
             self.r_gains.append(self.sreg(gen_ch=channel, name='gain'))
         # load waveforms
-        # FF.LoadWaveform_initial(self, self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)
+        # FF.LoadWaveform_initial(self, self.FFReadouts, self.cfg["sigma"][0] * 4 + 0.103)
         FF.LoadWaveforms(self)
         # FF.LoadWaveform_measure(self)
 
@@ -75,7 +75,7 @@ class RamseyFFCalRProg(RAveragerProgram):
         self.sync_all(gen_t0=self.gen_t0)
 
         # Set FF initial values (same as readout values)
-        self.FFPulses(self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)  # Should be 0 anyways
+        self.FFPulses(self.FFReadouts, self.cfg["sigma"][0] * 4 + 0.103)  # Should be 0 anyways
 
         # Qubit pi/2 pulse
         self.set_pulse_registers(ch=self.cfg["qubit_ch"], style="arb", freq=self.f_ge,
@@ -123,7 +123,7 @@ class RamseyFFCalRProg(RAveragerProgram):
             self.mathi(rp, r_mode, self.STORE_MODE_REG, '+', 0)  # restore value of res_r_mode
             self.mathi(rp, r_g, r_g, '*', -1)  # swap sign of gain!
             self.pulse(ch=FFChannel)
-        self.FFPulses(-1 * self.FFReadouts, self.cfg["sigma"] * 4 + 0.103)  # Should be 0 anyways
+        self.FFPulses(-1 * self.FFReadouts, self.cfg["sigma"][0] * 4 + 0.103)  # Should be 0 anyways
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))  # , gen_t0=self.gen_t0)
         # print("final", self.gen_mgrs[self.FFChannels[0]].pulses)
 

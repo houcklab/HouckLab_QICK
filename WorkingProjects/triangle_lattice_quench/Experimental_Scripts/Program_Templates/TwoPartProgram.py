@@ -1,26 +1,27 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import generate_ramp
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+from WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers import generate_ramp
+from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 import numpy as np
 from qick.helpers import gauss
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 import datetime
 from tqdm.notebook import tqdm
 import time
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Basic_Experiments_Programs.AveragerProgramFF import AveragerProgramFF
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import scipy
 
-class TwoPartProgram(AveragerProgramFF):
+class TwoPartProgram(FFAveragerProgramV2):
     def initialize(self):
         cfg = self.cfg
 
-        # Qubit (Equal sigma for all)
+        # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])  # Qubit
-        self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
-        self.pulse_qubit_length = self.us2cycles(cfg["sigma"] * 4, gen_ch=self.cfg["qubit_ch"])
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=self.pulse_sigma, length=self.pulse_qubit_length)
+        self.pulse_sigma = [self.us2cycles(s, gen_ch=self.cfg["qubit_ch"]) for s in cfg["sigma"]]
+        self.pulse_qubit_length = [self.us2cycles(s * 4, gen_ch=self.cfg["qubit_ch"]) for s in cfg["sigma"]]
+        for i in range(len(cfg["qubit_gains"])):
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=self.pulse_sigma[i], length=self.pulse_qubit_length[i])
 
         # Readout (MUX): resonator DAC gen and readout ADCs
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["res_nqz"],
@@ -42,7 +43,7 @@ class TwoPartProgram(AveragerProgramFF):
     def body(self):
         # 1: FFPulse
         self.sync_all(gen_t0=self.gen_t0)
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
         for i in range(len(self.cfg["qubit_gains"])):
             gain_ = self.cfg["qubit_gains"][i]
             freq_ = self.freq2reg(self.cfg["f_ges"][i], gen_ch=self.cfg["qubit_ch"])
@@ -50,7 +51,7 @@ class TwoPartProgram(AveragerProgramFF):
 
             self.setup_and_pulse(ch=self.cfg["qubit_ch"], style="arb", freq=freq_, phase=0,
                                  gain=gain_,
-                                 waveform="qubit", t=time_)
+                                 waveform=f"qubit{i}", t=time_)
 
         # 2: FFReadouts
         self.sync_all(self.cfg['delay_cycles'], gen_t0=self.gen_t0)
@@ -66,5 +67,5 @@ class TwoPartProgram(AveragerProgramFF):
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
         self.FFPulses(-self.FFExpt - 2*(self.FFReadouts - self.FFExpt), 4.65515/1e3*3)
 
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + 1.01)
+        self.FFPulses(-1 * self.FFPulse, 4 * sum(self.cfg["sigma"]) + 1.01)
         self.sync_all(self.us2cycles(self.cfg["relax_delay"]))

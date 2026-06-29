@@ -1,6 +1,6 @@
 from Import_Functions_Transmon import *
 from Initialize_Qubit_Information import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Voltages_to_Frequencies import all_qubits_and_couplers
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Voltages_to_Frequencies import all_qubits_and_couplers
 
 print_single_vector = True
 

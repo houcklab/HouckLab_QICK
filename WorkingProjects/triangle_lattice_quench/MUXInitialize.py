@@ -5,21 +5,7 @@ file to create basic initialization of things used for RFSOC This will include:
 - defining spirack and D5aModule
 - defining the basic config dict that will state the channels used for all subsequent code
 """
-from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy, soc, soccfg
 
-import os
-import platform
-
-try:
-    if 'macOS' in platform.platform():
-        if "LD_LIBRARY_PATH" in os.environ.keys():
-            os.environ["LD_LIBRARY_PATH"] += ":.\\..\\PythonDrivers"
-        else:
-            os.environ["LD_LIBRARY_PATH"] = ".\\..\\PythonDrivers"
-    else:
-        os.add_dll_directory(os.getcwd() + '\\..\\PythonDrivers')
-except:
-    pass
 
 #Define Save folder
 outerFolder = "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
@@ -31,6 +17,7 @@ BaseConfig = {
     "qubit_ch": 9,  # --Fixed
     "ro_chs": [0],  # --Fixed, overwritten if using MUX
     "fast_flux_chs": [0,1,2,3,4,5,6,7],
+    "fast_flux_delays": [0,0,0,0,0,0,0,0], # Additional delays (us) for each fast flux channel non-"auto" t argument if desired
     "res_nqz": 1,
     "qubit_nqz": 2,
     "mixer_freq": -1750, # 7200  # MHz
@@ -47,21 +34,3 @@ BaseConfig = {
     "qubit_LO": 0,
 
 }
-
-### Lets do this within the waveform from now on instead, since it gives better resolution
-FF_Qubits = {
-    str(1): {'channel': 0, 'delay_time': 0.000},
-    str(2): {'channel': 1, 'delay_time': 0.000},
-    str(3): {'channel': 2, 'delay_time': 0.000},
-    str(4): {'channel': 3, 'delay_time': 0.000},
-    str(5): {'channel': 4, 'delay_time': 0.000},
-    str(6): {'channel': 5, 'delay_time': 0.000},
-    str(7): {'channel': 6, 'delay_time': 0.000},
-    str(8): {'channel': 7, 'delay_time': 0.000},
-}
-
-Additional_Delays = {
-    str(1): {'channel': 4, 'delay_time': 0}
-}
-
-BaseConfig["Additional_Delays"] = Additional_Delays

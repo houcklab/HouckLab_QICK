@@ -1,13 +1,13 @@
 from qick.asm_v2 import AsmV2
 from scipy.optimize import curve_fit
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_lines import \
     SweepExperiment1D_lines
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
     SweepWaveformAveragerProgram
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 from math import ceil, floor
 
@@ -103,9 +103,9 @@ class FFvsDriveTimingProgram(FFAveragerProgramV2):
         # FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
         # Qubit (Test one qubit at a time)
-        self.qubit_length_us = 4 * cfg["sigma"]
+        self.qubit_length_us = 4 * cfg["sigma"][0]
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=self.qubit_length_us)
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=self.qubit_length_us)
 
         self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive', style="arb", envelope="qubit",
                            freq=cfg["qubit_freqs"][0], phase=90, gain=cfg["qubit_gains"][0])
@@ -231,7 +231,7 @@ class CalibrateFFvsDriveTiming(SweepExperiment1D_lines):
         pop_vec = data['data'][self.z_value][0]
         x_vec = data['data'][self.x_name]
 
-        width_guess = 1000*self.cfg['sigma']/NS_PER_SAMPLE
+        width_guess = 1000*self.cfg['sigma'][0]/NS_PER_SAMPLE
 
         if self.cfg.get('invert') is not True:
             p0 = [x_vec[np.argmax(pop_vec)], np.max(pop_vec), width_guess, 0]

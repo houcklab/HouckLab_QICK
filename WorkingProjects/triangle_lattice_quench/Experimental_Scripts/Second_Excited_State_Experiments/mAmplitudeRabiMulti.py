@@ -2,11 +2,11 @@ import numpy as np
 from qick.asm_v2 import QickSweep1D
 from scipy.optimize import curve_fit
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 import matplotlib.pyplot as plt
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, frequency_guess
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, frequency_guess
 
 
 class AmplitudeRabiFFProg(FFAveragerProgramV2):
@@ -34,17 +34,17 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
                                        end=cfg["max_gain"] / 32766.)
 
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][-1], length=4 * cfg["sigma"][-1])
         self.add_pulse(ch=cfg["qubit_ch"], name='qubit_drive', style="arb", envelope="qubit",
                        freq=cfg["qubit_freqs"][-1],
                        phase=90, gain=qubit_gain_sweep)
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_length_us = cfg["sigma"][-1] * 4
 
         self.delay_auto(0.05)
 
     def _body(self, cfg):
 
-        self.FFPulses(self.FFPulse, self.cfg["sigma"] * 4 + 1)
+        self.FFPulses(self.FFPulse, self.cfg["sigma"][-1] * 4 + 1)
         self.pulse(ch=cfg["qubit_ch"], name="qubit_drive", t = 1)  # play probe pulse
         self.delay_auto()
 
@@ -56,7 +56,7 @@ class AmplitudeRabiFFProg(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"] * 4 + 1)
+        self.FFPulses(-1 * self.FFPulse, self.cfg["sigma"][-1] * 4 + 1)
 
 
 def fit_func_simple(gain, ampl, pi_gain):

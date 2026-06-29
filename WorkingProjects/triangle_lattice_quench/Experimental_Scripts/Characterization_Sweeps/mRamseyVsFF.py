@@ -1,9 +1,9 @@
 import numpy as np
 import scipy
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RProgram
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import omega_guess
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RProgram
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import omega_guess
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
 
 
 class RamseyVsFF(SweepExperiment2D_plots):
@@ -54,6 +54,16 @@ class RamseyVsFF(SweepExperiment2D_plots):
         self.omegas_fit = omegas
         self.gains_fit = FFgains
 
+        def freq_fit(FF_gain, center_gain, k):
+            return k * np.abs(FF_gain - center_gain)
+        try:
+            (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"]["Gain_Pulse"]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
+
+            data['data']['center_gain'] = center_gain
+            data['data']['k_fit_param'] = k
+        except:
+            print("Fitting failed.")
+
 
     def _display_plot(self, data=None, fig_axs=None):
         fig, axs = super()._display_plot(data, fig_axs)
@@ -66,17 +76,16 @@ class RamseyVsFF(SweepExperiment2D_plots):
             half_periods = 2*np.pi/np.array(self.omegas_fit) / 2
             axs[0].scatter(half_periods, self.gains_fit, color='r', zorder=11)
 
-            omegas = self.omegas_fit
-            FFgains = self.gains_fit
             ax = axs[0]
 
             try:
-                (center_gain, k), _ = scipy.optimize.curve_fit(freq_fit, FFgains, omegas, p0=[np.mean(data["data"]["Gain_Pulse"]), (omegas[-1]-omegas[-2])/(FFgains[-1]-FFgains[-2])])
+                center_gain = data["data"]["center_gain"]
+                k = data["data"]["k_fit_param"]
                 y_pts = data["data"]["Gain_Pulse"]
                 y_spacing = np.abs(y_pts[1] - y_pts[0])
                 gains_up = np.linspace(np.max(y_pts)+y_spacing, center_gain,  num=50,endpoint=False,)
                 gains_lo = np.linspace(np.min(y_pts) - y_spacing, center_gain,  num=50,endpoint=False,)
-                print(gains_up, gains_lo)
+                
                 fig.canvas.draw()
                 ax.autoscale(False)
                 ax.plot(2*np.pi/freq_fit(gains_up, center_gain, k)/2, gains_up, '--', color='red',zorder=10,lw=3)
@@ -85,10 +94,8 @@ class RamseyVsFF(SweepExperiment2D_plots):
 
                 ax.axhline(center_gain, color='red', ls='--', label=f'FF Gain = {center_gain:.1f}', lw=3)
                 ax.legend(prop={'size': 14})
-
-                self.data['data']['center_gain'] = center_gain
             except:
-                print("Fitting failed.")
+                pass
 
 
         return fig, axs

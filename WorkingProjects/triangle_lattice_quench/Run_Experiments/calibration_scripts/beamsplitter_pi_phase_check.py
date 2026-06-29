@@ -4,16 +4,16 @@ rungs (12, 34, 56, 78) or odd rungs (12, 45, 67).
 
 This assumes that the ramps (12,34,45,56,67,78) are all defined in the qubit parameters file.
 '''
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mBSDoubleJump_CleanTiming import BSClean_offset
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mBSDoubleJump_CleanTiming import BSClean_offset
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibrationR_SSMUX import \
     RampBeamsplitterGainR, RampBeamsplitterOffsetR
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.UPDATE_CONFIG_function import update_config
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 
 
@@ -101,11 +101,11 @@ def calibrate_rung_gains(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'ramp_initial_gain']:
+        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
             print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
 
 
-        exec(open("../CALIBRATE_SINGLESHOT_READOUTS.py").read())
+        exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
         experiment = RampBeamsplitterGainR(path="RampBeamsplitterGainR", outerFolder=outerFolder,
                               cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg)
@@ -197,11 +197,11 @@ def calibrate_rung_offset(BS_FF, rungs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'ramp_initial_gain']:
+        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
             print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
 
 
-        exec(open("../CALIBRATE_SINGLESHOT_READOUTS.py").read())
+        exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
         BSClean_offset(path="BSClean_offset", outerFolder=outerFolder, prefix=f'{beamsplitter_point}_{rung}',
                        cfg=config | sweep_bs_offset_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True,

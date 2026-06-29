@@ -1,10 +1,10 @@
 import matplotlib
 matplotlib.use("Qt5agg")
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Helpers.hist_analysis import *
 import time
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
 
 
 # ====================================================== #
@@ -29,19 +29,18 @@ class SingleShotProgram(FFAveragerProgramV2):
 
         FF.FFDefinitions(self)
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-
         for i in range(len(self.cfg["qubit_gains"])):
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=4 * cfg["sigma"][i])
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope=f"qubit{i}",
                        freq=cfg["qubit_freqs"][i],
                        phase=90, gain=cfg["qubit_gains"][i])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
 
     def _body(self, cfg):
         # print(cfg["readout_lengths"])
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, self.cfg['number_of_pulses'] * self.qubit_total_length_us + FF_Delay_time)
         if self.cfg["Pulse"]:
             for i in range(len(self.cfg["qubit_gains"])):
                 for pulse_num in range(self.cfg["number_of_pulses"]):
@@ -62,7 +61,7 @@ class SingleShotProgram(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 

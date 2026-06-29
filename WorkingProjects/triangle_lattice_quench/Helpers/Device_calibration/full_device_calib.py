@@ -1,4 +1,4 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration.qt_qubit_sys import *
+from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration.qt_qubit_sys import *
 from scipy.optimize import minimize, root_scalar
 from matplotlib import patches
 # disentangles qubit frequencies

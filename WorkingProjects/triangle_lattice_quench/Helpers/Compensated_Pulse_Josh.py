@@ -82,7 +82,7 @@ def load_ab_file(ab_file):
     # ab = IIR_DICT.get(ab_file)
     # if ab is None:
     #     ab = np.loadtxt(ab_file, dtype=np.complex128)
-    #     print("Triangle_Lattice_tProcV2\\Helpers\\Compensated_Pulse_Josh.py: To avoid the time cost "
+    #     print("triangle_lattice_quench\\Helpers\\Compensated_Pulse_Josh.py: To avoid the time cost "
     #            f"of np.loadtxt() (and this print statement), I suggest hardcoding {ab_file} "
     #            "at the bottom of this file.")
 

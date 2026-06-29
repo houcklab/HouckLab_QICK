@@ -5,13 +5,13 @@ from locale import normalize
 from matplotlib import pyplot as plt
 from qick.asm_v2 import AsmV2
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepWaveformAveragerProgram import \
     SweepWaveformAveragerProgram
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.IQ_contrast import IQ_contrast, normalize_contrast
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Helpers.IQ_contrast import IQ_contrast, normalize_contrast
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 from math import ceil
 
@@ -36,14 +36,14 @@ class RamseyFFCalProg(SweepWaveformAveragerProgram):
 
         # Qubit (Equal sigma for all)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"][0], length=4 * cfg["sigma"][0])
         self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive_1', style="arb", envelope="qubit",
                        freq=cfg["qubit_freqs"][0],
                        phase=0, gain=cfg["pi2_gain"])
         self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive_2', style="arb", envelope="qubit",
                        freq=cfg["qubit_freqs"][0],
                        phase=cfg["Second_Pulse_Angle"], gain=cfg["pi2_gain"])
-        self.qubit_length_us = 4 * cfg["sigma"]
+        self.qubit_length_us = 4 * cfg["sigma"][0]
         # 1 cycle = 16 samples
         # cycle_counter: always 2+length of waveform in cycles
         self.add_reg(name='cycle_counter')

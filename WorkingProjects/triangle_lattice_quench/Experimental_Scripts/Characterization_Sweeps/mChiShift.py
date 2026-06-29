@@ -1,16 +1,16 @@
 
-# from WorkingProjects.Triangle_Lattice_tProcV2.socProxy import makeProxy
+# from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 import numpy as np
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 # from tqdm.notebook import tqdm
 import time
 import traceback
 from tqdm import tqdm
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFProg
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mTransmissionFFMUX import CavitySpecFFProg
 
 class CavitySpecExciteProg(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -29,19 +29,18 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
                        length=cfg["res_length"],
                        mask=cfg["ro_chs"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-
         for i in range(len(self.cfg["qubit_gains"])):
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=4 * cfg["sigma"][i])
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90, gain=cfg["qubit_gains"][i])
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
         FF.FFDefinitions(self)
 
     def _body(self, cfg):
         FF_Delay_time = 1
-        self.FFPulses(self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             if i == 0:
                 time = FF_Delay_time
@@ -60,7 +59,7 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
 
     # ====================================================== #
 

@@ -1,4 +1,4 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Import_Functions_Transmon import *
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Import_Functions_Transmon import *
 import os
 
 directory = r"Z:\QSimMeasurements\Measurements\\8QV1_Triangle_Lattice\\qubit_parameters\\Dictionary_File\\"

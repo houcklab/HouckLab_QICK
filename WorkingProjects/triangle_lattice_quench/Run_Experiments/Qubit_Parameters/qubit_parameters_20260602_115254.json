@@ -1,0 +1,776 @@
+{
+  "_comment": "Nested-groups JSON replacement for the legacy per-stage *_params.py files. Resolver in UPDATE_CONFIG_function.py:build_config consumes this directly.",
+  "base_params": {
+    "Expt_3800": [23036, 0, -6890, -9134, -6023, -8606, -5872, -7759]
+  },
+  "readout_groups": {
+    "readout_3800_new": {
+      "description": "Standard 8Q readout point. Q1 at 4400 MHz, Q2 broken, Q3-Q8 at 3800 MHz.",
+      "Readout_FF": [27320, 0, -20534, -9200, 3463, -21422, -3764, 4481],
+      "Pulse_FF": [27320, 0, -20534, -9200, 3463, -21422, -3764, 4481],
+      "entries": {
+        "3": {
+          "Readout": {
+            "Frequency": 7510.605555555555,
+            "Gain": 2786,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8406666666666667,
+            "angle": 0.3321223606245635,
+            "threshold": -4.2034397482172245,
+            "ne_contrast": 0.14333333333333334,
+            "ng_contrast": 0.016000000000000014
+          },
+          "Qubit": {
+            "Frequency": 3500.6513738421395,
+            "sigma": 0.03,
+            "Gain": 7994,
+            "T1": 26.553984775434515,
+            "T2R": 1.4344136048849712
+          }
+        },
+        "4": {
+          "Readout": {
+            "Frequency": 7568.277777777777,
+            "Gain": 2357,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7986666666666666,
+            "angle": 3.045602458621852,
+            "threshold": -4.369440073492793,
+            "ne_contrast": 0.16,
+            "ng_contrast": 0.04133333333333333
+          },
+          "Qubit": {
+            "Frequency": 3800.8644071629183,
+            "sigma": 0.03,
+            "Gain": 3394,
+            "T1": 21.407076535381332,
+            "T2R": 0.6499818727383605
+          }
+        },
+        "5": {
+          "Readout": {
+            "Frequency": 7363.488888888888,
+            "Gain": 2786,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8160000000000001,
+            "angle": 2.5732546858453933,
+            "threshold": 2.0236872470787546,
+            "ne_contrast": 0.15466666666666667,
+            "ng_contrast": 0.029333333333333322
+          },
+          "Qubit": {
+            "Frequency": 4061.5511243509004,
+            "sigma": 0.03,
+            "Gain": 5027,
+            "T1": 17.031065794341455,
+            "T2R": 1.8996981395196777
+          }
+        },
+        "6": {
+          "Readout": {
+            "Frequency": 7441.100000000001,
+            "Gain": 3071,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7693333333333333,
+            "angle": 2.38935768269491,
+            "threshold": 3.9151044571834746,
+            "ne_contrast": 0.161,
+            "ng_contrast": 0.06966666666666665
+          },
+          "Qubit": {
+            "Frequency": 3556.1177919648835,
+            "sigma": 0.03,
+            "Gain": 3145,
+            "T1": 13.54734053626813,
+            "T2R": 0.6116826413120332
+          }
+        },
+        "7": {
+          "Readout": {
+            "Frequency": 7254.383333333333,
+            "Gain": 3000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8426666666666667,
+            "angle": 0.9995876258150699,
+            "threshold": 7.896191656664444,
+            "ne_contrast": 0.09466666666666666,
+            "ng_contrast": 0.06266666666666665
+          },
+          "Qubit": {
+            "Frequency": 3857.2057619114935,
+            "sigma": 0.03,
+            "Gain": 3861,
+            "T1": 13.337126396557604,
+            "T2R": 1.0414132293956386
+          }
+        },
+        "8": {
+          "Readout": {
+            "Frequency": 7309.599999999999,
+            "Gain": 2143,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.831,
+            "angle": 1.3920652659660815,
+            "threshold": -3.8078540163090224,
+            "ne_contrast": 0.12966666666666668,
+            "ng_contrast": 0.03933333333333333
+          },
+          "Qubit": {
+            "Frequency": 4147.856137082955,
+            "sigma": 0.03,
+            "Gain": 3504,
+            "T1": 23.571782170817656,
+            "T2R": 1.29204728601572
+          }
+        }
+      }
+    },
+    "readout_3800": {
+      "description": "Standard 8Q readout point. Q1 at 4400 MHz, Q2 broken, Q3-Q8 at 3800 MHz.",
+      "Readout_FF": [23036, 0, -14316, -13195, -6023, 14156, -1880, -1076],
+      "Pulse_FF": [23036, 0, -14316, -13195, -6023, 14156, -1880, -1076],
+      "entries": {
+        "3": {
+          "Readout": {
+            "Frequency": 7510.9,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7503333333333333,
+            "angle": -1.5979285813905928,
+            "threshold": 4.5721544772415275,
+            "ne_contrast": 0.21166666666666667,
+            "ng_contrast": 0.038000000000000034
+          },
+          "Qubit": {
+            "Frequency": 3605.50475971222,
+            "sigma": 0.07,
+            "Gain": 2904,
+            "T1": 57.145595330970906,
+            "T2R": 1.5624738632184283
+          }
+        },
+        "4": {
+          "Readout": {
+            "Frequency": 7568.45,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.7736666666666667,
+            "angle": -2.6128711777740876,
+            "threshold": 5.4188354949174755,
+            "ne_contrast": 0.16566666666666666,
+            "ng_contrast": 0.06066666666666665
+          },
+          "Qubit": {
+            "Frequency": 3702.123808581035,
+            "sigma": 0.07,
+            "Gain": 2263,
+            "T1": 18.145875218727866,
+            "T2R": 1.1482075669403315
+          }
+        },
+        "5": {
+          "Readout": {
+            "Frequency": 7363.25,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.6439999999999999,
+            "angle": -1.6944468126015322,
+            "threshold": 2.0719293100846023,
+            "ne_contrast": 0.2816666666666667,
+            "ng_contrast": 0.07433333333333336
+          },
+          "Qubit": {
+            "Frequency": 3801.81428390503,
+            "sigma": 0.07,
+            "Gain": 1567,
+            "T1": 14.83735727743667,
+            "T2R": 1.4163952776337045
+          }
+        },
+        "6": {
+          "Readout": {
+            "Frequency": 7442.05,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.6493333333333333,
+            "angle": -0.3501435200803646,
+            "threshold": 3.1708144187862146,
+            "ne_contrast": 0.25466666666666665,
+            "ng_contrast": 0.09599999999999997
+          },
+          "Qubit": {
+            "Frequency": 4290.166665903728,
+            "sigma": 0.07,
+            "Gain": 1632,
+            "T1": 13.64686849650512,
+            "T2R": 1.4119514692940496
+          }
+        },
+        "7": {
+          "Readout": {
+            "Frequency": 7253.85,
+            "Gain": 2000,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.8253333333333334,
+            "angle": -2.7399023198933006,
+            "threshold": -9.054959129162448,
+            "ne_contrast": 0.13933333333333334,
+            "ng_contrast": 0.03533333333333333
+          },
+          "Qubit": {
+            "Frequency": 3908.9238086764026,
+            "sigma": 0.07,
+            "Gain": 1690,
+            "T1": 13.770562893070707,
+            "T2R": 1.429627484710585
+          }
+        },
+        "8": {
+          "Readout": {
+            "Frequency": 7309.4,
+            "Gain": 1486,
+            "Readout_Time": 3,
+            "ADC_Offset": 1,
+            "fidelity": 0.808,
+            "angle": -0.3535291350456067,
+            "threshold": -2.630097352741487,
+            "ne_contrast": 0.11733333333333333,
+            "ng_contrast": 0.07466666666666666
+          },
+          "Qubit": {
+            "Frequency": 3997.4238084284475,
+            "sigma": 0.07,
+            "Gain": 1906,
+            "T1": 27.76605251156635,
+            "T2R": 1.163389936237353
+          }
+        }
+      }
+    }
+  },
+  "drive_groups": {
+    "3Q_state_prep": {
+      "description": "Drive 3 particles onto 6 sites (right half of lattice).",
+      "Pulse_FF": [23036, 0, -14571, -1582, -4107, -17861, -13426, -7915],
+      "entries": {
+        "4_4Q_readout": {
+          "Readout": {
+            "Frequency": 7568.1,
+            "Gain": 1000,
+            "Readout_Time": 2.3,
+            "ADC_Offset": 0.7,
+            "fidelity": 0.4099999999999999
+          },
+          "Qubit": {
+            "Frequency": 3999.4999991989143,
+            "sigma": 0.03,
+            "Gain": 7455
+          }
+        },
+        "8_4Q_readout": {
+          "Readout": {
+            "Frequency": 7308.6,
+            "Gain": 1000,
+            "Readout_Time": 2.8,
+            "ADC_Offset": 0.7,
+            "fidelity": 0.825
+          },
+          "Qubit": {
+            "Frequency": 3796.642856273652,
+            "sigma": 0.03,
+            "Gain": 3819
+          }
+        },
+        "5_4Q_readout": {
+          "Readout": {
+            "Frequency": 7362.85,
+            "Gain": 1033,
+            "Readout_Time": 2.8,
+            "ADC_Offset": 0.7,
+            "fidelity": 0.6575
+          },
+          "Qubit": {
+            "Frequency": 3854.385713691712,
+            "sigma": 0.03,
+            "Gain": 7312
+          }
+        }
+      }
+    },
+    "ramsey_3800+": {
+      "description": "Ramsey calibration pulses at 3800 MHz with +6000 FF Ramsey detuning. Pulse_FF per entry = Expt_3800.subsys(_recipe_arg, det=6000).",
+      "_recipe": {
+        "base": "Expt_3800",
+        "method": "subsys",
+        "det": 6000
+      },
+      "entries": {
+        "1_3800+": {
+          "_recipe_arg": [1],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 2997,
+            "sigma": 0.03
+          }
+        },
+        "2_3800+": {
+          "_recipe_arg": [2],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 2777,
+            "sigma": 0.03
+          }
+        },
+        "3_3800+": {
+          "_recipe_arg": [3],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 9948,
+            "sigma": 0.03
+          }
+        },
+        "4_3800+": {
+          "_recipe_arg": [4],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 16329,
+            "sigma": 0.03
+          }
+        },
+        "5_3800+": {
+          "_recipe_arg": [5],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 6500,
+            "sigma": 0.03
+          }
+        },
+        "6_3800+": {
+          "_recipe_arg": [6],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 4284,
+            "sigma": 0.03
+          }
+        },
+        "7_3800+": {
+          "_recipe_arg": [7],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 3057,
+            "sigma": 0.03
+          }
+        },
+        "8_3800+": {
+          "_recipe_arg": [8],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 5483,
+            "sigma": 0.03
+          }
+        }
+      }
+    },
+    "ramsey_3800-": {
+      "description": "Ramsey calibration pulses at 3800 MHz with -6000 FF Ramsey detuning.",
+      "_recipe": {
+        "base": "Expt_3800",
+        "method": "subsys",
+        "det": -6000
+      },
+      "entries": {
+        "1_3800-": {
+          "_recipe_arg": [1],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 2997,
+            "sigma": 0.03
+          }
+        },
+        "2_3800-": {
+          "_recipe_arg": [2],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 2777,
+            "sigma": 0.03
+          }
+        },
+        "3_3800-": {
+          "_recipe_arg": [3],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 9948,
+            "sigma": 0.03
+          }
+        },
+        "4_3800-": {
+          "_recipe_arg": [4],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 14329,
+            "sigma": 0.03
+          }
+        },
+        "5_3800-": {
+          "_recipe_arg": [5],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 6500,
+            "sigma": 0.03
+          }
+        },
+        "6_3800-": {
+          "_recipe_arg": [6],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 4284,
+            "sigma": 0.03
+          }
+        },
+        "7_3800-": {
+          "_recipe_arg": [7],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 3057,
+            "sigma": 0.03
+          }
+        },
+        "8_3800-": {
+          "_recipe_arg": [8],
+          "Qubit": {
+            "Frequency": 3800,
+            "Gain": 5483,
+            "sigma": 0.03
+          }
+        }
+      }
+    },
+    "coupler_scan_3500+": {
+      "description": "Coupler-scan pulses at 3500 MHz with +6000 FF Ramsey detuning. Same recipe pattern as ramsey_3800+.",
+      "_recipe": {
+        "base": "Expt_3800",
+        "method": "subsys",
+        "det": 6000
+      },
+      "entries": {
+        "1_3500+": {
+          "_recipe_arg": [1],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 4032,
+            "sigma": 0.03
+          }
+        },
+        "2_3500+": {
+          "_recipe_arg": [2],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 4032,
+            "sigma": 0.03
+          }
+        },
+        "3_3500+": {
+          "_recipe_arg": [3],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 13000,
+            "sigma": 0.03
+          }
+        },
+        "4_3500+": {
+          "_recipe_arg": [4],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 4329,
+            "sigma": 0.03
+          }
+        },
+        "5_3500+": {
+          "_recipe_arg": [5],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 7690,
+            "sigma": 0.03
+          }
+        },
+        "6_3500+": {
+          "_recipe_arg": [6],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 4179,
+            "sigma": 0.03
+          }
+        },
+        "7_3500+": {
+          "_recipe_arg": [7],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 6549,
+            "sigma": 0.03
+          }
+        },
+        "8_3500+": {
+          "_recipe_arg": [8],
+          "Qubit": {
+            "Frequency": 3500,
+            "Gain": 4822,
+            "sigma": 0.03
+          }
+        }
+      }
+    }
+  },
+  "ramp_groups": {
+    "ramp_6Q": {
+      "description": "6Q ramps targeting Expt_3800 on resonance.",
+      "Expt_FF": "Expt_3800",
+      "entries": {
+        "6Q_Pulse_init": {
+          "Init_FF_delta": null
+        },
+        "6Q_highest": {
+          "comment": "Init detunes holes (Q3,Q6,Q7) DOWN by -6000 = ramps to highest excited state",
+          "Init_FF_delta": [0, 0, -6000, 0, 0, -6000, -6000, 0]
+        },
+        "5Q_highest_6_low": {
+          "comment": "ramps to highest excited state without Q5, for the jump quench",
+          "Init_FF_delta": [0, 0, -6000, 0, 0, -6000, -6000, 0],
+          "Expt_FF_delta": [0, 0, 0, 0, 0, -6000, 0, 0]
+        },
+        "6Q_lowest": {
+          "comment": "Init detunes holes (Q3,Q6,Q7) UP by +6000 = ramps to lowest-energy hard-core-approximate state",
+          "Init_FF_delta": [0, 0, 6000, 0, 0, 6000, 6000, 0]
+        }
+      }
+    },
+    "ramp_3800": {
+      "description": "Ramps targeting Expt_3800 on resonance. Delta fields add element-wise to Expt_FF / null Init_FF_delta = no init segment (use FFPulse).",
+      "Expt_FF": "Expt_3800",
+      "entries": {
+        "8Q_1854": {
+          "Init_FF_delta": null
+        },
+        "8Q_4815": {
+          "comment": "Init detunes holes (Q2,Q3,Q6,Q7) DOWN by -6000 = ramps to bonding ground state",
+          "Init_FF_delta": [0, -6000, -6000, 0, 0, -6000, -6000, 0]
+        },
+        "8Q_4815_lowest": {
+          "comment": "Init detunes holes UP by +5000 = ramps to antibonding (highest-of-H) state",
+          "Init_FF_delta": [0, 5000, 5000, 0, 0, 5000, 5000, 0]
+        },
+        "1234": {
+          "Init_FF_delta": null,
+          "Expt_FF_delta": [0, 0, 0, 0, 8000, 8000, 8000, 8000]
+        },
+        "1234_dis10": {
+          "Init_FF_delta": [0, -6000, -6000, 0, 0, -6000, -6000, 0],
+          "Expt_FF_delta": [0, 400, 0, -400, 0, 400, 0, 400]
+        },
+        "2345_dis10": {
+          "Init_FF_delta": [0, -6000, -6000, 0, 0, -6000, -6000, 0],
+          "Expt_FF_delta": [0, -400, 0, -400, 0, 400, 0, 400]
+        },
+        "2345_dis10_lowest": {
+          "Init_FF_delta": [0, 5000, 5000, 0, 0, 5000, 5000, 0],
+          "Expt_FF_delta": [0, -400, 0, -400, 0, 400, 0, 400]
+        },
+        "1234_dis10_lowest": {
+          "Init_FF_delta": [0, 5000, 5000, 0, 0, 5000, 5000, 0],
+          "Expt_FF_delta": [0, 400, 0, -400, 0, -400, 0, 400]
+        },
+        "12": {
+          "Init_FF_delta": [0, -5000, 12000, 12000, 12000, 12000, 12000, 12000],
+          "Expt_FF_delta": [0, 0, 12000, 12000, 12000, 12000, 12000, 12000]
+        },
+        "13": {
+          "Init_FF_delta": [0, 12000, -5000, 12000, 12000, 12000, 12000, 12000],
+          "Expt_FF_delta": [0, 12000, 0, 12000, 12000, 12000, 12000, 12000]
+        },
+        "23": {
+          "Init_FF_delta": [12000, 0, -5000, 12000, 12000, 12000, 12000, 12000],
+          "Expt_FF_delta": [12000, 0, 0, 12000, 12000, 12000, 12000, 12000]
+        },
+        "34": {
+          "Init_FF_delta": [12000, 12000, 0, -5000, 12000, 12000, -15000, 12000],
+          "Expt_FF_delta": [12000, 12000, 0, 0, 12000, 12000, -15000, 12000]
+        },
+        "35": {
+          "Init_FF_delta": null,
+          "Expt_FF_delta": [8000, 8000, 0, 8000, 0, 8000, 8000, 8000]
+        },
+        "45": {
+          "Init_FF_delta": [12000, 12000, 12000, 0, -5000, 12000, 12000, 12000],
+          "Expt_FF_delta": [12000, 12000, 12000, 0, 0, 12000, 12000, 12000]
+        },
+        "46": {
+          "Init_FF_delta": null,
+          "Expt_FF_delta": [-8000, -8000, -8000, 0, -8000, 0, -8000, -8000]
+        },
+        "56": {
+          "Init_FF_delta": [12000, 12000, 12000, 12000, 0, -5000, 12000, 12000],
+          "Expt_FF_delta": [12000, 12000, 12000, 12000, 0, 0, 12000, 12000]
+        },
+        "57": {
+          "Init_FF_delta": null,
+          "Expt_FF_delta": [8000, 8000, 8000, 8000, 0, 8000, 0, 8000]
+        },
+        "67": {
+          "Init_FF_delta": [12000, 12000, 12000, 12000, 12000, 0, -5000, 12000],
+          "Expt_FF_delta": [12000, 12000, 12000, 12000, 12000, 0, 0, 12000]
+        },
+        "68": {
+          "Init_FF_delta": null,
+          "Expt_FF_delta": [8000, 8000, -8000, 8000, 8000, 0, 8000, 0]
+        },
+        "78": {
+          "Init_FF_delta": [12000, 12000, 12000, 12000, 12000, 12000, 0, -5000],
+          "Expt_FF_delta": [12000, 12000, 12000, 12000, 12000, 12000, 0, 0]
+        },
+        "12_dis": {
+          "Init_FF_delta": [0, -5000, -12000, -12000, -12000, -12000, -12000, -12000],
+          "Expt_FF_delta": [0, -125, -12000, -12000, -12000, -12000, -12000, -12000]
+        },
+        "23_dis": {
+          "Init_FF_delta": [-12000, 0, -5000, -12000, -12000, -12000, -12000, -12000],
+          "Expt_FF_delta": [-12000, 0, -125, -12000, -12000, -12000, -12000, -12000]
+        },
+        "34_dis": {
+          "Init_FF_delta": [-12000, -12000, 0, -5000, -12000, -12000, -12000, -12000],
+          "Expt_FF_delta": [-12000, -12000, 0, -150, -12000, -12000, -12000, -12000]
+        },
+        "45_dis": {
+          "Init_FF_delta": [-12000, -12000, -12000, 0, -5000, -12000, -12000, -12000],
+          "Expt_FF_delta": [-12000, -12000, -12000, 0, -125, -12000, -12000, -12000]
+        },
+        "56_dis": {
+          "Init_FF_delta": [-12000, -12000, -12000, -12000, 0, -5000, -12000, -12000],
+          "Expt_FF_delta": [-12000, -12000, -12000, -12000, 0, -125, -12000, -12000]
+        },
+        "67_dis": {
+          "Init_FF_delta": [-12000, -12000, -12000, -12000, -12000, 0, -5000, -12000],
+          "Expt_FF_delta": [-12000, -12000, -12000, -12000, -12000, 0, -125, -12000]
+        },
+        "78_dis": {
+          "Init_FF_delta": [-12000, -12000, -12000, -12000, -12000, -12000, 0, -5000],
+          "Expt_FF_delta": [-12000, -12000, -12000, -12000, -12000, -12000, 0, -125]
+        }
+      }
+    }
+  },
+  "dynamics_groups": {
+    "dynamics_FF_points": {
+      "description": "Post-ramp dynamics-segment FF settings. Absolute FF arrays (typical calibration output).",
+      "entries": {
+        "resonant": {
+          "Dynamics_FF_abs": "Expt_3800",
+          "t_offset": [22, 25, 14, 25, 14, 14, 14, 6]
+        },
+        "13": {
+          "Dynamics_FF_abs": [-9136, 0, -6635, 2890, 6011, 3477, 6188, 4269]
+        },
+        "all_qubits": {
+          "Dynamics_FF_abs": [-9136, 0, -6635, 2890, 6011, 3477, 6188, 4269]
+        },
+        "345678": {
+          "Dynamics_FF_abs": [0, 0, -6635, 2890, 6011, 3477, 6188, 4269]
+        },
+        "34": {
+          "Dynamics_FF_abs": [2886, 0, -8200, 2890, -7754, 17156, -1880, -1076]
+        }
+      }
+    },
+    "single_qubit_quenches": {
+      "description": "Single-qubit jump-on-resonance points. BS_FF + t_offset, absolute arrays.",
+      "entries": {
+        "Q1_quench": {
+          "BS_FF_abs": [2886, 0, -14316, -13195, -7754, 17156, -1880, -1076],
+          "t_offset": [22, 25, 14, 25, 14, 14, 14, 6]
+        },
+        "Q3_quench": {
+          "BS_FF_abs": [2886, 0, -14316, -13195, -7754, 17156, -1880, -1076],
+          "t_offset": [22, 25, 14, 25, 14, 14, 14, 6]
+        },
+        "Q3R_quench": {
+          "BS_FF_abs": [2886, 0, -6635, -13195, -7754, 17156, -1880, -1076],
+          "t_offset": [22, 25, 14, 25, 14, 14, 14, 6]
+        }
+      }
+    },
+    "four_qubit_correlations": {
+      "description": "4Q-subset BS calibrations. Absolute BS_FF + per-pair t_offset + exact_t_bs + optional ij_samples / ij_gains / pad_bs.",
+      "entries": {
+        "1234_correlations": {
+          "BS_FF_abs": [-17321, -18075, -3255, -5340, -18218, -19657, -4373, -7093],
+          "t_offset": [22, 25, 14, 25, 14, 14, 14, 6],
+          "exact_t_bs": [76, 76, 58, 58, 81, 81, 67, 67]
+        },
+        "1234_bonds": {
+          "BS_FF_abs": [-17346, -18075, -3255, -5342, -18083, -19657, -4373, -7173],
+          "t_offset": [22, 24, 13, 24, 13, 14, 14, 6],
+          "ij_samples": [2, 0, 0, 2, 2, 0, 0, 2],
+          "ij_gains": [-5100, null, null, -23538, 4015, null, null, -24500],
+          "pad_bs": [0, 2, 2, 0, 0, 2, 2, 0]
+        },
+        "1245_correlations": {
+          "BS_FF_abs": [-2844, -3325, 7638, -19982, -17870, 3499, 4079, 1051],
+          "t_offset": [24, 27, 16, 27, 10, 12, 12, 4],
+          "exact_t_bs": [78, 78, 80, 80, 80, 80, 80, 80]
+        },
+        "1267_correlations": {
+          "BS_FF_abs": [-12295, -12916, -25392, -27560, -25700, 3805, 4079, -24395],
+          "t_offset": [19, 23, 12, 23, 10, 12, 12, 4],
+          "ij_samples": [1, 0, 0, 0, 0, 0, 1, 0],
+          "ij_gains": [-10000, null, null, null, null, null, -120, null],
+          "pad_bs": [0, 1, 0, 0, 0, 1, 0, 0],
+          "exact_t_bs": [75, 75, 75, 75, 75, 73, 73, 73]
+        },
+        "2345_correlations": {
+          "BS_FF_abs": [-17390, -4100, -1150, -24397, -21724, -4183, -2859, -15200],
+          "t_offset": [20, 22, 10, 21, 10, 12, 12, 4],
+          "exact_t_bs": [52, 52, 52, 81, 81, 64, 64, 64]
+        },
+        "2345_bonds": {
+          "BS_FF_abs": [-17390, -4156, -1150, -24397, -21686, -4183, -2859, -15200],
+          "t_offset": [20, 22, 10, 21, 10, 12, 12, 4],
+          "ij_samples": [0, 2, 0, 0, 2, 0, 3, 0],
+          "ij_gains": [null, -19700, null, null, -2800, null, -15600, null],
+          "pad_bs": [0, 0, 2, 2, 0, 3, 0, 0],
+          "exact_t_bs": [65, 58, 58, 55, 55, 65, 65, 65]
+        },
+        "2356_correlations": {
+          "BS_FF_abs": [-26873, -4222, -1150, -10906, -18064, -19612, 1517, -1296],
+          "t_offset": [23, 25, 14, 25, 12, 12, 12, 4],
+          "ij_samples": [0, 0, 0, 0, 0, 1, 0, 0],
+          "ij_gains": [null, null, null, null, null, -15000, null, null],
+          "exact_t_bs": [59, 59, 59, 85, 85, 85, 85, 85]
+        },
+        "2378_correlations": {
+          "BS_FF_abs": [-26873, -4223, -1150, -27560, -25700, -28060, -4558, -7173],
+          "t_offset": [19, 21, 12, 23, 10, 12, 12, 4],
+          "exact_t_bs": [49, 49, 49, 49, 61, 61, 61, 61]
+        },
+        "3467_correlations": {
+          "BS_FF_abs": [-26873, -29001, -9505, -12014, -25700, 3723, 4079, -24395],
+          "t_offset": [22, 24, 11, 23, 10, 12, 12, 4],
+          "exact_t_bs": [68, 68, 65, 65, 68, 68, 68, 68]
+        },
+        "4578_correlations": {
+          "BS_FF_abs": [-2040, -309, 1225, -19941, -17870, -8074, -83, -3366],
+          "t_offset": [25, 27, 16, 27, 10, 12, 11, 4],
+          "exact_t_bs": [92, 92, 92, 92, 92, 60, 60, 60]
+        }
+      }
+    }
+  }
+}

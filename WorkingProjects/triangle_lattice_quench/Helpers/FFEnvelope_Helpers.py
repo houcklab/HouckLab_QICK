@@ -1,7 +1,7 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FF_Crosstalk_Helper
+from WorkingProjects.triangle_lattice_quench.Helpers import FF_Crosstalk_Helper
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers import *
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers import *
 
 '''
 Quickly generates IQDataArrays for each fast flux channel.

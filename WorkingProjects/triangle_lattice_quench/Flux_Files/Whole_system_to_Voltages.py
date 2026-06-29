@@ -1,10 +1,10 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Import_Functions_Transmon import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Flux_Files.Initialize_Qubit_Information import *
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Import_Functions_Transmon import *
+from WorkingProjects.triangle_lattice_quench.Flux_Files.Initialize_Qubit_Information import *
 
 import matplotlib.pyplot as plt
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Device_calibration import full_device_calib
+from WorkingProjects.triangle_lattice_quench.Helpers.Device_calibration import full_device_calib
 
 print_single_vector = True
 plot_bare_system = True
@@ -130,6 +130,23 @@ frequencies = {
     'C4': 0,
     'C5': 0,
     'C6': 0,
+}
+
+frequencies = {
+    'Q1': 4030.03,
+    'Q2': 0,
+    'Q3': 3990.75,
+    'Q4': 4040.4,
+    'Q5': 4011.35,
+    'Q6': 4004.53,
+    'Q7': 3949.87,
+    'Q8': 4030.67,
+    'C1': 1003.5,
+    'C2': 729.02,
+    'C3': 1081.79,
+    'C4': 1205.31,
+    'C5': 934.5,
+    'C6': 578.31,
 }
 
 # Whether you gave a flux value for a key

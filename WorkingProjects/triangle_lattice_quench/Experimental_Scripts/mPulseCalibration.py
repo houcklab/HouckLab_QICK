@@ -4,20 +4,20 @@ import datetime
 from itertools import product
 
 
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.RampHelpers as RampHelpers
+import WorkingProjects.triangle_lattice_quench.Helpers.RampHelpers as RampHelpers
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mCorrelationExperiments import generate_counts, display_counts
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramOneFF
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotProgram
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mRampCurrentCalibration_SSMUX import RampCurrentCalibration1D
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mSingleQubitOscillations import QubitOscillations
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mCorrelationExperiments import generate_counts, display_counts
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
 
 class BB1(FFAveragerProgramV2):
     def _initialize(self, cfg):
@@ -40,8 +40,6 @@ class BB1(FFAveragerProgramV2):
 
         FF.FFDefinitions(self)
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-
         phase_1 = cfg['phase_1']
         phase_2 = cfg['phase_2']
 
@@ -55,33 +53,30 @@ class BB1(FFAveragerProgramV2):
             cfg['qubit_gains_4'] = cfg['qubit_gains_2']
 
         for i in range(len(self.cfg["qubit_gains"])):
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=4 * cfg["sigma"][i])
 
-            # print(f'adding naive with gain: {self.cfg["qubit_gains"][i]}')
-            # print(f'adding pulse 2 with gain: {self.cfg["qubit_gains_2"][i]}')
-            # print(f'adding pulse 3 with gain: {self.cfg["qubit_gains_3"][i]}')
-            # print(f'adding pulse 4 with gain: {self.cfg["qubit_gains_4"][i]}')
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_naive', style="arb", envelope="qubit",
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_naive', style="arb", envelope=f"qubit{i}",
                        freq=cfg["qubit_freqs"][i],
                        phase=90, gain=cfg["qubit_gains"][i])
 
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_2', style="arb", envelope="qubit",
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_2', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90 + phase_1, gain=cfg["qubit_gains_2"][i])
 
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_3', style="arb", envelope="qubit",
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_3', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90 + phase_2, gain=cfg["qubit_gains_3"][i])
 
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_4', style="arb", envelope="qubit",
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}_4', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i],
                            phase=90 + phase_1, gain=cfg["qubit_gains_4"][i])
 
-        self.qubit_length_us = cfg["sigma"] * 4
+        self.qubit_total_length_us = 4 * sum(cfg["sigma"])
 
     def _body(self, cfg):
         # print(cfg["readout_lengths"])
         FF_Delay_time = 10
-        self.FFPulses(self.FFPulse, 4 * len(self.cfg["qubit_gains"]) * self.cfg['sigma'] * 4 + FF_Delay_time)
+        self.FFPulses(self.FFPulse, 4 * self.qubit_total_length_us + FF_Delay_time)
         for i in range(len(self.cfg["qubit_gains"])):
             if i == 0:
                 time = FF_Delay_time
@@ -107,7 +102,7 @@ class BB1(FFAveragerProgramV2):
         self.delay_auto(10)  # us
 
         self.FFPulses(-1 * self.FFReadouts, self.cfg["res_length"])
-        self.FFPulses(-1 * self.FFPulse, len(self.cfg["qubit_gains"]) * self.cfg["sigma"] * 4 + FF_Delay_time)
+        self.FFPulses(-1 * self.FFPulse, self.qubit_total_length_us + FF_Delay_time)
 
         self.delay_auto()
 

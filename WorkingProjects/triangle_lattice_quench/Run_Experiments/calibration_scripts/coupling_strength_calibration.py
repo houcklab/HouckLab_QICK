@@ -2,15 +2,15 @@
 This file can be used to find coupling strengths for all pairs of qubits.
 Can be used when starting from a new coupling point to find the coupling of couplers
 '''
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.mGainSweepQubitOscillationsR import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.mGainSweepQubitOscillationsR import \
     GainSweepOscillationsR
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import \
     SingleShotFFMUX
 
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.UPDATE_CONFIG_function import update_config
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.Qubit_Parameters.UPDATE_CONFIG_function import update_config
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 
 
@@ -71,11 +71,11 @@ def calibrate_coupling(pairs):
         # This ends the translation of the Qubit_Parameters dict
         # --------------------------------------------------
 
-        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'ramp_initial_gain']:
+        for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_RampInit']:
             print(f'{label}: {[int(config["FF_Qubits"][q][label]) for q in config["FF_Qubits"]]}')
 
 
-        exec(open("../CALIBRATE_SINGLESHOT_READOUTS.py").read())
+        exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
         experiment = GainSweepOscillationsR(path="GainSweepOscillationsR", outerFolder=outerFolder,
                                cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg)

@@ -14,9 +14,9 @@ from qick.asm_v2 import AveragerProgramV2
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
-from WorkingProjects.Triangle_Lattice_tProcV2.Experiment import ExperimentClass
+from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.Triangle_Lattice_tProcV2.MUXInitialize import soc, soccfg
+from WorkingProjects.triangle_lattice_quench.MUXInitialize import soc, soccfg
 # soc, soccfg = makeProxy_RFSOC_11()
 
 #TODO UPDATE FOR TPROC_V2

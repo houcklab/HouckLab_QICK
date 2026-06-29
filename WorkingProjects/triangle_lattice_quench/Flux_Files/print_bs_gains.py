@@ -1,6 +1,6 @@
 from Calculate_FF import *
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 bs_params = {
     '1234_correlations': (3900, 3900, 3550, 3550, 4300, 4300, 4000.0, 4000.0),

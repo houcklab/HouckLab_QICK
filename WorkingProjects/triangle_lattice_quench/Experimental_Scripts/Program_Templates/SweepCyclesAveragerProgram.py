@@ -1,8 +1,8 @@
 from qick.asm_v2 import AsmV2
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
-import WorkingProjects.Triangle_Lattice_tProcV2.Helpers.FF_utils as FF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.rotate_SS_data import *
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.AveragerProgramFF import FFAveragerProgramV2
+import WorkingProjects.triangle_lattice_quench.Helpers.FF_utils as FF
+from WorkingProjects.triangle_lattice_quench.Helpers.rotate_SS_data import *
 
 from math import ceil
 
@@ -109,12 +109,13 @@ class SweepCyclesAveragerProgram(FFAveragerProgramV2):
         # longest_length = self.cfg["start"] + self.cfg["expts"] * self.cfg["step"]
         # FFLoad16Waveforms(self, self.FFPulse, "FFExpt", longest_length)
 
-        # Qubit (Equal sigma for all)
-        self.qubit_length_us = 4 * cfg["sigma"]
+        # Qubit (one Gaussian envelope per pulse, indexed by qubit_pulse position)
+        self.qubit_length_us = [4 * s for s in cfg["sigma"]]
+        self.qubit_total_length_us = sum(self.qubit_length_us)
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"], mixer_freq=cfg["qubit_mixer_freq"])  # Qubit
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit", sigma=cfg["sigma"], length=self.qubit_length_us)
         for i in range(len(self.cfg["qubit_gains"])):
-            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope="qubit",
+            self.add_gauss(ch=cfg["qubit_ch"], name=f"qubit{i}", sigma=cfg["sigma"][i], length=self.qubit_length_us[i])
+            self.add_pulse(ch=cfg["qubit_ch"], name=f'qubit_drive{i}', style="arb", envelope=f"qubit{i}",
                            freq=cfg["qubit_freqs"][i], phase=90, gain=cfg["qubit_gains"][i])
 
         # 1 cycle = 16 samples

@@ -1,11 +1,11 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers import FFEnvelope_Helpers
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
+from WorkingProjects.triangle_lattice_quench.Helpers import FFEnvelope_Helpers
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment1D_plots import SweepExperiment1D_plots
 import datetime
-# from WorkingProjects.Triangle_Lattice_tProcV2.Experiment_Scripts.mRabiOscillations import WalkFFProg
+# from WorkingProjects.triangle_lattice_quench.Experiment_Scripts.mRabiOscillations import WalkFFProg
 
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
-from WorkingProjects.Triangle_Lattice_tProcV2.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
-from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.Compensated_Pulse_Josh import *
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.SweepExperiment2D_plots import SweepExperiment2D_plots
+from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Program_Templates.ThreePartProgram import ThreePartProgramTwoFF
+from WorkingProjects.triangle_lattice_quench.Helpers.Compensated_Pulse_Josh import *
 
 
 class RampCurrentCalibrationOffset(SweepExperiment2D_plots):
@@ -203,7 +203,7 @@ class RampCurrentCalibration1D(SweepExperiment1D_plots):
         # self.cfg["IDataArray1"] = FFEnvelope_Helpers.CubicRampArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt',
         #                                                              self.cfg['ramp_time'])
 
-        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'ramp_initial_gain','Gain_Expt',self.cfg['ramp_time'])
+        self.cfg["IDataArray1"] = FFEnvelope_Helpers.CompensatedRampArrays(self.cfg, 'Gain_Pulse', 'Gain_RampInit','Gain_Expt',self.cfg['ramp_time'])
 
 
         # ramp_wait = 3000

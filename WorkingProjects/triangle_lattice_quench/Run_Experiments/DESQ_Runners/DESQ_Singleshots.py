@@ -1,4 +1,4 @@
-from WorkingProjects.Triangle_Lattice_tProcV2.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
+from WorkingProjects.triangle_lattice_quench.Run_Experiments.qubit_parameter_files.Qubit_Parameters_Master import *
 
 ######################################################
 ################ SingleShot General ##################
@@ -135,4 +135,4 @@ from pathlib import Path
 exec(Path("../UPDATE_CONFIG.py").resolve().read_text(), globals())
 
 if calibrate_singleshot:
-    exec(Path("../CALIBRATE_SINGLESHOT_READOUTS.py").resolve().read_text(), globals())
+    exec(Path("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").resolve().read_text(), globals())

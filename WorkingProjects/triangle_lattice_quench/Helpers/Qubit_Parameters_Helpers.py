@@ -87,30 +87,37 @@ class FF_gains:
 
         return FF_gains(self.arr + detuning_list)
 
-class QubitParams:
-    def __init__(self, param_dict={}):
-        self.d = defaultdict(dict, param_dict)
-    
+class QubitParams(defaultdict):
+    """defaultdict(dict) with convenience methods for building qubit-param entries.
+
+    Each stage (drive/readout/expt) lives at top-level key `name`, e.g.
+    `qps['1_3800+']['Qubit'] = {...}`.
+    """
+    def __init__(self, param_dict=None):
+        super().__init__(dict)
+        if param_dict:
+            self.update(param_dict)
+
     def __or__(self, other):
-        if type(other) is QubitParams:
-            return QubitParams(self.d | other.d)
-        else:
-            return QubitParams(self.d | other)
+        merged = QubitParams()
+        merged.update(self)
+        merged.update(other if not isinstance(other, QubitParams) else dict(other))
+        return merged
 
-    def add_pulse(self, name, freq, gain, sigma, ff_array = None):
+    def add_pulse(self, name, freq, gain, sigma, ff_array=None):
         if ff_array is None:
             ff_array = np.zeros(LEN_FF_ARRAY)
-        self.d[name]['Qubit'] = {'Frequency': freq, 'Gain': gain, 'sigma': sigma,}
-        self.d[name]['Pulse_FF'] = ff_array
+        self[name]['Qubit']    = {'Frequency': freq, 'Gain': gain, 'sigma': sigma}
+        self[name]['Pulse_FF'] = ff_array
 
-    def add_readout(self, name, freq, gain, ff_array = None, read_time=3, adc_off=1):
+    def add_readout(self, name, freq, gain, ff_array=None, read_time=3, adc_off=1):
         if ff_array is None:
             ff_array = np.zeros(LEN_FF_ARRAY)
-        self.d[name]['Readout'] = {'Frequency': freq, 'Gain': gain,
-                                     "FF_Gains": ff_array, "Readout_Time": read_time, "ADC_Offset": adc_off},
-        
+        self[name]['Readout'] = {'Frequency': freq, 'Gain': gain,
+                                 'FF_Gains': ff_array, 'Readout_Time': read_time, 'ADC_Offset': adc_off}
+
     def add_expt(self, name, ff_array, ff_init=None):
-        self.d[name]['Expt'] = {'Expt_FF': ff_array, 'Init_FF': ff_init}
+        self[name]['Expt'] = {'Expt_FF': ff_array, 'Init_FF': ff_init}
 
 class QubitConfig:
     def __init__(self, cfg, Qubit, L, OptReadout_index, OptQubit_index, varname_FF=None):
@@ -119,7 +126,7 @@ class QubitConfig:
         self.resonator_freq = cfg["res_freqs"][OptReadout_index] + cfg["res_LO"]
         self.qubit_gain = int(32766 * cfg["qubit_gains"][OptQubit_index])
         self.res_gain = int(32766 * cfg["res_gains"][OptReadout_index] / L) # divide by num readouts
-        self.sigma = cfg["sigma"]
+        self.sigma = cfg["sigma"][OptQubit_index]
         self.readout_time = cfg["readout_lengths"][OptReadout_index]
         self.adc_offset = cfg["adc_trig_delays"][OptReadout_index]
 
