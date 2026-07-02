@@ -1,0 +1,154 @@
+"""Shared runtime context for the CSTQ03 measurement runner.
+
+`Context` bundles the state that the old CSTQ03_BFC.py script kept as module-level
+globals (soc/soccfg/yoko, the persistent instrument `config`, the output folder, and
+the derived per-qubit scalars). Every extracted measurement routine takes `(ctx, params)`.
+
+Config model (see docs/superpowers/specs/2026-07-02-cstq03-runner-refactor-design.md §5):
+  * `ctx.config` is the PERSISTENT instrument config. Only measured carry-overs
+    `pulse_freq` (found cavity frequency) and `res_phase` (calibrated readout phase)
+    are written back to it by routines.
+  * Transient per-experiment knobs (reps, rounds, spans, sigma, per-scan gains, ...)
+    go on a fresh local copy from `ctx.working_config(params)` and never leak.
+"""
+
+from dataclasses import dataclass
+
+import pyvisa
+
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Calib.initialize4Q import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.socProxy import *
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import *
+
+
+@dataclass
+class Context:
+    # hardware handles
+    soc: object
+    soccfg: object
+    yoko: object
+    # persistent instrument config (mutated only for the pulse_freq / res_phase carry-overs)
+    config: dict
+    outerFolder: str
+    # active qubit selection
+    Qubit_Readout: int
+    Qubit_Pulse: int
+    Qubit_Parameters: dict
+    # session-wide flags/values
+    start_voltage: float
+    yoko_fixed: bool
+    cavity_min: bool
+    # derived scalars for the selected qubit(s)
+    cavity_gain: float
+    resonator_frequency_center: float
+    qubit_gain: float
+    pi2_gain: float
+    qubit_frequency_center: float
+    qubit_sigma: float
+    qubit_flattop: object
+
+    def working_config(self, *updates):
+        """Return a fresh shallow copy of the persistent config, updated with the
+        given dict(s). Use this for transient per-experiment knobs so they never
+        leak into later measurements."""
+        cfg = dict(self.config)
+        for u in updates:
+            if u:
+                cfg.update(u)
+        return cfg
+
+
+def sanity_dump(cfg, tag=""):
+    keys = ["pulse_freq","qubit_freq","SpecSpan","SpecNumPoints","step","start",
+            "qubit_pulse_style","qubit_length","qubit_gain","pulse_gain",
+            "readout_length","cavity_min"]
+    print(f"\n--- Sanity {tag} ---")
+    for k in keys:
+        if k in cfg: print(f"{k:>18}: {cfg[k]}")
+    # If BaseConfig stores LOs/IFs/NCOs, print them too:
+    for k in ["cavity_LO","qubit_LO","cavity_IF","qubit_IF","read_lo","drive_lo"]:
+        if k in cfg: print(f"{k:>18}: {cfg[k]}")
+    print("-------------------\n")
+
+
+def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *,
+                  Transmission_params, Spec_relevant_params, tl, ts, charge_params,
+                  cavity_min=True, yoko_fixed=False, yoko_addr='GPIB1::9::INSTR'):
+    """Connect to the RFSoC + yoko, assemble the instrument config, and derive the
+    per-qubit scalars — the setup boilerplate that used to sit at the top of the
+    CSTQ03_BFC.py script — returning a populated Context.
+
+    The keyword param dicts (Transmission_params, Spec_relevant_params, tl, ts,
+    charge_params) are the client's tuning dicts; they feed the initial config
+    assembly exactly as the original script did.
+    """
+    soc, soccfg = makeProxy()
+
+    outerFolder = Qubit_Parameters[str(Qubit_Readout)]['outerfoldername']
+
+    # yoko current source
+    rm = pyvisa.ResourceManager()
+    yoko = rm.open_resource(yoko_addr)
+    yoko.write(":SOUR:FUNC VOLT")
+    yoko.write(":OUTP ON")
+    ramp_to(yoko, start_voltage)
+
+    # derived scalars for the selected readout/pulse qubit
+    cavity_gain = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Gain']
+    resonator_frequency_center = Qubit_Parameters[str(Qubit_Readout)]['Readout']['Frequency']
+    qubit_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Gain']
+    pi2_gain = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['pi2_Gain']
+    qubit_frequency_center = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['Frequency']
+    qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
+    qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
+
+    trans_config = {
+        "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
+        "pulse_style": "const",  # --Fixed
+        # Resonator readout length [us]. "length" sets the readout TONE/pulse
+        # duration (ModifiedRamsey/ActiveResetVerify play the res pulse for
+        # us2cycles(cfg["length"])); if it is NOT set here it silently falls back
+        # to BaseConfig ("length": 30), so the tone outlives the integration
+        # window and editing readout_length alone never changes the played tone.
+        # "readout_length" is the ADC integration window. Keep the two equal so
+        # the window tracks the tone.
+        "length": 15,  # us - resonator readout tone duration
+        "readout_length": 15,  # us - ADC integration window (keep = "length")
+        "pulse_gain": cavity_gain,  # [DAC units]
+        "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
+        "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter
+        "TransNumPoints": Transmission_params['num_points'],  ### number of points in the transmission frequecny
+        "cav_relax_delay": 30
+    }
+    qubit_config = {
+        "qubit_pulse_style": "const",
+        "qubit_gain": Spec_relevant_params["qubit_gain"],
+        "qubit_freq": qubit_frequency_center,
+        "qubit_length": Spec_relevant_params["qubit_length"],  # 20, 100 # 10 was the best for Q4
+        "SpecSpan": Spec_relevant_params["SpecSpan"],  ### MHz, span will be center+/- this parameter
+        "SpecNumPoints": Spec_relevant_params["SpecNumPoints"],  ### number of points in the transmission frequecny
+        "current_voltage": start_voltage
+    }
+    expt_cfg = {
+        "step": 2 * qubit_config["SpecSpan"] / qubit_config["SpecNumPoints"],
+        "start": qubit_config["qubit_freq"] - qubit_config["SpecSpan"],
+        "expts": qubit_config["SpecNumPoints"]
+    }
+
+    UpdateConfig = trans_config | qubit_config | expt_cfg | tl | ts | charge_params
+    config = BaseConfig | UpdateConfig  ### note that UpdateConfig will overwrite elements in BaseConfig
+    print(config)
+    config["FF_Qubits"] = FF_Qubits
+    config["cavity_min"] = cavity_min  # look for dip, not peak
+
+    return Context(
+        soc=soc, soccfg=soccfg, yoko=yoko,
+        config=config, outerFolder=outerFolder,
+        Qubit_Readout=Qubit_Readout, Qubit_Pulse=Qubit_Pulse,
+        Qubit_Parameters=Qubit_Parameters,
+        start_voltage=start_voltage, yoko_fixed=yoko_fixed, cavity_min=cavity_min,
+        cavity_gain=cavity_gain, resonator_frequency_center=resonator_frequency_center,
+        qubit_gain=qubit_gain, pi2_gain=pi2_gain,
+        qubit_frequency_center=qubit_frequency_center,
+        qubit_sigma=qubit_sigma, qubit_flattop=qubit_flattop,
+    )
