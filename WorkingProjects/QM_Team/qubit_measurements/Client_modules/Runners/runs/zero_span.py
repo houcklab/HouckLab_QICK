@@ -36,14 +36,14 @@ def run_zero_span_parity(ctx, p):
         Instance_paritySpec = QubitSpecSliceFF(
             path="ZeroSpanParity_Spec", cfg=spec_cfg,
             soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=zsp_outerFolder)
-        data_paritySpec = QubitSpecSliceFF.acquire(Instance_paritySpec)
-        QubitSpecSliceFF.display(
-            Instance_paritySpec, data_paritySpec, plotDisp=False, figNum=2,
+        data_paritySpec = Instance_paritySpec.acquire()
+        Instance_paritySpec.display(
+            data_paritySpec, plotDisp=False, figNum=2,
             min_sep=p["ZSP_ParitySpec_params"]["min_sep_MHz"],
             fit_window_mhz=p["ZSP_ParitySpec_params"]["fit_window_mhz"],
             prominent_ratio=p["ZSP_ParitySpec_params"]["prominent_ratio"])
-        QubitSpecSliceFF.save_data(Instance_paritySpec, data_paritySpec)
-        QubitSpecSliceFF.save_config(Instance_paritySpec)
+        Instance_paritySpec.save_data(data_paritySpec)
+        Instance_paritySpec.save_config()
 
         chosen = pick_parity_drive_freq(
             data_paritySpec, which=p["ZSP_ParityFreqs_Cached"]["which_to_park"])
@@ -125,19 +125,37 @@ def run_zero_span_parity(ctx, p):
         **zsp_mode_params,
     }
 
+    # The validation harness (Validate_* stages below) is strobe-only: every
+    # run_* helper calls experiment.set_qubit_gain(), which raises in decimated
+    # mode. Fail fast here — before the (potentially long) acquisition — rather
+    # than crashing partway through the validation tail.
+    _validate_flags = ("Validate_StaticContrast", "Validate_ContrastVsQubitFreq",
+                       "Validate_ModulationCheck", "Validate_ControlSuite",
+                       "Validate_EnvironmentSweep")
+    if p["ZSP_RunMode"] != "strobe" and any(p.get(f) for f in _validate_flags):
+        raise RuntimeError(
+            f"[ZeroSpanParity] the validation harness (Validate_*) is strobe-only "
+            f"but ZSP_RunMode={p['ZSP_RunMode']!r}. Set ZSP_RunMode='strobe' or "
+            f"disable the Validate_* flags.")
+
     # ---- Step 4: run acquisition --------------------------------------------
     zsp_exp = ZeroSpanParity(
         soc=ctx.soc, soccfg=ctx.soccfg, path="ZeroSpanParity",
         outerFolder=zsp_outerFolder, cfg=zsp_cfg)
     if p["ZSP_RunMode"] == "strobe" and p["ZSP_StrobeParams"]["n_chunks"] > 1:
+        # chunked_acquire sets zsp_exp.data = {"data": stitched} itself, so the
+        # bare save_data() below persists the full stitched record.
         zsp_data = chunked_acquire(
             zsp_exp, n_chunks=p["ZSP_StrobeParams"]["n_chunks"], progress=True)
-        # Stitched arrays replace exp.data so save_data writes the full record.
-        zsp_exp.data = {"data": zsp_data}
     else:
         zsp_data = zsp_exp.acquire(progress=True)
     zsp_exp.save_data()
     zsp_exp.save_config()
+
+    # Single run directory (the dated subfolder already holding the raw .h5) for
+    # BOTH the analysis outputs and every validation-stage sidecar, so
+    # build_evidence_report collates them from one place.
+    _run_dir = os.path.dirname(zsp_exp.fname)
 
     # ---- Step 5: offline analysis -------------------------------------------
     zsp_separator = (p["ZSP_Separator_Cached"]
@@ -153,20 +171,25 @@ def run_zero_span_parity(ctx, p):
         min_burst_duration_us=p["ZSP_AnalysisParams"]["min_burst_duration_us"],
         analysis_bin_us=p["ZSP_AnalysisParams"]["analysis_bin_us"],
         save_plots=p["ZSP_AnalysisParams"]["save_plots"],
-        out_dir=os.path.dirname(zsp_exp.fname),
+        out_dir=_run_dir,
     )
     print(f"[ZeroSpanParity] complete. Raw data: {zsp_exp.fname}")
 
     # --- Validation harness execution ---
-    _val_out_dir = zsp_exp.outerFolder if hasattr(zsp_exp, "outerFolder") else os.path.dirname(zsp_exp.fname)
+    _val_out_dir = _run_dir
 
     if p["Validate_StaticContrast"]:
-        if p["ZSP_Separator_Cached"].get("g_center") is None:
-            raise RuntimeError("Validate_StaticContrast needs a calibrated separator (set RecalibrateSeparator)")
+        # Stage 1 measures |Z_on - Z_off| vs read_pulse_freq; it does NOT use a
+        # g/e separator (that guard belonged to the classify-based stages, which
+        # already have their separator validated in Step 2).
         _f0 = zsp_cfg["read_pulse_freq"]
         _span = p["StaticContrast_params"]["freq_span_mhz"]
         _flist = np.linspace(_f0 - _span / 2, _f0 + _span / 2, p["StaticContrast_params"]["n_points"])
+        # run_static_contrast's set_qubit_gain rebuilds the strobe program from
+        # cfg["reps"], so update both keys — otherwise reps_per_point only lands
+        # in the sidecar metadata and the acquisition keeps the original count.
         zsp_exp.cfg["reps_per_chunk"] = p["StaticContrast_params"]["reps_per_point"]
+        zsp_exp.cfg["reps"] = p["StaticContrast_params"]["reps_per_point"]
         _sc = run_static_contrast(zsp_exp, _flist, qubit_gain_on=zsp_cfg["qubit_gain"], out_dir=_val_out_dir)
         print(f"[stage 1] best read_pulse_freq = {_sc['best_freq']:.4f} MHz  (contrast SNR {_sc['contrast_snr']:.1f})")
 

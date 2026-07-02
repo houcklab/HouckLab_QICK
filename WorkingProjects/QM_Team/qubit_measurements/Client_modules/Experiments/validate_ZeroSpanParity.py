@@ -6,23 +6,39 @@ Composes ZeroSpanParity acquisition + analyze_ZeroSpanParity primitives into the
 import os
 import json
 import datetime
+from contextlib import contextmanager
 
 import numpy as np
 import h5py
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.utils import (
     modulated_strobe_acquire,
+    find_two_tone_peaks,
 )
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import (
     classify_parity_trace,
     verify_modulation,
     projected_histogram_snr,
-    bin_size_sweep,
-    threshold_stability,
     contrast_from_sweeps,
     dwell_time_statistics,
     sliding_window_switch_rate,
 )
+
+
+@contextmanager
+def _preserve_cfg(experiment, *keys):
+    """Snapshot the named cfg keys and unconditionally restore them on exit.
+
+    Stages that sweep read_pulse_freq / parity_drive_freq / qubit_gain mutate
+    experiment.cfg in a loop; without this an exception mid-sweep would leave
+    the experiment parked at a swept value. set_qubit_gain is called explicitly
+    by callers to rebuild the program after restoring the gain.
+    """
+    saved = {k: experiment.cfg.get(k) for k in keys}
+    try:
+        yield
+    finally:
+        experiment.cfg.update(saved)
 
 
 def _timestamp():
@@ -144,7 +160,13 @@ def _plot_contrast(c, out_path, xlabel="read_pulse_freq (MHz)"):
         ax.axvline(c["best_freq"], color="r", ls="--", label=f"best={c['best_freq']:.3f}")
     ax.set_xlabel(xlabel)
     ax.set_ylabel("response")
-    ax.set_title(f"Static contrast  snr={c['contrast_snr']:.2f}")
+    # Stage 2 (contrast vs qubit freq) has no meaningful contrast SNR; only
+    # annotate it when a finite value was actually computed (stage 1).
+    snr = c.get("contrast_snr")
+    if snr is not None and np.isfinite(snr):
+        ax.set_title(f"Contrast  snr={snr:.2f}")
+    else:
+        ax.set_title("Contrast")
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=200)
@@ -161,14 +183,13 @@ def run_static_contrast(experiment, freq_list, qubit_gain_on, progress=False, ou
     Z_on = np.empty(freq_list.size, dtype=complex)
     Z_off = np.empty(freq_list.size, dtype=complex)
     base_gain = experiment.cfg["qubit_gain"]
-    base_freq = experiment.cfg.get("read_pulse_freq")
-    for i, fr in enumerate(freq_list):
-        experiment.cfg["read_pulse_freq"] = float(fr)
-        experiment.set_qubit_gain(qubit_gain_on)
-        Z_on[i] = _mean_complex_response(experiment, progress=progress)
-        experiment.set_qubit_gain(0)
-        Z_off[i] = _mean_complex_response(experiment, progress=progress)
-    experiment.cfg["read_pulse_freq"] = base_freq
+    with _preserve_cfg(experiment, "read_pulse_freq", "qubit_gain"):
+        for i, fr in enumerate(freq_list):
+            experiment.cfg["read_pulse_freq"] = float(fr)
+            experiment.set_qubit_gain(qubit_gain_on)
+            Z_on[i] = _mean_complex_response(experiment, progress=progress)
+            experiment.set_qubit_gain(0)
+            Z_off[i] = _mean_complex_response(experiment, progress=progress)
     experiment.set_qubit_gain(base_gain)
     c = contrast_from_sweeps(freq_list, Z_on, Z_off)
     arrays = {"freqs": c["freqs"], "Z_on_real": c["Z_on"].real, "Z_on_imag": c["Z_on"].imag,
@@ -188,23 +209,19 @@ def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=N
     bimodality here -- use complex-response difference against a drive-off baseline.
     Run this at the resonator probe point already optimized by stage 1.
     """
-    from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.analyze_ZeroSpanParity import (
-        find_two_tone_peaks,
-    )
     qfreq_list = np.asarray(qfreq_list, dtype=float).ravel()
     base_gain = experiment.cfg["qubit_gain"]
-    base_qfreq = experiment.cfg.get("parity_drive_freq")
-    # drive-off baseline at current probe point
-    experiment.set_qubit_gain(0)
-    z_off = _mean_complex_response(experiment, progress=progress)
-    contrast = np.empty(qfreq_list.size, dtype=float)
-    z_on = np.empty(qfreq_list.size, dtype=complex)
-    for i, fq in enumerate(qfreq_list):
-        experiment.cfg["parity_drive_freq"] = float(fq)
-        experiment.set_qubit_gain(base_gain)
-        z_on[i] = _mean_complex_response(experiment, progress=progress)
-        contrast[i] = abs(z_on[i] - z_off)
-    experiment.cfg["parity_drive_freq"] = base_qfreq
+    with _preserve_cfg(experiment, "parity_drive_freq", "qubit_gain"):
+        # drive-off baseline at current probe point
+        experiment.set_qubit_gain(0)
+        z_off = _mean_complex_response(experiment, progress=progress)
+        contrast = np.empty(qfreq_list.size, dtype=float)
+        z_on = np.empty(qfreq_list.size, dtype=complex)
+        for i, fq in enumerate(qfreq_list):
+            experiment.cfg["parity_drive_freq"] = float(fq)
+            experiment.set_qubit_gain(base_gain)
+            z_on[i] = _mean_complex_response(experiment, progress=progress)
+            contrast[i] = abs(z_on[i] - z_off)
     experiment.set_qubit_gain(base_gain)
     peaks = find_two_tone_peaks(qfreq_list, contrast)
     arrays = {"qfreqs": qfreq_list, "contrast": contrast,
@@ -225,8 +242,10 @@ def run_contrast_vs_qubit_freq(experiment, qfreq_list, progress=False, out_dir=N
 class CrossRunComparison:
     """Collect (swept_param, {metric: value}) across runs; emit table + plot.
 
-    Shared by stages 5/7/8. Stage 7 records multiple metrics per setting because
-    readout power changes both measurement SNR and real parity dynamics.
+    Used by stage 7 (run_environment_sweep) to record multiple metrics per
+    environment setting, because readout power changes both measurement SNR and
+    real parity dynamics. (Stages 5/6 are declared in _STAGE_ORDER but not yet
+    implemented here; stage 8 builds its own results dict.)
     """
     METRICS = ("switch_rate", "separation_snr", "mean_dwell", "mean_signal_level")
 
@@ -321,41 +340,42 @@ def run_control_suite(experiment, separator, variants=("A", "B", "C", "D"), detu
             "read_pulse_freq": cfg.get("read_pulse_freq")}
     results = {}
 
-    # drive-off reference for sign baseline
-    experiment.set_qubit_gain(0)
-    off_level, _ = _signed_level(experiment, separator, progress=progress)
-    experiment.set_qubit_gain(base["qubit_gain"])
-
-    if "A" in variants:
+    with _preserve_cfg(experiment, "qubit_gain", "parity_drive_freq", "read_pulse_freq"):
+        # drive-off reference for sign baseline
         experiment.set_qubit_gain(0)
-        lvl, snr = _signed_level(experiment, separator, progress=progress)
-        results["A"] = {"label": "drive_off", "mean_level": lvl, "separation_snr": snr}
+        off_level, _ = _signed_level(experiment, separator, progress=progress)
         experiment.set_qubit_gain(base["qubit_gain"])
-    if "B" in variants:
-        experiment.cfg["parity_drive_freq"] = (base["parity_drive_freq"] or 0.0) + detune_mhz
-        experiment.set_qubit_gain(base["qubit_gain"])
-        lvl, snr = _signed_level(experiment, separator, progress=progress)
-        results["B"] = {"label": "drive_detuned", "mean_level": lvl, "separation_snr": snr}
-        experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
-    if "C" in variants:
-        experiment.cfg["read_pulse_freq"] = (base["read_pulse_freq"] or 0.0) + detune_mhz
-        lvl, snr = _signed_level(experiment, separator, progress=progress)
-        results["C"] = {"label": "probe_off_resonance", "mean_level": lvl, "separation_snr": snr}
-        experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
-    if "D" in variants:
-        pf = parity_freqs or {"lower": base["parity_drive_freq"], "higher": base["parity_drive_freq"]}
-        experiment.cfg["parity_drive_freq"] = float(pf["lower"])
-        experiment.set_qubit_gain(base["qubit_gain"])
-        lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress)
-        experiment.cfg["parity_drive_freq"] = float(pf["higher"])
-        lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress)
-        sgn_lo = int(np.sign(lvl_lo - off_level))
-        sgn_hi = int(np.sign(lvl_hi - off_level))
-        results["D"] = {"label": "swap_branch", "mean_level_lower": lvl_lo, "mean_level_higher": lvl_hi,
-                        "separation_snr_lower": snr_lo, "separation_snr_higher": snr_hi,
-                        "sign_lower": sgn_lo, "sign_higher": sgn_hi,
-                        "branch_sign_flip": bool(sgn_lo != sgn_hi)}
-        experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
+
+        if "A" in variants:
+            experiment.set_qubit_gain(0)
+            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            results["A"] = {"label": "drive_off", "mean_level": lvl, "separation_snr": snr}
+            experiment.set_qubit_gain(base["qubit_gain"])
+        if "B" in variants:
+            experiment.cfg["parity_drive_freq"] = (base["parity_drive_freq"] or 0.0) + detune_mhz
+            experiment.set_qubit_gain(base["qubit_gain"])
+            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            results["B"] = {"label": "drive_detuned", "mean_level": lvl, "separation_snr": snr}
+            experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
+        if "C" in variants:
+            experiment.cfg["read_pulse_freq"] = (base["read_pulse_freq"] or 0.0) + detune_mhz
+            lvl, snr = _signed_level(experiment, separator, progress=progress)
+            results["C"] = {"label": "probe_off_resonance", "mean_level": lvl, "separation_snr": snr}
+            experiment.cfg["read_pulse_freq"] = base["read_pulse_freq"]
+        if "D" in variants:
+            pf = parity_freqs or {"lower": base["parity_drive_freq"], "higher": base["parity_drive_freq"]}
+            experiment.cfg["parity_drive_freq"] = float(pf["lower"])
+            experiment.set_qubit_gain(base["qubit_gain"])
+            lvl_lo, snr_lo = _signed_level(experiment, separator, progress=progress)
+            experiment.cfg["parity_drive_freq"] = float(pf["higher"])
+            lvl_hi, snr_hi = _signed_level(experiment, separator, progress=progress)
+            sgn_lo = int(np.sign(lvl_lo - off_level))
+            sgn_hi = int(np.sign(lvl_hi - off_level))
+            results["D"] = {"label": "swap_branch", "mean_level_lower": lvl_lo, "mean_level_higher": lvl_hi,
+                            "separation_snr_lower": snr_lo, "separation_snr_higher": snr_hi,
+                            "sign_lower": sgn_lo, "sign_higher": sgn_hi,
+                            "branch_sign_flip": bool(sgn_lo != sgn_hi)}
+            experiment.cfg["parity_drive_freq"] = base["parity_drive_freq"]
     experiment.set_qubit_gain(base["qubit_gain"])
 
     json_path, _ = _stage_sidecar(experiment, "8_control_suite",
@@ -423,7 +443,10 @@ if __name__ == "__main__":
     import tempfile
 
     class _StrobeFakeExp:
-        """Fake ZeroSpanParity: acquire() returns bimodal IQ when driven, unimodal off."""
+        """Fake ZeroSpanParity: acquire() returns a single IQ cloud shifted to
+        level 5.0 when driven (gain>0), a cloud at 0.0 when off. Models the
+        drive-on/off mean-response contrast used by the modulation and static-
+        contrast stages — NOT parity telegraph (see _ParityFakeExp for that)."""
         def __init__(self, n, sp_us, out_dir):
             self.cfg = {"qubit_gain": 200, "reps_per_chunk": n, "reps": n,
                         "sample_period_us": sp_us, "read_pulse_freq": 100.0,
@@ -512,16 +535,43 @@ if __name__ == "__main__":
     print("validate_ZeroSpanParity CrossRunComparison: OK")
 
     # --- Task 12: run_control_suite ---
+    class _ParityFakeExp(_StrobeFakeExp):
+        """Bimodal-telegraph fake: driving ON at a parity-doublet peak
+        (3998/4002 MHz) yields a 50/50 mix of the g-cloud (0,0) and e-cloud
+        (5,0) — the two separated states run_control_suite's separation_snr is
+        meant to detect. Drive OFF or detuned off the peaks -> single g-cloud.
+        This is what the drive-off (A) vs on-peak (D) control comparison needs;
+        the plain _StrobeFakeExp only shifts a unimodal cloud and cannot
+        exercise the ordering."""
+        PEAKS = (3998.0, 4002.0)
+        def acquire(self, progress=False):
+            g = self.cfg["qubit_gain"]
+            fq = self.cfg["parity_drive_freq"]
+            on_peak = g > 0 and min(abs(fq - p) for p in self.PEAKS) < 0.5
+            if on_peak:
+                labels = self._rng.random(self._n) < 0.5
+                I = np.where(labels, 5.0, 0.0) + self._rng.normal(0, 0.5, self._n)
+                Q = self._rng.normal(0, 0.5, self._n)
+            else:
+                I = self._rng.normal(0, 0.5, self._n)
+                Q = self._rng.normal(0, 0.5, self._n)
+            t = np.arange(self._n) * self._sp
+            return {"I": I, "Q": Q, "t_us": t, "mode": "strobe",
+                    "sample_period_us": self._sp, "read_length_us": 5.0,
+                    "wall_clock_start": "2026-01-01T00:00:00"}
+
     with tempfile.TemporaryDirectory() as d:
-        exp = _StrobeFakeExp(2000, 20.0, d)
+        exp = _ParityFakeExp(2000, 20.0, d)
         sep = {"g_center": np.array([0.0, 0.0]), "e_center": np.array([5.0, 0.0])}
         res = run_control_suite(exp, separator=sep,
                                 variants=("A", "D"), detune_mhz=50.0,
                                 parity_freqs={"lower": 3998.0, "higher": 4002.0},
                                 out_dir=d)
         assert "A" in res["variants"] and "D" in res["variants"], res["variants"]
-        # control A (drive off) separation should be lower than driven baseline
-        assert res["variants"]["A"]["separation_snr"] <= res["variants"]["D"]["separation_snr_lower"] + 1e-6
+        # control A (drive off, unimodal) separation must be well below the
+        # on-peak driven branch D (bimodal telegraph -> large separation).
+        assert res["variants"]["A"]["separation_snr"] < res["variants"]["D"]["separation_snr_lower"], (
+            res["variants"]["A"]["separation_snr"], res["variants"]["D"]["separation_snr_lower"])
         assert "branch_sign_flip" in res["variants"]["D"], res["variants"]["D"]
     print("validate_ZeroSpanParity run_control_suite: OK")
 

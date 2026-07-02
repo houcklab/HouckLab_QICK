@@ -2,13 +2,28 @@
 Offline analysis for the zero-span charge-parity measurement.
 
 See docs/superpowers/specs/2026-05-16-bfc-charge-parity-zero-span-design.md for the
-canonical reference. Five pure functions plus a top-level driver:
+canonical reference.
+
+Sequential pipeline (orchestrated end-to-end by analyze_parity_run):
 
   classify_parity_trace      Project (I,Q) -> parity bits via separator or KMeans
   sliding_window_switch_rate Switch rate vs time
   detect_bursts              Find anomalous high-rate intervals
   dwell_time_statistics      Per-state run-length statistics + exponential fits
   analyze_parity_run         Load saved .h5, run all of the above, save plots/sidecars
+
+Validation primitives (consumed by validate_ZeroSpanParity.py, NOT part of the
+sequential pipeline above):
+
+  verify_modulation          Confirm a recovered trace carries an injected square wave
+  contrast_from_sweeps       |Z_on - Z_off|(f), best probe freq, robust contrast SNR
+  projected_histogram_snr    Two-Gaussian bimodality test on projected V(t)
+  bin_size_sweep             Reprocess raw IQ at several bin sizes
+  threshold_stability        Dwell-tau stability across classification thresholds
+
+Most functions are pure (arrays in, dicts out); the exceptions are
+analyze_parity_run (file + plot I/O) and the classifiers, which import sklearn
+(KMeans / GaussianMixture) on the kmeans / bimodality paths.
 
 Tests live under the `if __name__ == "__main__":` block at the end of this file
 and are run with:
@@ -53,7 +68,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
       binary_states  : int array (N,), values 0 or 1
       scores         : float array (N,), signed projection along separator axis
       separator_used : dict, the separator actually used (synthesized for kmeans)
-      method         : "apriori" or "kmeans_fallback"
+      method         : "apriori" or "kmeans" (echoes the requested method)
     """
     if method == "apriori":
         if separator is None:
@@ -80,7 +95,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
                     "g_center": np.array([0.0, 0.0]),
                     "e_center": np.array([0.0, 0.0]),
                 },
-                "method": "kmeans_fallback",
+                "method": "kmeans",
             }
         iq = np.column_stack([I, Q])
         km = KMeans(n_clusters=2, n_init=10, random_state=0).fit(iq)
@@ -114,7 +129,7 @@ def classify_parity_trace(I, Q, separator=None, method="apriori"):
             "binary_states": bits,
             "scores": scores,
             "separator_used": synth_sep,
-            "method": "kmeans_fallback",
+            "method": "kmeans",
         }
     else:
         raise ValueError(f"Unknown method: {method!r}")
@@ -308,6 +323,18 @@ def detect_bursts(rate_Hz, window_t_us, baseline_rate=None, k_sigma=5,
     return bursts
 
 
+def _gap_segment_edges(gap_indices, n):
+    """Segment boundaries ``[0, ...valid gaps..., n]`` for a length-n trace.
+
+    Keeps only gap indices strictly inside the trace (``0 < g < n``); out-of-range
+    entries (negative, 0, or >= n) are dropped as boundary no-ops. Returned edges
+    are sorted and unique, so zipping consecutive pairs yields non-overlapping
+    ``[a, b)`` segments that never span an acquisition gap.
+    """
+    valid = sorted({int(g) for g in (gap_indices or []) if 0 < int(g) < n})
+    return [0, *valid, n]
+
+
 def _debounce_bits(bits, min_len):
     """Merge runs shorter than min_len into the neighbouring run (single segment)."""
     bits = np.asarray(bits).astype(int).copy()
@@ -337,8 +364,7 @@ def _debounce_bits_segmented(bits, gap_indices, min_dwell_bins):
     n = bits.size
     if min_dwell_bins <= 1 or n == 0:
         return bits.copy()
-    valid = sorted({int(g) for g in (gap_indices or []) if 0 < int(g) < n})
-    edges = [0] + valid + [n]
+    edges = _gap_segment_edges(gap_indices, n)
     out = bits.copy()
     for a, b in zip(edges[:-1], edges[1:]):
         out[a:b] = _debounce_bits(bits[a:b], min_dwell_bins)
@@ -376,11 +402,9 @@ def dwell_time_statistics(binary_states, t_us, gap_indices=None,
         }
 
     # Break trace into segments at gap_indices, run-length encode each segment.
-    # Filter gap_indices to in-range positive values only — out-of-range entries
-    # (negative, 0, or >= n) are no-ops at the trace boundaries and are silently
-    # dropped to avoid IndexError from numpy slice wraparound.
-    valid_gaps = [int(g) for g in (gap_indices or []) if 0 < int(g) < n]
-    breakpoints = sorted(set([0, n] + valid_gaps))
+    # Out-of-range entries (negative, 0, or >= n) are dropped as boundary no-ops
+    # to avoid IndexError from numpy slice wraparound.
+    breakpoints = _gap_segment_edges(gap_indices, n)
     # Global sample period, recoverable from the whole trace even when an
     # individual segment is a single sample. Used to extrapolate the duration
     # of the last run in each segment.
@@ -568,8 +592,7 @@ def _bin_iq_time(I, Q, t_us, bin_us, gap_indices=None):
     if sp <= 0:
         sp = float(bin_us)
     bin_samples = max(1, int(round(float(bin_us) / sp)))
-    valid_gaps = sorted({int(g) for g in (gap_indices or []) if 0 < int(g) < I.size})
-    segment_edges = [0] + valid_gaps + [I.size]
+    segment_edges = _gap_segment_edges(gap_indices, I.size)
     I_parts, Q_parts, t_parts = [], [], []
     new_gaps = []
     cum = 0
@@ -778,7 +801,7 @@ def verify_modulation(scores, t_us, modulation_reference, gap_indices=None):
 
 
 def contrast_from_sweeps(freqs, Z_on, Z_off):
-    """Stage 1: |Z_on - Z_off|(f), best probe freq, robust contrast SNR.
+    """|Z_on - Z_off|(f), best probe freq, robust contrast SNR.
 
     Z_on/Z_off are complex demodulated responses (proportional to S21, NOT
     calibrated S21).
@@ -806,7 +829,7 @@ def contrast_from_sweeps(freqs, Z_on, Z_off):
 
 
 def projected_histogram_snr(scores, bins="auto"):
-    """Stage 4: two-Gaussian fit of V(t) with conservative, BIC-based bimodality.
+    """Two-Gaussian fit of V(t) with conservative, BIC-based bimodality.
 
     A 2-component GMM almost always 'finds' two peaks, so is_bimodal requires
     delta_bic>0 AND separation_snr>1.5 AND both weights in (0.1, 0.9).
@@ -843,7 +866,7 @@ def projected_histogram_snr(scores, bins="auto"):
 
 
 def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method="apriori"):
-    """Stage 5: reprocess the same raw IQ at several bin sizes.
+    """Reprocess the same raw IQ at several bin sizes.
 
     Returns per-bin separation SNR and dwell tau. best_bin_us maximizes separation
     SNR. NO monotonic-then-degrade assertion: the optimum can occur before T_parity.
@@ -867,7 +890,7 @@ def bin_size_sweep(I, Q, t_us, separator, bin_list_us, gap_indices=None, method=
 
 
 def threshold_stability(scores, t_us, threshold_list=None, gap_indices=None, min_dwell_bins=2):
-    """Stage 6: vary the classification threshold; report dwell tau stability.
+    """Vary the classification threshold; report dwell tau stability.
 
     Low tau_cv (coefficient of variation across thresholds) = robust telegraph;
     high tau_cv = noise crossings.
@@ -911,7 +934,7 @@ if __name__ == "__main__":
 
     # --- classify_parity_trace kmeans fallback --------------------------------
     out_km = classify_parity_trace(I, Q, separator=None, method="kmeans")
-    assert out_km["method"] == "kmeans_fallback"
+    assert out_km["method"] == "kmeans"
     assert "separator_used" in out_km
     accuracy_km = np.mean(out_km["binary_states"] == labels_true)
     assert accuracy_km > 0.99, f"kmeans accuracy too low: {accuracy_km}"

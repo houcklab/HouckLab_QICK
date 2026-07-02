@@ -107,28 +107,20 @@ def _validate_cfg(cfg, soccfg):
                 f"Increase sample_period_us or shorten read_length."
             )
 
-    # Rules 2 & 3: const-pulse 16-bit cycle cap
-    # us2cycles depends on the channel; soccfg exposes us2cycles via soccfg.us2cycles
+    # Rules 2 & 3: const-pulse 16-bit cycle cap (< 65535 cycles on both channels).
+    # us2cycles depends on the channel; soccfg exposes us2cycles via soccfg.us2cycles.
+    def _check_cycle_cap(length_key, rule_no):
+        for label in ("qubit_ch", "res_ch"):
+            cyc = soccfg.us2cycles(cfg[length_key], gen_ch=cfg[label])
+            if cyc > 65535:
+                raise RuntimeError(
+                    f"[ZeroSpanParity §5.3 rule {rule_no}] {length_key} yields "
+                    f"{cyc} cycles on {label} > 65535 cap. Reduce {length_key}."
+                )
     if mode == "strobe":
-        cyc_q = soccfg.us2cycles(cfg["sample_period_us"], gen_ch=cfg["qubit_ch"])
-        cyc_r = soccfg.us2cycles(cfg["sample_period_us"], gen_ch=cfg["res_ch"])
-        for label, cyc in [("qubit_ch", cyc_q), ("res_ch", cyc_r)]:
-            if cyc > 65535:
-                raise RuntimeError(
-                    f"[ZeroSpanParity §5.3 rule 2] sample_period_us yields "
-                    f"{cyc} cycles on {label} > 65535 cap. "
-                    f"Reduce sample_period_us."
-                )
+        _check_cycle_cap("sample_period_us", 2)
     else:
-        cyc_q = soccfg.us2cycles(cfg["capture_length_us"], gen_ch=cfg["qubit_ch"])
-        cyc_r = soccfg.us2cycles(cfg["capture_length_us"], gen_ch=cfg["res_ch"])
-        for label, cyc in [("qubit_ch", cyc_q), ("res_ch", cyc_r)]:
-            if cyc > 65535:
-                raise RuntimeError(
-                    f"[ZeroSpanParity §5.3 rule 3] capture_length_us yields "
-                    f"{cyc} cycles on {label} > 65535 cap. "
-                    f"Reduce capture_length_us."
-                )
+        _check_cycle_cap("capture_length_us", 3)
 
     # Rules 4 & 5: avg_maxlen / buf_maxlen
     ro_ch = cfg["ro_chs"][0]
@@ -216,7 +208,68 @@ def _validate_cfg(cfg, soccfg):
     # re-checked here.
 
 
-class ZeroSpanParityProgStrobe(AveragerProgram):
+class _ZeroSpanParityProgBase(AveragerProgram):
+    """
+    Shared two-tone setup and gate sequence for both parity acquisition paths.
+
+    Both programs declare the same two generators (readout + qubit) and single
+    readout, park a const readout tone and a const qubit "parity drive" tone,
+    and run the same body() (pulse the drive, then measure). The ONLY difference
+    is the const-pulse length: the strobe path holds each tone for one
+    sample_period; the decimated path holds them for the full capture window.
+    Subclasses supply that length via _const_length_us().
+
+    Required cfg keys: see module docstring.
+    """
+
+    def _const_length_us(self):
+        """Return the const-pulse duration (us) for this acquisition path."""
+        raise NotImplementedError
+
+    def _setup_two_tones(self):
+        cfg = self.cfg
+        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+                          mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        for ch in cfg["ro_chs"]:
+            self.declare_readout(
+                ch=ch,
+                length=self.us2cycles(cfg["read_length"]),
+                freq=cfg["read_pulse_freq"],
+                gen_ch=cfg["res_ch"],
+            )
+        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
+                              ro_ch=cfg["ro_chs"][0])
+        f_qub = self.freq2reg(cfg["parity_drive_freq"], gen_ch=cfg["qubit_ch"])
+        return f_res, f_qub
+
+    def initialize(self):
+        cfg = self.cfg
+        f_res, f_qub = self._setup_two_tones()
+        length_us = self._const_length_us()
+        length_cyc_q = self.us2cycles(length_us, gen_ch=cfg["qubit_ch"])
+        length_cyc_r = self.us2cycles(length_us, gen_ch=cfg["res_ch"])
+
+        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=f_qub,
+                                  phase=0, gain=cfg["qubit_gain"],
+                                  length=length_cyc_q)
+        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res,
+                                  phase=cfg["res_phase"], gain=cfg["pulse_gain"],
+                                  length=length_cyc_r)
+        self.synci(200)
+
+    def body(self):
+        self.pulse(ch=self.cfg["qubit_ch"], t=0)
+        self.measure(
+            pulse_ch=self.cfg["res_ch"],
+            adcs=self.cfg["ro_chs"],
+            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+            wait=True,
+            syncdelay=0,
+        )
+
+
+class ZeroSpanParityProgStrobe(_ZeroSpanParityProgBase):
     """
     Path A: stroboscopic per-rep IQ acquisition for zero-span parity measurement.
 
@@ -231,49 +284,11 @@ class ZeroSpanParityProgStrobe(AveragerProgram):
     Required cfg keys: see module docstring.
     """
 
-    def _setup_two_tones(self):
-        cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
-                          mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        for ch in cfg["ro_chs"]:
-            self.declare_readout(
-                ch=ch,
-                length=self.us2cycles(cfg["read_length"]),
-                freq=cfg["read_pulse_freq"],
-                gen_ch=cfg["res_ch"],
-            )
-        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
-                              ro_ch=cfg["ro_chs"][0])
-        f_qub = self.freq2reg(cfg["parity_drive_freq"], gen_ch=cfg["qubit_ch"])
-        return f_res, f_qub
-
-    def initialize(self):
-        cfg = self.cfg
-        f_res, f_qub = self._setup_two_tones()
-        period_cyc_q = self.us2cycles(cfg["sample_period_us"], gen_ch=cfg["qubit_ch"])
-        period_cyc_r = self.us2cycles(cfg["sample_period_us"], gen_ch=cfg["res_ch"])
-
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=f_qub,
-                                  phase=0, gain=cfg["qubit_gain"],
-                                  length=period_cyc_q)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res,
-                                  phase=cfg["res_phase"], gain=cfg["pulse_gain"],
-                                  length=period_cyc_r)
-        self.synci(200)
-
-    def body(self):
-        self.pulse(ch=self.cfg["qubit_ch"], t=0)
-        self.measure(
-            pulse_ch=self.cfg["res_ch"],
-            adcs=self.cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-            wait=True,
-            syncdelay=0,
-        )
+    def _const_length_us(self):
+        return self.cfg["sample_period_us"]
 
 
-class ZeroSpanParityProgDecimated(AveragerProgram):
+class ZeroSpanParityProgDecimated(_ZeroSpanParityProgBase):
     """
     Path B: decimated raw-ADC waveform acquisition for zero-span parity.
 
@@ -281,53 +296,16 @@ class ZeroSpanParityProgDecimated(AveragerProgram):
     for the entire window. ExperimentClass wrapper calls prog.acquire_decimated()
     instead of prog.acquire() to extract the (length, 2) IQ array.
 
-    Sample period = 1 / soccfg['readouts'][ro_ch]['f_output'] (us).
-    Total length = capture_length_us * f_output_MHz samples, capped by buf_maxlen.
+    Sample period = 1 / soccfg['readouts'][ro_ch]['f_output'] (us). The returned
+    trace length per capture is set by the DECLARED readout window
+    (declare_readout(length=us2cycles(read_length))) — i.e. read_length_us *
+    f_output_MHz samples, capped by buf_maxlen — NOT by capture_length_us.
+    capture_length_us only sets the const-pulse duration, which must cover the
+    readout window (spec §5.3 rule 9).
     """
 
-    def _setup_two_tones(self):
-        # Identical to strobe — could be hoisted to a mixin, but the spec calls
-        # for both classes to be self-contained for clarity. Duplication is
-        # bounded (~12 lines) and changes to one usually require revisiting both.
-        cfg = self.cfg
-        self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
-                          mixer_freq=cfg["mixer_freq"], ro_ch=cfg["ro_chs"][0])
-        self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        for ch in cfg["ro_chs"]:
-            self.declare_readout(
-                ch=ch,
-                length=self.us2cycles(cfg["read_length"]),
-                freq=cfg["read_pulse_freq"],
-                gen_ch=cfg["res_ch"],
-            )
-        f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"],
-                              ro_ch=cfg["ro_chs"][0])
-        f_qub = self.freq2reg(cfg["parity_drive_freq"], gen_ch=cfg["qubit_ch"])
-        return f_res, f_qub
-
-    def initialize(self):
-        cfg = self.cfg
-        f_res, f_qub = self._setup_two_tones()
-        capture_cyc_q = self.us2cycles(cfg["capture_length_us"], gen_ch=cfg["qubit_ch"])
-        capture_cyc_r = self.us2cycles(cfg["capture_length_us"], gen_ch=cfg["res_ch"])
-
-        self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=f_qub,
-                                  phase=0, gain=cfg["qubit_gain"],
-                                  length=capture_cyc_q)
-        self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res,
-                                  phase=cfg["res_phase"], gain=cfg["pulse_gain"],
-                                  length=capture_cyc_r)
-        self.synci(200)
-
-    def body(self):
-        self.pulse(ch=self.cfg["qubit_ch"], t=0)
-        self.measure(
-            pulse_ch=self.cfg["res_ch"],
-            adcs=self.cfg["ro_chs"],
-            adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
-            wait=True,
-            syncdelay=0,
-        )
+    def _const_length_us(self):
+        return self.cfg["capture_length_us"]
 
 
 class ZeroSpanParity(ExperimentClass):
@@ -373,6 +351,14 @@ class ZeroSpanParity(ExperimentClass):
         if self.cfg.get("mode", "strobe") != "strobe":
             raise RuntimeError("set_qubit_gain is strobe-mode only")
         self.cfg["qubit_gain"] = gain
+        # Re-sync the effective reps from reps_per_chunk before rebuilding.
+        # AveragerProgram bakes cfg["reps"] at construction, and only __init__
+        # translated reps_per_chunk->reps. A caller (e.g. validate's
+        # run_static_contrast) may bump reps_per_chunk after construction; without
+        # this re-sync that change is silently ignored and the sidecar's logged
+        # reps disagree with the reps actually run.
+        if "reps_per_chunk" in self.cfg:
+            self.cfg["reps"] = int(self.cfg["reps_per_chunk"])
         self.prog = ZeroSpanParityProgStrobe(self.soccfg, self.cfg)
 
     def acquire(self, progress=False, **kwargs):
@@ -404,10 +390,15 @@ class ZeroSpanParity(ExperimentClass):
         # Normalize accumulated di_buf/dq_buf by the number of readout-window
         # cycles so I/Q are in the same units as g/e centroids computed by
         # mSingleShotProgramFFMUX.collect_shots (which divides by
-        # us2cycles(readout_length, ro_ch=0)). Without this the apriori
-        # separator from get_apriori_separator_from_singleshot is on a
-        # different scale than the strobe trace and classification is wrong.
-        ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=ro_ch))
+        # us2cycles(readout_length, ro_ch=0) — ro_ch HARD-CODED to 0). Without
+        # this the apriori separator from get_apriori_separator_from_singleshot is
+        # on a different scale than the strobe trace and classification is wrong.
+        # Divide by the SAME cycles/us the separator was calibrated with: use
+        # ro_ch=0 to mirror collect_shots exactly, NOT ro_chs[0]. On a MUX setup
+        # where ro_chs[0] != 0 the two channels can have different decimated
+        # clocks, so keying off ro_chs[0] would silently rescale the trace
+        # relative to the separator.
+        ro_cycles = float(self.soccfg.us2cycles(cfg["read_length"], ro_ch=0))
         if ro_cycles <= 0:
             ro_cycles = 1.0
         # di_buf/dq_buf are indexed by readout DECLARATION ORDER, not absolute
@@ -446,6 +437,7 @@ class ZeroSpanParity(ExperimentClass):
         # persist read_length_us and the raw returned-sample count so the time
         # axis can be reconstructed once the true rate is known.
         decimated_fs_MHz = float(self.soccfg["readouts"][ro_ch]["f_output"])
+        sp = 1.0 / decimated_fs_MHz  # us per decimated sample (nominal); invariant
 
         n_captures = int(cfg.get("n_captures", 1))
         if n_captures < 1:
@@ -501,7 +493,6 @@ class ZeroSpanParity(ExperimentClass):
                 Q_c = arr[:, 1, :].ravel()
             else:
                 raise RuntimeError(f"unexpected acquire_decimated shape: {arr.shape}")
-            sp = 1.0 / decimated_fs_MHz  # us per decimated sample (nominal)
             t_c = np.arange(I_c.size, dtype=float) * sp
             if ci > 0:
                 cum_offset_us = float(t_parts[-1][-1]) + sp
@@ -514,7 +505,6 @@ class ZeroSpanParity(ExperimentClass):
         I = np.concatenate(I_parts)
         Q = np.concatenate(Q_parts)
         t_us = np.concatenate(t_parts)
-        sp = 1.0 / decimated_fs_MHz
         data = {
             "I": I, "Q": Q, "t_us": t_us,
             "gap_indices": np.asarray(gap_indices, dtype=int),
