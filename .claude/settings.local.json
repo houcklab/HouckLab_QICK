@@ -44,7 +44,8 @@
       "WebFetch(domain:na.support.keysight.com)",
       "PowerShell(& \"C:\\\\Users\\\\ece-houck-j409\\\\PycharmProjects\\\\HouckLab_QICK\\\\.venv\\\\Scripts\\\\python.exe\" \"C:\\\\Users\\\\ece-houck-j409\\\\PycharmProjects\\\\HouckLab_QICK\\\\.claude\\\\worktrees\\\\_find_twpa_opt.py\")",
       "PowerShell(& \"C:\\\\Users\\\\ece-houck-j409\\\\PycharmProjects\\\\HouckLab_QICK\\\\.venv\\\\Scripts\\\\python.exe\" -c \"import pywindfreak; print\\(pywindfreak.__file__\\); print\\(dir\\(pywindfreak\\)\\)\")",
-      "PowerShell(& \".\\\\.venv\\\\Scripts\\\\python.exe\" -c \"from pywindfreak import SynthHD, ReferenceMode; print\\('ok'\\)\")"
+      "PowerShell(& \".\\\\.venv\\\\Scripts\\\\python.exe\" -c \"from pywindfreak import SynthHD, ReferenceMode; print\\('ok'\\)\")",
+      "Bash(awk -F/ '{print $1}')"
     ]
   }
 }

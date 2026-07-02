@@ -5,9 +5,11 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.MixedShot
 
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mSingleShotProgramFFMUX import SingleShotProgram
 
-from WorkingProjects.Inductive_Coupler.Client_modules.Experiment import ExperimentClass
-from WorkingProjects.Inductive_Coupler.Client_modules.Helpers.hist_analysis import *
-# from WorkingProjects.Inductive_Coupler.Client_modules.Experiment_Scripts.mSingleShotProgramFF_HigherLevels import * #SingleShotProgramFF_2States, hist
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.CoreLib.Experiment import ExperimentClass
+# hist_analysis_opt is the relocated Inductive_Coupler hist_analysis (its hist_process
+# takes print_fidelities= and uses a different contrast calc than QM_Team's own
+# Helpers/hist_analysis, so it is kept as a separate module to preserve behavior).
+from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.hist_analysis_opt import *
 import time
 from tqdm.notebook import tqdm
 
