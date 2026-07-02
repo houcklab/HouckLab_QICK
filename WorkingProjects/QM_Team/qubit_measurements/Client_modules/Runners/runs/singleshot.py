@@ -189,7 +189,7 @@ def run_readout_optimize(ctx, SS_R_params):
         "trans_freq_stop": cfg["pulse_freq"] + span / 2,
         "TransNumPoints": cav_trans_pts,
     }
-    cfg = ctx.working_config(exp_parameters)
+    cfg = cfg | exp_parameters  # merge into the copy already holding number_of_pulses=1
     # Now lets optimize powers and readout frequencies
     Instance_SingleShotOptimize = ReadOpt_wSingleShotFF(path="SingleShot_OptReadout", outerFolder=ctx.outerFolder, cfg=cfg,soc=ctx.soc,soccfg=ctx.soccfg)
     data_SingleShotProgramOptimize = ReadOpt_wSingleShotFF.acquire(Instance_SingleShotOptimize)
@@ -223,7 +223,7 @@ def run_qubit_optimize(ctx, SS_Q_params, SS_params):
         "number_of_pulses": SS_Q_params["number_of_pulses"]
     }
     print(exp_parameters)
-    cfg = ctx.working_config(exp_parameters)
+    cfg = cfg | exp_parameters  # preserve number_of_pulses + pi2 qubit_gain set above (mirrors original config | exp_parameters)
     g0 = qubit_gains[Qubit_Pulse_Index]
     f0 = qubit_frequency_centers[Qubit_Pulse_Index]
     # # Now lets optimize powers and readout frequencies

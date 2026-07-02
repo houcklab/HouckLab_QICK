@@ -256,8 +256,8 @@ def run_t2e(ctx, T2E_params):
 
 def run_t1_ss(ctx, T1SS_params, SS_params):
     for i in range(T1SS_params["repetitions"]):
+        cfg = ctx.working_config()
         if T1SS_params["calibrate_SS"]:
-            cfg = ctx.working_config()
             cfg['number_of_pulses'] = SS_params['number_of_pulses']
             Instance_SingleShotProgram = SingleShotProgramFFMUX(path="SingleShot", outerFolder=ctx.outerFolder, cfg=cfg,
                                                                 soc=ctx.soc, soccfg=ctx.soccfg)
@@ -276,7 +276,7 @@ def run_t1_ss(ctx, T1SS_params, SS_params):
                     'reps': T1SS_params['reps'],
                     "pi_gain": ctx.qubit_gain, "relax_delay": T1SS_params["relax_delay"]
                     }
-        cfg = ctx.working_config(expt_cfg)  ### note that UpdateConfig will overwrite elements in BaseConfig
+        cfg = cfg | expt_cfg  ### preserve number_of_pulses set above (mirrors original config | expt_cfg)
         iT1 = T1_SS(path="T1SS", cfg=cfg, soc=ctx.soc, soccfg=ctx.soccfg, outerFolder=ctx.outerFolder)
         dT1 = T1_SS.acquire(iT1, angle = angle, threshold = threshold)
         T1_SS.display(iT1, dT1, plotDisp=False, figNum=2)
