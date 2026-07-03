@@ -13,7 +13,7 @@ from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF
 from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Experiments.mT1FF_NoUpdate import T1FF_N
 
 
-soc, soccfg = makeProxy()
+soc, soccfg = makeProxy_RFSOC_143()
 
 #### define the saving path
 
@@ -39,43 +39,74 @@ soc, soccfg = makeProxy()
 #           'outerfoldernameT2': "Z:/t1Team/Data/2026-02-22_BFF_cooldown/TATP03-01/RFSOC/T2/"}  # readout_time: 20
 # }
 
+# Qubit_Parameters = {
+#     "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
+#           "Qubit": {"Frequency": 1319.966169154229, "Gain": 3841, "sigma": 0.7, "flattop_length": None}, #pi = 3841
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//",
+#           "outerfoldernameT2": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
+#     # Not found
+#     "2": {"Readout": {"Frequency": 6719.506, "Gain": 2000},
+#           "Qubit": {"Frequency": 1434, "Gain": 3020, "sigma": 1, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q2//",
+#           "outerfoldernameT2": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q2//"},
+#
+#     "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
+#           "Qubit": {"Frequency": 1682.506674548052, "Gain": 5000, "sigma": 1.9, "flattop_length": None}, #pi 5000
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//",
+#           "outerfoldernameT2": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
+#
+#     "4": {"Readout": {"Frequency":  6911.954000000001, "Gain": 4000},
+#           "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
+#           "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//",
+#           "outerfoldernameT2": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
+# }
+
+# Device 3: FTTv02_SiOxJJ (3.0 nm)
 Qubit_Parameters = {
-    "1": {"Readout": {"Frequency": 6649.4, "Gain": 6000},
-          "Qubit": {"Frequency": 1724.135, "Gain": 10000, "sigma": 2.2, "flattop_length": None},
-          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q1/",
-          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q1/"},
+    # "1": {"Readout": {"Frequency":  6627.759, "Gain": 2000},
+    #       "Qubit": {"Frequency": 1319.966, "Gain": 3841, "sigma": 0.7, "flattop_length": None},  #pi = 3841
+    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q1//"},
+    # # Not found
 
-    "2": {"Readout": {"Frequency": 6767, "Gain": 10000},
-          "Qubit": {"Frequency": 1862.65, "Gain": 18000, "sigma": 2.2, "flattop_length": None},  # 0.03 sigma
-          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q2/",
-          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q2/"},
+    "2":
+    {
+        "Readout": {"Frequency": 6821.65, "Gain": 3300},
+        "Qubit":
+        {
+            "Frequency": 2854.95,   # pi pulse: 2855.05
+            "Gain":  18000,         # pi pulse: 18000
+            "sigma": 0.1,           # pi pulse: 0.1
+            "flattop_length": None
+        },
+        "outerfoldername": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//",
+        "outerfoldernameT2": "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC/q2//"
+    },
 
-    "3": {"Readout": {"Frequency": 6853.4, "Gain": 9000},
-          "Qubit": {"Frequency": 2106.9739, "Gain": 4200, "sigma": 1.5, "flattop_length": None},
-          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q3/",
-          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q3/"},
+    # "3": {"Readout": {"Frequency":  6817.98, "Gain": 4000},
+    #       "Qubit": {"Frequency": 1682.5, "Gain": 5000, "sigma": 1.9, "flattop_length": None},  #pi 5000
+    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q3//"},
 
-    "4": {"Readout": {"Frequency": 6946.126, "Gain": 6000},
-          "Qubit": {"Frequency": 2248.97, "Gain": 1218, "sigma": 1, "flattop_length": None},
-          "outerfoldername": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q4/",
-          "outerfoldernameT2": "Z:/t1Team/Data/2026-06-08_BFG_cooldown/Device 4 KOH stats/RFSOC/Q4/"},
+    # "4": {"Readout": {"Frequency":  6911.954, "Gain": 4000},
+    #       "Qubit": {"Frequency":   2043, "Gain": 1089, "sigma": 0.5, "flattop_length": None},
+    #       "outerfoldername": "Z:/t1Team/Data/2026-06-27_BFG_recooldown/Device 2 KOH + SiOx JJ (2 CLs)/RFSOC/Q4//"},
 }
 
 T1_qubitsweep = False
 T1_T2E_sweep = True
 
-T1T2_params = {"qubit_swept": [1,2,3,4],
-               "T1_step_list": [110, 10, 10, 70],
-               "T1_expts_list": [100,100,100,100],
-               "T1_reps_list": [15,15,15,15],
-               "T1_rounds_list": [15,15,15,15],
-               "T2E_max_list": [1550,1550,1550,1550],
-               "T2E_expts_list": [100,100,100,100],
-               "T2E_reps_list": [20,20,20,20],
-               "T2E_rounds_list": [20,20,20,20],
-               "pi2_gain_list": [5000,9000,2100,609],
-               "T1_relax_delay": [11000,1000,1000,7000],
-               "T2E_relax_delay": [11000,1000,1000,7000]}
+T1T2_params = {"qubit_swept":      [2],         # [1, 3],
+               "T1_step_list":     [100],       # [100, 100],
+               "T1_expts_list":    [100],       # [100, 100],
+               "T1_reps_list":     [15],        # [15, 15],
+               "T1_rounds_list":   [15],        # [15, 15],
+               "T2E_max_list":     [2000],      # [2000, 100],
+               "T2E_expts_list":   [101],       # [101, 3],
+               "T2E_reps_list":    [20],        # [20, 3],
+               "T2E_rounds_list":  [20],        # [20, 3],
+               "pi2_gain_list":    [7000],      # [2100, 2500],
+               "T1_relax_delay":   [3000],      # [10000, 10000],
+               "T2E_relax_delay":  [3000]       # [2000, 10]
+               }
 
 RunAmplitudeRabi = False
 Amplitude_Rabi_params = {"reps": 200,
@@ -197,7 +228,7 @@ if T1_T2E_sweep:
             trans_config = {
                 "reps": 10000,
                 "pulse_style": "const",
-                "readout_length": 5,
+                "readout_length": 18,
                 "pulse_gain": cavity_gain,
                 "pulse_freq": resonator_frequency_center,
                 "TransSpan": 1,
@@ -221,16 +252,16 @@ if T1_T2E_sweep:
                 "relax_delay": 3000,
                 "flattop_length": qubit_flattop
             }
-            config = config | ARabi_config
-
-            iAmpRabi = AmplitudeRabiFF_N(path="AmplitudeRabi", cfg=config, soc=soc, soccfg=soccfg,
-                                         outerFolder=outerFolder)
-            dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
-            rotation_angle, min_max = AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=False, figNum=2)
-            AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
-            AmplitudeRabiFF_N.save_config(iAmpRabi)
-            config["rotation_angle"] = rotation_angle
-            config["min_max"] = min_max
+            # config = config | ARabi_config
+            #
+            # iAmpRabi = AmplitudeRabiFF_N(path="AmplitudeRabi", cfg=config, soc=soc, soccfg=soccfg,
+            #                              outerFolder=outerFolder)
+            # dAmpRabi = AmplitudeRabiFF_N.acquire(iAmpRabi)
+            # rotation_angle, min_max = AmplitudeRabiFF_N.display(iAmpRabi, dAmpRabi, plotDisp=False, figNum=2)
+            # AmplitudeRabiFF_N.save_data(iAmpRabi, dAmpRabi)
+            # AmplitudeRabiFF_N.save_config(iAmpRabi)
+            # config["rotation_angle"] = rotation_angle
+            # config["min_max"] = min_max
 
             T1step = T1T2_params["T1_step_list"][idx]
             T1expts = T1T2_params["T1_expts_list"][idx]

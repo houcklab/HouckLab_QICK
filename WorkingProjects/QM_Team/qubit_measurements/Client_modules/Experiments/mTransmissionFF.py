@@ -1,3 +1,5 @@
+import os.path
+
 from qick import *
 import matplotlib.pyplot as plt
 import numpy as np
@@ -79,16 +81,19 @@ class CavitySpecFF(ExperimentClass):
         avgamp0 = np.abs(signal)
 
         amp_min = x_pts[np.argmin(avgamp0)]
-        print(f"Amplitude at minimum avgamp0: {amp_min*1e3} MHz")
+        print(f"Resonator frequency: {amp_min*1e3} MHz")
 
-        plt.figure(figNum)
-        plt.plot(x_pts, avgi, '.-', color = 'Green', label="I")
-        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
-        plt.plot(x_pts, avgamp0, color = 'Magenta', label="Amp")
+        plt.figure(figNum, figsize=(7, 5), dpi=150)
+        plt.plot(x_pts, avgi, '.-', color='Green', label="I")
+        plt.plot(x_pts, avgq, '.-', color='Blue', label="Q")
+        plt.plot(x_pts, avgamp0, color='Magenta', label="Amp")
         plt.axvline(x=amp_min, linestyle='--', color='r')
         plt.ylabel("a.u.")
         plt.xlabel("Cavity Frequency (GHz)")
-        plt.title(self.iname)
+        # plt.title(self.iname)
+        plt.title(self.outerFolder.replace("Z:\\", "") + self.path + str(os.path.sep) + '\n' +
+                  self.path + self.iname.split(self.path)[2] +
+                  self.path + "".join(self.iname.split(self.path)[3:]))
         plt.legend()
 
         plt.savefig(self.iname)
@@ -98,6 +103,18 @@ class CavitySpecFF(ExperimentClass):
             plt.pause(0.1)
         plt.close(figNum)
 
+        plt.figure(figsize=(7, 5), dpi=150)
+        plt.plot(x_pts, 20*np.log10(avgamp0), color='Magenta', label="logmag")
+        plt.axvline(x=amp_min, linestyle='--', color='r')
+        plt.ylabel("dB (arbitrary ref. level)")
+        plt.xlabel("Cavity Frequency (GHz)")
+        # plt.title(self.iname)
+        plt.title(self.outerFolder.replace("Z:\\", "") + self.path + str(os.path.sep) + '\n' +
+                  self.path + self.iname.split(self.path)[2] +
+                  self.path + "".join(self.iname.split(self.path)[3:]))
+        plt.legend()
+
+        plt.show()
 
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
