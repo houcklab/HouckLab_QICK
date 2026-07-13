@@ -122,6 +122,16 @@ class SingleShotProgram(AveragerProgram):
         cfg["reps"] = cfg["shots"]
         self.cfg["rounds"] = 1
 
+        if cfg["sigma"] <= 0:
+            raise ValueError("cfg['sigma'] must be positive")
+        if cfg["readout_length"] <= 0:
+            raise ValueError("cfg['readout_length'] must be positive")
+        if not cfg["ro_chs"]:
+            raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
+        for delay_key in ("adc_trig_offset", "relax_delay"):
+            if cfg.get(delay_key, 0.0) < 0:
+                raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+
         self.q_rp = self.ch_page(self.cfg["qubit_ch"])  # get register page for qubit_ch
 
         qubit_ch = cfg["qubit_ch"]
@@ -130,12 +140,53 @@ class SingleShotProgram(AveragerProgram):
 
         f_res = self.freq2reg(cfg["pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])  # conver f_res to dac register value
 
+        # Active-reset thresholds are calibrated from this program and consumed
+        # by ModifiedRamsey/ActiveResetVerify. All three programs must therefore
+        # integrate the same physical ADC window and play the same resonator tone.
+        # Convert each duration using its owning hardware clock, then extend the
+        # tone by the minimum generator cycles needed after cross-clock rounding.
+        required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
+        cfg.setdefault("length", required_tone_us)
+        if cfg["length"] < required_tone_us:
+            raise ValueError(
+                "cfg['length'] must cover cfg['adc_trig_offset'] + "
+                f"cfg['readout_length'] ({cfg['length']} us < "
+                f"{required_tone_us} us)"
+            )
+
+        self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
+        requested_tone_cycles = self.us2cycles(
+            cfg["length"], gen_ch=cfg["res_ch"]
+        )
+        self.readout_window_cycles = {
+            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch)
+            for ch in cfg["ro_chs"]
+        }
+
+        f_time = self.soccfg["tprocs"][0]["f_time"]
+        res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
+        adc_end_tproc = max(
+            self.adc_trig_offset_cycles
+            + self.readout_window_cycles[ch]
+            * f_time / self.soccfg["readouts"][ch]["f_output"]
+            for ch in cfg["ro_chs"]
+        )
+        required_tone_cycles = int(np.ceil(
+            adc_end_tproc * res_f_fabric / f_time - 1e-12
+        ))
+        self.readout_tone_cycles = max(
+            requested_tone_cycles, required_tone_cycles
+        )
+        self.readout_tone_extension_cycles = (
+            self.readout_tone_cycles - requested_tone_cycles
+        )
+
         for ch in cfg["ro_chs"]:  # configure the readout lengths and downconversion frequencies
-            self.declare_readout(ch=ch, length=self.us2cycles(cfg["readout_length"]),
+            self.declare_readout(ch=ch, length=self.readout_window_cycles[ch],
                                  freq=cfg["pulse_freq"], gen_ch=cfg["res_ch"])
         self.set_pulse_registers(ch=cfg["res_ch"], style="const", freq=f_res, phase=cfg["res_phase"],
                                  gain=cfg["pulse_gain"],
-                                 length=self.us2cycles(cfg["length"]))
+                                 length=self.readout_tone_cycles)
 
         # print("generator freq:", self.reg2freq(freq, gen_ch=res_ch))
         self.pulse_sigma = self.us2cycles(cfg["sigma"], gen_ch=self.cfg["qubit_ch"])
@@ -186,7 +237,7 @@ class SingleShotProgram(AveragerProgram):
 
         self.measure(pulse_ch=self.cfg["res_ch"],
                      adcs=self.ro_chs,
-                     adc_trig_offset=self.us2cycles(self.cfg["adc_trig_offset"]),
+                     adc_trig_offset=self.adc_trig_offset_cycles,
                      wait=True,
                      syncdelay=self.us2cycles(self.cfg["relax_delay"]))
 
@@ -204,8 +255,10 @@ class SingleShotProgram(AveragerProgram):
         all_q = []
         # print(self.di_buf)#, self.di_buf[1][:30])
         for i in range(len(self.di_buf)):
-            shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
-            shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) /self.us2cycles(self.cfg['readout_length'], ro_ch = 0)
+            ro_ch = self.cfg["ro_chs"][i]
+            norm = self.us2cycles(self.cfg['readout_length'], ro_ch=ro_ch)
+            shots_i0=self.di_buf[i].reshape((1,self.cfg["reps"])) / norm
+            shots_q0=self.dq_buf[i].reshape((1,self.cfg["reps"])) / norm
             all_i.append(shots_i0)
             all_q.append(shots_q0)
         return all_i,all_q

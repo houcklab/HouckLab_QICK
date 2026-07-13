@@ -89,7 +89,10 @@ def rebuild_singleshot_config(ctx, SS_params):
         ###### cavity
         # "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
         "read_pulse_style": "const", # --Fixed
-        "readout_length": SS_params["Readout_Time"], # us (length of the pulse applied)
+        # The resonator tone starts at t=0; ADC integration starts ADC_Offset
+        # later, so the tone must cover offset + the full integration window.
+        "length": SS_params["ADC_Offset"] + SS_params["Readout_Time"],
+        "readout_length": SS_params["Readout_Time"], # us (ADC integration window)
         "adc_trig_offset": SS_params["ADC_Offset"],
         "pi2_SS" : SS_params["pi2_SS"],
 
@@ -146,18 +149,16 @@ def build_context(Qubit_Parameters, Qubit_Readout, Qubit_Pulse, start_voltage, *
     qubit_sigma = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['sigma']
     qubit_flattop = Qubit_Parameters[str(Qubit_Pulse)]['Qubit']['flattop_length']
 
+    readout_length_us = 15
+    adc_trig_offset_us = BaseConfig["adc_trig_offset"]
     trans_config = {
         "reps": 1000,  # this will used for all experiements below unless otherwise changed in between trials
         "pulse_style": "const",  # --Fixed
-        # Resonator readout length [us]. "length" sets the readout TONE/pulse
-        # duration (ModifiedRamsey/ActiveResetVerify play the res pulse for
-        # us2cycles(cfg["length"])); if it is NOT set here it silently falls back
-        # to BaseConfig ("length": 30), so the tone outlives the integration
-        # window and editing readout_length alone never changes the played tone.
-        # "readout_length" is the ADC integration window. Keep the two equal so
-        # the window tracks the tone.
-        "length": 15,  # us - resonator readout tone duration
-        "readout_length": 15,  # us - ADC integration window (keep = "length")
+        # "length" is the resonator tone duration; "readout_length" is the ADC
+        # integration window. Since the ADC starts after adc_trig_offset, the tone
+        # must last through offset + window rather than merely equal the window.
+        "length": adc_trig_offset_us + readout_length_us,
+        "readout_length": readout_length_us,
         "pulse_gain": cavity_gain,  # [DAC units]
         "pulse_freq": resonator_frequency_center,  # [MHz] actual frequency is this number + "cavity_LO"
         "TransSpan": Transmission_params['span'],  ### 0.75 MHz, span will be center+/- this parameter

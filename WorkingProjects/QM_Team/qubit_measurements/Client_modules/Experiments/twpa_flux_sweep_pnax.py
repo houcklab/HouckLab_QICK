@@ -60,7 +60,7 @@ PNAX_ADDRESS         = "GPIB0::16::INSTR"   # TODO: PNA-X VISA address
 # Bias sweep
 I_START_uA           = 0.0
 I_STOP_uA            = 25.0      # full first flux period — calibration only
-N_BIAS_POINTS        = 51        # 51 points → 0.5 uA spacing across 0–25 uA
+N_BIAS_POINTS        = 26        # 51 points → 0.5 uA spacing across 0–25 uA
 SETTLE_AFTER_RAMP_S  = 0.5       # post-ramp dwell before each PNA-X read
 
 # PNA-X measurement mode:
@@ -74,12 +74,12 @@ PNAX_F_START_HZ      = 5e9    # TODO: low edge of the signal band of interest
 PNAX_F_STOP_HZ       = 8e9    # TODO: high edge of the signal band of interest
 PNAX_N_FREQ_POINTS   = 201       # points across the band (BAND mode only)
 PNAX_IF_BW_HZ        = 100.0
-PNAX_POWER_dBm       = -50.0       # keep low: TWPA is unbiased much of the sweep
+PNAX_POWER_dBm       = -5.0       # keep low: TWPA is unbiased much of the sweep
 PNAX_N_AVG           = 4         # sweep-averaging count (1 = off)
 PNAX_TIMEOUT_MS      = 30000
 
 # Output
-SAVE_DIR             = r"V:/t1Team/Data/2026-05-29_BFC_cooldown/TWPA_calibration"
+SAVE_DIR             = r"V:/t1Team/Data/2026-07-10_BFC_cooldown/TWPA_calibration"
 RUN_TAG              = "first_period_sweep"
 
 

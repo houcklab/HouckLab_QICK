@@ -25,7 +25,7 @@ BaseConfig = {
     "relax_delay": 3000,  # --Fixed
     "res_phase": 0,  # --Fixed
     "pulse_style": "const",  # --Fixed
-    "length": 30,  # [Clock ticks]
+    "length": 30,  # [us] resonator pulse duration (converted by each program)
     "pulse_gain": 30000,  # [DAC units]
     "adc_trig_offset": 1,  # [us]
     # Try varying adc_trig_offset from 100 to 220 clock ticks

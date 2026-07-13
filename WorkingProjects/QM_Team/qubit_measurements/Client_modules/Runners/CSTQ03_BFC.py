@@ -107,8 +107,9 @@ Run2ToneChargeDispersionQuasiCW = False   # new automated mode
 # Modified Ramsey for charge-parity switching: two-tone search -> fixed-tau Ramsey.
 # tau is automatically set to 1/(2*df) where df is the measured peak separation.
 # f_ge is automatically set to the higher-frequency peak.
-# relax_delay must be set to >= 3-5 * T1 so the qubit thermalises between shots
-# (hardware active reset not available in AveragerProgram; thermal reset is sufficient).
+# ModifiedRamsey_params["relax_delay"] applies only to the two-tone search. The
+# fixed-tau Ramsey uses the separate mr_relax_delay below (zero by default);
+# enable its hardware active reset when deterministic |g> preparation is required.
 RunModifiedRamsey = False
 
 TwoToneChargeDispersion_params = {
@@ -181,7 +182,9 @@ ModifiedRamsey_params = {
     # --- Modified Ramsey settings ---
     # tau is computed automatically as 1 / (2 * peak_sep_MHz)
     # f_ge is set automatically to the higher-frequency peak
-    # No relax delay: the measurement collapses the qubit and acts as reset.
+    # No relax delay: the preceding measurement collapses the state, but does
+    # not guarantee |g>. Enable use_active_reset for deterministic preparation.
+    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
     "mr_reps": 40000,             # number of single-shot Ramsey measurements per cycle
     "average_n_shots": 400,
     # Parity -> computational-state mapping (closing pi/2 phase). Opt-in; default
@@ -273,6 +276,7 @@ ModifiedRamsey_Control_params = {
     # tau is computed from S1 (the separation found at V1), NOT from S_sweet
     # (which is ~0), so it matches the tau that ModifiedRamsey would use at V1.
     # f_ge is set from the two-tone at V_sweet (average of peaks, or single peak).
+    "mr_relax_delay": 0.0,       # us after final readout; separate from search relax_delay
     "mr_reps": 500,
     # hysteresis / moving-average: set via setdefault below (same as ModifiedRamsey)
 }

@@ -21,6 +21,167 @@ from .calibration import (
 )
 
 
+def modified_ramsey_timing(soccfg, cfg):
+    """Return the scheduled per-repetition timing used by ModifiedRamseyProgram.
+
+    This mirrors the program's clock-domain conversions and timestamp barriers.
+    It excludes one-time initialize(), tProc instruction latency, data transfer,
+    and Python-side calibration/plotting/saving overhead.
+    """
+    res_ch = cfg["res_ch"]
+    qubit_ch = cfg["qubit_ch"]
+    ro_chs = cfg["ro_chs"]
+
+    if not ro_chs:
+        raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
+    if cfg["df"] <= 0:
+        raise ValueError("cfg['df'] must be positive")
+    if cfg["sigma"] <= 0:
+        raise ValueError("cfg['sigma'] must be positive")
+    if cfg["readout_length"] <= 0:
+        raise ValueError("cfg['readout_length'] must be positive")
+    delay_keys = ["adc_trig_offset", "mr_relax_delay"]
+    if cfg.get("use_active_reset", False):
+        delay_keys.extend(["reset_readout_relax_delay", "post_reset_wait"])
+    for delay_key in delay_keys:
+        if cfg.get(delay_key, 0.0) < 0:
+            raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+
+    f_time = float(soccfg["tprocs"][0]["f_time"])
+    res_f_fabric = float(soccfg["gens"][res_ch]["f_fabric"])
+    qubit_f_fabric = float(soccfg["gens"][qubit_ch]["f_fabric"])
+
+    # QICK tracks generator/readout timestamps as (native clock cycles converted
+    # to tProc cycles), then sync_all() truncates the largest timestamp to an
+    # integer tProc cycle. Reproduce that sequence exactly here.
+    requested_tone_native_cycles = soccfg.us2cycles(
+        cfg["length"], gen_ch=res_ch
+    )
+    adc_offset_tproc_cycles = soccfg.us2cycles(cfg["adc_trig_offset"])
+    window_native_cycles_by_ch = {
+        int(ch): soccfg.us2cycles(cfg["readout_length"], ro_ch=ch)
+        for ch in ro_chs
+    }
+    adc_end_tproc_by_ch = {
+        int(ch): (
+            adc_offset_tproc_cycles
+            + window_native_cycles_by_ch[int(ch)]
+            * f_time / float(soccfg["readouts"][ch]["f_output"])
+        )
+        for ch in ro_chs
+    }
+    adc_window_end_tproc = max(adc_end_tproc_by_ch.values())
+    required_tone_native_cycles = int(np.ceil(
+        adc_window_end_tproc * res_f_fabric / f_time - 1e-12
+    ))
+    tone_native_cycles = max(
+        requested_tone_native_cycles, required_tone_native_cycles
+    )
+    tone_extension_native_cycles = (
+        tone_native_cycles - requested_tone_native_cycles
+    )
+    tone_end_tproc = tone_native_cycles * f_time / res_f_fabric
+    readout_slot_tproc_cycles = int(max(tone_end_tproc, adc_window_end_tproc))
+
+    qubit_native_cycles = soccfg.us2cycles(
+        cfg["sigma"] * 4, gen_ch=qubit_ch
+    )
+    qubit_end_tproc = qubit_native_cycles * f_time / qubit_f_fabric
+    qubit_pulse_tproc_cycles = int(qubit_end_tproc)
+    use_pi_pulse = bool(cfg.get("use_pi_pulse", False))
+    ramsey_pulse_count = 3 if use_pi_pulse else 2
+    wait_request_us = (
+        1.0 / (4.0 * cfg["df"])
+        if use_pi_pulse else 1.0 / (2.0 * cfg["df"])
+    )
+    wait_count = 2 if use_pi_pulse else 1
+    wait_tproc_cycles = wait_count * soccfg.us2cycles(wait_request_us)
+    final_padding_tproc_cycles = soccfg.us2cycles(0.05)
+    mr_relax_tproc_cycles = soccfg.us2cycles(cfg.get("mr_relax_delay", 0.0))
+
+    reset_cycles = (
+        int(cfg.get("reset_cycles", 1))
+        if cfg.get("use_active_reset", False) else 0
+    )
+    if reset_cycles < 0:
+        raise ValueError("cfg['reset_cycles'] must be non-negative")
+    reset_delay_tproc_cycles = (
+        soccfg.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
+        if reset_cycles else 0
+    )
+    post_reset_wait_tproc_cycles = (
+        soccfg.us2cycles(cfg.get("post_reset_wait", 0.0))
+        if reset_cycles else 0
+    )
+
+    ramsey_sequence_tproc_cycles = (
+        ramsey_pulse_count * qubit_pulse_tproc_cycles
+        + wait_tproc_cycles
+        + final_padding_tproc_cycles
+        + readout_slot_tproc_cycles
+        + mr_relax_tproc_cycles
+    )
+    reset_block_tproc_cycles = (
+        # The corrective pi is conditional at runtime, but QICK's compile-time
+        # timestamp tracking sees the pulse before the shared sync_all(). The
+        # generated synci therefore reserves its full duration on both branches.
+        reset_cycles * (
+            readout_slot_tproc_cycles
+            + reset_delay_tproc_cycles
+            + qubit_pulse_tproc_cycles
+        )
+        + post_reset_wait_tproc_cycles
+    )
+    scheduled_rep_period_tproc_cycles = (
+        ramsey_sequence_tproc_cycles + reset_block_tproc_cycles
+    )
+
+    to_us = lambda cycles: float(cycles / f_time)
+    tone_us = float(tone_end_tproc / f_time)
+    adc_offset_us = to_us(adc_offset_tproc_cycles)
+    window_us_by_ch = {
+        int(ch): float(
+            window_native_cycles_by_ch[int(ch)]
+            / float(soccfg["readouts"][ch]["f_output"])
+        )
+        for ch in ro_chs
+    }
+
+    return {
+        "scheduled_rep_period_us": to_us(scheduled_rep_period_tproc_cycles),
+        "scheduled_rep_period_tproc_cycles": int(scheduled_rep_period_tproc_cycles),
+        "ramsey_sequence_us": to_us(ramsey_sequence_tproc_cycles),
+        "reset_block_us": to_us(reset_block_tproc_cycles),
+        "readout_slot_us": to_us(readout_slot_tproc_cycles),
+        "readout_slot_tproc_cycles": int(readout_slot_tproc_cycles),
+        "resonator_tone_us": tone_us,
+        "requested_resonator_tone_us": float(
+            requested_tone_native_cycles / res_f_fabric
+        ),
+        "tone_quantization_extension_cycles": int(tone_extension_native_cycles),
+        "adc_offset_us": adc_offset_us,
+        "max_readout_window_us": float(max(window_us_by_ch.values())),
+        "tone_coverage_margin_us": float(
+            (tone_end_tproc - adc_window_end_tproc) / f_time
+        ),
+        "qubit_pulse_us": to_us(qubit_pulse_tproc_cycles),
+        "ramsey_qubit_pulse_count": int(ramsey_pulse_count),
+        "ramsey_wait_us": to_us(wait_tproc_cycles),
+        "final_padding_us": to_us(final_padding_tproc_cycles),
+        "mr_relax_delay_us": to_us(mr_relax_tproc_cycles),
+        "reset_cycles": int(reset_cycles),
+        "reset_readout_relax_delay_us": to_us(reset_delay_tproc_cycles),
+        "post_reset_wait_us": to_us(post_reset_wait_tproc_cycles),
+        "f_time_mhz": f_time,
+        "res_f_fabric_mhz": res_f_fabric,
+        "qubit_f_fabric_mhz": qubit_f_fabric,
+        "ro_f_output_mhz": {
+            int(ch): float(soccfg["readouts"][ch]["f_output"])
+            for ch in ro_chs
+        },
+    }
+
+
 def run_two_tone_charge_dispersion_quasicw(ctx, TwoToneChargeDispersion_params, Spec_relevant_params, ChargeDispersion_params):
     cfg = ctx.working_config()
     save_dir = os.path.join(ctx.outerFolder, "TwoToneChargeDispersion")
@@ -644,6 +805,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             "reset_ground_below_threshold": ModifiedRamsey_params.get("reset_ground_below_threshold", True),
             "reset_readout_relax_delay": ModifiedRamsey_params.get("reset_readout_relax_delay", 1.0),
             "post_reset_wait": ModifiedRamsey_params.get("post_reset_wait", 0.0),
+            "mr_relax_delay": ModifiedRamsey_params.get("mr_relax_delay", 0.0),
             "sigma": ctx.qubit_sigma,
             "flattop_length": ctx.qubit_flattop,
             "reps": ModifiedRamsey_params["mr_reps"],
@@ -660,6 +822,8 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         elif mr_cfg["use_active_reset"]:
             wire_reset_into_mr_cfg(mr_cfg, apriori_sep_mr)
         config_mr = cfg | mr_cfg
+        timing_mr = modified_ramsey_timing(ctx.soccfg, config_mr)
+        config_mr["modified_ramsey_timing"] = timing_mr
 
         Instance_mr = ModifiedRamsey(
             path="ModifiedRamsey",
@@ -699,9 +863,10 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         c0_mr = apriori_sep_mr["g_center"]
         c1_mr = apriori_sep_mr["e_center"]
 
-        pulse_length_us = ctx.qubit_sigma * 4
-        n_qubit_pulses_mr = 3 if config_mr.get("use_pi_pulse", False) else 2
-        rep_period_us = n_qubit_pulses_mr * pulse_length_us + tau_us_mr + 0.05 + config_mr["readout_length"]
+        rep_period_us = timing_mr["scheduled_rep_period_us"]
+        streamer_rep_period_us_mr = data_mr["data"].get(
+            "streamer_average_rep_period_us", np.nan
+        )
 
         elapsed_ms_mr = np.arange(len(raw_i_mr)) * rep_period_us * 1e-3
         elapsed_avg_ms_mr = (
@@ -754,7 +919,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         plt.figure(figsize=(10, 4))
         plt.step(elapsed_ms_mr, binary_states_mr, where="post", linewidth=1.2)
         plt.plot(elapsed_ms_mr, binary_states_mr, "o", markersize=2)
-        plt.xlabel("Time since start (ms)")
+        plt.xlabel("Scheduled time since start (ms)")
         plt.ylabel("Single-shot state")
         plt.yticks([0, 1])
         plt.ylim(-0.1, 1.1)
@@ -769,7 +934,7 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
         # Averaged 0-to-1 population trace
         plt.figure(figsize=(10, 4))
         plt.plot(elapsed_avg_ms_mr, excited_avg_mr, "o-", linewidth=1.5)
-        plt.xlabel("Time since start (ms)")
+        plt.xlabel("Scheduled time since start (ms)")
         plt.ylabel("Averaged excited-state population")
         plt.ylim(-0.05, 1.05)
         plt.title(
@@ -799,6 +964,9 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             tau_us=np.array(tau_us_mr),
             final_voltage=np.array(current_voltage_mr),
             cycle_idx=np.array(cycle_idx_mr),
+            scheduled_rep_period_us=np.array(rep_period_us),
+            streamer_average_rep_period_us=np.array(streamer_rep_period_us_mr),
+            timing_breakdown=np.array(timing_mr, dtype=object),
             config=np.array(config_mr, dtype=object),
         )
 
@@ -812,6 +980,8 @@ def run_modified_ramsey(ctx, ModifiedRamsey_params, Spec_relevant_params):
             "chosen_probe_freq": chosen_probe_freq_mr,
             "peak_sep": chosen_peak_sep_mr,
             "tau_us": tau_us_mr,
+            "scheduled_rep_period_us": rep_period_us,
+            "streamer_average_rep_period_us": streamer_rep_period_us_mr,
         })
 
     summary_path_mr = os.path.join(
@@ -906,12 +1076,15 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 "pi2_gain":       ctx.pi2_gain,
                 "sigma":          ctx.qubit_sigma,
                 "flattop_length": ctx.qubit_flattop,
+                "mr_relax_delay": ModifiedRamsey_Control_params.get("mr_relax_delay", 0.0),
                 "reps":           ModifiedRamsey_Control_params["mr_reps"],
                 "rounds":         1,
                 "current_voltage": current_voltage_mrc,
                 "Qubit_number":   ctx.Qubit_Readout,
             }
             config_mrc = cfg | mr_cfg_mrc
+            timing_mrc = modified_ramsey_timing(ctx.soccfg, config_mrc)
+            config_mrc["modified_ramsey_timing"] = timing_mrc
 
             Instance_mrc = ModifiedRamsey(
                 path="ModifiedRamsey_Control",
@@ -947,9 +1120,10 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 midpoint_mrc = 0.5 * (c0_mrc + c1_mrc)
                 scores_mrc   = (iq_mrc - midpoint_mrc) @ normal_mrc
 
-            pulse_length_us_mrc = ctx.qubit_sigma * 4
-            rep_period_us_mrc   = (2 * pulse_length_us_mrc + tau_mrc
-                                    + 0.05 + config_mrc["readout_length"])
+            rep_period_us_mrc = timing_mrc["scheduled_rep_period_us"]
+            streamer_rep_period_us_mrc = data_mrc["data"].get(
+                "streamer_average_rep_period_us", np.nan
+            )
             elapsed_ms_mrc = np.arange(len(raw_i_mrc)) * rep_period_us_mrc * 1e-3
 
             timestamp_mrc = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
@@ -998,7 +1172,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
             plt.figure(figsize=(10, 4))
             plt.step(elapsed_ms_mrc, binary_states_mrc, where="post", linewidth=1.5)
             plt.plot(elapsed_ms_mrc, binary_states_mrc, "o", markersize=2)
-            plt.xlabel("Time since start (ms)")
+            plt.xlabel("Scheduled time since start (ms)")
             plt.ylabel("Parity state")
             plt.yticks([0, 1]); plt.ylim(-0.1, 1.1)
             plt.title(
@@ -1046,7 +1220,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                             label=f"High threshold = {high_thresh_mrc:.2f}")
                 plt.axhline(low_thresh_mrc,  linestyle="--", linewidth=1.2,
                             label=f"Low threshold = {low_thresh_mrc:.2f}")
-                plt.xlabel("Time since start (ms)")
+                plt.xlabel("Scheduled time since start (ms)")
                 plt.ylabel("Smoothed parity state")
                 plt.ylim(-0.05, 1.05)
                 plt.title(
@@ -1062,7 +1236,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                          linewidth=1.5, label="Hysteresis state")
                 plt.plot(elapsed_ms_mrc, binary_states_mrc, "o", markersize=2,
                          alpha=0.35, label="Raw binary state")
-                plt.xlabel("Time since start (ms)")
+                plt.xlabel("Scheduled time since start (ms)")
                 plt.ylabel("Parity state")
                 plt.yticks([0, 1]); plt.ylim(-0.1, 1.1)
                 plt.title(
@@ -1080,7 +1254,7 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                     plt.step(switch_time_ms_mrc, switches_hyst_mrc, where="post",
                              linewidth=1.5)
                     plt.plot(switch_time_ms_mrc, switches_hyst_mrc, "o", markersize=2)
-                    plt.xlabel("Time since start (ms)")
+                    plt.xlabel("Scheduled time since start (ms)")
                     plt.ylabel("Jump detected")
                     plt.yticks([0, 1]); plt.ylim(-0.1, 1.1)
                     plt.title(
@@ -1116,6 +1290,9 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 hysteresis_high      = np.array(high_thresh_mrc),
                 moving_avg_window_n  = np.array(window_n_mrc),
                 moving_avg_window_ms = np.array(window_n_mrc * dt_ms_mrc),
+                scheduled_rep_period_us = np.array(rep_period_us_mrc),
+                streamer_average_rep_period_us = np.array(streamer_rep_period_us_mrc),
+                timing_breakdown     = np.array(timing_mrc, dtype=object),
                 config               = np.array(config_mrc, dtype=object),
             )
 
@@ -1130,6 +1307,8 @@ def run_modified_ramsey_control(ctx, ModifiedRamsey_Control_params):
                 "sweet_verified": True,
                 "f_ge":           f_ge_mrc,
                 "tau_us":         tau_mrc,
+                "scheduled_rep_period_us": rep_period_us_mrc,
+                "streamer_average_rep_period_us": streamer_rep_period_us_mrc,
             })
 
         else:

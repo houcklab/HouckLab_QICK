@@ -63,6 +63,22 @@ class ActiveResetVerifyProgram(AveragerProgram):
     def initialize(self):
         cfg = self.cfg
 
+        if cfg["sigma"] <= 0:
+            raise ValueError("cfg['sigma'] must be positive")
+        if cfg["readout_length"] <= 0:
+            raise ValueError("cfg['readout_length'] must be positive")
+        if not cfg["ro_chs"]:
+            raise ValueError("cfg['ro_chs'] must contain at least one readout channel")
+        for delay_key in (
+            "adc_trig_offset",
+            "verify_relax_delay",
+            "relax_delay",
+            "reset_readout_relax_delay",
+            "post_reset_wait",
+        ):
+            if cfg.get(delay_key, 0.0) < 0:
+                raise ValueError(f"cfg['{delay_key}'] must be non-negative")
+
         self.q_rp = self.ch_page(cfg["qubit_ch"])
 
         # Free user registers on the qubit page (mirrors ModifiedRamsey).
@@ -72,6 +88,8 @@ class ActiveResetVerifyProgram(AveragerProgram):
         self.prep_excited = cfg.get("prep_excited", False)
         self.use_active_reset = cfg.get("use_active_reset", False)
         self.reset_cycles = int(cfg.get("reset_cycles", 1)) if self.use_active_reset else 0
+        if self.reset_cycles < 0:
+            raise ValueError("cfg['reset_cycles'] must be non-negative")
         self.reset_skip_op = "<" if cfg.get("reset_ground_below_threshold", True) else ">"
         # Diagnostic: fire the corrective pi UNCONDITIONALLY (skip the condj).
         # Measures the bare pi fidelity in the post-readout environment,
@@ -94,10 +112,49 @@ class ActiveResetVerifyProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
 
+        # Match ModifiedRamsey exactly: ADC windows use the readout clock,
+        # resonator pulses use the generator fabric clock, and trigger/delay
+        # values use the tProc clock.
+        required_tone_us = cfg["adc_trig_offset"] + cfg["readout_length"]
+        cfg.setdefault("length", required_tone_us)
+        if cfg["length"] < required_tone_us:
+            raise ValueError(
+                "cfg['length'] must cover cfg['adc_trig_offset'] + "
+                f"cfg['readout_length'] ({cfg['length']} us < "
+                f"{required_tone_us} us)"
+            )
+
+        self.adc_trig_offset_cycles = self.us2cycles(cfg["adc_trig_offset"])
+        requested_tone_cycles = self.us2cycles(
+            cfg["length"], gen_ch=cfg["res_ch"]
+        )
+        self.readout_window_cycles = {
+            ch: self.us2cycles(cfg["readout_length"], ro_ch=ch)
+            for ch in cfg["ro_chs"]
+        }
+
+        f_time = self.soccfg["tprocs"][0]["f_time"]
+        res_f_fabric = self.soccfg["gens"][cfg["res_ch"]]["f_fabric"]
+        adc_end_tproc = max(
+            self.adc_trig_offset_cycles
+            + self.readout_window_cycles[ch]
+            * f_time / self.soccfg["readouts"][ch]["f_output"]
+            for ch in cfg["ro_chs"]
+        )
+        required_tone_cycles = int(np.ceil(
+            adc_end_tproc * res_f_fabric / f_time - 1e-12
+        ))
+        self.readout_tone_cycles = max(
+            requested_tone_cycles, required_tone_cycles
+        )
+        self.readout_tone_extension_cycles = (
+            self.readout_tone_cycles - requested_tone_cycles
+        )
+
         for ch in cfg["ro_chs"]:
             self.declare_readout(
                 ch=ch,
-                length=self.us2cycles(cfg["readout_length"]),
+                length=self.readout_window_cycles[ch],
                 freq=cfg["pulse_freq"],
                 gen_ch=cfg["res_ch"]
             )
@@ -128,7 +185,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
             freq=f_res,
             phase=cfg["res_phase"],
             gain=cfg["pulse_gain"],
-            length=self.us2cycles(cfg["length"])
+            length=self.readout_tone_cycles
         )
 
         if self.use_active_reset or self.prep_excited:
@@ -145,7 +202,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
                 )
             # Rescale the normalized threshold back to the raw accumulator units the
             # tProc compares (collect_shots divides accumulated I by the window len).
-            ro_norm = self.us2cycles(cfg["readout_length"], ro_ch=0)
+            ro_norm = self.readout_window_cycles[cfg["ro_chs"][0]]
             raw_threshold = int(round(cfg["readout_threshold"] * ro_norm))
             if abs(raw_threshold) >= self.cmp_offset:
                 raise ValueError(
@@ -187,7 +244,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
             self.measure(
                 pulse_ch=cfg["res_ch"],
                 adcs=self.ro_chs,
-                adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
                 syncdelay=self.us2cycles(cfg.get("reset_readout_relax_delay", 1.0))
             )
@@ -250,7 +307,7 @@ class ActiveResetVerifyProgram(AveragerProgram):
             self.measure(
                 pulse_ch=cfg["res_ch"],
                 adcs=self.ro_chs,
-                adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                adc_trig_offset=self.adc_trig_offset_cycles,
                 wait=True,
                 syncdelay=syncdelay
             )
@@ -268,7 +325,8 @@ class ActiveResetVerifyProgram(AveragerProgram):
         return self.collect_shots()
 
     def collect_shots(self):
-        norm = self.us2cycles(self.cfg["readout_length"], ro_ch=0)
+        ro_ch = self.cfg["ro_chs"][0]
+        norm = self.us2cycles(self.cfg["readout_length"], ro_ch=ro_ch)
         reps = self.cfg["reps"]
         reads_per_rep = self.reads_per_rep
         # Verification read k of each rep lives at di_buf[ch][reset_cycles+k :: reads_per_rep].
