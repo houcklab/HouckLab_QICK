@@ -26,6 +26,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import (
     BaseConfig, FLUX_FIT_PARAMS, FF_PARK_GAIN, FF_STEP_TARGET_GAIN, outerFolder,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFlux import TransmissionVsFlux
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpecVsFlux import QubitSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
@@ -40,6 +41,16 @@ QUBIT = "q4"   # data subfolder under outerFolder (matches the existing .../RFSO
 
 
 # ---- per-step parameters (edit + flip 'run' flags) --------------------------
+P1FF_TRANSMISSION = dict(
+    run=False, reps=300,
+    # readout-freq window around the park resonator (7248.95 MHz)
+    trans_freq_start=7245.0, trans_freq_stop=7252.0, TransNumPoints=141,
+    ff_gain_start=0, ff_gain_stop=12000, ff_gain_num=41,
+    ff_settle_us=20.0,
+    relax_delay=50,          # us; no qubit excitation -> cavity ring-down only
+    ff_ramp_length=0.02, dt_pulseplay=5.0, dt_pulsedef=0.002,
+)
+
 P4_LONG_TIME = dict(
     run=False, reps=100,
     # spec window: park f01 ~ 2557 MHz; flux tuning pulls it DOWN from there
@@ -98,6 +109,22 @@ YOKO_VISA = None   # set a VISA address AND flip the run flags above to use them
 
 
 # ---- step functions ---------------------------------------------------------
+def run_step1_ff(soc, soccfg):
+    """Bring-up: resonator transmission vs held ff_gain (readout AT the flux).
+    Confirms the flux wiring/polarity/scale; exports a resonator-vs-ff lookup."""
+    p = P1FF_TRANSMISSION
+    cfg = BaseConfig | {k: p[k] for k in
+                        ("reps", "trans_freq_start", "trans_freq_stop", "TransNumPoints",
+                         "ff_gain_start", "ff_gain_stop", "ff_gain_num", "ff_settle_us",
+                         "relax_delay", "ff_ramp_length", "dt_pulseplay", "dt_pulsedef")}
+    exp = TransmissionVsFFGain(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
+                               cfg=cfg)
+    data = exp.acquire()
+    exp.save_data(data)
+    exp.save_config()
+    return data['data'].get('resonator_lookup_csv')
+
+
 def run_step4(soc, soccfg, correction_json=None):
     """Spec vs ff_gain at long delays: settling check + f_q(ff_gain) map + the
     transmon-arc fit (FLUX_FIT_PARAMS in DAC units).  Runs FIRST in this workflow."""
@@ -298,7 +325,8 @@ def main():
     print(f"TLS spectroscopy pipeline (all-fast-flux) | FTTv02_SiOxJJ {QUBIT}")
     print(f"park ff_gain = {BaseConfig['ff_park_gain']} DAC | "
           f"step-response target = {P3_STEP_RESPONSE['ff_gain']} DAC | ff_ch = {BaseConfig['ff_ch']}")
-    steps = [("4_spec_vs_ff_gain (map + flux fit)", P4_LONG_TIME["run"]),
+    steps = [("1ff_transmission_vs_ff_gain (bring-up)", P1FF_TRANSMISSION["run"]),
+             ("4_spec_vs_ff_gain (map + flux fit)", P4_LONG_TIME["run"]),
              ("3a_step_response_fit", P3_STEP_RESPONSE["run_fit"]),
              ("3b_step_response_correct", P3_STEP_RESPONSE["run_correct"]),
              ("5_single_shot_cal", P5_SS_CAL["run"]),
@@ -316,6 +344,8 @@ def main():
     ff_gain_to_freq = None
     resonator_lookup_csv = None
 
+    if P1FF_TRANSMISSION["run"]:
+        run_step1_ff(soc, soccfg)
     if P4_LONG_TIME["run"]:
         ff_gain_to_freq, fit = run_step4(soc, soccfg, correction_json)
         if fit is not None:
