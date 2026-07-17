@@ -33,6 +33,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import (
     T1FullCurveVsFlux, T13PointVsFlux, run_wall_clock_repeat,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 
 
 QUBIT = "q4"   # data subfolder under outerFolder (matches the existing .../RFSOC/q4/)
@@ -63,7 +64,12 @@ P5_SS_CAL = dict(run=False, ss_shots=2000, min_F=0.60)
 P6_3PT_T1 = dict(
     run=False, shots=2000,
     ff_gain_start=0, ff_gain_stop=12000, ff_gain_num=201,
-    Ts_us=100.0, min_ref_contrast=0.05, relax_delay=5000,
+    freq_step_mhz=1,        # freq-UNIFORM flux scan from the flux fit (QUA beat);
+                            # None -> plain gain-linspace of ff_gain_num points
+    Ts_us=100.0,            # None -> auto: Ts = auto_Ts_factor * T1_park (probe below)
+    auto_Ts_factor=0.5, run_park_T1_if_Ts_none=True,
+    T1_probe_cfg=dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71),
+    min_ref_contrast=0.05, relax_delay=5000,
     ff_ramp_length=0.02, dt_pulseplay=5.0, dt_pulsedef=0.002,
     wall_clock_duration_min=None,
 )
@@ -71,6 +77,7 @@ P6_3PT_T1 = dict(
 P6_FULL_T1 = dict(
     run=False, shots=1000,
     ff_gain_start=0, ff_gain_stop=12000, ff_gain_num=101,
+    freq_step_mhz=2,        # freq-uniform flux scan (QUA beat); None -> linspace
     t_min_us=1.0, t_max_us=300.0, t_points=41, relax_delay=5000,
     ff_ramp_length=0.02, dt_pulseplay=5.0, dt_pulsedef=0.002,
     wall_clock_duration_min=None,
@@ -179,11 +186,37 @@ def _t1_base(p, comp):
     return base
 
 
-def run_step6_3pt(soc, soccfg, calib_params, correction_json, ff_gain_to_freq):
+def _build_ff_gain_vec(p, flux_fit_params, tag):
+    """Freq-UNIFORM flux vector from the flux fit (QUA _build_freq_uniform_dc_vec
+    beat), falling back to a plain gain-linspace when no fit/step is available."""
+    step_mhz = p.get("freq_step_mhz")
+    if step_mhz and flux_fit_params is not None:
+        vec = fx.build_freq_uniform_dc_vec(p["ff_gain_start"], p["ff_gain_stop"],
+                                           float(step_mhz) * 1e6, flux_fit_params)
+        f_edges = fx.estimate_fit_frequency_ghz_array(
+            flux_fit_params, np.array([vec.min(), vec.max()]))
+        print(f"[6] freq-uniform ff_gain scan from flux fit: {len(vec)} points at "
+              f"{step_mhz:g} MHz steps (gain {vec.min():g}..{vec.max():g}, "
+              f"f {min(f_edges):.3f}..{max(f_edges):.3f} GHz)")
+        return vec
+    if step_mhz:
+        print(f"[6] freq_step_mhz set but no FLUX_FIT_PARAMS -> gain-linspace "
+              f"({tag}); run step 4 first for a freq-uniform scan.")
+    return np.linspace(p["ff_gain_start"], p["ff_gain_stop"], int(p["ff_gain_num"]))
+
+
+def run_step6_3pt(soc, soccfg, calib_params, correction_json, ff_gain_to_freq,
+                  flux_fit_params=None):
     p = P6_3PT_T1
     comp = QubitLongTimeSpecVsFlux.load_dc_compensation_json(correction_json) \
         if correction_json else None
     base = _t1_base(p, comp)
+    ff_gains = _build_ff_gain_vec(p, flux_fit_params, "3pt")
+    base["ff_gain_vec"] = ff_gains
+    wc = p["wall_clock_duration_min"]
+    print(f"[6] 3-point T1 vs flux (distortion-{'corrected' if comp else 'UNcorrected'}): "
+          f"{len(ff_gains)} flux points, "
+          f"{'single pass' if not wc else f'wall-clock {wc:g} min'}")
 
     def factory():
         return T13PointVsFlux(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
@@ -191,20 +224,26 @@ def run_step6_3pt(soc, soccfg, calib_params, correction_json, ff_gain_to_freq):
                               ff_gain_to_freq=ff_gain_to_freq,
                               suffix="TLS_3pt_T1_vs_Flux")
 
-    ff_gains = np.linspace(p["ff_gain_start"], p["ff_gain_stop"], int(p["ff_gain_num"]))
-    if p["wall_clock_duration_min"]:
+    if wc:
         csv = outerFolder + f"/{QUBIT}/TLS_3pt_T1_wall_clock.csv"
         run_wall_clock_repeat(factory, "inv_T1_3pt_per_us", ff_gains, csv,
-                              duration_min=p["wall_clock_duration_min"])
+                              duration_min=wc)
     else:
         factory().acquire()
 
 
-def run_step6_full(soc, soccfg, calib_params, correction_json, ff_gain_to_freq):
+def run_step6_full(soc, soccfg, calib_params, correction_json, ff_gain_to_freq,
+                   flux_fit_params=None):
     p = P6_FULL_T1
     comp = QubitLongTimeSpecVsFlux.load_dc_compensation_json(correction_json) \
         if correction_json else None
     base = _t1_base(p, comp)
+    ff_gains = _build_ff_gain_vec(p, flux_fit_params, "full")
+    base["ff_gain_vec"] = ff_gains
+    wc = p["wall_clock_duration_min"]
+    print(f"[6] Full T1 vs flux (distortion-{'corrected' if comp else 'UNcorrected'}): "
+          f"{len(ff_gains)} flux points, "
+          f"{'single pass' if not wc else f'wall-clock {wc:g} min'}")
 
     def factory():
         return T1FullCurveVsFlux(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
@@ -212,11 +251,10 @@ def run_step6_full(soc, soccfg, calib_params, correction_json, ff_gain_to_freq):
                                  ff_gain_to_freq=ff_gain_to_freq,
                                  suffix="TLS_Full_T1_vs_Flux")
 
-    ff_gains = np.linspace(p["ff_gain_start"], p["ff_gain_stop"], int(p["ff_gain_num"]))
-    if p["wall_clock_duration_min"]:
+    if wc:
         csv = outerFolder + f"/{QUBIT}/TLS_Full_T1_wall_clock.csv"
         run_wall_clock_repeat(factory, "inv_T1_per_us", ff_gains, csv,
-                              duration_min=p["wall_clock_duration_min"])
+                              duration_min=wc)
     else:
         factory().acquire()
 
@@ -290,12 +328,16 @@ def main():
         calib_params = run_step5(soc, soccfg)
     if P6_3PT_T1["run"]:
         if calib_params is None:
+            print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
             calib_params = run_step5(soc, soccfg)
-        run_step6_3pt(soc, soccfg, calib_params, correction_json, ff_gain_to_freq)
+        run_step6_3pt(soc, soccfg, calib_params, correction_json, ff_gain_to_freq,
+                      flux_fit_params)
     if P6_FULL_T1["run"]:
         if calib_params is None:
+            print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
             calib_params = run_step5(soc, soccfg)
-        run_step6_full(soc, soccfg, calib_params, correction_json, ff_gain_to_freq)
+        run_step6_full(soc, soccfg, calib_params, correction_json, ff_gain_to_freq,
+                       flux_fit_params)
 
     if P1_RESONATOR["run"] or P2_QUBIT_SPEC["run"]:
         if YOKO_VISA is None:

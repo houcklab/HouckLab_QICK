@@ -262,11 +262,42 @@ class T13PointVsFlux(_T1VsFluxBase):
     """Fast 3-point T1 estimate at each fast-flux target (P0/P1/Ps closed form).
 
     T1 = -Ts / ln((Ps - P0)/(P1 - P0)).  cfg: ff_gain_vec, Ts_us, shots, qubit_pi_gain.
+    If Ts_us is None, a park T1 probe picks Ts = auto_Ts_factor * T1_park
+    (QUA _auto_choose_Ts_via_park_T1 beat; knobs: auto_Ts_factor, T1_probe_cfg,
+    run_park_T1_if_Ts_none).
     """
+
+    def _auto_Ts_from_park_T1(self):
+        """Measure T1 at the park point and return auto_Ts_factor * T1_park (us)."""
+        cfg = self.cfg
+        probe = dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71)
+        probe.update(cfg.get("T1_probe_cfg") or {})
+        park = float(cfg.get("ff_park_gain", 0))
+        shots_saved = cfg["shots"]
+        cfg["shots"] = int(probe["shots_T1"])
+        waits = np.geomspace(max(probe["t_min_us"], 0.05), probe["t_max_us"],
+                             int(probe["t_points"]))
+        print(f"[6] Ts_us is None -> park T1 probe ({len(waits)} waits x "
+              f"{cfg['shots']} shots at ff_gain={park:g}) ...")
+        pe = np.array([self._run_point(park, w, do_pi=True) for w in waits])
+        cfg["shots"] = shots_saved
+        pars, _ = ff.fit_T1(waits, pe)
+        if pars is None:
+            raise RuntimeError("Park T1 probe fit failed; set Ts_us explicitly.")
+        t1_park = float(pars['T1'])
+        factor = float(cfg.get("auto_Ts_factor", 0.5))
+        Ts = factor * t1_park
+        print(f"[6] park T1 = {t1_park:.1f} us -> Ts = {factor:g} x T1_park = {Ts:.1f} us")
+        self._park_probe = {'t1_park_us': t1_park, 'waits_us': waits, 'pe': pe}
+        return Ts
 
     def acquire(self, progress=False, plotDisp=False, figNum=1, write_outputs=True):
         cfg = self.cfg
         ff_gains = self._ff_gain_vec()
+        if cfg.get("Ts_us") is None:
+            if not cfg.get("run_park_T1_if_Ts_none", True):
+                raise RuntimeError("Ts_us is None and run_park_T1_if_Ts_none is False.")
+            cfg["Ts_us"] = self._auto_Ts_from_park_T1()
         Ts = float(cfg["Ts_us"])
         min_contrast = float(cfg.get("min_ref_contrast", 0.05))
         P0 = np.full(len(ff_gains), np.nan)
@@ -274,11 +305,16 @@ class T13PointVsFlux(_T1VsFluxBase):
         Ps = np.full(len(ff_gains), np.nan)
         T1 = np.full(len(ff_gains), np.nan)
 
+        # QUA convention: the P0/P1 references are measured AT PARK (no detuned
+        # hold) each flux point -- interleaved so they track drift; only Ps decays
+        # at the target.  The minimal park dwell is one dt_pulseplay segment.
+        park = float(cfg.get("ff_park_gain", 0))
+        w0 = cfg.get("dt_pulseplay", 5.0)
         start = time.time()
         for i, g in enumerate(ff_gains):
-            P0[i] = self._run_point(g, cfg.get("dt_pulseplay", 5.0), do_pi=False)  # no pi ref
-            P1[i] = self._run_point(g, cfg.get("dt_pulseplay", 5.0), do_pi=True)    # pi, ~0 wait
-            Ps[i] = self._run_point(g, Ts, do_pi=True)                              # pi + hold Ts
+            P0[i] = self._run_point(park, w0, do_pi=False)  # thermal ref (park, no pi)
+            P1[i] = self._run_point(park, w0, do_pi=True)   # pi ref (park, ~zero delay)
+            Ps[i] = self._run_point(g, Ts, do_pi=True)      # pi + hold Ts at target
             contrast = P1[i] - P0[i]
             if abs(contrast) >= min_contrast:
                 pe = (Ps[i] - P0[i]) / contrast
@@ -293,6 +329,7 @@ class T13PointVsFlux(_T1VsFluxBase):
         data = {'config': cfg, 'data': {
             'ff_gains': ff_gains, 'P0': P0, 'P1': P1, 'Ps': Ps, 'Ts_us': Ts,
             'T1_3pt_us': T1, 'inv_T1_3pt_per_us': inv_T1, 'qubit_freq_ghz': freq,
+            't1_park_us': getattr(self, '_park_probe', {}).get('t1_park_us'),
             'repeat_metadata': self.repeat_metadata}}
         self.data = data
         if write_outputs:
@@ -352,21 +389,31 @@ def run_wall_clock_repeat(factory, metric_key, ff_gains, csv_path,
                    some sandboxes).  Defaults to time.time.
     """
     import time as _time
+    import datetime as _dt
     now_fn = now_fn or _time.time
     series_start = now_fn()
+    series_iso = _dt.datetime.fromtimestamp(series_start).isoformat(timespec='seconds')
     rows = []
     run_index = 0
     while True:
         run_start = now_fn()
+        run_iso = _dt.datetime.fromtimestamp(run_start).isoformat(timespec='seconds')
+        elapsed_min = (run_start - series_start) / 60.0
+        if duration_min is not None:
+            print(f"  [6] wall-clock run {run_index + 1} (elapsed {elapsed_min:.1f} min)")
         exp = factory()
         data = exp.acquire(write_outputs=True)
         metric = np.asarray(data['data'][metric_key], dtype=float)
-        elapsed_min = (run_start - series_start) / 60.0
         for g, m in zip(ff_gains, metric):
-            rows.append([run_index, elapsed_min, g, m])
-        np.savetxt(csv_path, np.array(rows), delimiter=",",
-                   header="run_index,elapsed_min,ff_gain," + metric_key, comments="")
-        print(f"[6] wall-clock run {run_index+1} done; CSV updated: {csv_path}")
+            rows.append([run_index, run_iso, series_iso, f"{elapsed_min:.3f}",
+                         f"{g:.6g}", f"{m:.8g}"])
+        np.savetxt(csv_path, np.array(rows, dtype=object), delimiter=",", fmt="%s",
+                   header=("wall_clock_run_index,wall_clock_run_started_at_iso,"
+                           "wall_clock_series_started_at_iso,"
+                           "wall_clock_elapsed_minutes_from_first_run,ff_gain,"
+                           + metric_key),
+                   comments="")
+        print(f"  [6] one-stop CSV updated after run {run_index + 1}: {csv_path}")
         run_index += 1
         if duration_min is None or (now_fn() - series_start) >= duration_min * 60.0:
             break
