@@ -296,6 +296,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix="Resonator_Spec_vs_Flux", cfg=cfg,
         save_resonator_lookup=SAVE_RESONATOR_LOOKUP,
+        resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
     )
     data = exp.acquire(plotDisp=LIVE_PLOTS)
     exp.save_data(data)

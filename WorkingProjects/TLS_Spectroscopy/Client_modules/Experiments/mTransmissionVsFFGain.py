@@ -78,10 +78,11 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Transmission_vs_FF_Gain', cfg=None, meta_dict=None,
-                 save_resonator_lookup=True, **kw):
+                 save_resonator_lookup=True, resonator_lookup_smooth_points=None, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
         self.save_resonator_lookup = save_resonator_lookup
+        self.resonator_lookup_smooth_points = resonator_lookup_smooth_points
 
     def _freq_vec(self):
         cfg = self.cfg
@@ -129,17 +130,40 @@ class TransmissionVsFFGain(ExperimentClass):
                                         'dip_freq_MHz': dip_freq}}
         self.data = data
 
-        # cosine fit of the dip-vs-flux trace -> resonator_fit_parameters (the QUA
-        # default readout-IF source when USE_RESONATOR_LOOKUP is False)
         from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+
+        # smoothed dip trace (QUA _smooth_resonator_dip_trace): feeds the saved
+        # lookup and the dispersive fit; the cosine fit uses the raw minima
+        dip_smoothed, smooth_win = ff.smooth_resonator_dip_trace(
+            dip_freq, self.resonator_lookup_smooth_points)
+        data['data']['dip_freq_smoothed_MHz'] = dip_smoothed
+        data['data']['lookup_smooth_window'] = smooth_win
+
+        # (a) legacy 4-param cosine fit -> resonator_fit_parameters_cosine (the QUA
+        # default readout-IF source when USE_RESONATOR_LOOKUP is False)
         cos_params, _ = ff.fit_cosine_vs_flux(gains, dip_freq)
         if cos_params is not None:
             data['data']['resonator_fit_parameters_cosine'] = cos_params
 
+        # (b) 7-param physical dressed-resonator (avoided-crossing) fit ->
+        # resonator_fit_parameters_dispersive; failure leaves the cosine fit intact
+        period_seed = None
+        if cos_params is not None and cos_params.get('frequency'):
+            period_seed = 1.0 / abs(cos_params['frequency'])
+        anharm_mhz = abs(self.cfg.get("anharmonicity_mhz", -200.0))
+        disp_params, disp_rms = ff.fit_resonator_dispersive(
+            gains, dip_smoothed, period_seed=period_seed,
+            Ec_seed_ghz=anharm_mhz / 1e3)
+        if disp_params is not None:
+            data['data']['resonator_fit_parameters_dispersive'] = disp_params
+            data['data']['resonator_dispersive_rms_MHz'] = disp_rms
+
         if self.save_resonator_lookup:
             lookup_csv = self.iname[:-4] + "_resonator_lookup.csv"
-            np.savetxt(lookup_csv, np.column_stack([gains, dip_freq]), delimiter=",",
-                       header="ff_gain,resonator_dip_freq_MHz", comments="")
+            np.savetxt(lookup_csv,
+                       np.column_stack([gains, dip_smoothed, dip_freq]), delimiter=",",
+                       header="ff_gain,resonator_dip_freq_MHz,resonator_dip_freq_raw_MHz",
+                       comments="")
             data['data']['resonator_lookup_csv'] = lookup_csv
         span = np.nanmax(dip_freq) - np.nanmin(dip_freq)
         print(f"[1] dip moved {span*1e3:.0f} kHz over ff_gain "
@@ -160,6 +184,18 @@ class TransmissionVsFFGain(ExperimentClass):
         im = ax.imshow(d['mag_db'], aspect='auto', origin='lower', extent=extent,
                        interpolation='none')
         ax.scatter(d['dip_freq_MHz'], d['ff_gains'], s=8, c='r', marker='x', label='dip')
+        # fit overlays (QUA style: cosine black solid, dispersive dashed red)
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+        g_fine = np.linspace(d['ff_gains'][0], d['ff_gains'][-1], 400)
+        if 'resonator_fit_parameters_cosine' in d:
+            p = d['resonator_fit_parameters_cosine']
+            ax.plot(ff.cosine_vs_flux(g_fine, p['amplitude'], p['frequency'],
+                                      p['phi'], p['offset']),
+                    g_fine, 'k-', lw=1, label='cosine fit')
+        if 'resonator_fit_parameters_dispersive' in d:
+            ax.plot(ff.resonator_dispersive_func(g_fine,
+                                                 *d['resonator_fit_parameters_dispersive']),
+                    g_fine, 'r--', lw=1, label='dispersive fit')
         ax.set_xlabel("Readout frequency (MHz)")
         ax.set_ylabel("ff_gain (DAC units)")
         ax.set_title("Resonator transmission |S21| (dB) vs fast-flux gain")

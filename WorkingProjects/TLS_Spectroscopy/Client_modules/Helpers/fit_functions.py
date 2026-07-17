@@ -162,6 +162,80 @@ def cosine_vs_flux(x, amplitude, frequency, phi, offset):
     return amplitude * np.cos(2 * np.pi * frequency * x + phi) + offset
 
 
+def smooth_resonator_dip_trace(dip, smooth_points=None):
+    """Median-filter + Savitzky-Golay smoothing of the per-flux dip trace (QUA
+    _smooth_resonator_dip_trace).  smooth_points: None = auto window ~n/20
+    (>=5, odd), 0 = raw, int = explicit window.  Returns (smoothed, window)."""
+    from scipy.signal import medfilt, savgol_filter
+    d = np.asarray(dip, dtype=float)
+    n = d.size
+    if smooth_points == 0 or n < 7:
+        return d.copy(), 0
+    w = max(5, int(round(n / 20))) if smooth_points is None else int(smooth_points)
+    if w % 2 == 0:
+        w += 1
+    w = min(w, n - 1 if n % 2 == 0 else n)
+    if w < 5:
+        return d.copy(), 0
+    sm = medfilt(d, kernel_size=w if w <= 5 else 5)
+    sm = savgol_filter(sm, window_length=w, polyorder=2)
+    return sm, w
+
+
+def resonator_dispersive_func(x, f_bare_mhz, g_mhz, EJmax_ghz, Ec_ghz,
+                              period, offset, d):
+    """Dressed-resonator avoided crossing (QUA resonator_dispersive_func):
+
+    f_dressed = 0.5*(f_bare + f_q) + 0.5*sign(delta)*sqrt(delta^2 + 4*g^2),
+    delta = f_bare - f_q, with f_q the asymmetric-SQUID transmon arc.
+    Freqs in MHz; the flux axis ``x`` (and period/offset) in whatever linear
+    flux unit the data uses (ff_gain DAC units here, volts in QUA).
+    """
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.flux_fit import (
+        flux_tunable_transmon_frequency,
+    )
+    fq_mhz = flux_tunable_transmon_frequency(x, EJmax_ghz, Ec_ghz, period, offset, d) * 1e3
+    delta = f_bare_mhz - fq_mhz
+    return 0.5 * (f_bare_mhz + fq_mhz) + 0.5 * np.sign(delta) * np.sqrt(delta ** 2 + 4.0 * g_mhz ** 2)
+
+
+def fit_resonator_dispersive(dc_vec, dip_mhz, period_seed=None, offset_seed=None,
+                             Ec_seed_ghz=0.2, fq_max_guess_mhz=None):
+    """7-parameter physical fit of the dip-vs-flux trace (QUA _fit_resonator_dispersive).
+
+    Returns (params7, rms_mhz) with params7 = [f_bare_mhz, g_mhz, EJmax_ghz,
+    Ec_ghz, period, offset, d], or (None, None) on failure.  Note (as in QUA):
+    the resonator trace alone weakly constrains Ec/EJmax/g/d individually --
+    they are degenerate; the fit is judged by its rms, not per-parameter errors.
+    """
+    x = np.asarray(dc_vec, dtype=float)
+    y = np.asarray(dip_mhz, dtype=float)
+    good = np.isfinite(x) & np.isfinite(y)
+    x, y = x[good], y[good]
+    if x.size < 8:
+        return None, None
+    span = float(x.max() - x.min()) or 1.0
+    f_bare0 = float(np.min(y))                       # resonator-above-qubit branch
+    g0 = 30.0
+    Ec0 = abs(float(Ec_seed_ghz)) or 0.2
+    fmax0 = float(fq_max_guess_mhz) if fq_max_guess_mhz else max(f_bare0 - 4500.0, 500.0)
+    EJmax0 = (fmax0 / 1e3 + Ec0) ** 2 / (8.0 * Ec0)
+    period0 = float(period_seed) if period_seed else 2.0 * span
+    offset0 = float(offset_seed) if offset_seed is not None else float(x[np.argmax(y)])
+    p0 = [f_bare0, g0, EJmax0, Ec0, period0, offset0, 0.1]
+    lb = [np.min(y) - 50.0, 1.0, 0.1, 0.02, span / 2.0, x.min() - 2 * span, 0.0]
+    ub = [np.max(y) + 50.0, 500.0, 500.0, 0.5, 50.0 * span, x.max() + 2 * span, 1.0]
+    # a degenerate cosine seed (non-periodic trace) can land outside the bounds
+    p0 = [float(np.clip(v, l, u)) for v, l, u in zip(p0, lb, ub)]
+    try:
+        popt, _ = curve_fit(resonator_dispersive_func, x, y, p0=p0,
+                            bounds=(lb, ub), maxfev=20000)
+        rms = float(np.sqrt(np.mean((resonator_dispersive_func(x, *popt) - y) ** 2)))
+        return [float(v) for v in popt], rms
+    except (RuntimeError, ValueError):
+        return None, None
+
+
 def fit_cosine_vs_flux(dc, dip):
     """Fit resonator dip frequency vs flux voltage with a cosine.  Returns
     (params, perr) with {'amplitude','frequency','phi','offset'} (frequency in 1/V)."""
