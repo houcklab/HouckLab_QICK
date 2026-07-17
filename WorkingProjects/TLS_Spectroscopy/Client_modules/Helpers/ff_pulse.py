@@ -53,24 +53,33 @@ def _avg_segs(seg, dt_def_us, dt_play_us):
 
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          dt_def_us=0.002, compensation=None, distortion_model=None,
-                         maxv=None):
-    """Build (and register) a predistorted ramp -> hold -> ramp fast-flux pulse.
+                         maxv=None, park_gain=None):
+    """Build (and register) a predistorted park -> target hold -> park fast-flux pulse.
 
-    Returns a dict of the coarse hold staircase + ramp metadata for play_*.
+    ``ff_gain`` is the absolute target DAC level of the hold; ``park_gain`` (default
+    cfg['ff_park_gain'], else 0) is the static baseline the sequence starts and ends
+    at.  Predistortion is applied to the STEP (target - park) relative to park, so a
+    nonzero park behaves exactly like the QUA baseline_dc_offset.
+
+    Returns a dict of the coarse hold staircase + ramp/park metadata for play_*.
     Registers the two arb ramps ("ff_ramp"/"ff_ramp_reversed") on ff_ch.
     """
     cfg = prog.cfg
     if maxv is None:
         maxv = prog.soccfg['gens'][0]['maxv']
+    if park_gain is None:
+        park_gain = cfg.get("ff_park_gain", 0)
+    park_gain = float(np.clip(park_gain, -maxv, maxv))
     ff_gain = float(np.clip(ff_gain, -maxv, maxv))
+    delta = ff_gain - park_gain
 
-    # ideal trapezoid: rise (ramp_us) -> flat (hold_us) at ff_gain -> fall (ramp_us)
+    # ideal step RELATIVE TO PARK: rise (ramp_us) -> flat (hold_us) at delta -> fall
     total = 2 * ramp_us + hold_us + 4 * dt_play_us
     pb = PulseFunctions.PulseBuilder(dt_def_us, total)
-    pb.add_trapezoid(start=dt_play_us, rise=ramp_us, flat=hold_us, fall=ramp_us, amp=ff_gain)
+    pb.add_trapezoid(start=dt_play_us, rise=ramp_us, flat=hold_us, fall=ramp_us, amp=delta)
     waveform = pb.waveform()
 
-    # --- predistortion ---
+    # --- predistortion (of the step, not the park baseline) ---
     if distortion_model is not None:
         waveform = distortion_model.predistort(waveform)
     elif compensation is not None:
@@ -83,37 +92,38 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
         seg_idx = np.clip(np.searchsorted(edges, t_since_hold, side='right') - 1,
                           0, mult.size - 1)
         scale = np.where(t_since_hold >= 0, mult[seg_idx], 1.0)
-        # only scale the "on" part (where the ideal waveform is near ff_gain)
-        on = np.abs(waveform) > 0.05 * (abs(ff_gain) + 1e-9)
+        # only scale the "on" part (where the ideal step is near delta)
+        on = np.abs(waveform) > 0.05 * (abs(delta) + 1e-9)
         waveform = np.where(on, waveform * scale, waveform)
 
-    waveform = np.clip(waveform, -maxv, maxv)
+    waveform = np.clip(park_gain + waveform, -maxv, maxv)   # absolute DAC levels
 
     # split into pre / hold / post around the trapezoid
-    i_rise0 = int(round(dt_play_us / dt_def_us))
     i_hold0 = int(round((dt_play_us + ramp_us) / dt_def_us))
     i_hold1 = int(round((dt_play_us + ramp_us + hold_us) / dt_def_us))
-    i_fall1 = int(round((dt_play_us + 2 * ramp_us + hold_us) / dt_def_us))
     hold_wave = waveform[i_hold0:i_hold1]
 
     hold_play = _avg_segs(hold_wave, dt_def_us, dt_play_us)
     if hold_play.size == 0:
         hold_play = np.array([ff_gain])
 
-    # register the ramp arbs using the staircase endpoints
+    # register the ramp arbs: park -> first hold level, last hold level -> park.
+    # NOTE create_ff_ramp(reversed=True) plays ff_ramp_stop -> ff_ramp_start
+    # (escher convention), so for the down-ramp: stop = FROM (hold end), start = TO (park).
     cfg["ff_ramp_style"] = "linear"
     cfg["ff_ramp_length"] = ramp_us
-    cfg["ff_ramp_start"] = 0
+    cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(hold_play[0])
     PulseFunctions.create_ff_ramp(prog, reversed=False, name="ff_ramp")
-    cfg["ff_ramp_start"] = int(hold_play[-1])
-    cfg["ff_ramp_stop"] = 0
+    cfg["ff_ramp_start"] = int(park_gain)
+    cfg["ff_ramp_stop"] = int(hold_play[-1])
     PulseFunctions.create_ff_ramp(prog, reversed=True, name="ff_ramp_reversed")
-    cfg["ff_ramp_start"] = 0
+    cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(ff_gain)
 
     return {"hold_play": hold_play.astype(int), "ideal": waveform,
-            "dt_def_us": dt_def_us, "ramp_us": ramp_us, "ff_gain": ff_gain}
+            "dt_def_us": dt_def_us, "ramp_us": ramp_us, "ff_gain": ff_gain,
+            "park": int(park_gain)}
 
 
 def play_ramp_up_hold(prog, segs, dt_play_us=5.0):
@@ -142,14 +152,31 @@ def play_ramp_up_hold(prog, segs, dt_play_us=5.0):
 
 
 def play_ramp_down(prog, segs):
-    """Play the ramp-down back to park (0) and settle the ff gain register to 0."""
+    """Play the ramp-down back to park and hold there (stdysel='last')."""
     cfg = prog.cfg
     ff_rp = prog.ch_page(cfg["ff_ch"])
     ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
                              gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp_reversed", outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
-    prog.safe_regwi(ff_rp, ff_gain_reg, 0)
+    prog.safe_regwi(ff_rp, ff_gain_reg, int(segs.get("park", 0)))
+
+
+def assert_park(prog, segs, dt_us=0.1):
+    """Force the ff DAC to the park level (held via stdysel='last').
+
+    Call at the top of body() when ff_park_gain != 0 so the first rep after a
+    program load (when the DAC may sit at 0) starts from park like every other rep.
+    No-op when park == 0.
+    """
+    park = int(segs.get("park", 0))
+    if park == 0:
+        return
+    cfg = prog.cfg
+    prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+                             stdysel='last', gain=park,
+                             length=prog.us2cycles(dt_us, gen_ch=cfg["ff_ch"]))
+    prog.pulse(ch=cfg["ff_ch"])
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):

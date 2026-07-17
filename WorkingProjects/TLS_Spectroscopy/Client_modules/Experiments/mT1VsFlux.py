@@ -58,7 +58,8 @@ class FFT1Program(AveragerProgram):
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])
+        qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
+                                   gen_ch=cfg["qubit_ch"])
 
         # pi pulse (gaussian arb by default)
         style = cfg.get("qubit_pulse_style", "arb")
@@ -89,7 +90,8 @@ class FFT1Program(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
-        # herald readout (post-selection reference), do not wait
+        ff_pulse.assert_park(self, self.ff_segs)
+        # herald readout (post-selection reference) at park
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 0.5)))

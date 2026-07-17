@@ -60,7 +60,9 @@ class SingleShotProgram(RAveragerProgram):
                                  gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
-        qubit_freq = self.freq2reg(cfg["qubit_freq"], gen_ch=cfg["qubit_ch"])
+        # the excited-blob preparation is a pi pulse -> use the calibrated pi freq
+        qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
+                                   gen_ch=cfg["qubit_ch"])
 
         style = cfg.get("qubit_pulse_style", "arb")
         if style == "arb":

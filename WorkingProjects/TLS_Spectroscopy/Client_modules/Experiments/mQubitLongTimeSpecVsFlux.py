@@ -133,6 +133,25 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         print(f"[4] median settling flatness over flux points: "
               f"{np.nanmedian(long_time_std):.3f} MHz")
 
+        # transmon-arc fit with ff_gain (DAC units) as the flux axis -> the
+        # FLUX_FIT_PARAMS used by steps 3 & 6 in the all-FF workflow (step-2 role).
+        if self.cfg.get("fit_flux", True):
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
+            params, _perr = fx.fit_qubit_freq_vs_flux(ff_gains, long_time_freq)
+            if params is not None:
+                data['data']['flux_fit_params'] = params
+                print("[4] FLUX_FIT_PARAMS = [   # flux axis in ff_gain DAC units")
+                print("      %.8g,  # EJmax (GHz)" % params[0])
+                print("      %.8g,  # Ec (GHz)" % params[1])
+                print("      %.8g,  # period (DAC units)" % params[2])
+                print("      %.8g,  # sweet-spot offset (DAC units)" % params[3])
+                print("      %.8g,  # d (asymmetry)" % params[4])
+                print("      0.0,      # tilt (GHz per DAC unit)")
+                print("    ]")
+            else:
+                print("[4] transmon-arc fit failed; fit offline from the raw_sweep CSV "
+                      "(flux_fit.fit_qubit_freq_vs_flux(ff_gains, freq_ghz)).")
+
         self.display(data, plotDisp=plotDisp, figNum=figNum)
         return data
 

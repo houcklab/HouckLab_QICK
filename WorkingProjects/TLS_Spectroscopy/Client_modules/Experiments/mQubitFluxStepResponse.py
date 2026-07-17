@@ -80,6 +80,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
 
     def body(self):
         cfg = self.cfg
+        ff_pulse.assert_park(self, self.ff_segs)
         self.sync_all(self.us2cycles(0.05))
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))          # flux held at target (stdysel='last')
@@ -159,8 +160,11 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data = data
 
         # --- normalized step responses ---
-        baseline_v = cfg["baseline_dc_offset"]
-        target_v = cfg["dc_offset"]
+        # Flux-axis units: whatever FLUX_FIT_PARAMS was fit in.  In the all-FF
+        # workflow that is ff_gain DAC units: baseline = park, target = ff_gain.
+        # (Volt keys kept for the optional Yoko-swept mode.)
+        baseline_v = cfg.get("baseline_dc_offset", cfg.get("ff_park_gain", 0))
+        target_v = cfg.get("dc_offset", cfg["ff_gain"])
         if self.flux_fit_params is not None:
             f_base = fx.estimate_fit_frequency_ghz(self.flux_fit_params, baseline_v)
             f_targ = fx.estimate_fit_frequency_ghz(self.flux_fit_params, target_v)

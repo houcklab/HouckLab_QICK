@@ -2,9 +2,11 @@
 
 A self-contained QICK/RFSoC implementation of the De Leon–Houck lab's QUA (Quantum
 Machines OPX) TLS-spectroscopy workflow
-(`Houck-Lab-Qua/LabCode/Control/Flux_Tunable/TLSSpectroscopy.py`), targeting the
-**FTTv02_SiOxJJ** flux-tunable transmon (same board as the QICK `BFF_ACStark`
-branch, nameserver `192.168.1.125`).
+(`Houck-Lab-Qua/LabCode/Control/Flux_Tunable/TLSSpectroscopy.py`), configured for
+**FTTv02_SiOxJJ qubit 4** (ZCU216 board, nameserver `192.168.1.107`) in the
+**all-fast-flux workflow**: every flux operation — park, sweep, step — is the
+`ff_ch` DAC (generator 3 → DAC `3_230` P/N pigtails); no Yokogawa is required
+(matching the QUA original, which also left its Yoko untouched).
 
 **What it measures.** A two-level-system (TLS) defect sits at a fixed frequency.
 When the flux-tuned qubit is swept through a TLS resonance, energy swaps into the
@@ -37,14 +39,17 @@ python -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscop
   so `f_physical = LO_freq + IF`. QICK synthesizes the whole tone digitally, so every
   `*_freq` in `Calib/initialize.py` is an **absolute MHz** and the Nyquist zone
   (`nqz`/`qubit_nqz`) places it. Mixer-imbalance/LO-power calibration is dropped.
-- **Two flux mechanisms, split.** QUA drove one OPX baseband line for *both* the DC
-  offset and fast pulses. QICK splits them: **static/DC flux = Yokogawa GS200**
-  (`SetVoltage`, swept in a Python loop for steps 1–2), **fast/dynamic flux = a
-  dedicated DAC channel `ff_ch`** playing a shaped pulse (steps 3, 4, 6).
+- **One flux line, all-DAC (QUA-style).** QUA drove one OPX baseband line for both
+  the DC offset and fast pulses. Here the `ff_ch` DAC on the DC-coupled P/N pigtails
+  plays the same role: the static park is `ff_park_gain` (held between pulses via
+  `stdysel='last'`, analogous to QUA's `flux_dc_offset`), and steps/holds are shaped
+  pulses on top of it. Steps 1–2 (Yoko-swept DC scans) are kept only as optional
+  extras — readout always happens at park, so no resonator-tracking lookup is needed.
 - **Flux target axis.** QUA's steps 4 & 6 swept the flux *target voltage* (`dc_vec`).
-  QICK reaches a dynamic operating point with a fast-flux DAC pulse, so the swept axis
-  is **`ff_gain` (DAC units)**. Step 4 measures f_q(ff_gain), giving the frequency
-  axis that step 6 uses to plot T₁ vs qubit frequency.
+  Here the swept axis is **`ff_gain` (DAC units)**, and `FLUX_FIT_PARAMS` is fit with
+  that axis (period/offset in DAC units) by step 4, which also gives the f_q(ff_gain)
+  frequency axis step 6 uses to plot T₁ vs qubit frequency. Step ordering is
+  therefore **4 → 3a → 3b → 5 → 6**.
 - **Predistortion.** QUA played a real-time `set_dc_offset` staircase of
   per-segment *multipliers*. QICK has no in-program DC primitive, so the same
   multipliers are **baked into the fast-flux `idata` waveform** (a piecewise-constant
@@ -71,18 +76,23 @@ New pure-numpy analysis (unit-tested locally, no hardware): `Helpers/fit_functio
 This code is **tProc v1** and follows the proven escher FF stack, but the intricate
 fast-flux timing must be checked on your board (I could not run against hardware):
 
-1. **`# DEVICE` constants** in `Calib/initialize.py` — `read_pulse_freq`, `qubit_freq`,
-   gains, `adc_trig_offset`, `read_length`, `ff_ch`, `BASELINE/TARGET_DC_OFFSET`,
-   `YOKO_VISA`, `outerFolder`. Steps 1, 2, 5 exist precisely to find several of these.
+1. **Device constants** in `Calib/initialize.py` are filled from the working q4 setup
+   (readout 7248.95 MHz @ 4300, qubit 2557.25/π 2557.37 @ 12850, σ=0.125 µs,
+   read 20 µs, `adc_trig_offset` 0.5 µs, `ff_ch=3`). Still to establish on hardware:
+   `FLUX_FIT_PARAMS` (run step 4), `FF_STEP_TARGET_GAIN` (pick from step 4's map),
+   the ff-line `delay_time`, and optionally a nonzero `ff_park_gain`.
 2. **FF pulse timing** (steps 3/4/6): `dt_pulseplay`, `ff_ramp_length`,
    `pre_meas_delay`, and that the qubit probe / decay actually overlaps the held flux
    (the code relies on `stdysel='last'` holding the DAC between hold pulses — the same
    idiom escher uses). Sanity-check with a loopback/`FFRampTest` before trusting T₁.
 3. **`ff_gain` range** — pick from a spec-vs-ff_gain scan (step 4 is that scan); the
    `ff_gain → flux → frequency` mapping is device-specific.
-4. **Long holds** — the staircase (not an arb envelope) removes the ~9.5 µs memory
-   limit, but very long T₁ waits × many segments cost tProc instructions; tune
-   `dt_pulseplay` up for long holds.
+4. **Long holds** — the staircase (not an arb envelope) removes the ~9.5 µs envelope
+   memory limit, but each staircase segment costs tProc instructions and this board's
+   **program memory is 8192 words**. Rule of thumb: segments ≈ hold / `dt_pulseplay`,
+   ~3 words each; the runner defaults `dt_pulseplay=5 µs` for the T₁ steps (300 µs
+   hold → ~60 segments) and 1 µs for the step response. Raise `dt_pulseplay` if a
+   long-hold program fails to load.
 
 ## Status
 
