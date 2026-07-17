@@ -77,9 +77,11 @@ class TransmissionVsFFGain(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
-                 suffix='Transmission_vs_FF_Gain', cfg=None, meta_dict=None, **kw):
+                 suffix='Transmission_vs_FF_Gain', cfg=None, meta_dict=None,
+                 save_resonator_lookup=True, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
+        self.save_resonator_lookup = save_resonator_lookup
 
     def _freq_vec(self):
         cfg = self.cfg
@@ -119,7 +121,7 @@ class TransmissionVsFFGain(ExperimentClass):
             dip_freq[i] = fpts[int(np.argmin(mag))]
             if i == 0:
                 per = time.time() - start
-                print(f"[1ff] ~{per*len(gains)/60:.1f} min for {len(gains)} ff_gain x "
+                print(f"[1] ~{per*len(gains)/60:.1f} min for {len(gains)} ff_gain x "
                       f"{len(fpts)} freq points")
 
         data = {'config': cfg, 'data': {'fpts': fpts, 'ff_gains': gains,
@@ -127,13 +129,20 @@ class TransmissionVsFFGain(ExperimentClass):
                                         'dip_freq_MHz': dip_freq}}
         self.data = data
 
-        lookup_csv = self.iname[:-4] + "_resonator_vs_ff_lookup.csv"
-        np.savetxt(lookup_csv, np.column_stack([gains, dip_freq]), delimiter=",",
-                   header="ff_gain,resonator_dip_freq_MHz", comments="")
-        data['data']['resonator_lookup_csv'] = lookup_csv
+        # cosine fit of the dip-vs-flux trace -> resonator_fit_parameters (the QUA
+        # default readout-IF source when USE_RESONATOR_LOOKUP is False)
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+        cos_params, _ = ff.fit_cosine_vs_flux(gains, dip_freq)
+        if cos_params is not None:
+            data['data']['resonator_fit_parameters_cosine'] = cos_params
+
+        if self.save_resonator_lookup:
+            lookup_csv = self.iname[:-4] + "_resonator_lookup.csv"
+            np.savetxt(lookup_csv, np.column_stack([gains, dip_freq]), delimiter=",",
+                       header="ff_gain,resonator_dip_freq_MHz", comments="")
+            data['data']['resonator_lookup_csv'] = lookup_csv
         span = np.nanmax(dip_freq) - np.nanmin(dip_freq)
-        print(f"[1ff] resonator-vs-ff lookup CSV: {lookup_csv}")
-        print(f"[1ff] dip moved {span*1e3:.0f} kHz over ff_gain "
+        print(f"[1] dip moved {span*1e3:.0f} kHz over ff_gain "
               f"{gains.min():g}..{gains.max():g} "
               f"({'flux line LIVE' if span > 0.02 else 'little/no motion -- check wiring/polarity/range'})")
 

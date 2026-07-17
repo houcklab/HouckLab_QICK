@@ -81,7 +81,9 @@ class FFStepResponseSpecProgram(RAveragerProgram):
     def body(self):
         cfg = self.cfg
         ff_pulse.assert_park(self, self.ff_segs)
-        self.sync_all(self.us2cycles(0.05))
+        # QUA baseline_rearm_time: dwell at park so each shot starts settled
+        rearm = cfg.get("baseline_rearm_us", 0.0)
+        self.sync_all(self.us2cycles(max(rearm, 0.05)))
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))          # flux held at target (stdysel='last')
         self.pulse(ch=cfg["qubit_ch"])                # spec probe at the target flux point

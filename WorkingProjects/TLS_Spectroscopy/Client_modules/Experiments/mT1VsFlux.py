@@ -167,9 +167,14 @@ class _T1VsFluxBase(ExperimentClass):
         return _pe_postselected(i0, q0, i1, q1, self.calib_params, self.post_select)
 
     def _freq_axis(self, ff_gains):
-        if self.ff_gain_to_freq is None:
-            return None
-        return np.array([self.ff_gain_to_freq(g) for g in ff_gains])
+        if self.ff_gain_to_freq is not None:
+            return np.array([self.ff_gain_to_freq(g) for g in ff_gains])
+        # QUA convention: predicted qubit frequency per flux from FLUX_FIT_PARAMS
+        params = self.cfg.get("flux_fit_params", None)
+        if params is not None:
+            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
+            return fx.estimate_fit_frequency_ghz_array(params, np.asarray(ff_gains, dtype=float))
+        return None
 
 
 class T1FullCurveVsFlux(_T1VsFluxBase):
@@ -300,10 +305,14 @@ class T13PointVsFlux(_T1VsFluxBase):
             cfg["Ts_us"] = self._auto_Ts_from_park_T1()
         Ts = float(cfg["Ts_us"])
         min_contrast = float(cfg.get("min_ref_contrast", 0.05))
+        max_t1_multiple = float(cfg.get("max_plot_t1_multiple", 20.0))
         P0 = np.full(len(ff_gains), np.nan)
         P1 = np.full(len(ff_gains), np.nan)
         Ps = np.full(len(ff_gains), np.nan)
-        T1 = np.full(len(ff_gains), np.nan)
+        ref_contrast = np.full(len(ff_gains), np.nan)
+        pe_Ts = np.full(len(ff_gains), np.nan)
+        T1_raw = np.full(len(ff_gains), np.nan)
+        valid = np.zeros(len(ff_gains), dtype=np.int8)
 
         # QUA convention: the P0/P1 references are measured AT PARK (no detuned
         # hold) each flux point -- interleaved so they track drift; only Ps decays
@@ -315,30 +324,39 @@ class T13PointVsFlux(_T1VsFluxBase):
             P0[i] = self._run_point(park, w0, do_pi=False)  # thermal ref (park, no pi)
             P1[i] = self._run_point(park, w0, do_pi=True)   # pi ref (park, ~zero delay)
             Ps[i] = self._run_point(g, Ts, do_pi=True)      # pi + hold Ts at target
-            contrast = P1[i] - P0[i]
-            if abs(contrast) >= min_contrast:
-                pe = (Ps[i] - P0[i]) / contrast
-                if 0 < pe < 1:
-                    T1[i] = -Ts / np.log(pe)
+            ref_contrast[i] = P1[i] - P0[i]
+            if abs(ref_contrast[i]) > 1e-12:
+                pe_Ts[i] = (Ps[i] - P0[i]) / ref_contrast[i]
+                if 0 < pe_Ts[i] < 1:
+                    T1_raw[i] = -Ts / np.log(pe_Ts[i])
+            # QUA validity: contrast floor, physical pe, and T1 <= N * Ts
+            valid[i] = int(abs(ref_contrast[i]) >= min_contrast
+                           and 0 < pe_Ts[i] < 1
+                           and np.isfinite(T1_raw[i])
+                           and T1_raw[i] <= max_t1_multiple * Ts)
             if i == 0:
                 print(f"[6] ~{(time.time()-start)*len(ff_gains)/60:.1f} min for "
                       f"{len(ff_gains)} flux x 3 points")
 
+        T1 = np.where(valid.astype(bool), T1_raw, np.nan)   # the "plot" values
         inv_T1 = np.where(np.isfinite(T1) & (T1 > 0), 1.0 / T1, np.nan)
         freq = self._freq_axis(ff_gains)
         data = {'config': cfg, 'data': {
             'ff_gains': ff_gains, 'P0': P0, 'P1': P1, 'Ps': Ps, 'Ts_us': Ts,
-            'T1_3pt_us': T1, 'inv_T1_3pt_per_us': inv_T1, 'qubit_freq_ghz': freq,
+            'ref_contrast_3pt': ref_contrast, 'pe_Ts': pe_Ts,
+            'T1_3pt_us_raw': T1_raw, 'T1_3pt_us': T1, 'T1_3pt_valid_mask': valid,
+            'inv_T1_3pt_per_us': inv_T1, 'qubit_freq_ghz': freq,
             't1_park_us': getattr(self, '_park_probe', {}).get('t1_park_us'),
             'repeat_metadata': self.repeat_metadata}}
         self.data = data
         if write_outputs:
             summ = self.iname[:-4] + "_3pt_summary.csv"
-            cols = [ff_gains, P0, P1, Ps, T1, inv_T1]
-            hdr = "ff_gain,P0,P1,Ps,T1_3pt_us,inv_T1_3pt_per_us"
+            cols = [ff_gains, P0, P1, Ps, ref_contrast, pe_Ts, T1_raw, T1, inv_T1, valid]
+            hdr = ("ff_gain,P0,P1,Ps,ref_contrast,pe_estimator,"
+                   "T1_3pt_us_raw,T1_3pt_us_plot,inv_T1_3pt_per_us,valid_mask")
             if freq is not None:
-                cols = [ff_gains, freq, P0, P1, Ps, T1, inv_T1]
-                hdr = "ff_gain,qubit_freq_ghz,P0,P1,Ps,T1_3pt_us,inv_T1_3pt_per_us"
+                cols = [ff_gains, freq] + cols[1:]
+                hdr = "ff_gain,qubit_freq_ghz," + hdr.split(",", 1)[1]
             np.savetxt(summ, np.column_stack(cols), delimiter=",", header=hdr, comments="")
             data['data']['summary_csv'] = summ
             print(f"[6] 3-point T1-vs-flux summary CSV: {summ}")

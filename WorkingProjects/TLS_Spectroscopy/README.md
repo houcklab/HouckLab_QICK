@@ -48,8 +48,13 @@ python -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscop
 - **Flux target axis.** QUA's steps 4 & 6 swept the flux *target voltage* (`dc_vec`).
   Here the swept axis is **`ff_gain` (DAC units)**, and `FLUX_FIT_PARAMS` is fit with
   that axis (period/offset in DAC units) by step 4, which also gives the f_q(ff_gain)
-  frequency axis step 6 uses to plot T₁ vs qubit frequency. Step ordering is
-  therefore **4 → 3a → 3b → 5 → 6**.
+  frequency axis step 6 uses to plot T₁ vs qubit frequency. The runner keeps the
+  QUA step order **1 → 2 → 3a → 3b → 4 → 5 → 6** with the QUA constants, param
+  dicts, defaults, and printouts: step 1 = resonator spec vs flux (cosine fit is
+  the default readout-IF source, `USE_RESONATOR_LOOKUP=False`), step 2 = full-range
+  qubit spec that prints paste-ready `FLUX_FIT_PARAMS`, step 4 runs FIT OFF, and
+  `FLUX_TAIL_COMPENSATION_GAIN` is applied at load time from `undamped_multipliers`
+  exactly like QUA's `_scale_gain`.
 - **Predistortion.** QUA played a real-time `set_dc_offset` staircase of
   per-segment *multipliers*. QICK has no in-program DC primitive, so the same
   multipliers are **baked into the fast-flux `idata` waveform** (a piecewise-constant

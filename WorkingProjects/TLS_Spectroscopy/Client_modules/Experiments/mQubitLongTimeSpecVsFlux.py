@@ -59,9 +59,10 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Qubit_Long_Time_Frequency_vs_Flux', cfg=None, meta_dict=None,
-                 flux_tail_compensation=None, **kw):
+                 flux_tail_compensation=None, step_tag="4", **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
+        self.step_tag = str(step_tag)
         if flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = flux_tail_compensation
 
@@ -112,7 +113,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 long_time_std[i] = float(np.std(good) * 1e3)  # MHz
             if i == 0:
                 per = (time.time() - start)
-                print(f"[4] ~{per*len(ff_gains)/60:.1f} min for {len(ff_gains)} flux x "
+                print(f"[{self.step_tag}] ~{per*len(ff_gains)/60:.1f} min for {len(ff_gains)} flux x "
                       f"{len(t_probe)} probe-delays x {cfg['expts']} freqs")
 
         data = {'config': cfg, 'data': {
@@ -129,8 +130,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         np.savetxt(raw_csv, np.array(rows), delimiter=",",
                    header="ff_gain,probe_time_us,fq_ghz", comments="")
         data['data']['raw_sweep_csv'] = raw_csv
-        print(f"[4] raw sweep CSV: {raw_csv}")
-        print(f"[4] median settling flatness over flux points: "
+        print(f"[{self.step_tag}] raw sweep CSV: {raw_csv}")
+        print(f"[{self.step_tag}] median settling flatness over flux points: "
               f"{np.nanmedian(long_time_std):.3f} MHz")
 
         # transmon-arc fit with ff_gain (DAC units) as the flux axis -> the
@@ -140,7 +141,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             params, _perr = fx.fit_qubit_freq_vs_flux(ff_gains, long_time_freq)
             if params is not None:
                 data['data']['flux_fit_params'] = params
-                print("[4] FLUX_FIT_PARAMS = [   # flux axis in ff_gain DAC units")
+                print(f"[{self.step_tag}] FLUX_FIT_PARAMS = [   # paste at the top of Runners/TLSSpectroscopy.py (flux axis in ff_gain DAC units)")
                 print("      %.8g,  # EJmax (GHz)" % params[0])
                 print("      %.8g,  # Ec (GHz)" % params[1])
                 print("      %.8g,  # period (DAC units)" % params[2])
@@ -149,7 +150,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 print("      0.0,      # tilt (GHz per DAC unit)")
                 print("    ]")
             else:
-                print("[4] transmon-arc fit failed; fit offline from the raw_sweep CSV "
+                print(f"[{self.step_tag}] transmon-arc fit failed; fit offline from the raw_sweep CSV "
                       "(flux_fit.fit_qubit_freq_vs_flux(ff_gains, freq_ghz)).")
 
         self.display(data, plotDisp=plotDisp, figNum=figNum)
