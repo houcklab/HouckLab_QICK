@@ -61,8 +61,17 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     at.  Predistortion is applied to the STEP (target - park) relative to park, so a
     nonzero park behaves exactly like the QUA baseline_dc_offset.
 
-    Returns a dict of the coarse hold staircase + ramp/park metadata for play_*.
-    Registers the two arb ramps ("ff_ramp"/"ff_ramp_reversed") on ff_ch.
+    The HOLD is played as VARIABLE-WIDTH piecewise-constant segments -- exactly the QUA
+    ``_hold_flux_step`` set_dc_offset staircase: when a ``compensation`` dict is present
+    the segment edges are its ``segment_edges_ns`` (fine early: 500 ns/1 us, coarse
+    late), each played for its EXACT width so (a) the total hold == the requested
+    ``hold_us`` (on the tProc 4 ns grid, NOT floored to dt_play), and (b) the fast early
+    correction segments are RESOLVED rather than averaged into dt_play bins.  Without
+    compensation the hold is a single constant segment of exactly ``hold_us``.
+    ``dt_play_us`` is used only for the coarse binning of the (optional) escher IIR
+    ``distortion_model`` path.
+
+    Returns {hold_segs: [(level_int, dur_us), ...], ...}.  Registers the two arb ramps.
     """
     cfg = prog.cfg
     if maxv is None:
@@ -72,40 +81,46 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     park_gain = float(np.clip(park_gain, -maxv, maxv))
     ff_gain = float(np.clip(ff_gain, -maxv, maxv))
     delta = ff_gain - park_gain
+    hold_us = max(float(hold_us), dt_def_us)
 
-    # ideal step RELATIVE TO PARK: rise (ramp_us) -> flat (hold_us) at delta -> fall
-    total = 2 * ramp_us + hold_us + 4 * dt_play_us
-    pb = PulseFunctions.PulseBuilder(dt_def_us, total)
-    pb.add_trapezoid(start=dt_play_us, rise=ramp_us, flat=hold_us, fall=ramp_us, amp=delta)
-    waveform = pb.waveform()
+    def _lvl(mult):
+        return int(np.clip(park_gain + float(mult) * delta, -maxv, maxv))
 
-    # --- predistortion (of the step, not the park baseline) ---
-    if distortion_model is not None:
-        waveform = distortion_model.predistort(waveform)
-    elif compensation is not None:
-        # apply the piecewise multipliers as a time-varying scale of the ideal step
-        edges = np.asarray(compensation['segment_edges_ns'], dtype=float)
+    if compensation is not None and distortion_model is None:
+        # QUA-faithful piecewise staircase at the compensation segment edges.
+        edges_us = np.asarray(compensation['segment_edges_ns'], dtype=float) / 1e3
         mult = np.asarray(compensation['multipliers'], dtype=float)
-        t_ns = np.arange(waveform.size) * dt_def_us * 1e3
-        # measure time since the hold started (rise begins at start=dt_play_us)
-        t_since_hold = t_ns - (dt_play_us + ramp_us) * 1e3
-        seg_idx = np.clip(np.searchsorted(edges, t_since_hold, side='right') - 1,
-                          0, mult.size - 1)
-        scale = np.where(t_since_hold >= 0, mult[seg_idx], 1.0)
-        # only scale the "on" part (where the ideal step is near delta)
-        on = np.abs(waveform) > 0.05 * (abs(delta) + 1e-9)
-        waveform = np.where(on, waveform * scale, waveform)
+        bounds = sorted(set([0.0] + [float(e) for e in edges_us if 0.0 < e < hold_us - 1e-9]))
+        hold_segs = []
+        for k, b0 in enumerate(bounds):
+            b1 = bounds[k + 1] if k + 1 < len(bounds) else hold_us
+            dur = b1 - b0
+            if dur <= 0:
+                continue
+            seg_i = (min(max(int(np.searchsorted(edges_us, b0 + 1e-12, side='right') - 1), 0),
+                         mult.size - 1) if mult.size else 0)
+            hold_segs.append((_lvl(mult[seg_i] if mult.size else 1.0), dur))
+        if not hold_segs:
+            hold_segs = [(int(ff_gain), hold_us)]
+    elif distortion_model is not None:
+        # escher IIR path: predistort the ideal step, coarse-bin the hold at dt_play,
+        # extend the last bin so the total played hold == hold_us.
+        total = 2 * ramp_us + hold_us + 4 * dt_play_us
+        pb = PulseFunctions.PulseBuilder(dt_def_us, total)
+        pb.add_trapezoid(start=dt_play_us, rise=ramp_us, flat=hold_us, fall=ramp_us, amp=delta)
+        waveform = np.clip(park_gain + distortion_model.predistort(pb.waveform()), -maxv, maxv)
+        i0 = int(round((dt_play_us + ramp_us) / dt_def_us))
+        i1 = int(round((dt_play_us + ramp_us + hold_us) / dt_def_us))
+        levels = _avg_segs(waveform[i0:i1], dt_def_us, dt_play_us)
+        if levels.size == 0:
+            levels = np.array([ff_gain])
+        hold_segs = [(int(g), dt_play_us) for g in levels]
+        last_dur = max(hold_us - dt_play_us * (len(hold_segs) - 1), dt_def_us)
+        hold_segs[-1] = (hold_segs[-1][0], last_dur)
+    else:
+        hold_segs = [(int(ff_gain), hold_us)]      # plain constant hold, exact duration
 
-    waveform = np.clip(park_gain + waveform, -maxv, maxv)   # absolute DAC levels
-
-    # split into pre / hold / post around the trapezoid
-    i_hold0 = int(round((dt_play_us + ramp_us) / dt_def_us))
-    i_hold1 = int(round((dt_play_us + ramp_us + hold_us) / dt_def_us))
-    hold_wave = waveform[i_hold0:i_hold1]
-
-    hold_play = _avg_segs(hold_wave, dt_def_us, dt_play_us)
-    if hold_play.size == 0:
-        hold_play = np.array([ff_gain])
+    first_level, last_level = hold_segs[0][0], hold_segs[-1][0]
 
     # register the ramp arbs: park -> first hold level, last hold level -> park.
     # NOTE create_ff_ramp(reversed=True) plays ff_ramp_stop -> ff_ramp_start
@@ -113,42 +128,30 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
     cfg["ff_ramp_style"] = "linear"
     cfg["ff_ramp_length"] = ramp_us
     cfg["ff_ramp_start"] = int(park_gain)
-    cfg["ff_ramp_stop"] = int(hold_play[0])
+    cfg["ff_ramp_stop"] = int(first_level)
     PulseFunctions.create_ff_ramp(prog, reversed=False, name="ff_ramp")
     cfg["ff_ramp_start"] = int(park_gain)
-    cfg["ff_ramp_stop"] = int(hold_play[-1])
+    cfg["ff_ramp_stop"] = int(last_level)
     PulseFunctions.create_ff_ramp(prog, reversed=True, name="ff_ramp_reversed")
     cfg["ff_ramp_start"] = int(park_gain)
     cfg["ff_ramp_stop"] = int(ff_gain)
 
-    return {"hold_play": hold_play.astype(int), "ideal": waveform,
-            "dt_def_us": dt_def_us, "ramp_us": ramp_us, "ff_gain": ff_gain,
-            "park": int(park_gain)}
+    return {"hold_segs": hold_segs, "dt_def_us": dt_def_us, "ramp_us": ramp_us,
+            "ff_gain": ff_gain, "park": int(park_gain)}
 
 
-def play_ramp_up_hold(prog, segs, dt_play_us=5.0):
-    """Play ramp-up + the predistorted hold staircase (leaves flux held at target).
-    Streams the hold staircase via safe_regwi on the ff gain register."""
+def play_ramp_up_hold(prog, segs, dt_play_us=None):
+    """Play ramp-up + the piecewise-constant hold (leaves flux held at target).
+    Each hold segment is played for its EXACT width (QUA set_dc_offset staircase)."""
     cfg = prog.cfg
-    ff_rp = prog.ch_page(cfg["ff_ch"])
-    ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
-    hold = segs["hold_play"]
-
-    # ramp up
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
                              gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp", outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
-
-    # hold staircase
-    for i, g in enumerate(hold):
-        if i == 0:
-            prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
-                                     stdysel='last', gain=int(g),
-                                     length=prog.us2cycles(dt_play_us, gen_ch=cfg["ff_ch"]))
-            prog.pulse(ch=cfg["ff_ch"])
-        else:
-            prog.safe_regwi(ff_rp, ff_gain_reg, int(g))
-            prog.pulse(ch=cfg["ff_ch"])
+    for g, dur_us in segs["hold_segs"]:
+        length = max(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"]), 3)
+        prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+                                 stdysel='last', gain=int(g), length=length)
+        prog.pulse(ch=cfg["ff_ch"])
 
 
 def play_ramp_down(prog, segs):

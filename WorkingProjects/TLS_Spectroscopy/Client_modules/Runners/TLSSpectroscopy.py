@@ -351,6 +351,7 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
           f"{p['freq_min'] / 1e3:.3f}-{p['freq_max'] / 1e3:.3f} GHz x {len(dc_vec)} DC points")
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
+        "qubit_freq_step": p["freq_step"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
     })
     exp = QubitLongTimeSpecVsFlux(
@@ -358,6 +359,8 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
         suffix="Qubit_Spec_vs_Flux_Full_Range", cfg=cfg, step_tag="2",
         dc_vec=dc_vec,
         long_time_ns=2000.0, average_window_ns=0.0,          # settle-then-probe slice
+        readout_after_park=False,                            # QUA step 2 reads AT the held flux
+        park_voltage=BASELINE_DC_OFFSET,
         fit_trace=False, advanced_fit=bool(p.get("advanced_fit", True)),
         live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
@@ -613,6 +616,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
           f"{len(dc_vec)} DC points")
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
+        "qubit_freq_step": p["freq_step"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
     })
     exp = QubitLongTimeSpecVsFlux(
@@ -726,6 +730,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             dc_vec=dc_vec, Ts_ns=(None if p.get("Ts_us") is None
                                   else int(round(p["Ts_us"] * 1e3))),
             shots=int(p["shots"]), calib_params=calib_params,
+            park_voltage=BASELINE_DC_OFFSET,       # QUA parks refs at baseline_dc_offset
             min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
             max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
             auto_Ts_factor=float(p.get("auto_Ts_factor", 0.5)),
@@ -771,6 +776,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="TLS_Full_T1_vs_Flux_distortion_corrected", cfg=dict(base),
                       dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
+                      park_voltage=BASELINE_DC_OFFSET,       # QUA parks refs at baseline_dc_offset
                       auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
                       T1_probe_cfg=p.get("T1_probe_cfg", None),
                       t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,

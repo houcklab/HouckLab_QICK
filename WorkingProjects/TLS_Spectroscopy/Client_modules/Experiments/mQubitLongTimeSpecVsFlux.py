@@ -204,13 +204,23 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             plotDisp = self.live_plot
         cfg["start"] = cfg["qubit_freq_start"]
         cfg["expts"] = int(cfg["qubit_freq_expts"])
-        cfg["step"] = (cfg["qubit_freq_stop"] - cfg["qubit_freq_start"]) / (cfg["expts"] - 1)
-        fpts_mhz = np.linspace(cfg["qubit_freq_start"], cfg["qubit_freq_stop"], cfg["expts"])
+        # QUA-exact half-open grid: start + step*i (arange), NOT a stretched linspace
+        # that includes the endpoint (which would resize the step).
+        if "qubit_freq_step" in cfg:
+            cfg["step"] = float(cfg["qubit_freq_step"])
+            fpts_mhz = cfg["qubit_freq_start"] + cfg["step"] * np.arange(cfg["expts"])
+        else:
+            cfg["step"] = (cfg["qubit_freq_stop"] - cfg["qubit_freq_start"]) / (cfg["expts"] - 1)
+            fpts_mhz = np.linspace(cfg["qubit_freq_start"], cfg["qubit_freq_stop"], cfg["expts"])
         dc_vec = self.dc_vec
         t_probe_ns = self._probe_time_window_ns()
         n_f, n_dc, n_tau = len(fpts_mhz), len(dc_vec), len(t_probe_ns)
 
         readout_if_hz, target_if_hz, curve_source = self._build_resonator_curve()
+        # QUA reads out where the step demands: step 2 AT the held flux with a per-flux
+        # resonator IF, step 4 back at park.  _build_resonator_curve already returns the
+        # right readout_if per point; push it to hardware per flux column (below).
+        cfg["readout_after_park"] = bool(self.readout_after_park)
 
         mag_dbm = np.full((n_f, n_dc, n_tau), np.nan)
         phase_rad = np.full((n_f, n_dc, n_tau), np.nan)
@@ -229,6 +239,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             cfg["ff_gain"] = float(dc_vec[i_dc])
             cfg["ff_hold"] = float(t_probe_ns[k_tau]) / 1e3
             cfg["reps"] = int(reps)
+            # per-flux readout IF (step 2: dip at the held flux; step 4: flat park IF)
+            cfg["read_pulse_freq"] = float(readout_if_hz[i_dc]) / 1e6
             prog = FFStepResponseSpecProgram(self.soccfg, cfg)
             _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])      # (n_f,) complex

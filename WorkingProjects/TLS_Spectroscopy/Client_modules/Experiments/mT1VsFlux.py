@@ -418,8 +418,10 @@ class FFT1Program(AveragerProgram):
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         if cfg.get("do_ff", True):
+            # hold the flux for the EXACT requested wait (no dt_pulseplay floor): the
+            # decay window must equal the wait the 3-point/curve estimator divides by.
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
-                self, hold_us=max(cfg["ff_hold"], cfg.get("dt_pulseplay", 5.0)),
+                self, hold_us=cfg["ff_hold"],
                 ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
                 ramp_us=cfg.get("ff_ramp_length", 0.02), dt_def_us=cfg.get("dt_pulsedef", 0.002),
                 compensation=ff_pulse.load_compensation(cfg),
