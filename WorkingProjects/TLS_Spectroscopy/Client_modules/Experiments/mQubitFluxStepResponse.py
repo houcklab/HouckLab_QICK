@@ -882,9 +882,12 @@ class QubitFluxStepResponse(ExperimentClass):
         # readout, the resonator IF at the target flux is off).
         cfg["readout_after_park"] = bool(cfg.get("readout_after_park", False))
         cfg["read_pulse_freq"] = self.resonator_if / 1e6
+        _rfp = cfg.get("resonator_fit_parameters")
+        _if_src = (f"{len(_rfp)}-param RESONATOR_FIT_PARAMS" if _rfp
+                   else "flat r_IF (RESONATOR_FIT_PARAMS=None)")
         print(f"[3] readout {'at PARK' if cfg['readout_after_park'] else 'AT the held flux'}, "
-              f"read_pulse_freq = {cfg['read_pulse_freq']:.4f} MHz (resonator IF at "
-              f"dc={self.dc_offset:+.0f}); qubit spec {self.f_vec[0]/1e6:.1f}-{self.f_vec[-1]/1e6:.1f} "
+              f"read_pulse_freq = {cfg['read_pulse_freq']:.4f} MHz [IF source: {_if_src}] at "
+              f"dc={self.dc_offset:+.0f}; qubit spec {self.f_vec[0]/1e6:.1f}-{self.f_vec[-1]/1e6:.1f} "
               f"MHz @ gain {cfg.get('qubit_gain')}")
         if self.flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = self.flux_tail_compensation
