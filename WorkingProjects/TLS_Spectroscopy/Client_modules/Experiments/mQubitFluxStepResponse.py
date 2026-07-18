@@ -45,7 +45,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import trace_extrac
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    interleaved_average, resolve_rounds)
+    interleaved_average, resolve_rounds, suppress_stdout)
 
 
 def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
@@ -883,8 +883,9 @@ class QubitFluxStepResponse(ExperimentClass):
         def run_point(idx, reps):
             cfg["ff_hold"] = float(self.t_vec[idx]) / 1e3
             cfg["reps"] = int(reps)
-            prog = FFStepResponseSpecProgram(self.soccfg, cfg)
-            _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            with suppress_stdout():      # keep qick per-program chatter off the progress line
+                prog = FFStepResponseSpecProgram(self.soccfg, cfg)
+                _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])       # (n_f,) complex
 
         live_fig = LiveFigure() if plotDisp else None

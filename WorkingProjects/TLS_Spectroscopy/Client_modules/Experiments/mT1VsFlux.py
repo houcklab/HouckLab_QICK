@@ -33,7 +33,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    resolve_rounds, split_reps)
+    resolve_rounds, split_reps, suppress_stdout)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
@@ -519,8 +519,9 @@ class _T1VsFluxBase(ExperimentClass):
         cfg["do_ff"] = bool(do_ff)
         if reps is not None:
             cfg["shots"] = int(reps)      # FFT1Program copies cfg['shots'] -> reps
-        prog = FFT1Program(self.soccfg, cfg)
-        i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
+        with suppress_stdout():           # keep qick per-program chatter off the progress line
+            prog = FFT1Program(self.soccfg, cfg)
+            i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if self.reset_mode == "active":
             # herald must be confidently ground (QUA ground_confidence_threshold)

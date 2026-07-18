@@ -24,7 +24,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_function
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    interleaved_average, resolve_rounds)
+    interleaved_average, resolve_rounds, suppress_stdout)
 
 
 class FFTransProgram(AveragerProgram):
@@ -117,8 +117,9 @@ class TransmissionVsFFGain(ExperimentClass):
             cfg["ff_gain"] = float(dc_vec[i_dc])
             cfg["read_pulse_freq"] = float(f_vec[j_f])
             cfg["reps"] = int(reps)
-            prog = FFTransProgram(self.soccfg, cfg)
-            res = prog.acquire(self.soc, load_pulses=True, progress=False)
+            with suppress_stdout():      # keep qick per-program chatter off the progress line
+                prog = FFTransProgram(self.soccfg, cfg)
+                res = prog.acquire(self.soc, load_pulses=True, progress=False)
             # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q)
             return np.array(res[0]).mean() + 1j * np.array(res[1]).mean()
 

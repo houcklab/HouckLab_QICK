@@ -43,7 +43,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predist
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import qubit_spec_trace_fit as qst
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
-    interleaved_average, resolve_rounds)
+    interleaved_average, resolve_rounds, suppress_stdout)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import (
     FFStepResponseSpecProgram,
 )
@@ -241,8 +241,9 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             cfg["reps"] = int(reps)
             # per-flux readout IF (step 2: dip at the held flux; step 4: flat park IF)
             cfg["read_pulse_freq"] = float(readout_if_hz[i_dc]) / 1e6
-            prog = FFStepResponseSpecProgram(self.soccfg, cfg)
-            _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            with suppress_stdout():      # keep qick per-program chatter off the progress line
+                prog = FFStepResponseSpecProgram(self.soccfg, cfg)
+                _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])      # (n_f,) complex
 
         live = LiveFigure(figsize=(8, 6)) if plotDisp else None

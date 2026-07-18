@@ -29,7 +29,32 @@ so for a stationary system the result is bit-for-bit what the sequential average
 give -- only the drift robustness (and the live-plot semantics) change.
 """
 
+import os as _os
+import sys as _sys
+import contextlib as _contextlib
+
 import numpy as np
+
+
+@_contextlib.contextmanager
+def suppress_stdout():
+    """Silence stdout for the duration of the block.
+
+    qick prints a per-program line whenever it rounds a requested pulse/readout
+    frequency or clips a gain (e.g. the per-flux dispersive readout in step 2 triggers
+    it on every point).  Those newline-terminated prints break the in-place '\\r'
+    progress bar -- the bar "keeps going away".  Wrapping the program build + acquire in
+    this keeps the progress bar the ONLY thing on the console, exactly like the QUA
+    workflow.  Exceptions still propagate; stderr is untouched.
+    """
+    saved = _sys.stdout
+    devnull = open(_os.devnull, "w")
+    try:
+        _sys.stdout = devnull
+        yield
+    finally:
+        _sys.stdout = saved
+        devnull.close()
 
 
 def split_reps(shots, rounds):
