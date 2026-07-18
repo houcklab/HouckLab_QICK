@@ -43,8 +43,9 @@ python -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscop
   the DC offset and fast pulses. Here the `ff_ch` DAC on the DC-coupled P/N pigtails
   plays the same role: the static park is `ff_park_gain` (held between pulses via
   `stdysel='last'`, analogous to QUA's `flux_dc_offset`), and steps/holds are shaped
-  pulses on top of it. Steps 1–2 (Yoko-swept DC scans) are kept only as optional
-  extras — readout always happens at park, so no resonator-tracking lookup is needed.
+  pulses on top of it. Readout location follows QUA: steps 1 & 3 read out AT the
+  held flux (readout IF from the step-1 lookup CSV / resonator fit, QUA
+  `_build_resonator_curve`), steps 4 & 6 read out back at park.
 - **Flux target axis.** QUA's steps 4 & 6 swept the flux *target voltage* (`dc_vec`).
   Here the swept axis is **`ff_gain` (DAC units)**, and `FLUX_FIT_PARAMS` is fit with
   that axis (period/offset in DAC units) by step 4, which also gives the f_q(ff_gain)

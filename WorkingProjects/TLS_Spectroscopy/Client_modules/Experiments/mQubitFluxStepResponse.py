@@ -1,45 +1,88 @@
 """
-STEP 3 of the TLS pipeline: fast-flux step response + predistortion.
+STEP 3 of the TLS pipeline: fast-flux step response + rise-decay-bump DC compensation.
 
-QUA analog: LabCode/Experiments/Flux_Predistortion/m_qubit_step_response.py
-            + LabCode/Control/Flux_Tunable/flux_predistortion.py (_run_qubit_flux_step_response)
-QICK model: escher FF_fromParth/mFFSpecVsDelay + mFFRampHoldTest_wPulsePreDist, using
-            Helpers/ff_pulse.py (predistorted ramp-hold on ff_ch) and
-            Helpers/flux_predistortion.py (rise_decay_bump fit + piecewise solve).
+QUA analog (line-for-line): LabCode/Experiments/Flux_Predistortion/m_qubit_step_response.py
+(QubitFluxStepResponse) driven by _run_qubit_flux_step_response.  Every artifact of the
+QUA class is reproduced: the live 2-panel magnitude/phase map, the per-shot progress bar
+(here per delay column, the QICK acquisition unit), the *_raw_sweep.csv (written BEFORE
+any analysis), the ridge/independent-slices trace extraction on the dBm map, the signed
+frequency- and voltage-domain step responses, the rise_decay_bump model fit (600 seeds,
+BIC), the piecewise DC correction SOLVED ON THE FITTED MODEL CURVE, the
+*_rise_decay_bump_dc_compensation.json (schema-identical via save_predistortion_json;
+never written on failure), the *_frequency_drift.csv + *_frequency_drift_zoom.png, the
+standalone *_step_response.png, and the 3-panel summary PNG.
 
-Two modes:
-  FIT     (run_fit=True):  play a BARE flux step to the target, probe the qubit
-          frequency vs hold delay t (spec-vs-delay), extract f_q(t), normalize to a
-          voltage step response via the flux fit, fit rise_decay_bump, solve the
-          piecewise DC correction, and save a *_rise_decay_bump_dc_compensation.json.
-  CORRECT (run_correct=True): reload that JSON, replay the step PREDISTORTED, and
-          verify the qubit frequency is flat vs delay (residual settling nulled).
-
-Flux model: the DC baseline (park = baseline_dc_offset) is the Yokogawa bias; the
-step to the target is the additional fast-flux excursion on ff_ch (ff_gain DAC units).
-The qubit probe fires while the flux is HELD at target (ff pulses use stdysel='last',
-so the DAC holds the level between the hold staircase and the ramp-down).
+Unit translation only (per the QUA->QICK port convention):
+  - flux volts -> ff_gain DAC units (CSV headers keep the QUA *_V names byte-identical);
+  - external LO + IF -> absolute-frequency synthesis (q_LO = 0, IF = absolute Hz);
+  - OPX set_dc_offset staircase -> predistorted arb staircase on ff_ch (ff_pulse),
+    played at cfg['dt_pulseplay'] resolution (default 0.5 us here so the 500 ns QUA
+    early segments are resolved; the QUA staircase is exact per segment);
+  - spec_amp V -> qubit_gain DAC, spec_len ns -> qubit_length us.
+Sequencing parity: baseline re-arm at park (default 500 us, QUA reset_time), bare or
+compensated step to the target, spec tone AND readout at the held target flux
+(restore_target_at_end=False semantics via stdysel='last'; readout IF looked up at the
+target from the step-1 resonator lookup CSV / dispersive / cosine fit), then back to park.
+The OPX output-filter path (fit_predistortion) has no QICK analog and raises if enabled.
 """
 
+import os
+import inspect
 import time
+from datetime import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import trace_extraction as trx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
+
+
+def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
+    """VERBATIM QUA m_qubit_step_response._build_resonator_curve, absolute-Hz units.
+
+    Priority: (1) resonator_lookup_csv (step-1 *_resonator_lookup.csv, columns
+    dc_offset_V / resonator_dip_if_Hz) interpolated; (2) meta resonator_fit_parameters
+    (7-param dispersive or legacy 4-param cosine); (3) flat r_IF (= park readout freq).
+    """
+    dc_vec = np.asarray(dc_vec, dtype=float)
+    if resonator_lookup_csv is not None:
+        table = np.genfromtxt(resonator_lookup_csv, delimiter=",", skip_header=1)
+        if table.ndim == 1:
+            table = table[None, :]
+        lut_dc = np.asarray(table[:, 0], dtype=float)
+        lut_if = np.asarray(table[:, 1], dtype=float)
+        order = np.argsort(lut_dc)
+        lut_dc, lut_if = lut_dc[order], lut_if[order]
+        if dc_vec.size and (dc_vec.min() < lut_dc.min() - 1e-9 or dc_vec.max() > lut_dc.max() + 1e-9):
+            print(f"WARNING: dc_vec [{dc_vec.min():+.4f}, {dc_vec.max():+.4f}] V extends beyond the "
+                  f"resonator lookup range [{lut_dc.min():+.4f}, {lut_dc.max():+.4f}] V; edge values used.")
+        print(f"Using resonator dip lookup table for readout IF: {resonator_lookup_csv}")
+        return np.asarray(np.round(np.interp(dc_vec, lut_dc, lut_if)), dtype=int)
+    fit_params = meta_dict.get("resonator_fit_parameters")
+    if fit_params is None:
+        return np.full(len(dc_vec), int(meta_dict["r_IF"]), dtype=int)
+    if len(fit_params) == 7:
+        return np.asarray(np.round(ff.resonator_dispersive_func_hz(dc_vec, *fit_params)), dtype=int)
+    return np.asarray(np.round(ff.cosine_vs_flux(dc_vec, *fit_params)), dtype=int)
 
 
 class FFStepResponseSpecProgram(RAveragerProgram):
     """One spec slice (hardware qubit-freq sweep) at hold delay cfg['ff_hold'] after a flux step.
 
-    Sequence: ramp flux up -> hold at target for ff_hold (predistorted if compensation
-    present) -> qubit spec pulse (freq swept) while held -> ramp flux back to park ->
-    read out at park.
+    QUA make_prog analog: re-arm baseline at park (cfg['baseline_rearm_us']) -> ramp+hold
+    at the target for ff_hold (predistorted staircase if cfg['flux_tail_compensation']) ->
+    qubit spec pulse while held -> readout.  cfg['readout_after_park'] (default True,
+    used by step 4) reads out back at park; step 3 sets it False to read out AT the held
+    target flux like the QUA program (restore_target_at_end=False), then returns to park.
     """
 
     def __init__(self, soccfg, cfg):
@@ -88,178 +131,1122 @@ class FFStepResponseSpecProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))          # flux held at target (stdysel='last')
         self.pulse(ch=cfg["qubit_ch"])                # spec probe at the target flux point
         self.sync_all(self.us2cycles(0.01))
-        ff_pulse.play_ramp_down(self, self.ff_segs)   # back to park
-        self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
-        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+        if cfg.get("readout_after_park", True):
+            ff_pulse.play_ramp_down(self, self.ff_segs)   # back to park
+            self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
+            self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                         adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                         wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+        else:
+            # QUA step 3: measure AT the held target flux (restore_target_at_end=False)
+            self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                         adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                         wait=True, syncdelay=self.us2cycles(0.01))
+            ff_pulse.play_ramp_down(self, self.ff_segs)   # back to park
+            self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_freq, self.r_freq, '+', self.f_step)
 
 
 class QubitFluxStepResponse(ExperimentClass):
-    """Measure/fit (or verify) the fast-flux step response and its predistortion.
+    """QUA QubitFluxStepResponse, method for method (see module docstring)."""
 
-    cfg keys (measurement): qubit_freq_start/stop/expts (MHz), t_vec_us (delay axis),
-      ff_gain (DAC), baseline_dc_offset, dc_offset (target, V), flux_fit_params.
-    cfg keys (predistortion): flux_tail_compensation (dict or JSON path, correct mode).
-    """
+    @staticmethod
+    def find_latest_full_range_trace_csv(outer_folder, qubit):
+        """Find the newest full-range trace CSV saved for this qubit."""
+        from pathlib import Path
+        qubit_dir = Path(outer_folder) / qubit
+        pattern = f"{qubit}_*_Qubit_Spec_vs_Flux_Full_Range_trace.csv"
+        if not qubit_dir.exists():
+            return None
+        candidates = list(qubit_dir.rglob(pattern))
+        if not candidates:
+            return None
+        latest = max(candidates, key=lambda path: path.stat().st_mtime)
+        return str(latest)
 
-    def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
-                 suffix='Qubit_Flux_Step_Response', cfg=None, meta_dict=None,
-                 flux_fit_params=None, run_fit=False, correction_json=None,
-                 piecewise_min_multiplier=0.5, piecewise_max_multiplier=1.5,
-                 correction_gain=1.0, qubit_name='q1', **kw):
+    @staticmethod
+    def find_latest_rise_decay_bump_dc_compensation_json(
+        outer_folder,
+        qubit,
+        dc_offset=None,
+        baseline_dc_offset=None,
+        require_success=True,
+    ):
+        """Find the newest production rise-decay-bump DC compensation JSON saved for this qubit."""
+        return fpd.find_latest_compensation_json(
+            outer_folder, qubit, dc_offset=dc_offset,
+            baseline_dc_offset=baseline_dc_offset, require_success=require_success)
+
+    @staticmethod
+    def load_piecewise_dc_compensation_json(json_path):
+        return fpd.load_compensation_json(json_path)
+
+    @staticmethod
+    def _has_real_flux_fit_params(flux_fit_params):
+        if flux_fit_params is None:
+            return False
+        if isinstance(flux_fit_params, dict):
+            return any(value is not None for value in flux_fit_params.values())
+        try:
+            values = list(flux_fit_params)
+        except TypeError:
+            return True
+        return any(value is not None for value in values)
+
+    def __init__(
+        self,
+        soc=None,
+        soccfg=None,
+        path='',
+        outerFolder='',
+        prefix='data',
+        suffix='Qubit_Flux_Step_Response',
+        cfg=None,
+        element=None,
+        f_vec=None,
+        t_vec=None,
+        dc_offset=None,
+        shots=None,
+        flux_fit_params=None,
+        flux_trace_csv=None,
+        flux_lookup_mode="auto",
+        baseline_dc_offset=0.0,
+        live_plot=True,
+        fit_predistortion=False,
+        fit_n_exp=1,
+        fit_tail_fraction=0.25,
+        fit_rise_decay_bump_dc_correction=False,
+        piecewise_segment_edges_ns=None,
+        piecewise_regularization=0.02,
+        piecewise_final_weight=0.0,
+        piecewise_min_multiplier=0.5,
+        piecewise_max_multiplier=1.5,
+        piecewise_correction_gain=1.0,
+        piecewise_desired_response="median",
+        piecewise_response_domain="voltage",
+        baseline_rearm_time_ns=None,
+        flux_tail_compensation=None,
+        compose_with_applied_flux_tail_compensation=False,
+        composition_damping=0.5,
+        trace_tracking_mode="ridge",
+        trace_polarity="bright",
+        trace_baseline_window_mhz=25.0,
+        trace_max_jump_mhz=4.0,
+        trace_smoothness_penalty=0.15,
+        trace_local_fit_half_window_mhz=8.0,
+        trace_smoothing_window_points=17,
+        trace_smoothing_polyorder=2,
+        trace_use_smoothed_frequency=True,
+        resonator_lookup_csv=None,
+        **kw,
+    ):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
-                         prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
-        self.flux_fit_params = flux_fit_params if flux_fit_params is not None \
-            else cfg.get("flux_fit_params")
-        self.run_fit = run_fit
-        self.correction_json = correction_json
-        self.min_mult = piecewise_min_multiplier
-        self.max_mult = piecewise_max_multiplier
-        self.correction_gain = correction_gain
-        self.qubit_name = qubit_name
+                         prefix=prefix, suffix=suffix, cfg=cfg, **kw)
+        self.element = str(element if element is not None else path)
+        # f_vec: absolute Hz (QUA IF + LO -> QICK absolute, q_LO = 0)
+        if f_vec is None:
+            f_vec = np.linspace(cfg["qubit_freq_start"], cfg["qubit_freq_stop"],
+                                int(cfg["qubit_freq_expts"])) * 1e6
+        self.f_vec = np.asarray(f_vec, dtype=float)
+        if t_vec is None:
+            t_vec = np.asarray(cfg["t_vec_ns"], dtype=float)
+        self.t_vec = np.asarray(t_vec, dtype=float)          # ns, QUA units
+        self.dc_offset = float(dc_offset if dc_offset is not None else cfg["dc_offset"])
+        self.baseline_dc_offset = float(baseline_dc_offset)
+        self.shots = int(shots if shots is not None else cfg["reps"])
+        # meta_dict: the QUA-format summary the artifact strings/metadata read from
+        self.meta_dict = {
+            "q_name": self.element,
+            "r_name": f"r{self.element[1:]}" if len(self.element) > 1 else "r",
+            "flux_name": f"ff_ch{cfg['ff_ch']}",
+            "flux_channel": int(cfg["ff_ch"]),
+            "cw_amp": cfg["qubit_gain"],                     # DAC (QUA: V)
+            "cw_len": float(cfg["qubit_length"]) * 1e3,      # ns
+            "read_len": float(cfg["read_length"]) * 1e3,     # ns
+            "reset_time": float(cfg.get("reset_time_ns", 500_000)),
+            "q_LO": {"LO_freq": 0.0},
+            "r_IF": float(cfg["read_pulse_freq"]) * 1e6,
+        }
+        self.live_plot_enabled = bool(live_plot)
+        self.fit_predistortion = bool(fit_predistortion)
+        self.fit_n_exp = int(fit_n_exp)
+        self.fit_tail_fraction = float(fit_tail_fraction)
+        self.fit_rise_decay_bump_dc_correction = bool(fit_rise_decay_bump_dc_correction)
+        self.piecewise_segment_edges_ns = (
+            None if piecewise_segment_edges_ns is None else [float(x) for x in piecewise_segment_edges_ns]
+        )
+        self.piecewise_regularization = float(piecewise_regularization)
+        self.piecewise_final_weight = float(piecewise_final_weight)
+        self.piecewise_min_multiplier = float(piecewise_min_multiplier)
+        self.piecewise_max_multiplier = float(piecewise_max_multiplier)
+        self.piecewise_correction_gain = float(piecewise_correction_gain)
+        self.piecewise_desired_response = piecewise_desired_response
+        self.piecewise_response_domain = str(piecewise_response_domain).strip().lower()
+        if self.piecewise_response_domain not in {"frequency", "voltage"}:
+            raise ValueError("piecewise_response_domain must be 'frequency' or 'voltage'.")
+        self.baseline_rearm_time_ns = int(
+            self.meta_dict.get("reset_time", 500_000)
+            if baseline_rearm_time_ns is None
+            else baseline_rearm_time_ns
+        )
+        self.flux_tail_compensation = flux_tail_compensation
+        self.compose_with_applied_flux_tail_compensation = bool(compose_with_applied_flux_tail_compensation)
+        self.composition_damping = float(composition_damping)
+        self.trace_tracking_mode = str(trace_tracking_mode).strip().lower()
+        if self.trace_tracking_mode not in {"ridge", "independent_slices"}:
+            raise ValueError("trace_tracking_mode must be 'ridge' or 'independent_slices'.")
+        self.trace_polarity = str(trace_polarity).strip().lower()
+        if self.trace_polarity not in {"bright", "dark", "auto"}:
+            raise ValueError("trace_polarity must be 'bright', 'dark', or 'auto'.")
+        self.trace_baseline_window_mhz = float(trace_baseline_window_mhz)
+        self.trace_max_jump_mhz = float(trace_max_jump_mhz)
+        self.trace_smoothness_penalty = float(trace_smoothness_penalty)
+        self.trace_local_fit_half_window_mhz = float(trace_local_fit_half_window_mhz)
+        self.trace_smoothing_window_points = int(trace_smoothing_window_points)
+        self.trace_smoothing_polyorder = int(trace_smoothing_polyorder)
+        self.trace_use_smoothed_frequency = bool(trace_use_smoothed_frequency)
+        self.flux_lookup_mode_requested = str(flux_lookup_mode).strip().lower()
+        if self.flux_lookup_mode_requested not in {"auto", "csv", "fit"}:
+            raise ValueError(
+                "flux_lookup_mode must be one of: 'auto', 'csv', 'fit'."
+            )
 
-    def _t_vec(self):
-        cfg = self.cfg
-        if "t_vec_us" in cfg:
-            return np.asarray(cfg["t_vec_us"], dtype=float)
-        return np.arange(cfg["t_min_us"], cfg["t_max_us"], cfg["t_step_us"])
-
-    def acquire(self, progress=False, plotDisp=False, figNum=1):
-        cfg = self.cfg
-        cfg["start"] = cfg["qubit_freq_start"]
-        cfg["expts"] = int(cfg["qubit_freq_expts"])
-        cfg["step"] = (cfg["qubit_freq_stop"] - cfg["qubit_freq_start"]) / (cfg["expts"] - 1)
-        fpts = np.linspace(cfg["qubit_freq_start"], cfg["qubit_freq_stop"], cfg["expts"])
-        t_vec = self._t_vec()
-
-        # correct mode: load the compensation into cfg so the program predistorts
-        if not self.run_fit and self.correction_json is not None:
-            cfg["flux_tail_compensation"] = fpd.load_compensation_json(self.correction_json)
-
-        Z_mag = np.full((len(t_vec), len(fpts)), np.nan)
-        fq_ghz = np.full(len(t_vec), np.nan)
-
-        start = time.time()
-        for i, t in enumerate(t_vec):
-            cfg["ff_hold"] = float(t)
-            prog = FFStepResponseSpecProgram(self.soccfg, cfg)
-            x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            mag = np.abs(np.array(avgi[0][0]) + 1j * np.array(avgq[0][0]))
-            Z_mag[i, :] = mag
-            sp, _ = ff.fit_spec_dip(fpts, mag, kind='auto')
-            if sp is not None:
-                fq_ghz[i] = sp['f0'] / 1e3
-            if i == 0:
-                print(f"[3] ~{(time.time()-start)*len(t_vec)/60:.1f} min for "
-                      f"{len(t_vec)} delays x {cfg['expts']} freq points")
-
-        data = {'config': cfg, 'data': {'t_vec_us': t_vec, 'fpts_MHz': fpts,
-                                        'magnitude': Z_mag, 'fq_ghz': fq_ghz}}
-        self.data = data
-
-        # --- normalized step responses ---
-        # Flux-axis units: whatever FLUX_FIT_PARAMS was fit in.  In the all-FF
-        # workflow that is ff_gain DAC units: baseline = park, target = ff_gain.
-        # (Volt keys kept for the optional Yoko-swept mode.)
-        baseline_v = cfg.get("baseline_dc_offset", cfg.get("ff_park_gain", 0))
-        target_v = cfg.get("dc_offset", cfg["ff_gain"])
-        if self.flux_fit_params is not None:
-            f_base = fx.estimate_fit_frequency_ghz(self.flux_fit_params, baseline_v)
-            f_targ = fx.estimate_fit_frequency_ghz(self.flux_fit_params, target_v)
-            denom = (f_targ - f_base) or np.nan
-            freq_step_resp = (fq_ghz - f_base) / denom
-            v_eff = fx.frequency_to_local_flux_branch(self.flux_fit_params, fq_ghz,
-                                                      baseline_v, target_v)
-            volt_step_resp = (v_eff - baseline_v) / ((target_v - baseline_v) or np.nan)
-            data['data'].update(freq_step_response=freq_step_resp,
-                                voltage_step_response=volt_step_resp,
-                                effective_dc_offset_V=v_eff)
+        self.flux_trace_interp = None
+        self.flux_trace_csv = None
+        has_real_flux_fit_params = self._has_real_flux_fit_params(flux_fit_params)
+        if self.flux_lookup_mode_requested == "csv":
+            if flux_trace_csv is None:
+                raise ValueError(
+                    "flux_lookup_mode='csv' requires flux_trace_csv to be set."
+                )
+            self.flux_trace_interp = self._load_trace_csv(flux_trace_csv)
+            self.flux_trace_csv = flux_trace_csv
+            self.flux_fit_params = (
+                self._coerce_flux_fit_params(flux_fit_params) if has_real_flux_fit_params
+                else None
+            )
+            self.flux_lookup_method = "trace_interpolation"
+            print(f"Using trace interpolation from: {flux_trace_csv}")
+        elif self.flux_lookup_mode_requested == "fit":
+            if not has_real_flux_fit_params:
+                raise ValueError(
+                    "flux_lookup_mode='fit' requires flux_fit_params to be set."
+                )
+            self.flux_fit_params = self._coerce_flux_fit_params(flux_fit_params)
+            self.flux_lookup_method = "parametric_model"
+            print("Using parametric model from flux_fit_params")
         else:
-            volt_step_resp = None
-            print("[3] no flux_fit_params -> skipping voltage-domain normalization")
+            if flux_trace_csv is not None:
+                self.flux_trace_interp = self._load_trace_csv(flux_trace_csv)
+                self.flux_trace_csv = flux_trace_csv
+                self.flux_fit_params = (
+                    self._coerce_flux_fit_params(flux_fit_params) if has_real_flux_fit_params
+                    else None
+                )
+                self.flux_lookup_method = "trace_interpolation"
+                print(f"Using trace interpolation from: {flux_trace_csv}")
+            else:
+                if not has_real_flux_fit_params:
+                    raise ValueError(
+                        "Either flux_trace_csv or flux_fit_params must be provided."
+                    )
+                self.flux_fit_params = self._coerce_flux_fit_params(flux_fit_params)
+                self.flux_lookup_method = "parametric_model"
+                print("Using parametric model (no trace CSV provided)")
 
-        # --- fit + solve + save compensation (FIT mode only) ---
-        if self.run_fit:
-            if volt_step_resp is None:
-                raise RuntimeError("run_fit requires flux_fit_params to normalize the step response.")
-            t_ns = t_vec * 1e3
-            resp = volt_step_resp
-            model = fpd.fit_rise_decay_bump_response_model(t_ns, resp)
-            edges = fpd.default_dc_tail_segment_edges(float(t_ns[-1]))
-            comp = fpd.calculate_piecewise_dc_correction(
-                t_ns, resp, edges, desired_response='median',
-                min_multiplier=self.min_mult, max_multiplier=self.max_mult,
-                correction_gain=self.correction_gain)
-            json_path = self.iname[:-4] + "_rise_decay_bump_dc_compensation.json"
-            fpd.save_compensation_json(
-                json_path, comp,
-                metadata={'qubit': self.qubit_name, 'dc_offset': target_v,
-                          'baseline_dc_offset': baseline_v, 'ff_gain': cfg["ff_gain"],
-                          'created_at': self.date_string + "_" + self.time_string},
-                rise_decay_bump_model=model)
-            data['data']['rise_decay_bump_dc_compensation_json'] = json_path
-            data['data']['rise_decay_bump_model'] = model
-            data['data']['compensation'] = comp
-            print(f"[3a] saved compensation JSON: {json_path}")
-            print(f"[3a] fit success={model.get('success')}, "
-                  f"solve success={comp.get('success')}, "
-                  f"segments={len(comp['segment_edges_ns'])}")
+        self.resonator_lookup_csv = resonator_lookup_csv
+        self.resonator_if = int(_build_resonator_curve(
+            {**self.meta_dict, "resonator_fit_parameters": cfg.get("resonator_fit_parameters")},
+            np.asarray([self.dc_offset]), resonator_lookup_csv)[0])
+
+        self.data = {
+            'qubit': self.element,
+            'f_vec': self.f_vec,
+            't_vec': self.t_vec,
+            'dc_offset': self.dc_offset,
+            'baseline_dc_offset': self.baseline_dc_offset,
+            'shots': self.shots,
+            'meta_dict': self.meta_dict,
+            'flux_fit_params': dict(self.flux_fit_params) if self.flux_fit_params else None,
+            'flux_trace_csv': self.flux_trace_csv,
+            'flux_lookup_mode_requested': self.flux_lookup_mode_requested,
+            'flux_lookup_method': self.flux_lookup_method,
+            'live_plot': self.live_plot_enabled,
+            'fit_predistortion': self.fit_predistortion,
+            'fit_n_exp': self.fit_n_exp,
+            'fit_tail_fraction': self.fit_tail_fraction,
+            'fit_rise_decay_bump_dc_correction': self.fit_rise_decay_bump_dc_correction,
+            'piecewise_segment_edges_ns': self.piecewise_segment_edges_ns,
+            'piecewise_regularization': self.piecewise_regularization,
+            'piecewise_final_weight': self.piecewise_final_weight,
+            'piecewise_min_multiplier': self.piecewise_min_multiplier,
+            'piecewise_max_multiplier': self.piecewise_max_multiplier,
+            'piecewise_correction_gain': self.piecewise_correction_gain,
+            'piecewise_desired_response': self.piecewise_desired_response,
+            'piecewise_response_domain': self.piecewise_response_domain,
+            'baseline_rearm_time_ns': self.baseline_rearm_time_ns,
+            'applied_flux_tail_compensation': self.flux_tail_compensation,
+            'compose_with_applied_flux_tail_compensation': self.compose_with_applied_flux_tail_compensation,
+            'composition_damping': self.composition_damping,
+            'trace_tracking_mode': self.trace_tracking_mode,
+            'trace_polarity': self.trace_polarity,
+            'trace_baseline_window_mhz': self.trace_baseline_window_mhz,
+            'trace_max_jump_mhz': self.trace_max_jump_mhz,
+            'trace_smoothness_penalty': self.trace_smoothness_penalty,
+            'trace_local_fit_half_window_mhz': self.trace_local_fit_half_window_mhz,
+            'trace_smoothing_window_points': self.trace_smoothing_window_points,
+            'trace_smoothing_polyorder': self.trace_smoothing_polyorder,
+            'trace_use_smoothed_frequency': self.trace_use_smoothed_frequency,
+        }
+
+    @staticmethod
+    def _load_trace_csv(csv_path):
+        """Load a trace CSV and return a cubic interpolation function (V -> GHz)."""
+        from scipy.interpolate import interp1d
+        data = np.genfromtxt(csv_path, delimiter=',', skip_header=1)
+        dc_v = data[:, 0]
+        freq_ghz = data[:, 2]
+        valid = np.isfinite(dc_v) & np.isfinite(freq_ghz)
+        dc_v = dc_v[valid]
+        freq_ghz = freq_ghz[valid]
+        if len(dc_v) < 5:
+            raise ValueError(f"Trace CSV {csv_path} has fewer than 5 valid points.")
+        order = np.argsort(dc_v)
+        return interp1d(dc_v[order], freq_ghz[order], kind='cubic',
+                        fill_value='extrapolate')
+
+    @staticmethod
+    def _coerce_flux_fit_params(flux_fit_params):
+        required = ("EJmax", "Ec", "period_volts", "phase_offset_volts", "d")
+        if isinstance(flux_fit_params, dict):
+            missing = [key for key in required if key not in flux_fit_params]
+            if missing:
+                raise ValueError(f"Missing flux-fit parameters: {missing}")
+            invalid = [key for key in required if flux_fit_params[key] is None]
+            if invalid:
+                raise ValueError(
+                    f"Set flux_fit_params in the control script before running. Missing values for: {invalid}"
+                )
+            parsed = {key: float(flux_fit_params[key]) for key in required}
+            if "tilt_slope" in flux_fit_params and flux_fit_params["tilt_slope"] is not None:
+                parsed["tilt_slope"] = float(flux_fit_params["tilt_slope"])
+            if not all(np.isfinite(parsed[key]) for key in required):
+                raise ValueError("All flux_fit_params values must be finite numbers.")
+            if "tilt_slope" in parsed and not np.isfinite(parsed["tilt_slope"]):
+                raise ValueError("flux_fit_params tilt_slope must be a finite number.")
+            return parsed
+        try:
+            values = list(flux_fit_params)
+        except TypeError as exc:
+            raise ValueError(
+                "flux_fit_params must be a dict or a sequence in the order "
+                "[EJmax, Ec, period_volts, phase_offset_volts, d] "
+                "or [EJmax, Ec, period_volts, phase_offset_volts, d, tilt_slope]."
+            ) from exc
+        if len(values) not in (5, 6):
+            raise ValueError(
+                "flux_fit_params must have 5 or 6 values in the order "
+                "[EJmax, Ec, period_volts, phase_offset_volts, d, (optional) tilt_slope]."
+            )
+        if any(value is None for value in values):
+            raise ValueError(
+                "Set flux_fit_params in the control script before running. "
+                "Expected [EJmax, Ec, period_volts, phase_offset_volts, d, (optional) tilt_slope]."
+            )
+        parsed = {key: float(value) for key, value in zip(required, values[:5])}
+        if len(values) == 6:
+            parsed["tilt_slope"] = float(values[5])
+        if not all(np.isfinite(parsed[key]) for key in required):
+            raise ValueError("All flux_fit_params values must be finite numbers.")
+        if "tilt_slope" in parsed and not np.isfinite(parsed["tilt_slope"]):
+            raise ValueError("flux_fit_params tilt_slope must be a finite number.")
+        return parsed
+
+    def _evaluate_flux_model_frequency(self, dc_offset_volts):
+        """Evaluate the fitted qubit frequency in GHz, including optional linear tilt."""
+        dc_offset_array = np.asarray(dc_offset_volts, dtype=float)
+        base_frequency_ghz = np.asarray(
+            fx.flux_tunable_transmon_frequency(
+                x=dc_offset_array,
+                EJmax=self.flux_fit_params["EJmax"],
+                Ec=self.flux_fit_params["Ec"],
+                period_volts=self.flux_fit_params["period_volts"],
+                phase_offset_volts=self.flux_fit_params["phase_offset_volts"],
+                d=self.flux_fit_params["d"],
+            ),
+            dtype=float,
+        )
+        tilt_slope = float(self.flux_fit_params.get("tilt_slope", 0.0))
+        frequency_ghz = base_frequency_ghz + tilt_slope * dc_offset_array
+        if np.ndim(dc_offset_volts) == 0:
+            return float(frequency_ghz)
+        return frequency_ghz
+
+    def _make_save_figure(self, figsize=None):
+        if self.live_plot_enabled:
+            return plt.figure(figsize=figsize)
+        fig = Figure(figsize=figsize)
+        FigureCanvasAgg(fig)
+        return fig
+
+    def _compute_expected_frequencies(self):
+        if self.flux_trace_interp is not None:
+            # Direct lookup from the measured trace -- no model error
+            baseline_frequency_ghz = float(self.flux_trace_interp(self.baseline_dc_offset))
+            target_frequency_ghz = float(self.flux_trace_interp(self.dc_offset))
         else:
-            # correct mode: report residual flatness
-            resid = np.nanstd(fq_ghz) * 1e3  # MHz
-            data['data']['residual_flatness_MHz'] = resid
-            print(f"[3b] post-correction qubit-freq flatness: std = {resid:.3f} MHz "
-                  f"(smaller is better)")
+            # Fallback: parametric transmon model
+            baseline_frequency_ghz = self._evaluate_flux_model_frequency(self.baseline_dc_offset)
+            target_frequency_ghz = self._evaluate_flux_model_frequency(self.dc_offset)
+        frequency_margin_ghz = max(0.040, 0.50 * abs(target_frequency_ghz - baseline_frequency_ghz))
+        return baseline_frequency_ghz, target_frequency_ghz, frequency_margin_ghz
 
-        self.display(data, plotDisp=plotDisp, figNum=figNum)
-        return data
+    def _frequency_to_local_flux_branch(self, frequency_ghz):
+        """
+        Convert measured qubit frequency back to the local flux-voltage branch.
 
-    def display(self, data=None, plotDisp=False, figNum=1, **kw):
-        if data is None:
-            data = self.data
-        d = data['data']
-        while plt.fignum_exists(num=figNum):
-            figNum += 1
-        fig, axs = plt.subplots(2, 1, figsize=(9, 9), num=figNum)
-        extent = [d['fpts_MHz'][0] / 1e3, d['fpts_MHz'][-1] / 1e3,
-                  d['t_vec_us'][0], d['t_vec_us'][-1]]
-        axs[0].imshow(d['magnitude'], aspect='auto', origin='lower', extent=extent,
-                      interpolation='none')
-        axs[0].plot(d['fq_ghz'], d['t_vec_us'], 'r.-', ms=3, lw=0.8)
-        axs[0].set_xlabel("Qubit frequency (GHz)")
-        axs[0].set_ylabel("Hold delay t (us)")
-        axs[0].set_title("Spec vs delay after flux step")
-        if 'voltage_step_response' in d:
-            axs[1].plot(d['t_vec_us'], d['voltage_step_response'], 'k.-', label='voltage step response')
-            if 'rise_decay_bump_model' in d and d['rise_decay_bump_model'].get('success'):
-                m = d['rise_decay_bump_model']
-                fitc = fpd.rise_decay_bump_model(d['t_vec_us'] * 1e3, m['asymptote'],
-                        m['late_amplitude'], m['late_tau_ns'], m['bump_amplitude'],
-                        m['rise_tau_ns'], m['bump_tau_ns'])
-                axs[1].plot(d['t_vec_us'], fitc, 'r--', label='rise_decay_bump fit')
-            axs[1].axhline(1.0, color='g', ls=':', lw=1, label='target')
-            axs[1].set_xlabel("Hold delay t (us)")
-            axs[1].set_ylabel("normalized step response")
-            axs[1].legend()
+        This is intentionally local: it only inverts the fitted spectrum between
+        the baseline and target voltages used in the step-response experiment.
+        That avoids jumping to another SQUID branch when the spectrum is not
+        globally one-to-one.
+        """
+        frequency_ghz = np.asarray(frequency_ghz, dtype=float)
+        if self.flux_fit_params is None:
+            return np.full_like(frequency_ghz, np.nan, dtype=float)
+
+        branch_voltage = np.linspace(self.baseline_dc_offset, self.dc_offset, 10_001, dtype=float)
+        branch_frequency = np.asarray(self._evaluate_flux_model_frequency(branch_voltage), dtype=float)
+        finite_branch = np.isfinite(branch_voltage) & np.isfinite(branch_frequency)
+        branch_voltage = branch_voltage[finite_branch]
+        branch_frequency = branch_frequency[finite_branch]
+        if branch_voltage.size < 3:
+            return np.full_like(frequency_ghz, np.nan, dtype=float)
+
+        frequency_diff = np.diff(branch_frequency)
+        monotonic_increasing = np.all(frequency_diff >= -1e-9)
+        monotonic_decreasing = np.all(frequency_diff <= 1e-9)
+        finite_frequency = np.isfinite(frequency_ghz)
+        effective_dc = np.full_like(frequency_ghz, np.nan, dtype=float)
+
+        if monotonic_increasing or monotonic_decreasing:
+            if monotonic_decreasing:
+                interp_frequency = branch_frequency[::-1]
+                interp_voltage = branch_voltage[::-1]
+            else:
+                interp_frequency = branch_frequency
+                interp_voltage = branch_voltage
+            effective_dc[finite_frequency] = np.interp(
+                frequency_ghz[finite_frequency],
+                interp_frequency,
+                interp_voltage,
+                left=float(interp_voltage[0]),
+                right=float(interp_voltage[-1]),
+            )
         else:
-            axs[1].plot(d['t_vec_us'], d['fq_ghz'], 'k.-')
-            axs[1].set_xlabel("Hold delay t (us)"); axs[1].set_ylabel("f_q (GHz)")
+            # Last-resort local nearest-neighbor inversion for a non-monotonic
+            # target interval. This should be rare for the short validation
+            # windows we use here.
+            for flat_index in np.flatnonzero(finite_frequency):
+                nearest_index = int(np.nanargmin(np.abs(branch_frequency - frequency_ghz[flat_index])))
+                effective_dc[flat_index] = float(branch_voltage[nearest_index])
+
+        return effective_dc
+
+    def _extract_trace_from_map(self, iq_magnitude_dbm):
+        baseline_frequency_ghz, target_frequency_ghz, frequency_margin_ghz = self._compute_expected_frequencies()
+        expected_min_ghz = min(baseline_frequency_ghz, target_frequency_ghz) - frequency_margin_ghz
+        expected_max_ghz = max(baseline_frequency_ghz, target_frequency_ghz) + frequency_margin_ghz
+
+        frequency_axis_ghz = (self.meta_dict['q_LO']['LO_freq'] + self.f_vec) / 1e9
+        expected_window_mask = (
+            (frequency_axis_ghz >= expected_min_ghz)
+            & (frequency_axis_ghz <= expected_max_ghz)
+        )
+        self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
+        self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
+
+        # the helper re-derives the window, raises the QUA no-overlap ValueError,
+        # runs the ridge engine and falls back to independent slices with the
+        # QUA fallback print
+        trace_result = trx.extract_trace_from_map(
+            iq_magnitude_dbm,
+            frequency_axis_ghz,
+            self.t_vec,
+            baseline_frequency_ghz,
+            target_frequency_ghz,
+            frequency_margin_ghz,
+            trace_tracking_mode=self.trace_tracking_mode,
+            trace_polarity=self.trace_polarity,
+            trace_baseline_window_mhz=self.trace_baseline_window_mhz,
+            trace_max_jump_mhz=self.trace_max_jump_mhz,
+            trace_smoothness_penalty=self.trace_smoothness_penalty,
+            trace_local_fit_half_window_mhz=self.trace_local_fit_half_window_mhz,
+            trace_smoothing_window_points=self.trace_smoothing_window_points,
+            trace_smoothing_polyorder=self.trace_smoothing_polyorder,
+            trace_use_smoothed_frequency=self.trace_use_smoothed_frequency,
+        )
+
+        extracted_qubit_frequency_ghz = np.asarray(trace_result["selected_frequency_ghz"], dtype=float)
+        extracted_if_frequency_hz = np.asarray(trace_result["extracted_if_frequency_hz"], dtype=float)
+        extracted_fwhm_hz = np.asarray(trace_result["extracted_fwhm_hz"], dtype=float)
+        extracted_supported = np.asarray(trace_result["supported"], dtype=bool)
+        extraction_method = trace_result["method"]
+
+        # Signed step normalization:
+        #   0 -> still at baseline
+        #   1 -> exactly at target
+        #  <1 -> did not reach the target yet
+        #  >1 -> overshot past the target
+        step_denominator_ghz = target_frequency_ghz - baseline_frequency_ghz
+        if abs(step_denominator_ghz) < 1e-12:
+            measured_step_response = np.full(len(self.t_vec), np.nan)
+            ideal_step_response = np.full(len(self.t_vec), np.nan)
+        else:
+            measured_step_response = (
+                extracted_qubit_frequency_ghz - baseline_frequency_ghz
+            ) / step_denominator_ghz
+            ideal_step_response = np.ones(len(self.t_vec), dtype=float)
+
+        effective_dc_offset = self._frequency_to_local_flux_branch(extracted_qubit_frequency_ghz)
+        voltage_step_denominator = self.dc_offset - self.baseline_dc_offset
+        if abs(voltage_step_denominator) < 1e-15:
+            measured_voltage_step_response = np.full(len(self.t_vec), np.nan)
+            effective_dc_correction_to_target = np.full(len(self.t_vec), np.nan)
+        else:
+            measured_voltage_step_response = (
+                effective_dc_offset - self.baseline_dc_offset
+            ) / voltage_step_denominator
+            effective_dc_correction_to_target = self.dc_offset - effective_dc_offset
+
+        self.data.update({
+            "baseline_frequency_ghz": baseline_frequency_ghz,
+            "target_frequency_ghz": target_frequency_ghz,
+            "frequency_margin_ghz": frequency_margin_ghz,
+            "expected_frequency_window_ghz": [expected_min_ghz, expected_max_ghz],
+            "extracted_qubit_frequency_ghz": extracted_qubit_frequency_ghz,
+            "ridge_qubit_frequency_ghz": trace_result.get("ridge_frequency_ghz"),
+            "local_lorentzian_qubit_frequency_ghz": trace_result.get("local_frequency_ghz"),
+            "smoothed_qubit_frequency_ghz": trace_result.get("smoothed_frequency_ghz"),
+            "extracted_if_frequency_hz": extracted_if_frequency_hz,
+            "extracted_fwhm_hz": extracted_fwhm_hz,
+            "trace_supported": extracted_supported.tolist(),
+            "trace_extraction_method": extraction_method,
+            "trace_selected_polarity": trace_result.get("polarity", None),
+            "measured_step_response": measured_step_response,
+            "measured_frequency_step_response": measured_step_response,
+            "effective_dc_offset_V": effective_dc_offset,
+            "measured_voltage_step_response": measured_voltage_step_response,
+            "effective_dc_correction_to_target_V": effective_dc_correction_to_target,
+            "ideal_step_response": ideal_step_response,
+            "step_response_definition": (
+                "(measured_qubit_frequency_ghz - baseline_frequency_ghz) / "
+                "(target_frequency_ghz - baseline_frequency_ghz)"
+            ),
+            "voltage_step_response_definition": (
+                "(effective_dc_offset_V - baseline_dc_offset) / "
+                "(dc_offset - baseline_dc_offset)"
+            ),
+        })
+
+    def _fit_predistortion_from_step_response(self):
+        if not self.fit_predistortion:
+            return None
+        raise NotImplementedError(
+            "fit_predistortion (OPX output-filter FIR/IIR taps) has no QICK analog; "
+            "use fit_rise_decay_bump_dc_correction for the set_dc_offset-style "
+            "piecewise tail compensation instead."
+        )
+
+    def _response_for_dc_tail_correction(self):
+        if self.piecewise_response_domain == "voltage":
+            return np.asarray(self.data["measured_voltage_step_response"], dtype=float)
+        return np.asarray(self.data["measured_step_response"], dtype=float)
+
+    def _dc_tail_segment_edges(self, time_zeroed_ns):
+        if self.piecewise_segment_edges_ns is None:
+            max_time_ns = max(float(np.nanmax(time_zeroed_ns)), 4.0)
+            return list(fpd.default_dc_tail_segment_edges(max_time_ns))
+        segment_edges_ns = np.asarray(self.piecewise_segment_edges_ns, dtype=float)
+        segment_edges_ns = np.unique(segment_edges_ns[np.isfinite(segment_edges_ns)])
+        if np.any(segment_edges_ns < 0):
+            raise ValueError("piecewise_segment_edges_ns must be non-negative.")
+        if segment_edges_ns.size == 0 or segment_edges_ns[0] > 0:
+            segment_edges_ns = np.concatenate([[0.0], segment_edges_ns])
+        return list(segment_edges_ns)
+
+    def _fit_rise_decay_bump_dc_correction_from_step_response(self):
+        if not self.fit_rise_decay_bump_dc_correction:
+            return None
+
+        response_for_correction = self._response_for_dc_tail_correction()
+        finite_count = int(np.count_nonzero(np.isfinite(response_for_correction)))
+        print(
+            "Calculating rise-decay-bump DC compensation JSON "
+            f"(domain={self.piecewise_response_domain}, finite_points={finite_count}/{len(response_for_correction)})"
+        )
+        try:
+            bump_model = fpd.fit_rise_decay_bump_response_model(
+                np.asarray(self.t_vec, dtype=float),
+                response_for_correction,
+                fit_tail_fraction=self.fit_tail_fraction,
+            )
+            if not bump_model["success"]:
+                raise RuntimeError(bump_model["error"])
+            segment_edges_ns = self._dc_tail_segment_edges(bump_model["time_zeroed_ns"])
+            correction_kwargs = {
+                "segment_edges_ns": segment_edges_ns,
+                "regularization": self.piecewise_regularization,
+                "final_weight": self.piecewise_final_weight,
+                "normalize": False,
+                "tail_fraction": self.fit_tail_fraction,
+                "min_multiplier": self.piecewise_min_multiplier,
+                "max_multiplier": self.piecewise_max_multiplier,
+                "desired_response": self.piecewise_desired_response,
+            }
+            supports_correction_gain = (
+                "correction_gain" in inspect.signature(fpd.calculate_piecewise_dc_correction).parameters
+            )
+            if supports_correction_gain:
+                correction_kwargs["correction_gain"] = self.piecewise_correction_gain
+            fit_result = fpd.calculate_piecewise_dc_correction(
+                bump_model["time_ns"],
+                bump_model["fit_response"],
+                **correction_kwargs,
+            )
+        except Exception as exc:
+            self.data["rise_decay_bump_dc_correction_fit"] = {
+                "success": False,
+                "error": str(exc),
+                "method": "rise_decay_bump_set_dc_offset_correction",
+            }
+            raise RuntimeError(
+                "Rise-decay-bump DC correction fit failed, so no compensation JSON can be saved. "
+                f"domain={self.piecewise_response_domain}, "
+                f"finite_points={finite_count}/{len(response_for_correction)}, "
+                f"error={exc}"
+            ) from exc
+
+        model_note = (
+            "one late exponential plus an early causal rise-decay bump; "
+            "piecewise set_dc_offset correction is solved from the fitted voltage response"
+        )
+        fit_result.update(
+            {
+                "success": bool(fit_result["success"]),
+                "error": fit_result["error"],
+                "method": "rise_decay_bump_set_dc_offset_correction",
+                "response_domain": self.piecewise_response_domain,
+                "model_fit_response": bump_model["fit_response"],
+                "rise_decay_bump_model": bump_model,
+                "correction_prediction": fit_result["corrected_response"],
+                "correction_gain": float(fit_result.get("correction_gain", self.piecewise_correction_gain)),
+                "model_note": model_note,
+            }
+        )
+
+        desired_level = float(
+            fit_result.get(
+                "desired_response_level",
+                fit_result.get("desired_level", np.nan),
+            )
+        )
+        self.data["rise_decay_bump_dc_correction_fit"] = {
+            "success": bool(fit_result["success"]),
+            "error": fit_result["error"],
+            "method": fit_result["method"],
+            "response_domain": fit_result["response_domain"],
+            "model_note": model_note,
+            "asymptote": float(bump_model["asymptote"]),
+            "late_amplitude": float(bump_model["late_amplitude"]),
+            "late_tau_ns": float(bump_model["late_tau_ns"]),
+            "bump_amplitude": float(bump_model["bump_amplitude"]),
+            "rise_tau_ns": float(bump_model["rise_tau_ns"]),
+            "bump_tau_ns": float(bump_model["bump_tau_ns"]),
+            "segment_edges_ns": fit_result["segment_edges_ns"],
+            "multipliers": fit_result["multipliers"],
+            "undamped_multipliers": fit_result.get("undamped_multipliers", []),
+            "normalization": float(fit_result["normalization"]),
+            "desired_response": fit_result.get("desired_response", None),
+            "desired_response_level": desired_level,
+            "rms": float(fit_result["rms"]),
+            "undamped_rms": float(fit_result.get("undamped_rms", np.nan)),
+            "model_rms": float(bump_model["rms"]),
+            "bic": float(bump_model["bic"]),
+            "min_multiplier": float(self.piecewise_min_multiplier),
+            "max_multiplier": float(self.piecewise_max_multiplier),
+            "correction_gain": float(fit_result.get("correction_gain", self.piecewise_correction_gain)),
+            "multiplier_clipped": bool(fit_result["multiplier_clipped"]),
+            "time_zeroed_ns": fit_result["time_zeroed_ns"],
+            "normalized_response": fit_result["normalized_response"],
+            "model_fit_response": bump_model["fit_response"],
+            "corrected_response": fit_result["corrected_response"],
+            "undamped_corrected_response": fit_result.get("undamped_corrected_response", []),
+        }
+
+        filter_json_path = os.path.splitext(self.iname)[0] + "_rise_decay_bump_dc_compensation.json"
+        metadata = {
+            "qubit": self.element,
+            "flux_channel": int(self.meta_dict["flux_channel"]),
+            "flux_name": self.meta_dict["flux_name"],
+            "dc_offset": self.dc_offset,
+            "baseline_dc_offset": self.baseline_dc_offset,
+            "source_png": self.iname,
+            "source": self.__class__.__name__,
+            "intended_use": "rise_decay_bump_set_dc_offset_tail_compensation",
+            "rise_decay_bump_response_domain": self.piecewise_response_domain,
+            "rise_decay_bump_desired_response": fit_result.get("desired_response", None),
+            "rise_decay_bump_desired_response_level": desired_level,
+            "rise_decay_bump_correction_gain": float(
+                fit_result.get("correction_gain", self.piecewise_correction_gain)
+            ),
+            "rise_decay_bump_late_tau_ns": float(bump_model["late_tau_ns"]),
+            "rise_decay_bump_rise_tau_ns": float(bump_model["rise_tau_ns"]),
+            "rise_decay_bump_bump_tau_ns": float(bump_model["bump_tau_ns"]),
+            "model_note": model_note,
+        }
+        self.data["rise_decay_bump_dc_compensation_json"] = fpd.save_predistortion_json(
+            filter_json_path,
+            fit_result,
+            metadata=metadata,
+        )
+        if not os.path.isfile(self.data["rise_decay_bump_dc_compensation_json"]):
+            raise RuntimeError(
+                "save_predistortion_json returned a path, but the rise-decay-bump DC compensation JSON "
+                f"does not exist on disk: {self.data['rise_decay_bump_dc_compensation_json']}"
+            )
+        print(f"Saved rise-decay-bump DC compensation JSON: {self.data['rise_decay_bump_dc_compensation_json']}")
+        return fit_result
+
+    def _draw_live_plot(self, fig, iq_magnitude_dbm, iq_phase):
+        qubit_frequency_ghz = (self.meta_dict['q_LO']['LO_freq'] + self.f_vec) / 1e9
+        plt.figure(fig.number)
+        plt.clf()
+        ax1 = plt.subplot(211)
+        ax1.set_title("Magnitude [dBm]")
+        pcm1 = ax1.pcolor(self.t_vec / 1e3, qubit_frequency_ghz, iq_magnitude_dbm)
+        plt.colorbar(pcm1, ax=ax1, pad=0.2, label="Magnitude [dBm]")
+        ax1.set_ylabel("Qubit frequency [GHz]")
+        ax1.set_xlabel("Delay time [us]")
+        ax2 = plt.subplot(212)
+        ax2.set_title("Phase [rad]")
+        pcm2 = ax2.pcolor(self.t_vec / 1e3, qubit_frequency_ghz, iq_phase)
+        plt.colorbar(pcm2, ax=ax2, pad=0.2, label="Phase [rad]")
+        ax2.set_ylabel("Qubit frequency [GHz]")
+        ax2.set_xlabel("Delay time [us]")
+        plt.suptitle(
+            f"Flux step response spectroscopy, dc offset = {self.dc_offset} DAC, "
+            f"spec_amp={self.meta_dict['cw_amp']} DAC, spec_len={self.meta_dict['cw_len']} ns"
+        )
+        plt.pause(0.5)
         plt.tight_layout()
-        plt.savefig(self.iname)
-        if plotDisp:
-            plt.show(block=False); plt.pause(0.1)
+
+    def acquire(self, progress=False, plotDisp=None, figNum=1):
+        """QUA analyze(): live-updated acquisition -> raw CSV -> trace -> fit -> figures.
+
+        QICK translation of the QUA shots-live loop: the acquisition unit is one delay
+        column (hardware-swept qubit frequency, reps-averaged on the board), so the
+        progress bar and live map update once per delay point.
+        """
+        cfg = self.cfg
+        if plotDisp is None:
+            plotDisp = self.live_plot_enabled
+        cfg["start"] = self.f_vec[0] / 1e6
+        cfg["expts"] = len(self.f_vec)
+        cfg["step"] = ((self.f_vec[-1] - self.f_vec[0]) / max(len(self.f_vec) - 1, 1)) / 1e6
+        cfg["reps"] = self.shots
+        cfg["ff_gain"] = self.dc_offset
+        cfg["ff_park_gain"] = self.baseline_dc_offset
+        cfg["baseline_rearm_us"] = self.baseline_rearm_time_ns / 1e3
+        cfg.setdefault("dt_pulseplay", 0.5)   # resolve the 500 ns QUA early segments
+        cfg["readout_after_park"] = False     # QUA: readout at the held target flux
+        cfg["read_pulse_freq"] = self.resonator_if / 1e6
+        if self.flux_tail_compensation is not None:
+            cfg["flux_tail_compensation"] = self.flux_tail_compensation
         else:
-            fig.clf(); plt.close(fig)
+            cfg.pop("flux_tail_compensation", None)
+
+        n_f, n_t = len(self.f_vec), len(self.t_vec)
+        iq_magnitude_dbm = np.full((n_f, n_t), np.nan)
+        iq_phase = np.full((n_f, n_t), np.nan)
+
+        live_fig = LiveFigure() if plotDisp else None
+        start_time = time.time()
+        for time_index, t_ns in enumerate(self.t_vec):
+            cfg["ff_hold"] = float(t_ns) / 1e3
+            prog = FFStepResponseSpecProgram(self.soccfg, cfg)
+            _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            S = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
+            iq_magnitude_dbm[:, time_index] = 20 * np.log10(np.abs(S) + 1e-12)
+            iq_phase[:, time_index] = np.angle(S)
+            progress_counter(time_index, n_t, progress_bar=True, percent=True, start_time=start_time)
+            if live_fig is not None:
+                self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
+                if not live_fig.is_open:
+                    break
+        progress_counter(n_t, n_t, progress_bar=True, percent=True, start_time=start_time)
+
+        self.data.update({
+            "IQ_mag": iq_magnitude_dbm,
+            "IQ_phase": iq_phase,
+        })
+        self._write_raw_sweep_csv()
+        if live_fig is not None:
+            live_fig.close()
+        self._extract_trace_from_map(iq_magnitude_dbm)
+        self._fit_predistortion_from_step_response()
+        self._fit_rise_decay_bump_dc_correction_from_step_response()
+        self.finalize_analysis()
+        self.data.update({'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+        self.pickle_data()
+        return {'config': cfg, 'data': self.data}
+
+    def _save_step_response_panel(self, time_us, measured_step_response, ideal_step_response):
+        """Save the third panel as a standalone PNG."""
+        panel_path = os.path.splitext(self.iname)[0] + "_step_response.png"
+        fig = self._make_save_figure(figsize=(8, 4.5))
+        ax = fig.add_subplot(111)
+        ax.plot(time_us, measured_step_response, "o-", ms=4, lw=1.2, color="tab:red", label="Measured step response")
+        ax.plot(time_us, ideal_step_response, "o--", ms=3, lw=1.2, color="tab:purple", label="Ideal step response")
+        ax.set_xlabel("Delay time [us]")
+        ax.set_ylabel("Step response")
+        ax.set_title(
+            f"Step response, dc offset={self.dc_offset:.6f} DAC\n"
+            "0 = baseline, 1 = ideal target, >1 = overshoot"
+        )
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="best")
+
+        finite_response = measured_step_response[np.isfinite(measured_step_response)]
+        if finite_response.size:
+            ymin = min(np.nanmin(finite_response), 0.95) - 0.01
+            ymax = max(np.nanmax(finite_response), 1.0) + 0.01
+            ax.set_ylim(ymin, ymax)
+
+        fig.tight_layout()
+        self.data["step_response_image"] = panel_path
+        print(f"Saving standalone step response figure to: {panel_path}")
+        fig.savefig(panel_path, bbox_inches="tight")
+        if self.live_plot_enabled:
+            plt.close(fig)
+        print(f"Saved standalone step response figure: {panel_path}")
+
+    def _write_raw_sweep_csv(self):
+        """Save the full step-response spectroscopy map as long-form CSV."""
+        raw_csv_path = os.path.splitext(self.iname)[0] + "_raw_sweep.csv"
+        magnitude = np.asarray(self.data["IQ_mag"], dtype=float)
+        phase = np.asarray(self.data["IQ_phase"], dtype=float)
+        if magnitude.shape != phase.shape:
+            raise ValueError("IQ_mag and IQ_phase must have matching shapes to save a raw sweep CSV.")
+        if magnitude.shape != (len(self.f_vec), len(self.t_vec)):
+            raise ValueError(
+                "Unexpected step-response map shape. Expected "
+                f"({len(self.f_vec)}, {len(self.t_vec)}), got {magnitude.shape}."
+            )
+
+        time_ns = np.asarray(self.t_vec, dtype=float)
+        time_us = time_ns / 1e3
+        if_hz = np.asarray(self.f_vec, dtype=float)
+        q_lo_hz = float(self.meta_dict["q_LO"]["LO_freq"])
+        frequency_hz = q_lo_hz + if_hz
+        frequency_mhz = frequency_hz / 1e6
+        frequency_ghz = frequency_hz / 1e9
+        spec_amp_v = float(self.meta_dict.get("cw_amp", np.nan))
+        spec_len_ns = float(self.meta_dict.get("cw_len", np.nan))
+
+        freq_grid_hz = np.broadcast_to(frequency_hz[:, None], magnitude.shape)
+        freq_grid_mhz = np.broadcast_to(frequency_mhz[:, None], magnitude.shape)
+        freq_grid_ghz = np.broadcast_to(frequency_ghz[:, None], magnitude.shape)
+        if_grid_hz = np.broadcast_to(if_hz[:, None], magnitude.shape)
+        delay_grid_ns = np.broadcast_to(time_ns[None, :], magnitude.shape)
+        delay_grid_us = np.broadcast_to(time_us[None, :], magnitude.shape)
+
+        header = (
+            "delay_time_us,delay_time_ns,frequency_Hz,frequency_MHz,frequency_GHz,"
+            "qubit_frequency_Hz,qubit_frequency_MHz,qubit_frequency_GHz,if_frequency_Hz,"
+            "q_lo_frequency_Hz,dc_offset_V,baseline_dc_offset_V,"
+            "magnitude_dBm,phase_rad,spec_amp_V,spec_len_ns"
+        )
+        csv_data = np.column_stack(
+            [
+                delay_grid_us.ravel(order="C"),
+                delay_grid_ns.ravel(order="C"),
+                freq_grid_hz.ravel(order="C"),
+                freq_grid_mhz.ravel(order="C"),
+                freq_grid_ghz.ravel(order="C"),
+                freq_grid_hz.ravel(order="C"),
+                freq_grid_mhz.ravel(order="C"),
+                freq_grid_ghz.ravel(order="C"),
+                if_grid_hz.ravel(order="C"),
+                np.full(magnitude.size, q_lo_hz, dtype=float),
+                np.full(magnitude.size, self.dc_offset, dtype=float),
+                np.full(magnitude.size, self.baseline_dc_offset, dtype=float),
+                magnitude.ravel(order="C"),
+                phase.ravel(order="C"),
+                np.full(magnitude.size, spec_amp_v, dtype=float),
+                np.full(magnitude.size, spec_len_ns, dtype=float),
+            ]
+        )
+        np.savetxt(raw_csv_path, csv_data, delimiter=",", header=header, comments="")
+        self.data["raw_sweep_csv"] = raw_csv_path
+        self.data["raw_sweep_csv_path"] = raw_csv_path
+        print(f"Saved raw sweep CSV: {raw_csv_path}")
+
+    def _save_frequency_drift_outputs(self, time_us, extracted_frequency_ghz, measured_step_response, ideal_step_response):
+        """Save a target-free zoomed frequency drift plot and its numeric CSV."""
+        extracted_frequency_ghz = np.asarray(extracted_frequency_ghz, dtype=float)
+        measured_step_response = np.asarray(measured_step_response, dtype=float)
+        ideal_step_response = np.asarray(ideal_step_response, dtype=float)
+        finite_frequency = np.isfinite(extracted_frequency_ghz)
+        if not np.any(finite_frequency):
+            print("Skipping frequency-drift zoom plot: no finite extracted frequencies.")
+            return
+
+        first_frequency_ghz = float(extracted_frequency_ghz[finite_frequency][0])
+        median_frequency_ghz = float(np.nanmedian(extracted_frequency_ghz))
+        frequency_from_first_mhz = 1e3 * (extracted_frequency_ghz - first_frequency_ghz)
+        frequency_from_median_mhz = 1e3 * (extracted_frequency_ghz - median_frequency_ghz)
+
+        csv_path = os.path.splitext(self.iname)[0] + "_frequency_drift.csv"
+        trace_supported = np.asarray(
+            self.data.get("trace_supported", np.ones_like(extracted_frequency_ghz, dtype=bool)),
+            dtype=float,
+        )
+        extracted_if_frequency_hz = np.asarray(
+            self.data.get("extracted_if_frequency_hz", np.full_like(extracted_frequency_ghz, np.nan)),
+            dtype=float,
+        )
+        extracted_fwhm_hz = np.asarray(
+            self.data.get("extracted_fwhm_hz", np.full_like(extracted_frequency_ghz, np.nan)),
+            dtype=float,
+        )
+        effective_dc_offset = np.asarray(
+            self.data.get("effective_dc_offset_V", np.full_like(extracted_frequency_ghz, np.nan)),
+            dtype=float,
+        )
+        measured_voltage_step_response = np.asarray(
+            self.data.get("measured_voltage_step_response", np.full_like(extracted_frequency_ghz, np.nan)),
+            dtype=float,
+        )
+        effective_dc_correction_to_target = np.asarray(
+            self.data.get("effective_dc_correction_to_target_V", np.full_like(extracted_frequency_ghz, np.nan)),
+            dtype=float,
+        )
+        csv_data = np.column_stack(
+            [
+                np.asarray(time_us, dtype=float),
+                np.asarray(self.t_vec, dtype=float),
+                extracted_frequency_ghz,
+                1e3 * extracted_frequency_ghz,
+                frequency_from_first_mhz,
+                frequency_from_median_mhz,
+                extracted_if_frequency_hz,
+                extracted_fwhm_hz,
+                measured_step_response,
+                measured_voltage_step_response,
+                effective_dc_offset,
+                effective_dc_correction_to_target,
+                ideal_step_response,
+                trace_supported,
+            ]
+        )
+        csv_header = (
+            "delay_time_us,delay_time_ns,extracted_qubit_frequency_GHz,"
+            "extracted_qubit_frequency_MHz,frequency_minus_first_MHz,"
+            "frequency_minus_median_MHz,extracted_if_frequency_Hz,"
+            "extracted_fwhm_Hz,measured_step_response,"
+            "measured_voltage_step_response,effective_dc_offset_V,"
+            "effective_dc_correction_to_target_V,ideal_step_response,trace_supported"
+        )
+        np.savetxt(csv_path, csv_data, delimiter=",", header=csv_header, comments="")
+        self.data["frequency_drift_csv"] = csv_path
+        print(f"Saved frequency drift CSV: {csv_path}")
+
+        zoom_path = os.path.splitext(self.iname)[0] + "_frequency_drift_zoom.png"
+        fig = self._make_save_figure(figsize=(8, 4.5))
+        ax = fig.add_subplot(111)
+        ax.plot(
+            time_us,
+            frequency_from_first_mhz,
+            "o-",
+            ms=4,
+            lw=1.2,
+            color="tab:blue",
+            label="Extracted frequency",
+        )
+        ax.axhline(0.0, color="0.45", ls=":", lw=1.0, label="First point")
+        ax.set_xlabel("Delay time [us]")
+        ax.set_ylabel("Qubit frequency - first point [MHz]")
+        ax.set_title(
+            f"Zoomed frequency drift, dc offset={self.dc_offset:.6f} DAC\n"
+            f"first = {first_frequency_ghz:.9f} GHz, median = {median_frequency_ghz:.9f} GHz"
+        )
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="best")
+
+        finite_drift = frequency_from_first_mhz[np.isfinite(frequency_from_first_mhz)]
+        if finite_drift.size == 1:
+            ax.set_ylim(float(finite_drift[0]) - 1.0, float(finite_drift[0]) + 1.0)
+        elif finite_drift.size > 1:
+            ymin = float(np.nanmin(finite_drift))
+            ymax = float(np.nanmax(finite_drift))
+            span = max(ymax - ymin, 1.0)
+            pad = max(0.10 * span, 0.25)
+            ax.set_ylim(ymin - pad, ymax + pad)
+
+        fig.tight_layout()
+        self.data["frequency_drift_zoom_image"] = zoom_path
+        print(f"Saving zoomed frequency drift figure to: {zoom_path}")
+        fig.savefig(zoom_path, bbox_inches="tight")
+        if self.live_plot_enabled:
+            plt.close(fig)
+        print(f"Saved zoomed frequency drift figure: {zoom_path}")
+
+    def finalize_analysis(self):
+        fig = self._make_save_figure(figsize=(9, 11))
+        fig.suptitle(
+            f"Flux step response, dc offset={self.dc_offset:.6f} DAC, "
+            f"spec_amp={self.meta_dict['cw_amp']} DAC, spec_len={self.meta_dict['cw_len']} ns"
+        )
+
+        time_us = self.t_vec / 1e3
+        qubit_frequency_ghz_axis = (self.meta_dict['q_LO']['LO_freq'] + self.f_vec) / 1e9
+        extracted_frequency_ghz = np.asarray(self.data["extracted_qubit_frequency_ghz"], dtype=float)
+        ideal_frequency_ghz = float(self.data["target_frequency_ghz"])
+        baseline_frequency_ghz = float(self.data["baseline_frequency_ghz"])
+        measured_step_response = np.asarray(self.data["measured_step_response"], dtype=float)
+        measured_voltage_step_response = np.asarray(
+            self.data.get("measured_voltage_step_response", np.full_like(measured_step_response, np.nan)),
+            dtype=float,
+        )
+        ideal_step_response = np.asarray(self.data["ideal_step_response"], dtype=float)
+        bump_fit = self.data.get("rise_decay_bump_dc_correction_fit", {})
+        piecewise_response_domain = bump_fit.get("response_domain", self.piecewise_response_domain)
+        if piecewise_response_domain == "voltage":
+            correction_plot_response = measured_voltage_step_response
+            correction_ylabel = "Voltage-domain step response"
+        else:
+            correction_plot_response = measured_step_response
+            correction_ylabel = "Frequency-domain step response"
+
+        ax1 = fig.add_subplot(311)
+        ax1.set_title("Magnitude [dBm]")
+        pcm1 = ax1.pcolor(
+            time_us,
+            qubit_frequency_ghz_axis,
+            self.data["IQ_mag"],
+            rasterized=True,
+        )
+        fig.colorbar(pcm1, ax=ax1, pad=0.02, label="Magnitude [dBm]")
+        ax1.plot(time_us, extracted_frequency_ghz, "w.", ms=3, label="Measured trace")
+        ax1.plot(time_us, np.full_like(time_us, ideal_frequency_ghz), "k--", lw=1.4, label="Ideal target")
+        ax1.set_ylabel("Qubit frequency [GHz]")
+        ax1.set_xlabel("Delay time [us]")
+        ax1.legend(loc="best")
+
+        ax2 = fig.add_subplot(312)
+        ax2.plot(time_us, extracted_frequency_ghz, "o", ms=3, color="tab:blue", label="Measured")
+        ax2.plot(time_us, np.full_like(time_us, ideal_frequency_ghz), "--", lw=1.4, color="tab:purple", label="Ideal")
+        ax2.axhline(baseline_frequency_ghz, color="0.5", ls=":", lw=1.0, label="Baseline")
+        ax2.set_ylabel("Qubit frequency [GHz]")
+        ax2.set_xlabel("Delay time [us]")
+        ax2.set_title(
+            f"Ideal target = {ideal_frequency_ghz:.6f} GHz, "
+            f"baseline = {baseline_frequency_ghz:.6f} GHz"
+        )
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc="best")
+
+        ax3 = fig.add_subplot(313)
+        ax3.plot(
+            time_us,
+            correction_plot_response,
+            "o-",
+            ms=4,
+            lw=1.2,
+            color="tab:red",
+            label=f"Measured {piecewise_response_domain} response",
+        )
+        ax3.plot(time_us, ideal_step_response, "o--", ms=3, lw=1.2, color="tab:purple", label="Ideal step response")
+        if bump_fit.get("success", False):
+            ax3.plot(
+                np.asarray(bump_fit["time_zeroed_ns"], dtype=float) / 1e3,
+                bump_fit["model_fit_response"],
+                "--",
+                lw=1.5,
+                color="tab:green",
+                alpha=0.75,
+                label="Rise-decay bump fit",
+            )
+            ax3.plot(
+                np.asarray(bump_fit["time_zeroed_ns"], dtype=float) / 1e3,
+                bump_fit["corrected_response"],
+                "-",
+                lw=1.5,
+                color="tab:green",
+                label="Rise-decay bump DC correction prediction",
+            )
+        predistortion_fit = self.data.get("predistortion_fit", {})
+        if predistortion_fit.get("success", False):
+            ax3.plot(
+                np.asarray(predistortion_fit["time_zeroed_ns"], dtype=float) / 1e3,
+                predistortion_fit["fit_response"],
+                "-",
+                lw=1.5,
+                color="tab:green",
+                label="Exponential fit",
+            )
+            text = (
+                f"FIR = {np.array2string(np.asarray(predistortion_fit['feedforward']), precision=6)}\n"
+                f"IIR = {np.array2string(np.asarray(predistortion_fit['feedback']), precision=6)}"
+            )
+            ax3.text(
+                0.02,
+                0.05,
+                text,
+                transform=ax3.transAxes,
+                fontsize=8,
+                verticalalignment="bottom",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+            )
+        ax3.set_xlabel("Delay time [us]")
+        ax3.set_ylabel(correction_ylabel)
+        ax3.grid(True, alpha=0.3)
+        ax3.legend(loc="best")
+
+        finite_response = correction_plot_response[np.isfinite(correction_plot_response)]
+        if finite_response.size:
+            ymin = min(np.nanmin(finite_response), 0.95) - 0.01
+            ymax = max(np.nanmax(finite_response), 1.0) + 0.01
+            ax3.set_ylim(ymin, ymax)
+
+        self._save_step_response_panel(time_us, correction_plot_response, ideal_step_response)
+        self._save_frequency_drift_outputs(
+            time_us,
+            extracted_frequency_ghz,
+            measured_step_response,
+            ideal_step_response,
+        )
+
+        fig.tight_layout()
+        self.data["summary_image"] = self.iname
+        print(f"Saving flux step response figure to: {self.iname}")
+        fig.savefig(self.iname, bbox_inches="tight")
+        if self.live_plot_enabled:
+            plt.close(fig)
+        print(f"Saved flux step response figure: {self.iname}")
 
     def save_data(self, data=None):
-        if data is None:
-            data = self.data
         print(f'Saving {self.fname}')
-        # store only array-like entries in h5; dicts (model/comp) go to JSON attrs
-        arr = {k: v for k, v in data['data'].items()
-               if not isinstance(v, dict) and not isinstance(v, str)}
+        d = self.data if data is None else data.get('data', data)
+        # h5-safe subset: arrays and scalars (dict/str/None artifacts live in the pickle/JSON)
+        arr = {}
+        for k, v in d.items():
+            if isinstance(v, (dict, str)) or v is None:
+                continue
+            try:
+                arr[k] = np.asarray(v, dtype=float)
+            except (TypeError, ValueError):
+                continue
         super().save_data(data=arr)

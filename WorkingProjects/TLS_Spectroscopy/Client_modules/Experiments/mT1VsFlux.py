@@ -1,45 +1,380 @@
 """
-STEP 6 of the TLS pipeline: T1 vs (fast-flux) flux -- the actual TLS spectroscopy.
+STEP 6: T1 vs flux (the TLS map) -- QUA-identical behavior.
 
-QUA analog: LabCode/Experiments/Flux_Sweeps/m_swap_spec_vs_flux.py
-            (T1FullCurveVsFlux, T13PointVsFlux, + wall-clock repeat helpers)
-QICK model: escher FF_fromParth/mFF_T1_wPulsePreDist + FFRampHoldTest (predistorted
-            fast-flux ramp-hold) + mT1_PS_sse (post-selected T1).
+Port of Houck-Lab-Qua m_swap_spec_vs_flux.py restricted to what TLSSpectroscopy.py
+uses, with the SAME module surface the QUA runner imports:
+    T1FullCurveVsFlux, T1FullCurveVsFluxFromFit, T13PointVsFlux,
+    build_wall_clock_repeat_metadata, get_wall_clock_repeat_spec,
+    get_wall_clock_repeat_full_spec, save_wall_clock_repeat_full_outputs,
+    _csv_base_from_pickle
+plus the internal helpers (_compute_3pt_t1, _fit_T1_map, _safe_inverse_t1_us,
+_save_flux_curve_csv, _save_flux_map_csv, save_wall_clock_repeat_outputs,
+NOTEBOOK_FIT_PARAM_ORDER, _coerce_notebook_fit_params,
+_predict_qubit_frequency_hz_from_flux_fit) -- estimators and CSV/PNG schemas are
+verbatim QUA.
 
-Physics: a two-level-system (TLS) defect sits at a fixed frequency.  When the
-flux-tuned qubit crosses a TLS resonance, energy swaps into the defect and the
-qubit T1 DIPS.  So we measure T1 (or 1/T1) as a function of the fast-flux target;
-TLS defects show up as sharp dips in T1 (peaks in 1/T1) at specific fluxes
-(equivalently qubit frequencies, via the step-4 f_q(ff_gain) map).
-
-Per flux point the sequence is:
-    herald readout (park) -> pi (park) -> ramp to target -> HOLD = the T1 wait
-    (decay at the detuned point, predistorted) -> ramp back -> final readout (park)
-Post-selection keeps shots that started in |g>; P(e) vs wait is fit to an
-exponential T1.  A 3-point variant (P0/P1/Ps) gives a fast closed-form estimate.
-
-Flux-axis note: as in step 4, the swept "flux target" is the fast-flux gain
-``ff_gain`` (DAC units); pass a step-4 f_q(ff_gain) map to plot T1 vs qubit freq.
+Hardware mapping: the QUA flux step (set_dc_offset hold) is a predistorted
+fast-flux ramp-hold-ramp on ff_ch; the P0/P1 references are measured AT PARK with
+NO flux pulse at t~0 (do_ff=False), exactly like QUA.  QUA's on-FPGA classify +
+active reset maps to herald + post-selection with the QUA [threshold, scale_factor,
+read_theta] discrimination (reset_mode='active'); 'passive' uses all shots.
+Flux-axis units are ff_gain DAC; time keys keep QUA's _ns names with ns values.
 """
 
+import csv
 import time
+import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
 from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import rotate_and_threshold
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
+# --------------------------------------------------------------------------- #
+#  Notebook-fit-params coercion + flux->frequency prediction (QUA verbatim)
+# --------------------------------------------------------------------------- #
+NOTEBOOK_FIT_PARAM_ORDER = ("f_max_GHz", "E_C_GHz", "d", "V_period_V", "V_sweet_V")
+
+
+def _coerce_notebook_fit_params(notebook_fit_params):
+    if notebook_fit_params is None:
+        raise ValueError("notebook_fit_params is required.")
+    if isinstance(notebook_fit_params, dict):
+        vals = [notebook_fit_params.get(k) for k in NOTEBOOK_FIT_PARAM_ORDER]
+    else:
+        vals = list(notebook_fit_params)
+    if len(vals) != 5 or any(v is None for v in vals):
+        raise ValueError(f"notebook_fit_params must supply exactly the 5 values "
+                         f"{NOTEBOOK_FIT_PARAM_ORDER}.")
+    f_max, e_c, d, period, sweet = [float(v) for v in vals]
+    if not all(np.isfinite([f_max, e_c, d, period, sweet])):
+        raise ValueError("notebook_fit_params values must be finite.")
+    if e_c <= 0:
+        raise ValueError("E_C must be positive.")
+    if period == 0:
+        raise ValueError("V_period must be nonzero.")
+    if f_max + e_c <= 0:
+        raise ValueError("f_max + E_C must be positive.")
+    ejmax = (f_max + e_c) ** 2 / (8.0 * e_c)
+    notebook = dict(zip(NOTEBOOK_FIT_PARAM_ORDER, [f_max, e_c, d, period, sweet]))
+    canonical = {"EJmax": ejmax, "Ec": e_c, "period_volts": period,
+                 "phase_offset_volts": sweet, "d": d}
+    return notebook, canonical
+
+
+def _predict_qubit_frequency_hz_from_flux_fit(dc_values, flux_fit_params):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.flux_fit import (
+        flux_tunable_transmon_frequency,
+    )
+    p = flux_fit_params
+    f_ghz = flux_tunable_transmon_frequency(np.asarray(dc_values, dtype=float),
+                                            p["EJmax"], p["Ec"], p["period_volts"],
+                                            p["phase_offset_volts"], p["d"])
+    return np.asarray(f_ghz, dtype=float) * 1e9
+
+
+# --------------------------------------------------------------------------- #
+#  Estimators (QUA verbatim)
+# --------------------------------------------------------------------------- #
+def _compute_3pt_t1(P0, P1, Ps, Ts_ns, min_ref_contrast=0.05, max_t1_multiple=20.0):
+    P0 = np.asarray(P0, dtype=float)
+    P1 = np.asarray(P1, dtype=float)
+    Ps = np.asarray(Ps, dtype=float)
+    contrast = P1 - P0
+    valid_contrast = np.isfinite(contrast) & (np.abs(contrast) >= float(min_ref_contrast))
+    denom_safe = np.where(valid_contrast, contrast, np.nan)
+    pe = (Ps - P0) / denom_safe
+    with np.errstate(divide="ignore", invalid="ignore"):
+        T1_3pt_us_raw = -(Ts_ns / 1e3) / np.log(pe)
+    valid_pe = np.isfinite(pe) & (pe > 0.0) & (pe < 1.0)
+    valid_t1 = np.isfinite(T1_3pt_us_raw)
+    max_t1_us = None
+    if max_t1_multiple is not None:
+        max_t1_us = float(max_t1_multiple) * (Ts_ns / 1e3)
+        valid_t1 &= T1_3pt_us_raw <= max_t1_us
+    valid_mask = valid_contrast & valid_pe & valid_t1
+    T1_3pt_us_plot = np.where(valid_mask, T1_3pt_us_raw, np.nan)
+    return {"contrast": contrast, "pe": pe, "T1_3pt_us_raw": T1_3pt_us_raw,
+            "T1_3pt_us_plot": T1_3pt_us_plot,
+            "valid_mask": valid_mask.astype(np.int8), "max_t1_us": max_t1_us}
+
+
+def _safe_inverse_t1_us(T1_us, T1_err_us=None):
+    T1_us = np.asarray(T1_us, dtype=float)
+    inv = np.where(np.isfinite(T1_us) & (T1_us > 0), 1.0 / T1_us, np.nan)
+    if T1_err_us is None:
+        return inv
+    T1_err_us = np.asarray(T1_err_us, dtype=float)
+    inv_err = np.where(np.isfinite(T1_err_us) & np.isfinite(T1_us) & (T1_us > 0),
+                       T1_err_us / T1_us ** 2, np.nan)
+    return inv, inv_err
+
+
+def _exp_decay_model(t, P0, P1, T1):
+    return P0 + (P1 - P0) * np.exp(-t / T1)
+
+
+def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
+    """Per-flux-row exponential fit (QUA _fit_T1_map: seeds, bounds, maxfev)."""
+    from scipy.optimize import curve_fit
+    ss = np.asarray(ss, dtype=float)
+    t_us = np.asarray(t_us, dtype=float)
+    n_dc = ss.shape[0]
+    T1_fit = np.full(n_dc, np.nan)
+    T1_err = np.full(n_dc, np.nan)
+    fit_ok = np.zeros(n_dc, dtype=np.int8)
+    lo, hi = fit_clip
+    for i in range(n_dc):
+        y = ss[i, :]
+        finite = np.isfinite(y) & np.isfinite(t_us)
+        if finite.sum() < 4:
+            continue
+        t_fit = t_us[finite]
+        fit_y = np.clip(y[finite], lo, hi)
+        if require_monotone and np.nanmax(np.diff(fit_y)) > 0.05:
+            continue
+        p0_seed = float(np.min(fit_y))
+        p1_seed = float(np.max(fit_y))
+        if p1_seed - p0_seed < 1e-6:
+            continue
+        mid = p0_seed + (p1_seed - p0_seed) / np.e
+        try:
+            t_mid = t_fit[np.argmin(np.abs(fit_y - mid))]
+            t1_seed = max(0.1, float(t_mid) / np.log(2))
+        except Exception:
+            t1_seed = max(0.1, float(np.median(t_fit)))
+        try:
+            popt, pcov = curve_fit(_exp_decay_model, t_fit, fit_y,
+                                   p0=[p0_seed, p1_seed, t1_seed],
+                                   bounds=([0.0, 0.0, 0.01], [1.0, 1.0, 1e6]),
+                                   maxfev=20000)
+            T1_fit[i] = popt[2]
+            err = np.sqrt(pcov[2, 2]) if np.isfinite(pcov[2, 2]) else np.nan
+            T1_err[i] = err
+            fit_ok[i] = 1
+        except Exception:
+            continue
+    return T1_fit, T1_err, fit_ok
+
+
+# --------------------------------------------------------------------------- #
+#  CSV writers (QUA verbatim schemas)
+# --------------------------------------------------------------------------- #
+def _csv_base_from_pickle(pname):
+    return pname[:-4] if str(pname).endswith(".pkl") else str(pname)
+
+
+def _write_csv_rows(csv_path, fieldnames, rows):
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return csv_path
+
+
+def _save_flux_curve_csv(csv_path, dc_vec, columns, extra_columns=None):
+    """One row per DC: scan_index, dc_target_V, <extra (repeat) cols>, <columns>."""
+    extra_columns = dict(extra_columns or {})
+    fieldnames = ["scan_index", "dc_target_V"] + list(extra_columns.keys()) + list(columns.keys())
+    rows = []
+    for i, dc in enumerate(np.asarray(dc_vec, dtype=float)):
+        row = {"scan_index": i, "dc_target_V": float(dc)}
+        row.update(extra_columns)
+        for k, v in columns.items():
+            row[k] = np.asarray(v).ravel()[i]
+        rows.append(row)
+    return _write_csv_rows(csv_path, fieldnames, rows)
+
+
+def _save_flux_map_csv(csv_path, dc_vec, t_us, map2d, value_name="population_pe",
+                       extra_columns=None):
+    """One row per (dc, t): scan_index, t_index, dc_target_V, t_wait_us, <extra>, value."""
+    extra_columns = dict(extra_columns or {})
+    fieldnames = (["scan_index", "t_index", "dc_target_V", "t_wait_us"]
+                  + list(extra_columns.keys()) + [value_name])
+    map2d = np.asarray(map2d, dtype=float)
+    rows = []
+    for i, dc in enumerate(np.asarray(dc_vec, dtype=float)):
+        for k, t in enumerate(np.asarray(t_us, dtype=float)):
+            row = {"scan_index": i, "t_index": k, "dc_target_V": float(dc),
+                   "t_wait_us": float(t)}
+            row.update(extra_columns)
+            row[value_name] = map2d[i, k]
+            rows.append(row)
+    return _write_csv_rows(csv_path, fieldnames, rows)
+
+
+# --------------------------------------------------------------------------- #
+#  Wall-clock repeat helper API (QUA verbatim)
+# --------------------------------------------------------------------------- #
+def build_wall_clock_repeat_metadata(run_start_dt, series_start_dt, run_index):
+    elapsed_minutes = (run_start_dt - series_start_dt).total_seconds() / 60.0
+    return {
+        "wall_clock_run_index": int(run_index),
+        "wall_clock_run_started_at_iso": run_start_dt.isoformat(timespec="seconds"),
+        "wall_clock_series_started_at_iso": series_start_dt.isoformat(timespec="seconds"),
+        "wall_clock_elapsed_minutes_from_first_run": float(elapsed_minutes),
+    }
+
+
+def get_wall_clock_repeat_spec(exp):
+    data = exp.data
+    if isinstance(exp, T13PointVsFlux):
+        return {"metric_values": data["inv_T1_3pt_per_us"],
+                "metric_column_name": "inv_T1_3pt_per_us",
+                "extra_metric_matrices": {"T1_3pt_us": data["T1_3pt_us"]},
+                "colorbar_label": "1 / T1 (1/us)",
+                "plot_title": f"{exp.element} 1/T1_3pt vs flux and wall clock",
+                "file_tag": "T1_3pt"}
+    if isinstance(exp, T1FullCurveVsFlux):
+        return {"metric_values": data["inv_T1_fit_per_us"],
+                "metric_column_name": "inv_T1_fit_per_us",
+                "extra_metric_matrices": {"T1_fit_us": data["T1_fit_us"]},
+                "colorbar_label": "1 / T1 (1/us)",
+                "plot_title": f"{exp.element} 1/T1 vs flux and wall clock",
+                "file_tag": "T1_fit"}
+    raise TypeError(f"Unsupported experiment type for wall-clock repeat: {type(exp)}")
+
+
+def get_wall_clock_repeat_full_spec(exp):
+    data = exp.data
+    if isinstance(exp, T1FullCurveVsFlux):
+        scalar_columns = {}
+        for key in ("T1_fit_err_us", "inv_T1_fit_err_per_us", "fit_success"):
+            if key in data:
+                scalar_columns[key] = data[key]
+        return {"axes": {"delay_time_us": np.asarray(data["t_vec_ns"], dtype=float) / 1e3},
+                "scalar_columns": scalar_columns,
+                "array_columns": {"population_pe": data["ss_data"]}}
+    if isinstance(exp, T13PointVsFlux):
+        return {"axes": {},
+                "scalar_columns": {"Ts_ns": float(int(exp.Ts_ns)),
+                                   "P0": data["P0"], "P1": data["P1"], "Ps": data["Ps"]},
+                "array_columns": {}}
+    return None
+
+
+def save_wall_clock_repeat_outputs(csv_base_path, dc_vec, run_metadata_list,
+                                   metric_matrix, metric_column_name, colorbar_label,
+                                   plot_title, file_tag, extra_metric_matrices=None):
+    metric_matrix = np.asarray(metric_matrix, dtype=float)
+    if metric_matrix.ndim != 2:
+        raise ValueError("metric_matrix must be 2D (n_runs, n_dc).")
+    extra_metric_matrices = {k: np.asarray(v, dtype=float)
+                             for k, v in dict(extra_metric_matrices or {}).items()}
+    for k, v in extra_metric_matrices.items():
+        if v.shape != metric_matrix.shape:
+            raise ValueError(f"extra metric '{k}' shape mismatch.")
+    dc_vec = np.asarray(dc_vec, dtype=float)
+    meta_keys = ["wall_clock_run_index", "wall_clock_run_started_at_iso",
+                 "wall_clock_series_started_at_iso",
+                 "wall_clock_elapsed_minutes_from_first_run"]
+    fieldnames = meta_keys + ["scan_index", "dc_target_V", metric_column_name] \
+        + list(extra_metric_matrices.keys())
+    rows = []
+    for r, md in enumerate(run_metadata_list):
+        for i, dc in enumerate(dc_vec):
+            row = {k: md[k] for k in meta_keys}
+            row.update({"scan_index": i, "dc_target_V": float(dc),
+                        metric_column_name: metric_matrix[r, i]})
+            for k, v in extra_metric_matrices.items():
+                row[k] = v[r, i]
+            rows.append(row)
+    csv_path = f"{csv_base_path}_{file_tag}_vs_wall_clock.csv"
+    _write_csv_rows(csv_path, fieldnames, rows)
+
+    elapsed = np.array([md["wall_clock_elapsed_minutes_from_first_run"]
+                        for md in run_metadata_list], dtype=float)
+    fig, ax = plt.subplots(constrained_layout=True)
+    X, Y = np.meshgrid(elapsed, dc_vec)
+    pcm = ax.pcolormesh(X, Y, metric_matrix.T, shading="nearest")
+    fig.colorbar(pcm, ax=ax, label=colorbar_label)
+    ax.set_xlabel("Wall clock time after first run start (min)")
+    ax.set_ylabel("Flux DC target")
+    ax.set_title(plot_title)
+    png_path = f"{csv_base_path}_{file_tag}_vs_wall_clock.png"
+    fig.savefig(png_path, bbox_inches="tight")
+    plt.close(fig)
+    return csv_path, png_path
+
+
+def save_wall_clock_repeat_full_outputs(csv_base_path, file_tag, per_run_full_data):
+    if not per_run_full_data:
+        return None
+    meta_keys = ["wall_clock_run_index", "wall_clock_run_started_at_iso",
+                 "wall_clock_series_started_at_iso",
+                 "wall_clock_elapsed_minutes_from_first_run"]
+    first = per_run_full_data[0]
+    metric_name = first["metric_column_name"]
+    extra_keys = list(dict(first.get("extra_metric_matrices", {})).keys())
+    axes = dict(first.get("axes", {}))
+    if len(axes) > 1:
+        raise ValueError("At most one extra axis is supported in the one-stop CSV.")
+    axis_key = next(iter(axes.keys())) if axes else None
+    scalar_keys = list(dict(first.get("scalar_columns", {})).keys())
+    array_keys = list(dict(first.get("array_columns", {})).keys())
+    fieldnames = (meta_keys + ["scan_index", "dc_target_V", metric_name] + extra_keys
+                  + ([axis_key] if axis_key else []) + scalar_keys + array_keys)
+
+    def _scalar_at(value, dc_idx):
+        arr = np.asarray(value)
+        if arr.ndim == 0:
+            return float(arr)
+        try:
+            return float(arr.ravel()[dc_idx])
+        except Exception:
+            return np.nan
+
+    rows = []
+    for run in per_run_full_data:
+        md = run["run_metadata"]
+        dc_vec = np.asarray(run["dc_vec"], dtype=float)
+        metric = np.asarray(run["metric_values"], dtype=float)
+        extras = {k: np.asarray(v, dtype=float)
+                  for k, v in dict(run.get("extra_metric_matrices", {})).items()}
+        run_axes = dict(run.get("axes", {}))
+        scalars = dict(run.get("scalar_columns", {}))
+        arrays = {k: np.asarray(v, dtype=float)
+                  for k, v in dict(run.get("array_columns", {})).items()}
+        axis_vals = np.asarray(run_axes[axis_key], dtype=float) if axis_key else None
+        for i, dc in enumerate(dc_vec):
+            base = {k: md[k] for k in meta_keys}
+            base.update({"scan_index": i, "dc_target_V": float(dc),
+                         metric_name: metric[i] if i < metric.size else np.nan})
+            for k in extra_keys:
+                base[k] = _scalar_at(extras.get(k, np.nan), i)
+            for k in scalar_keys:
+                base[k] = _scalar_at(scalars.get(k, np.nan), i)
+            if axis_key is None:
+                rows.append(base)
+            else:
+                for a_idx, a_val in enumerate(axis_vals):
+                    row = dict(base)
+                    row[axis_key] = float(a_val)
+                    for k in array_keys:
+                        arr = arrays.get(k)
+                        row[k] = (float(arr[i, a_idx])
+                                  if arr is not None and arr.shape[0] > i and arr.shape[1] > a_idx
+                                  else np.nan)
+                    rows.append(row)
+    csv_path = f"{csv_base_path}_{file_tag}_vs_wall_clock_full.csv"
+    return _write_csv_rows(csv_path, fieldnames, rows)
+
+
+# --------------------------------------------------------------------------- #
+#  The QICK measurement program (one flux point, one wait)
+# --------------------------------------------------------------------------- #
 class FFT1Program(AveragerProgram):
-    """One (flux target, wait) T1 point with herald + final single-shot readouts.
+    """One (flux target, wait) point with herald + final single-shot readouts.
 
-    Sequence: herald measure -> [optional pi] -> ramp to target -> hold (=wait) ->
-    ramp back -> final measure.  reps single shots; two readouts per rep.
-    cfg: ff_gain (target), ff_hold (wait us), do_pi (bool).
+    cfg['do_ff']=False (the P0/P1 park references) skips the flux pulse entirely
+    so the reference readout happens at t~0 at park, exactly like QUA.
     """
 
     def __init__(self, soccfg, cfg):
@@ -51,7 +386,8 @@ class FFT1Program(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        ff_pulse.declare_ff(self)
+        if cfg.get("do_ff", True):
+            ff_pulse.declare_ff(self)
         for ch in cfg["ro_chs"]:
             self.declare_readout(ch=ch,
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -61,7 +397,6 @@ class FFT1Program(AveragerProgram):
         qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
                                    gen_ch=cfg["qubit_ch"])
 
-        # pi pulse (gaussian arb by default)
         style = cfg.get("qubit_pulse_style", "arb")
         if style == "flat_top":
             self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
@@ -80,31 +415,31 @@ class FFT1Program(AveragerProgram):
                                  freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
-        self.ff_segs = ff_pulse.build_ramp_hold_ramp(
-            self, hold_us=max(cfg["ff_hold"], cfg.get("dt_pulseplay", 5.0)),
-            ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
-            ramp_us=cfg.get("ff_ramp_length", 0.02), dt_def_us=cfg.get("dt_pulsedef", 0.002),
-            compensation=ff_pulse.load_compensation(cfg),
-            distortion_model=ff_pulse.make_distortion_model(self))
+        if cfg.get("do_ff", True):
+            self.ff_segs = ff_pulse.build_ramp_hold_ramp(
+                self, hold_us=max(cfg["ff_hold"], cfg.get("dt_pulseplay", 5.0)),
+                ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
+                ramp_us=cfg.get("ff_ramp_length", 0.02), dt_def_us=cfg.get("dt_pulsedef", 0.002),
+                compensation=ff_pulse.load_compensation(cfg),
+                distortion_model=ff_pulse.make_distortion_model(self))
         self.synci(200)
 
     def body(self):
         cfg = self.cfg
-        ff_pulse.assert_park(self, self.ff_segs)
-        # herald readout (post-selection reference) at park
+        if cfg.get("do_ff", True):
+            ff_pulse.assert_park(self, self.ff_segs)
+        # herald readout (post-selection reference / active-reset analog) at park
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 0.5)))
-        # prepare |e>
         if cfg.get("do_pi", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
-        # decay at the detuned flux point during the hold (= wait)
-        ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
-        self.sync_all(self.us2cycles(0.01))
-        ff_pulse.play_ramp_down(self, self.ff_segs)
+        if cfg.get("do_ff", True):
+            ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
+            self.sync_all(self.us2cycles(0.01))
+            ff_pulse.play_ramp_down(self, self.ff_segs)
         self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
-        # final readout at park
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
@@ -116,7 +451,7 @@ class FFT1Program(AveragerProgram):
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        raw = np.array(self.get_raw())  # [ro, expts=1, reps, readouts=2, IQ]
+        raw = np.array(self.get_raw())
         i0 = raw[0, 0, :, 0, 0] / length
         q0 = raw[0, 0, :, 0, 1] / length
         i1 = raw[0, 0, :, 1, 0] / length
@@ -124,315 +459,409 @@ class FFT1Program(AveragerProgram):
         return i0, q0, i1, q1
 
 
-def _pe_postselected(i0, q0, i1, q1, calib_params, post_select=True):
-    """Excited-state population of the FINAL shot, optionally post-selected on the
-    herald being ground."""
-    final = rotate_and_threshold(i1, q1, calib_params)
-    if not post_select:
-        return float(np.mean(final))
-    herald = rotate_and_threshold(i0, q0, calib_params)
-    keep = herald == 0
-    if keep.sum() == 0:
-        return np.nan
-    return float(np.mean(final[keep]))
-
-
 # --------------------------------------------------------------------------- #
 class _T1VsFluxBase(ExperimentClass):
+    """Shared ctor/knobs/data-dict scaffolding (QUA base behavior)."""
+
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
-                 suffix='T1_vs_Flux', cfg=None, meta_dict=None, calib_params=None,
-                 ff_gain_to_freq=None, post_select=True, repeat_metadata=None, **kw):
+                 suffix='data', cfg=None, meta_dict=None, dc_vec=None, shots=2000,
+                 calib_params=None, park_voltage=None, flux_settle_time_ns=None,
+                 reset_mode="passive", flux_tail_compensation=None,
+                 repeat_metadata=None, write_outputs=True, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
-        self.calib_params = calib_params if calib_params is not None else cfg.get("calib_params")
-        if self.calib_params is None:
-            raise ValueError("T1-vs-flux needs calib_params from step 5 (SingleShot1Q).")
-        self.ff_gain_to_freq = ff_gain_to_freq   # optional callable ff_gain -> f_q GHz
-        self.post_select = post_select
-        self.repeat_metadata = repeat_metadata
+        if calib_params is None:
+            calib_params = cfg.get("calib_params") if cfg else None
+        if calib_params is None:
+            raise ValueError("calib_params is required (run SingleShot1Q first).")
+        if reset_mode not in ("passive", "active"):
+            raise ValueError(f"reset_mode must be 'passive' or 'active', got {reset_mode!r}")
+        self.element = str(path)
+        self.calib_params = calib_params
+        self.dc_vec = np.asarray(dc_vec if dc_vec is not None else cfg["ff_gain_vec"],
+                                 dtype=float)
+        self.shots = int(shots)
+        self.park_voltage = (park_voltage if park_voltage is not None
+                             else cfg.get("ff_park_gain", 0))
+        self.flux_settle_time_ns = (flux_settle_time_ns if flux_settle_time_ns is not None
+                                    else cfg.get("flux_settle_time", 0))
+        self.reset_mode = reset_mode
+        self.repeat_metadata = dict(repeat_metadata or {})
+        self.write_outputs = bool(write_outputs)
+        if flux_tail_compensation is not None:
+            cfg["flux_tail_compensation"] = flux_tail_compensation
+        cfg["shots"] = self.shots
 
-    def _ff_gain_vec(self):
-        cfg = self.cfg
-        if "ff_gain_vec" in cfg:
-            return np.asarray(cfg["ff_gain_vec"], dtype=float)
-        return np.linspace(cfg["ff_gain_start"], cfg["ff_gain_stop"], int(cfg["ff_gain_num"]))
+        self.data = {"qubit": self.element, "dc_vec": self.dc_vec, "shots": self.shots,
+                     "park_voltage": self.park_voltage,
+                     "flux_settle_time_ns": self.flux_settle_time_ns,
+                     "flux_tail_compensation": cfg.get("flux_tail_compensation"),
+                     "meta_dict": dict(cfg), "calib_params": calib_params,
+                     "reset_mode": reset_mode,
+                     "repeat_metadata": self.repeat_metadata or None}
+        if self.repeat_metadata:
+            self.data.update(self.repeat_metadata)
 
-    def _run_point(self, ff_gain, wait_us, do_pi=True):
+    # ---- one (flux, wait) point -> P(e), QUA-discriminated + reset analog ----
+    def _run_point(self, ff_gain, wait_us, do_pi=True, do_ff=True):
         cfg = self.cfg
         cfg["ff_gain"] = float(ff_gain)
         cfg["ff_hold"] = float(wait_us)
         cfg["do_pi"] = bool(do_pi)
+        cfg["do_ff"] = bool(do_ff)
         prog = FFT1Program(self.soccfg, cfg)
         i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
-        return _pe_postselected(i0, q0, i1, q1, self.calib_params, self.post_select)
+        final = discriminate_shots(i1, q1, self.calib_params)
+        if self.reset_mode == "active":
+            # herald must be confidently ground (QUA ground_confidence_threshold)
+            herald_calib = dict(self.calib_params)
+            herald_calib["threshold"] = self.calib_params.get(
+                "ground_threshold", self.calib_params["threshold"])
+            herald = discriminate_shots(i0, q0, herald_calib)
+            keep = herald == 0
+            if keep.sum() == 0:
+                return np.nan
+            return float(np.mean(final[keep]))
+        return float(np.mean(final))
 
-    def _freq_axis(self, ff_gains):
-        if self.ff_gain_to_freq is not None:
-            return np.array([self.ff_gain_to_freq(g) for g in ff_gains])
-        # QUA convention: predicted qubit frequency per flux from FLUX_FIT_PARAMS
-        params = self.cfg.get("flux_fit_params", None)
-        if params is not None:
-            from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
-            return fx.estimate_fit_frequency_ghz_array(params, np.asarray(ff_gains, dtype=float))
-        return None
-
-
-class T1FullCurveVsFlux(_T1VsFluxBase):
-    """Full T1 decay curve at each fast-flux target; the robust TLS scan.
-
-    cfg keys: ff_gain_vec (DAC), wait_vec_us (T1 delay grid), shots, qubit_pi_gain.
-    """
-
-    def _wait_vec(self):
-        cfg = self.cfg
-        if "wait_vec_us" in cfg:
-            return np.asarray(cfg["wait_vec_us"], dtype=float)
-        return np.geomspace(max(cfg["t_min_us"], 0.05), cfg["t_max_us"], int(cfg["t_points"]))
-
-    def acquire(self, progress=False, plotDisp=False, figNum=1, write_outputs=True):
-        ff_gains = self._ff_gain_vec()
-        waits = self._wait_vec()
-        pe = np.full((len(ff_gains), len(waits)), np.nan)
-        T1 = np.full(len(ff_gains), np.nan)
-        T1_err = np.full(len(ff_gains), np.nan)
-
-        start = time.time()
-        for i, g in enumerate(ff_gains):
-            for k, w in enumerate(waits):
-                pe[i, k] = self._run_point(g, w, do_pi=True)
-            pars, perr = ff.fit_T1(waits, pe[i, :])
-            if pars is not None:
-                T1[i] = pars['T1']
-                T1_err[i] = perr['T1'] if perr else np.nan
-            if i == 0:
-                print(f"[6] ~{(time.time()-start)*len(ff_gains)/60:.1f} min for "
-                      f"{len(ff_gains)} flux x {len(waits)} waits")
-
-        inv_T1 = np.where(np.isfinite(T1) & (T1 > 0), 1.0 / T1, np.nan)
-        freq = self._freq_axis(ff_gains)
-        data = {'config': self.cfg, 'data': {
-            'ff_gains': ff_gains, 'wait_vec_us': waits, 'pe': pe,
-            'T1_us': T1, 'T1_err_us': T1_err, 'inv_T1_per_us': inv_T1,
-            'qubit_freq_ghz': freq, 'repeat_metadata': self.repeat_metadata}}
-        self.data = data
-        if write_outputs:
-            self._write_csv(data)
-            self.display(data, plotDisp=plotDisp, figNum=figNum)
-        return data
-
-    def _write_csv(self, data):
-        d = data['data']
-        summ = self.iname[:-4] + "_full_t1_summary.csv"
-        cols = [d['ff_gains'], d['T1_us'], d['T1_err_us'], d['inv_T1_per_us']]
-        hdr = "ff_gain,T1_us,T1_err_us,inv_T1_per_us"
-        if d['qubit_freq_ghz'] is not None:
-            cols = [d['ff_gains'], d['qubit_freq_ghz']] + cols[1:]
-            hdr = "ff_gain,qubit_freq_ghz,T1_us,T1_err_us,inv_T1_per_us"
-        np.savetxt(summ, np.column_stack(cols), delimiter=",", header=hdr, comments="")
-        data['data']['summary_csv'] = summ
-        print(f"[6] T1-vs-flux summary CSV: {summ}")
-
-    def display(self, data=None, plotDisp=False, figNum=1, **kw):
-        if data is None:
-            data = self.data
-        d = data['data']
-        x = d['qubit_freq_ghz'] if d['qubit_freq_ghz'] is not None else d['ff_gains']
-        xlabel = "Qubit frequency (GHz)" if d['qubit_freq_ghz'] is not None else "Fast-flux gain (DAC)"
-        while plt.fignum_exists(num=figNum):
-            figNum += 1
-        fig, axs = plt.subplots(2, 1, figsize=(9, 8), num=figNum)
-        axs[0].plot(x, d['T1_us'], 'k.-')
-        axs[0].set_ylabel("T1 (us)"); axs[0].set_xlabel(xlabel)
-        axs[0].set_title("T1 vs flux (TLS dips)")
-        axs[1].plot(x, d['inv_T1_per_us'], 'r.-')
-        axs[1].set_ylabel("1/T1 (1/us)"); axs[1].set_xlabel(xlabel)
-        axs[1].set_title("1/T1 vs flux (TLS peaks)")
-        plt.tight_layout()
-        plt.savefig(self.iname)
-        if plotDisp:
-            plt.show(block=False); plt.pause(0.1)
-        else:
-            fig.clf(); plt.close(fig)
-
-    def save_data(self, data=None):
-        if data is None:
-            data = self.data
-        print(f'Saving {self.fname}')
-        arr = {k: v for k, v in data['data'].items()
-               if not isinstance(v, (str, dict)) and v is not None}
-        super().save_data(data=arr)
+    def _park_T1_probe(self, probe_cfg, suffix_tag):
+        """Full T1 decay at park (the QUA m_T1 AUTO probe analog)."""
+        p = dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71, num_pulses=1)
+        for k, v in (probe_cfg or {}).items():
+            # accept both *_ns (QUA) and *_us key spellings
+            if k.endswith("_ns"):
+                p[k[:-3] + "_us"] = float(v) / 1e3
+            else:
+                p[k] = v
+        shots_saved = self.cfg["shots"]
+        self.cfg["shots"] = int(p["shots_T1"])
+        t_vec_us = np.logspace(np.log10(max(p["t_min_us"], 0.016)),
+                               np.log10(p["t_max_us"]), int(p["t_points"]))
+        print(f"[{suffix_tag}] park T1 probe: {len(t_vec_us)} waits x {self.cfg['shots']} shots")
+        pe = np.array([self._run_point(self.park_voltage, t, do_pi=True)
+                       for t in t_vec_us])
+        self.cfg["shots"] = shots_saved
+        T1_fit, _, ok = _fit_T1_map(pe[None, :], t_vec_us)
+        if not ok[0]:
+            raise RuntimeError("Park T1 probe fit failed.")
+        return float(T1_fit[0])
 
 
 class T13PointVsFlux(_T1VsFluxBase):
-    """Fast 3-point T1 estimate at each fast-flux target (P0/P1/Ps closed form).
+    """QUA T13PointVsFlux: P0/P1 park references at t~0, Ps after a hold Ts at
+    the target; closed-form T1 with the exact validity gates."""
 
-    T1 = -Ts / ln((Ps - P0)/(P1 - P0)).  cfg: ff_gain_vec, Ts_us, shots, qubit_pi_gain.
-    If Ts_us is None, a park T1 probe picks Ts = auto_Ts_factor * T1_park
-    (QUA _auto_choose_Ts_via_park_T1 beat; knobs: auto_Ts_factor, T1_probe_cfg,
-    run_park_T1_if_Ts_none).
-    """
+    def __init__(self, *args, Ts_ns=None, min_ref_contrast=0.05,
+                 max_plot_t1_multiple=20.0, auto_Ts_factor=0.5, T1_probe_cfg=None,
+                 run_park_T1_if_Ts_none=True, **kw):
+        super().__init__(*args, **kw)
+        self.min_ref_contrast = float(min_ref_contrast)
+        self.max_plot_t1_multiple = max_plot_t1_multiple
+        self.auto_Ts_factor = float(auto_Ts_factor)
+        self.T1_probe_cfg = T1_probe_cfg
+        self.data.update({"min_ref_contrast": self.min_ref_contrast,
+                          "max_plot_t1_multiple": max_plot_t1_multiple,
+                          "auto_Ts_factor": self.auto_Ts_factor,
+                          "auto_T1_probe_cfg": T1_probe_cfg})
+        if Ts_ns is None:
+            if not run_park_T1_if_Ts_none:
+                raise ValueError("Ts_ns is None and run_park_T1_if_Ts_none is False.")
+            T1_us = self._park_T1_probe(T1_probe_cfg, "AUTO Ts")
+            Ts_us = self.auto_Ts_factor * T1_us
+            Ts_ns = int(np.round(Ts_us * 1e3))
+            print(f"[AUTO Ts] T1_park={T1_us:.3g} us -> Ts={Ts_us:.3g} us ({Ts_ns} ns)")
+            self.data.update({"auto_T1_park_us": T1_us, "auto_Ts_us": Ts_us,
+                              "auto_Ts_ns": Ts_ns})
+        self.Ts_ns = int(Ts_ns)
+        self.data["Ts_ns"] = self.Ts_ns
 
-    def _auto_Ts_from_park_T1(self):
-        """Measure T1 at the park point and return auto_Ts_factor * T1_park (us)."""
-        cfg = self.cfg
-        probe = dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71)
-        probe.update(cfg.get("T1_probe_cfg") or {})
-        park = float(cfg.get("ff_park_gain", 0))
-        shots_saved = cfg["shots"]
-        cfg["shots"] = int(probe["shots_T1"])
-        waits = np.geomspace(max(probe["t_min_us"], 0.05), probe["t_max_us"],
-                             int(probe["t_points"]))
-        print(f"[6] Ts_us is None -> park T1 probe ({len(waits)} waits x "
-              f"{cfg['shots']} shots at ff_gain={park:g}) ...")
-        pe = np.array([self._run_point(park, w, do_pi=True) for w in waits])
-        cfg["shots"] = shots_saved
-        pars, _ = ff.fit_T1(waits, pe)
-        if pars is None:
-            raise RuntimeError("Park T1 probe fit failed; set Ts_us explicitly.")
-        t1_park = float(pars['T1'])
-        factor = float(cfg.get("auto_Ts_factor", 0.5))
-        Ts = factor * t1_park
-        print(f"[6] park T1 = {t1_park:.1f} us -> Ts = {factor:g} x T1_park = {Ts:.1f} us")
-        self._park_probe = {'t1_park_us': t1_park, 'waits_us': waits, 'pe': pe}
-        return Ts
+    def acquire(self, progress=False, plotDisp=False, figNum=1):
+        dc_vec = self.dc_vec
+        Ts_us = self.Ts_ns / 1e3
+        P0 = np.full(len(dc_vec), np.nan)
+        P1 = np.full(len(dc_vec), np.nan)
+        Ps = np.full(len(dc_vec), np.nan)
+        start_time = time.time()
+        for i, dc in enumerate(dc_vec):
+            P0[i] = self._run_point(self.park_voltage, 0.0, do_pi=False, do_ff=False)
+            P1[i] = self._run_point(self.park_voltage, 0.0, do_pi=True, do_ff=False)
+            Ps[i] = self._run_point(dc, Ts_us, do_pi=True, do_ff=True)
+            progress_counter(i, len(dc_vec), start_time=start_time)
 
-    def acquire(self, progress=False, plotDisp=False, figNum=1, write_outputs=True):
-        cfg = self.cfg
-        ff_gains = self._ff_gain_vec()
-        if cfg.get("Ts_us") is None:
-            if not cfg.get("run_park_T1_if_Ts_none", True):
-                raise RuntimeError("Ts_us is None and run_park_T1_if_Ts_none is False.")
-            cfg["Ts_us"] = self._auto_Ts_from_park_T1()
-        Ts = float(cfg["Ts_us"])
-        min_contrast = float(cfg.get("min_ref_contrast", 0.05))
-        max_t1_multiple = float(cfg.get("max_plot_t1_multiple", 20.0))
-        P0 = np.full(len(ff_gains), np.nan)
-        P1 = np.full(len(ff_gains), np.nan)
-        Ps = np.full(len(ff_gains), np.nan)
-        ref_contrast = np.full(len(ff_gains), np.nan)
-        pe_Ts = np.full(len(ff_gains), np.nan)
-        T1_raw = np.full(len(ff_gains), np.nan)
-        valid = np.zeros(len(ff_gains), dtype=np.int8)
+        est = _compute_3pt_t1(P0, P1, Ps, self.Ts_ns,
+                              min_ref_contrast=self.min_ref_contrast,
+                              max_t1_multiple=self.max_plot_t1_multiple)
+        inv = _safe_inverse_t1_us(est["T1_3pt_us_plot"])
+        self.data.update({"P0": P0, "P1": P1, "Ps": Ps,
+                          "ref_contrast_3pt": est["contrast"], "pe_Ts": est["pe"],
+                          "T1_3pt_us_raw": est["T1_3pt_us_raw"],
+                          "T1_3pt_us": est["T1_3pt_us_plot"],
+                          "inv_T1_3pt_per_us": inv,
+                          "T1_3pt_valid_mask": est["valid_mask"],
+                          "T1_3pt_max_plot_us": est["max_t1_us"]})
 
-        # QUA convention: the P0/P1 references are measured AT PARK (no detuned
-        # hold) each flux point -- interleaved so they track drift; only Ps decays
-        # at the target.  The minimal park dwell is one dt_pulseplay segment.
-        park = float(cfg.get("ff_park_gain", 0))
-        w0 = cfg.get("dt_pulseplay", 5.0)
-        start = time.time()
-        for i, g in enumerate(ff_gains):
-            P0[i] = self._run_point(park, w0, do_pi=False)  # thermal ref (park, no pi)
-            P1[i] = self._run_point(park, w0, do_pi=True)   # pi ref (park, ~zero delay)
-            Ps[i] = self._run_point(g, Ts, do_pi=True)      # pi + hold Ts at target
-            ref_contrast[i] = P1[i] - P0[i]
-            if abs(ref_contrast[i]) > 1e-12:
-                pe_Ts[i] = (Ps[i] - P0[i]) / ref_contrast[i]
-                if 0 < pe_Ts[i] < 1:
-                    T1_raw[i] = -Ts / np.log(pe_Ts[i])
-            # QUA validity: contrast floor, physical pe, and T1 <= N * Ts
-            valid[i] = int(abs(ref_contrast[i]) >= min_contrast
-                           and 0 < pe_Ts[i] < 1
-                           and np.isfinite(T1_raw[i])
-                           and T1_raw[i] <= max_t1_multiple * Ts)
-            if i == 0:
-                print(f"[6] ~{(time.time()-start)*len(ff_gains)/60:.1f} min for "
-                      f"{len(ff_gains)} flux x 3 points")
+        if self.write_outputs:
+            base = _csv_base_from_pickle(self.pname)
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.plot(dc_vec, P0, "-", label="P0 (no pi)")
+            ax.plot(dc_vec, P1, "-", label="P1 (pi, t=0)")
+            ax.plot(dc_vec, Ps, "-", label=f"Ps (pi, hold Ts={Ts_us:.3g} us)")
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("P(excited) (SS-classified)")
+            ax.set_title(f"{self.element} 3-point raw references")
+            ax.legend()
+            fig.savefig(self.iname[:-4] + "_3pt_P0P1Ps.png", bbox_inches="tight")
+            plt.close(fig)
 
-        T1 = np.where(valid.astype(bool), T1_raw, np.nan)   # the "plot" values
-        inv_T1 = np.where(np.isfinite(T1) & (T1 > 0), 1.0 / T1, np.nan)
-        freq = self._freq_axis(ff_gains)
-        data = {'config': cfg, 'data': {
-            'ff_gains': ff_gains, 'P0': P0, 'P1': P1, 'Ps': Ps, 'Ts_us': Ts,
-            'ref_contrast_3pt': ref_contrast, 'pe_Ts': pe_Ts,
-            'T1_3pt_us_raw': T1_raw, 'T1_3pt_us': T1, 'T1_3pt_valid_mask': valid,
-            'inv_T1_3pt_per_us': inv_T1, 'qubit_freq_ghz': freq,
-            't1_park_us': getattr(self, '_park_probe', {}).get('t1_park_us'),
-            'repeat_metadata': self.repeat_metadata}}
-        self.data = data
-        if write_outputs:
-            summ = self.iname[:-4] + "_3pt_summary.csv"
-            cols = [ff_gains, P0, P1, Ps, ref_contrast, pe_Ts, T1_raw, T1, inv_T1, valid]
-            hdr = ("ff_gain,P0,P1,Ps,ref_contrast,pe_estimator,"
-                   "T1_3pt_us_raw,T1_3pt_us_plot,inv_T1_3pt_per_us,valid_mask")
-            if freq is not None:
-                cols = [ff_gains, freq] + cols[1:]
-                hdr = "ff_gain,qubit_freq_ghz," + hdr.split(",", 1)[1]
-            np.savetxt(summ, np.column_stack(cols), delimiter=",", header=hdr, comments="")
-            data['data']['summary_csv'] = summ
-            print(f"[6] 3-point T1-vs-flux summary CSV: {summ}")
-            self.display(data, plotDisp=plotDisp, figNum=figNum)
-        return data
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.plot(dc_vec, self.data["T1_3pt_us"], "-")
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("T1 (us) from 3-point estimator")
+            ax.set_title(f"{self.element} T1_3pt vs flux (Ts={Ts_us:.3g} us)")
+            fig.savefig(self.iname[:-4] + "_3pt_T1.png", bbox_inches="tight")
+            plt.close(fig)
 
-    def display(self, data=None, plotDisp=False, figNum=1, **kw):
-        if data is None:
-            data = self.data
-        d = data['data']
-        x = d['qubit_freq_ghz'] if d['qubit_freq_ghz'] is not None else d['ff_gains']
-        xlabel = "Qubit frequency (GHz)" if d['qubit_freq_ghz'] is not None else "Fast-flux gain (DAC)"
-        while plt.fignum_exists(num=figNum):
-            figNum += 1
-        fig, ax = plt.subplots(1, 1, figsize=(9, 5), num=figNum)
-        ax.plot(x, d['inv_T1_3pt_per_us'], 'r.-')
-        ax.set_xlabel(xlabel); ax.set_ylabel("1/T1 (1/us)")
-        ax.set_title("3-point 1/T1 vs flux (TLS peaks)")
-        plt.tight_layout()
-        plt.savefig(self.iname)
-        if plotDisp:
-            plt.show(block=False); plt.pause(0.1)
-        else:
-            fig.clf(); plt.close(fig)
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.plot(dc_vec, inv, "-")
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("1 / T1 (1/us) from 3-point estimator")
+            ax.set_title(f"{self.element} 1/T1_3pt vs flux (Ts={Ts_us:.3g} us)")
+            fig.savefig(self.iname[:-4] + "_3pt_invT1.png", bbox_inches="tight")
+            plt.close(fig)
+
+            invalid_mask = est["valid_mask"] == 0
+            if np.any(invalid_mask):
+                fig, ax = plt.subplots(constrained_layout=True)
+                ax.plot(dc_vec, est["contrast"], "-", label="P1 - P0")
+                ax.plot(dc_vec[invalid_mask], est["contrast"][invalid_mask], "rx",
+                        ms=7, label="masked T1 points")
+                ax.axhline(self.min_ref_contrast, color="k", linestyle="--",
+                           linewidth=1, label="min contrast threshold")
+                ax.set_xlabel("Flux DC target")
+                ax.set_ylabel("Reference contrast")
+                ax.set_title(f"{self.element} 3-point estimator validity")
+                ax.legend()
+                fig.savefig(self.iname[:-4] + "_3pt_validity.png", bbox_inches="tight")
+                plt.close(fig)
+
+            _save_flux_curve_csv(
+                base + "_3pt_summary.csv", dc_vec,
+                {"P0": P0, "P1": P1, "Ps": Ps,
+                 "ref_contrast": est["contrast"], "pe_estimator": est["pe"],
+                 "T1_3pt_us_raw": est["T1_3pt_us_raw"],
+                 "T1_3pt_us_plot": est["T1_3pt_us_plot"],
+                 "inv_T1_3pt_per_us": inv, "valid_mask": est["valid_mask"]},
+                extra_columns=self.repeat_metadata)
+
+        self.data["time"] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if self.write_outputs:
+            self.pickle_data()
+        return {"config": self.cfg, "data": self.data}
 
     def save_data(self, data=None):
-        if data is None:
-            data = self.data
         print(f'Saving {self.fname}')
-        arr = {k: v for k, v in data['data'].items()
-               if not isinstance(v, (str, dict)) and v is not None}
+        arr = {k: v for k, v in self.data.items()
+               if isinstance(v, np.ndarray)}
         super().save_data(data=arr)
 
 
-# --------------------------------------------------------------------------- #
-#  Wall-clock repeat: rerun the flux sweep for a duration, stack into one CSV
-#  (mirrors the QUA _run_one_stop_t1 / save_wall_clock_repeat_full_outputs).
-# --------------------------------------------------------------------------- #
-def run_wall_clock_repeat(factory, metric_key, ff_gains, csv_path,
-                          duration_min=None, now_fn=None):
-    """Rerun the flux sweep repeatedly (TLS drift/blink over hours), appending the
-    per-run metric (e.g. inv_T1) into one accumulating CSV.
+class T1FullCurveVsFlux(_T1VsFluxBase):
+    """QUA T1FullCurveVsFlux: full P(e)-vs-wait decay per flux, exponential fit."""
 
-    factory()   -> an experiment instance whose .acquire() returns data.
-    metric_key  -> key in data['data'] to stack (1D over ff_gains).
-    now_fn      -> callable returning a float 'seconds since epoch' (injected so the
-                   workflow layer/tests can control time; Date.now is unavailable in
-                   some sandboxes).  Defaults to time.time.
-    """
-    import time as _time
-    import datetime as _dt
-    now_fn = now_fn or _time.time
-    series_start = now_fn()
-    series_iso = _dt.datetime.fromtimestamp(series_start).isoformat(timespec='seconds')
-    rows = []
-    run_index = 0
-    while True:
-        run_start = now_fn()
-        run_iso = _dt.datetime.fromtimestamp(run_start).isoformat(timespec='seconds')
-        elapsed_min = (run_start - series_start) / 60.0
-        if duration_min is not None:
-            print(f"  [6] wall-clock run {run_index + 1} (elapsed {elapsed_min:.1f} min)")
-        exp = factory()
-        data = exp.acquire(write_outputs=True)
-        metric = np.asarray(data['data'][metric_key], dtype=float)
-        for g, m in zip(ff_gains, metric):
-            rows.append([run_index, run_iso, series_iso, f"{elapsed_min:.3f}",
-                         f"{g:.6g}", f"{m:.8g}"])
-        np.savetxt(csv_path, np.array(rows, dtype=object), delimiter=",", fmt="%s",
-                   header=("wall_clock_run_index,wall_clock_run_started_at_iso,"
-                           "wall_clock_series_started_at_iso,"
-                           "wall_clock_elapsed_minutes_from_first_run,ff_gain,"
-                           + metric_key),
-                   comments="")
-        print(f"  [6] one-stop CSV updated after run {run_index + 1}: {csv_path}")
-        run_index += 1
-        if duration_min is None or (now_fn() - series_start) >= duration_min * 60.0:
-            break
-    return csv_path
+    def __init__(self, *args, auto_tmax_factor=3.0, T1_probe_cfg=None,
+                 t_min_ns_default=1000.0, t_points_default=41, t_max_ns=None,
+                 fit_clip=(0.0, 1.0), require_monotone=False, **kw):
+        super().__init__(*args, **kw)
+        self.auto_tmax_factor = float(auto_tmax_factor)
+        self.T1_probe_cfg = T1_probe_cfg
+        self.t_min_ns_default = float(t_min_ns_default)
+        self.t_points_default = int(t_points_default)
+        self.t_max_ns_user = t_max_ns
+        self.fit_clip = fit_clip
+        self.require_monotone = bool(require_monotone)
+        self.data.update({"auto_tmax_factor": self.auto_tmax_factor,
+                          "auto_T1_probe_cfg": T1_probe_cfg,
+                          "t_max_ns_user": t_max_ns, "fit_clip": fit_clip,
+                          "require_monotone": self.require_monotone,
+                          "write_outputs": self.write_outputs})
+        self._build_t_vec()
+
+    def _build_t_vec(self):
+        t_min = max(16.0, self.t_min_ns_default)
+        if self.t_max_ns_user is not None:
+            t_max = float(self.t_max_ns_user)
+            if t_max <= t_min:
+                raise ValueError("t_max_ns must exceed t_min_ns.")
+            t_vec_ns = np.logspace(np.log10(t_min), np.log10(t_max), self.t_points_default)
+            print(f"[FIXED t_vec] t_max={t_max / 1e3:.3g} us, points={len(t_vec_ns)} "
+                  f"(park-T1 probe skipped)")
+        else:
+            T1_us = self._park_T1_probe(self.T1_probe_cfg, "AUTO t_vec")
+            t_max = self.auto_tmax_factor * T1_us * 1e3
+            t_vec_ns = np.logspace(np.log10(t_min), np.log10(max(t_max, t_min * 2)),
+                                   self.t_points_default)
+            print(f"[AUTO t_vec] T1_park={T1_us:.3g} us -> t_max={t_max / 1e3:.3g} us, "
+                  f"points={len(t_vec_ns)}")
+            self.data.update({"auto_T1_park_us_for_tvec": T1_us, "auto_t_max_ns": t_max})
+        t_vec_ns = np.unique(np.round(t_vec_ns).astype(int))
+        self.data["t_vec_ns_requested"] = t_vec_ns
+        self.t_vec_ns = t_vec_ns.astype(float)
+        self.data["t_vec_ns"] = self.t_vec_ns
+        self.data["wall_clock_note"] = None
+
+    def _wait_mask_for_dc(self, dc_index):
+        return np.ones(len(self.t_vec_ns), dtype=bool)
+
+    def acquire(self, progress=False, plotDisp=False, figNum=1):
+        dc_vec = self.dc_vec
+        t_us = self.t_vec_ns / 1e3
+        ss = np.full((len(dc_vec), len(t_us)), np.nan)
+        valid = np.zeros((len(dc_vec), len(t_us)), dtype=np.int8)
+        start_time = time.time()
+        for i, dc in enumerate(dc_vec):
+            mask = self._wait_mask_for_dc(i)
+            for k, t in enumerate(t_us):
+                if not mask[k]:
+                    continue
+                ss[i, k] = self._run_point(dc, float(t), do_pi=True, do_ff=True)
+                valid[i, k] = 1
+            progress_counter(i, len(dc_vec), start_time=start_time)
+        self._finish_acquire(ss, valid, t_us)
+        self.data["time"] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if self.write_outputs:
+            self.pickle_data()
+        return {"config": self.cfg, "data": self.data}
+
+    def _title_suffix(self):
+        return ""
+
+    def _finish_acquire(self, ss, valid, t_us):
+        self.data["ss_data"] = ss
+        T1_fit, T1_err, fit_ok = _fit_T1_map(ss, t_us, fit_clip=self.fit_clip,
+                                             require_monotone=self.require_monotone)
+        inv, inv_err = _safe_inverse_t1_us(T1_fit, T1_err)
+        self.data.update({"T1_fit_us": T1_fit, "T1_fit_err_us": T1_err,
+                          "inv_T1_fit_per_us": inv, "inv_T1_fit_err_per_us": inv_err,
+                          "fit_success": fit_ok})
+        if self.write_outputs:
+            base = _csv_base_from_pickle(self.pname)
+            dc_vec = self.dc_vec
+            sfx = self._title_suffix()
+
+            fig, ax = plt.subplots(constrained_layout=True)
+            X, Y = np.meshgrid(t_us, dc_vec)
+            pcm = ax.pcolormesh(X, Y, ss, shading="nearest")
+            fig.colorbar(pcm, ax=ax, label="P(e)")
+            ax.set_xlabel("Wait time t (us)")
+            ax.set_ylabel("Flux DC target")
+            ax.set_title(f"{self.element} full T1 curves vs flux (P(e){sfx})")
+            fig.savefig(self.iname[:-4] + "_T1map.png", bbox_inches="tight")
+            plt.close(fig)
+
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.errorbar(dc_vec, T1_fit, yerr=T1_err, fmt="-", capsize=2)
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("T1 (us)")
+            ax.set_title(f"{self.element} T1 vs flux (full decay fit{sfx})")
+            fig.savefig(self.iname[:-4] + "_T1_vs_flux.png", bbox_inches="tight")
+            plt.close(fig)
+
+            fig, ax = plt.subplots(constrained_layout=True)
+            ax.errorbar(dc_vec, inv, yerr=inv_err, fmt="-", capsize=2)
+            ax.set_xlabel("Flux DC target")
+            ax.set_ylabel("1 / T1 (1/us)")
+            ax.set_title(f"{self.element} 1/T1 vs flux (full decay fit{sfx})")
+            fig.savefig(self.iname[:-4] + "_invT1_vs_flux.png", bbox_inches="tight")
+            plt.close(fig)
+
+            _save_flux_curve_csv(base + "_full_t1_summary.csv", dc_vec,
+                                 self._summary_columns(),
+                                 extra_columns=self.repeat_metadata)
+            _save_flux_map_csv(base + "_full_t1_map.csv", dc_vec, t_us, ss,
+                               value_name="population_pe",
+                               extra_columns=self.repeat_metadata)
+
+    def _summary_columns(self):
+        return {"T1_fit_us": self.data["T1_fit_us"],
+                "T1_fit_err_us": self.data["T1_fit_err_us"],
+                "inv_T1_fit_per_us": self.data["inv_T1_fit_per_us"],
+                "inv_T1_fit_err_per_us": self.data["inv_T1_fit_err_per_us"],
+                "fit_success": self.data["fit_success"]}
+
+    def save_data(self, data=None):
+        print(f'Saving {self.fname}')
+        arr = {k: v for k, v in self.data.items() if isinstance(v, np.ndarray)}
+        super().save_data(data=arr)
+
+
+class T1FullCurveVsFluxFromFit(T1FullCurveVsFlux):
+    """QUA FromFit variant: per-DC t_max from the transmon fit + a quality factor."""
+
+    def __init__(self, *args, notebook_fit_params=None, quality_factor=None, **kw):
+        self._notebook_raw = notebook_fit_params
+        self.quality_factor = quality_factor
+        self.notebook_fit_params, self.flux_fit_params = \
+            _coerce_notebook_fit_params(notebook_fit_params)
+        super().__init__(*args, **kw)
+        self.data.update({"notebook_fit_params": self.notebook_fit_params,
+                          "flux_fit_params": self.flux_fit_params,
+                          "supplied_quality_factor": quality_factor})
+        if self.write_outputs:
+            self.pickle_data()
+
+    def _build_t_vec(self):
+        t_min = max(16.0, self.t_min_ns_default)
+        park_f_hz = _predict_qubit_frequency_hz_from_flux_fit(
+            [self.park_voltage], self.flux_fit_params)[0]
+        if self.quality_factor is not None:
+            estimated_Q = float(self.quality_factor)
+            T1_us = estimated_Q / (2.0 * np.pi * park_f_hz) * 1e6
+            print(f"[t_vec from SUPPLIED Q] Q={estimated_Q:.6g}, "
+                  f"f_park={park_f_hz / 1e9:.6g} GHz -> implied T1_park={T1_us:.3g} us "
+                  f"(park-T1 probe skipped)")
+        else:
+            T1_us = self._park_T1_probe(self.T1_probe_cfg, "AUTO t_vec")
+            estimated_Q = 2.0 * np.pi * park_f_hz * T1_us * 1e-6
+        predicted_f_hz = _predict_qubit_frequency_hz_from_flux_fit(
+            self.dc_vec, self.flux_fit_params)
+        predicted_T1_us = estimated_Q / (2.0 * np.pi * predicted_f_hz) * 1e6
+        local_t_max_ns = self.auto_tmax_factor * predicted_T1_us * 1e3
+        local_t_max_ns = np.maximum(local_t_max_ns, max(16.0, t_min))
+        global_t_max = max(np.nanmax(local_t_max_ns), t_min * 2)
+        t_vec_ns = np.logspace(np.log10(t_min), np.log10(global_t_max),
+                               self.t_points_default)
+        print(f"[AUTO t_vec from qubit fit] T1_park={T1_us:.3g} us, "
+              f"f_park={park_f_hz / 1e9:.6g} GHz, Q={estimated_Q:.6g} -> "
+              f"global t_max={global_t_max / 1e3:.3g} us, points={len(t_vec_ns)}")
+        t_vec_ns = np.unique(np.round(t_vec_ns).astype(int))
+        self.t_vec_ns = t_vec_ns.astype(float)
+        self._local_t_max_ns = local_t_max_ns
+        self.data.update({
+            "auto_T1_park_us_for_tvec": T1_us,
+            "park_qubit_freq_hz_for_tvec": park_f_hz,
+            "park_qubit_freq_ghz_for_tvec": park_f_hz / 1e9,
+            "estimated_Q_for_tvec": estimated_Q,
+            "predicted_qubit_freq_hz_per_dc": predicted_f_hz,
+            "predicted_qubit_freq_ghz_per_dc": predicted_f_hz / 1e9,
+            "predicted_T1_us_per_dc": predicted_T1_us,
+            "local_t_max_ns_per_dc": local_t_max_ns,
+            "auto_t_max_ns": global_t_max,
+            "t_vec_ns_requested": t_vec_ns, "t_vec_ns": self.t_vec_ns})
+
+    def _wait_mask_for_dc(self, dc_index):
+        return self.t_vec_ns <= self._local_t_max_ns[dc_index]
+
+    def _title_suffix(self):
+        return ", qubit-fit t_max"
+
+    def _finish_acquire(self, ss, valid, t_us):
+        ss_masked = np.where(valid > 0.5, ss, np.nan)
+        self.data.update({"ss_data_raw": ss, "valid_mask_data": valid})
+        super()._finish_acquire(ss_masked, valid, t_us)
+
+    def _summary_columns(self):
+        cols = {"predicted_qubit_freq_GHz": self.data["predicted_qubit_freq_ghz_per_dc"],
+                "predicted_T1_us_from_Q": self.data["predicted_T1_us_per_dc"],
+                "local_t_max_ns": self.data["local_t_max_ns_per_dc"]}
+        cols.update(super()._summary_columns())
+        return cols

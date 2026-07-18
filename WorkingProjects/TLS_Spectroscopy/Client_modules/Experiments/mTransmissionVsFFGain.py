@@ -1,29 +1,28 @@
 """
-STEP 1 (all-fast-flux variant): resonator transmission vs fast-flux gain.
+STEP 1: resonator transmission vs flux (all-fast-flux) -- QUA-identical behavior.
 
-The bring-up check for the flux wiring: sweep the readout frequency while the
-ff DAC HOLDS each flux level, and watch the resonator dip move vs ff_gain.  If
-the dip moves, the ff_ch wiring / polarity / rough flux scale are all confirmed
--- no qubit knowledge needed.  Also exports a resonator-vs-ff lookup CSV.
-
-Unlike every other FF experiment in this pipeline (which read out at park), the
-readout here deliberately happens AT the held flux -- that is the measurement.
-Sequence per shot:  assert park -> ramp to ff_gain + settle (ff_settle_us) ->
-measure while held (stdysel='last' keeps the level through the readout) ->
-ramp back to park -> relax.
-
-QUA analog: m_transmission_vs_flux.py::TransmissionVsFlux, with the OPX
-set_dc_offset axis replaced by the ff DAC gain axis.
+Structural port of Houck-Lab-Qua m_transmission_vs_flux.py::TransmissionVsFlux with
+the OPX set_dc_offset flux axis replaced by the ff-DAC gain axis (readout happens
+AT the held flux via stdysel='last').  Order of operations, prints, live plotting,
+progress counter, file artifacts (4-column lookup CSV written BEFORE the fits,
+lookup PNG, final overlay PNG, pickle), data keys, and both fits (raw-trace cosine,
+smoothed-trace dispersive with the exact QUA seeds/branch/bounds) mirror the QUA
+source line by line.  Units: flux in ff_gain DAC units, frequencies absolute Hz
+(r_lo = 0), so the CSV keeps the QUA Hz column semantics honestly.
 """
 
 import time
+import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import signal
 from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
 
 
 class FFTransProgram(AveragerProgram):
@@ -44,8 +43,6 @@ class FFTransProgram(AveragerProgram):
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
                                  freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
-        # settle hold before the readout window; stdysel='last' keeps the flux at
-        # the target THROUGH the measure() that follows
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=max(cfg.get("ff_settle_us", 20.0), cfg.get("dt_pulseplay", 5.0)),
             ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
@@ -60,7 +57,6 @@ class FFTransProgram(AveragerProgram):
         self.sync_all(self.us2cycles(0.05))
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         self.sync_all(self.us2cycles(0.01))
-        # readout AT the held flux (the point of this experiment)
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(0.01))
@@ -69,19 +65,15 @@ class FFTransProgram(AveragerProgram):
 
 
 class TransmissionVsFFGain(ExperimentClass):
-    """2D resonator transmission vs (readout frequency, fast-flux gain).
-
-    cfg keys: trans_freq_start/trans_freq_stop/TransNumPoints (MHz),
-              ff_gain_start/ff_gain_stop/ff_gain_num (or ff_gain_vec, DAC units),
-              ff_settle_us, reps, relax_delay (keep small -- no qubit involved).
-    """
+    """2D resonator transmission vs (readout frequency, fast-flux gain) --
+    the QUA TransmissionVsFlux analog.  All analysis happens in acquire()."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
-                 suffix='Transmission_vs_FF_Gain', cfg=None, meta_dict=None,
+                 suffix='Resonator_Spec_vs_Flux', cfg=None, meta_dict=None,
                  save_resonator_lookup=True, resonator_lookup_smooth_points=None, **kw):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
-        self.save_resonator_lookup = save_resonator_lookup
+        self.save_resonator_lookup = bool(save_resonator_lookup)
         self.resonator_lookup_smooth_points = resonator_lookup_smooth_points
 
     def _freq_vec(self):
@@ -97,122 +89,164 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         cfg = self.cfg
-        fpts = self._freq_vec()
-        gains = self._gain_vec()
+        f_vec = self._freq_vec()          # MHz absolute
+        dc_vec = self._gain_vec()         # ff_gain DAC units (the QUA dc_vec analog)
+        r_lo = 0.0                        # QICK synthesizes absolute tones
+        qubit_lo_hz = cfg.get("qubit_freq", 0.0) * 1e6
 
-        Z_mag = np.full((len(gains), len(fpts)), np.nan)
-        Z_phase = np.full((len(gains), len(fpts)), np.nan)
-        dip_freq = np.full(len(gains), np.nan)
+        self.data = {'qubit': self.path, 'f_vec': f_vec, 'dc_vec': dc_vec,
+                     'meta_dict': dict(cfg)}
 
-        start = time.time()
-        for i, g in enumerate(gains):
-            cfg["ff_gain"] = float(g)
-            I = np.zeros(len(fpts))
-            Q = np.zeros(len(fpts))
-            for j, f in enumerate(fpts):
+        R = np.full((len(f_vec), len(dc_vec)), np.nan)       # (num_f, num_dc), dBm-style
+        phase_raw = np.full((len(f_vec), len(dc_vec)), np.nan)
+
+        live = LiveFigure(figsize=(8, 7)) if plotDisp else None
+        start_time = time.time()
+        interrupted = False
+        for i, dc in enumerate(dc_vec):
+            cfg["ff_gain"] = float(dc)
+            I = np.zeros(len(f_vec))
+            Q = np.zeros(len(f_vec))
+            for j, f in enumerate(f_vec):
                 cfg["read_pulse_freq"] = float(f)
                 prog = FFTransProgram(self.soccfg, cfg)
                 res = prog.acquire(self.soc, load_pulses=True, progress=False)
                 I[j] = np.array(res[0][0][0]).mean()
                 Q[j] = np.array(res[0][0][1]).mean()
-            sig = I + 1j * Q
-            mag = np.abs(sig)
-            Z_mag[i, :] = 20 * np.log10(mag + 1e-12)
-            Z_phase[i, :] = np.unwrap(np.angle(sig))
-            dip_freq[i] = fpts[int(np.argmin(mag))]
-            if i == 0:
-                per = time.time() - start
-                print(f"[1] ~{per*len(gains)/60:.1f} min for {len(gains)} ff_gain x "
-                      f"{len(fpts)} freq points")
+            S = I + 1j * Q
+            R[:, i] = 20 * np.log10(np.abs(S) + 1e-12)
+            phase_raw[:, i] = np.angle(S)
+            progress_counter(i, len(dc_vec), start_time=start_time)
+            if live is not None:
+                plt.figure(live.fig.number)
+                plt.subplot(211); plt.cla()
+                plt.suptitle(f"Resonator spectroscopy - {self.path}")
+                plt.title(r"Amplitude (dBm)")
+                plt.pcolor(dc_vec[:i + 1], f_vec, R[:, :i + 1])
+                plt.ylabel("Readout freq [MHz]")
+                plt.subplot(212); plt.cla()
+                plt.title("Phase (rad)")
+                ph = np.unwrap(phase_raw[:, :i + 1], axis=-1)
+                plt.pcolor(dc_vec[:i + 1], f_vec, signal.detrend(ph, axis=-1)
+                           if i > 0 else ph)
+                plt.xlabel("Flux bias [ff_gain DAC]")
+                plt.ylabel("Readout freq [MHz]")
+                live.refresh(pause=0.5)
+                plt.tight_layout()
+                if not live.is_open:
+                    interrupted = True
+                    break
+            self.data.update({"IQ_mag": R, "IQ_phase": phase_raw})
+        if live is not None:
+            live.close()
+        if interrupted:
+            self.pickle_data()
+            return {'config': cfg, 'data': self.data}
 
-        data = {'config': cfg, 'data': {'fpts': fpts, 'ff_gains': gains,
-                                        'mag_db': Z_mag, 'phase': Z_phase,
-                                        'dip_freq_MHz': dip_freq}}
-        self.data = data
+        # ---- dip extraction (RAW): per flux column, freq of minimum dB magnitude
+        minima = np.zeros(len(dc_vec))
+        for i in range(len(dc_vec)):
+            minima[i] = f_vec[np.argmin(R.T[i])]
 
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+        # ---- smoothing (always; feeds lookup CSV/plot, dip prints, dispersive fit)
+        minima_lookup, smooth_window = ff.smooth_resonator_dip_trace(
+            minima, self.resonator_lookup_smooth_points)
 
-        # smoothed dip trace (QUA _smooth_resonator_dip_trace): feeds the saved
-        # lookup and the dispersive fit; the cosine fit uses the raw minima
-        dip_smoothed, smooth_win = ff.smooth_resonator_dip_trace(
-            dip_freq, self.resonator_lookup_smooth_points)
-        data['data']['dip_freq_smoothed_MHz'] = dip_smoothed
-        data['data']['lookup_smooth_window'] = smooth_win
+        _dip_hz = np.asarray(minima_lookup) * 1e6 + r_lo
+        _imax = int(np.nanargmax(_dip_hz))
+        _imin = int(np.nanargmin(_dip_hz))
+        print(f"Resonator dip MAX freq {_dip_hz[_imax] / 1e9:.6f} GHz at DC = {dc_vec[_imax]:+.5f} DAC")
+        print(f"Resonator dip MIN freq {_dip_hz[_imin] / 1e9:.6f} GHz at DC = {dc_vec[_imin]:+.5f} DAC")
+        print(f"DC scan range: {float(np.min(dc_vec)):+.5f} .. {float(np.max(dc_vec)):+.5f} DAC")
 
-        # (a) legacy 4-param cosine fit -> resonator_fit_parameters_cosine (the QUA
-        # default readout-IF source when USE_RESONATOR_LOOKUP is False)
-        cos_params, _ = ff.fit_cosine_vs_flux(gains, dip_freq)
-        if cos_params is not None:
-            data['data']['resonator_fit_parameters_cosine'] = cos_params
-
-        # (b) 7-param physical dressed-resonator (avoided-crossing) fit ->
-        # resonator_fit_parameters_dispersive; failure leaves the cosine fit intact
-        period_seed = None
-        if cos_params is not None and cos_params.get('frequency'):
-            period_seed = 1.0 / abs(cos_params['frequency'])
-        anharm_mhz = abs(self.cfg.get("anharmonicity_mhz", -200.0))
-        disp_params, disp_rms = ff.fit_resonator_dispersive(
-            gains, dip_smoothed, period_seed=period_seed,
-            Ec_seed_ghz=anharm_mhz / 1e3)
-        if disp_params is not None:
-            data['data']['resonator_fit_parameters_dispersive'] = disp_params
-            data['data']['resonator_dispersive_rms_MHz'] = disp_rms
-
+        # ---- lookup CSV (BEFORE the fits, so it survives a fit failure) + PNG
         if self.save_resonator_lookup:
-            lookup_csv = self.iname[:-4] + "_resonator_lookup.csv"
-            np.savetxt(lookup_csv,
-                       np.column_stack([gains, dip_smoothed, dip_freq]), delimiter=",",
-                       header="ff_gain,resonator_dip_freq_MHz,resonator_dip_freq_raw_MHz",
+            import os
+            lookup_csv_path = os.path.splitext(self.iname)[0] + "_resonator_lookup.csv"
+            np.savetxt(lookup_csv_path,
+                       np.column_stack([dc_vec, minima_lookup * 1e6,
+                                        minima_lookup * 1e6 + r_lo, minima * 1e6]),
+                       delimiter=",",
+                       header="dc_offset_V,resonator_dip_if_Hz,resonator_dip_freq_Hz,resonator_dip_if_raw_Hz",
                        comments="")
-            data['data']['resonator_lookup_csv'] = lookup_csv
-        span = np.nanmax(dip_freq) - np.nanmin(dip_freq)
-        print(f"[1] dip moved {span*1e3:.0f} kHz over ff_gain "
-              f"{gains.min():g}..{gains.max():g} "
-              f"({'flux line LIVE' if span > 0.02 else 'little/no motion -- check wiring/polarity/range'})")
+            self.data['resonator_lookup_csv'] = lookup_csv_path
+            self.data['resonator_lookup_dc_V'] = dc_vec
+            self.data['resonator_lookup_dip_if_Hz'] = minima_lookup * 1e6
+            self.data['resonator_lookup_dip_if_raw_Hz'] = minima * 1e6
+            self.data['resonator_lookup_smooth_points'] = int(smooth_window)
+            print(f"Saved resonator dip lookup table: {lookup_csv_path}"
+                  + (f" (smoothed, window={smooth_window} pts)" if smooth_window
+                     else " (raw, no smoothing)"))
 
-        self.display(data, plotDisp=plotDisp, figNum=figNum)
-        return data
+            fig_lut = plt.figure()
+            plt.suptitle(f"Resonator dip lookup (measured) - {self.path}")
+            plt.pcolor(dc_vec, f_vec, R)
+            plt.plot(dc_vec, minima, "x", color="red", markersize=3,
+                     label="Measured dips (raw)")
+            order = np.argsort(dc_vec)
+            lut_dc, lut_if = dc_vec[order], np.asarray(minima_lookup)[order]
+            dense_dc = np.linspace(lut_dc.min(), lut_dc.max(), max(1000, lut_dc.size))
+            dense_if = np.interp(dense_dc, lut_dc, lut_if)
+            plt.plot(dense_dc, dense_if, "-", color="cyan", linewidth=1.4,
+                     label=(f"Smoothed lookup (w={smooth_window} pts, used downstream)"
+                            if smooth_window else "Interpolated lookup (used downstream)"))
+            plt.xlabel("Flux bias [ff_gain DAC]")
+            plt.ylabel("Readout freq [MHz]")
+            plt.legend(loc="best", fontsize=8)
+            lookup_png_path = os.path.splitext(self.iname)[0] + "_resonator_lookup.png"
+            fig_lut.savefig(lookup_png_path, bbox_inches="tight")
+            plt.close(fig_lut)
+            self.data['resonator_lookup_png'] = lookup_png_path
+            print(f"Saved resonator dip lookup plot: {lookup_png_path}")
 
-    def display(self, data=None, plotDisp=False, figNum=1, **kw):
-        if data is None:
-            data = self.data
-        d = data['data']
+        # ---- cosine fit on the RAW minima (QUA-exact seeds; failure propagates)
+        fit_params, initial_guess = ff.cosine_fit_qua(dc_vec, minima)
+        print("initial guesses", ','.join(map(str, initial_guess)))
+        print("cosine fit parameters (legacy)", ','.join(map(str, fit_params)))
+        self.data['resonator_fit_parameters_cosine'] = [float(v) for v in fit_params]
+        fitted_curve = ff.cosine_vs_flux(dc_vec, *fit_params)
+
+        # ---- dispersive fit on the SMOOTHED trace (period seeded from cosine)
+        dispersive_params = None
+        try:
+            period_seed = 1.0 / fit_params[1]
+            dispersive_params, disp_rms_hz = ff.fit_resonator_dispersive(
+                dc_vec, minima_lookup * 1e6, r_lo, qubit_lo_hz,
+                cfg.get('anharmonicity', -0.2e9) or -0.2e9, period_seed)
+            print("dispersive fit parameters [f_bare_Hz,g_Hz,EJmax_GHz,Ec_GHz,period_V,offset_V,d]")
+            print(','.join(map(str, dispersive_params)))
+            print(f"dispersive fit RMS = {disp_rms_hz / 1e3:.1f} kHz (all params free)")
+            self.data['resonator_fit_parameters_dispersive'] = dispersive_params
+        except Exception as exc:
+            print(f"Dispersive resonator fit failed ({exc}); cosine fit (legacy) remains available.")
+
+        # ---- final saved figure (single panel, cosine + dispersive overlays)
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, ax = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
-        extent = [d['fpts'][0], d['fpts'][-1], d['ff_gains'][0], d['ff_gains'][-1]]
-        im = ax.imshow(d['mag_db'], aspect='auto', origin='lower', extent=extent,
-                       interpolation='none')
-        ax.scatter(d['dip_freq_MHz'], d['ff_gains'], s=8, c='r', marker='x', label='dip')
-        # fit overlays (QUA style: cosine black solid, dispersive dashed red)
-        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
-        g_fine = np.linspace(d['ff_gains'][0], d['ff_gains'][-1], 400)
-        if 'resonator_fit_parameters_cosine' in d:
-            p = d['resonator_fit_parameters_cosine']
-            ax.plot(ff.cosine_vs_flux(g_fine, p['amplitude'], p['frequency'],
-                                      p['phi'], p['offset']),
-                    g_fine, 'k-', lw=1, label='cosine fit')
-        if 'resonator_fit_parameters_dispersive' in d:
-            ax.plot(ff.resonator_dispersive_func(g_fine,
-                                                 *d['resonator_fit_parameters_dispersive']),
-                    g_fine, 'r--', lw=1, label='dispersive fit')
-        ax.set_xlabel("Readout frequency (MHz)")
-        ax.set_ylabel("ff_gain (DAC units)")
-        ax.set_title("Resonator transmission |S21| (dB) vs fast-flux gain")
-        fig.colorbar(im, ax=ax, label="|S21| (dB)")
-        ax.legend(loc='upper right')
-        plt.tight_layout()
-        plt.savefig(self.iname)
+        plt.figure(figNum)
+        plt.suptitle(f"Resonator spectroscopy - {self.path}")
+        plt.pcolor(dc_vec, f_vec, R)
+        plt.plot(dc_vec, fitted_curve, label="Cosine fit (legacy)", color="black")
+        if dispersive_params is not None:
+            dispersive_curve = (ff.resonator_dispersive_func_hz(dc_vec, *dispersive_params)
+                                - r_lo) / 1e6
+            plt.plot(dc_vec, dispersive_curve, "--", color="red", label="Dispersive model fit")
+        plt.xlabel("Flux bias [ff_gain DAC]")
+        plt.ylabel("Readout freq [MHz]")
+        plt.legend(loc="best", fontsize=8)
+        plt.savefig(self.iname, bbox_inches="tight")
         if plotDisp:
             plt.show(block=False)
             plt.pause(0.1)
-        else:
-            fig.clf()
-            plt.close(fig)
+
+        self.data['time'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.pickle_data()
+        return {'config': cfg, 'data': self.data}
 
     def save_data(self, data=None):
         if data is None:
-            data = self.data
+            data = {'data': self.data}
         print(f'Saving {self.fname}')
-        arr = {k: v for k, v in data['data'].items() if not isinstance(v, str)}
+        arr = {k: v for k, v in data['data'].items()
+               if not isinstance(v, (str, dict)) and v is not None}
         super().save_data(data=arr)

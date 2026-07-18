@@ -16,10 +16,23 @@ Run from the HouckLab_QICK repo root on the measurement PC:
     python -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy
 """
 
-import gc
+import os
+import sys
+from datetime import datetime
+
+# find the HouckLab_QICK repo root so the script runs from anywhere (QUA-style
+# repo-root finder: the OPX file walked up until it found LabCode/)
+_d = os.path.dirname(os.path.abspath(__file__))
+while _d != os.path.dirname(_d):
+    if os.path.isdir(os.path.join(_d, "WorkingProjects")):
+        if _d not in sys.path:
+            sys.path.insert(0, _d)
+        break
+    _d = os.path.dirname(_d)
+else:
+    raise RuntimeError("Could not find the HouckLab_QICK repo root (no WorkingProjects/ above this file).")
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
@@ -28,13 +41,26 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import (
-    T13PointVsFlux, T1FullCurveVsFlux, run_wall_clock_repeat,
+    T1FullCurveVsFlux,
+    T1FullCurveVsFluxFromFit,
+    T13PointVsFlux,
+    build_wall_clock_repeat_metadata,
+    get_wall_clock_repeat_spec,
+    get_wall_clock_repeat_full_spec,
+    save_wall_clock_repeat_full_outputs,
+    _csv_base_from_pickle,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
 
 
 LIVE_PLOTS = True
+# QUA-identical backend switch (TLSSpectroscopy.py lines 49-52): interactive TkAgg
+# for live plots, headless Agg otherwise
+import matplotlib
+matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
+import matplotlib.pyplot as plt
+import gc
 
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
 QUBIT = "q4"
@@ -93,12 +119,12 @@ P3_STEP_RESPONSE = {
     "shots": 200,
     "spec_amp": 2000,
     "spec_len_us": 0.5,
-    "freq_step": 2.0,
+    "freq_step": 0.5,
     "auto_center_frequency_window": True,
     "auto_freq_absolute_min_mhz": 2250.0,
     "auto_freq_absolute_max_mhz": 2570.0,
     "t_min_us": 1.0,
-    "t_max_us": 200.0,
+    "t_max_us": 500.0,
     "t_step_us": 4.0,
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
@@ -226,11 +252,11 @@ def _load_correction(correction_json, outer_folder):
     return compensation
 
 
-def _wall_clock_minutes(duration_min):
+def _wall_clock_seconds(duration_min):
     if duration_min is None:
         return None
     duration_min = float(duration_min)
-    return duration_min if duration_min > 0 else None
+    return 60.0 * duration_min if duration_min > 0 else None
 
 
 def _resolve_resonator_lookup(latest_lookup_csv):
@@ -299,8 +325,6 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
     )
     data = exp.acquire(plotDisp=LIVE_PLOTS)
-    exp.save_data(data)
-    exp.save_config()
     lookup_csv = data['data'].get('resonator_lookup_csv')
     print("[1] Done. Cosine fit -> resonator_fit_parameters (update the meta dict if the resonator moved).")
     if lookup_csv:
@@ -316,19 +340,17 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
-        "ff_gain_vec": dc_vec,
-        "long_time_us": 2.0,          # settle-then-probe; no long-time window here
-        "average_window_us": 0.0, "average_step_us": 0.016,
-        "fit_flux": bool(p.get("advanced_fit", True)),
-        "resonator_lookup_csv": resonator_lookup_csv,
     })
     exp = QubitLongTimeSpecVsFlux(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix="Qubit_Spec_vs_Flux_Full_Range", cfg=cfg, step_tag="2",
+        dc_vec=dc_vec,
+        long_time_ns=2000.0, average_window_ns=0.0,          # settle-then-probe slice
+        fit_trace=False, advanced_fit=bool(p.get("advanced_fit", True)),
+        live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
+        resonator_lookup_csv=resonator_lookup_csv,
     )
-    data = exp.acquire(plotDisp=bool(p.get("live_plot", True)) and LIVE_PLOTS)
-    exp.save_data(data)
-    exp.save_config()
+    data = exp.acquire()
     print(f"[2] Done. raw_sweep CSV (fit offline): {data['data'].get('raw_sweep_csv')}")
     return data['data'].get('flux_fit_params')
 
@@ -338,13 +360,151 @@ def _step3_common_cfg(p):
     n = max(int(round((fmax - fmin) / p["freq_step"])) + 1, 5)
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": fmin, "qubit_freq_stop": fmax, "qubit_freq_expts": n,
-        "t_vec_us": np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"]),
-        "ff_gain": TARGET_DC_OFFSET,
-        "baseline_dc_offset": BASELINE_DC_OFFSET,
-        "dc_offset": TARGET_DC_OFFSET,
-        "baseline_rearm_us": p.get("baseline_rearm_us", 0.0),
     })
     return cfg
+
+
+def _gain_suffix(gain):
+    sign = "p" if float(gain) >= 0 else "m"
+    milli = int(round(abs(float(gain)) * 1000))
+    return f"gain_{sign}{milli:04d}"
+
+
+def _gain_sweep_row(gain, dc_offset, exp, flux_tail_compensation):
+    """VERBATIM QUA Control _gain_sweep_row (u.us -> 1e3 ns/us)."""
+    frequency_ghz = np.asarray(exp.data.get("extracted_qubit_frequency_ghz", []), dtype=float)
+    time_ns = np.asarray(exp.data.get("t_vec", []), dtype=float)
+    finite = np.isfinite(frequency_ghz)
+    row = {
+        "gain": float(gain),
+        "dc_offset_V": float(dc_offset),
+        "source_json": flux_tail_compensation.get("source", ""),
+        "summary_png": exp.data.get("summary_image", ""),
+        "step_response_png": exp.data.get("step_response_image", ""),
+        "frequency_drift_zoom_png": exp.data.get("frequency_drift_zoom_image", ""),
+        "frequency_drift_csv": exp.data.get("frequency_drift_csv", ""),
+        "raw_sweep_csv": exp.data.get("raw_sweep_csv", exp.data.get("raw_sweep_csv_path", "")),
+        "n_finite_frequency_points": int(np.count_nonzero(finite)),
+        "multiplier_min": float(np.nanmin(flux_tail_compensation["multipliers"])),
+        "multiplier_max": float(np.nanmax(flux_tail_compensation["multipliers"])),
+        "multiplier_clipped": bool(flux_tail_compensation.get("gain_sweep_multiplier_clipped", False)),
+    }
+    if np.count_nonzero(finite) > 0:
+        first = float(frequency_ghz[finite][0])
+        drift_mhz = 1e3 * (frequency_ghz[finite] - first)
+        finite_time_us = time_ns[finite] / 1e3 if time_ns.size == frequency_ghz.size else np.arange(drift_mhz.size)
+        row.update(
+            {
+                "first_frequency_GHz": first,
+                "median_frequency_GHz": float(np.nanmedian(frequency_ghz[finite])),
+                "final_minus_first_MHz": float(drift_mhz[-1]),
+                "min_minus_first_MHz": float(np.nanmin(drift_mhz)),
+                "max_minus_first_MHz": float(np.nanmax(drift_mhz)),
+                "peak_to_peak_MHz": float(np.nanmax(drift_mhz) - np.nanmin(drift_mhz)),
+                "max_abs_minus_first_MHz": float(np.nanmax(np.abs(drift_mhz))),
+                "rms_minus_first_MHz": float(np.sqrt(np.nanmean(drift_mhz**2))),
+                "mean_abs_minus_first_MHz": float(np.nanmean(np.abs(drift_mhz))),
+                "duration_us": float(finite_time_us[-1] - finite_time_us[0]) if finite_time_us.size > 1 else 0.0,
+            }
+        )
+    else:
+        row.update(
+            {
+                "first_frequency_GHz": np.nan,
+                "median_frequency_GHz": np.nan,
+                "final_minus_first_MHz": np.nan,
+                "min_minus_first_MHz": np.nan,
+                "max_minus_first_MHz": np.nan,
+                "peak_to_peak_MHz": np.nan,
+                "max_abs_minus_first_MHz": np.nan,
+                "rms_minus_first_MHz": np.nan,
+                "mean_abs_minus_first_MHz": np.nan,
+                "duration_us": np.nan,
+            }
+        )
+
+    voltage_response = np.asarray(exp.data.get("measured_voltage_step_response", []), dtype=float)
+    finite_v = np.isfinite(voltage_response)
+    if np.count_nonzero(finite_v) > 0:
+        row.update(
+            {
+                "voltage_response_min": float(np.nanmin(voltage_response[finite_v])),
+                "voltage_response_max": float(np.nanmax(voltage_response[finite_v])),
+                "voltage_response_peak_to_peak": float(
+                    np.nanmax(voltage_response[finite_v]) - np.nanmin(voltage_response[finite_v])
+                ),
+                "voltage_response_final_minus_one": float(voltage_response[finite_v][-1] - 1.0),
+            }
+        )
+    else:
+        row.update(
+            {
+                "voltage_response_min": np.nan,
+                "voltage_response_max": np.nan,
+                "voltage_response_peak_to_peak": np.nan,
+                "voltage_response_final_minus_one": np.nan,
+            }
+        )
+    return row
+
+
+def _write_gain_sweep_summary_csv(experiments, rows):
+    """VERBATIM QUA Control _write_gain_sweep_summary_csv."""
+    import csv
+    from pathlib import Path
+    if not rows:
+        return None
+    first_path = Path(experiments[0].iname)
+    stem = first_path.stem
+    marker = "_gain_"
+    if marker in stem:
+        stem = stem.split(marker)[0]
+    csv_path = first_path.with_name(stem + "_gain_sweep_summary.csv")
+    fieldnames = list(rows[0].keys())
+    with open(csv_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Saved gain sweep summary CSV: {csv_path}")
+    return str(csv_path)
+
+
+def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compensation,
+                          fit_rise_decay_bump_dc_correction, live_plot):
+    """One QubitFluxStepResponse run with the QUA wrapper's per-run beats."""
+    run_kind = "calibration" if fit_rise_decay_bump_dc_correction else "validation"
+    print(f"Running flux-step {run_kind} target dc_offset={TARGET_DC_OFFSET:+.6f} DAC")
+    t_vec_ns = np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"]) * 1e3
+    exp = QubitFluxStepResponse(
+        soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+        suffix=suffix, cfg=_step3_common_cfg(p),
+        element=QUBIT, t_vec=t_vec_ns,
+        dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
+        shots=int(p["shots"]),
+        flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
+        live_plot=live_plot,
+        fit_rise_decay_bump_dc_correction=fit_rise_decay_bump_dc_correction,
+        piecewise_min_multiplier=p.get("piecewise_min_multiplier", 0.5),
+        piecewise_max_multiplier=p.get("piecewise_max_multiplier", 1.5),
+        baseline_rearm_time_ns=float(p.get("baseline_rearm_us", 500.0)) * 1e3,
+        flux_tail_compensation=flux_tail_compensation,
+    )
+    exp.acquire()
+    exp.save_data()
+    exp.save_config()
+    if fit_rise_decay_bump_dc_correction and not exp.data.get("rise_decay_bump_dc_compensation_json"):
+        fit_info = exp.data.get("rise_decay_bump_dc_correction_fit", {})
+        raise RuntimeError(
+            "This calibration run was expected to save a rise-decay-bump DC compensation JSON, "
+            "but none was produced. The next validation run would otherwise fall back to an "
+            f"old JSON. Fit info: success={fit_info.get('success')}, "
+            f"error={fit_info.get('error')!r}. Check the just-saved raw sweep and trace plots."
+        )
+    # QUA wrapper: tear down this iteration's figures in the MAIN thread (TkAgg)
+    plt.close("all")
+    gc.collect()
+    print(f"Flux step response for {QUBIT} at dc_offset={TARGET_DC_OFFSET:+.6f} DAC complete")
+    return exp
 
 
 def run_step3a_step_response_fit(outer_folder, soc, soccfg):
@@ -352,20 +512,14 @@ def run_step3a_step_response_fit(outer_folder, soc, soccfg):
     if FLUX_FIT_PARAMS is None:
         raise RuntimeError("Step 3a needs FLUX_FIT_PARAMS: run step 2 and paste the "
                            "printed values at the top of this file.")
-    print(f"[3a] Step-response FIT: baseline={BASELINE_DC_OFFSET:+.0f} DAC -> "
-          f"target={TARGET_DC_OFFSET:+.0f} DAC (measure + fit the distortion, no correction applied)")
-    exp = QubitFluxStepResponse(
-        soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-        suffix="Qubit_Flux_Step_Response", cfg=_step3_common_cfg(p),
-        flux_fit_params=FLUX_FIT_PARAMS, run_fit=True, qubit_name=QUBIT,
-        piecewise_min_multiplier=p["piecewise_min_multiplier"],
-        piecewise_max_multiplier=p["piecewise_max_multiplier"],
-        correction_gain=1.0,          # undamped fit; gain applied at load time
+    print(f"[3a] Step-response FIT: baseline={BASELINE_DC_OFFSET:+.4f} DAC -> "
+          f"target={TARGET_DC_OFFSET:+.4f} DAC (measure + fit the distortion, no correction applied)")
+    exp = _run_step3_experiment(
+        p, soc, soccfg, outer_folder, suffix="Qubit_Flux_Step_Response",
+        flux_tail_compensation=None, fit_rise_decay_bump_dc_correction=True,
+        live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
     )
-    data = exp.acquire(plotDisp=bool(p.get("live_plot", True)) and LIVE_PLOTS)
-    exp.save_data(data)
-    exp.save_config()
-    correction_json = data['data'].get('rise_decay_bump_dc_compensation_json')
+    correction_json = exp.data.get("rise_decay_bump_dc_compensation_json")
     if correction_json is None:
         raise RuntimeError("Step-response fit did not save a rise-decay-bump compensation JSON.")
     print(f"[3a] Saved correction JSON: {correction_json}")
@@ -375,45 +529,65 @@ def run_step3a_step_response_fit(outer_folder, soc, soccfg):
 def run_step3b_step_response_correct(outer_folder, soc, soccfg, correction_json=None):
     p = P3_STEP_RESPONSE
     if correction_json is None:
-        correction_json = fpd.find_latest_compensation_json(
+        correction_json = QubitFluxStepResponse.find_latest_rise_decay_bump_dc_compensation_json(
             outer_folder, QUBIT,
-            dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET)
+            dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
+        )
         if correction_json is None:
             raise RuntimeError("No correction JSON found; run step 3a (fit) first.")
-
-    def _run_correct(compensation, live_plot):
-        cfg = _step3_common_cfg(p)
-        cfg["flux_tail_compensation"] = compensation
-        exp = QubitFluxStepResponse(
-            soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-            suffix="Qubit_Flux_Step_Response", cfg=cfg,
-            flux_fit_params=FLUX_FIT_PARAMS, run_fit=False, qubit_name=QUBIT)
-        data = exp.acquire(plotDisp=live_plot and LIVE_PLOTS)
-        exp.save_data(data)
-        exp.save_config()
-        return exp, data
+    base_comp = QubitFluxStepResponse.load_piecewise_dc_compensation_json(correction_json)
 
     if STEP3B_GAIN_SWEEP is not None:
         print(f"[3b] Step-response CORRECT (gain sweep {STEP3B_GAIN_SWEEP}): applying {correction_json}")
         print("[3b] Live plotting disabled during the gain sweep (multi-run Tk figures crash on Windows).")
-        base = fpd.load_compensation_json(correction_json)
-        rows = []
-        last_exp = None
-        for gain in STEP3B_GAIN_SWEEP:
-            comp = fpd.scale_compensation_gain(base, float(gain))
-            print(f"    gain = {gain}")
-            last_exp, data = _run_correct(comp, live_plot=False)
-            rows.append([float(gain), float(data['data'].get('residual_flatness_MHz', np.nan))])
-        summary_csv = last_exp.iname[:-4] + "_gain_sweep_summary.csv"
-        np.savetxt(summary_csv, np.array(rows), delimiter=",",
-                   header="flux_tail_compensation_gain,residual_flatness_MHz", comments="")
+        gain_sweep_values = ([float(STEP3B_GAIN_SWEEP)] if np.isscalar(STEP3B_GAIN_SWEEP)
+                             else [float(gain) for gain in STEP3B_GAIN_SWEEP])
+        for gain in gain_sweep_values:
+            if not np.isfinite(gain) or gain < 0.0:
+                raise ValueError("flux_tail_compensation_gain_sweep values must be finite and non-negative.")
+        print(
+            "Running flux-tail gain sweep with gains: "
+            + ", ".join(f"{gain:.3f}" for gain in gain_sweep_values)
+        )
+        experiments = []
+        gain_sweep_rows = []
+        for gain in gain_sweep_values:
+            run_flux_tail_compensation = fpd.scale_compensation_gain(
+                base_comp, gain,
+                min_multiplier=p.get("piecewise_min_multiplier", 0.5),
+                max_multiplier=p.get("piecewise_max_multiplier", 1.5),
+            )
+            suffix = f"Qubit_Flux_Step_Response_{_gain_suffix(gain)}"
+            print(
+                f"Gain-sweep validation: dc_offset={TARGET_DC_OFFSET:+.6f} DAC, "
+                f"correction_gain={gain:.3f}"
+            )
+            exp = _run_step3_experiment(
+                p, soc, soccfg, outer_folder, suffix=suffix,
+                flux_tail_compensation=run_flux_tail_compensation,
+                fit_rise_decay_bump_dc_correction=False, live_plot=False,
+            )
+            experiments.append(exp)
+            gain_sweep_rows.append(_gain_sweep_row(gain, TARGET_DC_OFFSET, exp, run_flux_tail_compensation))
+        summary_csv = _write_gain_sweep_summary_csv(experiments, gain_sweep_rows)
+        if summary_csv is not None:
+            experiments[-1].data["gain_sweep_summary_csv"] = summary_csv
         print("[3b] Done. Pick the best gain from the *_gain_sweep_summary.csv, then set "
               "FLUX_TAIL_COMPENSATION_GAIN to it for steps 4 & 6.")
-        print(f"     {summary_csv}")
     else:
-        compensation = _load_correction(correction_json, outer_folder)
         print(f"[3b] Step-response CORRECT (gain {FLUX_TAIL_COMPENSATION_GAIN}): applying {correction_json}")
-        _run_correct(compensation, live_plot=bool(p.get("live_plot", True)))
+        compensation = fpd.scale_compensation_gain(
+            base_comp, FLUX_TAIL_COMPENSATION_GAIN,
+            min_multiplier=p.get("piecewise_min_multiplier", 0.5),
+            max_multiplier=p.get("piecewise_max_multiplier", 1.5),
+        )
+        print(f"Applying fixed flux-tail compensation gain: {float(FLUX_TAIL_COMPENSATION_GAIN):.3f}")
+        _run_step3_experiment(
+            p, soc, soccfg, outer_folder, suffix="Qubit_Flux_Step_Response",
+            flux_tail_compensation=compensation,
+            fit_rise_decay_bump_dc_correction=False,
+            live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
+        )
         print("[3b] Done (the post-correction trace should be flat).")
     return correction_json
 
@@ -428,22 +602,22 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": p["freq_min"], "qubit_freq_stop": p["freq_max"],
         "qubit_freq_expts": len(_freq_vec_mhz(p)),
-        "ff_gain_vec": dc_vec,
-        "long_time_us": p["long_time_us"],
-        "average_window_us": p.get("average_window_us", 0.0),
-        "average_step_us": p.get("average_step_us", 0.016),
-        "inter_target_wait_us": p.get("inter_target_wait_us", 100.0),
-        "fit_flux": bool(p.get("advanced_fit", False)),
-        "resonator_lookup_csv": resonator_lookup_csv,
     })
     exp = QubitLongTimeSpecVsFlux(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix="Qubit_Long_Time_Frequency_vs_Flux", cfg=cfg, step_tag="4",
+        dc_vec=dc_vec,
+        long_time_ns=p["long_time_us"] * 1e3,
+        average_window_ns=p.get("average_window_us", 0.0) * 1e3,
+        average_step_ns=p.get("average_step_us", 0.016) * 1e3,
+        park_voltage=BASELINE_DC_OFFSET,
+        inter_target_wait_ns=p.get("inter_target_wait_us", 100.0) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
+        fit_trace=False, advanced_fit=bool(p.get("advanced_fit", False)),
+        live_plot=bool(p.get("live_plot", False)) and LIVE_PLOTS,
+        resonator_lookup_csv=resonator_lookup_csv,
     )
-    data = exp.acquire(plotDisp=bool(p.get("live_plot", False)) and LIVE_PLOTS)
-    exp.save_data(data)
-    exp.save_config()
+    data = exp.acquire()
     print(f"[4] Done. raw_sweep CSV (fit offline): {data['data'].get('raw_sweep_csv')}")
 
 
@@ -463,6 +637,60 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     return ss.calib_params
 
 
+def _run_one_stop_t1(factory, wall_clock_s):
+    """QUA TLSSpectroscopy._run_one_stop_t1 verbatim: repeat the flux sweep,
+    accumulating every run into the one-stop full CSV (rewritten after each run)."""
+    series_start = datetime.now()
+    per_run_full_data = []
+    base_path = None
+    csv_path = None
+    run_index = 0
+    while True:
+        run_start = datetime.now()
+        repeat_metadata = build_wall_clock_repeat_metadata(run_start, series_start, run_index)
+        if wall_clock_s is not None:
+            print(f"  [6] wall-clock run {run_index + 1} "
+                  f"(elapsed {repeat_metadata['wall_clock_elapsed_minutes_from_first_run']:.1f} min)")
+        exp = factory(repeat_metadata)
+        exp.acquire()
+        if base_path is None:
+            base_path = _csv_base_from_pickle(exp.pname)
+        spec = get_wall_clock_repeat_spec(exp)
+        full_spec = get_wall_clock_repeat_full_spec(exp) or {}
+        per_run_full_data.append({
+            "run_metadata": repeat_metadata,
+            "dc_vec": np.asarray(exp.dc_vec, dtype=float),
+            "metric_column_name": spec["metric_column_name"],
+            "metric_values": np.asarray(spec["metric_values"], dtype=float),
+            "extra_metric_matrices": {
+                key: np.asarray(values, dtype=float)
+                for key, values in dict(spec.get("extra_metric_matrices", {})).items()
+            },
+            "axes": full_spec.get("axes", {}),
+            "scalar_columns": full_spec.get("scalar_columns", {}),
+            "array_columns": full_spec.get("array_columns", {}),
+        })
+        csv_path = save_wall_clock_repeat_full_outputs(base_path, spec["file_tag"], per_run_full_data)
+        print(f"  [6] one-stop CSV updated after run {run_index + 1}: {csv_path}")
+        run_index += 1
+        if wall_clock_s is None or (datetime.now() - series_start).total_seconds() >= wall_clock_s:
+            break
+    return csv_path
+
+
+def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
+    base = dict(BaseConfig)
+    base.update({
+        "shots": int(p["shots"]),
+        "ff_gain_vec": dc_vec,
+        "flux_tail_compensation": flux_tail_compensation,
+        "flux_fit_params": FLUX_FIT_PARAMS,
+        "relax_delay": 5000,
+        "qubit_pulse_style": "arb",
+    })
+    return base
+
+
 def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
@@ -473,42 +701,80 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     else:
         dc_vec = _dc_vec(p)
     flux_tail_compensation = _load_correction(correction_json, outer_folder)
-    wall_clock_min = _wall_clock_minutes(p.get("wall_clock_duration_min", None))
+    wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
     print(f"[6] 3-point T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "
-          f"{'single pass' if wall_clock_min is None else f'wall-clock {wall_clock_min:.0f} min'}")
+          f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
+    base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
 
-    base = dict(BaseConfig)
-    base.update({
-        "shots": int(p["shots"]),
-        "ff_gain_vec": dc_vec,
-        "Ts_us": p.get("Ts_us", None),
-        "auto_Ts_factor": float(p.get("auto_Ts_factor", 0.5)),
-        "run_park_T1_if_Ts_none": bool(p.get("run_park_T1_if_Ts_none", True)),
-        "min_ref_contrast": float(p.get("min_ref_contrast", 0.05)),
-        "max_plot_t1_multiple": p.get("max_plot_t1_multiple", 20.0),
-        "reset_mode": p.get("reset_mode", "active"),
-        "T1_probe_cfg": p.get("T1_probe_cfg", None),
-        "flux_tail_compensation": flux_tail_compensation,
-        "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": 5000,
-        "qubit_pulse_style": "arb",
-    })
-
-    def factory():
+    def factory(repeat_metadata):
         return T13PointVsFlux(
             soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
             suffix="TLS_3pt_T1_vs_Flux_distortion_corrected", cfg=dict(base),
-            calib_params=calib_params)
+            dc_vec=dc_vec, Ts_ns=(None if p.get("Ts_us") is None
+                                  else int(round(p["Ts_us"] * 1e3))),
+            shots=int(p["shots"]), calib_params=calib_params,
+            min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
+            max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
+            auto_Ts_factor=float(p.get("auto_Ts_factor", 0.5)),
+            T1_probe_cfg=p.get("T1_probe_cfg", None),
+            run_park_T1_if_Ts_none=bool(p.get("run_park_T1_if_Ts_none", True)),
+            reset_mode=p.get("reset_mode", "active"),
+            flux_tail_compensation=flux_tail_compensation,
+            repeat_metadata=repeat_metadata,
+            write_outputs=False,
+        )
 
-    if wall_clock_min is not None:
-        csv_path = outer_folder + f"/{QUBIT}/TLS_3pt_T1_wall_clock.csv"
-        csv_path = run_wall_clock_repeat(factory, "inv_T1_3pt_per_us", dc_vec, csv_path,
-                                         duration_min=wall_clock_min)
-    else:
-        exp = factory()
-        exp.acquire(plotDisp=LIVE_PLOTS)
-        csv_path = exp.data['data'].get('summary_csv')
+    csv_path = _run_one_stop_t1(factory, wall_clock_s)
     print(f"[6] Done. One-stop 3-point CSV: {csv_path}")
+
+
+def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correction_json):
+    """QUA run_step6_full_t1_vs_flux (dict + main() call ship commented out)."""
+    plt.close("all")
+    gc.collect()
+    p = P6_FULL_T1
+    freq_step_mhz = p.get("freq_step_mhz", None)
+    if freq_step_mhz is not None and FLUX_FIT_PARAMS is not None:
+        dc_vec = _build_freq_uniform_dc_vec(p)
+    else:
+        dc_vec = _dc_vec(p)
+    flux_tail_compensation = _load_correction(correction_json, outer_folder)
+    wall_clock_s = _wall_clock_seconds(p.get("wall_clock_duration_min", None))
+    print(f"[6] Full T1 vs flux (distortion-corrected): {len(dc_vec)} DC points, "
+          f"{'single pass' if wall_clock_s is None else f'wall-clock {wall_clock_s / 60:.0f} min'}")
+    base = _t1_base_cfg(p, flux_tail_compensation, dc_vec)
+
+    q_factor = p.get("quality_factor", None)
+    notebook_fit = fx.flux_fit_params_to_notebook(FLUX_FIT_PARAMS) if q_factor is not None else None
+    if q_factor is not None:
+        tilt = float(FLUX_FIT_PARAMS[5]) if len(FLUX_FIT_PARAMS) > 5 else 0.0
+        if abs(tilt) > 1e-9:
+            print(f"[6] WARNING: FLUX_FIT_PARAMS tilt={tilt:+.4g} GHz/V is ignored by the per-dc Q t_max "
+                  f"model (it uses the tilt-free transmon form).")
+        print(f"[6] per-dc t_max from supplied Q = {q_factor:g}: "
+              f"t_max(dc) = {float(p.get('auto_tmax_factor', 3.0)):g} x Q/(2*pi*f(dc)) using the flux fit")
+
+    def factory(repeat_metadata):
+        common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                      suffix="TLS_Full_T1_vs_Flux_distortion_corrected", cfg=dict(base),
+                      dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
+                      auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
+                      T1_probe_cfg=p.get("T1_probe_cfg", None),
+                      t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,
+                      t_points_default=int(p.get("t_points_default", 41)),
+                      reset_mode=p.get("reset_mode", "active"),
+                      flux_tail_compensation=flux_tail_compensation,
+                      repeat_metadata=repeat_metadata,
+                      write_outputs=False)
+        if q_factor is not None:
+            return T1FullCurveVsFluxFromFit(notebook_fit_params=notebook_fit,
+                                            quality_factor=q_factor, **common)
+        t_max_us = p.get("t_max_us", None)
+        return T1FullCurveVsFlux(t_max_ns=(None if t_max_us is None else t_max_us * 1e3),
+                                 **common)
+
+    csv_path = _run_one_stop_t1(factory, wall_clock_s)
+    print(f"[6] Done. One-stop CSV: {csv_path}")
 
 
 def main():
