@@ -68,11 +68,15 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
             print(f"WARNING: dc_vec [{dc_vec.min():+.4f}, {dc_vec.max():+.4f}] V extends beyond the "
                   f"resonator lookup range [{lut_dc.min():+.4f}, {lut_dc.max():+.4f}] V; edge values used.")
         print(f"Using resonator dip lookup table for readout IF: {resonator_lookup_csv}")
-        return np.asarray(np.round(np.interp(dc_vec, lut_dc, lut_if)), dtype=int)
+        # NOTE: dtype=np.int64, NOT dtype=int -- numpy's default int is int32 on Windows,
+        # and a readout frequency in Hz (~7.2e9) overflows int32 (max 2.1e9), wrapping to a
+        # negative garbage frequency.  This bit us on the measurement PC (Windows) while
+        # working fine on Linux/Mac (int64).  Hz values must always be int64 here.
+        return np.asarray(np.round(np.interp(dc_vec, lut_dc, lut_if)), dtype=np.int64)
     fit_params = meta_dict.get("resonator_fit_parameters")
     r_if = float(meta_dict["r_IF"])
     if fit_params is None:
-        return np.full(len(dc_vec), int(round(r_if)), dtype=int)
+        return np.full(len(dc_vec), int(round(r_if)), dtype=np.int64)  # int64: Hz overflows int32 on Windows
     if len(fit_params) == 7:
         vals = ff.resonator_dispersive_func_hz(dc_vec, *fit_params)
     else:
@@ -89,7 +93,7 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
               f"r_IF={r_if / 1e6:.4f} MHz there. Set RESONATOR_FIT_PARAMS=None (a flat readout "
               f"is correct for a resonator that barely tunes).")
         vals = np.where(bad, r_if, vals)
-    return np.asarray(np.round(vals), dtype=int)
+    return np.asarray(np.round(vals), dtype=np.int64)  # int64: Hz overflows int32 on Windows
 
 
 class FFStepResponseSpecProgram(RAveragerProgram):
