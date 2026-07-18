@@ -121,6 +121,7 @@ P2_QUBIT_SPEC_FULL = {
     "run": False,
     "advanced_fit": True,
     "shots": 100,
+    "relax_delay_us": 100.0,  # spec thermalization (bump if the probe saturates the qubit)
     "spec_amp": 7000,         # DAC units (QUA: OPX volts)
     "spec_len_us": 0.5,       # us (QUA: spec_len in ns)
     "freq_min": 2250.0,       # MHz absolute
@@ -155,6 +156,7 @@ P4_LONG_TIME = {
     "run": False,
     "advanced_fit": False,
     "shots": 100,
+    "relax_delay_us": 100.0,  # spec thermalization (bump if the probe saturates the qubit)
     "spec_amp": 7000,
     "spec_len_us": 0.5,
     "freq_min": 2250.0,
@@ -250,6 +252,11 @@ def _spec_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
     cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
+    # Spec is a weak probe -- QUA used essentially no reset here.  BaseConfig's 3 ms
+    # relax_delay makes spectroscopy ~30x slower than it needs to be (it dominates the
+    # per-shot time).  Use a short spec thermalization; bump relax_delay_us in the P-dict
+    # if your qubit needs more.  (Steps 5/6 keep their own longer relax for T1.)
+    cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     # dispersive (or cosine) resonator-vs-flux fit -> dynamic per-flux readout IF for
     # steps 2/3/4 (QUA resonator_fit_parameters).  Only used when USE_RESONATOR_LOOKUP
     # is False; the CSV lookup, if enabled, takes priority in _build_resonator_curve.
