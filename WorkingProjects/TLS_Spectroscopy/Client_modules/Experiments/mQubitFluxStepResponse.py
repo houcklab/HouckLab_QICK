@@ -874,8 +874,15 @@ class QubitFluxStepResponse(ExperimentClass):
         cfg["ff_park_gain"] = self.baseline_dc_offset
         cfg["baseline_rearm_us"] = self.baseline_rearm_time_ns / 1e3
         cfg.setdefault("dt_pulseplay", 0.5)   # resolve the 500 ns QUA early segments
-        cfg["readout_after_park"] = False     # QUA: readout at the held target flux
+        # QUA reads out AT the held target flux; set cfg['readout_after_park']=True to
+        # read at PARK instead (a useful diagnostic: if the qubit only appears with park
+        # readout, the resonator IF at the target flux is off).
+        cfg["readout_after_park"] = bool(cfg.get("readout_after_park", False))
         cfg["read_pulse_freq"] = self.resonator_if / 1e6
+        print(f"[3] readout {'at PARK' if cfg['readout_after_park'] else 'AT the held flux'}, "
+              f"read_pulse_freq = {cfg['read_pulse_freq']:.4f} MHz (resonator IF at "
+              f"dc={self.dc_offset:+.0f}); qubit spec {self.f_vec[0]/1e6:.1f}-{self.f_vec[-1]/1e6:.1f} "
+              f"MHz @ gain {cfg.get('qubit_gain')}")
         if self.flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = self.flux_tail_compensation
         else:

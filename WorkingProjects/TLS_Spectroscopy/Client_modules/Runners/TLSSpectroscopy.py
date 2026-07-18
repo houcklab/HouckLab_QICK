@@ -149,6 +149,7 @@ P3_STEP_RESPONSE = {
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
     "piecewise_max_multiplier": 1.5,
+    "readout_after_park": False,   # QUA reads AT the held flux; True = read at park (diagnostic)
     "live_plot": True,
 }
 
@@ -403,6 +404,7 @@ def _step3_common_cfg(p):
     n = max(int(round((fmax - fmin) / p["freq_step"])) + 1, 5)
     cfg = _spec_cfg(p, extra={
         "qubit_freq_start": fmin, "qubit_freq_stop": fmax, "qubit_freq_expts": n,
+        "readout_after_park": p.get("readout_after_park", False),
     })
     return cfg
 
