@@ -179,7 +179,7 @@ P5_SS_CAL = {
 #     "t_max_us": None,
 #     "t_min_us_default": 1.0,
 #     "t_points_default": 21,
-#     "reset_mode": "active",
+#     "reset_mode": "passive",
 #     "T1_probe_cfg": {
 #         "shots_T1": 300,
 #         "t_min_us": 1.0,
@@ -202,7 +202,12 @@ P6_3PT_T1 = {
     "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    "reset_mode": "active",   # QICK analog: herald + post-selection
+    # QUA-faithful default: average EVERY shot (like QUA's unconditioned .average()) and
+    # reset passively via relax_delay.  tProc-v1 has no mid-circuit feedback, so 'active'
+    # here would mean herald POST-SELECTION -- a DIFFERENT (herald-conditioned) measurement
+    # that collapses the thermal P0 -- so it is opt-in, not the default.  (See the
+    # parity audit AR-1; true feedback active reset would need a tProc-v2 migration.)
+    "reset_mode": "passive",
     "T1_probe_cfg": {
         "shots_T1": 1000,
         "t_min_us": 1.0,
@@ -702,7 +707,9 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "ff_gain_vec": dc_vec,
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": 5000,
+        # passive reset between shots (us).  2 ms placeholder; once step-6's park-T1
+        # probe measures T1, size this to ~5-7x T1_max for the real speedup.
+        "relax_delay": 2000,
         "qubit_pulse_style": "arb",
     })
     return base
@@ -736,7 +743,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             auto_Ts_factor=float(p.get("auto_Ts_factor", 0.5)),
             T1_probe_cfg=p.get("T1_probe_cfg", None),
             run_park_T1_if_Ts_none=bool(p.get("run_park_T1_if_Ts_none", True)),
-            reset_mode=p.get("reset_mode", "active"),
+            reset_mode=p.get("reset_mode", "passive"),
             flux_tail_compensation=flux_tail_compensation,
             repeat_metadata=repeat_metadata,
             write_outputs=False,
@@ -781,7 +788,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
                       T1_probe_cfg=p.get("T1_probe_cfg", None),
                       t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,
                       t_points_default=int(p.get("t_points_default", 41)),
-                      reset_mode=p.get("reset_mode", "active"),
+                      reset_mode=p.get("reset_mode", "passive"),
                       flux_tail_compensation=flux_tail_compensation,
                       repeat_metadata=repeat_metadata,
                       write_outputs=False)
