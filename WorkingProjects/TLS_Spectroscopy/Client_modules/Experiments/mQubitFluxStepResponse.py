@@ -70,11 +70,23 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
         print(f"Using resonator dip lookup table for readout IF: {resonator_lookup_csv}")
         return np.asarray(np.round(np.interp(dc_vec, lut_dc, lut_if)), dtype=int)
     fit_params = meta_dict.get("resonator_fit_parameters")
+    r_if = float(meta_dict["r_IF"])
     if fit_params is None:
-        return np.full(len(dc_vec), int(meta_dict["r_IF"]), dtype=int)
+        return np.full(len(dc_vec), int(round(r_if)), dtype=int)
     if len(fit_params) == 7:
-        return np.asarray(np.round(ff.resonator_dispersive_func_hz(dc_vec, *fit_params)), dtype=int)
-    return np.asarray(np.round(ff.cosine_vs_flux(dc_vec, *fit_params)), dtype=int)
+        vals = ff.resonator_dispersive_func_hz(dc_vec, *fit_params)
+    else:
+        vals = ff.cosine_vs_flux(dc_vec, *fit_params)
+    vals = np.asarray(vals, dtype=float)
+    if not np.all(np.isfinite(vals)):
+        # a poorly-constrained resonator fit (e.g. a barely-moving resonator) can
+        # extrapolate to NaN/inf -> fall back to the flat readout IF at those points.
+        n_bad = int(np.count_nonzero(~np.isfinite(vals)))
+        print(f"WARNING: resonator_fit_parameters gave {n_bad}/{vals.size} non-finite readout "
+              f"IF value(s); using the flat r_IF={r_if / 1e6:.4f} MHz there. Consider clearing "
+              f"RESONATOR_FIT_PARAMS (a flat readout is fine for a resonator that barely tunes).")
+        vals = np.where(np.isfinite(vals), vals, r_if)
+    return np.asarray(np.round(vals), dtype=int)
 
 
 class FFStepResponseSpecProgram(RAveragerProgram):

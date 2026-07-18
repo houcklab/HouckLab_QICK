@@ -140,18 +140,30 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
             "ff_gain": ff_gain, "park": int(park_gain)}
 
 
+# tProc const-pulse length is a 16-bit field: 3 <= length <= 65535 cycles.  A single
+# const pulse can therefore hold for at most ~150 us; longer holds must be emitted as
+# several back-to-back const pulses (all at the same gain -> a continuous level).
+_MAX_CONST_LEN = 65000
+
+
 def play_ramp_up_hold(prog, segs, dt_play_us=None):
     """Play ramp-up + the piecewise-constant hold (leaves flux held at target).
-    Each hold segment is played for its EXACT width (QUA set_dc_offset staircase)."""
+    Each hold segment is played for its EXACT width (QUA set_dc_offset staircase),
+    split into <=16-bit const-pulse chunks so long holds (T1 waits, step-3 delays)
+    don't overflow the tProc pulse-length field."""
     cfg = prog.cfg
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
                              gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp", outsel="input")
     prog.pulse(ch=cfg["ff_ch"])
     for g, dur_us in segs["hold_segs"]:
-        length = max(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"]), 3)
-        prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
-                                 stdysel='last', gain=int(g), length=length)
-        prog.pulse(ch=cfg["ff_ch"])
+        total = max(int(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"])), 3)
+        n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)   # ceil
+        base, extra = divmod(total, n_chunks)
+        for c in range(n_chunks):
+            length = max(base + (1 if c < extra else 0), 3)
+            prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
+                                     stdysel='last', gain=int(g), length=int(length))
+            prog.pulse(ch=cfg["ff_ch"])
 
 
 def play_ramp_down(prog, segs):
