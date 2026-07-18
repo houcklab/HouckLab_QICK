@@ -97,9 +97,9 @@ class TransmissionVsFlux(ExperimentClass):
             self.cfg["read_pulse_freq"] = float(f)
             prog = TransmissionProgram(self.soccfg, self.cfg)
             res = prog.acquire(self.soc, load_pulses=True, progress=False)
-            # res shape: [n_ro][n_reads][2]; take first RO channel, avg I/Q
-            I[j] = np.array(res[0][0][0]).mean()
-            Q[j] = np.array(res[0][0][1]).mean()
+            # qick AveragerProgram.acquire -> res[ro_ch][0]=I, res[ro_ch][1]=Q
+            I[j] = np.array(res[0][0]).mean()
+            Q[j] = np.array(res[0][1]).mean()
         return I, Q
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
