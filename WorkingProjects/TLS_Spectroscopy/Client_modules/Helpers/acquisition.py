@@ -93,7 +93,13 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None, prog
     if rounds is None:
         rounds = min(int(shots), 10)
     reps_per_round = split_reps(shots, rounds)
-    total_units = sum(1 for reps in reps_per_round if reps > 0) * n_points
+    nz_rounds = sum(1 for reps in reps_per_round if reps > 0)
+    total_units = nz_rounds * n_points
+    if progress is not None:
+        reps0 = next((reps for reps in reps_per_round if reps > 0), 0)
+        print(f"[acquire] shot-interleaved: {n_points} points x {nz_rounds} rounds x "
+              f"~{reps0} reps = {shots} shots/point  ->  progress counts the "
+              f"{total_units} programs (NOT shots)", flush=True)
     acc = None
     done = 0
     done_units = 0

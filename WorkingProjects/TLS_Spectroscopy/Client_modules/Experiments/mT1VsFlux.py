@@ -554,8 +554,14 @@ class _T1VsFluxBase(ExperimentClass):
         kept = np.zeros(n)
         saved_shots = self.cfg.get("shots")
         reps_per_round = split_reps(shots, rounds)
-        total_units = sum(1 for reps in reps_per_round if reps > 0) * n
+        nz_rounds = sum(1 for reps in reps_per_round if reps > 0)
+        total_units = nz_rounds * n
         done_units = 0
+        if start_time is not None:
+            reps0 = next((reps for reps in reps_per_round if reps > 0), 0)
+            print(f"[acquire] shot-interleaved: {n} points x {nz_rounds} rounds x ~{reps0} "
+                  f"reps = {shots} shots/point  ->  progress counts the {total_units} "
+                  f"programs (NOT shots)", flush=True)
         for r, reps in enumerate(reps_per_round):
             if reps <= 0:
                 continue
