@@ -185,15 +185,17 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 target_if_hz = ff.cosine_vs_flux(self.dc_vec, *params)
                 source = "cosine_fit"
         target_if_hz = np.asarray(target_if_hz, dtype=float)
-        if not np.all(np.isfinite(target_if_hz)):
-            # a poorly-constrained resonator fit can extrapolate to NaN/inf; fall back to
-            # the flat readout IF at those flux points rather than emit a garbage freq.
-            n_bad = int(np.count_nonzero(~np.isfinite(target_if_hz)))
-            print(f"WARNING: {source} gave {n_bad}/{target_if_hz.size} non-finite readout IF "
-                  f"value(s); using the flat r_IF={park_if_hz / 1e6:.4f} MHz there. Consider "
-                  f"clearing RESONATOR_FIT_PARAMS (a flat readout is fine if the resonator "
-                  f"barely tunes).")
-            target_if_hz = np.where(np.isfinite(target_if_hz), target_if_hz, park_if_hz)
+        # reject non-finite OR nonsensical (<=0, or >2 GHz off the bare resonator) fit
+        # values from a poorly-constrained fit and fall back to the flat readout IF.
+        bad = (~np.isfinite(target_if_hz) | (target_if_hz <= 0)
+               | (np.abs(target_if_hz - park_if_hz) > 2e9))
+        if np.any(bad):
+            example = float(target_if_hz[bad][0]) / 1e6
+            print(f"WARNING: {source} gave {int(np.count_nonzero(bad))}/{target_if_hz.size} "
+                  f"out-of-range readout IF value(s) (e.g. {example:.1f} MHz); using the flat "
+                  f"r_IF={park_if_hz / 1e6:.4f} MHz there. Set RESONATOR_FIT_PARAMS=None (a flat "
+                  f"readout is correct if the resonator barely tunes).")
+            target_if_hz = np.where(bad, park_if_hz, target_if_hz)
         readout_if_hz = np.full(n, park_if_hz) if self.readout_after_park else target_if_hz
         return readout_if_hz, target_if_hz, source
 

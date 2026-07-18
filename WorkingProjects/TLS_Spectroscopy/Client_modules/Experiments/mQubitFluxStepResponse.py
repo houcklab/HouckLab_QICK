@@ -78,14 +78,17 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
     else:
         vals = ff.cosine_vs_flux(dc_vec, *fit_params)
     vals = np.asarray(vals, dtype=float)
-    if not np.all(np.isfinite(vals)):
-        # a poorly-constrained resonator fit (e.g. a barely-moving resonator) can
-        # extrapolate to NaN/inf -> fall back to the flat readout IF at those points.
-        n_bad = int(np.count_nonzero(~np.isfinite(vals)))
-        print(f"WARNING: resonator_fit_parameters gave {n_bad}/{vals.size} non-finite readout "
-              f"IF value(s); using the flat r_IF={r_if / 1e6:.4f} MHz there. Consider clearing "
-              f"RESONATOR_FIT_PARAMS (a flat readout is fine for a resonator that barely tunes).")
-        vals = np.where(np.isfinite(vals), vals, r_if)
+    # a poorly-constrained resonator fit (barely-moving resonator) can extrapolate to
+    # NaN/inf OR to a finite-but-nonsensical frequency (negative, or GHz off the bare
+    # resonator).  Reject anything non-finite, <=0, or >2 GHz from r_IF and fall back.
+    bad = ~np.isfinite(vals) | (vals <= 0) | (np.abs(vals - r_if) > 2e9)
+    if np.any(bad):
+        example = float(vals[bad][0]) / 1e6
+        print(f"WARNING: resonator_fit_parameters gave {int(np.count_nonzero(bad))}/{vals.size} "
+              f"out-of-range readout IF value(s) (e.g. {example:.1f} MHz); using the flat "
+              f"r_IF={r_if / 1e6:.4f} MHz there. Set RESONATOR_FIT_PARAMS=None (a flat readout "
+              f"is correct for a resonator that barely tunes).")
+        vals = np.where(bad, r_if, vals)
     return np.asarray(np.round(vals), dtype=int)
 
 
