@@ -111,10 +111,10 @@ class TransmissionVsFFGain(ExperimentClass):
                 cfg["read_pulse_freq"] = float(f)
                 prog = FFTransProgram(self.soccfg, cfg)
                 res = prog.acquire(self.soc, load_pulses=True, progress=False)
-                # qick AveragerProgram.acquire -> res[ro_ch][0]=I, res[ro_ch][1]=Q
-                # (matches the lab's mTransmissionFF convention on this board).
-                I[j] = np.array(res[0][0]).mean()
-                Q[j] = np.array(res[0][1]).mean()
+                # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q): res[0]=I,
+                # res[1]=Q (each [n_ro][n_expt]); single readout/expt -> scalar via mean.
+                I[j] = np.array(res[0]).mean()
+                Q[j] = np.array(res[1]).mean()
             S = I + 1j * Q
             R[:, i] = 20 * np.log10(np.abs(S) + 1e-12)
             phase_raw[:, i] = np.angle(S)
