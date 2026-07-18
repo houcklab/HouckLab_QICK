@@ -44,6 +44,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predist
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import trace_extraction as trx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+    interleaved_average, resolve_rounds)
 
 
 def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
@@ -871,21 +873,43 @@ class QubitFluxStepResponse(ExperimentClass):
         iq_magnitude_dbm = np.full((n_f, n_t), np.nan)
         iq_phase = np.full((n_f, n_t), np.nan)
 
-        live_fig = LiveFigure() if plotDisp else None
-        start_time = time.time()
-        for time_index, t_ns in enumerate(self.t_vec):
-            cfg["ff_hold"] = float(t_ns) / 1e3
+        # QUA-style shot-interleaved acquisition: the inner qubit-freq sweep is already
+        # RAverager-interleaved; here we interleave the OUTER delay axis across `rounds`
+        # passes so slow drift doesn't imprint on the step-response trace (which is then
+        # FIT, so drift bias would corrupt the extracted late/rise/bump time constants).
+        shots = int(self.shots)
+        rounds = resolve_rounds(cfg, shots, default=cfg.get("step_rounds"))
+
+        def run_point(idx, reps):
+            cfg["ff_hold"] = float(self.t_vec[idx]) / 1e3
+            cfg["reps"] = int(reps)
             prog = FFStepResponseSpecProgram(self.soccfg, cfg)
             _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            S = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
-            iq_magnitude_dbm[:, time_index] = 20 * np.log10(np.abs(S) + 1e-12)
-            iq_phase[:, time_index] = np.angle(S)
-            progress_counter(time_index, n_t, progress_bar=True, percent=True, start_time=start_time)
+            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])       # (n_f,) complex
+
+        live_fig = LiveFigure() if plotDisp else None
+        start_time = time.time()
+
+        def _fill(running):
+            cube = np.asarray(running).T          # (n_points, n_f) -> (n_f, n_t)
+            iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(cube) + 1e-12)
+            iq_phase[:, :] = np.angle(cube)
+
+        def live_cb(rnd, running):
+            _fill(running)
+            progress_counter(rnd, rounds, progress_bar=True, percent=True, start_time=start_time)
             if live_fig is not None:
                 self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
                 if not live_fig.is_open:
-                    break
-        progress_counter(n_t, n_t, progress_bar=True, percent=True, start_time=start_time)
+                    raise KeyboardInterrupt
+
+        try:
+            S_mean = interleaved_average(run_point, n_t, shots, rounds=rounds, live=live_cb)
+            _fill(S_mean)
+        except KeyboardInterrupt:
+            pass
+        progress_counter(rounds, rounds, progress_bar=True, percent=True, start_time=start_time)
+        cfg["reps"] = shots       # restore (run_point set it to the per-round rep count)
 
         self.data.update({
             "IQ_mag": iq_magnitude_dbm,

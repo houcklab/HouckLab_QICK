@@ -23,6 +23,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+    interleaved_average, resolve_rounds)
 
 
 class FFTransProgram(AveragerProgram):
@@ -100,45 +102,67 @@ class TransmissionVsFFGain(ExperimentClass):
         R = np.full((len(f_vec), len(dc_vec)), np.nan)       # (num_f, num_dc), dBm-style
         phase_raw = np.full((len(f_vec), len(dc_vec)), np.nan)
 
+        # QUA-style shot-interleaved acquisition (m_transmission_vs_flux averages the
+        # shot loop OUTERMOST): sweep the whole flux x freq map `rounds` times with
+        # reps ~= shots/rounds per pass, so slow drift averages uniformly into the map
+        # instead of imprinting a gradient along the flux axis.  rounds=1 reproduces the
+        # old fast per-point average; rounds=shots is exact single-shot interleaving.
+        shots = int(cfg.get("reps", cfg.get("shots", 200)))
+        rounds = resolve_rounds(cfg, shots, default=cfg.get("trans_rounds"))
+        n_f, n_dc = len(f_vec), len(dc_vec)
+        points = [(i_dc, j_f) for i_dc in range(n_dc) for j_f in range(n_f)]  # flux-major
+
+        def run_point(idx, reps):
+            i_dc, j_f = points[idx]
+            cfg["ff_gain"] = float(dc_vec[i_dc])
+            cfg["read_pulse_freq"] = float(f_vec[j_f])
+            cfg["reps"] = int(reps)
+            prog = FFTransProgram(self.soccfg, cfg)
+            res = prog.acquire(self.soc, load_pulses=True, progress=False)
+            # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q)
+            return np.array(res[0]).mean() + 1j * np.array(res[1]).mean()
+
         live = LiveFigure(figsize=(8, 7)) if plotDisp else None
         start_time = time.time()
         interrupted = False
-        for i, dc in enumerate(dc_vec):
-            cfg["ff_gain"] = float(dc)
-            I = np.zeros(len(f_vec))
-            Q = np.zeros(len(f_vec))
-            for j, f in enumerate(f_vec):
-                cfg["read_pulse_freq"] = float(f)
-                prog = FFTransProgram(self.soccfg, cfg)
-                res = prog.acquire(self.soc, load_pulses=True, progress=False)
-                # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q): res[0]=I,
-                # res[1]=Q (each [n_ro][n_expt]); single readout/expt -> scalar via mean.
-                I[j] = np.array(res[0]).mean()
-                Q[j] = np.array(res[1]).mean()
-            S = I + 1j * Q
-            R[:, i] = 20 * np.log10(np.abs(S) + 1e-12)
-            phase_raw[:, i] = np.angle(S)
-            progress_counter(i, len(dc_vec), start_time=start_time)
-            if live is not None:
-                plt.figure(live.fig.number)
-                plt.subplot(211); plt.cla()
-                plt.suptitle(f"Resonator spectroscopy - {self.path}")
-                plt.title(r"Amplitude (dBm)")
-                plt.pcolor(dc_vec[:i + 1], f_vec, R[:, :i + 1])
-                plt.ylabel("Readout freq [MHz]")
-                plt.subplot(212); plt.cla()
-                plt.title("Phase (rad)")
-                ph = np.unwrap(phase_raw[:, :i + 1], axis=-1)
-                plt.pcolor(dc_vec[:i + 1], f_vec, signal.detrend(ph, axis=-1)
-                           if i > 0 else ph)
-                plt.xlabel("Flux bias [ff_gain DAC]")
-                plt.ylabel("Readout freq [MHz]")
-                live.refresh(pause=0.5)
-                plt.tight_layout()
-                if not live.is_open:
-                    interrupted = True
-                    break
-            self.data.update({"IQ_mag": R, "IQ_phase": phase_raw})
+
+        def _fill_map(running):
+            Smap = np.asarray(running).reshape(n_dc, n_f).T      # (n_f, n_dc)
+            R[:, :] = 20 * np.log10(np.abs(Smap) + 1e-12)
+            phase_raw[:, :] = np.angle(Smap)
+            self.data.update({"IQ_mag": R.copy(), "IQ_phase": phase_raw.copy()})
+
+        def live_cb(rnd, running):
+            nonlocal interrupted
+            _fill_map(running)
+            progress_counter(rnd, rounds, start_time=start_time)
+            if live is None:
+                return
+            plt.figure(live.fig.number)
+            plt.subplot(211); plt.cla()
+            plt.suptitle(f"Resonator spectroscopy - {self.path}  "
+                         f"(shot-interleaved, {rounds} rounds)")
+            plt.title(r"Amplitude (dBm)")
+            plt.pcolor(dc_vec, f_vec, R)
+            plt.ylabel("Readout freq [MHz]")
+            plt.subplot(212); plt.cla()
+            plt.title("Phase (rad)")
+            plt.pcolor(dc_vec, f_vec, signal.detrend(np.unwrap(phase_raw, axis=-1), axis=-1))
+            plt.xlabel("Flux bias [ff_gain DAC]")
+            plt.ylabel("Readout freq [MHz]")
+            live.refresh(pause=0.5)
+            plt.tight_layout()
+            if not live.is_open:
+                interrupted = True
+                raise KeyboardInterrupt
+
+        try:
+            S_mean = interleaved_average(run_point, len(points), shots,
+                                         rounds=rounds, live=live_cb)
+            _fill_map(S_mean)
+        except KeyboardInterrupt:
+            pass
+        progress_counter(rounds, rounds, start_time=start_time)
         if live is not None:
             live.close()
         if interrupted:

@@ -85,6 +85,16 @@ SAVE_RESONATOR_LOOKUP = True
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
+# Shot-interleaving passes -- QUA drift-immunity parity.  QUA averages the shot loop
+# OUTERMOST, so every sweep point is revisited on every shot and slow drift averages
+# uniformly into the map instead of tilting it along the sweep axis.  QICK can't fold
+# the shot loop + Python flux/delay sweeps into one FPGA program, so instead we sweep
+# the whole map INTERLEAVE_ROUNDS times with reps ~= shots/rounds each (exact same
+# averaged result for a stable system; drift-robust like QUA).  10 captures nearly all
+# the drift immunity at ~10x the program loads; set "full" (or 0) for exact single-shot
+# QUA interleaving (slowest), or 1 for the old fast per-point average.
+INTERLEAVE_ROUNDS = 10
+
 
 P1_RESONATOR = {
     "run": False,
@@ -225,6 +235,7 @@ def _spec_cfg(p, extra=None):
     """BaseConfig + a P-dict's spec knobs (QUA _spec_meta_dict analog)."""
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
+    cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
     if "spec_amp" in p:
         cfg["qubit_gain"] = int(p["spec_amp"])
         cfg["qubit_pulse_style"] = "const"
@@ -312,6 +323,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     print(f"[1] Resonator spectroscopy vs flux: {len(f_vec)} IF x {len(dc_vec)} DC points")
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
+    cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
     cfg["relax_delay"] = 50           # no qubit excitation; cavity ring-down only
     cfg["trans_freq_start"] = p["freq_min"]
     cfg["trans_freq_stop"] = p["freq_max"]
@@ -682,6 +694,7 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     base = dict(BaseConfig)
     base.update({
         "shots": int(p["shots"]),
+        "interleave_rounds": p.get("interleave_rounds", INTERLEAVE_ROUNDS),
         "ff_gain_vec": dc_vec,
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,

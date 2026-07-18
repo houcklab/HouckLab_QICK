@@ -42,6 +42,8 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_function
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import qubit_spec_trace_fit as qst
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter, LiveFigure
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+    interleaved_average, resolve_rounds)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import (
     FFStepResponseSpecProgram,
 )
@@ -213,35 +215,61 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         mag_dbm = np.full((n_f, n_dc, n_tau), np.nan)
         phase_rad = np.full((n_f, n_dc, n_tau), np.nan)
 
+        # QUA-style shot-interleaved acquisition: the inner qubit-freq sweep is already
+        # RAverager-interleaved on the FPGA; here we additionally interleave the OUTER
+        # (dc, tau) sweep across `rounds` passes (reps ~= shots/rounds each) so slow
+        # drift averages uniformly into the map rather than tilting it along the flux
+        # axis.  rounds=1 = the old sequential per-point average; rounds=shots = exact.
+        shots = int(cfg.get("reps", 100))
+        rounds = resolve_rounds(cfg, shots, default=cfg.get("spec_rounds"))
+        points = [(i_dc, k_tau) for i_dc in range(n_dc) for k_tau in range(n_tau)]
+
+        def run_point(idx, reps):
+            i_dc, k_tau = points[idx]
+            cfg["ff_gain"] = float(dc_vec[i_dc])
+            cfg["ff_hold"] = float(t_probe_ns[k_tau]) / 1e3
+            cfg["reps"] = int(reps)
+            prog = FFStepResponseSpecProgram(self.soccfg, cfg)
+            _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])      # (n_f,) complex
+
         live = LiveFigure(figsize=(8, 6)) if plotDisp else None
         start_time = time.time()
         interrupted = False
-        total_iters = n_dc * n_tau
-        it = 0
-        for i, dc in enumerate(dc_vec):
-            cfg["ff_gain"] = float(dc)
-            for k, t_ns in enumerate(t_probe_ns):
-                cfg["ff_hold"] = float(t_ns) / 1e3
-                prog = FFStepResponseSpecProgram(self.soccfg, cfg)
-                _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-                S = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
-                mag_dbm[:, i, k] = 20 * np.log10(np.abs(S) + 1e-12)
-                phase_rad[:, i, k] = np.angle(S)
-                it += 1
-                progress_counter(it - 1, total_iters, start_time=start_time)
-            if live is not None:
-                plt.figure(live.fig.number)
-                plt.cla()
-                plt.suptitle(f"Long-time qubit spec vs flux - {self.element}")
-                with np.errstate(invalid="ignore"):
-                    plt.pcolor(dc_vec[:i + 1], fpts_mhz,
-                               np.nanmean(mag_dbm[:, :i + 1, :], axis=2))
-                plt.xlabel("Flux DC target")
-                plt.ylabel("Probe freq [MHz]")
-                live.refresh(pause=0.5)
-                if not live.is_open:
-                    interrupted = True
-                    break
+
+        def _fill(running):
+            # (n_points, n_f) -> (n_dc, n_tau, n_f) -> (n_f, n_dc, n_tau)
+            cube = np.asarray(running).reshape(n_dc, n_tau, n_f).transpose(2, 0, 1)
+            mag_dbm[:, :, :] = 20 * np.log10(np.abs(cube) + 1e-12)
+            phase_rad[:, :, :] = np.angle(cube)
+
+        def live_cb(rnd, running):
+            nonlocal interrupted
+            _fill(running)
+            progress_counter(rnd, rounds, start_time=start_time)
+            if live is None:
+                return
+            plt.figure(live.fig.number)
+            plt.cla()
+            plt.suptitle(f"Long-time qubit spec vs flux - {self.element}  "
+                         f"(shot-interleaved, {rounds} rounds)")
+            with np.errstate(invalid="ignore"):
+                plt.pcolor(dc_vec, fpts_mhz, np.nanmean(mag_dbm, axis=2))
+            plt.xlabel("Flux DC target")
+            plt.ylabel("Probe freq [MHz]")
+            live.refresh(pause=0.5)
+            if not live.is_open:
+                interrupted = True
+                raise KeyboardInterrupt
+
+        try:
+            S_mean = interleaved_average(run_point, len(points), shots,
+                                         rounds=rounds, live=live_cb)
+            _fill(S_mean)
+        except KeyboardInterrupt:
+            pass
+        progress_counter(rounds, rounds, start_time=start_time)
+        cfg["reps"] = shots      # restore (run_point set it to the per-round rep count)
         if live is not None:
             live.close()
 

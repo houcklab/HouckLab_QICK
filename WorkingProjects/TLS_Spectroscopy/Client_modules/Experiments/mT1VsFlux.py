@@ -32,6 +32,8 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
+    resolve_rounds, split_reps)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
@@ -502,27 +504,68 @@ class _T1VsFluxBase(ExperimentClass):
         if self.repeat_metadata:
             self.data.update(self.repeat_metadata)
 
-    # ---- one (flux, wait) point -> P(e), QUA-discriminated + reset analog ----
-    def _run_point(self, ff_gain, wait_us, do_pi=True, do_ff=True):
+    # ---- one (flux, wait) point -> excited/kept counts (interleave-accumulable) ----
+    def _run_point_counts(self, ff_gain, wait_us, do_pi=True, do_ff=True, reps=None):
+        """Run one (flux, wait) point; return (n_excited, n_kept) from the
+        SS-discriminated shots.  Counts (rather than a per-call mean) let shots be
+        POOLED across interleave rounds -- post-selection keeps a variable number of
+        shots per round, so only counts add correctly."""
         cfg = self.cfg
         cfg["ff_gain"] = float(ff_gain)
         cfg["ff_hold"] = float(wait_us)
         cfg["do_pi"] = bool(do_pi)
         cfg["do_ff"] = bool(do_ff)
+        if reps is not None:
+            cfg["shots"] = int(reps)      # FFT1Program copies cfg['shots'] -> reps
         prog = FFT1Program(self.soccfg, cfg)
         i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
-        final = discriminate_shots(i1, q1, self.calib_params)
+        final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if self.reset_mode == "active":
             # herald must be confidently ground (QUA ground_confidence_threshold)
             herald_calib = dict(self.calib_params)
             herald_calib["threshold"] = self.calib_params.get(
                 "ground_threshold", self.calib_params["threshold"])
-            herald = discriminate_shots(i0, q0, herald_calib)
+            herald = np.asarray(discriminate_shots(i0, q0, herald_calib))
             keep = herald == 0
-            if keep.sum() == 0:
-                return np.nan
-            return float(np.mean(final[keep]))
-        return float(np.mean(final))
+            return float(np.sum(final[keep])), int(np.sum(keep))
+        return float(np.sum(final)), int(final.size)
+
+    # ---- one (flux, wait) point -> P(e), QUA-discriminated + reset analog ----
+    def _run_point(self, ff_gain, wait_us, do_pi=True, do_ff=True):
+        exc, kept = self._run_point_counts(ff_gain, wait_us, do_pi=do_pi, do_ff=do_ff)
+        if kept == 0:
+            return np.nan
+        return float(exc / kept)
+
+    def _interleaved_populations(self, point_specs, start_time=None, live=None):
+        """QUA shots-outermost averaging for a list of (ff_gain, wait_us, do_pi, do_ff)
+        points.  Runs `rounds` passes (reps ~= shots/rounds each), POOLING excited/kept
+        counts across passes so slow drift averages uniformly into every point and the
+        returned P(e) is the exact pooled fraction over all shots.  rounds =
+        cfg['interleave_rounds'] (default min(shots,10); 'full'/0 -> shots = exact QUA).
+        Returns P(e) per point, in point_specs order."""
+        shots = int(self.cfg.get("shots", self.shots))   # honors a temp shot count (park probe)
+        rounds = resolve_rounds(self.cfg, shots, default=self.cfg.get("t1_rounds"))
+        n = len(point_specs)
+        exc = np.zeros(n)
+        kept = np.zeros(n)
+        saved_shots = self.cfg.get("shots")
+        for r, reps in enumerate(split_reps(shots, rounds)):
+            if reps <= 0:
+                continue
+            for idx, (g, w, dp, df) in enumerate(point_specs):
+                e, k = self._run_point_counts(g, w, do_pi=dp, do_ff=df, reps=reps)
+                exc[idx] += e
+                kept[idx] += k
+            with np.errstate(invalid="ignore", divide="ignore"):
+                running = np.where(kept > 0, exc / kept, np.nan)
+            if live is not None:
+                live(r, rounds, running)
+            elif start_time is not None:
+                progress_counter(r, rounds, start_time=start_time)
+        self.cfg["shots"] = saved_shots
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(kept > 0, exc / kept, np.nan)
 
     def _park_T1_probe(self, probe_cfg, suffix_tag):
         """Full T1 decay at park (the QUA m_T1 AUTO probe analog)."""
@@ -538,8 +581,8 @@ class _T1VsFluxBase(ExperimentClass):
         t_vec_us = np.logspace(np.log10(max(p["t_min_us"], 0.016)),
                                np.log10(p["t_max_us"]), int(p["t_points"]))
         print(f"[{suffix_tag}] park T1 probe: {len(t_vec_us)} waits x {self.cfg['shots']} shots")
-        pe = np.array([self._run_point(self.park_voltage, t, do_pi=True)
-                       for t in t_vec_us])
+        specs = [(self.park_voltage, float(t), True, True) for t in t_vec_us]
+        pe = self._interleaved_populations(specs)      # shot-interleaved like the maps
         self.cfg["shots"] = shots_saved
         T1_fit, _, ok = _fit_T1_map(pe[None, :], t_vec_us)
         if not ok[0]:
@@ -578,15 +621,19 @@ class T13PointVsFlux(_T1VsFluxBase):
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         dc_vec = self.dc_vec
         Ts_us = self.Ts_ns / 1e3
-        P0 = np.full(len(dc_vec), np.nan)
-        P1 = np.full(len(dc_vec), np.nan)
-        Ps = np.full(len(dc_vec), np.nan)
         start_time = time.time()
-        for i, dc in enumerate(dc_vec):
-            P0[i] = self._run_point(self.park_voltage, 0.0, do_pi=False, do_ff=False)
-            P1[i] = self._run_point(self.park_voltage, 0.0, do_pi=True, do_ff=False)
-            Ps[i] = self._run_point(dc, Ts_us, do_pi=True, do_ff=True)
-            progress_counter(i, len(dc_vec), start_time=start_time)
+        # QUA shots-outermost interleaving: pool P0/P1/Ps over ALL flux points and shots
+        # so slow drift can't tilt the T1(flux) map (P0/P1 are the shared references the
+        # 3-point estimator divides by, so a drift gradient in them would fake TLS dips).
+        specs = []
+        for dc in dc_vec:
+            specs.append((self.park_voltage, 0.0, False, False))   # P0: park, no pi, t~0
+            specs.append((self.park_voltage, 0.0, True, False))    # P1: park, pi,   t~0
+            specs.append((float(dc), Ts_us, True, True))           # Ps: target, pi, hold Ts
+        pe = self._interleaved_populations(specs, start_time=start_time)
+        P0 = pe[0::3]
+        P1 = pe[1::3]
+        Ps = pe[2::3]
 
         est = _compute_3pt_t1(P0, P1, Ps, self.Ts_ns,
                               min_ref_contrast=self.min_ref_contrast,
@@ -718,14 +765,22 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
         ss = np.full((len(dc_vec), len(t_us)), np.nan)
         valid = np.zeros((len(dc_vec), len(t_us)), dtype=np.int8)
         start_time = time.time()
+        # QUA shots-outermost interleaving of the WHOLE decay-vs-flux map: each (flux,
+        # wait) point is revisited every round, so slow drift can't bias the fitted T1
+        # (sequential per-point acquisition of a decay curve is the classic drift-bias).
+        specs = []
+        index_map = []
         for i, dc in enumerate(dc_vec):
             mask = self._wait_mask_for_dc(i)
             for k, t in enumerate(t_us):
                 if not mask[k]:
                     continue
-                ss[i, k] = self._run_point(dc, float(t), do_pi=True, do_ff=True)
+                specs.append((float(dc), float(t), True, True))
+                index_map.append((i, k))
                 valid[i, k] = 1
-            progress_counter(i, len(dc_vec), start_time=start_time)
+        pe = self._interleaved_populations(specs, start_time=start_time)
+        for (i, k), val in zip(index_map, pe):
+            ss[i, k] = val
         self._finish_acquire(ss, valid, t_us)
         self.data["time"] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         if self.write_outputs:
