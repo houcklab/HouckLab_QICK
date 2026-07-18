@@ -2,7 +2,16 @@
 # This file contains commonly-used functions for defining pulses, to avoid repeating the same code all the time.
 # Lev, May 11, 2025: create file, add the standard qubit pulse arb/flat_top/const function
 ###
-from qick.asm_v1 import AcquireProgram
+# AcquireProgram is used only for type hints below (prog: AcquireProgram); it is
+# never subclassed or instantiated, so we resolve it across qick versions and fall
+# back to `object` on classic qick builds that predate the asm_v1 refactor.
+try:
+    from qick.asm_v1 import AcquireProgram          # qick >= 0.2.7 (asm_v1/asm_v2 split)
+except ImportError:
+    try:
+        from qick.qick_asm import QickProgram as AcquireProgram   # classic tProc v1 API
+    except ImportError:
+        AcquireProgram = object
 import numpy as np
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
