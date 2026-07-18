@@ -85,6 +85,15 @@ SAVE_RESONATOR_LOOKUP = True
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
+# Resonator-dip-vs-flux DISPERSIVE model fit -- the QUA resonator_fit_parameters
+# workflow.  Paste the 7 values step 1 prints under "dispersive fit parameters
+# [f_bare_Hz, g_Hz, EJmax_GHz, Ec_GHz, period, offset, d]" here, and steps 2/3/4 will
+# DYNAMICALLY track the readout frequency with flux via the dispersive model (readout
+# at the flux-pulled dip), exactly like the OPX code -- instead of a flat IF.  Takes
+# effect only when USE_RESONATOR_LOOKUP=False (the CSV lookup, if enabled, wins).
+# (A 4-value list is accepted too and evaluated as the legacy cosine fit.)
+RESONATOR_FIT_PARAMS = None
+
 # Shot-interleaving passes -- QUA drift-immunity parity.  QUA averages the shot loop
 # OUTERMOST, so every sweep point is revisited on every shot and slow drift averages
 # uniformly into the map instead of tilting it along the sweep axis.  QICK can't fold
@@ -241,6 +250,11 @@ def _spec_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
     cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
+    # dispersive (or cosine) resonator-vs-flux fit -> dynamic per-flux readout IF for
+    # steps 2/3/4 (QUA resonator_fit_parameters).  Only used when USE_RESONATOR_LOOKUP
+    # is False; the CSV lookup, if enabled, takes priority in _build_resonator_curve.
+    if RESONATOR_FIT_PARAMS is not None and not USE_RESONATOR_LOOKUP:
+        cfg["resonator_fit_parameters"] = list(RESONATOR_FIT_PARAMS)
     if "spec_amp" in p:
         cfg["qubit_gain"] = int(p["spec_amp"])
         cfg["qubit_pulse_style"] = "const"
@@ -343,7 +357,9 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     )
     data = exp.acquire(plotDisp=LIVE_PLOTS)
     lookup_csv = data['data'].get('resonator_lookup_csv')
-    print("[1] Done. Cosine fit -> resonator_fit_parameters (update the meta dict if the resonator moved).")
+    print("[1] Done. To make steps 2-4 track the readout freq with flux (QUA-style), paste the printed")
+    print("    'dispersive fit parameters' 7-tuple into RESONATOR_FIT_PARAMS at the top of this file")
+    print("    (keep USE_RESONATOR_LOOKUP=False).  Leave it None for a flat readout IF.")
     if lookup_csv:
         print(f"[1] Measured-dip lookup table saved: {lookup_csv}")
     return lookup_csv
