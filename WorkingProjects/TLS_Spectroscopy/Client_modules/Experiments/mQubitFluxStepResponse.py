@@ -885,6 +885,15 @@ class QubitFluxStepResponse(ExperimentClass):
         _rfp = cfg.get("resonator_fit_parameters")
         _if_src = (f"{len(_rfp)}-param RESONATOR_FIT_PARAMS" if _rfp
                    else "flat r_IF (RESONATOR_FIT_PARAMS=None)")
+        if cfg["read_pulse_freq"] <= 0:
+            print("*" * 78)
+            print(f"WARNING: read_pulse_freq = {cfg['read_pulse_freq']:.4f} MHz is NON-PHYSICAL "
+                  f"(<= 0).\n  This port uses direct digital synthesis (mixer_freq=0, cavity_LO=0), so "
+                  f"read_pulse_freq\n  must be the ABSOLUTE resonator frequency in MHz (a positive value, "
+                  f"~7248.95),\n  NOT an IF/offset relative to an external LO. A negative value aliases and "
+                  f"the\n  readout sits off-resonance -> the qubit is invisible in spec.\n  Fix "
+                  f"BaseConfig['read_pulse_freq'] in Calib/initialize.py.")
+            print("*" * 78)
         print(f"[3] readout {'at PARK' if cfg['readout_after_park'] else 'AT the held flux'}, "
               f"read_pulse_freq = {cfg['read_pulse_freq']:.4f} MHz [IF source: {_if_src}] at "
               f"dc={self.dc_offset:+.0f}; qubit spec {self.f_vec[0]/1e6:.1f}-{self.f_vec[-1]/1e6:.1f} "
