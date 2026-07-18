@@ -40,7 +40,7 @@ def split_reps(shots, rounds):
     return [base + (1 if r < extra else 0) for r in range(rounds)]
 
 
-def interleaved_average(run_point, n_points, shots, rounds=None, live=None):
+def interleaved_average(run_point, n_points, shots, rounds=None, live=None, progress=None):
     """QUA-style shot-interleaved averaging over a Python sweep of ``n_points``.
 
     Parameters
@@ -68,8 +68,10 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None):
     if rounds is None:
         rounds = min(int(shots), 10)
     reps_per_round = split_reps(shots, rounds)
+    total_units = sum(1 for reps in reps_per_round if reps > 0) * n_points
     acc = None
     done = 0
+    done_units = 0
     for r, reps in enumerate(reps_per_round):
         if reps <= 0:
             continue
@@ -79,6 +81,9 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None):
                 acc = np.zeros((n_points,) + val.shape,
                                dtype=complex if np.iscomplexobj(val) else float)
             acc[idx] = acc[idx] + val * reps          # sum over shots in this pass
+            done_units += 1
+            if progress is not None:
+                progress(done_units, total_units)      # smooth per-point bar (QUA feel)
         done += reps
         if live is not None:
             live(r, acc / done)                        # running mean (partial average)

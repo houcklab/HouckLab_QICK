@@ -895,20 +895,22 @@ class QubitFluxStepResponse(ExperimentClass):
             iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(cube) + 1e-12)
             iq_phase[:, :] = np.angle(cube)
 
+        def prog_cb(done, total):
+            progress_counter(done - 1, total, progress_bar=True, percent=True, start_time=start_time)
+
         def live_cb(rnd, running):
             _fill(running)
-            progress_counter(rnd, rounds, progress_bar=True, percent=True, start_time=start_time)
             if live_fig is not None:
                 self._draw_live_plot(live_fig.fig, iq_magnitude_dbm, iq_phase)
                 if not live_fig.is_open:
                     raise KeyboardInterrupt
 
         try:
-            S_mean = interleaved_average(run_point, n_t, shots, rounds=rounds, live=live_cb)
+            S_mean = interleaved_average(run_point, n_t, shots, rounds=rounds,
+                                         live=live_cb, progress=prog_cb)
             _fill(S_mean)
         except KeyboardInterrupt:
             pass
-        progress_counter(rounds, rounds, progress_bar=True, percent=True, start_time=start_time)
         cfg["reps"] = shots       # restore (run_point set it to the per-round rep count)
 
         self.data.update({

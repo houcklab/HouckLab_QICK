@@ -255,10 +255,12 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             mag_dbm[:, :, :] = 20 * np.log10(np.abs(cube) + 1e-12)
             phase_rad[:, :, :] = np.angle(cube)
 
+        def prog_cb(done, total):
+            progress_counter(done - 1, total, start_time=start_time)
+
         def live_cb(rnd, running):
             nonlocal interrupted
             _fill(running)
-            progress_counter(rnd, rounds, start_time=start_time)
             if live is None:
                 return
             plt.figure(live.fig.number)
@@ -276,11 +278,10 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
 
         try:
             S_mean = interleaved_average(run_point, len(points), shots,
-                                         rounds=rounds, live=live_cb)
+                                         rounds=rounds, live=live_cb, progress=prog_cb)
             _fill(S_mean)
         except KeyboardInterrupt:
             pass
-        progress_counter(rounds, rounds, start_time=start_time)
         cfg["reps"] = shots      # restore (run_point set it to the per-round rep count)
         if live is not None:
             live.close()

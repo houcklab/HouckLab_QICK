@@ -132,10 +132,12 @@ class TransmissionVsFFGain(ExperimentClass):
             phase_raw[:, :] = np.angle(Smap)
             self.data.update({"IQ_mag": R.copy(), "IQ_phase": phase_raw.copy()})
 
+        def prog_cb(done, total):
+            progress_counter(done - 1, total, start_time=start_time)
+
         def live_cb(rnd, running):
             nonlocal interrupted
             _fill_map(running)
-            progress_counter(rnd, rounds, start_time=start_time)
             if live is None:
                 return
             plt.figure(live.fig.number)
@@ -158,11 +160,10 @@ class TransmissionVsFFGain(ExperimentClass):
 
         try:
             S_mean = interleaved_average(run_point, len(points), shots,
-                                         rounds=rounds, live=live_cb)
+                                         rounds=rounds, live=live_cb, progress=prog_cb)
             _fill_map(S_mean)
         except KeyboardInterrupt:
             pass
-        progress_counter(rounds, rounds, start_time=start_time)
         if live is not None:
             live.close()
         if interrupted:

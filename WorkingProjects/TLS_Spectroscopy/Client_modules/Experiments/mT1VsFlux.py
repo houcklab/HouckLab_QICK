@@ -552,19 +552,22 @@ class _T1VsFluxBase(ExperimentClass):
         exc = np.zeros(n)
         kept = np.zeros(n)
         saved_shots = self.cfg.get("shots")
-        for r, reps in enumerate(split_reps(shots, rounds)):
+        reps_per_round = split_reps(shots, rounds)
+        total_units = sum(1 for reps in reps_per_round if reps > 0) * n
+        done_units = 0
+        for r, reps in enumerate(reps_per_round):
             if reps <= 0:
                 continue
             for idx, (g, w, dp, df) in enumerate(point_specs):
                 e, k = self._run_point_counts(g, w, do_pi=dp, do_ff=df, reps=reps)
                 exc[idx] += e
                 kept[idx] += k
-            with np.errstate(invalid="ignore", divide="ignore"):
-                running = np.where(kept > 0, exc / kept, np.nan)
+                done_units += 1
+                if start_time is not None:           # smooth per-point bar (QUA feel)
+                    progress_counter(done_units - 1, total_units, start_time=start_time)
             if live is not None:
-                live(r, rounds, running)
-            elif start_time is not None:
-                progress_counter(r, rounds, start_time=start_time)
+                with np.errstate(invalid="ignore", divide="ignore"):
+                    live(r, rounds, np.where(kept > 0, exc / kept, np.nan))
         self.cfg["shots"] = saved_shots
         with np.errstate(invalid="ignore", divide="ignore"):
             return np.where(kept > 0, exc / kept, np.nan)

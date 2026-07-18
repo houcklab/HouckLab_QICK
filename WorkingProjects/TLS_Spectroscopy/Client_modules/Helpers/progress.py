@@ -31,9 +31,9 @@ def progress_counter(iteration, total, progress_bar=True, percent=True, start_ti
     if start_time is not None:
         progress += f" --> elapsed time: {time.time() - start_time:.2f}s"
 
-    print(progress, end="\r")
-    if current_percent == 100:
-        print("")
+    print(progress, end="\r", flush=True)      # flush so PyCharm/piped consoles render the \r line
+    if current_percent >= 100:
+        print("", flush=True)
 
 
 class LiveFigure:
