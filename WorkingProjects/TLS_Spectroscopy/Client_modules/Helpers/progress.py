@@ -11,16 +11,25 @@ to stop -- experiments check ``.is_open`` each sweep iteration and break when th
 operator closes the window (QUA: closing the figure halted the job).
 """
 
+import sys
 import time
 
 import matplotlib.pyplot as plt
 
 
 def progress_counter(iteration, total, progress_bar=True, percent=True, start_time=None):
-    """VERBATIM port of qualang_tools.results.progress_counter (v0.18.1):
-    'Progress: [###...   ] 12.3% (n=12/100) --> elapsed time: 45.67s' with
-    end='\\r', plus a bare newline once the percent hits exactly 100."""
+    """qualang_tools.results.progress_counter, console-aware:
+    'Progress: [###...   ] 12.3% (n=12/100) --> elapsed time: 45.67s'.
+
+    On a real/emulated terminal (isatty) it is a single in-place '\\r' line, exactly
+    like the QUA console.  On a NON-tty (PyCharm's plain "Run" console, a pipe, a log
+    file) '\\r' is not rendered, so we instead print a fresh line each time the integer
+    percent advances -- so it stays VISIBLE without spamming.  Enable "Emulate terminal
+    in output console" in the PyCharm run config to get the single-line QUA look.
+    """
     current_percent = (iteration + 1) / total * 100
+    if iteration <= 0:                       # new run -> reset the non-tty throttle
+        progress_counter._last_pct = -1
 
     progress = "Progress: "
     if progress_bar:
@@ -31,9 +40,24 @@ def progress_counter(iteration, total, progress_bar=True, percent=True, start_ti
     if start_time is not None:
         progress += f" --> elapsed time: {time.time() - start_time:.2f}s"
 
-    print(progress, end="\r", flush=True)      # flush so PyCharm/piped consoles render the \r line
-    if current_percent >= 100:
-        print("", flush=True)
+    is_tty = False
+    try:
+        is_tty = bool(sys.stdout.isatty())
+    except Exception:
+        is_tty = False
+
+    if is_tty:
+        print(progress, end="\r", flush=True)          # QUA single in-place line
+        if current_percent >= 100:
+            print("", flush=True)
+    else:
+        pct = int(current_percent)                     # non-tty: newline per integer %
+        if pct != progress_counter._last_pct or current_percent >= 100:
+            progress_counter._last_pct = pct
+            print(progress, flush=True)
+
+
+progress_counter._last_pct = -1
 
 
 class LiveFigure:
