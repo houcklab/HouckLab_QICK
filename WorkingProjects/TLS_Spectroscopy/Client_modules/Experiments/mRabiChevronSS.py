@@ -27,7 +27,8 @@ from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import n_drive_pulses
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
+    n_drive_pulses, flux_hold_declare, flux_hold_build, rabi_flux_body)
 
 
 class RabiSSProgram(RAveragerProgram):
@@ -49,6 +50,7 @@ class RabiSSProgram(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        flux_hold_declare(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -67,16 +69,11 @@ class RabiSSProgram(RAveragerProgram):
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
                                  freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        flux_hold_build(self)
         self.synci(200)
 
     def body(self):
-        cfg = self.cfg
-        for _ in range(int(cfg["n_pulses"])):
-            self.pulse(ch=cfg["qubit_ch"])
-            self.sync_all(self.us2cycles(0.010))
-        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
-                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))  # passive reset
+        rabi_flux_body(self)          # (optional) flux hold -> drive -> readout, passive relax
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])

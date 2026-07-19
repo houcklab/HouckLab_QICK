@@ -43,6 +43,18 @@ QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
 LIVE_PLOTS = True
 
+# Flux point to tune the pi at.  The sweet spot can be at any DC offset, so set this to the
+# fast-flux DAC gain of your operating point.  0 = park/native (the QUA YOKO=0 analog).
+# Non-zero -> the Rabi ramps park->hold there during the drive (and the readout if
+# READOUT_AFTER_PARK=False), then ramps back -- the same flux delivery as TLS step 3.
+#   *** When FF_HOLD_GAIN != 0, set BaseConfig['qubit_pi_freq'] to the qubit frequency AT
+#       this flux (measure it with a qubit spec there / TLS step 2 first). ***
+FF_HOLD_GAIN = 0
+# Readout location.  True: ramp back to park and read there (uses the park single-shot cal
+# -- simplest, recommended).  False: read AT the held flux (then read_pulse_freq must be the
+# resonator freq at FF_HOLD_GAIN AND the single-shot cal must be taken at that flux too).
+READOUT_AFTER_PARK = True
+
 # ----------------------------------------------------------------------------------------
 # Per-experiment params (QUA experiment_dict analog).  Amplitudes are DAC gain (absolute).
 # ----------------------------------------------------------------------------------------
@@ -92,12 +104,15 @@ P_RABI_LINECUT_SS = {
 
 
 def _base_cfg(p, extra=None):
-    """BaseConfig + shots + passive relax + optional sweep knobs."""
+    """BaseConfig + shots + passive relax + flux-hold point + optional sweep knobs."""
     cfg = dict(BaseConfig)
     cfg["shots"] = int(p["shots"])
     cfg["reps"] = int(p["shots"])
     cfg["relax_delay"] = float(p.get("relax_delay_us", 2000.0))
-    cfg["ff_gain"] = 0                      # calibrate at park (native flux)
+    cfg["ff_gain"] = int(FF_HOLD_GAIN)                  # the flux point being calibrated at
+    cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)             # 0 -> Rabi plays no flux pulse (park)
+    cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
+    cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
     if extra:
         cfg.update(extra)
     return cfg
@@ -188,7 +203,11 @@ def main():
     outer_folder = outerFolder
 
     print("=" * 70)
-    print(f"pi-pulse calibration | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | at PARK (ff_gain=0)")
+    flux_note = ("PARK (ff_gain=0)" if FF_HOLD_GAIN == 0 else
+                 f"HELD flux ff_gain={FF_HOLD_GAIN} DAC, read {'at park' if READOUT_AFTER_PARK else 'AT held flux'}")
+    print(f"pi-pulse calibration | {QUBIT} | chip {CHIP_NAME_FOR_CONFIG} | at {flux_note}")
+    if FF_HOLD_GAIN != 0:
+        print(f"  NOTE: qubit_pi_freq={BaseConfig['qubit_pi_freq']} MHz must be the qubit freq AT ff_gain={FF_HOLD_GAIN}")
     for name, on in [("SS_Cal", P_SS_CAL["run"]),
                      ("Rabi_Chevron_IQ", P_RABI_CHEVRON_IQ["run"]),
                      ("Rabi_Chevron_SS", P_RABI_CHEVRON_SS["run"]),
