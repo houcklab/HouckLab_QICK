@@ -527,6 +527,13 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
         shots=int(p["shots"]),
         flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
+        # QUA default is "voltage" (invert measured freq -> flux, correct the flux).  Set
+        # P3_STEP_RESPONSE["piecewise_response_domain"]="frequency" when the qubit settles
+        # PAST the flux-model target frequency: the voltage inversion clamps that overshoot
+        # to a flat 1.0 -> unity multipliers -> no correction, while the frequency-domain
+        # response preserves the measured drift the fit needs.  (piecewise_response_domain
+        # is a QUA-exposed parameter, so either value is QUA-faithful.)
+        piecewise_response_domain=p.get("piecewise_response_domain", "voltage"),
         live_plot=live_plot,
         fit_rise_decay_bump_dc_correction=fit_rise_decay_bump_dc_correction,
         piecewise_min_multiplier=p.get("piecewise_min_multiplier", 0.5),
