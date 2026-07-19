@@ -528,20 +528,42 @@ class QubitFluxStepResponse(ExperimentClass):
         """
         Convert measured qubit frequency back to the local flux-voltage branch.
 
-        This is intentionally local: it only inverts the fitted spectrum between
-        the baseline and target voltages used in the step-response experiment.
-        That avoids jumping to another SQUID branch when the spectrum is not
-        globally one-to-one.
+        This is intentionally local: it inverts the fitted spectrum on the branch
+        around the baseline and target voltages used in the step-response experiment
+        (plus a bounded pad so a normal past-target overshoot still inverts rather than
+        clamping).  Staying local avoids jumping to another SQUID branch when the
+        spectrum is not globally one-to-one.
         """
         frequency_ghz = np.asarray(frequency_ghz, dtype=float)
         if self.flux_fit_params is None:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
-        branch_voltage = np.linspace(self.baseline_dc_offset, self.dc_offset, 10_001, dtype=float)
-        branch_frequency = np.asarray(self._evaluate_flux_model_frequency(branch_voltage), dtype=float)
-        finite_branch = np.isfinite(branch_voltage) & np.isfinite(branch_frequency)
-        branch_voltage = branch_voltage[finite_branch]
-        branch_frequency = branch_frequency[finite_branch]
+        # Local inversion branch = [baseline, target] PLUS a bounded pad past each end.  The
+        # qubit routinely settles a few MHz PAST the flux-model target (the model target sits
+        # a hair above where it lands -- normal, and it shifts only the absolute step, not its
+        # flatness).  With the tight [baseline, target] branch that overshoot inverts-and-
+        # CLAMPS to exactly V_target (np.interp left/right), flattening the whole voltage-domain
+        # settling tail to 1.0 -> the rise_decay_bump fit sees no drift -> unity multipliers ->
+        # no correction.  The pad lets the overshoot invert to a real past-target voltage so the
+        # drift survives.  (This is the ONE deliberate departure from the QUA branch, which
+        # clamps; QUA never tripped it because its overshoots stayed inside [baseline, target].)
+        # The monotonicity guard below falls back to the tight QUA branch if the pad wanders off
+        # the local SQUID branch, so the normal (in-branch) inversion is never degraded.
+        def _sample_branch(pad_frac):
+            pad = pad_frac * abs(self.dc_offset - self.baseline_dc_offset)
+            lo = min(self.baseline_dc_offset, self.dc_offset) - pad
+            hi = max(self.baseline_dc_offset, self.dc_offset) + pad
+            v = np.linspace(lo, hi, 20_001, dtype=float)
+            f = np.asarray(self._evaluate_flux_model_frequency(v), dtype=float)
+            ok = np.isfinite(v) & np.isfinite(f)
+            return v[ok], f[ok]
+
+        branch_voltage, branch_frequency = _sample_branch(0.25)
+        _bf_diff = np.diff(branch_frequency)
+        if branch_frequency.size < 3 or not (
+            np.all(_bf_diff >= -1e-9) or np.all(_bf_diff <= 1e-9)
+        ):
+            branch_voltage, branch_frequency = _sample_branch(0.0)   # QUA-tight branch
         if branch_voltage.size < 3:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
