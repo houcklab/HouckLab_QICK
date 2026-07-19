@@ -31,6 +31,7 @@ from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import (
     resolve_rounds, split_reps, suppress_stdout)
@@ -432,6 +433,17 @@ class FFT1Program(AveragerProgram):
         cfg = self.cfg
         if cfg.get("do_ff", True):
             ff_pulse.assert_park(self, self.ff_segs)
+        if str(cfg.get("reset_mode", "passive")).lower() == "feedback":
+            # TRUE tProc feedback reset before the shot (measure -> conditional pi -> loop),
+            # the faithful QUA active reset.  The pi register (qubit_pi_gain) is reused
+            # directly (fixed gain -> no conflict).  Requires the probe-confirmed feedback
+            # path + raw threshold; with it, relax_delay can be short since the NEXT shot's
+            # feedback reset does the thermalization.
+            active_reset.active_reset_block(
+                self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
+                oper=cfg.get("reset_oper", "lower"),
+                ground_below=cfg.get("reset_ground_below", True),
+                max_iters=int(cfg.get("reset_max_iters", 3)))
         # herald readout (post-selection reference / active-reset analog) at park
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
@@ -478,8 +490,17 @@ class _T1VsFluxBase(ExperimentClass):
             calib_params = cfg.get("calib_params") if cfg else None
         if calib_params is None:
             raise ValueError("calib_params is required (run SingleShot1Q first).")
-        if reset_mode not in ("passive", "active"):
-            raise ValueError(f"reset_mode must be 'passive' or 'active', got {reset_mode!r}")
+        if reset_mode not in ("passive", "active", "feedback"):
+            raise ValueError(f"reset_mode must be 'passive', 'active', or 'feedback', got {reset_mode!r}")
+        # 'passive' = relax_delay; 'active' = herald post-selection (below); 'feedback' = TRUE
+        # tProc active reset (mid-circuit measure->conditional pi).  Feedback needs a readout
+        # that drives a tProc input -- guard on it so it fails loudly, not silently.
+        if reset_mode == "feedback" and self.soccfg is not None and not \
+                active_reset.active_reset_supported(self.soccfg, cfg["ro_chs"][0]):
+            raise RuntimeError(
+                "reset_mode='feedback' needs a readout that feeds back into the tProc "
+                f"(soccfg readout {cfg['ro_chs'][0]} has tproc_ch<0).  Run mActiveResetProbe "
+                "to confirm; this firmware may not support active reset -- use 'passive'.")
         self.element = str(path)
         self.calib_params = calib_params
         self.dc_vec = np.asarray(dc_vec if dc_vec is not None else cfg["ff_gain_vec"],
@@ -490,6 +511,7 @@ class _T1VsFluxBase(ExperimentClass):
         self.flux_settle_time_ns = (flux_settle_time_ns if flux_settle_time_ns is not None
                                     else cfg.get("flux_settle_time", 0))
         self.reset_mode = reset_mode
+        cfg["reset_mode"] = reset_mode        # FFT1Program.body reads this for feedback reset
         self.repeat_metadata = dict(repeat_metadata or {})
         self.write_outputs = bool(write_outputs)
         if flux_tail_compensation is not None:

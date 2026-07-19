@@ -38,6 +38,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import RabiChevronIQ
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiLinecutSS import RabiLinecutSS
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import ActiveResetProbe
 
 QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
@@ -54,6 +55,18 @@ FF_HOLD_GAIN = 0
 # -- simplest, recommended).  False: read AT the held flux (then read_pulse_freq must be the
 # resonator freq at FF_HOLD_GAIN AND the single-shot cal must be taken at that flux too).
 READOUT_AFTER_PARK = True
+
+# Reset for the single-shot Rabis (Chevron_SS, Linecut_SS).  "passive" = long relax_delay
+# (default, always works).  "feedback" = TRUE tProc active reset (measure -> conditional pi
+# -> loop), the faithful QUA reset -- but it needs (1) a readout that feeds back into the
+# tProc and (2) a raw threshold, BOTH determined by Experiments/mActiveResetProbe.py.
+# ==> RUN THE PROBE FIRST (RUN_ACTIVE_RESET_PROBE=True below); it prints the three values.
+RESET_MODE = "passive"
+RESET_THRESHOLD_RAW = None     # paste from mActiveResetProbe (raw accumulator units)
+RESET_OPER = "lower"           # 'lower' or 'upper', from the probe
+RESET_GROUND_BELOW = True      # from the probe
+RESET_MAX_ITERS = 3
+RUN_ACTIVE_RESET_PROBE = False # set True to run only the capability/threshold probe and exit
 
 # ----------------------------------------------------------------------------------------
 # Per-experiment params (QUA experiment_dict analog).  Amplitudes are DAC gain (absolute).
@@ -113,6 +126,15 @@ def _base_cfg(p, extra=None):
     cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)             # 0 -> Rabi plays no flux pulse (park)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
+    cfg["reset_mode"] = RESET_MODE
+    if RESET_MODE == "feedback":
+        if RESET_THRESHOLD_RAW is None:
+            raise RuntimeError("RESET_MODE='feedback' needs RESET_THRESHOLD_RAW from "
+                               "mActiveResetProbe.py (set RUN_ACTIVE_RESET_PROBE=True first).")
+        cfg["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
+        cfg["reset_oper"] = str(RESET_OPER)
+        cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
+        cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
     if extra:
         cfg.update(extra)
     return cfg
@@ -198,9 +220,27 @@ def run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params):
         return exp
 
 
+def run_active_reset_probe(outer_folder, soc, soccfg):
+    """Capability + threshold probe for TRUE tProc active reset (run before RESET_MODE='feedback')."""
+    cfg = _base_cfg(P_SS_CAL)
+    probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                             suffix="Active_Reset_Probe", cfg=cfg)
+    probe.acquire()
+    return probe
+
+
 def main():
     soc, soccfg = makeProxy()
     outer_folder = outerFolder
+
+    if RUN_ACTIVE_RESET_PROBE:
+        print("=" * 70)
+        print("Active-reset probe only (RUN_ACTIVE_RESET_PROBE=True)")
+        print("=" * 70)
+        run_active_reset_probe(outer_folder, soc, soccfg)
+        print("\nProbe done.  If supported, paste RESET_THRESHOLD_RAW / RESET_OPER / "
+              "RESET_GROUND_BELOW above, set RESET_MODE='feedback', RUN_ACTIVE_RESET_PROBE=False.")
+        return
 
     print("=" * 70)
     flux_note = ("PARK (ff_gain=0)" if FF_HOLD_GAIN == 0 else

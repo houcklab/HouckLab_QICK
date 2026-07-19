@@ -215,11 +215,17 @@ P6_3PT_T1 = {
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
     # QUA-faithful default: average EVERY shot (like QUA's unconditioned .average()) and
-    # reset passively via relax_delay.  tProc-v1 has no mid-circuit feedback, so 'active'
-    # here would mean herald POST-SELECTION -- a DIFFERENT (herald-conditioned) measurement
-    # that collapses the thermal P0 -- so it is opt-in, not the default.  (See the
-    # parity audit AR-1; true feedback active reset would need a tProc-v2 migration.)
+    # reset passively via relax_delay.  'active' = herald POST-SELECTION (a different,
+    # herald-conditioned measurement), opt-in.  'feedback' = TRUE tProc active reset
+    # (measure->conditional pi->loop, the faithful QUA reset) -- now available on tProc-v1
+    # 0.2.133 IF the firmware routes the readout into the tProc; RUN Experiments/
+    # mActiveResetProbe.py first (it confirms the path + prints reset_threshold_raw), then
+    # set reset_mode="feedback" and paste the three values below.
     "reset_mode": "passive",
+    "reset_threshold_raw": None,   # from mActiveResetProbe (raw accumulator units)
+    "reset_oper": "lower",         # 'lower'/'upper', from the probe
+    "reset_ground_below": True,    # from the probe
+    "reset_max_iters": 3,
     "T1_probe_cfg": {
         "shots_T1": 1000,
         "t_min_us": 1.0,
@@ -744,6 +750,17 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "relax_delay": 2000,
         "qubit_pulse_style": "arb",
     })
+    # TRUE tProc active reset (reset_mode='feedback'): threshold from the active-reset probe.
+    if p.get("reset_mode") == "feedback":
+        if p.get("reset_threshold_raw") is None:
+            raise RuntimeError("reset_mode='feedback' needs reset_threshold_raw in P6_3PT_T1 "
+                               "(run Experiments/mActiveResetProbe.py first).")
+        base.update({
+            "reset_threshold_raw": int(p["reset_threshold_raw"]),
+            "reset_oper": p.get("reset_oper", "lower"),
+            "reset_ground_below": bool(p.get("reset_ground_below", True)),
+            "reset_max_iters": int(p.get("reset_max_iters", 3)),
+        })
     return base
 
 

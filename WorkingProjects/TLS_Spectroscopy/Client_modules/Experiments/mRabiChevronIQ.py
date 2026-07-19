@@ -25,6 +25,7 @@ from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 
 
 # ---- optional fast-flux hold: tune the pi at an arbitrary DC offset (the sweet spot may
@@ -60,11 +61,36 @@ def flux_hold_build(prog):
             distortion_model=ff_pulse.make_distortion_model(prog))
 
 
-def rabi_flux_body(prog):
-    """Shared body: (optional) ramp park->hold at ff_hold_gain -> n_pulses gaussian drive ->
-    readout (at park after ramp-down by default, or AT the held flux) -> ramp down.  Passive
-    relax_delay after the measurement (the tProc-v1 substitute for QUA active reset)."""
+def _rabi_feedback_reset(prog):
+    """SS-Rabi TRUE tProc feedback reset at park, BEFORE the drive.  The qubit pulse register
+    holds the SWEPT gain, so save it to a scratch register, set the gain to qubit_pi_gain for
+    the reset pi, run the feedback loop, then restore the swept gain for the drive.  UNTESTED
+    on hardware -- gated on reset_mode=='feedback' so the passive path is never affected; run
+    mActiveResetProbe first to confirm the feedback path + get reset_threshold_raw.  The
+    scratch registers (25/26 for the block, 27 for the saved gain) may need adjusting if they
+    collide with the RAverager's sweep registers on this board."""
     cfg = prog.cfg
+    page = prog.ch_page(cfg["qubit_ch"])
+    r_gain = prog.sreg(cfg["qubit_ch"], "gain")
+    prog.mathi(page, 27, r_gain, "+", 0)                    # save swept gain -> scratch 27
+    prog.regwi(page, r_gain, int(cfg["qubit_pi_gain"]))     # gain = pi for the reset pulses
+    active_reset.active_reset_block(
+        prog, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
+        oper=cfg.get("reset_oper", "lower"), ground_below=cfg.get("reset_ground_below", True),
+        max_iters=int(cfg.get("reset_max_iters", 3)), page=page, reg_val=25, reg_thr=26)
+    prog.mathi(page, r_gain, 27, "+", 0)                    # restore swept gain for the drive
+
+
+def rabi_flux_body(prog):
+    """Shared body: [optional feedback reset] -> (optional) ramp park->hold at ff_hold_gain
+    -> n_pulses gaussian drive -> readout (at park after ramp-down by default, or AT the held
+    flux) -> ramp down.  reset_mode: 'passive' (default) uses relax_delay (the tProc-v1
+    substitute for QUA active reset); 'feedback' runs the TRUE tProc active reset first and
+    then a short relax (next shot's feedback does the thermalization)."""
+    cfg = prog.cfg
+    feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
+    if feedback:
+        _rabi_feedback_reset(prog)                 # reset to ground at park before the shot
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
         ff_pulse.assert_park(prog, prog.ff_segs)
@@ -78,12 +104,13 @@ def rabi_flux_body(prog):
     if hold and read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
         prog.sync_all(prog.us2cycles(cfg.get("pre_meas_delay", 0.1)))
+    _reset_sync = 0.05 if feedback else (cfg["relax_delay"] if read_at_park else 0.01)
     prog.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                  adc_trig_offset=prog.us2cycles(cfg["adc_trig_offset"]),
-                 wait=True, syncdelay=prog.us2cycles(cfg["relax_delay"] if read_at_park else 0.01))
+                 wait=True, syncdelay=prog.us2cycles(_reset_sync))
     if hold and not read_at_park:
         ff_pulse.play_ramp_down(prog, prog.ff_segs)
-        prog.sync_all(prog.us2cycles(cfg["relax_delay"]))
+        prog.sync_all(prog.us2cycles(0.05 if feedback else cfg["relax_delay"]))
 
 
 class RabiChevronIQProgram(RAveragerProgram):
