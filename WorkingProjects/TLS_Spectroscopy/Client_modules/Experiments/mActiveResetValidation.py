@@ -25,6 +25,8 @@ from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
+    ReadProbeProgram, _ADDR_I, _ADDR_Q)
 
 
 class ResetValidationProgram(AveragerProgram):
@@ -85,6 +87,17 @@ class ActiveResetValidation(ExperimentClass):
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
         self.element = str(path)
 
+    def _read_dmem(self, addr):
+        """Read one tProc data-memory word back through the Pyro proxy (best-effort)."""
+        for getter in (lambda: self.soc.tproc.single_read(addr),
+                       lambda: self.soc.tproc.read_dmem(addr, 1)[0],
+                       lambda: self.soc.read_dmem(addr, 1)[0]):
+            try:
+                return int(getter())
+            except Exception:
+                continue
+        raise RuntimeError("could not read tProc data memory via the soc proxy.")
+
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         cfg.setdefault("shots", 2000)
@@ -92,54 +105,105 @@ class ActiveResetValidation(ExperimentClass):
         cfg.setdefault("relax_delay", 500.0)
         ro_ch = cfg["ro_chs"][0]
         tproc_ch = ar.feedback_channel(self.soccfg, ro_ch)
-        print("=" * 68)
-        print(f"[reset validation] tproc_ch={tproc_ch}, threshold_raw={cfg.get('reset_threshold_raw')}, "
-              f"oper={cfg.get('reset_oper')}, ground_below={cfg.get('reset_ground_below')}, "
-              f"max_iters={cfg.get('reset_max_iters', 3)}")
+        oper = str(cfg.get("reset_oper", "upper"))
+        thr = cfg.get("reset_threshold_raw")
+        pi_gain = int(cfg["qubit_pi_gain"])
+        print("=" * 72)
+        print(f"[reset validation] tproc_ch={tproc_ch}, stored threshold_raw={thr}, oper={oper}, "
+              f"ground_below={cfg.get('reset_ground_below')}, pi_gain={pi_gain}")
         if tproc_ch < 0:
             print("  feedback path absent (tproc_ch<0) -> cannot validate active reset.")
-            print("=" * 68)
+            print("=" * 72)
             self.data = {'supported': False,
                          'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             return {'config': cfg, 'data': self.data}
-        if cfg.get("reset_threshold_raw") is None:
+        if thr is None:
             raise ValueError("reset_threshold_raw is required (run mActiveResetProbe first).")
+        cfg["tproc_ch"] = tproc_ch
 
-        def _run(prep_excited, do_reset):
-            cfg["prep_excited"] = prep_excited
-            cfg["do_reset"] = do_reset
-            return ResetValidationProgram(self.soccfg, cfg).acquire(self.soc, load_pulses=True)
+        # ---- (1) CURRENT raw |g>/|e> reads -> is the stored threshold still valid? ----------
+        def _raw_read(gain):
+            cfg["probe_gain"] = int(gain)
+            avgi, avgq = ReadProbeProgram(self.soccfg, cfg).acquire(self.soc, load_pulses=True,
+                                                                    progress=False)
+            return (float(np.asarray(avgi).ravel()[0]), float(np.asarray(avgq).ravel()[0]),
+                    self._read_dmem(_ADDR_I), self._read_dmem(_ADDR_Q))   # host I,Q ; raw lower,upper
 
-        Ig, Qg = _run(False, False)     # |g> reference
-        Ie, Qe = _run(True, False)      # |e> reference
-        Ir, Qr = _run(True, True)       # |e> then active reset
+        Ig, Qg, gl, gu = _raw_read(0)            # |g>
+        Ie, Qe, el, eu = _raw_read(pi_gain)      # |e>
+        gv, ev = ((gu, eu) if oper == "upper" else (gl, el))
+        cur_mid = int(round(0.5 * (gv + ev)))
+        sep_raw = abs(ev - gv)
+        thr_between = min(gv, ev) < thr < max(gv, ev)
+        print("-" * 72)
+        print("  CURRENT raw reads (this session):")
+        print(f"    |g>: lower={gl:>12d} upper={gu:>12d}   |e>: lower={el:>12d} upper={eu:>12d}")
+        print(f"    on '{oper}' half: |g>={gv}  |e>={ev}  separation={sep_raw}  midpoint={cur_mid}")
+        print(f"    stored threshold {thr}: {'BETWEEN |g> and |e> (ok)' if thr_between else '*** OUTSIDE [|g>,|e>] -- STALE ***'}")
+        if not thr_between:
+            print(f"    ==> update RESET_THRESHOLD_RAW to ~{cur_mid} (and RESET_GROUND_BELOW="
+                  f"{gv < ev}); readout drifted since the probe.")
+        host_sep = float(np.hypot(Ie - Ig, Qe - Qg))
+        print(f"    host |e>-|g> separation = {host_sep:.4g}  (|g> I={Ig:+.4g} Q={Qg:+.4g} ; "
+              f"|e> I={Ie:+.4g} Q={Qe:+.4g})")
 
+        # ---- (2) residual-excited vs max_iters (the trend diagnoses the failure mode) --------
         dx, dy = Ie - Ig, Qe - Qg
         denom = dx * dx + dy * dy
-        residual = (((Ir - Ig) * dx + (Qr - Qg) * dy) / denom) if denom > 0 else float("nan")
-        sep = float(np.hypot(dx, dy))
-        print(f"  |g> ref     : I={Ig:+.5g}  Q={Qg:+.5g}")
-        print(f"  |e> ref     : I={Ie:+.5g}  Q={Qe:+.5g}   (|e>-|g> separation {sep:.4g})")
-        print(f"  |e> + reset : I={Ir:+.5g}  Q={Qr:+.5g}")
-        print("-" * 68)
-        print(f"  RESIDUAL EXCITED FRACTION after active reset = {residual:.3f}")
-        print("     (0 = driven fully to |g>, 1 = still |e>)")
-        if not np.isfinite(residual):
-            print("  -> |g> and |e> readouts coincide; can't tell (check pi + readout).")
-        elif residual < 0.15:
+
+        def _resid(Ir, Qr):
+            return (((Ir - Ig) * dx + (Qr - Qg) * dy) / denom) if denom > 0 else float("nan")
+
+        def _reset_run(k):
+            cfg["prep_excited"] = True
+            cfg["do_reset"] = bool(k > 0)
+            cfg["reset_max_iters"] = int(k)
+            Ir, Qr = ResetValidationProgram(self.soccfg, cfg).acquire(self.soc, load_pulses=True)
+            return Ir, Qr, _resid(Ir, Qr)
+
+        iters_list = [0, 1, 2, 3, 5]
+        sweep = []
+        print("-" * 72)
+        print("  residual-excited vs max_iters  (0 = full |e>, 1 = still excited):")
+        for k in iters_list:
+            Ir, Qr, res = _reset_run(k)
+            sweep.append({"max_iters": k, "residual": res, "I": Ir, "Q": Qr})
+            print(f"    max_iters={k}:  residual={res:+.3f}   (reset I={Ir:+.4g} Q={Qr:+.4g})")
+
+        by_k = {s["max_iters"]: s["residual"] for s in sweep}
+        r0 = by_k[0]                                          # no-reset baseline (~1 if prep good)
+        r1 = by_k[1]                                          # one pass
+        rmax = by_k[max(iters_list)]                          # most passes
+        best = min((s for s in sweep if s["max_iters"] > 0), key=lambda s: s["residual"])
+        rbest = best["residual"]
+        print("-" * 72)
+        print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}   best = {rbest:+.3f} "
+              f"at max_iters={best['max_iters']}")
+        if not thr_between:
+            print("  -> THRESHOLD is STALE (see above): set RESET_THRESHOLD_RAW/GROUND_BELOW to "
+                  "the current values, then re-run.  (Other diagnoses unreliable until fixed.)")
+        elif rbest < 0.15:
             print("  -> ACTIVE RESET WORKS: the feedback loop drives |e> to ground.")
-        elif residual < 0.5:
-            print("  -> PARTIAL reset: raise reset_max_iters, or check the threshold/oper.")
+        elif abs(rbest - r0) < 0.12:
+            print("  -> reset does NOTHING vs baseline: the conditional isn't firing as intended "
+                  "-> discrimination broken (oper/ground_below sign, threshold, or read timing).")
+        elif rmax < r1 - 0.10:
+            print("  -> reset CONVERGING (residual still dropping at max iters) but not finished: "
+                  "the pi is under-rotated (weak/detuned).  Calibrate the pi (run SS_Cal+Rabi) "
+                  "and/or raise RESET_MAX_ITERS.")
         else:
-            print("  -> reset NOT working: check threshold_raw/oper/ground_below, the read, or "
-                  "whether the pi flips the qubit at all.")
-        print("=" * 68)
+            print("  -> reset PLATEAUS partway (helps but caps out): most likely an under-rotated "
+                  "pi -- calibrate it (SS_Cal+Rabi) -- or marginal discrimination.")
+        print("=" * 72)
 
         self.data = {
-            'supported': True, 'g_ref': (Ig, Qg), 'e_ref': (Ie, Qe), 'reset': (Ir, Qr),
-            'residual_excited': residual, 'separation': sep,
+            'supported': True, 'g_ref': (Ig, Qg), 'e_ref': (Ie, Qe),
+            'raw': {'g_lower': gl, 'g_upper': gu, 'e_lower': el, 'e_upper': eu,
+                    'oper': oper, 'current_midpoint': cur_mid, 'stored_threshold': thr,
+                    'threshold_valid': bool(thr_between)},
+            'iters_sweep': sweep, 'best': best, 'baseline_residual': r0,
             'reset_params': {k: cfg.get(k) for k in
-                             ("reset_threshold_raw", "reset_oper", "reset_ground_below", "reset_max_iters")},
+                             ("reset_threshold_raw", "reset_oper", "reset_ground_below")},
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         self.pickle_data()
