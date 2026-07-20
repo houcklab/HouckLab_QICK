@@ -221,13 +221,16 @@ P6_3PT_T1 = {
     # 0.2.133 IF the firmware routes the readout into the tProc; RUN Experiments/
     # mActiveResetProbe.py first (it confirms the path + prints reset_threshold_raw), then
     # set reset_mode="feedback" and paste the three values below.
-    # QUA T1 used TRUE active reset (audit AR-1), so 'feedback' is the QUA-faithful default.
-    # Values from mActiveResetProbe on this board (tproc_ch=0, discrimination on the Q half).
-    # NOT yet loop-validated on hardware -- validate feedback vs passive before trusting; once
-    # confirmed, relax_delay (2 ms in _t1_base_cfg) can drop toward the herald time.  Set
-    # reset_mode='passive' to fall back, or 'active' for herald post-selection.
-    "reset_mode": "feedback",
-    "reset_threshold_raw": 2153,   # raw accumulator (Q half)
+    # QUA T1 used TRUE active reset (audit AR-1), so 'feedback' is the QUA-faithful TARGET.  All
+    # CODE-side pieces are in place: the probe CONFIRMED the path (tproc_ch=0; discrimination on
+    # the Q half), and FFT1Program's readout-buffer accounting for the reset's extra measurements
+    # is wired (fixed-count reset -> deterministic count; collect_shots skips past them to the
+    # herald+final).  The ONLY thing left is confirming the LOOP resets on THIS board: run
+    # Experiments/mActiveResetValidation.py (from GateCalibration, RUN_ACTIVE_RESET_VALIDATION=
+    # True).  If residual_excited < 0.15, flip this to 'feedback' (then relax_delay's 2 ms can
+    # drop toward the herald time).  'active' = herald post-selection; 'passive' = relax (default).
+    "reset_mode": "passive",
+    "reset_threshold_raw": 2153,   # raw accumulator (Q half) -- from mActiveResetProbe, for later
     "reset_oper": "upper",         # discriminating half: Q (|g>=429, |e>=3877)
     "reset_ground_below": True,    # |g> reads below threshold
     "reset_max_iters": 3,

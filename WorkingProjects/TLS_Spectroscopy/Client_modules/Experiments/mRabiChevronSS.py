@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
     n_drive_pulses, flux_hold_declare, flux_hold_build, rabi_flux_body)
@@ -79,14 +80,20 @@ class RabiSSProgram(RAveragerProgram):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        super().acquire(soc, load_pulses=load_pulses, progress=progress)
+        # feedback reset adds active_reset_readouts() FIXED measurements BEFORE the Rabi readout
+        # (0 unless reset_mode=='feedback'); grow readouts_per_experiment so the buffer keeps its
+        # (expts, reps, readouts) shape and collect_shots picks the Rabi readout after them.
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=1 + n_reset,
+                        progress=progress)
         return self.collect_shots()
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg["read_length"], ro_ch=self.cfg["ro_chs"][0])
+        n_reset = active_reset.active_reset_readouts(self.cfg)   # Rabi readout follows the reset measures
         raw = np.array(self.get_raw())
-        shots_i = raw[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
-        shots_q = raw[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i = raw[0, :, :, n_reset, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q = raw[0, :, :, n_reset, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
         return shots_i, shots_q
 
 

@@ -461,17 +461,23 @@ class FFT1Program(AveragerProgram):
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=2,
+        # feedback reset adds active_reset_readouts() FIXED measurements BEFORE herald+final, so
+        # readouts_per_experiment grows by exactly that (0 unless reset_mode=='feedback').  The
+        # fixed count keeps the buffer shape deterministic; collect_shots skips past them.
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=2 + n_reset,
                         progress=progress)
         return self.collect_shots()
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
+        n_reset = active_reset.active_reset_readouts(self.cfg)   # reset measures precede herald+final
+        h, f = n_reset, n_reset + 1                              # herald, final readout indices
         raw = np.array(self.get_raw())
-        i0 = raw[0, 0, :, 0, 0] / length
-        q0 = raw[0, 0, :, 0, 1] / length
-        i1 = raw[0, 0, :, 1, 0] / length
-        q1 = raw[0, 0, :, 1, 1] / length
+        i0 = raw[0, 0, :, h, 0] / length
+        q0 = raw[0, 0, :, h, 1] / length
+        i1 = raw[0, 0, :, f, 0] / length
+        q1 = raw[0, 0, :, f, 1] / length
         return i0, q0, i1, q1
 
 

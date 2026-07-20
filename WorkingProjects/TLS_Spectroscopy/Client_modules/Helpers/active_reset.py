@@ -95,20 +95,30 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
            else prog.us2cycles(adc_trig_offset_us))
 
     _UID[0] += 1
-    done = f"AR_DONE_{_UID[0]}"
-    # ground state satisfies (value <op> threshold) -> we jump OUT of the loop.
+    # ground satisfies (value <op> threshold); we then SKIP the pi (not jump out of the loop).
     ground_op = "<" if ground_below else ">"
 
+    # FIXED count: always exactly max_iters measurements (each: measure -> read -> if excited,
+    # pi).  Once the qubit reaches ground the remaining iterations measure ground and skip the
+    # pi (no-op), so the final state is ground AND the number of readout triggers is
+    # DETERMINISTIC (= max_iters).  This matters: the enclosing AveragerProgram counts readouts
+    # via readouts_per_experiment, so a variable count (early jump-out) would corrupt the data
+    # buffer.  Callers MUST add active_reset_readouts(cfg) to their readouts_per_experiment.
     prog.regwi(page, reg_thr, int(threshold_raw), "active-reset threshold (raw)")
-    for _ in range(int(max_iters)):
-        # measure: play the readout pulse, trigger the ADC, wait for the accumulation
+    for i in range(int(max_iters)):
         prog.measure(pulse_ch=res_ch, adcs=[ro_ch], adc_trig_offset=off,
                      wait=True, syncdelay=prog.us2cycles(meas_syncdelay_us))
-        # pull the accumulator half into a register and branch out if the qubit is ground
-        prog.read(tproc_ch, page, oper, reg_val)
-        prog.condj(page, reg_val, ground_op, reg_thr, done)
-        # excited -> apply a pi pulse, then loop back to re-measure
-        prog.pulse(ch=qubit_ch)
+        prog.read(tproc_ch, page, oper, reg_val)          # accumulator half -> register
+        skip = f"AR_SKIP_{_UID[0]}_{i}"
+        prog.condj(page, reg_val, ground_op, reg_thr, skip)   # ground -> skip the pi
+        prog.pulse(ch=qubit_ch)                               # excited -> pi
+        prog.label(skip)
         prog.sync_all(prog.us2cycles(settle_us))
-    prog.label(done)
-    prog.sync_all(prog.us2cycles(settle_us))
+
+
+def active_reset_readouts(cfg):
+    """Number of readout triggers an active reset ADDS per shot (0 if not feedback mode).
+    Add this to an AveragerProgram's readouts_per_experiment when reset_mode=='feedback'."""
+    if str(cfg.get("reset_mode", "passive")).strip().lower() != "feedback":
+        return 0
+    return int(cfg.get("reset_max_iters", 3))

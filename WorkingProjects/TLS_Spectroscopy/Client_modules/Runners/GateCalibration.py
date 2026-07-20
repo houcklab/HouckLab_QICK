@@ -45,6 +45,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiLinecutSS import RabiLinecutSS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import ActiveResetProbe
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetValidation import ActiveResetValidation
 
 QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
@@ -62,19 +63,21 @@ FF_HOLD_GAIN = 0
 # resonator freq at FF_HOLD_GAIN AND the single-shot cal must be taken at that flux too).
 READOUT_AFTER_PARK = True
 
-# Reset for the SINGLE-SHOT Rabis (Chevron_SS, Linecut_SS).  QUA used active reset for these,
-# so "feedback" (TRUE tProc active reset: measure -> conditional pi -> loop) is the QUA-faithful
-# default.  The values below are from mActiveResetProbe on THIS board (tproc_ch=0 -> feedback
-# path present; the read captured |g>/|e> cleanly on the 'upper'/Q half).  Set "passive" to fall
-# back to relax_delay.  (Rabi_Chevron_IQ + SS_Cal stay passive -- QUA used wait() for those.)
-# NOTE: the full feedback LOOP is not yet hardware-validated -- see the caveats in the report;
-# re-run the probe (RUN_ACTIVE_RESET_PROBE=True) any time to re-measure the threshold.
-RESET_MODE = "feedback"
+# Reset for the SINGLE-SHOT Rabis (Chevron_SS, Linecut_SS).  QUA used active reset here, so
+# "feedback" is the QUA-faithful target.  Everything CODE-side is now in place: the probe
+# CONFIRMED the feedback path (tproc_ch=0; |g>/|e> separate on the Q half), and the SS-Rabi/T1
+# readout-buffer accounting for the reset's extra measurements is wired (fixed-count reset ->
+# deterministic readout count -> collect_shots skips past them).  The ONLY thing left before
+# flipping to "feedback" is confirming the LOOP actually resets on THIS board.  ==> Run
+# RUN_ACTIVE_RESET_VALIDATION=True; if it reports residual_excited < 0.15, set RESET_MODE=
+# "feedback".  Until that's confirmed, "passive" (relax_delay) stays the default.
+RESET_MODE = "passive"
 RESET_THRESHOLD_RAW = 2153     # from mActiveResetProbe on this board (raw accumulator, Q half)
 RESET_OPER = "upper"           # discriminating half: Q (|g>=429, |e>=3877)
 RESET_GROUND_BELOW = True      # |g> reads below threshold
 RESET_MAX_ITERS = 3
-RUN_ACTIVE_RESET_PROBE = False # set True to re-run only the capability/threshold probe and exit
+RUN_ACTIVE_RESET_PROBE = False       # True -> run only the capability/threshold probe and exit
+RUN_ACTIVE_RESET_VALIDATION = False  # True -> run only the reset-validation experiment and exit
 
 # ----------------------------------------------------------------------------------------
 # Per-experiment params (QUA experiment_dict analog).  Amplitudes are DAC gain (absolute).
@@ -354,6 +357,26 @@ def run_active_reset_probe(outer_folder, soc, soccfg):
     return probe
 
 
+def run_active_reset_validation(outer_folder, soc, soccfg):
+    """Validate the FULL active-reset feedback LOOP (not just the read): prep |e> -> reset ->
+    measure the residual excited fraction vs |g>/|e> refs.  Runs regardless of RESET_MODE (it
+    drives the reset itself, forcing the probe values in), and is self-contained on the readout
+    buffer -- so it's the correct thing to run BEFORE trusting reset_mode='feedback' anywhere."""
+    if RESET_THRESHOLD_RAW is None:
+        raise RuntimeError("Active-reset validation needs RESET_THRESHOLD_RAW from "
+                           "mActiveResetProbe.py (set RUN_ACTIVE_RESET_PROBE=True first).")
+    cfg = _base_cfg(P_SS_CAL, extra={
+        "reset_threshold_raw": int(RESET_THRESHOLD_RAW),
+        "reset_oper": str(RESET_OPER),
+        "reset_ground_below": bool(RESET_GROUND_BELOW),
+        "reset_max_iters": int(RESET_MAX_ITERS),
+    })
+    val = ActiveResetValidation(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                                suffix="Active_Reset_Validation", cfg=cfg)
+    val.acquire()
+    return val
+
+
 def main():
     soc, soccfg = makeProxy()
     outer_folder = outerFolder
@@ -364,7 +387,17 @@ def main():
         print("=" * 70)
         run_active_reset_probe(outer_folder, soc, soccfg)
         print("\nProbe done.  If supported, paste RESET_THRESHOLD_RAW / RESET_OPER / "
-              "RESET_GROUND_BELOW above, set RESET_MODE='feedback', RUN_ACTIVE_RESET_PROBE=False.")
+              "RESET_GROUND_BELOW above, then RUN_ACTIVE_RESET_VALIDATION=True to validate the loop.")
+        return
+
+    if RUN_ACTIVE_RESET_VALIDATION:
+        print("=" * 70)
+        print("Active-reset VALIDATION only (RUN_ACTIVE_RESET_VALIDATION=True)")
+        print("=" * 70)
+        run_active_reset_validation(outer_folder, soc, soccfg)
+        print("\nValidation done.  residual_excited < 0.15 => the feedback loop resets |e>->|g>;"
+              "\nthen ask me to wire the T1/SS-Rabi readout-buffer accounting so RESET_MODE="
+              "'feedback' works there too.")
         return
 
     print("=" * 70)
