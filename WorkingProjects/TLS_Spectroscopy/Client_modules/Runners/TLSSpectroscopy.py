@@ -221,10 +221,15 @@ P6_3PT_T1 = {
     # 0.2.133 IF the firmware routes the readout into the tProc; RUN Experiments/
     # mActiveResetProbe.py first (it confirms the path + prints reset_threshold_raw), then
     # set reset_mode="feedback" and paste the three values below.
-    "reset_mode": "passive",
-    "reset_threshold_raw": None,   # from mActiveResetProbe (raw accumulator units)
-    "reset_oper": "lower",         # 'lower'/'upper', from the probe
-    "reset_ground_below": True,    # from the probe
+    # QUA T1 used TRUE active reset (audit AR-1), so 'feedback' is the QUA-faithful default.
+    # Values from mActiveResetProbe on this board (tproc_ch=0, discrimination on the Q half).
+    # NOT yet loop-validated on hardware -- validate feedback vs passive before trusting; once
+    # confirmed, relax_delay (2 ms in _t1_base_cfg) can drop toward the herald time.  Set
+    # reset_mode='passive' to fall back, or 'active' for herald post-selection.
+    "reset_mode": "feedback",
+    "reset_threshold_raw": 2153,   # raw accumulator (Q half)
+    "reset_oper": "upper",         # discriminating half: Q (|g>=429, |e>=3877)
+    "reset_ground_below": True,    # |g> reads below threshold
     "reset_max_iters": 3,
     "T1_probe_cfg": {
         "shots_T1": 1000,

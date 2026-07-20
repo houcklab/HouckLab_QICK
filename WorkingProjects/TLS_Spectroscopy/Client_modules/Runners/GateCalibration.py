@@ -62,17 +62,19 @@ FF_HOLD_GAIN = 0
 # resonator freq at FF_HOLD_GAIN AND the single-shot cal must be taken at that flux too).
 READOUT_AFTER_PARK = True
 
-# Reset for the single-shot Rabis (Chevron_SS, Linecut_SS).  "passive" = long relax_delay
-# (default, always works).  "feedback" = TRUE tProc active reset (measure -> conditional pi
-# -> loop), the faithful QUA reset -- but it needs (1) a readout that feeds back into the
-# tProc and (2) a raw threshold, BOTH determined by Experiments/mActiveResetProbe.py.
-# ==> RUN THE PROBE FIRST (RUN_ACTIVE_RESET_PROBE=True below); it prints the three values.
-RESET_MODE = "passive"
-RESET_THRESHOLD_RAW = None     # paste from mActiveResetProbe (raw accumulator units)
-RESET_OPER = "lower"           # 'lower' or 'upper', from the probe
-RESET_GROUND_BELOW = True      # from the probe
+# Reset for the SINGLE-SHOT Rabis (Chevron_SS, Linecut_SS).  QUA used active reset for these,
+# so "feedback" (TRUE tProc active reset: measure -> conditional pi -> loop) is the QUA-faithful
+# default.  The values below are from mActiveResetProbe on THIS board (tproc_ch=0 -> feedback
+# path present; the read captured |g>/|e> cleanly on the 'upper'/Q half).  Set "passive" to fall
+# back to relax_delay.  (Rabi_Chevron_IQ + SS_Cal stay passive -- QUA used wait() for those.)
+# NOTE: the full feedback LOOP is not yet hardware-validated -- see the caveats in the report;
+# re-run the probe (RUN_ACTIVE_RESET_PROBE=True) any time to re-measure the threshold.
+RESET_MODE = "feedback"
+RESET_THRESHOLD_RAW = 2153     # from mActiveResetProbe on this board (raw accumulator, Q half)
+RESET_OPER = "upper"           # discriminating half: Q (|g>=429, |e>=3877)
+RESET_GROUND_BELOW = True      # |g> reads below threshold
 RESET_MAX_ITERS = 3
-RUN_ACTIVE_RESET_PROBE = False # set True to run only the capability/threshold probe and exit
+RUN_ACTIVE_RESET_PROBE = False # set True to re-run only the capability/threshold probe and exit
 
 # ----------------------------------------------------------------------------------------
 # Per-experiment params (QUA experiment_dict analog).  Amplitudes are DAC gain (absolute).
@@ -280,6 +282,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
+        "reset_mode": "passive",   # QUA Rabi_Chevron_IQ used wait(reset_time), NOT active reset
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
