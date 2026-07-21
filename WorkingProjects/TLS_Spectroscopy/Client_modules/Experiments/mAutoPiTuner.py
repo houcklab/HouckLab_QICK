@@ -679,6 +679,26 @@ class AutoPiTuner(ExperimentClass):
                    "also found nothing" if "read_pulse_freq" not in w["updated"]
                    else "did find a resonance"))
         gain = gain_used
+        # A peak sitting near the edge of the scan window is CLIPPED: its fitted center is
+        # biased inward and it may be the shoulder of a line that lies outside.  Re-center
+        # the window on it and re-scan until the peak is comfortably interior.
+        for _ in range(3):
+            if min(abs(fit1["f0"] - freqs[0]), abs(fit1["f0"] - freqs[-1])) > 0.15 * span_used:
+                break
+            self._report("spec", "WARN",
+                         "line at %.3f MHz sits within 15%% of the scan edge (window "
+                         "%.2f-%.2f MHz) -- re-centering on it and re-scanning"
+                         % (fit1["f0"], freqs[0], freqs[-1]))
+            freqs, z, sig = self._spec_scan(w, fit1["f0"], span_used, freqs.size, gain,
+                                            length, P["shots"], P["relax_delay_us"])
+            f2 = fit_resonance(freqs, sig, polarity="peak")
+            self.data["spec"] = {"freqs": freqs, "sig": sig, "fit": f2["yfit"]}
+            if not f2["ok"]:
+                raise TunerStageError(
+                    "spec: the line vanished when the window was re-centered on %.3f MHz "
+                    "(snr %.1f) -- the original peak was a scan-edge artifact, not the "
+                    "qubit." % (fit1["f0"], f2["snr"]))
+            fit1 = f2
         f_q = fit1["f0"]
         note = ""
         if P["two_pass"]:
@@ -723,6 +743,51 @@ class AutoPiTuner(ExperimentClass):
         w["updated"].add("qubit_pi_gain")
         self._report("rabi", "OK", "rough pi gain %d DAC (period %.0f, r2 %.2f, contrast %.3g)"
                      % (w["pi_gain"], fit["period"], fit["r2"], fit["contrast"]))
+        self._validate_pi_harmonic(w, cfg, int(P["shots"]))
+
+    def _validate_pi_harmonic(self, w, cfg, shots):
+        """Confirm the Rabi fit picked the RIGHT harmonic before anything depends on it.
+
+        A gain sweep covering only ~1 period can fit a period that is 2x too large or too
+        small.  That is silently catastrophic: if the true pi is pi_gain/2, then the
+        'pi/2' used everywhere downstream is a full pi -- and a Ramsey built from pi
+        pulses has no fringe at all (the first pulse parks the state at the pole, where
+        the second pulse's phase does nothing), which a fitter then explains away as an
+        impossibly short T2*.  So: measure the |g>-displacement at a few multiples of the
+        candidate gain; the TRUE pi is the one with maximum displacement."""
+        g0 = int(w["pi_gain"])
+        mults = [0.0, 0.5, 1.0, 1.5, 2.0]
+        pts = []
+        for m in mults:
+            g = int(round(min(g0 * m, 32766)))
+            seq = [("pulse", g, 0.0)] if g > 0 else []
+            I, Q, _, _ = _run_seq(self, cfg, seq, w["drive_freq"], shots)
+            pts.append((m, g, I, Q))
+        I0, Q0 = pts[0][2], pts[0][3]
+        seps = [float(np.hypot(I - I0, Q - Q0)) for (_, _, I, Q) in pts]
+        self.data["pi_check"] = {"mults": np.array(mults), "sep": np.array(seps)}
+        best = int(np.argmax(seps))
+        self._report("rabi", "OK", "pi check |IQ-IQ(0)| at %s x pi = %s"
+                     % (mults, ", ".join("%.4g" % s for s in seps)))
+        if seps[best] <= 0:
+            raise TunerStageError("rabi: no drive response at any gain -- drive frequency "
+                                  "or qubit is wrong.")
+        if best == 2:
+            return                                   # the fit had it right
+        m_true = mults[best]
+        if m_true == 0.0:
+            raise TunerStageError(
+                "rabi: the largest readout displacement is at ZERO drive gain -- the "
+                "drive is not exciting the qubit (wrong drive frequency?).")
+        new_pi = int(round(min(g0 * m_true, 32766)))
+        self._report("rabi", "WARN",
+                     "Rabi fit picked the WRONG harmonic: max excitation is at %.1f x the "
+                     "fitted pi -- correcting pi gain %d -> %d.  (The half-period fit is "
+                     "unreliable when the sweep covers only ~1 period; raise "
+                     "params['rabi']['gain_max'] to cover 2+ periods.)"
+                     % (m_true, g0, new_pi))
+        w["pi_gain"] = new_pi
+        w["pi2_gain"] = int(round(new_pi / 2.0))
 
     # ---------------- stage 3: Ramsey fine frequency ----------------
     def _ramsey_series(self, w, drive_freq, f_virt, tau_max, npts, shots, relax):
@@ -796,6 +861,18 @@ class AutoPiTuner(ExperimentClass):
                 raise TunerStageError("ramsey: fringe fit failed on round %d (contrast "
                                       "too low / T2* too short for tau_max=%.1f us?)"
                                       % (rnd, tau_max))
+            # With reference-normalized populations and correct pi/2 pulses the fringe
+            # swings |g> to |e>, i.e. amp ~ 0.5.  Much less than that means the PULSES are
+            # wrong (wrong pi/2 amplitude, or off-resonant drive), and the fitted decay
+            # would then be meaningless -- do NOT let a bad pulse masquerade as a short T2*.
+            if fit["amp"] < 0.20:
+                raise TunerStageError(
+                    "ramsey: fringe contrast is only %.2f (expected ~0.5 for pi/2 pulses "
+                    "against |g>/|e> references). The pi/2 AMPLITUDE or the drive "
+                    "frequency is wrong -- the fitted T2*=%.2f us is an artifact of the "
+                    "weak fringe, not a coherence measurement. Check the rough-Rabi pi "
+                    "gain (harmonic!) and the drive frequency before believing any T2* "
+                    "from this stage." % (fit["amp"], fit["t2_us"]))
             if abs(fit["f_mhz"]) < 0.3 * f_virt:
                 raise TunerStageError(
                     "ramsey: fringe at %.3f MHz << virtual detuning %.2f MHz -- the "
@@ -822,7 +899,9 @@ class AutoPiTuner(ExperimentClass):
             # A gate that is not short compared to T2* is decoherence-limited: the
             # rotation decays DURING the pulse, so no amplitude calibration is meaningful.
             t_pi_us = 4.0 * float(self.cfg["sigma"])
-            if rnd == 1 and t_pi_us > 0.5 * t2:
+            if rnd == 1 and t_pi_us > 0.5 * t2 and fit["amp"] >= 0.35:
+                # only trust a short T2* when the fringe had near-full contrast (a weak
+                # fringe is a pulse problem, already caught above)
                 moved = abs(w["qubit_freq"] - float(self.cfg["qubit_freq"]))
                 raise TunerStageError(
                     "coherence: the pi pulse is %.3f us long (4*sigma) but T2* is only "

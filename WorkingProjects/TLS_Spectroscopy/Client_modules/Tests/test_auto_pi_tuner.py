@@ -213,6 +213,44 @@ for t2, d_prev, d_now, expect_sign_blame in ((0.6, 0.0809, 0.1591, False),
 check("detuning below resolution = converged",
       0.0809 <= max(0.02, 1.0 / (2.0 * np.pi * 0.6)))
 
+print("== pi-harmonic validation (the 2x-wrong-period failure) ==")
+# |g>-displacement vs gain follows |sin(theta/2)| with theta = pi*g/g_pi_true.
+# If the Rabi fit returned 2x the true pi, the max displacement must appear at 0.5x.
+def _disp(mults, g0, g_true):
+    return [abs(np.sin(0.5 * np.pi * (g0 * m) / g_true)) for m in mults]
+mults = [0.0, 0.5, 1.0, 1.5, 2.0]
+g_true = 5838.0
+check("fit returned 2x pi -> max displacement at 0.5x",
+      int(np.argmax(_disp(mults, 2 * g_true, g_true))) == 1)
+check("fit correct -> max displacement at 1.0x",
+      int(np.argmax(_disp(mults, g_true, g_true))) == 2)
+check("fit returned 0.5x pi -> max displacement at 2.0x",
+      int(np.argmax(_disp(mults, 0.5 * g_true, g_true))) == 4)
+
+print("== ramsey contrast guard (bad pi/2 must not read as short T2*) ==")
+t = np.linspace(0.05, 4.0, 31)
+# a proper pi/2 pair: full-contrast fringe, long T2*
+X = 0.5 + 0.45 * np.exp(-t / 20.0) * np.cos(2 * np.pi * 1.05 * t) + rng.normal(0, 0.02, t.size)
+Y = 0.5 + 0.45 * np.exp(-t / 20.0) * np.sin(2 * np.pi * 1.05 * t) + rng.normal(0, 0.02, t.size)
+good = T.fit_ramsey_xy(t, X, Y)
+check("full-contrast fringe passes the 0.20 contrast gate", good["amp"] >= 0.20,
+      "amp=%.3f T2=%.1f" % (good["amp"], good["t2_us"]))
+# pi pulses instead of pi/2: fringe collapses -> must be REJECTED, not read as short T2*
+Xb = 0.5 + 0.03 * np.exp(-t / 20.0) * np.cos(2 * np.pi * 1.05 * t) + rng.normal(0, 0.02, t.size)
+Yb = 0.5 + 0.03 * np.exp(-t / 20.0) * np.sin(2 * np.pi * 1.05 * t) + rng.normal(0, 0.02, t.size)
+bad = T.fit_ramsey_xy(t, Xb, Yb)
+check("collapsed fringe caught by contrast gate (not blamed on T2*)", bad["amp"] < 0.20,
+      "amp=%.3f (fit would have claimed T2=%.2f us)" % (bad["amp"], bad["t2_us"]))
+
+print("== spec edge-clip detection ==")
+span, f_edge, f_mid = 48.0, 2534.45, 2557.0
+lo, hi = 2557.25 - span / 2, 2557.25 + span / 2
+check("peak 1.2 MHz from edge flagged as clipped",
+      min(abs(f_edge - lo), abs(f_edge - hi)) <= 0.15 * span,
+      "%.2f MHz from edge vs %.2f threshold" % (min(abs(f_edge - lo), abs(f_edge - hi)), 0.15 * span))
+check("interior peak not flagged",
+      min(abs(f_mid - lo), abs(f_mid - hi)) > 0.15 * span)
+
 print("== module surface ==")
 check("programs subclass mocked qick bases",
       issubclass(T.TunerSeqProgram, qick.AveragerProgram)
