@@ -620,7 +620,9 @@ class AutoPiTuner(ExperimentClass):
                      "%s at %.4f MHz (fwhm %.3f, snr %.0f); read_pulse_freq %.4f -> %.4f"
                      % (use["polarity"], use["f0"], use["fwhm"], use["snr"], f0,
                         w["read_pulse_freq"]))
-        self.data["trans"] = {"freqs": fr_f, "mag": np.abs(z_f), "fit": use["yfit"],
+        # NB: plot arrays must be self-consistent -- the fine trace pairs with the FINE
+        # fit even when the coarse fit supplied the frequency (they differ in length).
+        self.data["trans"] = {"freqs": fr_f, "mag": np.abs(z_f), "fit": fit_f["yfit"],
                               "coarse_freqs": fr_c, "coarse_mag": np.abs(z_c)}
 
     # ---------------- stage 1: spec ----------------
@@ -718,6 +720,7 @@ class AutoPiTuner(ExperimentClass):
                 "power or readout SNR." % (fit["r2"], fit["pi_gain"]))
         w["pi_gain"] = int(round(min(fit["pi_gain"], 32766)))
         w["pi2_gain"] = int(round(w["pi_gain"] / 2.0))
+        w["updated"].add("qubit_pi_gain")
         self._report("rabi", "OK", "rough pi gain %d DAC (period %.0f, r2 %.2f, contrast %.3g)"
                      % (w["pi_gain"], fit["period"], fit["r2"], fit["contrast"]))
 
@@ -801,22 +804,60 @@ class AutoPiTuner(ExperimentClass):
                     % (abs(fit["f_mhz"]), f_virt))
             delta = (abs(fit["f_mhz"]) - f_virt) / p
             t2 = fit["t2_us"]
+            # A Ramsey fringe cannot localize a frequency better than its own linewidth
+            # ~1/(2*pi*T2*).  Any "detuning" below that is noise, not signal -- so the
+            # convergence target must never be finer than the coherence allows.
+            f_res = 1.0 / (2.0 * np.pi * max(t2, 1e-3))
+            eff_tol = max(tol, f_res)
+            w["t2_us"] = float(t2)          # record as soon as measured, for the report
             self._report("ramsey", "OK",
-                         "round %d: f_osc %.4f MHz, T2* %.1f us -> detuning %+.4f MHz"
-                         % (rnd, abs(fit["f_mhz"]), t2, delta))
+                         "round %d: f_osc %.4f MHz, T2* %.2f us -> detuning %+.4f MHz "
+                         "(resolution limit %.3f MHz)"
+                         % (rnd, abs(fit["f_mhz"]), t2, delta, f_res))
+            if rnd == 1 and f_res > tol:
+                self._report("ramsey", "WARN",
+                             "T2*=%.2f us limits Ramsey resolution to ~%.3f MHz, coarser "
+                             "than the %.3f MHz target -- using %.3f MHz as the target."
+                             % (t2, f_res, tol, eff_tol))
+            # A gate that is not short compared to T2* is decoherence-limited: the
+            # rotation decays DURING the pulse, so no amplitude calibration is meaningful.
+            t_pi_us = 4.0 * float(self.cfg["sigma"])
+            if rnd == 1 and t_pi_us > 0.5 * t2:
+                moved = abs(w["qubit_freq"] - float(self.cfg["qubit_freq"]))
+                raise TunerStageError(
+                    "coherence: the pi pulse is %.3f us long (4*sigma) but T2* is only "
+                    "%.2f us -- the gate does not fit inside the coherence time, so NO "
+                    "amplitude calibration here can be meaningful.%s Fix the operating "
+                    "point first (flux/sweet spot, or shorten sigma), then re-run."
+                    % (t_pi_us, t2,
+                       " The qubit also moved %.1f MHz from its configured frequency, "
+                       "which is consistent with having drifted off its flux sweet spot "
+                       "onto a flux-sensitive (short-T2*) slope." % moved
+                       if moved > 1.0 else ""))
             if abs(delta) > 2.0:
                 raise TunerStageError("ramsey: |detuning| %.2f MHz is implausibly large "
                                       "-- spec stage suspect; not applying." % delta)
-            if prev_abs_delta is not None and abs(delta) > 1.5 * prev_abs_delta and abs(delta) > tol:
-                raise TunerStageError(
-                    "ramsey: the correction made the detuning GROW (%.4f -> %.4f MHz). "
-                    "Sign convention p=%+d is wrong for this setup -- rerun with "
-                    "params['ramsey']['sign']=%+d." % (prev_abs_delta, abs(delta), p, -p))
-            if abs(delta) <= tol:
+            if abs(delta) <= eff_tol:
                 self._report("ramsey", "OK", "converged: qubit_pi_freq = %.4f MHz "
-                                             "(T2* %.1f us)" % (w["drive_freq"], t2))
+                                             "(T2* %.2f us)" % (w["drive_freq"], t2))
                 w["t2_us"] = float(t2)
                 return
+            if prev_abs_delta is not None and abs(delta) > 1.5 * prev_abs_delta:
+                # Growth only implicates the SIGN if it is bigger than the measurement
+                # can explain; otherwise both readings are consistent with noise and
+                # blaming the sign would be a misdiagnosis.
+                if (abs(delta) - prev_abs_delta) > 2.0 * f_res:
+                    raise TunerStageError(
+                        "ramsey: the correction made the detuning GROW (%.4f -> %.4f MHz, "
+                        "well beyond the %.3f MHz resolution). Sign convention p=%+d is "
+                        "wrong for this setup -- rerun with params['ramsey']['sign']=%+d."
+                        % (prev_abs_delta, abs(delta), f_res, p, -p))
+                raise TunerStageError(
+                    "ramsey: detuning is not converging (%.4f -> %.4f MHz) but both "
+                    "values are within the %.3f MHz resolution set by T2*=%.2f us -- the "
+                    "fringe is too short-lived to measure the frequency this finely. "
+                    "This is a COHERENCE problem, not a sign problem."
+                    % (prev_abs_delta, abs(delta), f_res, t2))
             w["drive_freq"] = round(float(w["drive_freq"] + delta), 4)
             prev_abs_delta = abs(delta)
             # adapt the next round: longer window (T2*-limited), finer virtual detuning
@@ -941,44 +982,55 @@ class AutoPiTuner(ExperimentClass):
         return ok
 
     # ---------------- plotting ----------------
+    @staticmethod
+    def _pair(ax, x, y, *a, **kw):
+        """Plot only when x and y line up -- a mismatched pair is a plotting bug, and it
+        must never be allowed to kill a finished run (the measurement is the deliverable)."""
+        x = np.asarray(x)
+        y = np.asarray(y)
+        if x.ndim == 1 and y.ndim == 1 and x.size == y.size and x.size:
+            ax.plot(x, y, *a, **kw)
+
     def _plot_summary(self, w, success):
         fig, axs = plt.subplots(2, 3, figsize=(15, 8))
         d = self.data
         ax = axs[0, 0]
         if "trans" in d:
-            ax.plot(d["trans"]["freqs"], d["trans"]["mag"], ".", ms=3)
-            ax.plot(d["trans"]["freqs"], d["trans"]["fit"], "-", lw=1)
+            self._pair(ax, d["trans"].get("coarse_freqs", []), d["trans"].get("coarse_mag", []),
+                       ".", ms=2, color="0.7")
+            self._pair(ax, d["trans"]["freqs"], d["trans"]["mag"], ".", ms=3)
+            self._pair(ax, d["trans"]["freqs"], d["trans"]["fit"], "-", lw=1)
             ax.axvline(w["read_pulse_freq"], color="r", ls="--", lw=0.8)
         ax.set_title("resonator")
         ax.set_xlabel("MHz")
         ax = axs[0, 1]
         if "spec" in d:
-            ax.plot(d["spec"]["freqs"], d["spec"]["sig"], ".", ms=3)
-            ax.plot(d["spec"]["freqs"], d["spec"]["fit"], "-", lw=1)
+            self._pair(ax, d["spec"]["freqs"], d["spec"]["sig"], ".", ms=3)
+            self._pair(ax, d["spec"]["freqs"], d["spec"]["fit"], "-", lw=1)
             ax.axvline(w["qubit_freq"], color="r", ls="--", lw=0.8)
         ax.set_title("qubit spec")
         ax.set_xlabel("MHz")
         ax = axs[0, 2]
         if "rabi" in d:
-            ax.plot(d["rabi"]["gains"], d["rabi"]["sig"], ".", ms=3)
-            ax.plot(d["rabi"]["gains"], d["rabi"]["fit"], "-", lw=1)
+            self._pair(ax, d["rabi"]["gains"], d["rabi"]["sig"], ".", ms=3)
+            self._pair(ax, d["rabi"]["gains"], d["rabi"]["fit"], "-", lw=1)
             ax.axvline(w.get("pi_gain", np.nan), color="r", ls="--", lw=0.8)
         ax.set_title("rough Rabi")
         ax.set_xlabel("gain (DAC)")
         ax = axs[1, 0]
         if "ramsey" in d:
-            ax.plot(d["ramsey"]["taus"], d["ramsey"]["pop_x"], ".", ms=3, label="X")
-            ax.plot(d["ramsey"]["taus"], d["ramsey"]["pop_y"], ".", ms=3, label="Y")
-            ax.plot(d["ramsey"]["taus"], d["ramsey"]["xfit"], "-", lw=1)
-            ax.plot(d["ramsey"]["taus"], d["ramsey"]["yfit"], "-", lw=1)
+            self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["pop_x"], ".", ms=3, label="X")
+            self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["pop_y"], ".", ms=3, label="Y")
+            self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["xfit"], "-", lw=1)
+            self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["yfit"], "-", lw=1)
             ax.legend(fontsize=7)
-        ax.set_title("RamseyXY (last round)")
+        ax.set_title("RamseyXY (last round)  T2*=%.2f us" % w.get("t2_us", np.nan))
         ax.set_xlabel("delay (us)")
         ax = axs[1, 1]
         if "fine_amp" in d:
             for name, rd in sorted(d["fine_amp"].items()):
-                ax.plot(rd["N"], rd["pop"], ".-", ms=3, lw=0.7, label=name)
-                ax.plot(rd["N"], rd["fit"], "--", lw=0.7, color="gray")
+                self._pair(ax, rd["N"], rd["pop"], ".-", ms=3, lw=0.7, label=name)
+                self._pair(ax, rd["N"], rd["fit"], "--", lw=0.7, color="gray")
             ax.axhline(0.5, color="k", lw=0.5)
             ax.legend(fontsize=7)
         ax.set_title("fine amplitude (ping-pong)")
@@ -1048,8 +1100,21 @@ class AutoPiTuner(ExperimentClass):
             for k, v in tuned.items():
                 print("   %-18s %s" % (k, v))
         else:
-            print("TUNE FAILED%s -- config will NOT be written."
-                  % ("" if failure is None else " (%s)" % failure))
+            print("TUNE FAILED%s" % ("" if failure is None else " (%s)" % failure))
+            print("Config NOT written.  But these WERE measured this run -- apply by hand "
+                  "if you trust them:")
+            start = {"read_pulse_freq": float(cfg["read_pulse_freq"]),
+                     "qubit_freq": float(cfg["qubit_freq"]),
+                     "qubit_pi_gain": int(cfg["qubit_pi_gain"])}
+            for key, got in (("read_pulse_freq", w["read_pulse_freq"]),
+                             ("qubit_freq", w["qubit_freq"]),
+                             ("qubit_pi_gain", w["pi_gain"])):
+                if key in w["updated"]:
+                    was = start[key]
+                    moved = " (moved %+.4f)" % (float(got) - was) if was else ""
+                    print("   %-18s %-12s  was %s%s" % (key, got, was, moved))
+            if "t2_us" in w:
+                print("   %-18s %.2f us" % ("T2* (measured)", w["t2_us"]))
         print("=" * 72)
 
         self.data.update({
@@ -1059,12 +1124,16 @@ class AutoPiTuner(ExperimentClass):
             "ramsey_sign": int(w.get("ramsey_sign", 0)),
             "time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         })
-        fig = self._plot_summary(w, success)
-        if plotDisp:
-            plt.show(block=False)
-            plt.pause(0.1)
-        else:
-            plt.close(fig)
+        try:
+            fig = self._plot_summary(w, success)
+            if plotDisp:
+                plt.show(block=False)
+                plt.pause(0.1)
+            else:
+                plt.close(fig)
+        except Exception as perr:      # a plot must never lose a completed measurement
+            print("[auto-pi] WARNING: summary plot failed (%s); data still saved." % perr)
+            plt.close("all")
         self.pickle_data()
         self.save_config()
         return {'config': cfg, 'data': self.data}

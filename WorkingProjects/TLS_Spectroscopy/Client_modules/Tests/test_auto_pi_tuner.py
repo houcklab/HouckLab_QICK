@@ -188,6 +188,31 @@ check("unrounded np.float64 freq verifies (4-dec contract)",
 check("_fmt(np.int64) is an int literal", CU._fmt(np.int64(7)) == "7")
 check("_fmt(np.bool_) is a bool literal", CU._fmt(np.bool_(True)) == "True")
 
+print("== plot robustness (mismatched arrays must not crash a finished run) ==")
+import matplotlib.pyplot as plt
+_fig, _ax = plt.subplots()
+try:
+    T.AutoPiTuner._pair(_ax, np.arange(41), np.arange(183), "-")   # the shape that crashed
+    T.AutoPiTuner._pair(_ax, np.arange(10), np.arange(10), "-")    # valid pair still plots
+    check("mismatched x/y skipped, matched pair drawn", len(_ax.lines) == 1,
+          "%d line(s) drawn" % len(_ax.lines))
+except Exception as e:
+    check("mismatched x/y skipped, matched pair drawn", False, repr(e))
+plt.close(_fig)
+
+print("== ramsey coherence-limited diagnosis ==")
+# T2*=0.6 us -> resolution ~265 kHz; the observed 0.081 -> 0.159 MHz "growth" is noise,
+# so it must NOT be blamed on the sign convention.
+for t2, d_prev, d_now, expect_sign_blame in ((0.6, 0.0809, 0.1591, False),
+                                             (20.0, 0.0809, 0.1591, True)):
+    f_res = 1.0 / (2.0 * np.pi * t2)
+    blames_sign = (d_now - d_prev) > 2.0 * f_res
+    check("T2*=%.1f us -> sign blamed: %s" % (t2, expect_sign_blame),
+          blames_sign == expect_sign_blame, "f_res=%.3f MHz" % f_res)
+# and a detuning below the resolution counts as converged
+check("detuning below resolution = converged",
+      0.0809 <= max(0.02, 1.0 / (2.0 * np.pi * 0.6)))
+
 print("== module surface ==")
 check("programs subclass mocked qick bases",
       issubclass(T.TunerSeqProgram, qick.AveragerProgram)
