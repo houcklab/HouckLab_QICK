@@ -81,6 +81,33 @@ def _mad_sigma(x):
     return float(np.median(np.abs(x - np.median(x)))) * 1.4826 + 1e-15
 
 
+def _noise_sigma(y):
+    """Robust noise estimate that is immune to smooth structure.
+
+    Estimating noise as MAD(y - smooth(y)) FAILS on a well-averaged trace: the smoothed
+    curve nearly equals the data, the difference collapses toward zero, and any SNR built
+    on it explodes (observed: 8e15 on real hardware data, which made every fit pass its
+    `snr > 5` gate and let a spurious bump be accepted as the qubit line).
+
+    The second difference of a smooth curve is ~0, so MAD(diff(y, 2))/sqrt(6) measures the
+    noise alone.  Floored relative to the trace range so it can never reach zero."""
+    y = np.asarray(y, dtype=float)
+    y = y[np.isfinite(y)]
+    if y.size < 5:
+        return _mad_sigma(y)
+    d2 = np.diff(y, n=2)
+    s = float(np.median(np.abs(d2 - np.median(d2)))) * 1.4826 / np.sqrt(6.0)
+    # Averaged accumulator values are QUANTIZED, so a flat baseline can repeat exactly and
+    # drive every difference-based estimate to zero.  The noise can never be smaller than
+    # the quantization step / sqrt(12).
+    uniq = np.unique(y)
+    if uniq.size > 1:
+        step = float(np.min(np.diff(uniq)))
+        s = max(s, step / np.sqrt(12.0))
+    rng = float(np.ptp(y))
+    return float(max(s, 1e-4 * (rng if rng > 0 else 1.0)))
+
+
 def _smooth(y, npts_per_feature=None, w=None):
     """Moving average whose window is set by the EXPECTED FEATURE WIDTH IN SAMPLES, not a
     fixed sample count.  A fixed 7-sample boxcar is wider than the feature itself on a
@@ -142,12 +169,15 @@ def fit_resonance(freqs, mag, polarity=None, expected_fwhm=None):
                 ok = True
         except Exception:
             pass
-    # Noise from the HIGH-FREQUENCY content of the raw trace, not from the residual to
-    # the model: when curve_fit fails, yfit falls back to the smoothed data, the residual
-    # collapses, and the SNR explodes -- which would let a FAILED narrow scan out-score a
-    # successful wide one in the escalation.
-    snr = depth / _mad_sigma(mag - sm)
-    ok = bool(ok and snr > 5.0 and fwhm > 0.5 * abs(df))
+    # Noise from the second difference of the RAW trace.  Neither the residual to the
+    # model (which collapses when curve_fit falls back to the smoothed data) nor
+    # MAD(mag - smooth) (which collapses on a well-averaged trace) is a valid noise
+    # estimate -- both produce astronomically large SNRs that defeat the ok gate.
+    snr = depth / _noise_sigma(mag)
+    # require significance AND that the feature is actually resolved by this scan (at
+    # least ~2 samples across it) and not absurdly wide compared with the window
+    ok = bool(ok and snr > 5.0 and fwhm > 1.5 * abs(df)
+              and fwhm < 0.7 * (freqs.max() - freqs.min()))
     return {"ok": ok, "f0": float(f0), "fwhm": float(fwhm), "snr": float(snr),
             "polarity": polarity, "yfit": np.asarray(yfit, dtype=float),
             "f0_err": float(f0_err), "depth": depth}
@@ -861,6 +891,9 @@ class AutoTuner(ExperimentClass):
         if not fit["ok"]:
             raise TunerError("spec: no qubit line within +/-%.0f MHz of %.3f (best snr "
                              "%.1f)." % (span_used / 2, self.w["qubit_freq"], fit["snr"]))
+        self._say("spec", "OK", "candidate line at %.4f MHz (span %.0f MHz, gain %d, "
+                                "snr %.1f, fwhm %.3f) -- confirming against power"
+                  % (fit["f0"], span_used, gain_used, fit["snr"], fit["fwhm"]))
         # ---- re-centre if the peak sits near a scan edge (a clipped peak's centre is
         #      biased inward and may be the shoulder of a line outside the window) ----
         for _ in range(3):
@@ -894,9 +927,16 @@ class AutoTuner(ExperimentClass):
                                     "%d powers; highest-power centre %.4f)"
                       % (f_q, len(centres), centres[0]))
         else:
-            f_q = float(fit["f0"])
-            self._say("spec", "WARN", "only one usable power -- centre %.4f MHz is NOT "
-                                      "power-extrapolated and may be Stark shifted" % f_q)
+            # A REAL qubit line persists (and sharpens) as the drive comes down; a noise
+            # artifact does not.  Failing to reproduce it at ANY lower power means the
+            # candidate was not the qubit -- accepting it here is how a spurious bump in
+            # the first window prevents the search from ever widening to the real line.
+            raise TunerError(
+                "spec: the candidate at %.4f MHz did NOT reproduce at any reduced drive "
+                "power (%d of %d power steps found it), so it is not the qubit line. "
+                "Widen params['spec']['span_mhz'] / raise max_span_mhz, or the line lies "
+                "outside the searched window."
+                % (fit["f0"], len(centres), len(P["power_ratios"])))
         self.w["qubit_freq"] = round(f_q, 4)
         self.w["spec_fwhm"] = float(fit["fwhm"])
         self.w["updated"].add("qubit_freq")

@@ -217,6 +217,29 @@ check("narrow 3 MHz/61pt scan finds a 216 kHz dip (old fixed kernel erased it)",
 
 check("pure noise rejected", not T.fit_resonance(f, rng.normal(0, 0.05, f.size))["ok"])
 
+print("== noise estimator: the two hardware pathologies ==")
+# (1) a well-averaged (nearly noiseless) trace must NOT report an astronomical SNR --
+#     on hardware this read 8.2e15 and made every fit pass its snr>5 gate
+fq = np.linspace(2547.25, 2567.25, 121)
+smoothbump = 0.30 + 0.002 * np.exp(-((fq - 2561.76) / 1.5) ** 2)
+rs = T.fit_resonance(fq, smoothbump, polarity="peak", expected_fwhm=2.0)
+check("smooth trace does not produce a 1e15 SNR", rs["snr"] < 1e4, "snr=%.3g" % rs["snr"])
+# (2) QUANTIZED flat baseline (averaged accumulator values repeat exactly) must not
+#     collapse the noise estimate to zero
+qstep = 1e-4
+quant = np.round(smoothbump / qstep) * qstep
+rq = T.fit_resonance(fq, quant, polarity="peak", expected_fwhm=2.0)
+check("quantized baseline does not collapse the noise estimate", rq["snr"] < 1e4,
+      "snr=%.3g" % rq["snr"])
+# and a genuine resonance must still be found and pure noise still rejected
+rgood = T.fit_resonance(fq, 0.30 - 0.05 / (1 + ((fq - 2557.0) / 1.0) ** 2)
+                        + rng.normal(0, 0.002, fq.size), expected_fwhm=2.0)
+check("a real dip is still found after the noise fix", rgood["ok"]
+      and abs(rgood["f0"] - 2557.0) < 0.3, "f0=%.3f snr=%.1f" % (rgood["f0"], rgood["snr"]))
+check("pure noise is still rejected",
+      not T.fit_resonance(fq, 0.3 + rng.normal(0, 0.002, fq.size))["ok"])
+check("_noise_sigma is strictly positive on constant data", T._noise_sigma(np.full(50, 0.3)) > 0)
+
 print("== optimal readout detuning (analytic) ==")
 for chi, kap, expect_mid in ((0.05, 1.0, True), (0.10, 0.4, True), (0.5, 0.35, False)):
     d = T.optimal_readout_detuning(chi, kap)
