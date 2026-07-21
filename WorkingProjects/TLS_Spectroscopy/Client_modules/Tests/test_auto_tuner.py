@@ -344,6 +344,53 @@ check("qubit_pi_freq only written because fine_pi_freq measured it",
       "qubit_pi_freq" in tuned)
 check("qubit_pi2_gain NOT written (never measured)", "qubit_pi2_gain" not in tuned)
 
+print("\n== the graph must actually ITERATE (this is what the old test missed) ==")
+# The previous test asserted only recovered VALUES, so it passed while maintain() ran a
+# single straight-line pass and printed "FIXED POINT reached".  Count calibrations.
+calls = {}
+for _name, _deps, _meth in T.GRAPH:
+    orig_fn = getattr(T.AutoTuner, _meth)
+
+    def _wrap(fn, nm):
+        def inner(self, *a, **k):
+            calls[nm] = calls.get(nm, 0) + 1
+            return fn(self, *a, **k)
+        return inner
+    setattr(T.AutoTuner, _meth, _wrap(orig_fn, _name))
+
+dev2 = VirtualQubit(np.random.default_rng(9))
+install_simulator(dev2)
+t2 = T.AutoTuner(soc=None, soccfg=None, path="q4", outerFolder=tmp, suffix="Iter",
+                 cfg=dict(BaseConfig),
+                 params={"max_rounds": 3,
+                         "spec": {"span_mhz": 20.0, "max_span_mhz": 120.0},
+                         "t1": {"points": 6, "shots": 300},
+                         "single_shot": {"shots": 1500, "min_sep_sigma": 2.0},
+                         "fine_pi_amp": {"M_list": (4, 10), "frac": (0.12, 0.05)}})
+t2.acquire(plotDisp=False)
+check("at least one node was recalibrated (invalidation fired)",
+      max(calls.values()) >= 2, "calls=%s" % calls)
+check("the readout nodes forced spec/rough_pi to be re-measured",
+      calls.get("spec", 0) >= 2 or calls.get("rough_pi", 0) >= 2,
+      "spec=%d rough_pi=%d" % (calls.get("spec", 0), calls.get("rough_pi", 0)))
+check("_mark_dependents_stale is reachable (deps include readout back-edges)",
+      any("readout_power" in deps or "chi" in deps for _n, deps, _m in T.GRAPH))
+
+print("\n== escalation must prefer a SUCCESSFUL fit over a higher-SNR failed one ==")
+good = {"ok": True, "snr": 6.0}
+bad_hi = {"ok": False, "snr": 1e6}
+check("ok=True beats a failed fit with astronomically higher snr",
+      T._better_fit(good, bad_hi) and not T._better_fit(bad_hi, good))
+check("between two ok fits, higher snr wins",
+      T._better_fit({"ok": True, "snr": 9.0}, good))
+
+print("\n== optimal_readout_detuning returns a MAGNITUDE (D is even in d) ==")
+for chi in (+0.5, -0.5):
+    d = T.optimal_readout_detuning(chi, 0.35)
+    check("chi=%+.1f -> non-negative magnitude" % chi, d >= 0, "d=%.4f" % d)
+check("magnitude is the same for +chi and -chi (D is even)",
+      abs(T.optimal_readout_detuning(0.5, 0.35) - T.optimal_readout_detuning(-0.5, 0.35)) < 1e-9)
+
 print("\n== park-flux assertion ==")
 try:
     bad = dict(BaseConfig)
