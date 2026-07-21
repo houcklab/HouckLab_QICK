@@ -231,6 +231,49 @@ def fit_ramsey_xy(t_us, pop_x, pop_y):
             "xfit": fit[:t.size], "yfit": fit[t.size:]}
 
 
+def fit_decay_cosine(t, y):
+    """A exp(-t/tau) cos(2 pi f t + phi) + base, with f >= 0 (UNSIGNED).  Used by the
+    classic drive-detuned Ramsey, which has no quadrature partner to sign the frequency.
+    Returns dict(ok, f_mhz, t2_us, amp, yfit)."""
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    base0 = float(np.mean(y))
+    dt = float(np.mean(np.diff(t)))
+    nyq = 0.5 / dt
+    n = t.size
+    fft = np.fft.rfft((y - base0) * np.hanning(n))
+    fax = np.fft.rfftfreq(n, d=dt)
+    k = 1 + int(np.argmax(np.abs(fft[1:]))) if n > 3 else 1
+    f_seed = float(fax[min(k, fax.size - 1)])
+
+    def model(tt, amp, tau, f, phi, base):
+        return base + amp * np.exp(-tt / tau) * np.cos(2 * np.pi * f * tt + phi)
+
+    best = None
+    for tau0 in (t.max(), t.max() / 3.0):
+        for phi0 in (0.0, np.pi / 2, np.pi):
+            try:
+                popt, _ = curve_fit(
+                    model, t, y,
+                    p0=[max(np.ptp(y) / 2.0, 1e-3), tau0, max(f_seed, 0.05), phi0, base0],
+                    bounds=([0.0, dt, 0.0, -np.pi, -1.0],
+                            [2.0, 200.0 * t.max(), nyq, np.pi, 2.0]), maxfev=20000)
+                r = y - model(t, *popt)
+                sse = float(np.dot(r, r))
+                if best is None or sse < best[0]:
+                    best = (sse, popt)
+            except Exception:
+                continue
+    if best is None:
+        return {"ok": False, "f_mhz": np.nan, "t2_us": np.nan, "amp": 0.0,
+                "yfit": np.zeros_like(y)}
+    _, (amp, tau, f, phi, base) = best
+    yfit = model(t, amp, tau, f, phi, base)
+    resid = float(np.std(y - yfit))
+    return {"ok": bool(amp > 4.0 * max(resid, 1e-6) and amp > 0.10),
+            "f_mhz": float(abs(f)), "t2_us": float(tau), "amp": float(amp), "yfit": yfit}
+
+
 def _ea_model(N, base, amp, dth, eps):
     N = np.asarray(N, dtype=float)
     return base + 0.5 * amp * ((-1.0) ** N) * np.sin(N * dth + eps)
@@ -507,7 +550,10 @@ DEFAULT_PARAMS = {
     "rabi": {"gain_max": 30000, "points": 61, "shots": 400, "relax_delay_us": None},
     "ramsey": {"f_virt_mhz": 1.0, "tau_max_us": 4.0, "points": 31, "shots": 500,
                "rounds": 3, "tol_mhz": 0.02, "sign": None,  # None -> history else probe
-               "probe_offset_mhz": 0.25, "relax_delay_us": None},
+               "probe_offset_mhz": 0.25, "relax_delay_us": None,
+               # fallback used when the virtual-Z phase check fails: drive-detuned
+               # Ramsey at +/- this offset (must exceed the residual detuning)
+               "classic_offset_mhz": 1.0},
     "fine_amp": {"n_max": 14, "shots": 700, "rounds": 4, "tol_rad": 0.010,
                  "relax_delay_us": None},
     "verify": {"shots": 1000, "snr_min": 4.0, "relax_delay_us": None},
@@ -843,8 +889,115 @@ class AutoPiTuner(ExperimentClass):
         self._report("ramsey", "OK", "sign probe: slope %.2f -> convention p=%+d" % (slope, p))
         return p, "measured on hardware"
 
+    def _check_virtual_z(self, w, P):
+        """Decisive test of the virtual-Z phase -- the one ingredient the Ramsey needs
+        that no earlier stage exercises.
+
+        At an essentially ZERO delay, sweep the second pi/2's phase over 360 deg.  The
+        population must trace a full cosine (swing ~1).  Flat means the phase register is
+        not reaching the pulse, so no Ramsey can ever work -- and that failure would
+        otherwise masquerade as a dead fringe / absurdly short T2*.  Because the delay is
+        ~0, dephasing cannot explain a flat result: this separates a PHASE bug from real
+        decoherence."""
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        cfg["seq_gap_us"] = 0.005
+        shots = int(P["shots"])
+        sx = int(w["pi2_gain"])
+        phases = np.arange(0.0, 360.0, 30.0)
+        refs_pre = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        I = np.empty(phases.size)
+        Q = np.empty(phases.size)
+        for j, ph in enumerate(phases):
+            seq = [("pulse", sx, 0.0), ("delay", 0.01), ("pulse", sx, float(ph))]
+            I[j], Q[j], _, _ = _run_seq(self, cfg, seq, w["drive_freq"], shots)
+        refs_post = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        g, e = _combine_refs(refs_pre, refs_post, self._report, "ramsey")
+        pop = iq_to_pop(I, Q, g, e)
+        swing = float(np.ptp(pop))
+        self.data["phase_check"] = {"phases": phases, "pop": pop}
+        self._report("ramsey", "OK",
+                     "virtual-Z check (pi/2, ~0 delay, pi/2 at phase phi): population "
+                     "swing %.2f over 360 deg [%s]"
+                     % (swing, " ".join("%.2f" % v for v in pop)))
+        return swing
+
+    def _ramsey_classic_series(self, w, offset_mhz, tau_max, npts, shots, relax):
+        """Ramsey with NO phase control: both pi/2 pulses at phase 0, the drive itself
+        deliberately offset.  Fringe frequency = |f_q - (drive + offset)|, unsigned."""
+        cfg = self._stage_cfg(relax)
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        taus_nominal = np.linspace(0.05, float(tau_max), int(npts))
+        taus = np.array([self.soccfg.cycles2us(self.soccfg.us2cycles(t))
+                         for t in taus_nominal])
+        sx = int(w["pi2_gain"])
+        drive = float(w["drive_freq"]) + float(offset_mhz)
+        # references use the ON-resonance drive: they only define the |g>->|e> IQ axis
+        refs_pre = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        I = np.empty(taus.size)
+        Q = np.empty(taus.size)
+        for j, t in enumerate(taus):
+            seq = [("pulse", sx, 0.0), ("delay", float(t)), ("pulse", sx, 0.0)]
+            I[j], Q[j], _, _ = _run_seq(self, cfg, seq, drive, shots)
+        refs_post = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        g, e = _combine_refs(refs_pre, refs_post, self._report, "ramsey")
+        pop = iq_to_pop(I, Q, g, e)
+        return taus, pop, fit_decay_cosine(taus, pop)
+
+    def _stage_ramsey_classic(self, w, P):
+        """Frequency calibration that needs no phase register and no sign convention.
+
+        Run two Ramseys with the drive offset by +d and -d.  With x = f_q - f_drive,
+        the (unsigned) fringe frequencies are f1 = |x - d| and f2 = |x + d|; as long as
+        |x| < d this gives x = (f2 - f1)/2 exactly, sign included."""
+        d = float(P["classic_offset_mhz"])
+        tol = float(P["tol_mhz"])
+        tau_max = float(P["tau_max_us"])
+        for rnd in range(1, int(P["rounds"]) + 1):
+            t1, p1, f1 = self._ramsey_classic_series(w, +d, tau_max, P["points"],
+                                                     P["shots"], P["relax_delay_us"])
+            t2_, p2, f2 = self._ramsey_classic_series(w, -d, tau_max, P["points"],
+                                                      P["shots"], P["relax_delay_us"])
+            self.data["ramsey"] = {"taus": t1, "pop_x": p1, "pop_y": p2,
+                                   "xfit": f1["yfit"], "yfit": f2["yfit"]}
+            if not (f1["ok"] and f2["ok"]):
+                raise TunerStageError(
+                    "ramsey (classic): fringe fit failed at offset %+0.2f/%0.2f MHz "
+                    "(contrast %.2f/%.2f). With the pi confirmed good, a dead fringe at "
+                    "BOTH offsets points at genuine dephasing (T2* << %.1f us)."
+                    % (d, -d, f1["amp"], f2["amp"], tau_max))
+            x = (f2["f_mhz"] - f1["f_mhz"]) / 2.0
+            t2_us = float(0.5 * (f1["t2_us"] + f2["t2_us"]))
+            w["t2_us"] = t2_us
+            f_res = 1.0 / (2.0 * np.pi * max(t2_us, 1e-3))
+            eff_tol = max(tol, f_res)
+            self._report("ramsey", "OK",
+                         "classic round %d: fringes %.4f / %.4f MHz at offsets %+.2f/%.2f "
+                         "-> detuning %+.4f MHz, T2* %.2f us (resolution %.3f MHz)"
+                         % (rnd, f1["f_mhz"], f2["f_mhz"], d, -d, x, t2_us, f_res))
+            if max(f1["f_mhz"], f2["f_mhz"]) > 1.9 * d:
+                raise TunerStageError(
+                    "ramsey (classic): a fringe at %.3f MHz exceeds the +/-%.2f MHz "
+                    "offset, so |detuning| > offset and x=(f2-f1)/2 is not valid -- "
+                    "raise params['ramsey']['classic_offset_mhz'] above the residual "
+                    "detuning." % (max(f1["f_mhz"], f2["f_mhz"]), d))
+            if abs(x) <= eff_tol:
+                self._report("ramsey", "OK", "converged: qubit_pi_freq = %.4f MHz "
+                                             "(T2* %.2f us)" % (w["drive_freq"], t2_us))
+                return
+            w["drive_freq"] = round(float(w["drive_freq"] + x), 4)
+        self._report("ramsey", "WARN", "classic Ramsey did not converge in %d rounds; "
+                                        "using %.4f MHz" % (P["rounds"], w["drive_freq"]))
+
     def _stage_ramsey(self, w):
         P = self.P["ramsey"]
+        swing = self._check_virtual_z(w, P)
+        if swing < 0.3:
+            self._report("ramsey", "WARN",
+                         "virtual-Z phase is NOT working (swing %.2f at zero delay, where "
+                         "dephasing cannot be the cause) -- switching to the CLASSIC "
+                         "drive-detuned Ramsey, which needs no phase control." % swing)
+            return self._stage_ramsey_classic(w, P)
         p, sign_src = self._resolve_ramsey_sign(w, P)
         w["ramsey_sign"] = p
         self._report("ramsey", "OK", "using sign p=%+d (%s)" % (p, sign_src))

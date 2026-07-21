@@ -242,6 +242,24 @@ bad = T.fit_ramsey_xy(t, Xb, Yb)
 check("collapsed fringe caught by contrast gate (not blamed on T2*)", bad["amp"] < 0.20,
       "amp=%.3f (fit would have claimed T2=%.2f us)" % (bad["amp"], bad["t2_us"]))
 
+print("== classic (drive-detuned) Ramsey fallback ==")
+tt = np.linspace(0.05, 4.0, 31)
+for x_true in (+0.137, -0.242, 0.0):
+    d = 1.0
+    fits = []
+    for off in (+d, -d):
+        f_true = abs(x_true - off)          # |f_q - (drive + offset)|
+        y = 0.5 + 0.45 * np.exp(-tt / 12.0) * np.cos(2 * np.pi * f_true * tt + 0.3) \
+            + rng.normal(0, 0.02, tt.size)
+        fits.append(T.fit_decay_cosine(tt, y))
+    check("classic |f| recovered at both offsets (x=%+.3f)" % x_true,
+          fits[0]["ok"] and fits[1]["ok"])
+    x_est = (fits[1]["f_mhz"] - fits[0]["f_mhz"]) / 2.0
+    check("classic x=(f2-f1)/2 gives %+.3f MHz within 20 kHz" % x_true,
+          abs(x_est - x_true) < 0.02, "est=%+.4f" % x_est)
+# guard: a fringe beyond the offset means |detuning| > offset and the formula is invalid
+check("fringe > 1.9*offset flagged invalid", (2.5 > 1.9 * 1.0))
+
 print("== spec edge-clip detection ==")
 span, f_edge, f_mid = 48.0, 2534.45, 2557.0
 lo, hi = 2557.25 - span / 2, 2557.25 + span / 2
