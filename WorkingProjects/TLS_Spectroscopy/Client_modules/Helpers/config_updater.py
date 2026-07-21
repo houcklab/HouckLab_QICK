@@ -141,6 +141,9 @@ def history_path(path=None):
 
 
 def append_history(record, path=None):
+    """Append one run to the calibration history, ATOMICALLY.  Writing in place would
+    destroy the entire history if the process died mid-write -- the same care
+    update_baseconfig already takes for initialize.py."""
     hp = history_path(path)
     records = []
     if os.path.exists(hp):
@@ -148,18 +151,42 @@ def append_history(record, path=None):
             with open(hp, encoding="utf-8") as f:
                 records = json.load(f)
         except Exception:
+            # never silently drop an unreadable history -- keep it alongside
+            try:
+                os.replace(hp, hp + ".corrupt_" +
+                           datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+            except Exception:
+                pass
             records = []
     if not isinstance(records, list):
         records = [records]
     records.append(record)
-    with open(hp, "w", encoding="utf-8") as f:
+    tmp = hp + ".tmp_write"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2, default=str)
+    os.replace(tmp, hp)
     return hp
 
 
-def last_ramsey_sign(path=None):
+def prune_backups(path=None, keep=10):
+    """Keep only the newest `keep` initialize.py backups; they otherwise accumulate
+    without bound inside the package directory."""
+    path = path or config_path()
+    d = os.path.dirname(path)
+    base = os.path.basename(path) + ".bak_"
+    baks = sorted((f for f in os.listdir(d) if f.startswith(base)), reverse=True)
+    for f in baks[int(keep):]:
+        try:
+            os.remove(os.path.join(d, f))
+        except Exception:
+            pass
+    return len(baks)
+
+
+def last_ramsey_sign(qubit=None, path=None):
     """The hardware-measured Ramsey sign convention from the most recent run that
-    recorded one (+1/-1), else None."""
+    recorded one (+1/-1), else None.  Filtered by QUBIT when given: a sign measured on
+    one qubit must not be silently inherited by another."""
     hp = history_path(path)
     if not os.path.exists(hp):
         return None
@@ -169,6 +196,8 @@ def last_ramsey_sign(path=None):
     except Exception:
         return None
     for rec in reversed(records if isinstance(records, list) else [records]):
+        if qubit is not None and rec.get("qubit") not in (None, qubit):
+            continue
         s = rec.get("ramsey_sign")
         if s in (1, -1):
             return int(s)
