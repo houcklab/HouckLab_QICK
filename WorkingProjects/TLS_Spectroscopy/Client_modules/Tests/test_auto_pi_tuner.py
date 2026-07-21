@@ -303,6 +303,43 @@ check("peak 1.2 MHz from edge flagged as clipped",
 check("interior peak not flagged",
       min(abs(f_mid - lo), abs(f_mid - hi)) > 0.15 * span)
 
+print("== single-shot fidelity (absolute pi judge) ==")
+n, sd = 4000, 1.0
+sig = rng.normal(0, sd, n)
+ig, qg = rng.normal(0, sd, n), rng.normal(0, sd, n)
+ie, qe = rng.normal(6, sd, n), rng.normal(0, sd, n)
+r = T.single_shot_fidelity(ig, qg, ie, qe)
+check("perfect pi -> F>0.99, sep>5 sigma", r["fidelity"] > 0.99 and r["sep_sigma"] > 5,
+      "F=%.3f sep=%.2f" % (r["fidelity"], r["sep_sigma"]))
+k = int(0.2 * n)                                   # 20% of the e-prep left in |g>
+ie2 = np.concatenate([rng.normal(0, sd, k), rng.normal(6, sd, n - k)])
+r2 = T.single_shot_fidelity(ig, qg, ie2, rng.normal(0, sd, n))
+check("20% bad pi -> P(g|e) equals the pi error", abs(r2["p_g_given_e"] - 0.20) < 0.03,
+      "P(g|e)=%.3f" % r2["p_g_given_e"])
+check("bad pi does NOT corrupt P(e|g) (isolates pi from readout)",
+      r2["p_e_given_g"] < 0.02, "P(e|g)=%.3f" % r2["p_e_given_g"])
+r3 = T.single_shot_fidelity(ig, qg, rng.normal(0.5, sd, n), rng.normal(0, sd, n))
+check("overlapping blobs flagged (<2 sigma)", r3["sep_sigma"] < 2.0,
+      "sep=%.2f" % r3["sep_sigma"])
+# the OLD SEM-based gate would have passed this same non-discriminating readout
+sem_snr = (0.5) / ((sd / np.sqrt(1000)) * np.sqrt(2))
+check("old SEM-based SNR would have passed a 0.5-sigma readout", sem_snr > 4.0,
+      "SEM snr=%.1f vs real sep=0.50 sigma" % sem_snr)
+
+print("== even-M pi-train minimisation (no pi/2, no free evolution) ==")
+gpi = 11500.0
+for M, tol_frac in ((4, 0.02), (12, 0.005), (32, 0.005)):
+    g = np.round(gpi * np.linspace(0.95, 1.05, 13)).astype(int)
+    res = np.sin(M * (np.pi * (g / gpi - 1.0)) / 2.0) ** 2 + rng.normal(0, 0.01, g.size)
+    gopt, interior = T.parabola_min(g, res)
+    check("M=%d train recovers pi within %.1f%%" % (M, 100 * tol_frac),
+          abs(gopt - gpi) / gpi < tol_frac and interior,
+          "gain %.0f (err %+.2f%%)" % (gopt, 100 * (gopt - gpi) / gpi))
+# residual at the minimum bounds the per-pulse angle error with no fitting at all
+d32 = 2 * np.arcsin(np.sqrt(0.002)) / 32
+check("M=32 residual 0.002 bounds |dtheta| under 0.1% of pi", 100 * d32 / np.pi < 0.1,
+      "%.3f%% of pi" % (100 * d32 / np.pi))
+
 print("== module surface ==")
 check("programs subclass mocked qick bases",
       issubclass(T.TunerSeqProgram, qick.AveragerProgram)

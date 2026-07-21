@@ -348,6 +348,54 @@ def fit_error_amp(N, pop):
             "amp": float(amp), "base": float(base), "yfit": yfit}
 
 
+def parabola_min(x, y):
+    """Sub-sample minimum of a sampled curve via a local quadratic.  Returns
+    (x_min, interior) where interior is False if the minimum sits at a scan edge."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    k = int(np.argmin(y))
+    lo, hi = max(0, k - 2), min(x.size, k + 3)
+    if hi - lo >= 3:
+        c = np.polyfit(x[lo:hi], y[lo:hi], 2)
+        if c[0] > 0:
+            xv = -c[1] / (2.0 * c[0])
+            if x.min() <= xv <= x.max():
+                return float(xv), bool(0 < k < x.size - 1)
+    return float(x[k]), bool(0 < k < x.size - 1)
+
+
+def single_shot_fidelity(ig, qg, ie, qe):
+    """Single-shot readout/state analysis -- the absolute judge of a pi pulse.
+
+    Rotates the IQ plane so the |g>->|e> displacement lies along +x, scans the threshold
+    for maximum assignment fidelity, and reports the error rates separately:
+      p_e_given_g : ground prep read as excited   (readout error + thermal population)
+      p_g_given_e : excited prep read as ground   (readout error + PI-PULSE error)
+    With well-separated blobs, the EXCESS of p_g_given_e over p_e_given_g is the residual
+    ground-state weight the pi pulse failed to transfer -- an absolute measure that does
+    not depend on any reference or normalization.  Also returns the blob separation in
+    units of the single-shot spread, which is the honest readout-quality number (NOT the
+    standard error of the mean, which improves with averaging and hides a bad readout)."""
+    ig, qg = np.asarray(ig, dtype=float), np.asarray(qg, dtype=float)
+    ie, qe = np.asarray(ie, dtype=float), np.asarray(qe, dtype=float)
+    dx, dy = ie.mean() - ig.mean(), qe.mean() - qg.mean()
+    th = float(np.arctan2(dy, dx))
+    xg = ig * np.cos(th) + qg * np.sin(th)
+    xe = ie * np.cos(th) + qe * np.sin(th)
+    sigma = float(0.5 * (np.std(xg) + np.std(xe))) + 1e-15
+    sep_sigma = float(np.hypot(dx, dy) / sigma)
+    lo = float(min(xg.min(), xe.min()))
+    hi = float(max(xg.max(), xe.max()))
+    cand = np.linspace(lo, hi, 512)
+    corr_g = np.array([(xg < t).mean() for t in cand])
+    corr_e = np.array([(xe >= t).mean() for t in cand])
+    total = corr_g + corr_e - 1.0                 # F = 1 - P(e|g) - P(g|e)
+    k = int(np.argmax(total))
+    return {"fidelity": float(total[k]), "threshold": float(cand[k]), "theta": th,
+            "p_e_given_g": float(1.0 - corr_g[k]), "p_g_given_e": float(1.0 - corr_e[k]),
+            "sep_sigma": sep_sigma, "xg": xg, "xe": xe}
+
+
 def iq_to_pop(I, Q, g_ref, e_ref):
     """Projection of averaged IQ onto the |g>->|e> axis: 0 = |g>, 1 = |e>."""
     gI, gQ = g_ref
@@ -531,6 +579,23 @@ def _acquire_sweep(exp, prog_cls, cfg):
     return np.asarray(avgi[0][0], dtype=float), np.asarray(avgq[0][0], dtype=float)
 
 
+def _acquire_shots(exp, cfg, seq, drive_freq, shots):
+    """Per-shot I/Q for one sequence (qick 0.2.133 has no get_raw; shots live in
+    di_buf/dq_buf, shape (n_ro, reps*reads), normalized by the readout length)."""
+    c = dict(cfg)
+    c["seq"] = list(seq)
+    c["drive_freq"] = float(drive_freq)
+    c["shots"] = c["reps"] = int(shots)
+    with suppress_stdout():
+        prog = TunerSeqProgram(exp.soccfg, c)
+        prog.acquire(exp.soc, load_pulses=True, progress=False)
+    length = prog.us2cycles(c["read_length"], ro_ch=c["ro_chs"][0])
+    n = int(c["reps"])
+    i = np.asarray(prog.di_buf, dtype=float)[0][:n] / length
+    q = np.asarray(prog.dq_buf, dtype=float)[0][:n] / length
+    return i, q
+
+
 def _run_seq(exp, cfg, seq, drive_freq, shots):
     c = dict(cfg)
     c["seq"] = list(seq)
@@ -587,7 +652,18 @@ DEFAULT_PARAMS = {
                "f_virt_mhz": 1.0, "tau_max_us": 4.0, "classic_offset_mhz": 1.0},
     "fine_amp": {"n_max": 14, "shots": 700, "rounds": 4, "tol_rad": 0.010,
                  "relax_delay_us": None},
+    # pi-ONLY fine amplitude: even-M pi trains, gain swept to minimise the residual.
+    # passes = (M, +/- fractional gain window, points).  No pi/2, no free evolution,
+    # so T2* is irrelevant -- the limit is T1 / driven coherence.
+    "fine_pi": {"passes": ((4, 0.12, 13), (12, 0.05, 13), (32, 0.018, 13)),
+                "shots": 400, "tol_rad": 0.010, "max_floor": 0.45,
+                "relax_delay_us": None},
+    "single_shot": {"shots": 3000, "min_sep_sigma": 2.0, "relax_delay_us": None},
     "verify": {"shots": 1000, "snr_min": 4.0, "relax_delay_us": None},
+    # 'pi_only' (default): spec -> rough Rabi -> pi-train fine amplitude -> single shot.
+    # No pi/2 and no free evolution anywhere, so a short T2* cannot block the tune.
+    # 'full': adds the RamseyXY fine-frequency and sx-based error-amplification stages.
+    "pipeline": {"mode": "pi_only"},
 }
 
 
@@ -1333,6 +1409,166 @@ class AutoPiTuner(ExperimentClass):
         w["fine_amp_converged"] = False
         w["d_theta_final"] = float(hist[-1])
 
+    # ---------------- stage 4b: pi-ONLY fine amplitude ----------------
+    def _pi_train_residual(self, w, cfg, gain, M, shots):
+        """Residual excitation after M pi pulses at `gain`, with the |g> and |e>
+        references measured IMMEDIATELY adjacent to the data point.
+
+        The readout on this system drifted 40% within a single batch, so batch-level
+        references are useless -- every point carries its own."""
+        g = int(gain)
+        Ig, Qg, _, _ = _run_seq(self, cfg, [], w["drive_freq"], shots)
+        Ie, Qe, _, _ = _run_seq(self, cfg, [("pulse", g, 0.0)], w["drive_freq"], shots)
+        Im, Qm, _, _ = _run_seq(self, cfg, int(M) * [("pulse", g, 0.0)],
+                                w["drive_freq"], shots)
+        sep = float(np.hypot(Ie - Ig, Qe - Qg))
+        return float(iq_to_pop(Im, Qm, (Ig, Qg), (Ie, Qe))), sep
+
+    def _stage_fine_pi(self, w):
+        """Error-amplified pi calibration using NO pi/2 pulse and NO free evolution.
+
+        A train of M same-phase pi pulses is CPMG-like: it refocuses detuning and
+        low-frequency dephasing, so its limit is T1 / driven coherence, NOT T2*.  That is
+        precisely why it works on this qubit while every Ramsey-based method fails.  For
+        even M the population after the train is sin^2(M*d/2) with d the per-pulse angle
+        error, so the residual excitation is MINIMISED at the true pi and the minimum
+        narrows as 1/M.  We sweep the gain, find the minimum, and escalate M for
+        precision -- sign-free (a minimisation needs no sign convention) and
+        reference-free in the sense that only the LOCATION of the minimum matters."""
+        P = self.P["fine_pi"]
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        shots = int(P["shots"])
+        history = []
+        best_pi = int(w["pi_gain"])
+        for (M, frac, npts) in P["passes"]:
+            M = int(M)
+            gains = np.unique(np.round(best_pi * np.linspace(1.0 - frac, 1.0 + frac,
+                                                             int(npts))).astype(int))
+            gains = gains[(gains > 0) & (gains <= 32766)]
+            if gains.size < 5:
+                self._report("fine_pi", "WARN", "gain window collapsed at M=%d; stopping" % M)
+                break
+            res = np.empty(gains.size)
+            seps = np.empty(gains.size)
+            for j, g in enumerate(gains):
+                res[j], seps[j] = self._pi_train_residual(w, cfg, g, M, shots)
+            self.data.setdefault("fine_pi", {})["M%d" % M] = {"gains": gains, "res": res}
+            r_min = float(np.min(res))
+            if r_min > float(P["max_floor"]):
+                self._report("fine_pi", "WARN",
+                             "M=%d: best residual %.2f exceeds %.2f -- decoherence "
+                             "dominates this train length; stopping escalation"
+                             % (M, r_min, P["max_floor"]))
+                break
+            g_opt, interior = parabola_min(gains, res)
+            if not interior:
+                self._report("fine_pi", "WARN",
+                             "M=%d: minimum sits at a scan edge (gain %.0f, window "
+                             "%.0f-%.0f) -- widen params['fine_pi']['passes']"
+                             % (M, g_opt, gains[0], gains[-1]))
+            best_pi = int(round(min(max(g_opt, 1), 32766)))
+            # residual at the optimum bounds the per-pulse angle error: r = sin^2(M d/2)
+            d_est = 2.0 * float(np.arcsin(min(np.sqrt(max(r_min, 0.0)), 1.0))) / M
+            history.append({"M": M, "pi_gain": best_pi, "residual": r_min,
+                            "d_theta": d_est, "sep": float(np.mean(seps))})
+            self._report("fine_pi", "OK",
+                         "M=%2d pulses: pi gain -> %d (residual %.3f at the minimum "
+                         "=> |per-pulse angle error| <= %.4f rad = %.2f%%)"
+                         % (M, best_pi, r_min, d_est, 100 * d_est / np.pi))
+        if not history:
+            raise TunerStageError("fine_pi: no usable pass -- even a short pi train is "
+                                  "decoherence-dominated, or the readout has no contrast.")
+        w["pi_gain"] = int(history[-1]["pi_gain"])
+        w["pi2_gain"] = int(round(w["pi_gain"] / 2.0))
+        w["d_theta_final"] = float(history[-1]["d_theta"])
+        w["fine_amp_converged"] = bool(history[-1]["d_theta"] <= float(P["tol_rad"]))
+        w["updated"].add("qubit_pi_gain")
+        self.data["fine_pi_history"] = history
+        if not w["fine_amp_converged"]:
+            self._report("fine_pi", "WARN",
+                         "residual angle error %.4f rad exceeds the %.4f rad target -- "
+                         "the pi is usable but not fully converged"
+                         % (history[-1]["d_theta"], P["tol_rad"]))
+        return history
+
+    # ---------------- stage 4c: single-shot judge ----------------
+    def _stage_single_shot(self, w, label="single_shot"):
+        """Absolute quality check: single-shot |g>/|e> distributions.
+
+        This is the only measurement here that can judge the pi WITHOUT reference to the
+        pi itself.  Everything based on averaged IQ normalises |e> to 'whatever the
+        current pi produces', so it is structurally blind to a bad pi; the single-shot
+        histograms are not.  Reports assignment fidelity, both error directions, and the
+        blob separation in units of the SINGLE-SHOT spread (the honest readout number --
+        a standard error of the mean improves with averaging and would pass a readout
+        that cannot discriminate at all)."""
+        P = self.P["single_shot"]
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        shots = int(P["shots"])
+        ig, qg = _acquire_shots(self, cfg, [], w["drive_freq"], shots)
+        ie, qe = _acquire_shots(self, cfg, [("pulse", int(w["pi_gain"]), 0.0)],
+                                w["drive_freq"], shots)
+        ss = single_shot_fidelity(ig, qg, ie, qe)
+        self.data[label] = {k: v for k, v in ss.items()}
+        self._report(label, "OK",
+                     "fidelity %.3f | P(e|g) %.3f  P(g|e) %.3f | blob separation "
+                     "%.2f sigma (single-shot)"
+                     % (ss["fidelity"], ss["p_e_given_g"], ss["p_g_given_e"],
+                        ss["sep_sigma"]))
+        pi_err = ss["p_g_given_e"] - ss["p_e_given_g"]
+        if ss["sep_sigma"] < float(P["min_sep_sigma"]):
+            self._report(label, "WARN",
+                         "blobs overlap (%.2f sigma < %.1f): single-shot discrimination "
+                         "is not meaningful, so this fidelity is a READOUT limit, not a "
+                         "pi-pulse measurement." % (ss["sep_sigma"], P["min_sep_sigma"]))
+        else:
+            self._report(label, "OK",
+                         "residual ground-state weight left by the pi ~ %.3f "
+                         "(P(g|e) minus the readout's own P(e|g))" % max(pi_err, 0.0))
+        return ss
+
+    def _stage_verify_pi_only(self, w):
+        """Verification with no pi/2 anywhere: 2pi return-to-ground, an independent
+        even-M pi-train residual at the FINAL gain, and a readout gate based on the real
+        single-shot separation (not the standard error of the mean, which improves with
+        averaging and would happily pass a readout that cannot discriminate at all)."""
+        P = self.P["verify"]
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        shots = int(P["shots"])
+        ss = self.data.get("single_shot", {})
+        sep_sigma = float(ss.get("sep_sigma", 0.0))
+        fid = float(ss.get("fidelity", 0.0))
+        min_sep = float(self.P["single_shot"]["min_sep_sigma"])
+        ok = True
+        if sep_sigma < min_sep:
+            self._report("verify", "WARN",
+                         "readout blobs only %.2f sigma apart (< %.1f): single-shot "
+                         "discrimination is marginal, so the pi numbers are readout-"
+                         "limited rather than pi-limited." % (sep_sigma, min_sep))
+        else:
+            self._report("verify", "OK", "readout separation %.2f sigma, assignment "
+                                         "fidelity %.3f" % (sep_sigma, fid))
+        r2, _ = self._pi_train_residual(w, cfg, w["pi_gain"], 2, shots)
+        r8, _ = self._pi_train_residual(w, cfg, w["pi_gain"], 8, shots)
+        d8 = 2.0 * float(np.arcsin(min(np.sqrt(max(r8, 0.0)), 1.0))) / 8.0
+        self._report("verify", "OK",
+                     "2pi residual %.3f | 8-pi-train residual %.3f => independent bound "
+                     "|angle error| <= %.4f rad (%.2f%% of pi)"
+                     % (r2, r8, d8, 100 * d8 / np.pi))
+        tol = float(self.P["fine_pi"]["tol_rad"])
+        if d8 > 5.0 * tol:
+            self._report("verify", "WARN",
+                         "independent check disagrees with the calibration (%.4f rad vs "
+                         "the %.4f rad target) -- pi is usable but not converged"
+                         % (d8, tol))
+            ok = False
+        self.data["verify"] = {"sep_sigma": sep_sigma, "fidelity": fid,
+                               "residual_2pi": r2, "residual_8pi": r8, "d_theta_8": d8}
+        return ok
+
     # ---------------- stage 5: verification ----------------
     def _stage_verify(self, w):
         P = self.P["verify"]
@@ -1417,32 +1653,56 @@ class AutoPiTuner(ExperimentClass):
         ax.set_title("rough Rabi")
         ax.set_xlabel("gain (DAC)")
         ax = axs[1, 0]
-        if "ramsey" in d:
+        if "single_shot" in d and "xg" in d["single_shot"]:
+            ss = d["single_shot"]
+            bins = np.linspace(min(ss["xg"].min(), ss["xe"].min()),
+                               max(ss["xg"].max(), ss["xe"].max()), 60)
+            ax.hist(ss["xg"], bins=bins, alpha=0.6, label="|g>")
+            ax.hist(ss["xe"], bins=bins, alpha=0.6, label="|e> (pi)")
+            ax.axvline(ss["threshold"], color="k", ls="--", lw=0.8)
+            ax.legend(fontsize=7)
+            ax.set_title("single shot  F=%.3f  sep=%.1f sigma"
+                         % (ss["fidelity"], ss["sep_sigma"]))
+            ax.set_xlabel("projected IQ")
+        elif "ramsey" in d:
             self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["pop_x"], ".", ms=3, label="X")
             self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["pop_y"], ".", ms=3, label="Y")
             self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["xfit"], "-", lw=1)
             self._pair(ax, d["ramsey"]["taus"], d["ramsey"]["yfit"], "-", lw=1)
             ax.legend(fontsize=7)
-        ax.set_title("RamseyXY (last round)  T2*=%.2f us" % w.get("t2_us", np.nan))
-        ax.set_xlabel("delay (us)")
+            ax.set_title("RamseyXY (last round)  T2*=%.2f us" % w.get("t2_us", np.nan))
+            ax.set_xlabel("delay (us)")
         ax = axs[1, 1]
-        if "fine_amp" in d:
+        if "fine_pi" in d:
+            for name, rd in sorted(d["fine_pi"].items(),
+                                   key=lambda kv: int(kv[0][1:])):
+                self._pair(ax, rd["gains"], rd["res"], ".-", ms=3, lw=0.8,
+                           label="%s pulses" % name[1:])
+            ax.axvline(w.get("pi_gain", np.nan), color="r", ls="--", lw=0.8)
+            ax.legend(fontsize=7)
+            ax.set_title("fine pi (even-M train residual)")
+            ax.set_xlabel("gain (DAC)")
+        elif "fine_amp" in d:
             for name, rd in sorted(d["fine_amp"].items()):
                 self._pair(ax, rd["N"], rd["pop"], ".-", ms=3, lw=0.7, label=name)
                 self._pair(ax, rd["N"], rd["fit"], "--", lw=0.7, color="gray")
             ax.axhline(0.5, color="k", lw=0.5)
             ax.legend(fontsize=7)
-        ax.set_title("fine amplitude (ping-pong)")
-        ax.set_xlabel("N pi pulses after sx")
+            ax.set_title("fine amplitude (ping-pong)")
+            ax.set_xlabel("N pi pulses after sx")
         ax = axs[1, 2]
         ax.axis("off")
+        ss = d.get("single_shot", {})
         txt = ["AUTO PI TUNE  %s" % ("SUCCESS" if success else "FAILED"),
                "read  %.4f MHz" % w.get("read_pulse_freq", np.nan),
                "qubit %.4f MHz" % w.get("qubit_freq", np.nan),
                "pi f  %.4f MHz" % w.get("drive_freq", np.nan),
                "pi g  %s DAC" % w.get("pi_gain", "?"),
-               "T2*   %.1f us" % w.get("t2_us", np.nan),
-               "dtheta %.4f rad" % w.get("d_theta_final", np.nan)]
+               "dtheta %.4f rad (%.2f%%)" % (w.get("d_theta_final", np.nan),
+                                             100 * w.get("d_theta_final", np.nan) / np.pi),
+               "SS fid %.3f  sep %.1f sig" % (ss.get("fidelity", np.nan),
+                                              ss.get("sep_sigma", np.nan)),
+               "T2*   %.2f us" % w.get("t2_us", np.nan)]
         ax.text(0.02, 0.95, "\n".join(txt), va="top", family="monospace", fontsize=11)
         fig.suptitle("AutoPiTuner  %s  %s" % (self.element, self.time_string))
         fig.tight_layout()
@@ -1474,10 +1734,21 @@ class AutoPiTuner(ExperimentClass):
             if self.P["spec"]["run"]:
                 self._stage_spec(w)
             self._stage_rabi(w)
-            self._stage_ramsey(w)
-            self._stage_fine_amp(w)
-            verify_ok = self._stage_verify(w)
-            success = bool(verify_ok and w.get("fine_amp_converged", False))
+            if self.P["pipeline"]["mode"] == "pi_only":
+                # no pi/2 and no free evolution anywhere -> T2* cannot block the tune
+                ss_before = self._stage_single_shot(w, label="single_shot_before")
+                self._stage_fine_pi(w)
+                ss_after = self._stage_single_shot(w, label="single_shot")
+                self._report("single_shot", "OK",
+                             "fidelity %.3f -> %.3f across the fine-pi calibration"
+                             % (ss_before["fidelity"], ss_after["fidelity"]))
+                verify_ok = self._stage_verify_pi_only(w)
+                success = bool(verify_ok and w.get("fine_amp_converged", False))
+            else:
+                self._stage_ramsey(w)
+                self._stage_fine_amp(w)
+                verify_ok = self._stage_verify(w)
+                success = bool(verify_ok and w.get("fine_amp_converged", False))
         except TunerStageError as err:
             failure = str(err)
             self._report("pipeline", "FAIL", failure)

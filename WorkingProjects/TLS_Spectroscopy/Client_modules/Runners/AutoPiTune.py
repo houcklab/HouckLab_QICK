@@ -2,9 +2,22 @@
 AUTO PI TUNE -- run this file once; it tunes the pi pulse end-to-end and (on success)
 writes the new values into Calib/initialize.py's BaseConfig automatically.
 
-Pipeline (see Experiments/mAutoPiTuner.py for the physics):
-  resonator scan -> qubit spec (2-pass) -> rough Rabi -> RamseyXY fine frequency
-  (hardware-probed sign convention) -> error-amplification fine amplitude -> verify.
+Pipeline (default mode 'pi_only' -- see Experiments/mAutoPiTuner.py for the physics):
+  resonator scan -> qubit spec (2-pass) -> rough Rabi -> single shot ->
+  fine pi (even-M pi-train minimisation) -> single shot -> verify
+
+NOTHING in this path uses a pi/2 pulse or any free evolution, so a short T2* cannot
+block the tune.  A train of M same-phase pi pulses is CPMG-like: it refocuses detuning
+and low-frequency dephasing, so its limit is T1 / driven coherence rather than T2*.
+For even M the population after the train is sin^2(M*d/2) in the per-pulse angle error
+d, so sweeping the gain and MINIMISING the residual finds the true pi, with the minimum
+narrowing as 1/M.  Single-shot histograms bracket the calibration and give the absolute
+judge of pi quality: the excess of P(g|e) over P(e|g) is the ground-state weight the pi
+failed to transfer, which no averaged/normalised measurement can see (those define |e>
+as 'whatever the current pi produces').
+
+Set P_TUNER['pipeline'] = {'mode': 'full'} to restore the RamseyXY fine-frequency and
+sx-based error-amplification stages (needs T2* >> the pulse length to be meaningful).
 
 What gets written on success (and ONLY on success -- a failed run changes nothing):
   read_pulse_freq, qubit_freq, qubit_pi_freq, qubit_pi_gain, qubit_pi2_gain
@@ -31,6 +44,10 @@ UPDATE_READ_FREQ = True      # include read_pulse_freq in the write (resonator s
 
 # Per-stage overrides (defaults live in mAutoPiTuner.DEFAULT_PARAMS; uncomment to use).
 P_TUNER = {
+    # "pipeline":  {"mode": "pi_only"},   # or "full" (adds Ramsey + sx error-amp)
+    # "fine_pi":   {"passes": ((4, 0.12, 13), (12, 0.05, 13), (32, 0.018, 13)),
+    #               "shots": 400, "tol_rad": 0.010},
+    # "single_shot": {"shots": 3000, "min_sep_sigma": 2.0},
     # "resonator": {"run": True, "span_mhz": 3.0, "shots": 300},
     # "spec":      {"run": True, "span_mhz": 12.0, "shots": 500, "spec_gain": None},
     # "rabi":      {"gain_max": 30000, "points": 61, "shots": 400},
