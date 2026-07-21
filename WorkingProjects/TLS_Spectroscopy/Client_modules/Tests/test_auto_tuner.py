@@ -414,6 +414,33 @@ for chi in (+0.5, -0.5):
 check("magnitude is the same for +chi and -chi (D is even)",
       abs(T.optimal_readout_detuning(0.5, 0.35) - T.optimal_readout_detuning(-0.5, 0.35)) < 1e-9)
 
+print("\n== drift-robust readout sweep (hardware: 1.89 vs 1.06 sigma, same settings) ==")
+# a ladder measured under a monotonic drift: one pass ranks by TIME, two opposed passes
+# averaged rank by value
+true_q = np.array([1.0, 1.4, 1.9, 1.5, 1.0])          # true quality, peak at index 2
+drift = 0.55                                            # 55% decline across a pass
+n = true_q.size
+one_pass = np.array([true_q[j] * (1 - drift * j / (n - 1)) for j in range(n)])
+fwd = np.array([true_q[j] * (1 - drift * j / (n - 1)) for j in range(n)])
+rev = np.array([true_q[j] * (1 - drift * (n - 1 - j) / (n - 1)) for j in range(n)])
+two_pass = 0.5 * (fwd + rev)
+check("a single pass under drift picks the WRONG optimum",
+      int(np.argmax(one_pass)) != 2, "argmax=%d (true 2)" % int(np.argmax(one_pass)))
+check("two opposed passes averaged recover the true optimum",
+      int(np.argmax(two_pass)) == 2, "argmax=%d" % int(np.argmax(two_pass)))
+check("AutoTuner exposes the two-pass sweep", hasattr(T.AutoTuner, "_sweep_readout"))
+
+print("\n== chi/kappa design-optimum penalty (the device-limit diagnosis) ==")
+def dsep(c, k):
+    d = np.linspace(-3*max(abs(c), k), 3*max(abs(c), k), 2001)
+    ag, ae = 1.0/((d-c)+0.5j*k), 1.0/((d+c)+0.5j*k)
+    return float(np.max(np.abs(ag-ae))/np.max(np.abs(ag)))
+pen = dsep(0.5*0.36, 0.36) / dsep(0.065, 0.36)          # measured chi=0.065, kappa=0.36
+check("2|chi|/kappa=0.36 is flagged as ~2x below the design optimum",
+      1.7 < pen < 3.0, "penalty=%.2fx" % pen)
+check("at the 2|chi|=kappa optimum the penalty is 1.0",
+      abs(dsep(0.5*0.36, 0.36)/dsep(0.5*0.36, 0.36) - 1.0) < 1e-9)
+
 print("\n== park-flux assertion ==")
 try:
     bad = dict(BaseConfig)

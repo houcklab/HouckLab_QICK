@@ -1056,6 +1056,19 @@ class AutoTuner(ExperimentClass):
             cands = [f_mid - d_opt, f_mid + d_opt]
             f_analytic = min(cands, key=lambda x: abs(x - f_dmax))
             self.w["chi_mhz"], self.w["kappa_mhz"] = float(chi), float(kappa)
+            # separation-per-photon versus the 2|chi| = kappa design optimum
+            def _dsep(c, k):
+                d = np.linspace(-3 * max(abs(c), k), 3 * max(abs(c), k), 2001)
+                ag, ae = 1.0 / ((d - c) + 0.5j * k), 1.0 / ((d + c) + 0.5j * k)
+                return float(np.max(np.abs(ag - ae)) / np.max(np.abs(ag)))
+            d_now = _dsep(chi, kappa)
+            d_opt = _dsep(0.5 * kappa, kappa)          # 2|chi| = kappa
+            self.w["chi_kappa_penalty"] = float(d_opt / max(d_now, 1e-9))
+            self._say("chi", "OK",
+                      "separation-per-photon %.2f vs %.2f at the 2|chi|=kappa design "
+                      "optimum -> this device is %.1fx below the best achievable at ANY "
+                      "power; that is a CHIP property (chi and kappa), not a tuning knob"
+                      % (d_now, d_opt, d_opt / max(d_now, 1e-9)))
             self._say("chi", "OK", "chi/2pi = %+.4f MHz, kappa/2pi = %.4f MHz, 2|chi|/kappa "
                                    "= %.2f -> %s" % (chi, kappa, abs(2 * chi) / max(kappa, 1e-9),
                       "drive the midpoint" if abs(2 * chi) <= kappa else "drive a dressed peak"))
@@ -1074,6 +1087,41 @@ class AutoTuner(ExperimentClass):
         self._say("chi", "OK", "readout frequency -> %.4f MHz [%s]" % (f_use, note))
         return {"f": f_use}, {"f": max(0.1 * self.w.get("kappa_mhz", 0.3), 0.01)}
 
+    def _sweep_readout(self, node, candidates, apply_fn, shots):
+        """Score a ladder of readout settings, drift-robustly.
+
+        The readout on this system drifts tens of percent within a batch -- the SAME
+        settings measured minutes apart gave 1.89 and 1.06 sigma on hardware -- so a
+        single pass over a ladder partly ranks WHEN each point was measured rather than
+        how good it is.  Sweeping twice in opposite order and averaging cancels a
+        monotonic drift to first order, and the pass-to-pass spread is reported so the
+        operator can see how much of the ranking is real."""
+        n = len(candidates)
+        seps = np.full((2, n), np.nan)
+        fids = np.full((2, n), np.nan)
+        outs = np.full((2, n), np.nan)
+        for p_i, order in enumerate((list(range(n)), list(reversed(range(n))))):
+            for j in order:
+                cfg = self._cfg_for(node)
+                apply_fn(cfg, candidates[j])
+                ig, qg = _shots(self, cfg, [], self.w["drive_freq"], int(shots))
+                ie, qe = _shots(self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0)],
+                                self.w["drive_freq"], int(shots))
+                ss = single_shot_analysis(ig, qg, ie, qe)
+                seps[p_i, j], fids[p_i, j] = ss["sep_sigma"], ss["fidelity"]
+                outs[p_i, j] = ss["outlier_frac"]
+        sep = np.nanmean(seps, axis=0)
+        fid = np.nanmean(fids, axis=0)
+        out = np.nanmax(outs, axis=0)
+        spread = float(np.nanmax(np.abs(seps[0] - seps[1]))) if n else float("nan")
+        best = float(np.nanmax(sep)) if np.any(np.isfinite(sep)) else float("nan")
+        if np.isfinite(spread) and np.isfinite(best) and best > 0 and spread > 0.3 * best:
+            self._say(node, "WARN",
+                      "pass-to-pass spread %.2f sigma is %.0f%% of the best value -- the "
+                      "readout is drifting faster than this ladder can be measured, so "
+                      "the ranking is only partly real" % (spread, 100 * spread / best))
+        return sep, fid, out, spread
+
     def _cal_readout_power(self):
         """Readout power, gated on the OUTLIER FRACTION.
 
@@ -1083,20 +1131,20 @@ class AutoTuner(ExperimentClass):
         only powers whose shots are consistent with a two-blob model are eligible."""
         P = self.P["readout_power"]
         g0 = int(self.w["read_pulse_gain"])
+        gains = [int(round(min(max(g0 * r, 30), 32000))) for r in P["ratios"]]
+
+        def _apply(cfg, g):
+            cfg["read_pulse_gain"] = int(g)
+
+        sep, fid, out, _spread = self._sweep_readout("readout_power", gains, _apply,
+                                                     P["shots"])
         rows = []
-        for r in P["ratios"]:
-            g = int(round(min(max(g0 * r, 30), 32000)))
-            cfg = self._cfg_for("readout_power")
-            cfg["read_pulse_gain"] = g
-            ig, qg = _shots(self, cfg, [], self.w["drive_freq"], int(P["shots"]))
-            ie, qe = _shots(self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0)],
-                            self.w["drive_freq"], int(P["shots"]))
-            ss = single_shot_analysis(ig, qg, ie, qe)
-            rows.append({"gain": g, "sep": ss["sep_sigma"], "fid": ss["fidelity"],
-                         "outlier": ss["outlier_frac"]})
+        for j, g in enumerate(gains):
+            rows.append({"gain": g, "sep": float(sep[j]), "fid": float(fid[j]),
+                         "outlier": float(out[j])})
             self._say("readout_power", "OK", "gain %6d -> %.2f sigma, F=%.3f, outliers %.3f%s"
-                      % (g, ss["sep_sigma"], ss["fidelity"], ss["outlier_frac"],
-                         "" if ss["outlier_frac"] <= P["outlier_max"] else "  [REJECTED: not two-blob]"))
+                      % (g, sep[j], fid[j], out[j],
+                         "" if out[j] <= P["outlier_max"] else "  [REJECTED: not two-blob]"))
         self.node_data["readout_power"] = rows
         ok_rows = [r for r in rows if r["outlier"] <= P["outlier_max"] and np.isfinite(r["sep"])]
         if not ok_rows:
@@ -1169,18 +1217,16 @@ class AutoTuner(ExperimentClass):
         cands = [L for L in P["lengths_us"] if L <= max(0.5 * t1, 2.0)]
         if not cands:
             cands = [min(P["lengths_us"])]
-        rows = []
-        for L in cands:
-            cfg = self._cfg_for("readout_len")
+        def _apply(cfg, L):
             cfg["read_length"] = float(L)
-            ig, qg = _shots(self, cfg, [], self.w["drive_freq"], int(P["shots"]))
-            ie, qe = _shots(self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0)],
-                            self.w["drive_freq"], int(P["shots"]))
-            ss = single_shot_analysis(ig, qg, ie, qe)
-            rows.append({"len": L, "sep": ss["sep_sigma"], "fid": ss["fidelity"],
-                         "outlier": ss["outlier_frac"]})
+
+        sep, fid, out, _spread = self._sweep_readout("readout_len", cands, _apply, P["shots"])
+        rows = []
+        for j, L in enumerate(cands):
+            rows.append({"len": float(L), "sep": float(sep[j]), "fid": float(fid[j]),
+                         "outlier": float(out[j])})
             self._say("readout_len", "OK", "%5.1f us -> %.2f sigma, F=%.3f"
-                      % (L, ss["sep_sigma"], ss["fidelity"]))
+                      % (L, sep[j], fid[j]))
         self.node_data["readout_len"] = rows
         ok_rows = [r for r in rows if np.isfinite(r["fid"])]
         if not ok_rows:
@@ -1500,13 +1546,34 @@ class AutoTuner(ExperimentClass):
         try:
             self.maintain()
             ss_ok = self.w.get("ss_sep_sigma", 0.0) >= self.P["single_shot"]["min_sep_sigma"]
-            success = bool(self.w.get("pi_converged", False) and ss_ok)
-            if not ss_ok:
-                self._say("verdict", "WARN", "readout separation %.2f sigma is below the "
-                          "%.1f sigma floor -- the pi numbers are readout-limited, so the "
-                          "run is NOT marked successful even though the calibration itself "
-                          "converged." % (self.w.get("ss_sep_sigma", float('nan')),
-                                          self.P["single_shot"]["min_sep_sigma"]))
+            pi_ok = bool(self.w.get("pi_converged", False))
+            self.w["qubit_ok"], self.w["readout_ok"] = pi_ok, bool(ss_ok)
+            success = bool(pi_ok and ss_ok)
+            if pi_ok and not ss_ok:
+                # The pi calibration is a MINIMUM-LOCATION measurement, which is far more
+                # robust to readout SNR than an absolute fidelity -- and three independent
+                # M values agreeing is strong evidence on its own.  Withholding a good pi
+                # because the chip's readout is weak would be the wrong call, so the qubit
+                # and readout results are gated separately.
+                self._say("verdict", "OK",
+                          "QUBIT calibration converged (pi %d +/- %.0f DAC) and IS "
+                          "trustworthy: the pi-train vertex is a minimum LOCATION, which "
+                          "does not need single-shot discrimination, and %d independent M "
+                          "values agree."
+                          % (self.w["pi_gain"], self.w.get("pi_gain_err", float('nan')),
+                             len(self.node_data.get("fine_pi_amp", {}))))
+                self._say("verdict", "WARN",
+                          "READOUT separation %.2f sigma is below the %.1f sigma floor, so "
+                          "the readout values are the best FOUND but are not a good "
+                          "readout.%s"
+                          % (self.w.get("ss_sep_sigma", float('nan')),
+                             self.P["single_shot"]["min_sep_sigma"],
+                             (" With 2|chi|/kappa = %.2f this chip is %.1fx below the best "
+                              "separation achievable at any power, so the remaining gap is "
+                              "the amplifier chain (TWPA/JPA) or the chip itself."
+                              % (abs(2 * self.w["chi_mhz"]) / self.w["kappa_mhz"],
+                                 self.w["chi_kappa_penalty"]))
+                             if "chi_kappa_penalty" in self.w else ""))
         except TunerError as err:
             failure = str(err)
             self._say("verdict", "FAIL", failure)
@@ -1545,6 +1612,8 @@ class AutoTuner(ExperimentClass):
 
         self.data.update({
             "success": success, "failure": failure, "tuned": tuned,
+            "qubit_ok": bool(self.w.get("qubit_ok", False)),
+            "readout_ok": bool(self.w.get("readout_ok", False)),
             "working": {k: (sorted(v) if isinstance(v, set) else v) for k, v in self.w.items()},
             "nodes": self.node_data, "report": list(self.report_lines),
             "time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

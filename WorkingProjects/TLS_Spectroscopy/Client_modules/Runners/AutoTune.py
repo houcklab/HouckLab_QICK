@@ -88,10 +88,21 @@ def main():
         "report": data.get("report", []),
     })
 
-    if not data["success"]:
-        print("\n[auto-tune] not successful -- BaseConfig untouched.\n"
+    qubit_ok, readout_ok = data.get("qubit_ok", False), data.get("readout_ok", False)
+    if not (qubit_ok or readout_ok):
+        print("\n[auto-tune] nothing converged -- BaseConfig untouched.\n"
               "            Summary plot: %s" % exp.iname)
         return
+    if not qubit_ok:
+        for k in QUBIT_KEYS:
+            tuned.pop(k, None)
+        print("\n[auto-tune] qubit calibration did not converge -- its keys are NOT written.")
+    if not readout_ok:
+        # keep them: they are the best settings FOUND, and are still an improvement over
+        # an unoptimised readout even when the chip cannot reach the target separation
+        print("\n[auto-tune] readout is below the separation floor; its keys are the best "
+              "FOUND\n            (write them with WRITE_READOUT, or set it False to keep "
+              "the current readout).")
     if not WRITE_READOUT:
         for k in READOUT_KEYS:
             tuned.pop(k, None)
