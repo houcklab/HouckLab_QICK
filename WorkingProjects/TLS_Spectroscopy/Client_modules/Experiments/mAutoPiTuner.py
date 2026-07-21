@@ -274,6 +274,35 @@ def fit_decay_cosine(t, y):
             "f_mhz": float(abs(f)), "t2_us": float(tau), "amp": float(amp), "yfit": yfit}
 
 
+def fit_exp_decay(t, y):
+    """y = A exp(-t/tau) + c.  Used for the lock-in Ramsey's coherence envelope, where
+    there is no oscillation to confuse the decay with.  Returns dict(ok, tau, A, c, yfit)."""
+    t = np.asarray(t, dtype=float)
+    y = np.asarray(y, dtype=float)
+    A0 = float(max(y[0] - y[-1], np.ptp(y), 1e-6))
+
+    def model(tt, A, tau, c):
+        return A * np.exp(-tt / tau) + c
+
+    best = None
+    for tau0 in (t.max() / 4.0, t.max(), t.max() * 4.0):
+        try:
+            popt, _ = curve_fit(model, t, y, p0=[A0, tau0, float(min(y))],
+                                bounds=([0.0, 1e-3, -1.0], [3.0, 1e4, 1.0]), maxfev=20000)
+            r = y - model(t, *popt)
+            sse = float(np.dot(r, r))
+            if best is None or sse < best[0]:
+                best = (sse, popt)
+        except Exception:
+            continue
+    if best is None:
+        return {"ok": False, "tau": np.nan, "A": 0.0, "c": 0.0, "yfit": np.zeros_like(y)}
+    _, (A, tau, c) = best
+    yfit = model(t, A, tau, c)
+    ok = A > 4.0 * max(float(np.std(y - yfit)), 1e-6) and A > 0.05
+    return {"ok": bool(ok), "tau": float(tau), "A": float(A), "c": float(c), "yfit": yfit}
+
+
 def _ea_model(N, base, amp, dth, eps):
     N = np.asarray(N, dtype=float)
     return base + 0.5 * amp * ((-1.0) ** N) * np.sin(N * dth + eps)
@@ -548,12 +577,14 @@ DEFAULT_PARAMS = {
              "two_pass": True, "relax_delay_us": 1000.0,
              "max_span_mhz": 150.0},     # widest auto-escalated search window
     "rabi": {"gain_max": 30000, "points": 61, "shots": 400, "relax_delay_us": None},
-    "ramsey": {"f_virt_mhz": 1.0, "tau_max_us": 4.0, "points": 31, "shots": 500,
+    # 'lockin' (default) measures 4 phases per delay: the envelope gives T2* with no
+    # oscillation fit, the unwrapped phase slope gives the detuning.  'xy' is the older
+    # fringe-pair method (kept for comparison); it degrades badly when T2* is short.
+    "ramsey": {"method": "lockin", "points": 16, "shots": 400,
                "rounds": 3, "tol_mhz": 0.02, "sign": None,  # None -> history else probe
-               "probe_offset_mhz": 0.25, "relax_delay_us": None,
-               # fallback used when the virtual-Z phase check fails: drive-detuned
-               # Ramsey at +/- this offset (must exceed the residual detuning)
-               "classic_offset_mhz": 1.0},
+               "probe_offset_mhz": 0.5, "relax_delay_us": None,
+               # 'xy'/fallback-only knobs
+               "f_virt_mhz": 1.0, "tau_max_us": 4.0, "classic_offset_mhz": 1.0},
     "fine_amp": {"n_max": 14, "shots": 700, "rounds": 4, "tol_rad": 0.010,
                  "relax_delay_us": None},
     "verify": {"shots": 1000, "snr_min": 4.0, "relax_delay_us": None},
@@ -922,6 +953,97 @@ class AutoPiTuner(ExperimentClass):
                      % (swing, " ".join("%.2f" % v for v in pop)))
         return swing
 
+    def _stage_ramsey_lockin(self, w, P):
+        """Fine frequency via the lock-in Ramsey.
+
+        Step 1 measures the coherence envelope on a LOG delay grid -> T2*, which then
+        sets the delay grid for everything after (a qubit with a short T2* simply needs
+        short delays; the old fixed 0.05-4 us grid spent most of its points on dead
+        signal, which is why the fringe fit kept failing).
+        Step 2 calibrates the hardware sign ONCE by re-measuring the phase slope with the
+        drive deliberately offset: the slope must move by exactly -offset.
+        Step 3 iterates the correction to convergence."""
+        shots = int(P["shots"])
+        # --- step 1: coherence envelope on a log grid --------------------------------
+        probe_delays = np.array([0.01, 0.03, 0.06, 0.12, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0])
+        d0, amp0, ph0, pop0 = self._ramsey_lockin(w, P, w["drive_freq"], probe_delays, shots)
+        env = fit_exp_decay(d0, amp0)
+        self.data["ramsey_env"] = {"delays": d0, "amp": amp0, "fit": env["yfit"]}
+        self._report("ramsey", "OK", "coherence envelope |C+iS| vs delay: [%s]"
+                     % " ".join("%.2f" % a for a in amp0))
+        if amp0[0] < 0.15:
+            raise TunerStageError(
+                "ramsey: lock-in amplitude is only %.2f even at the shortest delay -- the "
+                "pi/2 pulses are not creating a superposition (check pi2_gain), so no "
+                "frequency or T2* can be measured." % amp0[0])
+        if not env["ok"]:
+            raise TunerStageError("ramsey: could not fit the coherence envelope "
+                                  "(amplitudes %s)" % np.round(amp0, 3).tolist())
+        t2 = float(env["tau"])
+        w["t2_us"] = t2
+        self._report("ramsey", "OK", "T2* = %.2f us (from the envelope decay, no "
+                                     "oscillation fit involved)" % t2)
+        # --- delay grid matched to the measured coherence ----------------------------
+        tau_max = float(np.clip(1.2 * t2, 0.10, 40.0))
+        npts = int(P["points"])
+        delays = np.linspace(max(0.01, tau_max / npts), tau_max, npts)
+        # keep the per-step phase advance unwrappable for detunings up to ~1 MHz
+        dt = float(delays[1] - delays[0])
+        if dt > 0.4:
+            delays = np.linspace(delays[0], min(tau_max, 0.4 * npts), npts)
+        # --- step 2: one-time hardware sign calibration ------------------------------
+        sign = P["sign"] if P["sign"] in (+1, -1) else self.ramsey_sign_hint
+        if sign not in (+1, -1):
+            off = float(P["probe_offset_mhz"])
+            _d, a_a, p_a, _ = self._ramsey_lockin(w, P, w["drive_freq"], delays, shots)
+            det_a, n_a = self._lockin_detuning(delays, a_a, p_a)
+            _d, a_b, p_b, _ = self._ramsey_lockin(w, P, w["drive_freq"] + off, delays, shots)
+            det_b, n_b = self._lockin_detuning(delays, a_b, p_b)
+            if det_a is None or det_b is None:
+                raise TunerStageError(
+                    "ramsey: too few delays retain coherence to fit a phase slope "
+                    "(%d and %d usable of %d, T2*=%.2f us)." % (n_a, n_b, len(delays), t2))
+            # true detuning must DROP by exactly `off` when the drive moves up by `off`
+            slope = (det_b - det_a) / off
+            if not (0.4 <= abs(slope) <= 1.6):
+                raise TunerStageError(
+                    "ramsey: offsetting the drive by %+.2f MHz moved the measured "
+                    "detuning by %.2f x that (expected +/-1). The phase slope is not "
+                    "tracking the drive -- detuning may exceed what this delay grid can "
+                    "unwrap." % (off, slope))
+            sign = -1 if slope > 0 else +1
+            self._report("ramsey", "OK", "sign calibration: slope %+.2f -> convention "
+                                         "s=%+d (measured on hardware)" % (slope, sign))
+        else:
+            self._report("ramsey", "OK", "using sign s=%+d (from history/knob)" % sign)
+        w["ramsey_sign"] = int(sign)
+        # --- step 3: iterate the correction ------------------------------------------
+        tol = float(P["tol_mhz"])
+        for rnd in range(1, int(P["rounds"]) + 1):
+            dly, amp, ph_un, pop = self._ramsey_lockin(w, P, w["drive_freq"], delays, shots)
+            self.data["ramsey"] = {"taus": dly, "pop_x": pop[:, 0], "pop_y": pop[:, 1],
+                                   "xfit": amp, "yfit": ph_un}
+            det_raw, n_used = self._lockin_detuning(dly, amp, ph_un)
+            if det_raw is None:
+                raise TunerStageError("ramsey: only %d delays retain coherence -- cannot "
+                                      "fit a phase slope (T2*=%.2f us)." % (n_used, t2))
+            delta = float(sign) * det_raw
+            f_res = 1.0 / (2.0 * np.pi * max(t2, 1e-3))
+            eff_tol = max(tol, f_res)
+            self._report("ramsey", "OK",
+                         "round %d: detuning %+.4f MHz (%d/%d delays coherent, "
+                         "resolution %.3f MHz)" % (rnd, delta, n_used, len(dly), f_res))
+            if abs(delta) <= eff_tol:
+                self._report("ramsey", "OK", "converged: qubit_pi_freq = %.4f MHz "
+                                             "(T2* %.2f us)" % (w["drive_freq"], t2))
+                return
+            if abs(delta) > 5.0:
+                raise TunerStageError("ramsey: |detuning| %.2f MHz is implausible -- spec "
+                                      "stage suspect." % delta)
+            w["drive_freq"] = round(float(w["drive_freq"] + delta), 4)
+        self._report("ramsey", "WARN", "did not converge in %d rounds; using %.4f MHz"
+                     % (P["rounds"], w["drive_freq"]))
+
     def _ramsey_classic_series(self, w, offset_mhz, tau_max, npts, shots, relax):
         """Ramsey with NO phase control: both pi/2 pulses at phase 0, the drive itself
         deliberately offset.  Fringe frequency = |f_q - (drive + offset)|, unsigned."""
@@ -989,8 +1111,53 @@ class AutoPiTuner(ExperimentClass):
         self._report("ramsey", "WARN", "classic Ramsey did not converge in %d rounds; "
                                         "using %.4f MHz" % (P["rounds"], w["drive_freq"]))
 
+    def _ramsey_lockin(self, w, P, drive_freq, delays, shots):
+        """Lock-in Ramsey -- the robust replacement for fitting an XY fringe pair.
+
+        At each delay, measure the population at FOUR phases of the second pi/2
+        (0/90/180/270) and form the quadratures
+            C = (P0 - P180)/2 ,   S = (P90 - P270)/2
+        Then |C+iS| is the coherence ENVELOPE at that delay and arg(C+iS) is the
+        accumulated phase.  This separates the two things a fringe fit conflates: the
+        envelope gives T2* with NO oscillation to fit (so no decay/frequency degeneracy
+        and no aliasing), and the unwrapped phase's slope gives the detuning, signed by
+        the direction the phase winds.  Crucially it still works when the coherence dies
+        after a couple of points, which is exactly where the fringe fit kept failing."""
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        cfg["read_pulse_freq"] = float(w["read_pulse_freq"])
+        cfg["seq_gap_us"] = 0.005
+        sx = int(w["pi2_gain"])
+        phases = (0.0, 90.0, 180.0, 270.0)
+        delays = np.asarray(delays, dtype=float)
+        refs_pre = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        Iv = np.empty((delays.size, 4))
+        Qv = np.empty((delays.size, 4))
+        for i, tau in enumerate(delays):
+            for j, ph in enumerate(phases):
+                seq = [("pulse", sx, 0.0), ("delay", float(tau)), ("pulse", sx, float(ph))]
+                Iv[i, j], Qv[i, j], _, _ = _run_seq(self, cfg, seq, drive_freq, shots)
+        refs_post = _measure_refs(self, cfg, w["drive_freq"], w["pi_gain"], shots)
+        g, e = _combine_refs(refs_pre, refs_post, self._report, "ramsey")
+        pop = iq_to_pop(Iv, Qv, g, e)
+        C = (pop[:, 0] - pop[:, 2]) / 2.0
+        S = (pop[:, 1] - pop[:, 3]) / 2.0
+        amp = np.hypot(C, S)
+        phase_un = np.unwrap(np.arctan2(S, C))
+        return delays, amp, phase_un, pop
+
+    def _lockin_detuning(self, delays, amp, phase_un):
+        """Signed-up-to-convention detuning from the unwrapped lock-in phase slope, using
+        only the delays where coherence remains.  Returns (detuning_raw_MHz, n_used)."""
+        good = amp > max(0.25 * float(amp.max()), 0.05)
+        if int(good.sum()) < 3:
+            return None, int(good.sum())
+        b = np.polyfit(delays[good], phase_un[good], 1)[0]     # rad per us
+        return float(-b / (2.0 * np.pi)), int(good.sum())
+
     def _stage_ramsey(self, w):
         P = self.P["ramsey"]
+        if P.get("method", "lockin") == "lockin":
+            return self._stage_ramsey_lockin(w, P)
         swing = self._check_virtual_z(w, P)
         if swing < 0.3:
             self._report("ramsey", "WARN",

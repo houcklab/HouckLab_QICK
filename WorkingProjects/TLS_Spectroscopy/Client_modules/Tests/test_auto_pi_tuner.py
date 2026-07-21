@@ -260,6 +260,40 @@ for x_true in (+0.137, -0.242, 0.0):
 # guard: a fringe beyond the offset means |detuning| > offset and the formula is invalid
 check("fringe > 1.9*offset flagged invalid", (2.5 > 1.9 * 1.0))
 
+print("== lock-in Ramsey (envelope + phase slope) ==")
+# simulate: P(tau, phase) = 0.5 + 0.5*exp(-tau/T2)*cos(phase - 2*pi*det*tau)
+for T2, det in ((0.5, +0.180), (12.0, -0.045)):
+    dly = np.linspace(0.02, max(0.10, 1.2 * T2), 16)
+    pop = np.empty((dly.size, 4))
+    for i, tau in enumerate(dly):
+        for j, ph in enumerate((0.0, 90.0, 180.0, 270.0)):
+            pop[i, j] = 0.5 + 0.5 * np.exp(-tau / T2) * np.cos(
+                np.deg2rad(ph) - 2 * np.pi * det * tau) + rng.normal(0, 0.015)
+    C = (pop[:, 0] - pop[:, 2]) / 2.0
+    S = (pop[:, 1] - pop[:, 3]) / 2.0
+    amp = np.hypot(C, S)
+    ph_un = np.unwrap(np.arctan2(S, C))
+    env = T.fit_exp_decay(dly, amp)
+    check("T2*=%.1f us recovered from envelope (no oscillation fit)" % T2,
+          env["ok"] and abs(env["tau"] - T2) / T2 < 0.25, "fit=%.2f us" % env["tau"])
+    good = amp > max(0.25 * amp.max(), 0.05)
+    b = np.polyfit(dly[good], ph_un[good], 1)[0]
+    det_est = -b / (2 * np.pi)
+    # sign convention here: phase = -2*pi*det*tau  ->  slope/-2pi = det
+    check("detuning %+.3f MHz from phase slope within 15 kHz" % det,
+          abs(abs(det_est) - abs(det)) < 0.015, "est=%+.4f (%d/%d delays used)"
+          % (det_est, good.sum(), dly.size))
+# short-T2 case that the OLD fringe fit could not handle at all
+dly_old = np.linspace(0.05, 4.0, 31)          # the old fixed grid
+amp_old = np.exp(-dly_old / 0.5)
+check("old fixed grid wasted most points on dead signal (T2*=0.5us)",
+      float((amp_old < 0.1).mean()) > 0.65, "%.0f%% dead" % (100 * (amp_old < 0.1).mean()))
+# the adaptive grid keeps essentially every point inside the coherence window
+dly_new = np.linspace(0.5 * 1.2 / 16, 0.5 * 1.2, 16)
+check("adaptive grid keeps >90% of points alive",
+      float((np.exp(-dly_new / 0.5) >= 0.1).mean()) > 0.9,
+      "%.0f%% alive" % (100 * (np.exp(-dly_new / 0.5) >= 0.1).mean()))
+
 print("== spec edge-clip detection ==")
 span, f_edge, f_mid = 48.0, 2534.45, 2557.0
 lo, hi = 2557.25 - span / 2, 2557.25 + span / 2
