@@ -27,6 +27,16 @@ References: qick_demos 03_Conditional_logic (condj) + 04_Reading_Math_Writing; Q
 """
 
 
+def to_signed32(v):
+    """Interpret a 32-bit word as a SIGNED int.  The tProc readout accumulator is signed, but
+    soc.tproc.single_read / read_dmem hand the word back UNSIGNED, so a small negative like
+    -1402 comes out as 4294965894 (== -1402 + 2**32).  The tProc's own condj comparison is
+    signed, so the threshold must be compared in signed units -- always pass raw reads through
+    this before thresholding or reporting them."""
+    v = int(v) & 0xFFFFFFFF
+    return v - (1 << 32) if v >= (1 << 31) else v
+
+
 def feedback_channel(soccfg, ro_ch=0):
     """tProc input channel the readout buffer drives, from soccfg.  >= 0 => the firmware
     routes this readout into the tProc (feedback / active reset possible).  -1 => it does

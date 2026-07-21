@@ -88,12 +88,13 @@ class ActiveResetValidation(ExperimentClass):
         self.element = str(path)
 
     def _read_dmem(self, addr):
-        """Read one tProc data-memory word back through the Pyro proxy (best-effort)."""
+        """Read one tProc data-memory word back through the Pyro proxy (best-effort), as a
+        SIGNED int (the accumulator is signed; single_read returns it unsigned)."""
         for getter in (lambda: self.soc.tproc.single_read(addr),
                        lambda: self.soc.tproc.read_dmem(addr, 1)[0],
                        lambda: self.soc.read_dmem(addr, 1)[0]):
             try:
-                return int(getter())
+                return ar.to_signed32(getter())
             except Exception:
                 continue
         raise RuntimeError("could not read tProc data memory via the soc proxy.")
@@ -129,23 +130,49 @@ class ActiveResetValidation(ExperimentClass):
             return (float(np.asarray(avgi).ravel()[0]), float(np.asarray(avgq).ravel()[0]),
                     self._read_dmem(_ADDR_I), self._read_dmem(_ADDR_Q))   # host I,Q ; raw lower,upper
 
-        Ig, Qg, gl, gu = _raw_read(0)            # |g>
+        Ig, Qg, gl, gu = _raw_read(0)            # |g>  (raw lower/upper now SIGNED)
         Ie, Qe, el, eu = _raw_read(pi_gain)      # |e>
+        # recommend the discriminating half + threshold + sign from the CURRENT reads (as the probe does)
+        sep_lower, sep_upper = abs(el - gl), abs(eu - gu)
+        rec_oper = "lower" if sep_lower >= sep_upper else "upper"
+        rgv, rev = ((gl, el) if rec_oper == "lower" else (gu, eu))
+        rec_thr = int(round(0.5 * (rgv + rev)))
+        rec_ground_below = rgv < rev
+        rec_sep = abs(rev - rgv)
+        # validity of the STORED config (oper/threshold/sign) against the current reads
         gv, ev = ((gu, eu) if oper == "upper" else (gl, el))
-        cur_mid = int(round(0.5 * (gv + ev)))
-        sep_raw = abs(ev - gv)
         thr_between = min(gv, ev) < thr < max(gv, ev)
-        print("-" * 72)
-        print("  CURRENT raw reads (this session):")
-        print(f"    |g>: lower={gl:>12d} upper={gu:>12d}   |e>: lower={el:>12d} upper={eu:>12d}")
-        print(f"    on '{oper}' half: |g>={gv}  |e>={ev}  separation={sep_raw}  midpoint={cur_mid}")
-        print(f"    stored threshold {thr}: {'BETWEEN |g> and |e> (ok)' if thr_between else '*** OUTSIDE [|g>,|e>] -- STALE ***'}")
-        if not thr_between:
-            print(f"    ==> update RESET_THRESHOLD_RAW to ~{cur_mid} (and RESET_GROUND_BELOW="
-                  f"{gv < ev}); readout drifted since the probe.")
+        sign_ok = (bool(cfg.get("reset_ground_below", True)) == (gv < ev))
+        stored_ok = thr_between and sign_ok and (oper == rec_oper)
         host_sep = float(np.hypot(Ie - Ig, Qe - Qg))
+        print("-" * 72)
+        print("  CURRENT raw reads (signed, this session):")
+        print(f"    |g>: lower={gl:>11d} upper={gu:>11d}   |e>: lower={el:>11d} upper={eu:>11d}")
+        print(f"    raw separation: lower={sep_lower}  upper={sep_upper}")
+        print(f"    STORED config oper={oper} thr={thr} ground_below={cfg.get('reset_ground_below')}"
+              f"  ->  {'ok' if stored_ok else '*** STALE ***'}")
+        print(f"    RECOMMENDED (from current reads): oper='{rec_oper}' threshold_raw={rec_thr} "
+              f"ground_below={rec_ground_below}  (raw separation {rec_sep})")
+        if not stored_ok:
+            print(f"    ==> set RESET_OPER='{rec_oper}', RESET_THRESHOLD_RAW={rec_thr}, "
+                  f"RESET_GROUND_BELOW={rec_ground_below}")
         print(f"    host |e>-|g> separation = {host_sep:.4g}  (|g> I={Ig:+.4g} Q={Qg:+.4g} ; "
               f"|e> I={Ie:+.4g} Q={Qe:+.4g})")
+        if host_sep < 0.06:
+            print("    *** the |g>/|e> readout contrast is very small: the single-shot readout is "
+                  "NOT calibrated at this tuning.  Run SS_Cal (+Rabi for the pi) FIRST -- active "
+                  "reset can't discriminate until the blobs separate cleanly on one quadrature.")
+        # If the stored discrimination is stale/inverted, run the sweep with the RECOMMENDED one so
+        # a single run shows BOTH the corrected config and how the reset actually performs with it.
+        # (A wrong ground_below inverts condj: it fires the pi on |g> and skips on |e>, which PUMPS
+        # the qubit up -- residual grows with iters instead of falling.)
+        if not stored_ok:
+            print(f"    --> running the sweep below with the RECOMMENDED discrimination "
+                  f"(oper='{rec_oper}', thr={rec_thr}, ground_below={rec_ground_below}), "
+                  f"not the stale stored one.")
+            cfg["reset_oper"] = rec_oper
+            cfg["reset_threshold_raw"] = int(rec_thr)
+            cfg["reset_ground_below"] = bool(rec_ground_below)
 
         # ---- (2) residual-excited vs max_iters (the trend diagnoses the failure mode) --------
         dx, dy = Ie - Ig, Qe - Qg
@@ -179,9 +206,14 @@ class ActiveResetValidation(ExperimentClass):
         print("-" * 72)
         print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}   best = {rbest:+.3f} "
               f"at max_iters={best['max_iters']}")
-        if not thr_between:
-            print("  -> THRESHOLD is STALE (see above): set RESET_THRESHOLD_RAW/GROUND_BELOW to "
-                  "the current values, then re-run.  (Other diagnoses unreliable until fixed.)")
+        if host_sep < 0.06:
+            print(f"  -> READOUT NOT CALIBRATED (|g>/|e> contrast {host_sep:.3g}): the blobs barely "
+                  "separate, so NEITHER the tProc discrimination NOR this residual is meaningful "
+                  "(that is why the numbers above are erratic).  Run SS_Cal + Rabi to calibrate "
+                  "the readout and the pi, then re-probe the threshold and re-run this.")
+        elif not stored_ok:
+            print("  -> reset config is STALE (see above): apply the RECOMMENDED oper/threshold/"
+                  "ground_below, then re-run.  (Other diagnoses unreliable until fixed.)")
         elif rbest < 0.15:
             print("  -> ACTIVE RESET WORKS: the feedback loop drives |e> to ground.")
         elif abs(rbest - r0) < 0.12:
@@ -199,8 +231,10 @@ class ActiveResetValidation(ExperimentClass):
         self.data = {
             'supported': True, 'g_ref': (Ig, Qg), 'e_ref': (Ie, Qe),
             'raw': {'g_lower': gl, 'g_upper': gu, 'e_lower': el, 'e_upper': eu,
-                    'oper': oper, 'current_midpoint': cur_mid, 'stored_threshold': thr,
-                    'threshold_valid': bool(thr_between)},
+                    'stored_oper': oper, 'stored_threshold': thr, 'stored_ok': bool(stored_ok),
+                    'recommended': {'oper': rec_oper, 'threshold_raw': rec_thr,
+                                    'ground_below': bool(rec_ground_below), 'separation': rec_sep}},
+            'host_separation': host_sep,
             'iters_sweep': sweep, 'best': best, 'baseline_residual': r0,
             'reset_params': {k: cfg.get(k) for k in
                              ("reset_threshold_raw", "reset_oper", "reset_ground_below")},

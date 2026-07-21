@@ -95,12 +95,13 @@ class ActiveResetProbe(ExperimentClass):
         self.element = str(path)
 
     def _read_dmem(self, addr):
-        """Read one tProc data-memory word back through the Pyro proxy (best-effort)."""
+        """Read one tProc data-memory word back through the Pyro proxy (best-effort), as a
+        SIGNED int (the accumulator is signed; single_read returns it unsigned)."""
         for getter in (lambda: self.soc.tproc.single_read(addr),
                        lambda: self.soc.tproc.read_dmem(addr, 1)[0],
                        lambda: self.soc.read_dmem(addr, 1)[0]):
             try:
-                return int(getter())
+                return ar.to_signed32(getter())
             except Exception:
                 continue
         raise RuntimeError("could not read tProc data memory via the soc proxy; the "
