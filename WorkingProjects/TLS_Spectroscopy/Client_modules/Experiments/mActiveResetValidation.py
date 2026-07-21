@@ -198,15 +198,29 @@ class ActiveResetValidation(ExperimentClass):
             print(f"    max_iters={k}:  residual={res:+.3f}   (reset I={Ir:+.4g} Q={Qr:+.4g})")
 
         by_k = {s["max_iters"]: s["residual"] for s in sweep}
-        r0 = by_k[0]                                          # no-reset baseline (~1 if prep good)
+        r0 = by_k[0]                                          # no-reset baseline
         r1 = by_k[1]                                          # one pass
         rmax = by_k[max(iters_list)]                          # most passes
-        best = min((s for s in sweep if s["max_iters"] > 0), key=lambda s: s["residual"])
-        rbest = best["residual"]
+        resid_on = [by_k[k] for k in iters_list if k > 0]     # all with reset enabled
+        rbest, rworst = min(resid_on), max(resid_on)
+        # SANITY: max_iters=0 IS the |e> reference by construction, so it must read ~1.0.  If it
+        # doesn't, the reference run and the sweep runs disagree about what |e> is (drift or
+        # marginal SNR) and NO residual here means anything -- refuse to declare success.
+        baseline_sane = abs(r0 - 1.0) <= 0.25
+        # a real reset stays low once it reaches ground; one low point among high ones is noise
+        consistent = rworst < 0.15
         print("-" * 72)
-        print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}   best = {rbest:+.3f} "
-              f"at max_iters={best['max_iters']}")
-        if host_sep < 0.06:
+        print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}  (must be ~1.000 -- it IS the |e> "
+              f"reference) -> {'ok' if baseline_sane else '*** INCONSISTENT ***'}")
+        print(f"  with reset: best={rbest:+.3f}  worst={rworst:+.3f}  "
+              f"({'stable' if consistent else 'NOT stable across iters'})")
+        if not baseline_sane:
+            print(f"  -> INCONCLUSIVE: the no-reset baseline should be 1.000 by construction but "
+                  f"reads {r0:+.3f}.  The reference and sweep measurements disagree, so the "
+                  "residuals above are not trustworthy (marginal readout SNR / unreliable pi).")
+            print("     Run SS_Cal + Rabi to calibrate the readout discrimination and the pi, "
+                  "then re-run this.  Do NOT enable reset_mode='feedback' yet.")
+        elif host_sep < 0.06:
             print(f"  -> READOUT NOT CALIBRATED (|g>/|e> contrast {host_sep:.3g}): the blobs barely "
                   "separate, so NEITHER the tProc discrimination NOR this residual is meaningful "
                   "(that is why the numbers above are erratic).  Run SS_Cal + Rabi to calibrate "
@@ -214,8 +228,13 @@ class ActiveResetValidation(ExperimentClass):
         elif not stored_ok:
             print("  -> reset config is STALE (see above): apply the RECOMMENDED oper/threshold/"
                   "ground_below, then re-run.  (Other diagnoses unreliable until fixed.)")
+        elif consistent:
+            print("  -> ACTIVE RESET WORKS: residual stays low at EVERY iteration count.")
         elif rbest < 0.15:
-            print("  -> ACTIVE RESET WORKS: the feedback loop drives |e> to ground.")
+            print(f"  -> NOT CONFIRMED (unstable): residual dips to {rbest:+.3f} but reaches "
+                  f"{rworst:+.3f} at other iteration counts.  A real reset STAYS low once the "
+                  "qubit is in |g> (the conditional just skips the pi), so a single low point is "
+                  "noise, not reset.  Calibrate the readout + pi (SS_Cal + Rabi), then re-run.")
         elif abs(rbest - r0) < 0.12:
             print("  -> reset does NOTHING vs baseline: the conditional isn't firing as intended "
                   "-> discrimination broken (oper/ground_below sign, threshold, or read timing).")
@@ -235,7 +254,9 @@ class ActiveResetValidation(ExperimentClass):
                     'recommended': {'oper': rec_oper, 'threshold_raw': rec_thr,
                                     'ground_below': bool(rec_ground_below), 'separation': rec_sep}},
             'host_separation': host_sep,
-            'iters_sweep': sweep, 'best': best, 'baseline_residual': r0,
+            'iters_sweep': sweep, 'baseline_residual': r0,
+            'residual_best': rbest, 'residual_worst': rworst,
+            'baseline_sane': bool(baseline_sane), 'consistent': bool(consistent),
             'reset_params': {k: cfg.get(k) for k in
                              ("reset_threshold_raw", "reset_oper", "reset_ground_below")},
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),

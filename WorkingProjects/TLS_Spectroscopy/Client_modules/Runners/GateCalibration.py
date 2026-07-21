@@ -395,9 +395,11 @@ def main():
         print("Active-reset VALIDATION only (RUN_ACTIVE_RESET_VALIDATION=True)")
         print("=" * 70)
         run_active_reset_validation(outer_folder, soc, soccfg)
-        print("\nValidation done.  residual_excited < 0.15 => the feedback loop resets |e>->|g>;"
-              "\nthen ask me to wire the T1/SS-Rabi readout-buffer accounting so RESET_MODE="
-              "'feedback' works there too.")
+        print("\nValidation done.  Read the VERDICT line above -- it only says WORKS when the "
+              "no-reset\nbaseline is ~1.0 AND the residual stays low at EVERY iteration count.  A "
+              "single low\npoint, or a baseline that isn't ~1.0, means the readout/pi need "
+              "calibrating (SS_Cal +\nRabi) -- not that the reset works.  Only enable "
+              "RESET_MODE='feedback' after a clean WORKS.")
         return
 
     print("=" * 70)
