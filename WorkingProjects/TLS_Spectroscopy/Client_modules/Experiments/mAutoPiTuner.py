@@ -497,11 +497,13 @@ def _combine_refs(pre, post, report, stage):
 # Per-stage defaults; the runner can override any of these via params={...}.
 DEFAULT_PARAMS = {
     "resonator": {"run": True, "span_mhz": 3.0, "coarse_points": 61, "fine_span_mhz": 0.8,
-                  "fine_points": 41, "shots": 300, "relax_delay_us": 10.0},
+                  "fine_points": 41, "shots": 300, "relax_delay_us": 10.0,
+                  "max_span_mhz": 60.0},      # widest auto-escalated search window
     "spec": {"run": True, "span_mhz": 12.0, "points": 121, "shots": 500,
              "spec_gain": None,          # None -> BaseConfig['qubit_gain']
              "spec_len_us": None,        # None -> BaseConfig['qubit_length']
-             "two_pass": True, "relax_delay_us": 1000.0},
+             "two_pass": True, "relax_delay_us": 1000.0,
+             "max_span_mhz": 150.0},     # widest auto-escalated search window
     "rabi": {"gain_max": 30000, "points": 61, "shots": 400, "relax_delay_us": None},
     "ramsey": {"f_virt_mhz": 1.0, "tau_max_us": 4.0, "points": 31, "shots": 500,
                "rounds": 3, "tol_mhz": 0.02, "sign": None,  # None -> history else probe
@@ -554,8 +556,11 @@ class AutoPiTuner(ExperimentClass):
         P = self.P["resonator"]
         cfg = self._stage_cfg(P["relax_delay_us"])
         cfg["shots"] = cfg["reps"] = int(P["shots"])
+        base_gain = int(cfg["read_pulse_gain"])
+        f0 = float(w["read_pulse_freq"])
 
-        def scan(center, span, npts):
+        def scan(center, span, npts, gain):
+            cfg["read_pulse_gain"] = int(gain)
             freqs = np.linspace(center - span / 2.0, center + span / 2.0, int(npts))
             z = np.empty(freqs.size, dtype=complex)
             for j, f in enumerate(freqs):
@@ -564,18 +569,51 @@ class AutoPiTuner(ExperimentClass):
                 z[j] = I + 1j * Q
             return freqs, z
 
-        f0 = float(w["read_pulse_freq"])
-        fr_c, z_c = scan(f0, P["span_mhz"], P["coarse_points"])
-        fit_c = fit_resonance(fr_c, np.abs(z_c))
-        if not fit_c["ok"]:
+        # Escalating search.  A resonator that has drifted needs a WIDER window; one that
+        # is being over-driven has no dip at all until the power comes down (the dip only
+        # sharpens in the low-power dispersive regime), so escalate on both axes.
+        span0, npts0 = float(P["span_mhz"]), int(P["coarse_points"])
+        lo_gain = max(base_gain // 6, 50)
+        sh0 = int(P["shots"])
+        plan = [(span0, npts0, base_gain, sh0),
+                (span0 * 5, min(npts0 * 3, 241), base_gain, max(sh0 // 2, 150)),
+                (span0 * 5, min(npts0 * 3, 241), lo_gain, max(sh0 // 2, 150)),
+                (float(P["max_span_mhz"]), min(npts0 * 5, 401), lo_gain, max(sh0 // 3, 100))]
+        best = None
+        for span, npts, gain, sh in plan:
+            cfg["shots"] = cfg["reps"] = int(sh)
+            fr, z = scan(f0, span, npts, gain)
+            fit = fit_resonance(fr, np.abs(z))
+            if best is None or fit["snr"] > best[0]["snr"]:
+                best = (fit, fr, z, span, gain)
+            if fit["ok"]:
+                break
             self._report("resonator", "WARN",
-                         "no clear resonance in %.2f MHz around %.4f (snr %.1f); "
-                         "keeping read_pulse_freq" % (P["span_mhz"], f0, fit_c["snr"]))
-            self.data["trans"] = {"freqs": fr_c, "mag": np.abs(z_c), "fit": fit_c["yfit"]}
+                         "nothing in %.1f MHz at readout gain %d (best snr %.1f) -- widening"
+                         % (span, gain, fit["snr"]))
+        fit_c, fr_c, z_c, span_used, gain_used = best
+        cfg["shots"] = cfg["reps"] = sh0
+        self.data["trans"] = {"freqs": fr_c, "mag": np.abs(z_c), "fit": fit_c["yfit"]}
+        if not fit_c["ok"]:
+            cfg["read_pulse_gain"] = base_gain
+            mag = np.abs(z_c)
+            self._report("resonator", "WARN",
+                         "NO resonance found within +/-%.1f MHz of %.4f even at gain %d "
+                         "(best snr %.1f, best candidate %.4f MHz; trace ptp %.3g vs noise "
+                         "%.3g). Keeping read_pulse_freq -- the readout is suspect."
+                         % (span_used / 2.0, f0, gain_used, fit_c["snr"], fit_c["f0"],
+                            float(np.ptp(mag)), _mad(mag - _smooth(mag)) * 1.4826))
             return
-        fr_f, z_f = scan(fit_c["f0"], P["fine_span_mhz"], P["fine_points"])
+        if gain_used != base_gain:
+            self._report("resonator", "WARN",
+                         "resonance only visible at readout gain %d (configured %d) -- the "
+                         "configured readout power is likely SATURATING the resonator; "
+                         "consider lowering BaseConfig['read_pulse_gain']."
+                         % (gain_used, base_gain))
+        fr_f, z_f = scan(fit_c["f0"], P["fine_span_mhz"], P["fine_points"], gain_used)
         fit_f = fit_resonance(fr_f, np.abs(z_f), polarity=fit_c["polarity"])
         use = fit_f if fit_f["ok"] else fit_c
+        cfg["read_pulse_gain"] = base_gain
         w["read_pulse_freq"] = round(float(use["f0"]), 4)
         w["updated"].add("read_pulse_freq")
         self._report("resonator", "OK",
@@ -606,14 +644,39 @@ class AutoPiTuner(ExperimentClass):
         P = self.P["spec"]
         gain = int(P["spec_gain"] if P["spec_gain"] is not None else self.cfg["qubit_gain"])
         length = float(P["spec_len_us"] if P["spec_len_us"] is not None else self.cfg["qubit_length"])
-        freqs, z, sig = self._spec_scan(w, w["qubit_freq"], P["span_mhz"], P["points"],
-                                        gain, length, P["shots"], P["relax_delay_us"])
-        fit1 = fit_resonance(freqs, sig, polarity="peak")
+        # Escalating search, same logic as the resonator: a drifted qubit needs a WIDER
+        # window, and a faint line needs MORE drive (power-broadened but findable; the
+        # low-power 2nd pass below then recovers the unshifted center).
+        span0, npts0, sh0 = float(P["span_mhz"]), int(P["points"]), int(P["shots"])
+        hi_gain = min(gain * 3, 30000)
+        plan = [(span0, npts0, gain, sh0),
+                (span0 * 4, min(npts0 * 3, 361), gain, max(sh0 // 2, 200)),
+                (span0 * 4, min(npts0 * 3, 361), hi_gain, max(sh0 // 2, 200)),
+                (float(P["max_span_mhz"]), min(npts0 * 5, 601), hi_gain, max(sh0 // 3, 150))]
+        best = None
+        for span, npts, g, sh in plan:
+            freqs, z, sig = self._spec_scan(w, w["qubit_freq"], span, npts, g, length,
+                                            sh, P["relax_delay_us"])
+            fit = fit_resonance(freqs, sig, polarity="peak")
+            if best is None or fit["snr"] > best[0]["snr"]:
+                best = (fit, freqs, sig, span, g)
+            if fit["ok"]:
+                break
+            self._report("spec", "WARN",
+                         "no line in %.1f MHz at drive gain %d (best snr %.1f) -- widening"
+                         % (span, g, fit["snr"]))
+        fit1, freqs, sig, span_used, gain_used = best
         self.data["spec"] = {"freqs": freqs, "sig": sig, "fit": fit1["yfit"]}
         if not fit1["ok"]:
             raise TunerStageError(
-                "spec: no qubit line found in %.1f MHz around %.3f MHz (snr %.1f). "
-                "Check qubit_freq / drive power / readout." % (P["span_mhz"], w["qubit_freq"], fit1["snr"]))
+                "spec: no qubit line within +/-%.1f MHz of %.3f MHz even at drive gain %d "
+                "(best snr %.1f, best candidate %.3f MHz). Either the qubit moved further "
+                "than that, or the READOUT is not reporting state (the resonator stage %s) "
+                "-- fix the readout first."
+                % (span_used / 2.0, w["qubit_freq"], gain_used, fit1["snr"], fit1["f0"],
+                   "also found nothing" if "read_pulse_freq" not in w["updated"]
+                   else "did find a resonance"))
+        gain = gain_used
         f_q = fit1["f0"]
         note = ""
         if P["two_pass"]:
