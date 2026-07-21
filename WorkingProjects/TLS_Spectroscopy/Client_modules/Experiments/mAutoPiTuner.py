@@ -658,6 +658,14 @@ DEFAULT_PARAMS = {
     "fine_pi": {"passes": ((4, 0.12, 13), (12, 0.05, 13), (32, 0.018, 13)),
                 "shots": 400, "tol_rad": 0.010, "max_floor": 0.45,
                 "relax_delay_us": None},
+    # Readout optimization: coordinate descent on (freq, gain, length) maximizing the
+    # SINGLE-SHOT blob separation.  The dip minimum is not the best readout frequency
+    # (the state-dependent shift moves it), and power/length matter just as much.
+    "readout_opt": {"run": True, "rounds": 2, "shots": 500,
+                    "freq_span_mhz": 2.0, "freq_points": 11,
+                    "gain_lo": 0.15, "gain_hi": 4.0, "gain_points": 9,
+                    "lengths_us": (3.0, 6.0, 12.0, 20.0, 30.0),
+                    "target_sigma": 3.0, "relax_delay_us": None},
     "single_shot": {"shots": 3000, "min_sep_sigma": 2.0, "relax_delay_us": None},
     "verify": {"shots": 1000, "snr_min": 4.0, "relax_delay_us": None},
     # 'pi_only' (default): spec -> rough Rabi -> pi-train fine amplitude -> single shot.
@@ -1409,6 +1417,95 @@ class AutoPiTuner(ExperimentClass):
         w["fine_amp_converged"] = False
         w["d_theta_final"] = float(hist[-1])
 
+    # ---------------- stage 2b: READOUT optimization ----------------
+    def _readout_probe(self, w, cfg, freq, gain, length, shots):
+        """Single-shot |g>/|e> separation at one readout setting."""
+        c = dict(cfg)
+        c["read_pulse_freq"] = float(freq)
+        c["read_pulse_gain"] = int(gain)
+        c["read_length"] = float(length)
+        ig, qg = _acquire_shots(self, c, [], w["drive_freq"], shots)
+        ie, qe = _acquire_shots(self, c, [("pulse", int(w["pi_gain"]), 0.0)],
+                                w["drive_freq"], shots)
+        ss = single_shot_fidelity(ig, qg, ie, qe)
+        return float(ss["sep_sigma"]), float(ss["fidelity"])
+
+    def _stage_readout_opt(self, w):
+        """Optimize the READOUT for single-shot discrimination -- the step everything
+        else depends on, and the one that was missing.
+
+        The resonator dip minimum is NOT the best readout frequency: discrimination is
+        maximal where the |g> and |e> resonator responses differ most, which sits off the
+        bare dip by roughly the dispersive shift.  Power matters as much (too little and
+        there is no signal; too much saturates the resonator and collapses the state
+        dependence), and the integration length trades SNR against T1 decay during the
+        measurement.  These are exactly the knobs a manual bring-up tunes.
+
+        Coordinate descent over (frequency, gain, length) maximizing the single-shot blob
+        separation in units of the shot noise, using the current rough pi to prepare |e>.
+        A rough pi is fine here: an imperfect |e> shrinks every setting's separation by
+        the same factor, so the location of the optimum is unaffected."""
+        P = self.P["readout_opt"]
+        cfg = self._stage_cfg(P["relax_delay_us"])
+        shots = int(P["shots"])
+        f = float(w["read_pulse_freq"])
+        g = int(w.get("read_pulse_gain", self.cfg["read_pulse_gain"]))
+        L = float(w.get("read_length", self.cfg["read_length"]))
+        sep, fid = self._readout_probe(w, cfg, f, g, L, shots)
+        self._report("readout_opt", "OK",
+                     "start: f=%.4f MHz gain=%d len=%.1f us -> %.2f sigma (F=%.3f)"
+                     % (f, g, L, sep, fid))
+        trace = [{"freq": f, "gain": g, "length": L, "sep": sep, "fid": fid}]
+        for rnd in range(1, int(P["rounds"]) + 1):
+            # --- frequency (the dispersive-shift offset from the bare dip) ------------
+            span = float(P["freq_span_mhz"]) / rnd
+            fs = f + np.linspace(-span / 2.0, span / 2.0, int(P["freq_points"]))
+            vals = [self._readout_probe(w, cfg, x, g, L, shots)[0] for x in fs]
+            f_new = float(fs[int(np.argmax(vals))])
+            self.data.setdefault("readout_opt", {})["freq_r%d" % rnd] = \
+                {"x": fs, "sep": np.array(vals)}
+            # --- power ---------------------------------------------------------------
+            gs = np.unique(np.round(g * np.geomspace(float(P["gain_lo"]), float(P["gain_hi"]),
+                                                     int(P["gain_points"]))).astype(int))
+            gs = gs[(gs >= 50) & (gs <= 32000)]
+            vals_g = [self._readout_probe(w, cfg, f_new, int(x), L, shots)[0] for x in gs]
+            g_new = int(gs[int(np.argmax(vals_g))])
+            self.data["readout_opt"]["gain_r%d" % rnd] = {"x": gs, "sep": np.array(vals_g)}
+            # --- integration length --------------------------------------------------
+            Ls = np.array([x for x in P["lengths_us"] if 0 < x <= 40.0], dtype=float)
+            vals_L = [self._readout_probe(w, cfg, f_new, g_new, float(x), shots)[0] for x in Ls]
+            L_new = float(Ls[int(np.argmax(vals_L))])
+            self.data["readout_opt"]["len_r%d" % rnd] = {"x": Ls, "sep": np.array(vals_L)}
+            sep_new, fid_new = self._readout_probe(w, cfg, f_new, g_new, L_new, shots)
+            self._report("readout_opt", "OK",
+                         "round %d: f=%.4f MHz gain=%d len=%.1f us -> %.2f sigma (F=%.3f)"
+                         % (rnd, f_new, g_new, L_new, sep_new, fid_new))
+            if sep_new <= sep + 0.05 and rnd > 1:
+                break                       # coordinate descent has stopped improving
+            f, g, L, sep, fid = f_new, g_new, L_new, sep_new, fid_new
+            trace.append({"freq": f, "gain": g, "length": L, "sep": sep, "fid": fid})
+        w["read_pulse_freq"] = round(float(f), 4)
+        w["read_pulse_gain"] = int(g)
+        w["read_length"] = float(L)
+        w["updated"].update(["read_pulse_freq", "read_pulse_gain", "read_length"])
+        # every later stage builds its cfg from self.cfg, so the optimized readout has to
+        # land there too (self.cfg is the runner's copy -- BaseConfig is untouched)
+        self.cfg["read_pulse_freq"] = w["read_pulse_freq"]
+        self.cfg["read_pulse_gain"] = w["read_pulse_gain"]
+        self.cfg["read_length"] = w["read_length"]
+        self.data["readout_opt_trace"] = trace
+        self._report("readout_opt", "OK",
+                     "BEST readout: %.4f MHz, gain %d, %.1f us -> %.2f sigma (F=%.3f)"
+                     % (f, g, L, sep, fid))
+        if sep < float(P["target_sigma"]):
+            self._report("readout_opt", "WARN",
+                         "best achievable separation %.2f sigma is below the %.1f sigma "
+                         "target -- single-shot work will stay marginal.  Widen the "
+                         "search (freq_span_mhz / gain range / lengths_us), or the "
+                         "readout chain itself (amplifier, attenuation, resonator Q) is "
+                         "the limit." % (sep, P["target_sigma"]))
+        return sep
+
     # ---------------- stage 4b: pi-ONLY fine amplitude ----------------
     def _pi_train_residual(self, w, cfg, gain, M, shots):
         """Residual excitation after M pi pulses at `gain`, with the |g> and |e>
@@ -1719,8 +1816,15 @@ class AutoPiTuner(ExperimentClass):
             "drive_freq": float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
             "pi_gain": int(cfg["qubit_pi_gain"]),
             "pi2_gain": int(cfg.get("qubit_pi2_gain", cfg["qubit_pi_gain"] // 2)),
+            "read_pulse_gain": int(cfg["read_pulse_gain"]),
+            "read_length": float(cfg["read_length"]),
             "updated": set(),      # keys a stage actually MEASURED (safe to write back)
         }
+        # snapshot the starting values: stages may mutate self.cfg (readout optimization
+        # does), so "was" comparisons must not read it back afterwards
+        orig = {k: cfg.get(k) for k in
+                ("read_pulse_freq", "read_pulse_gain", "read_length", "qubit_freq",
+                 "qubit_pi_freq", "qubit_pi_gain", "qubit_pi2_gain")}
         print("=" * 72)
         print("AUTO PI TUNER  (%s)  starting from: read %.4f  qubit %.4f  pi %.4f MHz "
               "@ %d DAC" % (self.element, w["read_pulse_freq"], cfg["qubit_freq"],
@@ -1737,6 +1841,12 @@ class AutoPiTuner(ExperimentClass):
             if self.P["pipeline"]["mode"] == "pi_only":
                 # no pi/2 and no free evolution anywhere -> T2* cannot block the tune
                 ss_before = self._stage_single_shot(w, label="single_shot_before")
+                if self.P["readout_opt"]["run"]:
+                    # optimize the MEASUREMENT before calibrating anything with it, then
+                    # redo the rough Rabi now that the readout can actually see the qubit
+                    self._stage_readout_opt(w)
+                    self._stage_rabi(w)
+                    ss_before = self._stage_single_shot(w, label="single_shot_before")
                 self._stage_fine_pi(w)
                 ss_after = self._stage_single_shot(w, label="single_shot")
                 self._report("single_shot", "OK",
@@ -1762,9 +1872,12 @@ class AutoPiTuner(ExperimentClass):
         tuned = {"qubit_pi_freq": w["drive_freq"],
                  "qubit_pi_gain": int(w["pi_gain"]),
                  "qubit_pi2_gain": int(w["pi2_gain"])}
-        for key in ("read_pulse_freq", "qubit_freq"):
+        for key, val in (("read_pulse_freq", w["read_pulse_freq"]),
+                         ("read_pulse_gain", int(w["read_pulse_gain"])),
+                         ("read_length", float(w["read_length"])),
+                         ("qubit_freq", w["qubit_freq"])):
             if key in w["updated"]:
-                tuned[key] = w[key]
+                tuned[key] = val
         if success:
             print("TUNE SUCCESS:")
             for k, v in tuned.items():
@@ -1773,15 +1886,14 @@ class AutoPiTuner(ExperimentClass):
             print("TUNE FAILED%s" % ("" if failure is None else " (%s)" % failure))
             print("Config NOT written.  But these WERE measured this run -- apply by hand "
                   "if you trust them:")
-            start = {"read_pulse_freq": float(cfg["read_pulse_freq"]),
-                     "qubit_freq": float(cfg["qubit_freq"]),
-                     "qubit_pi_gain": int(cfg["qubit_pi_gain"])}
             for key, got in (("read_pulse_freq", w["read_pulse_freq"]),
+                             ("read_pulse_gain", w["read_pulse_gain"]),
+                             ("read_length", w["read_length"]),
                              ("qubit_freq", w["qubit_freq"]),
                              ("qubit_pi_gain", w["pi_gain"])):
                 if key in w["updated"]:
-                    was = start[key]
-                    moved = " (moved %+.4f)" % (float(got) - was) if was else ""
+                    was = orig.get(key)
+                    moved = (" (moved %+.4f)" % (float(got) - float(was))) if was else ""
                     print("   %-18s %-12s  was %s%s" % (key, got, was, moved))
             if "t2_us" in w:
                 print("   %-18s %.2f us" % ("T2* (measured)", w["t2_us"]))
