@@ -672,7 +672,7 @@ DEFAULTS = {
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
                       "shots": 1500, "outlier_max": 0.02, "relax_delay_us": None},
     "t1": {"points": 12, "shots": 600, "t_max_us": None, "relax_delay_us": None},
-    "readout_len": {"lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0),
+    "readout_len": {"lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0, 45.0),
                     "shots": 1500, "relax_delay_us": None},
     "single_shot": {"shots": 4000, "min_sep_sigma": 2.0, "target_sep_sigma": 4.0,
                     "relax_delay_us": None},
@@ -1146,6 +1146,12 @@ class AutoTuner(ExperimentClass):
         if not ok_rows:
             raise TunerError("readout_len: no usable length.")
         best = max(ok_rows, key=lambda r: r["fid"])
+        if len(ok_rows) > 1 and best["len"] in (ok_rows[0]["len"], ok_rows[-1]["len"]):
+            self._say("readout_len", "WARN",
+                      "the best length %.1f us is at an END of the tested ladder (%.1f-%.1f "
+                      "us) -- the RANGE may be the limit rather than the optimum; extend "
+                      "params['readout_len']['lengths_us'] (T1/2 = %.1f us allows more)"
+                      % (best["len"], ok_rows[0]["len"], ok_rows[-1]["len"], 0.5 * t1))
         self.w["read_length"] = float(best["len"])
         self.w["updated"].add("read_length")
         self._say("readout_len", "OK", "best length %.1f us (F=%.3f, %.2f sigma; capped at "
