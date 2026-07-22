@@ -632,36 +632,29 @@ def gen_sample_rate(soccfg, gen_ch):
 
 
 def check_nyquist(soccfg, gen_ch, freq_mhz, nqz, label):
-    """Refuse to drive a frequency that the declared Nyquist zone cannot produce.
+    """Report which Nyquist zone a frequency lands in and whether the declared zone
+    boosts it.  This WARNS; it never refuses.
 
-    This is not a theoretical concern: this project ran for a long time with
-    qubit_nqz=1 while the qubit sat at 5112 MHz (above fs/2).  A request above fs/2
-    with nqz=1 does NOT emit that tone -- freq2reg wraps it modulo fs and the DAC
-    puts out the alias instead -- so spectroscopy at the true qubit frequency found
-    nothing, and the only response ever seen came from driving at half the frequency.
-    qick's own warning about this goes to stdout, which the acquisition helpers
-    suppress, so it was invisible.  Fail loudly instead."""
+    qick's set_nyquist docstring is explicit that the setting "doesn't change the output
+    frequencies: you will always have some power at both the demanded frequency and its
+    image(s)" -- nqz only switches the DAC analog stage (NRZ vs mix-mode), raising output
+    in zones 2/3.  A frequency outside the declared zone is therefore still emitted, just
+    weakly, and refusing it would block working setups: this board's readout sits at
+    7248.95 MHz, which is in zone 3 if fs = 6881.28 MHz, with nqz=2.
+
+    What does matter: a 5112 MHz qubit driven with nqz=1 gets the NRZ envelope instead of
+    the mix-mode boost, so it is driven far more weakly than it should be."""
     fs = gen_sample_rate(soccfg, gen_ch)
-    if fs is None or not np.isfinite(freq_mhz):
+    if fs is None or not np.isfinite(freq_mhz) or float(freq_mhz) <= 0:
         return None
-    nqz = int(nqz)
-    lo, hi = (nqz - 1) * fs / 2.0, nqz * fs / 2.0
-    if not (lo <= float(freq_mhz) <= hi):
-        need = int(np.floor(float(freq_mhz) / (fs / 2.0))) + 1
-        raise TunerError(
-            "%s: %.4f MHz is not in Nyquist zone %d for generator %d (zone %d spans "
-            "%.1f-%.1f MHz at fs = %.1f MHz). The DAC would emit an alias, not this "
-            "frequency. Set the zone to %d (it contains %.4f MHz) and re-run."
-            % (label, float(freq_mhz), nqz, int(gen_ch), nqz, lo, hi, fs, need,
-               float(freq_mhz)))
-    # zero-order-hold rolloff: |sinc(f/fs)|.  Only warn when the output is genuinely
-    # weak, not merely because the tone is near a zone boundary.
-    x = np.pi * float(freq_mhz) / fs
-    sinc = abs(np.sin(x) / x) if x > 0 else 1.0
-    if sinc < 0.25:
-        return ("%s: %.4f MHz sits where the DAC sinc rolloff leaves only %.0f%% of full "
-                "amplitude, so the drive is inefficient here."
-                % (label, float(freq_mhz), 100 * sinc))
+    f = float(freq_mhz)
+    zone = int(f // (fs / 2.0)) + 1
+    want = 1 if zone == 1 else 2
+    if int(nqz) != want:
+        return ("%s: %.4f MHz falls in Nyquist zone %d but nqz=%d is declared. The tone is "
+                "still emitted, but zone %d is boosted by nqz=%d (mix-mode) and starved by "
+                "nqz=%d -- set it to %d for full drive power."
+                % (label, f, zone, int(nqz), zone, want, int(nqz), want))
     return None
 
 
@@ -1598,11 +1591,12 @@ class AutoTuner(ExperimentClass):
                     self._say("nyquist", "WARN", warn)
             fsq = gen_sample_rate(self.soccfg, cfg["qubit_ch"])
             if fsq:
-                self._say("nyquist", "OK", "qubit gen fs = %.1f MHz -> zone %d spans "
-                          "%.0f-%.0f MHz; driving %.4f MHz"
-                          % (fsq, cfg["qubit_nqz"], (cfg["qubit_nqz"] - 1) * fsq / 2,
-                             cfg["qubit_nqz"] * fsq / 2,
-                             cfg.get("qubit_pi_freq", cfg["qubit_freq"])))
+                fq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
+                self._say("nyquist", "OK",
+                          "qubit gen fs = %.1f MHz; driving %.4f MHz (zone %d, nqz=%d). "
+                          "Half of it is %.4f MHz -- a response there instead means the "
+                          "qubit is being driven two-photon rather than directly."
+                          % (fsq, fq, int(fq // (fsq / 2.0)) + 1, cfg["qubit_nqz"], fq / 2))
         if int(cfg.get("ff_park_gain", 0)) != 0:
             raise TunerError("this tuner is PARK-ONLY but ff_park_gain=%s; calibrating "
                              "here would write a pi measured at the wrong flux."
