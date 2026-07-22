@@ -65,6 +65,139 @@ def _smooth(y, npts_per_feature=None, w=None):
     return np.convolve(pad, k, mode="valid")
 
 
+def peak_significance(freqs, sig, f0, fwhm):
+    """How many sigma of signal sit at a KNOWN frequency.
+
+    Re-fitting a repeat scan blind asks the much harder question "is there a line
+    anywhere", and a marginal-but-real line fails it.  Here the hypothesis is already
+    fixed by the first scan, so the test is a targeted one: compare the peak inside one
+    linewidth of the candidate against the baseline everywhere else."""
+    f = np.asarray(freqs, dtype=float)
+    y = np.asarray(sig, dtype=float)
+    good = np.isfinite(f) & np.isfinite(y)
+    f, y = f[good], y[good]
+    if f.size < 8:
+        return 0.0
+    sel = np.abs(f - float(f0)) <= max(float(fwhm), 0.5)
+    if sel.sum() < 2 or (~sel).sum() < 5:
+        return 0.0
+    base = float(np.median(y[~sel]))
+    s = _noise_sigma(y)
+    return float((np.max(y[sel]) - base) / max(s, 1e-12))
+
+
+def fit_notch_complex(freqs, z, f0_guess=None, kappa_guess=None):
+    """Complex notch-resonator fit that ALLOWS an asymmetric lineshape.
+
+    A hanger resonator's dip is only symmetric when the feedline is perfectly matched.
+    Real ones never are: the mismatch rotates the resonance circle, which appears in
+    |S21| as a Fano-asymmetric dip with one shoulder higher than the other.  Fitting a
+    symmetric Lorentzian to that pulls f0 toward the shallow shoulder and inflates kappa,
+    and both errors propagate -- f0 sets where the readout sits and kappa sets the
+    2|chi|/kappa verdict.
+
+    Model, to first order in the environment across a narrow span:
+
+        z(f) = A + B*x - C / (1 + 2i*x/kappa),      x = f - f0
+
+    A (background), B (chain slope) and C (resonance) are COMPLEX and enter LINEARLY, so
+    for any trial (f0, kappa) they follow from an exact least-squares solve and only two
+    real parameters are ever searched.  The phase of C/A is the mismatch angle: 0 for a
+    symmetric dip, non-zero for a Fano-asymmetric one.  Fitting the complex trace rather
+    than |S21| is also what makes kappa right -- magnitude-fitting discards the phase,
+    which is where most of the linewidth information lives."""
+    f = np.asarray(freqs, dtype=float)
+    zz = np.asarray(z, dtype=complex)
+    good = np.isfinite(f) & np.isfinite(zz.real) & np.isfinite(zz.imag)
+    f, zz = f[good], zz[good]
+    n = f.size
+    out = {"ok": False, "f0": np.nan, "f0_err": np.nan, "fwhm": np.nan,
+           "asym_deg": np.nan, "snr": 0.0, "yfit": None}
+    if n < 12:
+        return out
+    span = float(f.max() - f.min())
+    if span <= 0:
+        return out
+    if f0_guess is None or not np.isfinite(f0_guess):
+        f0_guess = float(f[int(np.argmin(np.abs(zz)))])
+    if kappa_guess is None or not np.isfinite(kappa_guess) or kappa_guess <= 0:
+        kappa_guess = max(span / 10.0, 1e-6)
+
+    def solve(fr, kap):
+        x = f - fr
+        M = np.column_stack([np.ones(n), x, -1.0 / (1.0 + 2j * x / kap)])
+        try:
+            p, _res, _rank, _sv = np.linalg.lstsq(M, zz, rcond=None)
+        except np.linalg.LinAlgError:
+            return np.inf, None, None
+        r = zz - M.dot(p)
+        return float(np.real(np.vdot(r, r))), p, M
+
+    def cost(theta):
+        fr, lk = float(theta[0]), float(theta[1])
+        kap = float(np.exp(lk))
+        if not (f.min() - span <= fr <= f.max() + span):
+            return 1e30
+        if not (1e-7 <= kap <= 10.0 * span):
+            return 1e30
+        s = solve(fr, kap)[0]
+        return s if np.isfinite(s) else 1e30
+
+    from scipy.optimize import minimize
+    best = None
+    starts = []
+    for fr0 in (f0_guess, f0_guess - 0.1 * span, f0_guess + 0.1 * span):
+        for kr in (0.3, 1.0, 3.0):
+            starts.append((fr0, np.log(max(kappa_guess * kr, 1e-7))))
+    for th0 in starts:
+        try:
+            r = minimize(cost, np.array(th0), method="Nelder-Mead",
+                         options={"xatol": span * 1e-7, "fatol": 1e-12, "maxiter": 2000})
+        except Exception:
+            continue
+        if r.fun < 1e29 and (best is None or r.fun < best.fun):
+            best = r
+    if best is None:
+        return out
+    fr = float(best.x[0])
+    kap = float(np.exp(best.x[1]))
+    smin, p, M = solve(fr, kap)
+    if p is None or not np.isfinite(smin):
+        return out
+    if not (f.min() <= fr <= f.max()) or not (0 < kap <= 2.0 * span):
+        return out
+
+    dof = max(2 * n - 8, 1)
+    sigma2 = smin / dof
+    hf, hk = span * 1e-3, kap * 1e-2
+    try:
+        sff = (cost([fr + hf, np.log(kap)]) - 2 * smin + cost([fr - hf, np.log(kap)])) / hf ** 2
+        skk = (cost([fr, np.log(kap + hk)]) - 2 * smin
+               + cost([fr, np.log(max(kap - hk, 1e-9))])) / hk ** 2
+        sfk = (cost([fr + hf, np.log(kap + hk)]) - cost([fr + hf, np.log(max(kap - hk, 1e-9))])
+               - cost([fr - hf, np.log(kap + hk)])
+               + cost([fr - hf, np.log(max(kap - hk, 1e-9))])) / (4 * hf * hk)
+        H = np.array([[sff, sfk], [sfk, skk]], dtype=float)
+        cov = 2.0 * sigma2 * np.linalg.inv(H)
+        f0_err = float(np.sqrt(abs(cov[0, 0])))
+    except Exception:
+        f0_err = float(kap / 10.0)
+    if not np.isfinite(f0_err) or f0_err <= 0:
+        f0_err = float(kap / 10.0)
+
+    A, B, C = p[0], p[1], p[2]
+    asym = float(np.rad2deg(np.angle(C / A))) if abs(A) > 0 else np.nan
+    if asym > 180.0:
+        asym -= 360.0
+    model = M.dot(p)
+    depth = float(abs(C))
+    resid = float(np.sqrt(sigma2))
+    out.update({"ok": bool(depth > 3.0 * resid), "f0": fr, "f0_err": f0_err,
+                "fwhm": kap, "asym_deg": asym, "snr": depth / max(resid, 1e-15),
+                "yfit": np.abs(model) ** 2, "freqs": f, "depth": depth})
+    return out
+
+
 def fit_resonance(freqs, mag, polarity=None, expected_fwhm=None):
     """Fit a resonance on a sloped baseline.  `expected_fwhm` (MHz) sets the smoothing
     kernel so it can never be wider than the feature.  Returns dict with ok/f0/fwhm/
@@ -647,10 +780,12 @@ def _pop_with_local_refs(exp, cfg, seq, drive_freq, pi_gain, shots):
 DEFAULTS = {
     "max_rounds": 4,
     "resonator": {"span_mhz": 4.0, "points": 81, "max_span_mhz": 60.0, "shots": 400,
-                  "relax_delay_us": 50.0, "expected_fwhm_mhz": 0.3},
+                  "relax_delay_us": 50.0, "expected_fwhm_mhz": 0.3,
+                  "asym_warn_deg": 10.0},
     "spec": {"span_mhz": 20.0, "points": 121, "max_span_mhz": 150.0, "shots": 500,
              "gain": None, "len_us": None, "relax_delay_us": 500.0,
-             "power_ratios": (1.0, 0.35, 0.12, 0.04)},
+             "confirm_min_snr": 5.0, "confirm_steps": 3, "confirm_repeat_sigma": 4.0,
+             "confirm_min_lever": 0.5},
     "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500, "relax_delay_us": None},
     "chi": {"span_mhz": 4.0, "points": 81, "shots": 500, "relax_delay_us": None},
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
@@ -781,13 +916,37 @@ class AutoTuner(ExperimentClass):
         if not fit["ok"]:
             raise TunerError("resonator: no resonance within +/-%.1f MHz of %.4f (best "
                              "snr %.1f). Check the readout chain/power." % (span / 2, f0, fit["snr"]))
-        self._say("resonator", "OK", "%s at %.4f +/- %.4f MHz, kappa/2pi = %.3f MHz (snr %.0f)"
-                  % (fit["polarity"], fit["f0"], fit["f0_err"], fit["fwhm"], fit["snr"]))
-        self.w["resonator_f0"] = float(fit["f0"])
-        self.w["kappa_mhz"] = float(fit["fwhm"])
-        self.w["read_pulse_freq"] = round(float(fit["f0"]), 4)
+        cpx = fit_notch_complex(fs, z, f0_guess=fit["f0"], kappa_guess=fit["fwhm"])
+        if cpx["ok"]:
+            shift = abs(cpx["f0"] - fit["f0"])
+            self.node_data["resonator"]["fit"] = cpx["yfit"]
+            self.node_data["resonator"]["asym_deg"] = cpx["asym_deg"]
+            self._say("resonator", "OK",
+                      "dip at %.4f +/- %.4f MHz, kappa/2pi = %.3f MHz (snr %.0f, complex "
+                      "notch fit)" % (cpx["f0"], cpx["f0_err"], cpx["fwhm"], cpx["snr"]))
+            if abs(cpx["asym_deg"]) > float(P["asym_warn_deg"]):
+                self._say("resonator", "WARN",
+                          "the lineshape is ASYMMETRIC by %.0f deg (feedline mismatch), so "
+                          "a symmetric Lorentzian is the wrong model here: it puts the dip "
+                          "at %.4f and kappa at %.3f, which is %.0f kHz (%.2f kappa) from "
+                          "the complex-fit answer. The complex fit is the one being used."
+                          % (cpx["asym_deg"], fit["f0"], fit["fwhm"], 1000 * shift,
+                             shift / max(cpx["fwhm"], 1e-9)))
+            fit_f0, fit_k, fit_err = cpx["f0"], cpx["fwhm"], cpx["f0_err"]
+            self.w["res_asym_deg"] = float(cpx["asym_deg"])
+        else:
+            self._say("resonator", "WARN",
+                      "the complex notch fit did not converge -- falling back to the "
+                      "symmetric magnitude fit, which BIASES f0 if the dip is asymmetric")
+            self._say("resonator", "OK",
+                      "%s at %.4f +/- %.4f MHz, kappa/2pi = %.3f MHz (snr %.0f)"
+                      % (fit["polarity"], fit["f0"], fit["f0_err"], fit["fwhm"], fit["snr"]))
+            fit_f0, fit_k, fit_err = fit["f0"], fit["fwhm"], fit["f0_err"]
+        self.w["resonator_f0"] = float(fit_f0)
+        self.w["kappa_mhz"] = float(fit_k)
+        self.w["read_pulse_freq"] = round(float(fit_f0), 4)
         self.w["updated"].add("read_pulse_freq")
-        return {"f0": fit["f0"]}, {"f0": max(0.2 * fit["fwhm"], 3 * fit["f0_err"])}
+        return {"f0": fit_f0}, {"f0": max(0.2 * fit_k, 3 * fit_err)}
 
     def _cal_spec(self):
         P = self.P["spec"]
@@ -848,29 +1007,75 @@ class AutoTuner(ExperimentClass):
                 raise TunerError("spec: the line vanished when re-centred on %.3f -- the "
                                  "original peak was a scan-edge artifact." % fit["f0"])
             fit = f2
-        centres, powers = [], []
         narrow = max(6.0 * fit["fwhm"], 1.5)
-        for ratio in P["power_ratios"]:
-            g = max(int(gain_used * ratio), 40)
-            fs2, sig2 = scan(fit["f0"], narrow, max(41, npts // 3), g, P["shots"])
-            f2 = fit_resonance(fs2, sig2, polarity="peak", expected_fwhm=fit["fwhm"])
-            if f2["ok"]:
-                centres.append(f2["f0"])
-                powers.append(float(g) ** 2)
-                self.node_data["spec"] = {"freqs": fs2, "sig": sig2, "fit": f2["yfit"]}
-        if len(centres) >= 2:
-            c = np.polyfit(np.array(powers), np.array(centres), 1)
-            f_q = float(c[-1])
-            self._say("spec", "OK", "qubit line %.4f MHz (zero-power extrapolation over "
-                                    "%d powers; highest-power centre %.4f)"
-                      % (f_q, len(centres), centres[0]))
-        else:
+        npts_n = max(41, npts // 3)
+        fs2, sig2 = scan(fit["f0"], narrow, npts_n, gain_used, P["shots"])
+        rep = fit_resonance(fs2, sig2, polarity="peak", expected_fwhm=fit["fwhm"])
+        zrep = peak_significance(fs2, sig2, fit["f0"], fit["fwhm"])
+        if zrep < float(P["confirm_repeat_sigma"]):
             raise TunerError(
-                "spec: the candidate at %.4f MHz did NOT reproduce at any reduced drive "
-                "power (%d of %d power steps found it), so it is not the qubit line. "
-                "Widen params['spec']['span_mhz'] / raise max_span_mhz, or the line lies "
-                "outside the searched window."
-                % (fit["f0"], len(centres), len(P["power_ratios"])))
+                "spec: the candidate at %.4f MHz did not reproduce on a REPEAT scan at the "
+                "same drive power (only %.1f sigma of signal at that frequency, %.1f "
+                "required) -- it was a noise excursion, not a line."
+                % (fit["f0"], zrep, P["confirm_repeat_sigma"]))
+        if rep["ok"] and abs(rep["f0"] - fit["f0"]) <= max(fit["fwhm"], 1.0):
+            centre0, snr_full = float(rep["f0"]), max(float(rep["snr"]), 1e-6)
+        else:
+            centre0, snr_full = float(fit["f0"]), max(zrep, 1e-6)
+            self._say("spec", "OK", "the repeat scan confirms %.1f sigma at %.4f MHz but "
+                                    "will not support a narrow refit -- keeping the "
+                                    "wide-scan centre" % (zrep, fit["f0"]))
+        self.node_data["spec"] = {"freqs": fs2, "sig": sig2, "fit": rep["yfit"]}
+        centres, powers = [centre0], [float(gain_used) ** 2]
+        r_floor = float(np.sqrt(float(P["confirm_min_snr"]) / snr_full))
+        if r_floor >= 0.85:
+            self._say("spec", "WARN",
+                      "the line is only snr %.1f at full drive, and the signal falls as "
+                      "gain^2, so ANY reduced power would put it under the noise -- the "
+                      "AC-Stark extrapolation is skipped rather than failed. The Rabi in "
+                      "the next step is the real confirmation: a spurious feature cannot "
+                      "produce a coherent oscillation that returns to zero at 2 pi."
+                      % snr_full)
+        else:
+            for ratio in np.geomspace(0.75, max(r_floor, 0.2), int(P["confirm_steps"])):
+                g = max(int(gain_used * ratio), 40)
+                fs3, sig3 = scan(fit["f0"], narrow, npts_n, g, P["shots"])
+                f3 = fit_resonance(fs3, sig3, polarity="peak", expected_fwhm=fit["fwhm"])
+                if not f3["ok"] or abs(f3["f0"] - fit["f0"]) > max(2.0 * fit["fwhm"], 2.0):
+                    self._say("spec", "OK", "power step gain %d: line no longer resolvable "
+                                            "-- stopping the ladder here" % g)
+                    break
+                centres.append(f3["f0"])
+                powers.append(float(g) ** 2)
+        f_q, lever = float(centres[0]), min(powers) / max(powers)
+        if len(centres) >= 2 and lever <= float(P["confirm_min_lever"]):
+            f_ex = float(np.polyfit(np.array(powers), np.array(centres), 1)[-1])
+            shift = abs(f_ex - centres[0])
+            cap = max(0.5 * fit["fwhm"], 3.0 * float(np.std(centres)))
+            if shift <= cap:
+                f_q = f_ex
+                self._say("spec", "OK", "qubit line %.4f MHz (zero-power extrapolation over "
+                                        "%d powers; highest-power centre %.4f)"
+                          % (f_q, len(centres), centres[0]))
+            else:
+                self._say("spec", "WARN",
+                          "the zero-power extrapolation would move the line %.3f MHz, more "
+                          "than the %.3f MHz the scatter of the %d centres supports -- over "
+                          "this short a power lever arm that is amplified fit noise, not a "
+                          "Stark shift, so the full-power centre %.4f is kept"
+                          % (shift, cap, len(centres), centres[0]))
+        elif len(centres) >= 2:
+            self._say("spec", "OK",
+                      "qubit line %.4f MHz (reproduced at %d powers, but the weakest was "
+                      "still %.0f%% of the strongest -- too short a lever arm to extrapolate "
+                      "to zero power, so this is the full-drive centre)"
+                      % (f_q, len(centres), 100 * lever))
+        else:
+            self._say("spec", "OK",
+                      "qubit line %.4f MHz (reproduced at full drive; only one power was "
+                      "usable, so this is the AC-Stark-SHIFTED centre and not extrapolated "
+                      "to zero power -- fine_pi_freq re-measures it with a pi train anyway)"
+                      % f_q)
         self.w["qubit_freq"] = round(f_q, 4)
         self.w["spec_fwhm"] = float(fit["fwhm"])
         self.w["updated"].add("qubit_freq")

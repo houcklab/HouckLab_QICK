@@ -703,6 +703,96 @@ check("a T1 with NO usable error bar is not treated as precise",
       t1n.w["t1_hi_us"] > 140.6 and t1n.w["relax_delay"] >= 5.0 * 140.6,
       "hi=%.1f relax=%.0f" % (t1n.w["t1_hi_us"], t1n.w["relax_delay"]))
 
+print("\n== an ASYMMETRIC resonator dip must not bias f0 ==")
+_rng = np.random.default_rng(7)
+for phi in (0.0, 30.0, 60.0):
+    fr, kap = 7248.9000, 0.350
+    fgrid = np.linspace(fr - 2.0, fr + 2.0, 81)
+    xg = fgrid - fr
+    s21 = 1.0 - (0.55 * np.exp(1j * np.deg2rad(phi))) / (1 + 2j * xg / kap)
+    zc = 3000.0 * np.exp(1j * 0.7) * (1 + 0.01 * xg) * s21
+    zc = zc + (_rng.normal(0, 25, fgrid.size) + 1j * _rng.normal(0, 25, fgrid.size))
+    sym = T.fit_resonance(fgrid, np.abs(zc) ** 2, expected_fwhm=0.3)
+    cpx = T.fit_notch_complex(fgrid, zc, f0_guess=fgrid[np.argmin(np.abs(zc))],
+                              kappa_guess=0.4)
+    check("phi=%2.0f deg: complex notch fit recovers f0 to <20 kHz" % phi,
+          cpx["ok"] and abs(cpx["f0"] - fr) < 0.020,
+          "err = %+.1f kHz" % (1000 * (cpx["f0"] - fr)))
+    check("phi=%2.0f deg: complex fit recovers kappa to <10%%" % phi,
+          cpx["ok"] and abs(cpx["fwhm"] - kap) / kap < 0.10,
+          "kappa = %.3f vs %.3f" % (cpx["fwhm"], kap))
+    check("phi=%2.0f deg: asymmetry angle is reported, not hidden" % phi,
+          cpx["ok"] and abs(cpx["asym_deg"] - phi) < 6.0,
+          "asym = %.1f deg" % cpx["asym_deg"])
+    if phi >= 30.0:
+        check("phi=%2.0f deg: the SYMMETRIC fit really is biased (this is why)" % phi,
+              sym["ok"] and abs(sym["f0"] - fr) > 0.050,
+              "symmetric err = %+.1f kHz = %.2f kappa"
+              % (1000 * (sym["f0"] - fr), abs(sym["f0"] - fr) / kap))
+
+print("\n== a real qubit line must survive the spec power confirmation ==")
+
+
+def _spec_run(snr_full, seed=3):
+    rng = np.random.default_rng(seed)
+    f_true, fwhm = 2530.84, 3.9
+
+    class FakeSpec(object):
+        def __init__(self, soccfg, cfg):
+            self.cfg = cfg
+
+        def acquire(self, soc, **kw):
+            c = self.cfg
+            fs = c["start"] + c["step"] * np.arange(c["expts"])
+            amp = snr_full * (float(c["spec_gain"]) / 7000.0) ** 2
+            peak = amp / (1.0 + ((fs - f_true) / (fwhm / 2.0)) ** 2)
+            i = peak + rng.normal(0, 1.0, fs.size)
+            q = rng.normal(0, 1.0, fs.size)
+            return fs, [[i]], [[q]]
+
+    t = _StubTuner(11500.0, 11500.0)
+    t.cfg["qubit_gain"], t.cfg["qubit_length"] = 7000, 2.0
+    t.w["qubit_freq"] = 2512.0
+    t.soccfg, t.soc = None, None
+    saved = T.SpecProgram
+    T.SpecProgram = FakeSpec
+    try:
+        return t, t._cal_spec()
+    finally:
+        T.SpecProgram = saved
+
+
+st_w, res_w = _spec_run(14.1)
+check("a REAL line at the snr that just failed on hardware is now accepted",
+      abs(res_w[0]["f"] - 2530.84) < 1.0, "found %.3f MHz" % res_w[0]["f"])
+check("a weak line is never made WORSE by extrapolating over a short lever arm",
+      abs(res_w[0]["f"] - 2530.84) < 0.15,
+      "found %.4f, full-power centre was accurate" % res_w[0]["f"])
+check("and the tuner says WHY it did not extrapolate, instead of dying",
+      any(("lever arm" in l or "gain^2" in l) for l in st_w.report_lines))
+
+st_v, res_v = _spec_run(5.5, seed=11)
+check("an even weaker line skips the ladder entirely rather than failing",
+      abs(res_v[0]["f"] - 2530.84) < 1.5, "found %.3f" % res_v[0]["f"])
+check("the Rabi is named as the real confirmation, not the power ladder",
+      any("coherent oscillation" in l for l in st_v.report_lines)
+      or any("lever arm" in l for l in st_v.report_lines))
+
+st_s, res_s = _spec_run(400.0)
+check("a STRONG line still gets the zero-power Stark extrapolation",
+      any("zero-power extrapolation" in l for l in st_s.report_lines),
+      "f = %.3f" % res_s[0]["f"])
+
+print("\n== but pure noise must still be rejected ==")
+try:
+    _spec_run(0.0)
+    _noise_ok = False
+except T.TunerError as e:
+    _noise_ok = "did not reproduce" in str(e) or "no qubit line" in str(e)
+except Exception:
+    _noise_ok = False
+check("a noise excursion is still rejected (repeat scan at the SAME power)", _noise_ok)
+
 print("\n== park-flux assertion ==")
 try:
     bad = dict(BaseConfig)
