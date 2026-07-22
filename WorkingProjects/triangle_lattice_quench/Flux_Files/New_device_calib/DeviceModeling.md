@@ -20,7 +20,7 @@ Everything below was written by Claude. It is technically true but in the human 
 
 1. **`DeviceData`** — the calibration as numbers on disk, storable and loadable by JSON. Per-transmon spectrum parameters, the crosstalk matrix encoded into each transmon's `crosstalk_map`, pairwise couplings, and the flux offsets of each loop at zero voltage.
 2. **`DeviceInterface`** — the calibration as an object. Assembles the crosstalk matrix from the per-transmon maps and exposes the matrix operations (flux↔voltage) and topology queries (which couplers are adjacent to which qubits).
-3. **`VoltageConfiguration`** — one operating point with chosen J_||/J and resting qubit flux. Takes a human-friendly spec (some qubits by frequency, some couplers by tunable-coupling target), resolves it into a `flux_map`, and exposes the user interface for: "what fast-flux gain do I apply to land Q1 at 4500 MHz?"
+3. **`VoltageConfiguration`** — one operating point with chosen J_||/|J| and resting qubit flux. Takes a human-friendly spec (some qubits by frequency, some couplers by tunable-coupling target), resolves it into a `flux_map`, and exposes the user interface for: "what fast-flux gain do I apply to land Q1 at 4500 MHz?"
 
 ## Module map
 
@@ -100,7 +100,7 @@ Top-level container and JSON entry point. Fields: `name`, `timestamp`, `transmon
 - `coupling_exists(q1, q2) -> bool`.
 - `get_coupling(Q1=w1, Q2=w2) -> MHz` — direct exchange given bare frequencies. The kwarg syntax encodes both the names *and* the frequencies. [DeviceInterface.py:59](DeviceInterface.py#L59)
 - `get_adjacent_couplers(qubit_name)` / `get_adjacent_qubits_of_coupler(coupler_name)` — return `[(name, gamma), …]`.
-- `determine_coupler_freq(c_name, g_eff, w_q) -> MHz` — solves the Q-C-Q dispersive formula for the coupler frequency that yields effective coupling `g_eff` between two adjacent qubits, both at `w_q`. [DeviceInterface.py:80](DeviceInterface.py#L80)
+- `determine_coupler_freq(c_name, ratio, w_q) -> MHz` — solves the Q-C-Q dispersive formula for the coupler frequency giving `J_||/|J| = ratio`, where `J_||` is the coupler-mediated coupling between the two flanking qubits (both at `w_q`) and `|J|` is the magnitude of the mean rung coupling via the in-between qubit. Using `|J|` means the sign of `ratio` directly sets the sign of `J_||` (the rung J's are negative). [DeviceInterface.py:80](DeviceInterface.py#L80)
 
 Module-level helper `signed_eff_g(w1, w2, wc, g1, g2, g12)` — dispersive effective coupling formula. [DeviceInterface.py:94](DeviceInterface.py#L94)
 
@@ -116,7 +116,7 @@ Per-entry, keyed by qubit/coupler name:
 |---|---|
 | `float > 10` | frequency in MHz (dressed, for qubits; bare, for couplers) |
 | `float ≤ 10` | flux directly (dimensionless) |
-| `"<ratio>@<w_q>"` (couplers only) | tunable coupler target: J_∥/J = `ratio` when both adjacent qubits are at `w_q` MHz |
+| `"<ratio>@<w_q>"` (couplers only) | tunable coupler target: J_∥/\|J\| = `ratio` (its sign sets J_∥'s sign) when both adjacent qubits are at `w_q` MHz |
 | omitted | defaults to φ = 0 (warned via `print`) |
 | unknown name | `ValueError` |
 
@@ -125,7 +125,7 @@ Couplers are resolved first (their dressing by qubits is treated as negligible),
 ### Fast-flux interface
 
 - `desired_freqs_to_fast_flux({name: dressed_freq_MHz}) -> {name: gain}` — what FF gain reaches each desired dressed frequency, starting from `flux_map`. Raises if any `name` isn't a qubit. [VoltageConfiguration.py:59](VoltageConfiguration.py#L59)
-- `fast_fluxes_to_freqs({name: gain}) -> {name: freq_MHz}` — inverse: applies gains, returns resulting bare qubit frequencies. [VoltageConfiguration.py:71](VoltageConfiguration.py#L71)
+- `fast_fluxes_to_dressed_freqs({name: gain}) -> {name: freq_MHz}` — inverse: applies gains, returns resulting dressed qubit frequencies. [VoltageConfiguration.py:71](VoltageConfiguration.py#L71)
 
 Convention: **1 flux quantum = `ffgain_quantum` FF gain units**, so `Δgain = Δflux · ffgain_quantum`.
 

@@ -140,7 +140,7 @@ def calibrate_rung_gains(BS_FF, rungs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        experiment = RampBeamsplitterGainR(path="RampBeamsplitterGainR", outerFolder=outerFolder,
+        experiment = RampBeamsplitterGainR(path="RampBeamsplitterGainR", 
                               cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
@@ -236,7 +236,7 @@ def calibrate_rung_offset(BS_FF, rungs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        RampBeamsplitterOffsetR(path="RampBeamsplitterOffsetR", outerFolder=outerFolder,
+        RampBeamsplitterOffsetR(path="RampBeamsplitterOffsetR", 
                                 cfg=config | sweep_bs_offset_dict, soc=soc, soccfg=soccfg).acquire_display_save(
             plotDisp=True, block=False)
 

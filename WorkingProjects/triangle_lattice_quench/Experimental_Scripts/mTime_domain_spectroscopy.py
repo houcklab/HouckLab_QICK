@@ -107,7 +107,7 @@ class TimeDomainSpecProgram(RAveragerProgramFF):
         FF.FFPulses(self, self.FFReadouts, self.cfg["res_length"], t_start=0)
 
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
+                     adcs=self.cfg["ro_chs"],
                      adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))
@@ -142,7 +142,7 @@ class TimeDomainSpec(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False):
         self.cfg["IDataArray"] = [None] * 4

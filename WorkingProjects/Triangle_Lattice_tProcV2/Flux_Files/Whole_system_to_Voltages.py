@@ -132,6 +132,23 @@ frequencies = {
     'C6': 0,
 }
 
+frequencies = {
+    'Q1': 4030.03,
+    'Q2': 4033.67,
+    'Q3': 3990.75,
+    'Q4': 4040.4,
+    'Q5': 4011.35,
+    'Q6': 4004.53,
+    'Q7': 3949.87,
+    'Q8': 4030.67,
+    'C1': 1003.5,
+    'C2': 729.02,
+    'C3': 1081.79,
+    'C4': 1205.31,
+    'C5': 934.5,
+    'C6': 578.31,
+}
+
 # Whether you gave a flux value for a key
 flux_was_given = {key: (type(freq) is not str) and (freq < 10) for key,freq in frequencies.items()}
 

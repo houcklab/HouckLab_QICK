@@ -58,7 +58,7 @@ class TwoPartProgram(FFAveragerProgramV2):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
 
         self.measure(pulse_ch=self.cfg["res_ch"],
-                     adcs=self.cfg["ro_chs"], pins=[0],
+                     adcs=self.cfg["ro_chs"],
                      adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]),
                      wait=True,
                      syncdelay=self.us2cycles(10))

@@ -77,7 +77,7 @@ def calibrate_coupling(pairs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        experiment = GainSweepOscillationsR(path="GainSweepOscillationsR", outerFolder=outerFolder,
+        experiment = GainSweepOscillationsR(path="GainSweepOscillationsR", 
                                cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg)
 
         data = experiment.acquire_display_save(plotDisp=True, block=False)

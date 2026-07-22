@@ -53,7 +53,7 @@ class CavitySpecExciteProg(FFAveragerProgramV2):
 
         # self.delay(0.1)  # delay trigger and pulse to 0.5 us after beginning of FF pulses
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+            self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(self.cfg["res_ch"], name='res_pulse')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -69,7 +69,7 @@ class ChiShift(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, use_lorentzian=False):
         cfg = self.cfg

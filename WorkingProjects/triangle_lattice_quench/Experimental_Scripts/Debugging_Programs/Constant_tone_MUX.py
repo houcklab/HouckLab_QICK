@@ -63,7 +63,7 @@ class ConstantTone_Experiment(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
         prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=0)
@@ -108,7 +108,7 @@ print("Freq:", UpdateConfig["freqs"])
 config = UpdateConfig
 outerFolder = ''
 
-ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+ConstantTone_Instance = ConstantTone_Experiment(path="dataTestTransVsGain",  cfg=config, soc=soc, soccfg=soccfg)
 try:
     ConstantTone_Experiment.acquire(ConstantTone_Instance)
 except Exception:

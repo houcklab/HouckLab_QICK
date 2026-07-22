@@ -254,50 +254,50 @@ elif SinglePoint:
 config = config | double_jump_base
 
 if Sweep_BeamsplitterOffset:
-    BSClean_offset(path="BSClean_offset", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    BSClean_offset(path="BSClean_offset",  prefix = f'{beamsplitter_point}_{rung}',
                           cfg=config | sweep_bs_offset_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 if Sweep_BeamsplitterOffset_tprocSweep:
-    RampBeamsplitterOffsetR(path="RampBeamsplitterOffsetR", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    RampBeamsplitterOffsetR(path="RampBeamsplitterOffsetR",  prefix = f'{beamsplitter_point}_{rung}',
                             cfg=config | sweep_bs_offset_dict, soc=soc, soccfg=soccfg).acquire_display_save(
         plotDisp=True, block=False)
 
 
 if Sweep_BeamsplitterGain:
-    BSClean_BSGain(path="BSClean_BSGain", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    BSClean_BSGain(path="BSClean_BSGain",  prefix = f'{beamsplitter_point}_{rung}',
                           cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 if Sweep_BeamsplitterGain_tprocSweep:
-    RampBeamsplitterGainR(path="RampBeamsplitterGainR", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    RampBeamsplitterGainR(path="RampBeamsplitterGainR",  prefix = f'{beamsplitter_point}_{rung}',
                             cfg=config | sweep_bs_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(
         plotDisp=True, block=False)
 
 if Sweep_IntermediateSamples:
-    BSClean_ISamples(path="BSClean_ISamples", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    BSClean_ISamples(path="BSClean_ISamples",  prefix = f'{beamsplitter_point}_{rung}',
                           cfg=config | double_jump_base | sweep_intermediate_samples_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 if Sweep_IntermediateSamples_tprocSweep:
-    RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
+    RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", 
                                        cfg=config | double_jump_base | sweep_intermediate_samples_dict, soc=soc,
                                        soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 if Sweep_IntermediateGain:
-    BSClean_IGain(path="BSClean_IGain", outerFolder=outerFolder, prefix = f'{beamsplitter_point}_{rung}',
+    BSClean_IGain(path="BSClean_IGain",  prefix = f'{beamsplitter_point}_{rung}',
                         cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 if Sweep_IntermediateGain_tprocSweep:
-    RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
+    RampDoubleJumpGainR(path="RampDoubleJumpGainR", 
                         cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc,
                         soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 if DoubleJump1D:
     print("conf_mat type:", type(config.get('confusion_matrix')))
     print("conf_mat len:", len(config.get('confusion_matrix', [])))
-    BSClean1D(path="BSClean", outerFolder=outerFolder,
+    BSClean1D(path="BSClean", 
                       cfg=config | double_jump_base | double_jump_1d_dict, soc=soc, soccfg=soccfg,).acquire_display_save(plotDisp=True, block=False)
 
 if DoubleJump_CurrentCorrelations:
     print("conf_mat type:", type(config.get('confusion_matrix')))
     print("conf_mat len:", len(config.get('confusion_matrix', [])))
     print(config.get('confusion_matrix', []))
-    BSClean_Correlations(path="BSClean_Correlations", outerFolder=outerFolder,
+    BSClean_Correlations(path="BSClean_Correlations", 
                       cfg=config | double_jump_base | double_jump_1d_dict, soc=soc, soccfg=soccfg,).acquire_display(plotDisp=True, block=False)
 print(config)
 

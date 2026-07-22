@@ -29,7 +29,7 @@ def characterize_readout(config, Qubit_Readout):
         for Q, Gain in enumerate(Qubit_Parameters[str(Qubit)]['Pulse_FF']):
             new_config["FF_Qubits"][str(Q+1)]['Gain_Pulse'] = Gain
 
-        SSExp = SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder, cfg=new_config, soc=soc, soccfg=soccfg)
+        SSExp = SingleShotFFMUX(path="SingleShot",  cfg=new_config, soc=soc, soccfg=soccfg)
         data = SSExp.acquire()
         # SSExp.display(data, plotDisp=True, block=False, display_indices=[Q])
 

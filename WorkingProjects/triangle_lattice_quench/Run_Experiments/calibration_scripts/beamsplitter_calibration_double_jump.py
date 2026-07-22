@@ -148,7 +148,7 @@ def calibrate_rung_gains(BS_FF, rungs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        experiment = RampDoubleJump_BS_GainR(path="RampDoubleJump_BS_GainR", outerFolder=outerFolder,
+        experiment = RampDoubleJump_BS_GainR(path="RampDoubleJump_BS_GainR", 
                               cfg=config | double_jump_base | double_jump_BS_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
@@ -237,7 +237,7 @@ def calibrate_rung_intermediate_offset(BS_FF, rungs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", outerFolder=outerFolder,
+        experiment = RampDoubleJumpIntermediateSamplesR(path="RampDoubleJumpIntermediateLength", 
                                 cfg=config | double_jump_base | double_jump_intermediate_offset_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 
@@ -349,7 +349,7 @@ def calibrate_rung_intermediate_gains(BS_FF, rungs):
 
         exec(open("../Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 
-        experiment = RampDoubleJumpGainR(path="RampDoubleJumpGainR", outerFolder=outerFolder,
+        experiment = RampDoubleJumpGainR(path="RampDoubleJumpGainR", 
                               cfg=config | double_jump_base | double_jump_intermediate_gain_dict, soc=soc, soccfg=soccfg)
         data = experiment.acquire_display_save(plotDisp=True, block=False)
 

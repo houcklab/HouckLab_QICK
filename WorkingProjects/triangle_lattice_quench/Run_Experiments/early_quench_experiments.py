@@ -91,33 +91,33 @@ for label in ['Gain_Readout', 'Gain_Expt', 'Gain_Pulse', 'Gain_BS', 'Gain_Dynami
 # --------------------------------------------------
 
 if run_sweep_x_phase:
-    SweepXPhase(path="SweepXPhase", outerFolder=outerFolder,
+    SweepXPhase(path="SweepXPhase", 
                       cfg=config | sweep_x_phase_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 
 if run_quench_freq:
-    RampQuenchFreq(path="RampQuenchFreqSweep", outerFolder=outerFolder,
+    RampQuenchFreq(path="RampQuenchFreqSweep", 
                       cfg=config | quench_base_dict | quench_freq_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 if run_quench_gain:
-    RampQuenchRabi(path="RampQuenchRabi", outerFolder=outerFolder,
+    RampQuenchRabi(path="RampQuenchRabi", 
                       cfg=config | quench_base_dict | quench_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 if run_quench_sweep_ramp_time:
-    RampQuenchSweepRampTime(path="RampQuenchSweepRampTime", outerFolder=outerFolder,
+    RampQuenchSweepRampTime(path="RampQuenchSweepRampTime", 
                       cfg=config | quench_base_dict | quench_sweep_ramp_time_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 if run_quench_sweep_quench_time:
-    RampQuenchSweepQuenchTime(path="RampQuenchSweepQuenchTime", outerFolder=outerFolder,
+    RampQuenchSweepQuenchTime(path="RampQuenchSweepQuenchTime", 
                       cfg=config | quench_base_dict | quench_sweep_quench_time_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 
 if run_quench_dynamics:
-    RampQuenchDynamics(path="RampQuenchDynamics", outerFolder=outerFolder,
+    RampQuenchDynamics(path="RampQuenchDynamics", 
                       cfg=config | quench_base_dict | quench_dynamics_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 if run_quench_dynamics_sweep_gain:
-    QuenchDynamicsSweepGain(path="QuenchDynamicsSweepGain", outerFolder=outerFolder,
+    QuenchDynamicsSweepGain(path="QuenchDynamicsSweepGain", 
                       cfg=config | quench_base_dict | quench_dynamics_sweep_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 
 

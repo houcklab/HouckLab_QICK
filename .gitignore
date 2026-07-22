@@ -1,7 +1,20 @@
 *.iml
 *.pyc
 /__pycache__/*
+**/__pycache__/
+**/.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / OS
 /.idea/*
+/.vscode/
+.DS_Store
+
+# QM_Team resonator_measurements local artifacts
 /WorkingProjects/QM_Team/resonator_measurements/local_notebooks/
 /WorkingProjects/QM_Team/resonator_measurements/.idea/
 /WorkingProjects/QM_Team/resonator_measurements/bd/
@@ -15,6 +28,43 @@
 /WorkingProjects/QM_Team/resonator_measurements/proj.tcl
 /WorkingProjects/QM_Team/resonator_measurements/Client_modules/PythonDrivers
 /WorkingProjects/QM_Team/resonator_measurements/dBm_lookup
+
 /Personal/
-/.vscode/
-.DS_Store
+
+# ---------------------------------------------------------------------------
+# Measurement data (binary)
+# ---------------------------------------------------------------------------
+*.h5
+*.hdf5
+*.npz
+*.npy
+*.pkl
+
+# Per-experiment metadata JSON saved next to .h5 (e.g. *_data.json)
+*_data.json
+
+# ---------------------------------------------------------------------------
+# Figures / plots
+# ---------------------------------------------------------------------------
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+
+# Re-include checked-in documentation / GUI assets
+!MasterProject/Client_modules/Desq_GUI/assets/**
+!MasterProject/Client_modules/Desq_GUI/sphinx/source/**
+!report/**
+
+# ---------------------------------------------------------------------------
+# Output directories
+# ---------------------------------------------------------------------------
+# Top-level date-stamped figure dumps (e.g. _2025_05_09/, _2026_02_11/)
+_20[0-9][0-9]_[0-9][0-9]_[0-9][0-9]/
+
+# Root-level experiment data folder
+/data/
+
+# Stray runtime logs
+assembler.log

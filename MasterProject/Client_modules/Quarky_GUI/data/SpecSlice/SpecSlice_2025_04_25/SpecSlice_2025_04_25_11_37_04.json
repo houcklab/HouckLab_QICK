@@ -1,0 +1,36 @@
+{
+    "Experiment Config": {
+        "yokoVoltage": 0.25,
+        "read_pulse_style": "const",
+        "read_length": 5,
+        "read_pulse_gain": 10000,
+        "read_pulse_freq": 6425.3,
+        "qubit_freq_start": 2849,
+        "qubit_freq_stop": 2889,
+        "qubit_freq_expts": 81,
+        "qubit_pulse_style": "flat_top",
+        "sigma": 0.05,
+        "qubit_length": 1,
+        "flat_top_length": 0.3,
+        "relax_delay": 500,
+        "qubit_gain": 20000,
+        "reps": 100,
+        "sets": 5
+    },
+    "Base Config": {
+        "res_ch": 0,
+        "qubit_ch": 1,
+        "mixer_freq": 1.0,
+        "ro_chs": [
+            0
+        ],
+        "nqz": 2,
+        "qubit_nqz": 1,
+        "res_phase": 0,
+        "pulse_style": "const",
+        "pulse_gain": 30000,
+        "pulse_freq": 0.0,
+        "adc_trig_offset": 0.48800000000000004,
+        "cavity_LO": 0.0
+    }
+}

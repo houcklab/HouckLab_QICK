@@ -15,7 +15,6 @@ from time import time
 from functools import lru_cache
 from fractions import Fraction
 import itertools
-import bezier
 
 _2pi = 2*np.pi
 _2PI = 2*np.pi

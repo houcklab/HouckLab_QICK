@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "name": "example_program",
+    "description": "Two const FF segments with one Gaussian drive on the second; hand-editable template for the Program Builder GUI.",
+    "readout_group": null
+  },
+  "segments": [
+    {
+      "type": "const",
+      "length_samples": 320,
+      "gains": [0, 0, 0, 0, 0, 0, 0, 0],
+      "drives": []
+    },
+    {
+      "type": "const",
+      "length_samples": 480,
+      "gains": [5000, 0, 0, 0, 0, 0, 0, 0],
+      "drives": [
+        {
+          "freq": 4380.0,
+          "gain": 12000,
+          "phase": 0.0,
+          "sigma_us": 0.03,
+          "len_sigmas": 4,
+          "relative_t": "auto"
+        }
+      ]
+    }
+  ]
+}

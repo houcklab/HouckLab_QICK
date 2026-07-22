@@ -386,7 +386,7 @@ double_jump_1d_dict = {{
 }}
 
 config = config | double_jump_1d_dict
-BSClean_Correlations(path="BSClean_Correlations", outerFolder=outerFolder,
+BSClean_Correlations(path="BSClean_Correlations", 
                      cfg=config | double_jump_base,
                      soc=soc, soccfg=soccfg).acquire_display(plotDisp=True, block=False)
 
@@ -477,7 +477,7 @@ quench_dynamics_dict = {{
     'measurement_pi2_phase': {spec.measurement_pi2_phase},
 }}
 
-MottQuenchDynamics(outerFolder=outerFolder,
+MottQuenchDynamics(
                    cfg=config | quench_base_dict | quench_dynamics_dict,
                    soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 

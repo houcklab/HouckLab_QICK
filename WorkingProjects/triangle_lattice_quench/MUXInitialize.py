@@ -8,11 +8,12 @@ file to create basic initialization of things used for RFSOC This will include:
 
 
 #Define Save folder
-outerFolder = "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\"
+
 
 
 ###### define default configuration
 BaseConfig = {
+    "outerFolder": "Z:\\QSimMeasurements\\Measurements\\8QV1_Triangle_Lattice\\",
     "res_ch": 8,  # --Fixed
     "qubit_ch": 9,  # --Fixed
     "ro_chs": [0],  # --Fixed, overwritten if using MUX
@@ -34,3 +35,7 @@ BaseConfig = {
     "qubit_LO": 0,
 
 }
+
+# Back-compat: the GUI and many scripts do `from MUXInitialize import outerFolder`.
+# BaseConfig is the source of truth; also expose the module-level name.
+outerFolder = BaseConfig["outerFolder"]

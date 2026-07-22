@@ -42,7 +42,7 @@ from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterizati
 
 import matplotlib.pyplot as plt
 
-from WorkingProjects.triangle_lattice_quench.build_config import build_config, outerFolder
+from WorkingProjects.triangle_lattice_quench.build_config import build_config
 from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
 
 
@@ -50,12 +50,12 @@ soc, soccfg = makeProxy()
 
 
 # for det,Q in itertools.product([+20000, -20000],[1,2,3,4,5,6,7,8]):
-for Q in [5]:
+for Q in [4]:
     Qubit_Readout = [Q]
-    # Qubit_Pulse = [Q]
-    Qubit_Pulse =   [f"{Q}_3800+"]
+    Qubit_Pulse = [Q]
 
     config = build_config(
+        Readout_Point='readout_3800_new',
         Qubit_Readout=Qubit_Readout,  # required: list of readout-entry labels
         Qubit_Pulse=Qubit_Pulse,  # optional: list of drive-entry labels
         Ramp_State=None,  # optional: key in ramp_groups
@@ -93,13 +93,13 @@ for Q in [5]:
     Spec_relevant_params = {
                           # "qubit_gain": 200, "SpecSpan": 800, "SpecNumPoints": 1601,
                           #   "qubit_gain": 200, "SpecSpan": 50, "SpecNumPoints": 71,
-                             "qubit_gain": 200, "SpecSpan": 150, "SpecNumPoints": 2*71,
+                             "qubit_gain": 300, "SpecSpan": 150, "SpecNumPoints": 71,
                           #   "qubit_gain": 199, "SpecSpan": 50, "SpecNumPoints": 71,
                             # "qubit_gain": 10, "SpecSpan": 10, "SpecNumPoints": 71,
                             'Gauss': False, "sigma": 0.03, "Gauss_gain": 32766*config['qubit_gains'][0],
-                            'reps': 2*155, 'rounds': 1}
+                            'reps': 155, 'rounds': 1}
 
-    Run_Spec_vs_FFgain = False # Inherit spec parameters from above
+    Run_Spec_vs_FFgain = True # Inherit spec parameters from above
 
     RunSpecSliceSecond = False # Utilizes the first two drives in the qubit list, sweeps around the second drive
 
@@ -120,12 +120,12 @@ for Q in [5]:
                                      "qubit_gain_steps": 11,
                                      'relax_delay': 100}
 
-    FluxStability = True # Repeat SpecSlice over time
+    FluxStability = False # Repeat SpecSlice over time
     Flux_Stability_params = {"delay_minutes": 10, "num_steps": 6 * 8} # 8 hours since 10*6*8, every 10 minutes
 
 
     Run_Spec_v_Qblox = False
-    Spec_v_Qblox_params = {"Qblox_start": -1.6525-0.8, "Qblox_stop": -1.6525+0.8, "Qblox_steps": 31, "DAC": 9}
+    Spec_v_Qblox_params = {"Qblox_start": -0.5229-0.1, "Qblox_stop": -0.5229+0.1, "Qblox_steps": 5, "DAC": 8}
 
     RunAmplitudeRabi = False
     Amplitude_Rabi_params = {"max_gain": 15000, 'relax_delay':100}
@@ -240,7 +240,7 @@ for Q in [5]:
 
     if RunTransmissionSweep:
         Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
-                                         soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+                                         soc=soc, soccfg=soccfg)
         Instance_trans.acquire_display_save(plotDisp=True, block=False)
 
         config["res_freqs"][0] = Instance_trans.peakFreq_min
@@ -248,71 +248,71 @@ for Q in [5]:
 
     if RunTransmissionVsPower:
         TransmissionVsPower(path="TransmissionVsPower", cfg=config | Trans_relevant_params | transmission_v_power_params,
-                        soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True,
+                        soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True,
                                                                                               block=False)
 
     if RunChiShift:
         Instance_trans = ChiShift(path="ChiShift", cfg=config | Trans_relevant_params,
-                                         soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+                                         soc=soc, soccfg=soccfg)
         Instance_trans.acquire_display_save(plotDisp=True, block=False)
 
     if Run2ToneSpec:
         QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Spec_relevant_params,
-                            soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                            soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if RunSpecSliceSecond:
         QubitSpecSlice2nd(path="QubitSpec2nd", cfg=config | Spec_relevant_params,
-                        soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True,
+                        soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True,
                                                                                               block=False)
 
     if Run_Spec_vs_FFgain:
             SpecVsFF(path="SpecVsFF", cfg=config | Spec_relevant_params | FF_sweep_spec_relevant_params,
-                                     soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                                     soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     if Run_Spec_vs_Qubit_gain:
         SpecVsGain(path="SpecVsGain", cfg=config | Spec_relevant_params | gain_sweep_spec_params,
-                  soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                  soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if Run_Spec_v_Qblox:
         SpecVsQblox(path="SpecVsQblox", cfg=config | Spec_relevant_params | Spec_v_Qblox_params,
-                                 soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                                 soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if FluxStability:
         FluxStabilitySpec(path="FluxStability", cfg=config | Spec_relevant_params | Flux_Stability_params,
-                    soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                    soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if RunAmplitudeRabi:
         AmplitudeRabiFFMUX(path="AmplitudeRabi", cfg=config | Amplitude_Rabi_params,
-                            soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                            soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if RunT1:
-        T1MUX(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_save_display(plotDisp=True, block=False)
+        T1MUX(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
     if RunT2:
         T2RMUX(path="T2R", cfg=config | T2R_params,
-                  soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_save_display(plotDisp=True, block=False)
+                  soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
     if RunT2E:
         T2EMUX(path="T2E", cfg=config | T2R_params,
-                  soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_save_display(plotDisp=True, block=False)
+                  soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
     if SingleShot:
-        SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder,
+        SingleShotFFMUX(path="SingleShot", 
                                cfg=config | SS_params, soc=soc,soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
     if SingleShotDecimate:
-        SingleShotDecimated(path="SingleShotDecimated", outerFolder=outerFolder,
+        SingleShotDecimated(path="SingleShotDecimated", 
                                cfg=config | SS_params, soc=soc,soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
     if SingleShot_ReadoutOptimize:
-        ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
+        ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", 
                                  cfg=config | SS_params | SS_R_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     if SingleShot_QubitOptimize:
-        QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", outerFolder=outerFolder,
+        QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", 
                                        cfg=config | SS_params | SS_Q_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if SingleShot_SNROptimize:
-        SNROpt_wSingleShot(path="SNR_OptPump", outerFolder=outerFolder,
+        SNROpt_wSingleShot(path="SNR_OptPump", 
                            cfg=config | SNR_params, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     # if SingleShot_ROTimingOptimize:
-    #     ROTimingOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
+    #     ROTimingOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", 
     #                              cfg=config | SS_params | SS_Timing_params,soc=soc,soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if Run_Readout_Crosstalk or Oscillation_Single or Calib_FF_vs_drive_delay or RunT1_TLS or Run_FF_v_Ramsey and FF_sweep_Ramsey_relevant_params['populations']:
@@ -320,41 +320,41 @@ for Q in [5]:
 
     if Run_FF_v_Ramsey:
         RamseyVsFF(path="FF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params,
-                                 soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                                 soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     if Run_Readout_Crosstalk:
         ReadoutCrosstalkPopulation(path="ReadoutCrosstalk", cfg=config | ro_crosstalk_params,
-                                 soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                                 soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if Oscillation_Gain:
         if not Oscillation_Gain_QICK_sweep:
-            GainSweepOscillations(path="GainSweepOscillations", outerFolder=outerFolder,
+            GainSweepOscillations(path="GainSweepOscillations", 
                                   cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
         else:
             # raise AssertionError('this sweep not working yet.')
             print("Testing arbitrary waveform sweep")
-            # GainSweepOscillations(path="GainSweepOscillations", outerFolder=outerFolder,
+            # GainSweepOscillations(path="GainSweepOscillations", 
                                   # cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=False)
-            GainSweepOscillationsR(path="GainSweepOscillationsR", outerFolder=outerFolder,
+            GainSweepOscillationsR(path="GainSweepOscillationsR", 
                                   cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     if Oscillation_Single:
-        QubitOscillations(path="QubitOscillations", outerFolder=outerFolder,
+        QubitOscillations(path="QubitOscillations", 
                               cfg=config | oscillation_gain_dict, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
     if RunT1_TLS:
-        T1vsFF(path="T1vsFF", outerFolder=outerFolder, cfg=config | T1TLS_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
+        T1vsFF(path="T1vsFF",  cfg=config | T1TLS_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
 
-    # TimeDomainSpec(path="TimeDomainSpec", outerFolder=outerFolder,
+    # TimeDomainSpec(path="TimeDomainSpec", 
     #                           cfg=config | {'reps': 5,
     #                          'start':1, 'step': 16, 'expts': 50,}, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 
     if SingleShot_2Qubit:
-        SingleShot_2QFFMUX(path="SingleShot_2Qubit", outerFolder=outerFolder,
+        SingleShot_2QFFMUX(path="SingleShot_2Qubit", 
                                cfg=config | SS_2Q_params, soc=soc,soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
     if Calib_FF_vs_drive_delay:
-        CalibrateFFvsDriveTiming(path="FF_drive_timing", outerFolder=outerFolder,
+        CalibrateFFvsDriveTiming(path="FF_drive_timing", 
                                cfg=config | ff_drive_delay_dict, soc=soc,soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
     # import matplotlib.pyplot as plt

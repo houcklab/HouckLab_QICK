@@ -1,0 +1,5 @@
+{
+    "ip_address": "111.111.1.111",
+    "account_name": "template",
+    "config": "MasterProject.Client_modules.Init.initialize"
+}

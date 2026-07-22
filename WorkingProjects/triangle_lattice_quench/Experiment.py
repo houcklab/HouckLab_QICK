@@ -62,7 +62,7 @@ class ExperimentClass:
         if not path:
             print('updating_path')
             path = type(self).__name__
-        print("PATH:", type(self).__name__)
+        # print("PATH:", type(self).__name__)
         self.path = path
         datetimenow = datetime.datetime.now()
         datetimestring = datetimenow.strftime("%Y_%m_%d_%H_%M_%S")
@@ -81,6 +81,13 @@ class ExperimentClass:
         # self.dataserver= dataserver_client()
 
         ##### check to see if the file path exists
+        if not hasattr(self, 'outerFolder'):
+            try:
+                self.outerFolder = self.cfg['outerFolder']
+            except KeyError:
+                self.outerFolder = ''
+                # print("Error: did not pass in outerFolder to Experiment and cfg['outerFolder'] does not exist (you need one of them)")
+                # raise
         DataFolderBool = Path(self.outerFolder + self.path).is_dir()
         if DataFolderBool == False:
             os.makedirs(self.outerFolder + self.path)

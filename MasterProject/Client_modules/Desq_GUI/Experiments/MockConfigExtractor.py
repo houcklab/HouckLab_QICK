@@ -534,7 +534,7 @@ update_config()
 
 
 # =============================================================================
-# MOCK "CALIBRATE_SINGLESHOT" - Would be exec(open("CALIBRATE_SINGLESHOT_READOUTS.py").read())
+# MOCK "CALIBRATE_SINGLESHOT" - Would be exec(open("Legacy_CALIBRATE_SINGLESHOT_READOUTS.py").read())
 # =============================================================================
 
 def calibrate_singleshot_readouts():

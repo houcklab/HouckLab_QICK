@@ -23,10 +23,21 @@ class GainSweepOscillations(SweepExperiment2D_plots):
 
         self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
 
+        self.count = 0
 
 
     def set_up_instance(self):
         '''Run this on every iteration on the sweep. Use for setting waveforms, etc.'''
         self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
 
-            
+        # self.count += 1
+        #
+        # if self.count in [1, 230]:
+        #     total_IQArray = self.cfg["IDataArray"]
+        #
+        #     plt.figure()
+        #     for i in range(len(total_IQArray)):
+        #         print(f'Q{i + 1}: {total_IQArray[i]}')
+        #         plt.plot(total_IQArray[i][:self.cfg['expt_samples']], label=f'Q{i + 1}')
+        #     plt.legend()
+        #     plt.show()

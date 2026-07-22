@@ -53,15 +53,15 @@ mott_quench_pi2_phase_2d_dict = {'samples_start': 0, 'samples_end': 200,
 
 
 if run_sweep_pi2_phase:
-    SweepPi2Phase(outerFolder=outerFolder, cfg=config | quench_base_dict | sweep_pi2_phase_dict,
+    SweepPi2Phase( cfg=config | quench_base_dict | sweep_pi2_phase_dict,
                   soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 if run_mott_quench_pi2_phase:
-    MottQuenchPi2Phase(outerFolder=outerFolder, cfg=config | quench_base_dict | mott_quench_pi2_phase_dict,
+    MottQuenchPi2Phase( cfg=config | quench_base_dict | mott_quench_pi2_phase_dict,
                        soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 if run_mott_quench_pi2_phase_2d:
-    MottQuenchPi2Phase2D(outerFolder=outerFolder, cfg=config | quench_base_dict | mott_quench_pi2_phase_2d_dict,
+    MottQuenchPi2Phase2D( cfg=config | quench_base_dict | mott_quench_pi2_phase_2d_dict,
                          soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 

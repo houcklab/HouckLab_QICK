@@ -51,7 +51,7 @@ for Q_list in [[1,3]]:#[list(range(1,9))]:
         # Optimize second qubit pulse to account for ZZ frequency shift
         if Optimize_11:
             fig, ax = plt.subplots()
-            data = QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", outerFolder=outerFolder,
+            data = QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", 
                                                   cfg=config | SS_Q_params, soc=soc,
                                                   soccfg=soccfg).acquire_save(plotDisp=True, ax=ax)
             fid_mat, trans_fpts, gain_pts = (data['data'][key] for key in ('fid_mat', 'qubit_fpts', 'gain_pts'))
@@ -74,7 +74,7 @@ for Q_list in [[1,3]]:#[list(range(1,9))]:
             SS_2Q_params = SS_2Q_params | {'second_qubit_freq': best_freq, 'second_qubit_gain': best_gain}
 
         # Run 2 qubit single shot
-        SingleShot_2QFFMUX(path="SingleShot_2Qubit", outerFolder=outerFolder,
+        SingleShot_2QFFMUX(path="SingleShot_2Qubit", 
                                cfg=config | SS_2Q_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False)
 
 plt.show()

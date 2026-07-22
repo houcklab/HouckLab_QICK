@@ -16,7 +16,12 @@ import matplotlib.pyplot as plt
 # from WorkingProjects.QM_Team.qubit_measurements.Client_modules.Helpers.SQ_RB_Helpers import *
 from WorkingProjects.triangle_lattice_quench.Experiment import ExperimentClass
 
-from WorkingProjects.triangle_lattice_quench.MUXInitialize import soc, soccfg
+from WorkingProjects.triangle_lattice_quench.socProxy import makeProxy
+
+
+
+soc, soccfg = makeProxy()
+
 
 
 class ConstantTone(AveragerProgramV2):
@@ -26,14 +31,17 @@ class ConstantTone(AveragerProgramV2):
             self.declare_gen(ch=ch)
 
             self.add_pulse(ch=ch, name=f'flat_pulse{ch}', style="const", freq=cfg["freq"],
-                           phase=0, gain=cfg["gain"] / 32766.,  length=20)
+                           phase=0, gain=cfg["gain"] / 32766.,  length=cfg["length"])
             self.add_pulse(ch=ch, name=f'inv_flat_pulse{ch}', style="const", freq=cfg["freq"],
-                           phase=0, gain=cfg["gain"] / -32766., length=20)
+                           phase=0, gain=cfg["gain"] / -32766., length=cfg["length"])
+
+        self.delay_auto(10)
 
     def _body(self, cfg):
+        # self.delay_auto(10)
         for ch in cfg["channels"]:
-            self.pulse(ch, name=f'flat_pulse{ch}')
-            self.pulse(ch, name=f'inv_flat_pulse{ch}')
+            self.pulse(ch, name=f'flat_pulse{ch}',t=0)
+            self.pulse(ch, name=f'inv_flat_pulse{ch}',t=0)
 
 
     ## define the template config
@@ -47,10 +55,10 @@ class ConstantTone_Experiment(ExperimentClass):
     """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path,  prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, debug=False):
-        prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=0)
+        prog = ConstantTone(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"], final_delay=30)
         prog.run_rounds(self.soc,rounds=self.cfg['rounds'])
 
     def display(self, data=None, plotDisp = False, figNum = 1, **kwargs):
@@ -63,13 +71,14 @@ class ConstantTone_Experiment(ExperimentClass):
 UpdateConfig = {
     ###### cavity
     "read_pulse_style": "const",  # --Fixed
-    "gain": 32000,  # [DAC units]
+    "gain": 20000,  # [DAC units]
     "reps": 100000,
     "rounds":12000,
     # "qubit_LO_freq": 5000,
     "freq": 0, # [MHz] Leave as zero for flat pulse
+    "length": 5,
 
-    "channels": [1],  # TODO default value # 0-7 label the fast flux channels
+    "channels": [0],  # TODO default value # 0-7 label the fast flux channels
 }
 print("Freq:", UpdateConfig["freq"])
 
@@ -77,11 +86,11 @@ config = UpdateConfig
 outerFolder = ''
 
 soc.reset_gens()
-ConstantTone_Instance = ConstantTone_Experiment(path="dataTestConstPulse", outerFolder=outerFolder, cfg=config, soc=soc, soccfg=soccfg)
+ConstantTone_Instance = ConstantTone_Experiment(path="dataTestConstPulse",  cfg=config, soc=soc, soccfg=soccfg)
 try:
     ConstantTone_Experiment.acquire(ConstantTone_Instance)
 except Exception:
     print("Pyro traceback:")
     print("".join(Pyro4.util.getPyroTraceback()))
-ConstantTone_Experiment.save_data(ConstantTone_Instance)
-ConstantTone_Experiment.save_config(ConstantTone_Instance)
+# ConstantTone_Experiment.save_data(ConstantTone_Instance)
+# ConstantTone_Experiment.save_config(ConstantTone_Instance)

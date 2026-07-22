@@ -1,7 +1,10 @@
-from Device_calib.DeviceData import DeviceData
-from Device_calib.VoltageConfiguration import VoltageConfiguration
+from .DeviceData import DeviceData
+from .VoltageConfiguration import VoltageConfiguration
 import numpy as np
 import scipy
+import scipy.optimize
+from functools import lru_cache
+
 '''the unit to be MHz'''
 
 class DeviceInterface:
@@ -61,32 +64,41 @@ class DeviceInterface:
         Q1, Q2 = kwargs.keys()
         Ec1, Ec2 = self.transmons[Q1].Ec, self.transmons[Q2].Ec
         w1, w2 = kwargs.values()
-        gamma = self.couplings[tuple(sorted((Q1, Q2)))]
+        gamma = self.couplings.get(tuple(sorted((Q1, Q2))), 0)
         return gamma/4000 * np.sqrt((w1 + Ec1)*(w2 + Ec2))
 
+    @lru_cache
     def get_adjacent_couplers(self, qubit_name:str):
-        '''List adjacent couplers with gamma for a given qubit, form [('C1', 6.01)]'''
-        return [(c, self.couplings[tuple(sorted((qubit_name, c)))]) for c in self.couplers.keys() if self.coupling_exists(qubit_name, c)]
+        '''List adjacent ('coupler_name', gamma) for a given qubit, form [('C1', 6.01)]'''
+        return tuple((c, self.couplings[tuple(sorted((qubit_name, c)))]) for c in self.couplers.keys() if self.coupling_exists(qubit_name, c))
 
+    @lru_cache
     def get_adjacent_qubits_of_coupler(self, coupler_name:str):
-        '''List adjacent qubits with gamma for a given coupler, form [('Q1', 90.1)]'''
-        return [(q, self.couplings[tuple(sorted((coupler_name, q)))]) for q in self.qubits.keys() if self.coupling_exists(coupler_name, q)]
+        '''List adjacent ('qubit_name', gamma) for a given coupler, form [('Q1', 90.1)]'''
+        return tuple((q, self.couplings[tuple(sorted((coupler_name, q)))]) for q in self.qubits.keys() if self.coupling_exists(coupler_name, q))
 
     def bare_freqs_to_flux(self, bare_freqs:np.ndarray):
         '''Convert an array of bare frequencies to an array of fluxes'''
         return np.array([self.transmons[Q].flux(freq) for Q, freq in zip(self.ordered_names, bare_freqs)])
 
     
-    def determine_coupler_freq(self, c_name:str, g_eff:float, w_q:float):
-        '''Uses a Q-C-Q model and the coupling matrix to determine the required frequency for a tunable coupler'''
+    def determine_coupler_freq(self, c_name:str, ratio:float, w_q:float):
+        '''Determine the coupler frequency giving J_||/|J| = ratio (J_|| = coupler-mediated coupling,
+        J = mean of the two rung couplings via the in-between qubit), with qubits at w_q.'''
         bounds=(0,10000)
         adjacent_qubits = self.get_adjacent_qubits_of_coupler(c_name)
         q1, q2 = adjacent_qubits[0][0], adjacent_qubits[1][0]
         gamma1, gamma2 = adjacent_qubits[0][1], adjacent_qubits[1][1]
-        
-        g12 = self.get_coupling(q1=q1, q2=q2)
 
-        func = lambda wc: (signed_eff_g(w_q, w_q, wc, gamma1/4000*np.sqrt(w_q*wc),  gamma2/4000*np.sqrt(w_q*wc), g12) - g_eff)**2
+        Ec1, Ec2, Ecc = self.transmons[q1].Ec, self.transmons[q2].Ec, self.transmons[c_name].Ec
+
+        g12 = self.get_coupling(**{q1: w_q, q2: w_q})
+
+        # J_||/|J| ratio -> absolute target g_eff: J = mean of the two rung couplings via the in-between qubit
+        qm = next(q for q in self.qubits if q not in (q1, q2) and self.coupling_exists(q1, q) and self.coupling_exists(q, q2))
+        g_eff = ratio * 0.5 * np.abs(self.get_coupling(**{q1: w_q, qm: w_q}) + self.get_coupling(**{qm: w_q, q2: w_q}))
+
+        func = lambda wc: (signed_eff_g(w_q, w_q, wc, gamma1/4000*np.sqrt((w_q+Ec1)*(wc+Ecc)),  gamma2/4000*np.sqrt((w_q+Ec2)*(wc+Ecc)), g12) - g_eff)**2
         guess = w_q - gamma1*gamma2/4000**2 *w_q*w_q/(g_eff - g12)
         return scipy.optimize.minimize(func, x0=guess, bounds=[bounds]).x[0]
 

@@ -19,34 +19,24 @@ class TransmonData:
     crosstalk_map: Dict[str, float] = field(default_factory=dict) # {FluxLineID: Sensitivity}
     
 
-    def freq(self, flux:float):
+    def freq(self, flux: float | np.ndarray) -> float:
         '''converts a value of flux (dimensionless) to frequency'''
         A = self.w_max + self.c
         B = self.w_min + self.c
         return np.sqrt(A**2 * np.cos(np.pi*flux)**2 + B**2 * np.sin(np.pi*flux)**2) - self.c
 
-    def flux(self, freq):
+    def flux(self, freq: float | np.ndarray) -> float:
         '''converts a value of frequency to flux (dimensionless).'''
-        
-        bracket = (-0.5, 0)
         if isinstance(freq, (list, np.ndarray)):
-            fluxes = np.empty(len(freq))
-            for i in range(len(freq)):
-                root_function = lambda flux: self.freq(flux) - freq[i]
-                result = root_scalar(root_function, bracket=bracket)
-                fluxes[i] = result.root
+            fluxes = np.fromiter((self.flux(f) for f in freq), dtype=float, count = len(freq))
             return fluxes
-        elif isinstance(freq, (int, float)):
+        else:
             if freq < self.w_min:
                 raise ValueError(f"Frequency of {self.name} is below minimum {self.w_min}")
-                print(f"Frequency of {self.name} set to minimum {self.w_min}")
-                return 0.5
             elif freq > self.w_max:
                 raise ValueError(f"Frequency of {self.name} is above maximum {self.w_max}")
-                print(f"Frequency of {self.name} set to maximum {self.w_max}")
-                return 0
             root_function = lambda flux: self.freq(flux) - freq
-            result = root_scalar(root_function, bracket=bracket)
+            result = root_scalar(root_function, bracket=(-0.5, 0))
             return result.root
 
 @dataclass
@@ -54,7 +44,7 @@ class Coupling:
     ''''''
     q1: str
     q2: str
-    gamma: float # where J = gamma/4000 * np.sqrt((w1+Ec)(w2+Ec)), gamma ~ coupling at 4 GHz
+    gamma: float # ~ coupling (MHz) at wq = 4 GHz, as J = gamma/4000 * np.sqrt((w1+Ec)(w2+Ec))
 
 @dataclass
 class DeviceData:

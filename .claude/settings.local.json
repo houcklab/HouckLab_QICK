@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"/c/Users/houck/Documents/HouckLab_QICK\" ls-files)",
+      "Bash(grep -E \"\\\\.\\(h5|hdf5|png|jpg|jpeg|svg|pdf|csv|npz|npy|pkl\\)$\")",
+      "Bash(grep -E \"\\\\.\\(h5|hdf5|png|jpg|jpeg|svg|pdf|csv|npz|npy|pkl|json\\)$\")",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" --version)",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/pip.exe\" list *)",
+      "Bash(git -C \"/c/Users/houck/Documents/HouckLab_QICK\" check-ignore -v \"WorkingProjects/Triangle_Lattice_tProcV2/Experimental_Scripts/Debugging_Programs/dataTestConstPulse/dataTestConstPulse_2026_04_07/dataTestConstPulse_2026_04_07_14_48_03_data.h5\" \"_2025_11_10/_2025_11_10_09_53_30_data.png\" \"data/AmplitudeRabiFFMUX/AmplitudeRabiFFMUX_2025_09_20/AmplitudeRabiFFMUX_2025_09_20_22_00_50.json\" \".venv/Scripts/python.exe\" \"MasterProject/Client_modules/Desq_GUI/assets/play.svg\" \"MasterProject/Client_modules/Desq_GUI/sphinx/source/assets/Desq_demo.png\")",
+      "Bash(git -C \"/c/Users/houck/Documents/HouckLab_QICK\" status --short)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" -m pip install scikit-learn)",
+      "Bash(\".venv/Scripts/python.exe\" -c \"from sklearn.mixture import GaussianMixture; print\\('sklearn OK'\\); from WorkingProjects.Triangle_Lattice_tProcV2.Helpers.hist_analysis import *; print\\('hist_analysis OK'\\)\")",
+      "Bash(grep -E '\\\\.py$')",
+      "Bash(grep -E \"\\\\.\\(py|txt\\)$\")",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe -c ' *)",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" -m pip install pypdf)",
+      "Bash(/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe *)",
+      "Bash(.venv/Scripts/python.exe -u -c ' *)",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" -c \"import weasyprint\")",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" -c \"import reportlab; print\\('reportlab', reportlab.__version__\\)\")",
+      "Bash(\"/c/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe\" -c \"import pypdf; print\\('pypdf', pypdf.__version__\\)\")",
+      "Bash(C:/Users/houck/Documents/HouckLab_QICK/.venv/Scripts/python.exe *)",
+      "Bash(python -m py_compile \"WorkingProjects/triangle_lattice_quench/Run_Experiments/CALIBRATION_GUI.py\")",
+      "Bash(python -m py_compile WorkingProjects/triangle_lattice_quench/Run_Experiments/CALIBRATION_GUI.py)"
+    ]
+  }
+}

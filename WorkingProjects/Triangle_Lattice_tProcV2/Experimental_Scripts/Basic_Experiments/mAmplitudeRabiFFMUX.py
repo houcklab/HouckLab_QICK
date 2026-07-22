@@ -185,41 +185,46 @@ class AmplitudeRabiFFMUX(ExperimentClass):
         avgi = data['data']['avgi']
         avgq = data['data']['avgq']
 
-        while plt.fignum_exists(num=figNum): ###account for if figure with number already exists
-            figNum += 1
         if ax is None:
-            plt.figure(figNum)
+            while plt.fignum_exists(num=figNum):  # avoid clobbering existing pyplot figs
+                figNum += 1
+            fig = plt.figure(figNum)
+            ax = fig.add_subplot(111)
+            own_fig = True
         else:
-            plt.sca(ax)
+            fig = ax.figure
+            own_fig = False
+
         if 'ampl_fit' in data['data']:
             contrast = IQ_contrast(avgi, avgq)
             ampl = data['data']['ampl_fit']
             pi_gain = data['data']['pi_gain_fit']
             print(pi_gain)
             gains = np.linspace(x_pts[0], x_pts[-1], 61)
-            plt.plot(x_pts, contrast, 'o-', color='seagreen', label='IQ contrast')
-            plt.plot(x_pts, avgi - np.mean(avgi), 'o-', label="i", color='orange', alpha=0.5,zorder=0)
-            plt.plot(x_pts, avgq - np.mean(avgq), 'o-', label="q", color='blue', alpha=0.5,zorder=0)
+            ax.plot(x_pts, contrast, 'o-', color='seagreen', label='IQ contrast')
+            ax.plot(x_pts, avgi - np.mean(avgi), 'o-', label="i", color='orange', alpha=0.5, zorder=0)
+            ax.plot(x_pts, avgq - np.mean(avgq), 'o-', label="q", color='blue', alpha=0.5, zorder=0)
 
             # Plotting fits
             if hasattr(self, 'ampl_fit_simple') and self.ampl_fit_simple == self.ampl_fit:
-                plt.plot(gains, fit_func_simple(gains, ampl, pi_gain), '--', color='black')
+                ax.plot(gains, fit_func_simple(gains, ampl, pi_gain), '--', color='black')
             elif hasattr(self, 'ampl_fit_complex') and self.ampl_fit_complex == self.ampl_fit:
                 offset_fit = self.offset_fit_complex
                 phi_fit = self.phi_fit_complex
-                plt.plot(gains, rabi_fit_func(gains, ampl, pi_gain, offset_fit, phi_fit), '--', color='black')
+                ax.plot(gains, rabi_fit_func(gains, ampl, pi_gain, offset_fit, phi_fit), '--', color='black')
 
-            plt.axvline(pi_gain, color='black', label=f'[complex fit] gain = {int(np.round(pi_gain))}')
+            ax.axvline(pi_gain, color='black', label=f'[complex fit] gain = {int(np.round(pi_gain))}')
         else:
-            plt.plot(x_pts, avgi, 'o-', label="i", color='orange')
-            plt.plot(x_pts, avgq, 'o-', label="q", color='blue')
-        plt.ylabel("a.u.")
-        plt.xlabel("qubit gain")
-        plt.legend()
-        plt.title(self.titlename)
+            ax.plot(x_pts, avgi, 'o-', label="i", color='orange')
+            ax.plot(x_pts, avgq, 'o-', label="q", color='blue')
+        ax.set_ylabel("a.u.")
+        ax.set_xlabel("qubit gain")
+        ax.legend()
+        ax.set_title(self.titlename)
 
-        plt.show(block=block)
-        plt.pause(0.1)
+        if plotDisp and own_fig:
+            plt.show(block=block)
+            plt.pause(0.1)
 
 
     def save_data(self, data=None):

@@ -1,0 +1,5 @@
+{
+    "ip_address": "192.168.1.109",
+    "account_name": "qsim",
+    "config": "MasterProject.Client_modules.Init.qsim_gui_initialize"
+}

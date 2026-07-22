@@ -12,10 +12,8 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-import json
 import time
 from datetime import datetime
-from pathlib import Path
 
 from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSpecSliceFFMUX import QubitSpecSliceFFMUX
 from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Characterization_Sweeps.mOptimizeReadoutandPulse_FFMUX import ReadOpt_wSingleShotFFMUX, QubitPulseOpt_wSingleShotFFMUX
@@ -24,7 +22,7 @@ from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experime
 from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mSingleShotProgramFFMUX import SingleShotFFMUX
 from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT1MUX import T1MUX
 from WorkingProjects.triangle_lattice_quench.Experimental_Scripts.Basic_Experiments.mT2RMUX import T2RMUX
-from WorkingProjects.triangle_lattice_quench.Flux_Files.Calculate_FF import CalculateFFExperiment
+from WorkingProjects.triangle_lattice_quench.Flux_Files.LEGACY.Calculate_FF import CalculateFFExperiment
 
 from WorkingProjects.triangle_lattice_quench.Helpers.Qubit_Parameters_Helpers import QubitConfig
 
@@ -982,7 +980,7 @@ if __name__ == "__main__":
             soc=soc,
             soccfg=soccfg,
             config=config,
-            outerFolder=outerFolder,
+            
             qubit_id=Q,
             OptReadout_index=OptReadout_index,
             OptQubit_index=OptQubit_index,

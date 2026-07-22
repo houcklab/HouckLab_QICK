@@ -51,7 +51,7 @@ for pi2_phase in [0, 90]:
 
 
     if run_mott_quench_dynamics:
-        MottQuenchDynamics(outerFolder=outerFolder, cfg=config | quench_base_dict | quench_dynamics_dict,
+        MottQuenchDynamics( cfg=config | quench_base_dict | quench_dynamics_dict,
                         soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 

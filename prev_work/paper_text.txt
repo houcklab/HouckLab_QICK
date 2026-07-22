@@ -1,0 +1,1461 @@
+=== PAGE 1 ===
+Chiral and bond-ordered phases in a triangular-ladder superconducting-qubit
+quantum simulator
+Matthew Molinelli, 1,∗ Joshua C. Wang, 1,∗ Jeronimo G. C. Martinez, 1 Sonny
+Lowe,1 Andrew Osborne, 1 Rhine Samajdar, 1,† and Andrew A. Houck 1,‡
+1Department of Electrical and Computer Engineering,
+Princeton University, Princeton, NJ 08544, USA
+Many-body systems with strong interactions often exhibit macroscopic behavior markedly absent
+in single-particle or noninteracting limits. Such emergent phenomena are well exemplified in lattice
+Hubbard models, where the interplay between interactions, geometric frustration, and magnetic flux
+gives rise to rich physics. Superconducting qubits naturally enable analog quantum simulation of
+Bose-Hubbard models, while offering tunable parameters, site-resolved control, and rapid experimen-
+tal repetition rates. Here, we study a superconducting-qubit device that realizes the Bose-Hubbard
+model on a triangular-ladder lattice. By tuning the magnitude and sign of couplings, we engineer a
+synthetic magnetic flux to characterize the resulting half-filling ground state for various parameter
+regimes. We measure observables analogous to current-current correlators and bond kinetic ener-
+gies, finding signatures consistent with chiral superfluids, Meissner superfluids, and bond-ordered
+insulators. Our results establish superconducting circuits as a platform for robustly probing quan-
+tum phases of matter in frustrated Bose-Hubbard systems, even in strongly correlated and gapless
+regimes.
+INTRODUCTION
+Strongly interacting many-body systems display a
+wealth of emergent phenomena that cannot be in-
+ferred from the properties of their individual constituents
+alone [1]. As an example, consider a system of particles
+on a periodic lattice. In the absence of interactions, the
+physics is easily understood: Bloch’s theorem can be used
+to calculate band structures and eigenstates, and many
+properties follow directly from this noninteracting low-
+energy spectrum [2]. In contrast, strongly interacting lat-
+tice systems exhibit rich emergent behavior wherein in-
+teractions result in nontrivial many-body scattering pro-
+cesses and collective modes, often stabilizing macroscopic
+phases that have no single-particle analog [3]. Since the
+intrinsic quantum correlations render these regimes ex-
+ponentially difficult to simulate classically [4], quantum
+simulation [5] offers valuable opportunities for progress.
+The Hubbard model [6], a workhorse of modern con-
+densed matter physics, provides a useful paradigm to
+probe a variety of such emergent phenomena in strongly
+correlated materials [7]. In bosonic systems, described
+by the Bose-Hubbard model, the delicate competition
+between the lattice tunnelingJand the onsite interac-
+tionUyields a phase diagram that depends sensitively
+on not onlyJ/Ubut also the fillingρ[8]. At very low
+filling, one simply recovers a perturbative connection to
+single-particle behavior. On the other hand, at integer
+filling, strong interactions lead to Mott-insulating states
+while weak interactions favor superfluid order [9]. Be-
+tween these limits—at intermediate fillings—additional
+∗ These authors contributed equally to this work.
+† rhine samajdar@princeton.edu
+‡ aahouck@princeton.edu
+control parameters, such as geometric frustration and
+magnetic fluxes, can drive qualitatively distinct behavior,
+especially in reduced dimensionality where the effects of
+interactions are maximized [10].
+A simple geometry in which these effects of frustration
+and magnetic flux can be studied is the triangular-ladder
+lattice, composed of two coupled one-dimensional (1D)
+chains forming elementary plaquettes (Fig. 1b). In the
+Bose-Hubbard model on such a ladder, competing hop-
+ping processes on the triangular geometry give rise to ki-
+netic frustration [11–14], resulting in phases beyond con-
+ventional superfluids and Mott insulators [15–17]. Addi-
+tionally, applying a synthetic magnetic field can strongly
+modify the lattice properties, leading to phenomena such
+as flat band dispersions [18, 19], flux-dependent chiral
+transport [20], and the emergence of interaction-driven
+phases [21].
+Recent advances in analog quantum simulation have
+made it possible to implement and probe these Hamil-
+tonians in the laboratory [22]. Superconducting trans-
+mon [23] platforms are well poised for analog quantum
+simulation due to their native implementation of the
+Bose-Hubbard model as well as the flexibility of Hamilto-
+nian engineering. Transmon devices admit tunable cou-
+plings [24], strong interactions, and rapid experimental
+repetition rates, enabling the realization and character-
+ization of interacting lattice models in regimes that are
+difficult to access classically. In the limit of weak anhar-
+monicity and near-resonant coupling, a system of cou-
+pled transmons is naturally described by an attractive
+Bose-Hubbard Hamiltonian [25], where photons play the
+role of interacting bosons hopping between lattice sites.
+This mapping has enabled much experimental progress
+in exploring strongly correlated bosonic systems using
+superconducting circuits [26–28].
+In this work, we realize an experimental implemen-
+tation of the triangular-ladder Bose-Hubbard Hamilto-
+arXiv:2603.16993v1  [quant-ph]  17 Mar 2026
+
+=== PAGE 2 ===
+2
+FIG. 1. Realization of the triangular Bose-Hubbard ladder with transmon qubits.(a)False-color image of the 8-qubit triangular
+ladder with transmon qubits shaded in red and transmon couplers shaded in blue. Readout resonators and flux-bias lines are
+shaded in white and light blue, respectively.(b)Schematic of the 8-qubit triangular ladder.Jand ˜J∥ denote hoppings along
+the diagonals (rungs) and parallel edges (legs), respectively. Each plaquette is additionally threaded with a synthetic magnetic
+fluxϕ.(c)Full experimental sequence. The four qubits with the highest energy are excited before the adiabatic ramp onto
+resonance. Arbitrary pairs of spatially adjacent qubits are isolated to characterize the state in two-qubit subspaces. Lattice
+schematics (bottom) depict the initialized state at half filling, the superfluid state after the ramp, and the isolated state during
+the measurement protocol.
+nian with a synthetic gauge field on a superconducting-
+qubit device. By engineering both the magnitudes and
+signs of nearest-neighbor couplings, we implement a tun-
+able flux of either 0 orπper plaquette and probe the
+ground-state properties within fixed particle-number sec-
+tors. We observe a variety of exotic many-body phases,
+including states with currents along the legs of the lad-
+der (Meissner superfluids), states that spontaneously
+break aZ 2 parity symmetry (chiral superfluids), and
+states that break translational symmetry (bond-ordered
+phases) [29]. Our platform provides site-resolved access
+to observables analogous to current-current correlators
+and bond operators [30, 31], allowing direct measurement
+of order parameters that distinguish these regimes. By
+mapping the ground-state response as a function of in-
+teraction strength, flux, and filling, and comparing our
+measurements to theoretical predictions, we demonstrate
+robust signatures of flux-induced chiral order and bond
+modulation in this frustrated geometry. These results
+thus showcase superconducting lattices as a flexible and
+controllable testbed for exploring the interplay of syn-
+thetic flux and geometric frustration in strongly inter-
+acting bosonic systems.
+DEVICE AND MODEL
+The sites of our lattice areN= 8 flux-tunable trans-
+mon qubits arranged in a quasi-1D triangular-ladder ge-
+ometry, as shown in Fig. 1a, with the qubits highlighted
+in red in the false-color image. Adjacent qubits are
+capacitively coupled along the diagonals of the ladder,
+which we refer to as “rungs”, with an average hop-
+ping ofJ/2π= 6.1 MHz. Along the top and bot-
+tom edges of the ladder, which we call “legs”, qubits
+are coupled via a second set of flux-tunable transmons
+that act as couplers (shown in blue). Tuning the cou-
+pler frequency mediates hopping between the qubits in
+the rangeJ ∥/2π= 2.5 MHz to 20.4 MHz. When the
+coupler frequency is tuned below the qubit frequency,
+the effective hopping becomes negative, accessing values
+J∥/2π=−17.3 MHz to−7.0 MHz.
+Our qubits are tunable fromω q/2π= 3.5 GHz to
+4.4 GHz and are each coupled to a readout resonator with
+frequencies betweenω r/2π= 7.1 GHz and 7.6 GHz. In
+this work, we initialize and measure the qubits at dis-
+tinct frequencies, but operate the lattice at a resonance
+frequency of either 3.85 GHz or 4.30 GHz. The transmon
+qubits in our system are well approximated as weakly an-
+harmonic bosonic oscillators [23]. The couplers are like-
+
+=== PAGE 3 ===
+3
+wise transmons that mediate excitation transfer between
+neighboring qubits through a second-order hopping pro-
+cess. The device is therefore described by an interacting
+Bose-Hubbard model with the Hamiltonian
+H
+ℏ =
+NX
+j=1
+
+ωj nj + Uj
+2 nj(nj −1)
+
+−
+N−1X
+j=1
+Jj
+
+a†
+jaj+1 +a †
+j+1aj
+
++
+N−2X
+j=1
+˜J∥,j
+
+a†
+jaj+2eiϕ +a †
+j+2aje−iϕ
+
+.
+(1)
+Here,a j represents the bosonic annihilation operator on
+lattice sitej, andn j ≡a †
+jaj is the corresponding number
+operator.U j denotes the onsite interaction arising from
+the transmon anharmonicity, with average valueU/2π=
+−186.1 MHz.J j >0 is the rung hopping between sites
+jandj+ 1, while ˜J∥,j >0 is the leg hopping between
+sitesjandj+ 2, which relates to the physical coupling
+strength asJ ∥,j = ˜J∥,jeiϕ.
+Each triangular plaquette (see Fig. 1b) comprises two
+rungs with hoppingJand one leg with hopping ˜J∥, so the
+phase of the synthetic magnetic field through the loop is
+controlled by the sign ofJ ∥. Hence, we define the flux
+as 0 forJ ∥ >0 and asπforJ ∥ <0. Note that we have
+chosen a gauge in which the Peierls phaseϕis allocated
+entirely to the leg hopping. Experimentally, we setϕ= 0
+orπby changing the sign ofJ ∥,j as described above.
+The Hamiltonian (1) commutes with the total-particle-
+number operator, [H,P
+j nj] = 0,and therefore possesses
+a global U(1) symmetry. As a consequence, one may
+choose eigenstates to have definite particle numberN.
+For repulsive onsite interactions (U >0), the competi-
+tion between kinetic energy and interactions yields the fa-
+miliar Mott-insulator versus superfluid phenomenology:
+at commensurate (integer) filling and sufficiently large
+U/J, the ground state is a gapped Mott insulator with
+suppressed number fluctuations, while forJ≫Uthe
+kinetic term dominates and the system develops long-
+range phase coherence (i.e., superfluid order) [8]. This
+is diagnosed by off-diagonal long-range order (ODLRO)
+of the one-body density matrix, which corresponds to a
+nonvanishing asymptotic value of⟨a †
+i aj⟩as|i−j| → ∞.
+The attractive case (U <0) is qualitatively different.
+A strong onsite attraction minimizes energy by bunching
+all particles on a single site, so the natural Fock states at
+large|U|are localized states,|N j⟩ ∝(ˆa†
+j)N |0⟩. Crucially,
+the translationally invariant ground state, which is the
+symmetric superposition in this fixed-number sector, has
+vanishing off-diagonal one-body correlations between dis-
+tinct sites,⟨a †
+i aj⟩= 0 fori̸=j, and therefore, no ODLRO.
+In other words, the exact ground state exhibits no global
+phase coherence and is not a superfluid.
+In order to probe superfluid physics with our system,
+we instead consider the ground state of the negative
+Hamiltonian. Negating the Hamiltonian implements the
+transformation
+−H(ϕ, U) =H(ϕ+π,−U).(2)
+The plaquette phase is shifted byπbecause all couplings
+are negated and each plaquette contains an odd num-
+ber of edges. To access the ground state of therepulsive
+Hamiltonian atπflux, we first prepare the highest excited
+state of theattractiveHamiltonian at 0 flux and then
+exploit the sign-flip mapping of Eq. (2). Since we can
+control the sign ofJ ∥, this procedure allows a negative-
+temperature state of the experimentally realized attrac-
+tive Bose-Hubbard model to faithfully represent the low-
+energy physics of the repulsive model [32], a strategy we
+employ throughout this work.
+RESUL TS
+Our experiments focus on the half-filling sector corre-
+sponding to four excitations in an eight-site ladder. At
+this filling, the lattice is neither dilute nor fully occu-
+pied, which ensures that kinetic and interaction energies
+compete most strongly.
+The experimental procedure consists of two stages:
+state preparation and measurement, shown in Fig. 1c.
+State preparation involves exciting four out of the eight
+qubits and ramping all qubits onto resonance to prepare
+the half-filling ground state of the repulsive Hamiltonian.
+Next, we let the system evolve under a specific Hamilto-
+nian, which implements a calibrated unitary operation,
+to rotate the desired observables to the computational
+basis before performing simultaneous projective readout
+on all eight qubits to collect bitstring outcomes. Re-
+peated runs then yield the expectation values and corre-
+lation functions used to construct the order parameters
+reported below.
+In order to probe ODLRO, we characterize the pre-
+pared eigenstate by measuring pairwise particle-number
+current operators along rungs of the lattice. For a rung
+connecting sitesjandj+ 1, the Hermitian current oper-
+ator is given by
+Jj = iJj
+
+a†
+jaj+1 −a †
+j+1aj
+
+,(3)
+so that its expectation value is directly related to the
+nearest-neighbor coherences,⟨J j ⟩= 2J j Im⟨a†
+jaj+1⟩.A
+nonzero⟨J j⟩therefore signals finite short-range phase co-
+herence (a necessary condition for ODLRO), whereas in-
+sulating states with suppressed off-diagonal correlations
+have⟨J j⟩ ≈0.
+As the current operator generates population exchange
+between neighboring sites, its expectation value can
+be inferred from the population imbalance after con-
+trolled time evolution. To that end, we first time-evolve
+each pair of qubits individually under the Hamiltonian
+
+=== PAGE 4 ===
+4
+FIG. 2. Current-current correlations between rungs of the
+triangular ladder.(a)Schematic of the lattice showing pairs
+of qubits undergoing beamsplitter rotation in order to per-
+form current measurement. The arrows show the measured
+correlations with the rung shaded in red.(b)Bloch-sphere
+representation of the beamsplitter rotation from the current
+eigenstates|±j⟩to the readout basis.(c)Current measure-
+ment trace between qubits 1 and 2 as the beamsplitter inter-
+action time is varied. The current value is extracted at the
+beamsplitter timet BS =π/4Jshown by the dashed line. The
+solid line is a sinusoidal fit to the population oscillations.(d)
+Same as in (c) but for qubits 7 and 8.(e). Current correla-
+tion between qubit pairs 1-2 and 7-8. Although the current
+on both rungs vanishes at the beamsplitter time, the current
+correlation has a nonzero value.
+HBS,j =ℏJ j (a†
+jaj+1 +a †
+j+1aj) for a “beamsplitter” time
+tBS =π/4Jand estimate the currentJ j at timet= 0
+by [30]
+Jj (0)≈J j
+
+nj(tBS)−n j+1(tBS)
+
+.(4)
+This relation becomes exact in the hard-core boson limit,
+where the system reduces to the frustrated spin-1/2
+quantum XX model [33–35].
+Viewing the two-qubit system in the single-particle
+manifold{|01⟩,|10⟩}as shown in Fig. 2a, we see that
+Jj andH BS act as effectiveσ y andσ x operations, re-
+spectively, on this degree of freedom. After applying an
+effectiveσ x to rotate the current basis to the measure-
+ment basis, we quickly detune all qubits to freeze dynam-
+ics and perform readout.
+Upon quasiadiabatically preparing the ground state of
+the triangular ladder, we find that the rung currents
+vanish everywhere, as evidenced by the population dif-
+ferences vanishing at the beamsplitter time. Since the
+Hamiltonian is symmetric under time-reversal, for every
+state with current⟨J j⟩flowing from qubitsjtoj+ 1,
+there is a degenerate state with current−⟨J j⟩flowing in
+the opposite direction. Without breaking time-reversal
+symmetry, the two current outcomes are equally likely, so
+after many iterations, the currents average to zero. Im-
+portantly however, the current-current correlation func-
+tion,
+G(i, j) =⟨J iJj⟩ − ⟨Ji⟩⟨Jj⟩,(5)
+which can be further expanded into qubit-qubit popula-
+tion correlations using Eq. (4), can still be nonzero.
+Figure 2 demonstrates the measurement of a nonzero
+current correlation between distant rungs, despite mea-
+suring zero average current, forJ ∥/J=−1. First, we
+conduct the experimental procedure and read out a sin-
+gle pair of qubits, for example, qubits 1 and 2 in Fig. 2a.
+Since time evolution underH BS implements an effec-
+tive e −iJtσ x, it is necessary to calibratet BS such that
+e−itBSHBS/ℏ =
+√
+iSWAP, as seen in Fig. 2b,d. We elab-
+orate further on the subtleties in calibrating the beam-
+splitter time from qubit swaps in the Supplemental Infor-
+mation (SI). The dashed lines in Figs. 2c,d indicate the
+fitted beamsplitter evolution time.
+Having performed this calibration, we measure the cor-
+relations of currents between different pairs of qubits.
+For instance, the correlation between qubit pairs (1,2)
+and (7,8) is shown in Fig. 2e: while the dashed line cor-
+responds to zero current, we extract a nonzero current
+correlation. However, if rungsiandjshare a qubit,
+(JiJj)† ̸=J iJj, and hence⟨J iJj⟩is not measurable.
+There are six such pairs of rungs which we exclude, leav-
+ing
+ 7
+2
+
+−6 = 15 combinations of rungs for which we
+repeat the above experiment.
+CHIRAL CURRENT CORRELA TIONS
+Using this calibrated measurement procedure, we can
+now extractglobalinformation on a many-body state of
+the triangular lattice, including the spatial texture of cor-
+relations. The color plots in Figs. 3b,c display the rung
+correlation matrix for each ratioJ ∥/J. To emphasize the
+structure of these correlations, the same data are replot-
+ted in Figs. 3d,e as a function of the distance between
+the two rungs.
+In the gapless quasi-1D superfluid regime, current cor-
+relations are generically expected to decay as a power
+law with distance [36]. Accordingly, we indeed observe
+that the correlations generally decrease as the rung sep-
+aration grows, for all measurement points. However, the
+plots in Figs. 3d,e show a slight increase in the most dis-
+tant correlations relative to the monotonic trend. We at-
+tribute this behavior to finite-size and edge effects, since
+the largest separation corresponds to both rungs being
+on the boundary. Supporting this interpretation, correla-
+tions between rungs closer to the center of the lattice are
+systematically smaller at comparable separations. This
+position dependence manifests as a spread in the correla-
+tion values for a given separation in Figs. 3d,e, where we
+
+=== PAGE 5 ===
+5
+a
+b c
+d e
+FIG. 3. Chiral and Meissner superfluids on the 8-qubit triangle ladder.(a)Total chiral-current order parameter for various
+values ofJ ∥/J. Negative (positive) ratios correspond to aπ-flux (0-flux) synthetic magnetic field. The values ofJ ∥/Jfor each
+plot are (from left to right)−3.56,−2.02,−1.22, 0.98, 1.96, and 3.53.(b)Current correlation matrices for theπ-flux coupling
+ratios. Rungjlinks qubits (j, j+ 1). Experimental data are shown on the lower left and simulation on the upper right of the
+correlation matrix.(c)Current correlation matrices for the 0-flux coupling ratios.(d)The same current correlations as in
+part (b) plotted against distance between the two rungs for theπ-flux coupling ratios. The inset depicts a schematic of the
+rung currents that produce the positive current-current correlations observed here.(e)The same current correlations as in
+part (c) plotted against distance between the two rungs for the 0-flux coupling ratios. The inset depicts a schematic of the
+rung currents that produce the anticorrelated current-current correlations observed here.
+also plot the average correlation for each distance to com-
+pare with simulations. Both the decay of correlations and
+the edge effects are captured in these numerics, which we
+discuss further in the SI.
+We first examine the correlations with an applied syn-
+thetic magnetic field corresponding toπflux. As shown
+by the plots in Fig. 3b,d, whenJ ∥/J <0, the current cor-
+relations are all positive. Given our sign convention in
+the definitions of currents, a current flowing from qubit
+1 to qubit 2 is positively correlated with a current flow-
+ing from qubit 3 to qubit 4. This pattern is consistent
+with long-range chiral current order throughout the lat-
+tice [37, 38], since the currents flow with the same hand-
+edness around each similarly oriented plaquette.
+The currents themselves average to zero across ex-
+perimental iterations, implying that theπ-flux ground
+state is a superposition of two superfluids with equal am-
+plitude but opposite chirality, which are time-reversed
+copies of each other. Measuring a local current operator
+on this extended ground state projects the system into
+one of the two states with well-defined chiral currents,
+and this spontaneously breaks a discreteZ 2 parity sym-
+metry. The nonzero chiral current-current correlations
+are characteristic of the chiral superfluid (CSF) phase,
+in which we have finite currents on the rungs that al-
+ternate sign from rung to rung (giving opposite circula-
+tions on adjacent plaquettes), together with leg currents
+that flow coherently along each leg. These linked pat-
+terns of rung and leg currents correspond to circulating
+flow around elementary plaquettes and distinguish the
+CSF from nonchiral (for example Meissner-like or bond-
+ordered) phases [29, 36].
+In contrast to theπ-flux case discussed above, we no-
+tice a stark difference in the correlations in the absence
+of a synthetic magnetic field. In this case, we no longer
+expect states to have chiral properties and the plots in
+Fig. 3c,e forJ ∥/J >0 indeed demonstrate the break-
+down of the chiral order. In addition to the smaller mag-
+nitude, the correlations also tend to alternate sign with
+increasing distance. In this regime, rungs exhibit anti-
+correlated currents, indicating the absence of a uniform
+chirality. This is characteristic of a Meissner superfluid
+(MSF) [39, 40], which ideally has no currents along the
+rungs and no chirality around plaquettes; the nonzero
+correlations we measure here arise from having a finite
+system.
+We can define the chiral-current order parameter as
+the sum over distance-averaged correlations:
+C=
+X
+d
+1
+N−d
+X
+j
+[G(j, j+d)].(6)
+We reportCfor each coupling ratio along the axis in
+Fig. 3a. The order parameter measurement reveals that
+Cdiffers qualitatively between theπ-flux and 0-flux cases:
+the measured values are orders of magnitude smaller in
+the latter case than the former, which is consistent with
+our expectation thatCshould vanish for a MSF but re-
+main nonzero for a CSF.
+
+=== PAGE 6 ===
+6
+a b
+FIG. 4. Bond order insulator in the 8-qubit triangle ladder.(a)Schematic of the bond kinetic energy ordering on the lattice.
+(b)Pulse diagram depicting the bond kinetic energy measurement. Here, one qubit acquires a phase relative to the other in
+order to rotate the kinetic energy (ˆx) axis to the current (ˆy) axis, before undergoing the beamsplitter interaction to rotate to
+the measurement (ˆz) axis.(c)Total bond order parameter for various values ofJ ∥/J: from left to right,−3.56,−2.02,−1.22,
+0.98, 2.04, and 2.85.(d)Bond kinetic energies of each rung for theπ-flux coupling ratios. Experimental data (simulation) is
+shown on the upper (lower) row of the color plots. The dashed lines indicate the alternating trend in bond kinetic energies
+seen numerically.(e)Bond kinetic energy of each rung for the 0-flux coupling ratios. Here, the experimental (red circles)
+and numerical (dashed lines) results highlight that the bond kinetic energies maintain a uniform sign throughout, without the
+alternation seen previously.
+BOND ORDER INSULA TOR
+While current correlations provide a direct probe of
+chiral transport and distinguish key features between
+the 0- andπ-flux regimes, more generally, the com-
+plex nearest-neighbor correlator⟨a †
+jaj+1⟩contains both
+imaginary and real components, which encode distinct
+physical information. In contrast to the imaginary part
+discussed above (which is proportional to the particle-
+number current), the real part,O j = 2 Re[⟨a†
+jaj+1⟩],cor-
+responds to the expectation value of the kinetic en-
+ergy operator associated with tunneling on a given link
+(j, j+1). This quantity characterizes the degree to which
+particles are coherently delocalized across neighboring
+sites and thus provides a natural probe of bond-energy
+ordering in the many-body ground state.
+Experimentally, we accessO j using a modified version
+of the beamsplitter measurement used for current detec-
+tion, as seen in Fig. 4b. Prior to the beamsplitter pulse,
+we allow the system to evolve under an idling Hamil-
+tonianH idle,j =ℏ∆ j
+ 
+a†
+jaj −a †
+j+1aj+1
+
+implemented by
+detuning the two qubits forming the bond such that
+|∆j| ≫J. Choosing an evolution timet idle =π/4∆ j
+rotates the ˆx-axis to ˆyon the Bloch sphere during idling,
+and then ˆyto ˆzduring the beamsplitter. This, as before,
+effectively maps the real part of⟨a †
+jaj+1⟩onto a popula-
+tion imbalance in the computational basis.
+Figure 4 shows the measured bond kinetic energiesO j
+for each coupling ratio. As|J ∥/J|increases, the magni-
+tude of the bond energies on the rungs decreases, since
+the bosons preferentially delocalize along the legs when
+leg hopping dominates. In the presence of aπsynthetic
+flux (Fig. 4d), however, the rung bond energies exhibit a
+qualitatively distinct pattern: their signs alternate from
+rung to rung. Contrarily, in the zero-flux case (Fig. 4e)
+the bond energies maintain a uniform sign across the lad-
+der.
+To quantify this behavior, we define the bond order
+parameter [29]
+OBO =
+N−1X
+j
+(−1)j
+
+⟨a†
+jaj+1⟩+⟨a †
+j+1aj⟩
+
+,(7)
+which measures the staggered component of the bond
+kinetic energy. A nonzero value ofO BO indicates that
+
+=== PAGE 7 ===
+7
+the kinetic energy alternates between neighboring bonds,
+breaking lattice translational symmetry. In our measure-
+ments, the order parameter is largest in theπ-flux con-
+figuration nearJ ∥/J≈ −1, where the rung bond energies
+have large magnitudes and alternate in sign. As|J ∥ / J|
+increases further, the magnitude ofO BO decreases be-
+cause the rung bond energies themselves become small,
+whereas in the absence of a synthetic field, the order pa-
+rameter remains suppressed because the bonds no longer
+alternate.
+This staggered pattern of bond energies is the defin-
+ing signature of the bond order insulator (BOI) phase
+predicted for frustrated bosonic ladders in a magnetic
+field [29]. This bond ordering arises from the combination
+of strong interactions, geometric frustration, and flux,
+which conspire to favor a ground state with modulated
+kinetic energy density rather than uniform superfluid co-
+herence. Intuitively, repulsive onsite interactions sup-
+press macroscopic occupation of a single site and penalize
+delocalization patterns that place large density fluctua-
+tions on individual sites. Faced with a frustrated kinetic
+term that weakens the homogeneous delocalization ad-
+vantage, the interacting system can instead optimize its
+energy by reorganizing the pattern of tunneling: concen-
+trating kinetic energy density on a subset of bonds while
+suppressing it on others. The result is a spatially modu-
+lated expectation value of the bond kinetic operator (Oj),
+manifesting as alternating strong and weak bonds.
+In the many-body phase diagram, the gapped BOI lies
+next to the gapless chiral superfluid regime in parameter
+space [29]. This proximity implies an enhanced suscep-
+tibility toward bond ordering as|J ∥/J|is tuned towards
+the critical point. Since our device operates near this
+phase boundary (albeit on the CSF side) and because
+the ideally sharp phase transition is dulled by the finite
+size of our device, we measure a nonzeroO BO signal,
+reflecting the incipient instability towards bond ordering
+and the phase transition between these competing many-
+body states.
+DISCUSSION AND OUTLOOK
+In these experiments, we study a superconducting-
+qubit device that realizes an interacting Bose-Hubbard
+model—a paradigmatic model for understanding strongly
+correlated quantum matter—on a triangular ladder at
+half filling. Exploiting the tunability of transmon cou-
+plers, we implement a synthetic magnetic flux of 0 or
+πper plaquette and tune the ratio between rung and
+leg tunneling amplitudes to explore a rich ground-state
+structure predicted for frustrated bosonic ladders [29].
+We prepare and characterize multiple many-body states,
+including chiral superfluids, which host staggered loop
+currents that spontaneously break time-reversal symme-
+try, and Meissner superfluids with vanishing rung cur-
+rents. These phases are distinguished by measuring link-
+current operators and correlators thereof, which we ac-
+cess experimentally through a calibrated mapping from
+qubit population dynamics to the expectation values of
+currents. Using the same measurement framework, we
+also identify signatures of incipient bond ordering, re-
+flected in a pattern of staggered bond kinetic energies
+along the rungs of the ladder.
+Chiral superfluids and related current-carrying phases
+have been widely proposed [41] and, more recently, ex-
+perimentally explored [42] in quantum simulators based
+on ultracold atoms. In the context of such atomic sys-
+tems, most studies on the triangular Bose-Hubbard lad-
+der Hamiltonian have focused on unit filling [38, 43, 44]
+or low densities [45]. Superconducting circuits provide
+a complementary approach with several practical advan-
+tages. In particular, our setup of transmon qubits fa-
+cilitates deterministic high-fidelity preparation of many-
+body states with a fixed number of excitations, whereas
+cold-atom experiments typically rely on statistical load-
+ing of lattice sites. This capability enables us to initialize
+arbitrary product states in a chosen particle-number sec-
+tor and subsequently ramp onto the target Hamiltonian.
+In addition, superconducting platforms offer rapid exper-
+imental repetition rates and precise control over individ-
+ual couplings and site parameters, allowing Hamiltonian
+parameters to be engineered both in device design and
+through in situ tuning. These features provide a versa-
+tile environment for exploring frustrated Bose-Hubbard
+physics with direct microscopic control that may be more
+challenging to achieve in optical lattices.
+More broadly, the techniques demonstrated here pro-
+vide a useful toolset for the analog quantum simula-
+tion of lattice boson models and their strongly corre-
+lated phases. Extending these experiments to wider pa-
+rameter ranges is a natural next step for systematically
+exploring the full phase diagram, including the critical
+regimes separating Meissner and chiral superfluids, and
+bond-ordered phases. This opens the door to addressing
+important theoretical questions on quantum criticality:
+measuring critical exponents and related universal prop-
+erties would provide direct experimental tests of field-
+theoretic and numerical predictions for quantum phase
+transitions in frustrated bosonic systems [10, 36]. Go-
+ing beyond equilibrium ground states, our platform fur-
+ther provides a window into the fundamentally nonequi-
+librium quantum dynamics of state preparation. For
+example, the controlled parameter ramps through the
+Mott-insulator–superfluid quantum phase transition of-
+fer a natural testbed to probe the dynamical emergence
+of coherence and superfluid order [46]. It would also be
+interesting to understand the dynamical aspects ofZ 2
+symmetry breaking and domain formation in chiral sec-
+tors [47, 48]. Moreover, the control and tunability af-
+forded by superconducting circuits makes the system well
+suited for extracting more refined metrics, such as mul-
+tipartite entanglement [49], and for investigating finite-
+temperature properties of interacting lattice models [50],
+regimes that remain challenging to access with classical
+numerical methods.
+
+=== PAGE 8 ===
+8
+On the experimental front, one can envision several im-
+provements to further enhance the versatility of our plat-
+form. At present, qubit frequencies can be tuned rapidly
+during an experimental sequence, whereas coupler pa-
+rameters are adjusted more slowly between runs. Ex-
+panding control-hardware capabilities such that couplers
+can be tuned dynamically on experimental timescales
+could permit the design of more flexible ramp proto-
+cols and enable studies of adiabatic state preparation
+and thermalization dynamics [28]. Increasing the acces-
+sible range of coupler tunability—particularly the ability
+to tune the effective coupling through zero—would also
+simplify state initialization and improve readout fidelity
+for neighboring qubits. Such tunability would provide
+insights at intermediate coupling ratios between the chi-
+ral and Meissner regimes, where phase transitions are
+expected, as well as deeper access to the parameter re-
+gion associated with bond-ordered phases. Finally, Flo-
+quet modulation of qubit or coupler parameters could be
+used to engineer synthetic gauge fields beyond the static
+0- andπ-flux configurations studied here [20]. Access
+to continuously tunable flux would allow explicit break-
+ing of time-reversal symmetry and thus, shed new light
+on additional phases, including biased chiral superfluids
+with nonzero average current [29].
+ACKNOWLEDGMENTS
+We thank Faranak Bahrami, R. N. Bhatt, Eugene
+Demler, Lev Krayzman, and Basil Smitham for useful
+discussions, and Sho Uemura for assistance with QICK
+software development. We acknowledge support primar-
+ily from the NSF Quantum Leap Challenge Institute for
+Robust Quantum Simulation 2120757, with additional
+support for theoretical work from U.S. Department of
+Energy, Office of Science, National Quantum Information
+Science Research Centers, Co-design Center for Quantum
+Advantage (C2QA) under Contract No. DESC0012704.
+R.S. was partially supported by the Princeton Quantum
+Initiative Fellowship. This research made use of the Mi-
+cro and Nano Fabrication Center at Princeton University.
+Princeton University Professor Andrew Houck is also
+a consultant for Quantum Circuits Incorporated (QCI).
+Due to his income from QCI, Princeton University has
+a management plan in place to mitigate a potential con-
+flict of interest that could affect the design, conduct and
+reporting of this research.
+[1] P. W. Anderson, More Is Different: Broken symmetry
+and the nature of the hierarchical structure of science,
+Science177, 393 (1972).
+[2] C. Kittel,Introduction to Solid State Physics, 8th ed.
+(John Wiley & Sons, New York, NY, 2004).
+[3] S. Sachdev,Quantum Phases of Matter(Cambridge Uni-
+versity Press, 2023).
+[4] S. Lloyd, Universal Quantum Simulators, Science273,
+1073 (1996).
+[5] R. P. Feynman, Simulating Physics with Computers, Int.
+J. Theor. Phys.21, 467 (1982).
+[6] J. Hubbard, Electron correlations in narrow energy
+bands, Proc. R. Soc. Lond. A276, 238 (1963).
+[7] D. P. Arovas, E. Berg, S. A. Kivelson, and S. Raghu, The
+Hubbard model, Annu. Rev. Condens. Matter Phys.13,
+239 (2022).
+[8] S. Sachdev,Quantum Phase Transitions, 2nd ed. (Cam-
+bridge University Press, 2011).
+[9] M. Capello, F. Becca, M. Fabrizio, and S. Sorella, Su-
+perfluid to Mott-Insulator Transition in Bose-Hubbard
+Models, Phys. Rev. Lett.99, 056402 (2007).
+[10] T. Giamarchi,Quantum physics in one dimension, Vol.
+121 (Clarendon Press, Oxford, 2003).
+[11] J. O. Haerter and B. S. Shastry, Kinetic Antiferromag-
+netism in the Triangular Lattice, Phys. Rev. Lett.95,
+087202 (2005).
+[12] I. Morera, M. Kan´ asz-Nagy, T. Smolenski, L. Ciorciaro,
+A. Imamo˘ glu, and E. Demler, High-temperature kinetic
+magnetism in triangular lattices, Phys. Rev. Res.5,
+L022048 (2023).
+[13] R. Samajdar and R. N. Bhatt, Nagaoka ferromagnetism
+in doped Hubbard models in optical lattices, Phys. Rev.
+A110, L021303 (2024).
+[14] R. Samajdar and R. N. Bhatt, Polaronic mechanism of
+Nagaoka ferromagnetism in Hubbard models, Phys. Rev.
+B109, 235128 (2024).
+[15] M. Xu, L. H. Kendrick, A. Kale,et al., Frustration- and
+doping-induced magnetism in a Fermi–Hubbard simula-
+tor, Nature620, 971 (2023).
+[16] M. L. Prichard, B. M. Spar, I. Morera,et al., Directly
+imaging spin polarons in a kinetically frustrated Hubbard
+system, Nature629, 323 (2024).
+[17] Y. Li, H. Du, Y. Wang, and et al., Observation of frus-
+trated chiral dynamics in an interacting triangular flux
+ladder, Nat. Commun.14, 7560 (2023).
+[18] J. G. Martinez, C. S. Chiu, B. M. Smitham, and A. A.
+Houck, Flat-band localization and interaction-induced
+delocalization of photons, Sci. Adv.9, eadj7195 (2023).
+[19] I. T. Rosen, S. Muschinske, C. N. Barrett, D. A. Rower,
+R. Das, D. K. Kim, B. M. Niedzielski, M. Schuldt, K. Ser-
+niak, M. E. Schwartz, J. L. Yoder, J. A. Grover, and
+W. D. Oliver, Flat-Band (De)localization Emulated with
+a Superconducting Qubit Array, Phys. Rev. X15, 021091
+(2025).
+[20] P. Roushan, C. Neill, A. Megrant,et al., Chiral ground-
+state currents of interacting photons in a synthetic mag-
+netic field, Nat. Phys.13, 146 (2017).
+[21] A. Impertro, S. Huh, S. Karch,et al., Strongly interacting
+Meissner phases in large bosonic flux ladders, Nat. Phys.
+21, 895 (2025).
+[22] E. Altmanet al., Quantum Simulators: Architectures
+and Opportunities, PRX Quantum2, 017003 (2021).
+[23] J. Koch, T. M. Yu, J. Gambetta, A. A. Houck, D. I.
+Schuster, J. Majer, A. Blais, M. H. Devoret, S. M. Girvin,
+
+=== PAGE 9 ===
+9
+and R. J. Schoelkopf, Charge-insensitive qubit design de-
+rived from the Cooper pair box, Phys. Rev. A76, 042319
+(2007).
+[24] F. Yan, P. Krantz, Y. Sung, M. Kjaergaard, D. L. Camp-
+bell, T. P. Orlando, S. Gustavsson, and W. D. Oliver,
+Tunable coupling scheme for implementing high-fidelity
+two-qubit gates, Phys. Rev. Appl.10, 054062 (2018).
+[25] R. Ma, B. Saxberg, C. Owens, and et al., A dissipa-
+tively stabilized Mott insulator of photons, Nature566,
+51 (2019).
+[26] C. Wang, F.-M. Liu, M.-C. Chen, H. Chen, X.-H. Zhao,
+C. Ying, Z.-X. Shang, J.-W. Wang, Y.-H. Huo, C.-Z.
+Peng, X. Zhu, C.-Y. Lu, and J.-W. Pan, Realization of
+fractional quantum Hall state with interacting photons,
+Science384, 579 (2024).
+[27] P. Roushan, C. Neill, J. Tangpanitanon, V. M. Bastidas,
+A. Megrant, R. Barends, Y. Chen, Z. Chen, B. Chiaro,
+A. Dunsworth, A. Fowler, B. Foxen, M. Giustina, E. Jef-
+frey, J. Kelly, E. Lucero, J. Mutus, M. Neeley, C. Quin-
+tana, D. Sank, A. Vainsencher, J. Wenner, T. White,
+H. Neven, D. G. Angelakis, and J. Martinis, Spectro-
+scopic signatures of localization with interacting photons
+in superconducting qubits, Science358, 1175 (2017).
+[28] T. I. Andersen, N. Astrakhantsev, A. H. Karamlou,et al.,
+Thermalization and criticality on an analogue–digital
+quantum simulator, Nature638, 79 (2025).
+[29] C.-M. Halati and T. Giamarchi, Bose-hubbard triangu-
+lar ladder in an artificial gauge field, Phys. Rev. Res.5,
+013126 (2023).
+[30] B. Du, R. Suresh, S. L´ opez, J. Cadiente, and R. Ma,
+Probing site-resolved current in strongly interacting su-
+perconducting circuit lattices, Phys. Rev. Lett.133,
+060601 (2024).
+[31] D. K. Mark, H.-Y. Hu, J. Kwan, C. Kokail, S. Choi,
+and S. F. Yelin, Efficiently measuringd-wave pairing and
+beyond in quantum gas microscopes, Phys. Rev. Lett.
+135, 123402 (2025).
+[32] C. Chen, G. Bornet, M. Bintz, G. Emperauger,
+L. Leclerc, V. S. Liu, P. Scholl, D. Barredo, J. Hauschild,
+S. Chatterjee, M. Schuler, A. M. L¨ auchli, M. P. Zale-
+tel, T. Lahaye, N. Y. Yao, and A. Browaeys, Continuous
+symmetry breaking in a two-dimensional Rydberg array,
+Nature616, 691–695 (2023).
+[33] M. Sato, S. Furukawa, S. Onoda, and A. Furusaki, Com-
+peting phases in spin-1/2J 1-J2 chain with easy-plane
+anisotropy, Mod. Phys. Lett. B25, 901 (2011).
+[34] T. Mishra, R. V. Pai, S. Mukerjee, and A. Paramekanti,
+Quantum phases and phase transitions of frustrated
+hard-core bosons on a triangular ladder, Phys. Rev. B
+87, 174504 (2013).
+[35] T. Mishra, R. V. Pai, and S. Mukerjee, Supersolid in a
+one-dimensional model of hard-core bosons, Phys. Rev.
+A89, 013615 (2014).
+[36] A. Dhar, T. Mishra, M. Maji, R. V. Pai, S. Mukerjee, and
+A. Paramekanti, Chiral Mott insulator with staggered
+loop currents in the fully frustrated Bose-Hubbard model,
+Phys. Rev. B87, 174501 (2013).
+[37] Y. Nishiyama, Finite-size-scaling analyses of the chiral
+ordert in the josephson-junction ladder with half a flux
+quantum per plaquette, Eur. Phys. J. B17, 295 (2000).
+[38] S. Greschner, L. Santos, and T. Vekua, Ultracold bosons
+in zig-zag optical lattices, Phys. Rev. A87, 033609
+(2013).
+[39] E. Orignac and T. Giamarchi, Meissner effect in a bosonic
+ladder, Phys. Rev. B64, 144515 (2001).
+[40] M.-C. Cha and J.-G. Shin, Two peaks in the momen-
+tum distribution of bosons in a weakly frustrated two-leg
+optical ladder, Phys. Rev. A83, 055602 (2011).
+[41] L. Barbiero, J. Cabedo, M. Lewenstein, L. Tarruell, and
+A. Celi, Frustrated magnets without geometrical frustra-
+tion in bosonic flux ladders, Phys. Rev. Res.5, L042008
+(2023).
+[42] Y. Li, H. Du, Y. Wang, J. Liang, L. Xiao, W. Yi, J. Ma,
+and S. Jia, Observation of frustrated chiral dynamics in
+an interacting triangular flux ladder, Nat. Commun.14,
+7560 (2023).
+[43] M. P. Zaletel, S. A. Parameswaran, A. R¨ uegg, and E. Alt-
+man, Chiral bosonic Mott insulator on the frustrated tri-
+angular lattice, Phys. Rev. B89, 155142 (2014).
+[44] C. Romen and A. M. L¨ auchli, Chiral Mott insulators
+in frustrated Bose-Hubbard models on ladders and two-
+dimensional lattices: A combined perturbative and den-
+sity matrix renormalization group study, Phys. Rev. B
+98, 054519 (2018).
+[45] S. Greschner and T. Mishra, Interacting bosons in gen-
+eralized zigzag and railroad-trestle models, Phys. Rev. B
+100, 144405 (2019).
+[46] S. Braun, M. Friesdorf, S. S. Hodgman, M. Schreiber,
+J. P. Ronzheimer, A. Riera, M. Del Rey, I. Bloch,
+J. Eisert, and U. Schneider, Emergence of coherence and
+the dynamics of quantum phase transitions, Proc. Natl.
+Acad. Sci. U.S.A.112, 3641 (2015).
+[47] K. Shimizu, Y. Kuno, T. Hirano, and I. Ichinose, Dynam-
+ics of a quantum phase transition in the Bose-Hubbard
+model: Kibble-Zurek mechanism and beyond, Phys. Rev.
+A97, 033626 (2018).
+[48] R. Samajdar and D. A. Huse, Quantum and classical
+coarsening and their interplay with the Kibble-Zurek
+mechanism, (2024), arXiv:2401.15144 [quant-ph].
+[49] S. Singha Roy, L. Carl, and P. Hauke, Genuine multi-
+partite entanglement in a one-dimensional Bose-Hubbard
+model with frustrated hopping, Phys. Rev. B106, 195158
+(2022).
+[50] M. Buser, F. Heidrich-Meisner, and U. Schollw¨ ock,
+Finite-temperature properties of interacting bosons on
+a two-leg flux ladder, Phys. Rev. A99, 053601 (2019).
+[51] F. Bahrami, M. P. Bland, N. Shumiya, R. D. Chang,
+E. Hedrick, R. A. McLellan, K. D. Crowley, A. Dutta,
+L. Bishop-Van Horn, Y. Iguchi, A. K. Anbalagan,
+G. Cheng, C. Yang, N. Yao, A. L. Walter, A. M. Bar-
+bour, S. Gopalakrishnan, R. J. Cava, A. A. Houck, and
+N. P. de Leon, Vortex motion induced losses in tantalum
+resonators, Phys. Rev. B113, 054505 (2026).
+[52] G. J. Dolan, Offset masks for lift-off photoprocessing,
+Appl. Phys. Lett.31, 337 (1977).
+[53] M. P. Bland, F. Bahrami, J. G. C. Martinez, P. H. Preste-
+gaard, B. M. Smitham, A. Joshi, E. Hedrick, S. Kumar,
+A. Yang, A. C. Pakpour-Tabrizi, A. Jindal, R. D. Chang,
+G. Cheng, N. Yao, R. J. Cava, N. P. de Leon, and A. A.
+Houck, Millisecond lifetimes and coherence times in 2D
+transmon qubits, Nature647, 343 (2025).
+[54] Z. Chen, A. Megrant, J. Kelly, R. Barends, J. Bochmann,
+Y. Chen, B. Chiaro, A. Dunsworth, E. Jeffrey, J. Y. Mu-
+tus, P. J. J. O’Malley, C. Neill, P. Roushan, D. Sank,
+A. Vainsencher, J. Wenner, T. C. White, A. N. Cleland,
+and J. M. Martinis, Fabrication and characterization of
+aluminum airbridges for superconducting microwave cir-
+cuits, Appl. Phys. Lett.104, 052602 (2014).
+
+=== PAGE 10 ===
+10
+[55] L. Stefanazzi, K. Treptow, N. Wilcer, C. Stoughton,
+C. Bradford, S. Uemura, S. Zorzetti, S. Montella, G. Can-
+celo, S. Sussman, A. Houck, S. Saxena, H. Arnaldi,
+A. Agrawal, H. Zhang, C. Ding, and D. I. Schuster, The
+QICK (Quantum Instrumentation Control Kit): Read-
+out and control for qubits and detectors, Rev. Sci. In-
+strum.93, 044709 (2022).
+METHODS
+Device fabrication
+The eight-qubit device in this work consists of a
+200 nm-thick layer of tantalum deposited on ac-axis
+HEMEX sapphire substrate from Crystal Systems before
+undergoing the cleaning process outlined in Ref. [51]. Af-
+terwards, the base layer pattern is defined with optical
+lithography and etched with a chlorine-based dry etch.
+Josephson junctions are patterned with electron-beam
+lithography to create a suspended resist bridge [52]. The
+Al-AlOx-Al layers are deposited using using double-angle
+electron-beam evaporation in a custom UHV-chamber
+Plassys [53]. The first layer is 20 nm thick and the AlO x
+is grown for 40 minutes in pure oxygen at 50 mbar. The
+second layer is 70 nm thick. Afterwards, aluminum air-
+bridges are patterned with two optical lithography steps
+following the process in Ref. [54], and deposited by simi-
+lar means in a Plassys MEB550S system. Airbridges are
+use to short ground planes on opposite sides of copla-
+nar waveguides as well as to connect qubit and coupler
+flux lines on opposite sides of the transmission line. Alu-
+minum wirebonds are used to connect signal lines to bond
+pads on flux lines and the transmission line. The device
+is mounted in the Scalinq LINQER package.
+Wiring and setup
+Devices were measured in a Bluefors dilution refrigera-
+tor with a base temperature of 10 mK. Time-domain con-
+trol and measurements were performed using the Xilinx
+RFSoC ZCU216 with experiments written in QICK [55],
+including resonator and qubit drives, qubit fast-flux
+pulses, and simultaneous multiple-cavity readout. DC-
+flux offsets for qubits and couplers were controlled with
+Qblox D5a voltage sources, combined with a fast-flux line
+in the mixing chamber, and sent to the qubit via on-chip
+flux lines. The qubits were dispersively read out and
+driven through individual quarter-wave resonators induc-
+tively coupled to a single transmission line. Resonator
+readout tones and qubit drive pulses were combined using
+a 6dB directional coupler at room temperature. The out-
+put signal was amplified using a traveling-wave paramet-
+ric amplifier (TWPA) at 10mK, a high-electron-mobility
+transistor (HEMT) amplifier at 4K, and two amplifiers at
+room temperature. A Windfreak SynthHDv2 RF source
+was used to provide the pump drive for the TWPA. The
+full wiring setup can be found in Fig. S1 of the Supple-
+mentary Information.
+Experimental sequence
+For all experiments, DC-flux voltages are set so that
+all eight qubit frequencies are near the midpoint of their
+respective ranges of tunability. This enabled frequency
+tuning across the entire spectrum with solely fast-flux
+pulse control. DC-flux voltages for the six couplers are
+set to produce the desired coupling strengthJ || when
+the qubits are at the lattice resonance frequency. State
+initialization, time evolution, and readout are then per-
+formed using fast-flux pulses that control the qubit fre-
+quencies within 0.3 ns. State preparation entails tuning
+the frequencies of qubits 1, 4, 8, and 5 to be evenly spaced
+by 50 MHz and driving each of these four qubits to the
+excited state. All other qubits are negatively detuned
+by 150 MHz for this step. Qubits 1, 4, 8, and 5 are
+then quickly tuned to the lattice frequency (ω lattice), and
+qubits 2, 3, 6, and 7 are slowly ramped onto the same
+resonance frequency over 300 ns. During the measure-
+ment step, qubit pairs are tuned onto resonance with each
+other, with different resonant frequencies for each pair,
+depending on which qubits are designated to undergo
+the beamsplitter operation; qubits not involved are far
+detuned during the beamsplitter time evolution. Finally,
+qubits are detuned by at least 20Jfrom other qubits for
+simultaneous single-shot readout of all eight qubits.
+Readout for the current correlation and bond kinetic
+energy data consists of collecting 100,000 shots of simul-
+taneous eight-qubit single-shot measurements. Readout
+parameters, chosen to optimize discrimination between
+the ground and first excited states, are determined be-
+fore every run by collecting 8000 shots of the readout
+calibration experiment.
+T uning qubits onto resonance
+We calibrate the qubit frequencies after the adiabatic
+ramp to ensure that all qubits are brought on resonance.
+To this end, we extract the frequency of each qubit from
+a Ramsey experiment with the drive frequencyω drive =
+ωlattice while tuning the fast-flux pulse amplitude. This,
+combined with accounting for flux crosstalk, allows us to
+fine-tune all qubits to be resonant atω lattice.
+Hamiltonian and Lindbladian simulations
+All parameters used in the Hamiltonian and Lindbla-
+dian simulations of the dynamics are independently mea-
+sured. Coupling strengths are measured by extracting
+the rate of resonant exchange of a single excitation be-
+tween all pairs of qubits.T 1 andT 2R decoherence times
+
+=== PAGE 11 ===
+11
+are measured atω lattice while all other qubits are far de-
+tuned. Anharmonicities are measured by calibrating the
+frequency of anω 12 pulse after preparing a qubit in|1⟩.
+
+=== PAGE 12 ===
+Supplementary Information for “Chiral and bond-ordered phases in a
+triangular-ladder superconducting-qubit quantum simulator”
+S1. DEVICE P ARAMETERS
+Qubit Q1 Q2 Q3 Q4 Q5 Q6 Q7 Q8
+α/2π(MHz) 188 187 184 187 183 186 187 187
+ωq,bare,min/2π(MHz) 3524 3516 3473 3517 3512 3513 3448 3512
+ωq,bare,max/2π(MHz) 4409 4418 4378 4434 4402 4380 4324 4417
+κ/2π(MHz) 0.59 1.05 0.93 1.07 1.06 0.88 0.73 0.87
+χ/2π(MHz) 0.53 0.41 1.10 0.56 0.41 0.36 0.68 0.52
+ωr/2π(MHz) 7121 7077 7511 7568 7363 7441 7255 7309
+(J||/J=−3.5)T1 (µs) 37.5 38.1 33.5 24.5 16.1 19.4 21.4 28.8
+(J||/J=−2.0)T1 (µs) 39.3 51.5 39.3 30.5 19.2 32.8 24.5 33.6
+(J||/J=−1.0)T1 (µs) 31.1 42.7 26.6 16.9 19.4 23.3 23.2 33.6
+(J||/J= +1.0)T 1 (µs) 32.8 45.2 39.5 37.8 15.7 28.5 23.7 24.1
+(J||/J= +2.0)T 1 (µs) 25.6 33.9 26.1 28.4 15.6 23.9 21.4 30.0
+(J||/J= +3.5)T 1 (µs) 16.5 19.3 15.8 21.0 9.4 14.9 14.7 16.8
+(J||/J=−3.5)T2R (µs) 1.47 0.53 1.54 0.42 2.40 2.04 1.37 1.62
+(J||/J=−2.0)T2R (µs) 1.77 0.48 2.60 0.51 3.18 2.62 2.21 2.23
+(J||/J=−1.0)T2R (µs) 1.04 0.96 0.53 1.00 0.65 0.59 1.48 0.84
+(J||/J= +1.0)T 2R (µs) 2.19 0.74 2.60 1.49 2.08 2.52 2.33 1.93
+(J||/J= +2.0)T 2R (µs) 3.31 1.07 4.15 1.00 5.12 3.74 5.69 3.50
+(J||/J= +3.5)T 2R (µs) 2.09 0.22 3.40 0.27 3.53 2.94 5.45 2.50
+TABLE S1. A table of measured device parameters for the 8-qubit triangular ladder.α=ω01−ω12 is the qubit anharmonicity.
+ωq,bare,minandωq,bare,maxare the minimum and maximum tunable bare qubit frequencies, respectively.κis the resonator
+linewidth and photon loss rate.χis the change in the resonator frequency when the qubit is in its first excited state versus
+its ground state.ω r is the resonator frequency when the qubit is in its ground state.ω r varies over a range of 1–2 MHz
+depending on qubit frequency due to the dispersive resonator-qubit coupling.T 1 andT 2R are the qubit decay and Ramsey
+dephasing times, respectively, between the ground and first excited states, all measured at the resonance point of 3800 MHz
+forJ ||/J∈{−3.5,−2.0,−1.0,+1.0}or 4295 MHz forJ||/J∈{+2.0,+3.5}.
+S2. WIRING AND SETUP
+The wiring and control setup is shown in Fig. S1. For arbitrary pulse generation, pulse scheduling, and signal
+digitization, we use the Xilinx RFSoC ZCU216 with experiments written using the QICK library [1]. This setup
+enables synthesis of qubit drives, readout probes, and frequency control of qubits and couplers, which we refer to as
+“fast flux”. We include bias tees to combine fast-flux lines with DC lines in the mixing chamber; these have been
+modified by replacing the capacitor with a short.
+S3. FREQUENCY CALIBRA TION
+For each of our eight qubits, we measure the frequency by performing two-tone spectroscopy while varying DC
+voltage on the corresponding flux-bias line. We fit the flux dependence of the frequency to an asymmetric-junction
+tunable-transmon model [2, 3]. In order to model the coupler’s frequency spectrum, we rely on tracking the avoided
+crossings between the coupler and its neighboring qubits, as shown in Fig. S3.
+
+=== PAGE 13 ===
+2
+Qblox SPI rack D5a
+1 k/uni03A9
+x14
+x8 DAC
+fast ﬂux qubit drive resonator probe readout
+Keysight LO (E8267D)
+300K
+x2
+Windfreak SynthHDv2
+50K
+-20dB -20dB
+4K
+1K
+100mK
+10mK
+-10dB
+DAC DAC ADC
+-15dB
+-4dB -20dB
+-6dB
+SCALINQ
+CliQ10 lowpass
+infrared ﬁlter
+SCALINQ 
+CliQ10 lowpass
+infrared ﬁlter
+Minicircuits
+ZFBT -6GW+
+bias tee (modiﬁed)
+LNF-LNC4-8C
+HEMT
+Pamtech isolator
+Pamtech isolator
+TWPA
+Quantum Machines
+QFilter-II
+low-pass ﬁlter
+-20dB
+TWPA pump rf sourcedc ﬂux bias
+ZCU216 RFSoC + intermodulation products PFE
+Minicircuits
+ZX05-14H-S+
+3.7-10 GHz mixer
+Minicircuits
+TB-994+ amplifer
+Minicircuits
+TB-994+ amplifer
+Minicircuits
+VBF-4000-S+
+Minicircuits
+VBF-3590-S+
+x2
+Minicircuits
+VBF-7331+
+x3
+Minicircuits
+VBF-7331+
+Minicircuits
+TB-994+ amplifer
+Minicircuits
+TB-994+ amplifer
+Minicircuits
+TB-994+ amplifer
+Narda-MITEQ
+AFS3 amplifer
+Minicircuits
+VBF-7331+
+Minicircuits
+VHF-5500+
+Minicircuits
+VLPX-500
+Minicircuits
+ZX05-14H-S+
+3.7-10 GHz mixer
+Minicircuits
+ZUDC6-0283-S+
+directional coupler
+x8 (qubits)
+x6 (couplers)
+CPL
+INOUT
+50/uni03A9
+CPL
+IN
+OUT
+50/uni03A9
+Minicircuits
+ZUDC20-0283-S+
+directional coupler
+Device
+Pamtech isolator
+-10dB
+-10dB
+FIG. S1. Control and measurement wiring setup.
+After calibrating the qubits and couplers, we measure frequency shifts arising from applied biases on other flux
+lines in order to characterize the flux crosstalk matrix [4, 5]. For each qubit, we generate random sets of bias voltages
+on the other flux lines and measure the difference in the target qubit’s frequency from the expected frequency based
+on the tunable-transmon model. We use least-squares minimization to find a crosstalk matrix that best maps the
+randomly generated voltages to the corresponding measured frequency. We update the expected frequency based on
+the crosstalk matrix and repeat the process to further increase the precision of the crosstalk model.
+The procedure for calibrating crosstalk on the couplers is slightly different but again relies on measuring avoided
+crossings with neighboring qubits. We pick the coupler frequency to be at the highest value in its range, which is
+identifiable by recognizing the symmetry between its avoided crossings with adjacent qubits. As before, we randomize
+
+=== PAGE 14 ===
+3
+a b
+FIG. S2. Flux crosstalk matrices.(a)DC flux bias crosstalk matrix. The color indicates the relative crosstalk, or the amount
+of magnetic flux through a qubit or coupler’s junction loop (row) originating from a different qubit or coupler’s associated flux
+bias line (column).(b)Fast-flux crosstalk matrix.
+the frequencies of all other qubits (and voltages for all other couplers), and measure the qubit-coupler avoided crossings.
+We use least-squares optimization to find the crosstalk matrix that best predicts the shift in the coupler’s avoided
+crossing due to the bias voltages on all other flux lines.
+To calibrate a crosstalk matrix for the fast-flux channels on the eight qubits, we perform the same procedure but
+replace the DC biases with varying-amplitude flat pulses from our RFSoC. In doing so, we obtain both the 14×14
+DC crosstalk and the 8×8 fast-flux crosstalk matrices, both shown in Fig. S2.
+S4. CALIBRA TION OF COUPLING STRENGTHS
+Experimentally, we determine the coupling strengths by measuring the frequency of oscillations between the qubits.
+When nearly resonant, two qubits exchange a single excitation at a rate given by
+Ω swap = 2
+√
+J2 + ∆ 2/4,(S1)
+whereJis the coupling strength and ∆ is the detuning between the qubits. Thus, we measure particle swaps while
+varying the detuning to extract the coupling strength.
+While qubits are directly coupled along the rungs of the ladder, the coupling between qubits on the legs can be
+modeled as a second-order hopping process mediated by the coupler mode, with an effective coupling given by [6],
+geff≈g1g2
+ωc−ωq
+· 2ω2
+q
+ωc(ωq +ωc) +g 12.(S2)
+Here,g 1 andg 2 are the couplings between the qubits and the couplers,g 12 is the direct coupling between the qubits,
+andωc andωq are frequencies of the coupler and (resonant) qubits, respectively, all of which are depicted in Fig. S3a.
+It is readily seen from the denominator of the first term that whenω c > ωq,g eff >0 (ignoringg 12 which is small in
+our device), and whenωc < ωq,g eff <0. Therefore, the sign ofg eff is selected by whether the coupler frequency is
+above or below the qubit frequencies.
+A consequence of the strong qubit-coupler couplings is a noticeable difference between the bare and dressed fre-
+quencies of the full 8-qubit and 6-coupler system. Therefore, when mapping qubit bias fluxes to frequencies, we
+account for frequency dressing by diagonalizing the subsystem consisting of a qubit and its neighboring couplers.
+While determining the bias fluxes needed to tune all qubits into resonance, we minimize the effects of such dressing by
+performing Ramsey experiments to measure individual qubit frequencies. In this procedure, we drive theπ/2 pulses
+of the Ramsey sequence at the target lattice frequency. The optimal flux-pulse amplitude is then identified as the
+point where the qubit-drive detuning is minimized, which is indicated by the suppression of Ramsey fringes.
+
+=== PAGE 15 ===
+4
+a b c
+FIG. S3. Tunable leg couplings.(a)The qubit-coupler-qubit subsystem used to model the effective coupling strengths between
+qubits.(b)The magnitude of the effective coupling strength|g eff|as a function of the coupler frequencyωc when the qubit
+frequency is set toωq = 3800 MHz (dashed vertical line). Blue markers indicate the measured effective coupling strengths for
+various coupler frequencies. The dark blue curve plots the expression in Eq. (S2) usingg 12 as free fit parameter. Values forg 1
+andg 2 were acquired from the values of the energy gap measured at avoided crossings of the qubit and coupler modes.(c)We
+find the frequency spectrum of the couplers by performing two-tone spectroscopy on the hybridized qubit-coupler states near
+avoided crossings between a coupler and its two neighboring qubits, utilizing the qubit’s readout hardware. The dark blue line
+is the fit to the bare coupler spectrum, and the light red lines are fits to the hybrid qubit-coupler eigenstates.
+S5. FLUX PULSE DISTOR TION
+We characterize the fast-flux pulses by measuring the qubit frequency at various time points in order to compensate
+for distortions from the ideal step pulse. We fit the frequency to a step pulse multiplied by an envelope containing
+three exponentially decaying functions [7, 8]:
+f(t) = 1 +A 1 exp(−t/τ1) +A 2 exp(−t/τ2) cos(ω2t+ϕ2) +A 3 exp(−t/τ3).(S3)
+We perform aZ-transform to find the analytic infinite-impulse response (IIR) filter of this function, and we apply the
+inverted filter to all waveforms sent through the corresponding DAC. The results in Fig. S4 demonstrate the difference
+in distortion with no calibration and after three iterations of calibrating the filter function.
+FIG. S4. Qubit frequency over time, acquired via two-tone spectroscopy, immediately after a flat step pulse is sent through the
+fast-flux line. Light blue shows the behavior before applying pulse predistortion, and dark blue shows the behavior after.
+
+=== PAGE 16 ===
+5
+S6. TIMING CALIBRA TION FOR BEAMSPLITTER MEASUREMENTS
+To perform the beamsplitter measurement, we detune the lattice into resonant qubit pairs separated from all other
+qubits by more than 20J. Measuring both the real and imaginary parts of⟨a †
+iaj⟩requires precise control over the
+phase between the two qubits. No phase difference corresponds to a measurement of the current, while a phase
+difference ofπ/2 corresponds to a measurement of the bond kinetic energy. To this end, we add an intermediate
+step between the ramp and the beamsplitter interaction where the two qubits idle with some frequency difference, as
+shown in Fig S5a. Tuning the idle durationt idle and frequency difference allows measurement of⟨a†
+iaj⟩at arbitrary
+complex phase.
+We begin by characterizing the relative arrival times of fast-flux pulses applied to different qubits, in order to apply
+detuning step pulses simultaneously. Following the procedure in Ref. [5], we send a qubit drive pulse with some delay
+relative to a fast-flux pulse on the same qubit. When the pulses are aligned, the qubit frequency is resonant with
+the drive and we measure a high excited-state population. Otherwise, the qubit frequency is off-resonant from the
+drive and no signal is measured. Figure S5b reveals a maximum excited-state population of qubit 1 for a delay of
+around 80 ns. We repeat this experiment for all qubits to determine the relative delays required for simultaneous
+qubit fast-flux pulses.
+With the pulse delays calibrated, we tune the ideal duration and frequency difference to determine the phase
+difference. Figure S5c shows the population difference between the two qubits after preparing the state|10⟩+|01⟩,
+applying the phase offset by idling, and measuring the beamsplitter population swaps. As we varyt idle on they-axis,
+we notice periodic patterns of high-contrast or no-contrast population swaps. No-contrast traces correspond to a
+total phase ofnπfor integern(since|10⟩±|01⟩is invariant under the swap Hamiltonian), and high-contrast traces
+correspond to a phase of (n+ 1
+2)π(when the state rotates into|10⟩±i|01⟩). This calibration also absorbs residual
+phase offsets from asynchronous fast-flux pulses arising due to the finite waveform timing resolution (290 ps). After
+selecting thet idle that minimizes swap contrast (for current measurement) or maximizes swap contrast (for bond
+kinetic energy), we perform another round of calibrations to fine-tune the frequency difference during idling since
+finer resolution is accessible in the fast-flux amplitude than in the waveform time delay.
+Finally, after calibrating the idle duration and frequency difference, we fit the population swap trace to a sinusoid
+to extract the time that corresponds to a phase ofπ/2, representing the rotation on the Bloch sphere from the current
+(ˆy) axis to the measurement (ˆz) axis. Since the current measurement is calibrated to have minimal contrast of the two-
+qubit swaps, we instead ramp the two qubits to a slightly off-resonant point to prepare the stateα|10⟩+
+√
+1−α2|10⟩
+for someα≈0.5, thus increasing population swap contrast. The bond kinetic energy measurement is calibrated to
+have maximum contrast, so we can directly fit a sinusoid to the population swaps of the resonantly ramped state
+|10⟩+|01⟩.
+a b c
+FIG. S5. Beamsplitter timing calibration.(a)The experimental sequence to fine-tune the acquired phaseθbetween the two
+qubits involved in the beamsplitter interaction. Witht idle and the frequency difference as control knobs,θcan be arbitrarily
+tuned, thus implementing any linear combination of effectiveσ x andσy measurements.(b)Calibration of the delay of the
+arrival of a fast-flux pulse relative to a qubit drive pulse on a qubit. Thex-axis indicates the scheduled time delay between the
+fast-flux pulse and the qubit drive. The peak of the curve indicates the optimal delay to align the two pulses in time.(c)A
+plot of the population difference between the two qubits showing resonant qubit swaps witht swap swept on thex-axis andt idle
+swept on they-axis. Tuningt idle changes the phase accumulated between the qubits, thus changing the contrast of resonant
+swaps.
+
+=== PAGE 17 ===
+6
+S7. BEAMSPLITTER MEASUREMENT
+Following evolution under a double-well HamiltonianH=ℏJ(a †
+lar +a †
+ral), the particle number difference of two
+coupled resonant harmonic oscillators can be expressed as [9, 10]
+nr(t)−nl (t) = cos(2Jt)
+[
+nr(0)−nl (0)
+]
++ i sin(2Jt)
+[
+a†
+l (0)ar(0)−a†
+r(0)al (0)
+]
+.(S4)
+Given an evolution timet BS =π/4J, a measurement of the occupation difference translates to a measurement of the
+current operator on the initial state:
+nr(tBS)−nl (tBS) =J l→r (0)/J.(S5)
+This measurement protocol detects currents in the two-qubit subspace{|00⟩,|01⟩,|10⟩,|11⟩}, with|01⟩and|10⟩
+corresponding to currents of +Jand−J, and with|00⟩and|11⟩both corresponding to zero current. While, in principle,
+there exist additional currents corresponding to higher bosonic modes of the transmon, with our device parameters
+forU,J ∥, andJ, we expect a significant portion of the current to be restricted to the two-qubit computational basis
+above. Figure S7 highlights the discrepancy between measuring the current operator directly or through the mapping
+to particle number imbalance.
+S8. TLS SPECTROSCOPY
+FIG. S6. TLS spectroscopy of the qubit mode. Excited-state population of the qubit measured after a fixed delay as a function
+of qubit frequency. Narrow dips in the population indicate enhanced relaxation at frequencies where the qubit hybridizes with
+strongly coupled environmental two-level systems (TLSs).
+As part of the process for calibrating the adiabatic ramp, we find the qubitT 1 lifetimes depend sensitively on
+frequency-dependent environmental effects. We attribute lower lifetimes to the presence of lossy two-level systems
+(TLSs) coupled to the qubit mode [11, 12]. Strongly-coupled TLSs appear as sharp dips inT 1 at qubit frequencies
+near the TLS frequency. We characterize the frequency landscape by measuring qubit populations after a short delay
+at various frequency points. Frequencies for which the qubit interacts with a TLS exhibit faster population decay than
+is expected from the baselineT 1 lifetime. For consistency, we employ fast-flux pulses to tune the qubit initialization
+and readout frequencies to be the same throughout the experiment.
+A trace of the qubit population versus frequency is shown in Fig. S6. For each qubit, we choose the frequencies for
+driving, adiabatic ramps, beamsplitter operations, and readout that minimize population decay from TLSs. Further-
+more, we design the adiabatic ramp to tune the frequency of only the sites without excitations, in order to reduce the
+range in frequency space in which the qubit might interact with lossy environmental modes.
+S9. ST A TE PREP ARA TION AND ADIABA TIC RAMP
+Our state-preparation scheme involves tuning the frequencies of all qubits onto resonance (ωlattice). To prepare the
+highest half-filling eigenstate, we excite the four highest-frequency qubits to|1⟩while they are detuned by more than
+
+=== PAGE 18 ===
+7
+JandJ ∥. We pick qubits 1, 4, 5, and 8 as the excited qubits to minimize effects ofZZcrosstalk and level crossings
+with|2⟩states. We diabatically tune the four excited qubits toωlattice and simultaneously tune the four unoccupied
+sites toωlattice−25J. This state remains the highest-energy eigenstate, since the occupied and unoccupied sites
+have a separation much larger thanJandJ ∥. Slowly ramping the resonance frequency of the four unoccupied sites
+adiabatically prepares the highest excited state of the Hamiltonian with negativeU, and thus effectively prepares the
+half-filling ground state of the Hamiltonian with positiveUandπ-shifted plaquette fluxes as seen in Eq. (2) of the
+main text. This state-preparation procedure avoids tuning the frequencies of the excited qubits to suppress particle
+loss through level crossings with environmental decay channels (see Sec. S8 for more details).
+We find that the energy levels, throughout the adiabatic ramp, depend sensitively on which qubits are excited. We
+confirm through exact diagonalization and simulations of adiabatic ramps that the state with particles on sites 1, 4,
+5, and 8 remains sufficiently gapped throughout the adiabatic evolution. We choose a ramp time of 290 ns, balancing
+the requirement for adiabatic evolution set by the energy-level gaps against the finiteT 2 coherence times.
+S10. READOUT
+We determine the state of each qubit using the qubit-state-dependent dispersive shift of its readout resonator’s
+frequency [2], performing heterodyne detection to measure the amplitude and phase of our probe signal as it passes
+through the transmission line on our device. We calibrate single-shot readout before each experimental run by
+performing 8000 experiments measuring the averaged in-phase (I) and quadrature (Q) signals when the qubit is in
+the ground state and another 8000 when the qubit is in the first excited state. We then pick a discriminator line in
+theI-Qplane that maximizes the correct assignment of prepared ground- and excited-state points to the measured
+ground (|0⟩) and excited (|1⟩) states.
+Single-shot readout fidelities for all qubits typically exceed 90% if the qubit frequencies are at maximal detuning
+from coupler frequencies (∆ qc ≈3 GHz). On the other hand, we notice that as detunings decrease, single-shot
+discrimination fidelity worsens, likely due to increased qubit-coupler hybridization and worse couplerT 1 times. For
+coupler-qubit configurations used in our experiments, single-shot readout fidelities are generally between 70% and
+90%.
+Current correlation measurements require simultaneous readout of four qubits, which is done by multiplexing
+readout tones at the frequencies of each corresponding resonator. To improve the fidelity of our data, we postselect
+by retaining only experiments in which exactly four excitations are measured across the lattice, correcting out decay
+errors. Therefore, we read out all eight qubits on our lattice simultaneously.
+S11. NUMERICAL SIMULA TIONS OF THE TRIANGULAR LADDER
+We perform simulations of state preparation and beamsplitter operation by modeling our system according to the
+Hamiltonian in Eq. (1) of the main text. All simulations in this work use the QuTiP package [13]. We restrict the
+Hilbert space to include only states with exactly four particles on the eight sites and obtain eigenstates with exact
+diagonalization. We use measured values for the coupling strengthsJ ∥ andJand for the interaction strengthU <0.
+Following the transformation in Eq. (2) of the main text, we obtain the eigenstate with the highest energy, which
+corresponds to the ground state of the Hamiltonian with positiveUandπ-shifted plaquette fluxes. Since the adiabatic
+ramp duration is itself a non-negligible fraction of the lowestT 2 lifetimes, we also simulate an adiabatic ramp with
+dephasing to compare the prepared state to the exact eigenstate. We simulate the dynamics during the ramp using
+the Lindblad master equation
+˙ρ= i[H,ρ] +
+N∑
+j
+γj
+(
+LjρL†
+j + 1
+2{LjL†
+j,ρ}
+)
+(S6)
+with
+Lj =
+√
+2a†
+jaj (S7)
+as the collapse operator corresponding to qubit dephasing andγj the dephasing rate.
+After thus obtaining the state prepared during the ramp, we extract both the expectation value of the current as
+well as the population difference during the beamsplitter interaction. We incorporate the exact detunings and onsite
+interaction strengths of qubits to match our experimental procedure as best as possible, finding that these factors
+reduce the measured current correlations from their ideal values.
+
+=== PAGE 19 ===
+8
+a b c
+FIG. S7.(a)Comparison of experimentally measured current-current correlations as a function of rung separation with
+numerical simulations. Red circles denote experimental data. Dark blue triangles show⟨JiJj⟩in the ground state computed
+using exact diagonalization. Light blue squares represent the expected population-difference correlations obtained by simulating
+the beamsplitter measurement applied to the exact ground state. Points are offset along thex-axis for visibility.(b)Same
+comparison as in (a), but incorporating dephasing during state preparation. Current operator and beamsplitter measurement
+expectation values are calculated with the simulated mixed state after the adiabatic ramp.(c)Chiral-current order parameterC
+as a function of the rung-to-leg coupling ratioJ ∥/J. Direct operator simulation of the exact ground state, as well as simulation
+of the beamsplitter measurement with and without dephasing are shown for comparison.
+While simulating unitary time evolution on the state in the four-particle subspace is straightforward, the post-ramp
+state is generally a mixed state which requires Lindbladian dynamics. To greatly simplify the simulations, we can
+recognize that pairs of qubits are well separated in frequency during the beamsplitter interaction, so we can use the
+reduced density matrix of each pair in simulating the population difference measurement. Assuming there are no
+more than four particles in total, we truncate the two-qubit bosonic space to states with at most four particles per
+site.
+Figures S7 and S8 compare the measured current–current correlations and bond kinetic energies with numerical
+simulations. In each case, we show both the correlations obtained from direct operator expectation values and
+those inferred from a simulation of the beamsplitter measurement protocol. We find that the agreement between
+experiment and simulation improves when dephasing during state preparation is included in the model. Nevertheless,
+the simulations still overestimate the measured signal amplitudes, indicating that the model does not capture all
+relevant decoherence mechanisms. Incorporating additional dissipative processes, beyond simple dephasing, may
+therefore provide a more accurate description of the experimental dynamics.
+a b c
+FIG. S8.(a)Comparison of experimentally measured bond kinetic energies with numerical simulations. Red circles denote
+experimental data. Dark blue triangles show⟨Oj⟩in the ground state computed using exact diagonalization. Light blue squares
+represent the expected population difference obtained by simulating the beamsplitter measurement applied to the exact ground
+state. Points are offset along thex-axis for visibility.(b)Same comparison as in (a), now including dephasing during state
+preparation. Red circles again represent the experimental data. Dark blue triangles denote bond kinetic energies extracted
+directly from the simulated mixed state after state preparation, while light blue squares show those obtained after simulating
+the beamsplitter measurement.(c)The bond order parameterO BO as a function of the rung-to-leg coupling ratioJ ∥/J.
+Direct operator simulation of the exact ground state, as well as simulation of the beamsplitter measurement with and without
+dephasing are shown for comparison.
+
+=== PAGE 20 ===
+9
+ADDITIONAL DA T A ON CURRENT CORRELA TIONS
+FIG. S9. Beamsplitter measurement for current-current correlations atJ ∥/J=−2.(a)Traces of measured rung-rung number
+difference correlations over time, during evolution underH BS, for all pairs of rungs. Axes represent the same rungs as in the
+correlation matrices in Fig. 3b,c of the main text. The red dashed line indicatest BS, when the population-difference correlations
+correspond to current-current correlations.(b)Simulated beamsplitter measurements of current-current correlations.
+
+=== PAGE 21 ===
+10
+ADDITIONAL DA T A ON THE BOND ORDER P ARAMETER
+FIG. S10. Beamsplitter measurement for bond kinetic energy atJ ∥/J= 1. Time traces of particle-number differences are
+plotted against evolution time underH BS. Plots correspond to the rungs in Fig. 4d,e of the main text. The two qubits of each
+rung acquire a relative phase ofπ/2 to enable the kinetic energy measurement. The red dashed line indicatest BS, when the
+population difference corresponds to the bond kinetic energy.
+[1] L. Stefanazzi, K. Treptow, N. Wilcer, C. Stoughton, C. Bradford, S. Uemura, S. Zorzetti, S. Montella, G. Cancelo,
+S. Sussman, A. Houck, S. Saxena, H. Arnaldi, A. Agrawal, H. Zhang, C. Ding, and D. I. Schuster, The QICK (Quantum
+Instrumentation Control Kit): Readout and control for qubits and detectors, Rev. Sci. Instrum.93, 044709 (2022).
+[2] P. Krantz, M. Kjaergaard, F. Yan, T. P. Orlando, S. Gustavsson, and W. D. Oliver, A quantum engineer’s guide to
+superconducting qubits, Appl. Phys. Rev.6, 021318 (2019).
+[3] J. Koch, T. M. Yu, J. Gambetta, A. A. Houck, D. I. Schuster, J. Majer, A. Blais, M. H. Devoret, S. M. Girvin, and R. J.
+Schoelkopf, Charge-insensitive qubit design derived from the Cooper pair box, Phys. Rev. A76, 042319 (2007).
+[4] J. G. Martinez, C. S. Chiu, B. M. Smitham, and A. A. Houck, Flat-band localization and interaction-induced delocalization
+of photons, Sci. Adv.9, eadj7195 (2023).
+[5] A. H. Karamlou, I. T. Rosen, S. E. Muschinske, C. N. Barrett, A. Di Paolo, L. Ding, P. M. Harrington, M. Hays, R. Das,
+D. K. Kim, B. M. Niedzielski, M. Schuldt, K. Serniak, M. E. Schwartz, J. L. Yoder, S. Gustavsson, Y. Yanay, J. A. Grover,
+and W. D. Oliver, Probing entanglement in a 2D hard-core Bose–Hubbard lattice, Nature629, 561–566 (2024).
+[6] F. Yan, P. Krantz, Y. Sung, M. Kjaergaard, D. L. Campbell, T. P. Orlando, S. Gustavsson, and W. D. Oliver, Tunable
+coupling scheme for implementing high-fidelity two-qubit gates, Phys. Rev. Appl.10, 054062 (2018).
+[7] C. Ding, M. Di Federico, M. Hatridge, A. Houck, S. Leger, J. Martinez, C. Miao, D. S. I, L. Stefanazzi, C. Stoughton,
+S. Sussman, K. Treptow, S. Uemura, N. Wilcer, H. Zhang, C. Zhou, and G. Cancelo, Experimental advances with the
+QICK (Quantum Instrumentation Control Kit) for superconducting quantum hardware, Phys. Rev. Res.6, 013305 (2024).
+[8] R. Ma, B. Saxberg, C. Owens, and et al., A dissipatively stabilized Mott insulator of photons, Nature566, 51 (2019).
+[9] B. Du, R. Suresh, S. L´ opez, J. Cadiente, and R. Ma, Probing site-resolved current in strongly interacting superconducting
+circuit lattices, Phys. Rev. Lett.133, 060601 (2024).
+[10] S. Keßler and F. Marquardt, Single-site-resolved measurement of the current statistics in optical lattices, Phys. Rev. A89,
+061601 (2014).
+[11] C. M¨ uller, J. H. Cole, and J. Lisenfeld, Towards understanding two-level-systems in amorphous solids: insights from
+quantum circuits, Rep. Prog. Phys.82, 124501 (2019).
+[12] P. V. Klimov, J. Kelly, Z. Chen, M. Neeley, A. Megrant, B. Burkett, R. Barends, K. Arya, B. Chiaro, Y. Chen,
+A. Dunsworth, A. Fowler, B. Foxen, C. Gidney, M. Giustina, R. Graff, T. Huang, E. Jeffrey, E. Lucero, J. Y. Mutus,
+O. Naaman, C. Neill, C. Quintana, P. Roushan, D. Sank, A. Vainsencher, J. Wenner, T. C. White, S. Boixo, R. Babbush,
+V. N. Smelyanskiy, H. Neven, and J. M. Martinis, Fluctuations of energy-relaxation times in superconducting qubits, Phys.
+Rev. Lett.121, 090502 (2018).
+[13] J. Johansson, P. Nation, and F. Nori, QuTiP: An open-source Python framework for the dynamics of open quantum
+systems, Comput. Phys. Commun.183, 1760–1772 (2012).
+

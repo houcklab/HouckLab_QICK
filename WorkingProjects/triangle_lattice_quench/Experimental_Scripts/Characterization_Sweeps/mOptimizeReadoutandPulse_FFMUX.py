@@ -34,9 +34,9 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
-    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1, ax=None):
+    def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1, ax=None, live_callback=None):
         #### function used to actually find the cavity parameters
         opt_index = self.cfg.get('qubit_sweep_index', 0)
         self.opt_index = opt_index
@@ -106,6 +106,9 @@ class ReadOpt_wSingleShotFFMUX(ExperimentClass):
 
                 Z_fid[idf_cavgain, idx_trans] = fid
                 self.data['data']['fid_mat'][idf_cavgain, idx_trans] = fid
+
+                if live_callback is not None:
+                    live_callback(self.data)
 
                 #### plotting
                 if idf_cavgain == 0 and idx_trans ==0:
@@ -206,10 +209,10 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False,
-                cavityAtten=None, figNum = 1, ax = None):
+                cavityAtten=None, figNum = 1, ax = None, live_callback=None):
 
         Qubit_Sweep_Index = self.cfg.get('qubit_sweep_index', 0)
         self.Readout_Index = self.cfg.get('readout_index', 0)
@@ -274,6 +277,9 @@ class QubitPulseOpt_wSingleShotFFMUX(ExperimentClass):
 
                 Z_fid[idf_qubitgain, idx_qubit] = fid
                 self.data['data']['fid_mat'][idf_qubitgain, idx_qubit] = fid
+
+                if live_callback is not None:
+                    live_callback(self.data)
 
                 #### plotting
                 if idf_qubitgain == 0 and idx_qubit ==0:
@@ -372,7 +378,7 @@ class ReadOpt_wSingleShotFF_HigherMUX(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
         #### function used to actually find the cavity parameters
@@ -611,7 +617,7 @@ class QubitPulseOpt_wSingleShotFF_HigherMUX(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, ground = 0, excited = 1, progress=False, plotDisp = True, plotSave = True, calibrate=False,
                 cavityAtten=None, figNum = 1, Qubit_Sweep_Index = 0):
@@ -854,7 +860,7 @@ class ROTimingOpt_wSingleShotFFMUX(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data', cfg=None, config_file=None, progress=None,
                  calibrate = True, cavityAtten =None):
-        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,outerFolder=outerFolder, cfg=cfg, config_file=config_file, progress=progress)
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix, cfg=cfg, config_file=config_file, progress=progress)
 
     def acquire(self, progress=False, plotDisp = True, plotSave = True, calibrate=False, cavityAtten=None, figNum = 1):
         #### function used to actually find the cavity parameters

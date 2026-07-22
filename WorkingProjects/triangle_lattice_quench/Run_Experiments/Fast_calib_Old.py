@@ -119,7 +119,7 @@ for Readout_Point in [None]:
 
         if RunTransmissionSweep:
             Instance_trans = CavitySpecFFMUX(path="TransmissionFF", cfg=config | Trans_relevant_params,
-                                             soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+                                             soc=soc, soccfg=soccfg)
             data = Instance_trans.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
 
             #update the transmission frequency to be the peak
@@ -128,21 +128,21 @@ for Readout_Point in [None]:
 
         if RunFirst2ToneSpec:
             Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | First_Spec_params,
-                                soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+                                soc=soc, soccfg=soccfg)
             data = Instance_spec.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
             config["qubit_freqs"][0] = Instance_spec.qubitFreq
             print("Qubit frequency found at: ", config["qubit_freqs"][0])
 
         if RunSecond2ToneSpec:
             Instance_spec = QubitSpecSliceFFMUX(path="QubitSpecFF", cfg=config | Second_Spec_params,
-                                soc=soc, soccfg=soccfg, outerFolder=outerFolder)
+                                soc=soc, soccfg=soccfg)
             data = Instance_spec.acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
             config["qubit_freqs"][0] = Instance_spec.qubitFreq
             print("Qubit frequency found at: ", config["qubit_freqs"][0])
 
         if RunAmplitudeRabi:
             data = AmplitudeRabiFFMUX(path="AmplitudeRabi", cfg=config | Amplitude_Rabi_params,
-                                soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
+                                soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False, ax = next(iter_axs))
 
             if 'ampl_fit' in data['data']:
                 config["qubit_gains"][OptQubit_index] = data['data']['pi_gain_fit'] / 32766
@@ -154,7 +154,7 @@ for Readout_Point in [None]:
 
         if SingleShot_ReadoutOptimize:
             ax = next(iter_axs)
-            data = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", outerFolder=outerFolder,
+            data = ReadOpt_wSingleShotFFMUX(path="SingleShot_OptReadout", 
                                      cfg=config | SS_params | SS_R_params,soc=soc,soccfg=soccfg).acquire_save(plotDisp=True, ax = ax)
             fid_mat, trans_fpts, gain_pts = (data['data'][key] for key in ('fid_mat', 'trans_fpts', 'gain_pts'))
             ro_opt_index = data['data']['ro_opt_index']
@@ -174,7 +174,7 @@ for Readout_Point in [None]:
 
         if SingleShot_QubitOptimize:
             ax = next(iter_axs)
-            data = QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", outerFolder=outerFolder,
+            data = QubitPulseOpt_wSingleShotFFMUX(path="SingleShot_OptQubit", 
                                            cfg=config | SS_params | SS_Q_params,soc=soc,soccfg=soccfg).acquire_save(plotDisp=True, ax = ax)
             fid_mat, trans_fpts, gain_pts = (data['data'][key] for key in ('fid_mat', 'qubit_fpts', 'gain_pts'))
             ind = np.unravel_index(np.argmax(fid_mat, axis=None), fid_mat.shape)
@@ -193,7 +193,7 @@ for Readout_Point in [None]:
             print("Qubit frequency found at: ", config["qubit_freqs"][sweep_index])
 
         if SingleShot:
-            ss = SingleShotFFMUX(path="SingleShot", outerFolder=outerFolder,
+            ss = SingleShotFFMUX(path="SingleShot", 
                                    cfg=config | SS_params, soc=soc,soccfg=soccfg)
             ss_data = ss.acquire()
             try:
@@ -202,7 +202,7 @@ for Readout_Point in [None]:
                 ss.display(ss_data, plotDisp=True, block=False)
         Qubit_configs.append(QubitConfig(config, Q, len(Qubit_Readout), OptReadout_index, OptQubit_index, varname_FF))
 
-        # TimeDomainSpec(path="TimeDomainSpec", outerFolder=outerFolder,
+        # TimeDomainSpec(path="TimeDomainSpec", 
         #                           cfg=config | {'reps': 5,
         #                          'start':1, 'step': 16, 'expts': 50,}, soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True)
 

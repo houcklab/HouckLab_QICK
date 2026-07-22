@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import root_scalar
-from Device_calib.qt_qubit_sys import M_qubit_sys
+from .qt_qubit_sys import M_qubit_sys
 
 class VoltageConfiguration:
     '''The interface for fast-flux-gain to qubit frequency.
@@ -11,7 +11,7 @@ class VoltageConfiguration:
         Rules: 
             1. Frequencies in MHz, e.g. 4000
             2. Fluxes in e.g. -0.25, 0, 1
-            3. J_||/J@<w_q> as a string for tunable couplers: e.g. '3@3800' gives J_||/J=3 given qubit frequencies 3800 MHz
+            3. J_||/|J|@<w_q> as a string for tunable couplers: e.g. '3@3800' gives J_||/|J|=3 given qubit frequencies 3800 MHz
 
             A. Omitted qubit names default to 0 flux (will be noted), invalid names raise a ValueError.
         '''
@@ -57,7 +57,7 @@ class VoltageConfiguration:
                 self.flux_map[qubit] = value
 
     def desired_freqs_to_fast_flux(self, desired_freqs:dict)->dict:
-        '''Convert a dictionary of desired frequencies to a dictionary of fast flux gains'''
+        '''Convert a dictionary of desired qubit frequencies {'Q1':3800, ...} to a dictionary of fast flux gains'''
         gains_dict = {}
         for q_name, desired_freq in desired_freqs.items():
             if q_name not in self.device.qubits:
@@ -68,15 +68,15 @@ class VoltageConfiguration:
             gains_dict[q_name] = (desired_flux - current_flux) * self.device.transmons[q_name].ffgain_quantum
         return gains_dict
 
-    def fast_fluxes_to_freqs(self, fast_fluxes:dict)->dict:
-        '''Convert a dictionary of fast fluxes to a dictionary of all frequencies'''
+    def fast_flux_to_dressed_freqs(self, fast_fluxes:dict)->dict:
+        '''Convert a dictionary of qubit fast fluxes {'Q1':1000, ...} to a dictionary of all frequencies'''
         freqs_dict = {}
         for q_name, fast_flux in fast_fluxes.items():
             if q_name not in self.device.qubits:
                 raise ValueError(f"Unknown qubit name: {q_name}")
             current_flux = self.flux_map[q_name]
             desired_flux = current_flux + fast_flux / self.device.transmons[q_name].ffgain_quantum
-            freqs_dict[q_name] = self.device.transmons[q_name].freq(desired_flux)
+            freqs_dict[q_name] = self.bare_to_dressed_freq(q_name, self.device.transmons[q_name].freq(desired_flux))
         return freqs_dict
 
     def bare_to_dressed_freq(self, q_name:str, bare_freq:float)->float:

@@ -83,12 +83,12 @@ for Q in [3,4,5,6,7,8]:
     # This begins the booleans
 
     if RunT1:
-        T1MUX(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs1))
+        T1MUX(path="T1", cfg=config | T1_params, soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs1))
     fig1.canvas.draw()
     fig1.canvas.flush_events()
     if RunT2:
         T2RMUX(path="T2R", cfg=config | T2R_params,
-                  soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs2))
+                  soc=soc, soccfg=soccfg).acquire_save_display(plotDisp=True, block=False, ax=next(iter_axs2))
     fig2.canvas.draw()
     fig2.canvas.flush_events()
 

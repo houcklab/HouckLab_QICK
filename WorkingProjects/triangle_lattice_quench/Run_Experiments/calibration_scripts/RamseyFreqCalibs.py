@@ -46,16 +46,16 @@ for Q in [5]:
 
     if Run_FF_v_Ramsey:
         data = RamseyVsFF(path="FF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params,
-                   soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                   soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
         Gain_list.append(data['data'].get('center_gain'))
     if Run_CompFF_v_Ramsey:
         print('running comp FF')
         RamseyVsFFComp(path="CompFF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params,
-                   soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                   soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
     if Run_RampFF_v_Ramsey:
         print('running ramp FF')
         RamseyVsFF_Ramp(path="RampFF_vs_Ramsey", cfg=config | FF_sweep_Ramsey_relevant_params | FF_Ramp_params,
-                   soc=soc, soccfg=soccfg, outerFolder=outerFolder).acquire_display_save(plotDisp=True, block=False)
+                   soc=soc, soccfg=soccfg).acquire_display_save(plotDisp=True, block=False)
 
 print([int(np.round(g)) if g is not None else g for g in Gain_list])
 plt.show()

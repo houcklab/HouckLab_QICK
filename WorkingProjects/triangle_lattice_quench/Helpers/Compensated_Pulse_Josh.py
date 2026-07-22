@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.signal import lfilter
+from functools import lru_cache
 import matplotlib.pyplot as plt
 
 def sinusoid(ampl, period, length=256, plot=False):
@@ -77,16 +78,10 @@ def Compensated_Pulse(final_gain, initial_gain, Qubit):
 
     return Compensate(waveform, initial_gain, Qubit)
 
+@lru_cache(maxsize=None)
 def load_ab_file(ab_file):
-    ab = np.loadtxt(ab_file, dtype=np.complex128)
-    # ab = IIR_DICT.get(ab_file)
-    # if ab is None:
-    #     ab = np.loadtxt(ab_file, dtype=np.complex128)
-    #     print("triangle_lattice_quench\\Helpers\\Compensated_Pulse_Josh.py: To avoid the time cost "
-    #            f"of np.loadtxt() (and this print statement), I suggest hardcoding {ab_file} "
-    #            "at the bottom of this file.")
-
-    return ab
+    """Load IIR coefficients for one flux line, cached per file path. (Loading from disk is costly)"""
+    return np.loadtxt(ab_file, dtype=np.complex128)
 
 # IMPORTANT: COPY OVER ALL DECIMAL PLACES or unexpected behavior may arise!
 array = np.array

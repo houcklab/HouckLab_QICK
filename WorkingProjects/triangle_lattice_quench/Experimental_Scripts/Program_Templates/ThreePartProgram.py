@@ -48,7 +48,7 @@ class ThreePartProgramOneFF(FFAveragerProgramV2):
         # FF.FFPulses_compensated(self, self.FFReadouts, self.FFExpts, self.cfg["res_length"])
         # self.delay(0.1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+            self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -92,7 +92,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"])
         # self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+            self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive')
         self.wait_auto()
         self.delay_auto(10)  # us
@@ -145,7 +145,7 @@ class ThreePartProgramTwoFF(ThreePartProgramOneFF):
 #             # Not enough waveform memory for the entire 20 us res_length so compensate the first 3 us
 #         self.FFPulses(self.FFReadouts, self.cfg["res_length"]-3.0)
 #         self.measure(pulse_ch=self.cfg["res_ch"],
-#                      adcs=self.cfg["ro_chs"], pins=[0],
+#                      adcs=self.cfg["ro_chs"],
 #                      adc_trig_delay=self.us2cycles(self.cfg["adc_trig_delay"]),
 #                      wait=True,
 #                      syncdelay=self.us2cycles(10))

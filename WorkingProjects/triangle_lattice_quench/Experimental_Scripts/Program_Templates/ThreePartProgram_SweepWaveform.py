@@ -27,7 +27,7 @@ class ThreePartProgram_SweepOneFF(SweepWaveformAveragerProgram):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0],t=adc_trig_delay)
+            self.trigger(ros=[ro_ch], t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
         self.wait(self.cfg["res_length"] + 1)
         self.delay(self.cfg["res_length"] + 10)  # us
@@ -68,7 +68,7 @@ class ThreePartProgram_SweepTwoFF(SweepWaveformAveragerProgram):
         self.FFPulses(self.FFReadouts, self.cfg["res_length"], t_start=0)
         self.delay(1)
         for ro_ch, adc_trig_delay in zip(self.cfg["ro_chs"], self.cfg["adc_trig_delays"]):
-            self.trigger(ros=[ro_ch], pins=[0], t=adc_trig_delay)
+            self.trigger(ros=[ro_ch],  t=adc_trig_delay)
         self.pulse(cfg["res_ch"], name='res_drive', t=0)
         self.wait(self.cfg["res_length"] + 1)
         self.delay(self.cfg["res_length"] + 10)  # us

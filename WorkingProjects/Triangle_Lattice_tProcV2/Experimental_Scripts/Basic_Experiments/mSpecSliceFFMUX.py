@@ -176,30 +176,32 @@ class QubitSpecSliceFFMUX(ExperimentClass):
         avgamp0 = np.abs(sig)
 
         if ax is None:
-            plt.figure()
+            fig, ax = plt.subplots()
+            own_fig = True
         else:
-            plt.sca(ax)
-        plt.plot(x_pts, avgi, '.-', color = 'Orange', label="I")
-        plt.plot(x_pts, avgq, '.-', color = 'Blue', label="Q")
+            fig = ax.figure
+            own_fig = False
+
+        ax.plot(x_pts, avgi, '.-', color='Orange', label="I")
+        ax.plot(x_pts, avgq, '.-', color='Blue', label="Q")
 
         if hasattr(self, 'qubitFreq_lorentz') and hasattr(self, 'lorentz_fit') and self.lorentz_fit is not None:
-            plt.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
+            ax.plot(x_pts, self.lorentz_fit, '-', linewidth=2)
             chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_lorentz else ""
-            plt.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"{chosen_text}Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
+            ax.axvline(self.qubitFreq_lorentz, color='black', linestyle='--', label=f"{chosen_text}Lorentz Max: {self.qubitFreq_lorentz:.2f} MHz")
         if hasattr(self, 'qubitFreq_argmax'):
             chosen_text = "[Used] " if self.qubitFreq == self.qubitFreq_argmax else ""
-            plt.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"{chosen_text}Argmax: {self.qubitFreq_argmax:.2f} MHz")
+            ax.axvline(self.qubitFreq_argmax, color='gray', linestyle=':', label=f"{chosen_text}Argmax: {self.qubitFreq_argmax:.2f} MHz")
 
-        plt.ylabel("a.u.")
-        plt.xlabel("Qubit Frequency (GHz)")
-        plt.title(self.titlename)
-        plt.legend()
+        ax.set_ylabel("a.u.")
+        ax.set_xlabel("Qubit Frequency (GHz)")
+        ax.set_title(self.titlename)
+        ax.legend()
 
-        plt.savefig(self.iname[:-4] + '_IQ.png')
-        if plotDisp:
+        fig.savefig(self.iname[:-4] + '_IQ.png')
+        if plotDisp and own_fig:
             plt.show(block=block)
             plt.pause(0.1)
-        # plt.close(figNum)
 
 
 

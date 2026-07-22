@@ -1,0 +1,513 @@
+% !TEX program = pdflatex
+% Compile with: pdflatex 2026-05-06_qick_quench_tutorial.tex
+% Or upload to overleaf.com (no local install needed).
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}
+
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codegreen}{rgb}{0.0,0.5,0.0}
+\definecolor{codepurple}{rgb}{0.4,0.0,0.4}
+\definecolor{codeblue}{rgb}{0.0,0.0,0.7}
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  numbers=left,
+  numberstyle=\tiny\color{codegray},
+  numbersep=8pt,
+  keywordstyle=\color{codeblue},
+  stringstyle=\color{codepurple},
+  commentstyle=\color{codegreen}\itshape,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codegray},
+  framerule=0.3pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  upquote=true,
+  columns=fullflexible,
+  keepspaces=true,
+  literate={~}{{$\sim$}}1
+}
+
+\newtcolorbox{tryit}{colback=yellow!10,colframe=yellow!50!black,
+  title={Try it},fonttitle=\bfseries,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\newtcolorbox{pitfall}{colback=red!5,colframe=red!50!black,
+  title={Pitfall},fonttitle=\bfseries,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\newtcolorbox{notebox}{colback=blue!5,colframe=blue!50!black,
+  title={Note},fonttitle=\bfseries,boxrule=0.5pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+
+\title{\bfseries QICK + Quench Experiment: A Code-Level Tutorial}
+\author{For the 8-qubit triangular-ladder simulator (\texttt{HouckLab\_QICK})}
+\date{2026-05-06}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{How to use this document}
+This is a code-level walkthrough of every piece you need to read, edit, or extend the quench experiments in this repository. It is \emph{not} a physics tutorial---for that, see the prior paper \texttt{prev\_work/2603.16993v1.pdf} and the protocol document \texttt{report/2026-04-29\_superconducting\_triangular\_ladder\_generic\_quench\_measurement\_protocol.md}.
+
+The chapters build on each other. If something feels too dense, skip the code listing and read the paragraph above and below it---the prose tells you the why, the code shows the how.
+
+Companion file: \texttt{report/2026-05-06\_qick\_quench\_tutorial\_demos.py}. Each demo is referenced from a \emph{Try it} box in the relevant chapter.
+
+\textbf{Prereqs.} Python 3.12, the project venv at \verb|.venv|, the \texttt{qick} package version pinned in the project requirements (0.2.367 at the time of writing). Production runs go through the Desq GUI (\texttt{MasterProject/Client\_modules/Desq\_GUI/}); the demos in this document are deliberately small and many run without an RFSoC at all.
+
+\section{The control stack}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{RFSoC hardware} (Xilinx ZCU111 or similar). Has DACs and ADCs and a softcore processor (\textbf{tProc}) on the FPGA. The tProc executes a tiny instruction stream that triggers DAC outputs and ADC captures with sub-nanosecond timing.
+  \item \textbf{QICK firmware} (the bitstream). Defines what generators, readouts, and tProc resources are available. Uploaded once when the board boots.
+  \item \textbf{Pyro4 proxy} on the RFSoC. The board runs a Python server that exposes the firmware as a Pyro4 object. Your laptop talks to it over the network.
+  \item \textbf{\texttt{soc} and \texttt{soccfg} on your laptop.} \texttt{soc} is the Pyro4 proxy object (RPC stub). \texttt{soccfg} is a Python-side description of the firmware (number of generators, sample rates, channel types). You almost never need \texttt{soc} directly except for low-level resets; you pass it to \texttt{prog.acquire(soc, ...)}.
+  \item \textbf{QICK Python API.} \verb|qick.asm_v2.AveragerProgramV2| is the base class for the tProc programs you write. It compiles a Python description into the tProc instruction stream.
+  \item \textbf{\texttt{ExperimentClass}} (\texttt{WorkingProjects/triangle\_lattice\_quench/Experiment.py}). The lab's abstract base for an ``experiment'': owns paths, file naming, save/load, and standardises the \texttt{acquire} / \texttt{display} / \texttt{save\_data} contract.
+  \item \textbf{\texttt{FFAveragerProgramV2}} (\texttt{Experimental\_Scripts/Program\_Templates/AveragerProgramFF.py}). Subclass of \texttt{AveragerProgramV2} with helpers for the lab's Fast-Flux infrastructure (\texttt{FFPulses}, \texttt{FFDefinitions}, etc.). Every program in this repo inherits from this.
+  \item \textbf{Concrete experiments.} \texttt{Basic\_Experiments/}, \texttt{Characterization\_Sweeps/}, \texttt{quench\_experiments/}---each file a different measurement. They subclass \texttt{ExperimentClass} (the host-side wrapper) and \texttt{FFAveragerProgramV2} (the firmware-side program).
+\end{enumerate}
+
+The host-side wrapper (\texttt{ExperimentClass} subclass) and the firmware-side program (\texttt{FFAveragerProgramV2} subclass) are usually defined in \emph{the same file}, e.g. \texttt{mTransmissionFFMUX.py} contains both \texttt{CavitySpecFFMUX} (host) and \texttt{CavitySpecFFProg} (firmware).
+
+\begin{notebox}
+The Pyro proxy is a thin wrapper. Calls like \texttt{soc.reset\_gens()} or \texttt{soc.config\_gen(...)} are RPCs that round-trip to the FPGA. \texttt{prog.acquire(soc, ...)} compiles the program locally, uploads it, runs it, and pulls the result back. Each \texttt{acquire} = one round trip.
+\end{notebox}
+
+\section{QICK ASM v2 in 10 minutes}
+A QICK program is an \texttt{AveragerProgramV2} subclass with two methods: \texttt{\_initialize} (runs once, sets up declarations) and \texttt{\_body} (runs every shot, defines the timeline).
+
+\subsection{The two phases}
+\begin{lstlisting}
+from qick.asm_v2 import AveragerProgramV2
+
+class TinyProg(AveragerProgramV2):
+    def _initialize(self, cfg):
+        # Declarations: which DAC/ADC channels you'll use, what
+        # mixer LO sits on each, what gauss/const pulses you'll need.
+        self.declare_gen(ch=cfg["qubit_ch"], nqz=2, mixer_freq=4000)  # qubit DAC
+        self.declare_gen(ch=cfg["res_ch"],   nqz=1, mixer_freq=-1750,
+                         mux_freqs=cfg["res_freqs"], mux_gains=cfg["res_gains"],
+                         ro_ch=cfg["ro_chs"][0])
+        for ch, f in zip(cfg["ro_chs"], cfg["res_freqs"]):
+            self.declare_readout(ch=ch, length=cfg["readout_length"],
+                                 freq=f, gen_ch=cfg["res_ch"])
+        self.add_gauss(ch=cfg["qubit_ch"], name="qubit_gauss",
+                       sigma=cfg["sigma"], length=4*cfg["sigma"])
+        self.add_pulse(ch=cfg["qubit_ch"], name="pi_pulse", style="arb",
+                       envelope="qubit_gauss", freq=cfg["qubit_freqs"][0],
+                       phase=90, gain=cfg["qubit_gains"][0])
+        self.add_pulse(ch=cfg["res_ch"], name="res_drive", style="const",
+                       length=cfg["res_length"], mask=cfg["ro_chs"])
+
+    def _body(self, cfg):
+        # Timeline: in time order, what fires when.
+        self.pulse(ch=cfg["qubit_ch"], name="pi_pulse", t=0)
+        self.delay_auto(0.05)  # wait until pi pulse done + 50 ns slack
+        for ro_ch, td in zip(cfg["ro_chs"], cfg["adc_trig_delays"]):
+            self.trigger(ros=[ro_ch], pins=[0], t=td)
+        self.pulse(ch=cfg["res_ch"], name="res_drive")
+        self.wait_auto()
+        self.delay_auto(10)  # 10 us relax delay
+\end{lstlisting}
+
+The \emph{compile} step (the \texttt{prog} builds an instruction stream) reads \texttt{\_initialize} once. The \emph{run} step on the tProc executes \texttt{\_body} for each shot of the inner loop.
+
+\subsection{Time}
+\texttt{t=0.05} is microseconds, absolute from the program start. \texttt{t='auto'} means ``immediately after the previous pulse on this generator finishes.'' \texttt{delay\_auto(x)} pads the timeline so the next thing happens \texttt{x} microseconds after the latest pulse. \texttt{wait\_auto()} stalls the tProc until any pending readout actually completes (so you don't blast the next pulse on top of a still-recording ADC).
+
+\subsection{The qubit drive vs the resonator drive}
+On this device:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{qubit\_ch = 9} is one DAC; \emph{all} qubit pulses go here. You can declare many pulses (\texttt{add\_pulse(name="...")}) but only play one at a time.
+  \item \texttt{res\_ch = 8} is a multiplexed DAC; you declare it once with \texttt{mux\_freqs=[f1, f2, ...]} and it generates several CW tones simultaneously when fired. The catch: it has \emph{no waveform memory}---only \texttt{style="const"} (CW). You cannot envelope-shape the readout pulse on this hardware.
+  \item Eight FF DAC channels (one per qubit) drive flux. Independent; can fire simultaneously.
+\end{itemize}
+
+\begin{pitfall}
+Trying to play two qubit pulses at the same time on \texttt{qubit\_ch} is silently sequential---one runs after the other, not at the same time. If you want simultaneous excitation of multiple qubits, you have to either chain them or use a different mechanism.
+\end{pitfall}
+
+\begin{tryit}
+Demo 1 in the companion file constructs a \texttt{TinyProg} like the listing above and prints its compiled tProc dump without uploading anything to hardware.
+\end{tryit}
+
+\section{The Fast-Flux (FF) system}
+The reason every program in this repo subclasses \texttt{FFAveragerProgramV2} rather than \texttt{AveragerProgramV2}.
+
+\subsection{Why fast flux exists}
+Each qubit has its own flux line (one of eight FF DACs). When you bias a qubit, its frequency moves. Bringing two qubits onto resonance with each other (by detuning one) lets them exchange-couple at a rate set by the always-on inductive coupler between them. This is the chevron physics. It's also how you build the rung beam-splitter readout for current measurements (paper Eq. 4).
+
+Important distinction:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Qblox D5a DC voltages} (channels 9--14) sit on the \emph{leg-coupler} elements (C1--C6). Set quasi-statically between runs. Tunes \texttt{Jtilde\_||}.
+  \item \textbf{QICK FF DAC channels 0--7} sit on each \emph{qubit's} flux line. Switched fast (per-shot, per-segment). Detunes the qubit during the experiment.
+\end{itemize}
+
+\subsection{Crosstalk compensation}
+Flux lines have crosstalk: setting current on FF channel \(i\) also moves the frequency of qubit \(j\ne i\). The lab characterises this as an 8x8 matrix and uses \texttt{Compensated\_Pulse\_Josh.py} to invert it. When you say ``play a Pulse-FF on qubit 3,'' you actually fire all 8 FF channels with amplitudes that produce \emph{only} a pure detuning of Q3.
+
+Concretely, \texttt{Pulse\_FF} in the \texttt{Qubit\_Parameters} dict is an 8-element array per qubit:
+\begin{lstlisting}
+quench_readout_params = {
+    "1": {"Pulse_FF": [2886, 0, -14316, -13195, -7754, 17156, -1880, -1076],
+          "Readout": {..., "FF_Gains": [...]},
+          "Qubit": {...}},
+    ...
+}
+\end{lstlisting}
+The 8 numbers are pre-compensated DAC values; firing all 8 simultaneously produces the desired detuning of qubit 1 with zero detuning on the others.
+
+\subsection{The cfg \texttt{FF\_Qubits} dict}
+\texttt{FFAveragerProgramV2} expects a top-level \texttt{cfg["FF\_Qubits"]} keyed by qubit string \texttt{'1'..'8'} with one entry each. Each entry has slots for the FF amplitude during each \emph{phase} of the experiment:
+\begin{lstlisting}
+cfg["FF_Qubits"] = {
+    "1": {"channel": 0, "delay_time": 0.0,
+          "Gain_Pulse":   2886,    # FF during the qubit-drive segment
+          "Gain_Expt":    0,       # FF during the experiment segment
+          "Gain_BS":      0,       # FF during a beam-splitter segment
+          "Gain_Dynamics": 0,      # FF during the dynamics segment
+          "Gain_Readout": 0,       # FF during the readout pulse
+          "ramp_initial_gain": 2886},
+    "2": {...}, ...
+}
+\end{lstlisting}
+\texttt{FFPulses(self.FFPulse, length\_us)} is a helper from \texttt{FF\_utils.py} that reads \texttt{FF\_Qubits[i]["Gain\_Pulse"]} for each \(i\), packs them into a const pulse on each FF channel, and fires all 8 simultaneously for \texttt{length\_us}. \texttt{FFPulses(self.FFReadouts, ...)} does the same with \texttt{Gain\_Readout}, etc.
+
+\subsection{Time-varying FF: \texttt{IQArray}}
+For the ramp / quench / dynamics segments you don't want a flat pulse---you want a programmed waveform, e.g. a smooth ramp from \texttt{Gain\_Pulse} down to \texttt{Gain\_Expt}. Helpers in \texttt{FFEnvelope\_Helpers.py} build those arrays:
+\begin{lstlisting}
+IQArray_ramp = FFEnvelope_Helpers.CompensatedRampArrays(
+    cfg, 'Gain_Pulse', 'ramp_initial_gain', 'Gain_Expt',
+    cfg['expt_samples_ramp'])
+\end{lstlisting}
+This produces 8 length-\texttt{expt\_samples\_ramp} arrays (one per FF channel), each a smooth ramp with the crosstalk pre-compensated. \texttt{FFPulses\_direct(self.FFExpts, length, ..., IQPulseArray=IQArray\_ramp)} fires those arrays.
+
+\begin{notebox}
+Sample units: 1 sample = 0.291 ns (the QICK fabric clock). \texttt{expt\_samples\_ramp = 200} means a ~58 ns ramp.
+\end{notebox}
+
+\section{The \texttt{ExperimentClass} lifecycle}
+Every host-side wrapper inherits from \texttt{ExperimentClass}. The contract is:
+\begin{lstlisting}
+class MyExperiment(ExperimentClass):
+    def __init__(self, soc=None, soccfg=None, path='', outerFolder='',
+                 prefix='data', cfg=None, config_file=None, progress=None):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, prefix=prefix,
+                         outerFolder=outerFolder, cfg=cfg,
+                         config_file=config_file, progress=progress)
+
+    def acquire(self, progress=False):
+        prog = MyProg(self.soccfg, cfg=self.cfg, reps=self.cfg["reps"],
+                      final_delay=self.cfg["relax_delay"], initial_delay=10.0)
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get("rounds", 1),
+                               progress=progress)
+        # Pull what you want out of iq_list (shape:
+        # [n_readouts, 1, n_expts, 2 (I or Q)] for typical sweeps).
+        avgi = iq_list[0][0, :, 0]; avgq = iq_list[0][0, :, 1]
+        self.data = {"config": self.cfg,
+                     "data": {"avgi": avgi, "avgq": avgq, ...}}
+        return self.data
+
+    def display(self, data=None, plotDisp=True, ax=None, ...):
+        # Plot. If `ax` is given, plot onto it; otherwise make a fresh figure.
+        ...
+
+    def save_data(self, data=None):
+        super().save_data(data=data["data"])  # base class writes h5 + json + png
+\end{lstlisting}
+The base class auto-generates a path like \verb|<outerFolder>/<path>/<path>_YYYY_MM_DD/<path>_YYYY_MM_DD_HH_MM_SS_data.h5| from \texttt{path}, \texttt{prefix}, and the current time. \texttt{self.fname} (h5 file) and \texttt{self.iname} (image file) are pre-set; the experiment's \texttt{display} writes the PNG to \texttt{self.iname}.
+
+The standard run order on the host side is \texttt{acquire $\rightarrow$ display $\rightarrow$ save\_data}. Some experiments fold the save into \texttt{acquire} (e.g. \texttt{ReadOpt} writes its image inside the sweep loop). Most don't.
+
+\section{Walking \texttt{mTransmissionFFMUX} line by line}
+The simplest experiment in the repo. \emph{Resonator spectroscopy:} sweep the readout drive frequency and read the IQ. The cavity dip tells you the dressed resonator frequency.
+
+\subsection{Firmware side: \texttt{CavitySpecFFProg}}
+\begin{lstlisting}
+class CavitySpecFFProg(FFAveragerProgramV2):
+    def _initialize(self, cfg):
+        # 1. Declare the (mux) readout DAC.
+        self.declare_gen(ch=cfg['res_ch'], ro_ch=cfg['ro_chs'][0],
+                         nqz=cfg["res_nqz"],
+                         mixer_freq=cfg["mixer_freq"],
+                         mux_freqs=cfg['res_freqs'],
+                         mux_gains=cfg['res_gains'],
+                         mux_phases=[0]*len(cfg['res_freqs']))
+        # 2. Declare the readout (one ADC channel per readout entry).
+        for ch, f in zip(cfg['ro_chs'], cfg['res_freqs']):
+            self.declare_readout(ch=ch, length=cfg['readout_length'],
+                                 freq=f, phase=0, gen_ch=cfg['res_ch'])
+        # 3. Declare the resonator drive pulse.
+        self.add_pulse(ch=cfg['res_ch'], name="res_pulse", style="const",
+                       length=cfg["res_length"], mask=cfg["ro_chs"])
+        # 4. Wire up the FF infrastructure (defines self.FFPulse, FFReadouts,
+        #    FFExpts; and associated helper waveforms).
+        FF.FFDefinitions(self)
+        # 5. Add the inner sweep loop: vary the mux freq across the cavity.
+        self.add_loop("freq_loop", self.cfg["TransNumPoints"])
+        self.freq_loop = QickSweep1D("freq_loop",
+                                     start=-self.cfg["TransSpan"]/2,
+                                     end=+self.cfg["TransSpan"]/2)
+        # 6. The sweep variable is the mixer frequency offset.
+        self.cfg['mixer_freq_loop'] = self.cfg['mixer_freq'] + self.freq_loop
+
+    def _body(self, cfg):
+        # Hold all FF channels at the Pulse_FF baseline during the readout.
+        self.FFPulses(self.FFPulse, cfg['readout_length'] + 1)
+        # Trigger ADC for each readout and play the readout drive.
+        for ro_ch, td in zip(cfg['ro_chs'], cfg['adc_trig_delays']):
+            self.trigger(ros=[ro_ch], pins=[0], t=td)
+        self.pulse(cfg['res_ch'], name='res_pulse')
+        self.wait_auto()
+        self.delay_auto(cfg['cav_relax_delay'])
+        # Compensation: undo the FF pulse so the qubit sees zero net flux.
+        self.FFPulses(-1 * self.FFPulse, cfg['readout_length'] + 1)
+\end{lstlisting}
+The full file is in \texttt{Experimental\_Scripts/Basic\_Experiments/mTransmissionFFMUX.py}. What's worth noticing:
+\begin{itemize}[leftmargin=*]
+  \item Step 4 (\texttt{FF.FFDefinitions(self)}) is a one-line setup that internally calls \texttt{declare\_gen} for every FF channel from \texttt{cfg["fast\_flux\_chs"]}.
+  \item Step 5+6 use \texttt{QickSweep1D}, a \emph{tProc-side} loop. The frequency variable lives on the firmware---no Python-side loop fires the program 91 times. The whole 91-point sweep is one upload.
+  \item The \texttt{-1 * self.FFPulse} compensation at the end. FF DACs aren't true DC; over many shots an unbalanced FF pulse accumulates an offset in the LPF that follows the DAC. Always pair a \texttt{+FF} with a matching \texttt{-FF} to integrate to zero.
+\end{itemize}
+
+\subsection{Host side: \texttt{CavitySpecFFMUX}}
+\begin{lstlisting}
+class CavitySpecFFMUX(ExperimentClass):
+    def acquire(self, progress=False):
+        prog = CavitySpecFFProg(self.soccfg, cfg=self.cfg,
+                                reps=self.cfg["reps"],
+                                final_delay=self.cfg["relax_delay"],
+                                initial_delay=10.0)
+        iq_list = prog.acquire(self.soc, load_envelopes=True,
+                               rounds=self.cfg.get("rounds", 1),
+                               progress=progress)
+        # Sweep frequency points (firmware reports them back).
+        fpts = prog.get_pulse_param("res_pulse", "freq", as_array=True)
+        self.data = {"config": self.cfg,
+                     "data": {"results": iq_list, "fpts": fpts}}
+        self.analyze(self.data)        # Lorentzian fit
+        return self.data
+\end{lstlisting}
+\texttt{prog.get\_pulse\_param(...)} reads back the sweep array---you don't have to maintain it on both sides.
+
+\section{The other single-qubit experiments at a glance}
+Each one is structurally the same as \texttt{CavitySpecFFMUX}: \texttt{\_initialize} declares pulses, \texttt{\_body} sequences them, the host \texttt{acquire} runs the program once, the host \texttt{display} plots.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{\texttt{mSpecSliceFFMUX.py}} (qubit spec). Like Transmission but you also declare a long const pulse on \texttt{qubit\_ch} that fires before the readout, sweep its frequency, and fit the absorption peak.
+  \item \textbf{\texttt{mAmplitudeRabiFFMUX.py}} (Rabi). Declare a Gaussian pulse on \texttt{qubit\_ch} via \texttt{add\_gauss}+\texttt{add\_pulse}, sweep \texttt{gain}, fit the resulting oscillation to find \texttt{pi\_gain}.
+  \item \textbf{\texttt{mT1MUX.py}} / \textbf{\texttt{mT2RMUX.py}}. Declare a pi pulse, sweep \texttt{delay} between pi and readout (T1) or between two pi/2 with a phase shift (T2R). Fits live in the \texttt{\_fit\_t1} / \texttt{\_fit\_t2r} methods (called from \texttt{acquire}, not \texttt{display}, so the auto-cal worker sees the result).
+  \item \textbf{\texttt{mSingleShotProgramFFMUX.py}}. Acquires per-shot IQ instead of averaged IQ. Builds a histogram and fits a discrimination threshold + rotation angle. Outputs a confusion matrix \(\bigl[[1-n_g,\,n_e],[n_g,\,1-n_e]\bigr]\) per readout.
+\end{itemize}
+
+The cfg dict controls what the program does without changing source. See \S~\ref{sec:cfgref}.
+
+\section{Sweeps: \texttt{SweepExperimentND} and the chevron}
+\subsection{Why a sweep framework}
+\texttt{QickSweep1D} compiles \emph{one} sweep variable into the tProc instruction stream. For a 2D sweep you have two options:
+\begin{itemize}[leftmargin=*]
+  \item Two \texttt{QickSweep1D} loops on the firmware. Fast (one upload) but limited to QICK's idea of a sweep variable (gain, freq, phase, time delay).
+  \item One \texttt{QickSweep1D} loop for the inner axis on firmware, plus a Python-side loop that updates the cfg and re-uploads the program for each outer-axis point. Slower (re-upload per outer point) but lets you sweep \emph{anything in the cfg}.
+\end{itemize}
+\texttt{SweepExperimentND} (\texttt{Program\_Templates/SweepExperimentND.py}) implements the second pattern. You inherit from it, fill in \texttt{init\_sweep\_vars}, and it handles the iteration plus per-point plotting.
+
+\subsection{The chevron}
+\texttt{mGainSweepQubitOscillationsR.py:GainSweepOscillationsR}, used by \texttt{calibration\_scripts/coupling\_strength\_calibration.py}:
+\begin{lstlisting}
+class GainSweepOscillationsR(SweepExperiment2D_plots):
+    def init_sweep_vars(self):
+        self.Program = ThreePartProgram_SweepOneFF
+        # Y axis: nested cfg key. SweepExperimentND walks this with the helper
+        # set_nested_item, so cfg["FF_Qubits"][str(idx)]["Gain_Expt"] is updated
+        # at each Y point.
+        self.y_key = ("FF_Qubits", str(self.cfg["qubit_FF_index"]), "Gain_Expt")
+        self.y_points = np.linspace(self.cfg['gainStart'],
+                                    self.cfg['gainStop'],
+                                    self.cfg['gainNumPoints'], dtype=int)
+        # X axis: tProc loop name (firmware-side).
+        self.x_name = 'expt_samples'
+        self.z_value = 'population'
+        self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
+
+    def set_up_instance(self):
+        soc.reset_gens()  # generators reset between outer-loop iterations
+        self.cfg["IDataArray"] = StepPulseArrays(self.cfg, 'Gain_Pulse', 'Gain_Expt')
+
+    def analyze(self, data):
+        # Fit a chevron pattern to each readout's 2D matrix.
+        ...
+\end{lstlisting}
+The base \texttt{acquire} in \texttt{SweepExperimentND}:
+\begin{enumerate}[leftmargin=*]
+  \item Allocates output arrays sized \texttt{(n\_readouts, n\_y, n\_x, ...)}.
+  \item For each Y index: writes \texttt{self.y\_points[i]} into \texttt{cfg[y\_key]}, calls \texttt{set\_up\_instance()}, builds a fresh \texttt{Program} with the new cfg, calls \texttt{prog.acquire(...)}, and stores the result row.
+  \item Calls \texttt{self.analyze(data)} at the end.
+\end{enumerate}
+
+\begin{pitfall}
+\texttt{SweepExperimentND.acquire} (line ~215) has buggy parens in the plotting gate that fire \texttt{fig.canvas.draw()} every row regardless of \texttt{plotDisp}. Run from a Qt5Agg worker thread this deadlocks the GUI. The calibration GUI works around this for the Two-Qubit Calib tab by subclassing \texttt{GainSweepOscillationsR} and overriding \texttt{display} / \texttt{\_update\_fig} to use an Agg (off-screen) canvas. The right upstream fix is one set of parens.
+\end{pitfall}
+
+\section{The quench experiment skeleton}
+\texttt{Experimental\_Scripts/quench\_experiments/mQuenchExperiment.py}. Five time-periods, gated independently:
+\begin{lstlisting}
+def _body(self, cfg):
+    # ---- Init ---------------------------------------------------------
+    FF_Delay_time = 10
+    self.FFPulses(self.FFPulse,
+                  len(cfg["qubit_gains"]) * cfg['sigma'] * 4 + FF_Delay_time)
+    if cfg['init_pulse']:
+        for i in range(len(cfg["qubit_gains"])):
+            t = FF_Delay_time if i == 0 else 'auto'
+            self.pulse(ch=cfg["qubit_ch"], name=f'qubit_drive_{i}', t=t)
+    self.delay_auto()
+
+    # ---- Ramp ---------------------------------------------------------
+    if cfg["expt_samples_ramp"] >= 1:
+        self.FFPulses_direct(self.FFExpts, cfg["expt_samples_ramp"],
+                             self.FFPulse,
+                             IQPulseArray=cfg["IQArray_ramp"],
+                             waveform_label='FFRamp')
+        self.delay_auto()
+
+    # ---- Quench -------------------------------------------------------
+    if cfg["expt_samples_quench"] >= 1:
+        self.FFPulses_direct(self.FFExpts, cfg["expt_samples_quench"],
+                             self.FFPulse,
+                             IQPulseArray=cfg["IQArray_quench"],
+                             waveform_label='FFQuench')
+        self.pulse(ch=cfg["qubit_ch"], name='qubit_drive_quench', t='auto')
+        self.delay_auto()
+
+    # ---- Dynamics -----------------------------------------------------
+    if cfg["expt_samples_dynamics"] >= 1:
+        self.FFPulses_direct(self.FFExpts, cfg["expt_samples_dynamics"],
+                             self.FFPulse,
+                             IQPulseArray=cfg["IQArray_dynamics"],
+                             waveform_label='FFDynamics')
+        self.delay_auto()
+
+    # ---- Readout ------------------------------------------------------
+    self.FFPulses(self.FFReadouts, cfg["res_length"])
+    for ro_ch, td in zip(cfg["ro_chs"], cfg["adc_trig_delays"]):
+        self.trigger(ros=[ro_ch], pins=[0], t=td)
+    self.pulse(cfg["res_ch"], name='res_drive')
+    self.wait_auto()
+    self.delay_auto(10)
+    # Negative compensation
+    self.FFPulses(-1 * self.FFReadouts, cfg["res_length"])
+    self.FFPulses(-1 * self.FFPulse, ...)
+\end{lstlisting}
+Each \texttt{FFPulses\_direct} fires an arbitrary 8-channel waveform built host-side via the \texttt{CompensatedRampArrays} / \texttt{StepPulseArrays} helpers. \texttt{cfg["expt\_samples\_ramp"]} = 0 disables the ramp segment entirely. The five \texttt{RampQuench*} sweep classes (also in the same file) inherit \texttt{RampQuenchBase} and just declare which key gets swept:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{RampQuenchDynamics}: \texttt{x\_key = 'expt\_samples\_dynamics'} (time evolution).
+  \item \texttt{RampQuenchSweepRampTime}: \texttt{'expt\_samples\_ramp'}.
+  \item \texttt{RampQuenchSweepQuenchTime}: \texttt{'expt\_samples\_quench'}.
+  \item \texttt{RampQuenchFreq}: \texttt{'quench\_freq'}.
+  \item \texttt{RampQuenchRabi}: \texttt{'quench\_gain'}.
+\end{itemize}
+
+\begin{tryit}
+Demo 4 in the companion file builds the IQ arrays for a small quench (no hardware involved) and plots the time-domain FF waveform on each channel. You'll see the ramp + quench + dynamics structure visually.
+\end{tryit}
+
+\section{The cfg dict, a key-by-key tour}\label{sec:cfgref}
+This is the single most important reference. Every program reads from \texttt{self.cfg}; every host-side wrapper receives one. Keys split into ``hardware'' (set once and forgotten), ``calibration'' (per-qubit, derived from \texttt{Qubit\_Parameters}), and ``experiment'' (per-stage, the user knobs).
+
+\subsection{Hardware (BaseConfig)}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{res\_ch} (8): mux readout DAC.
+  \item \texttt{qubit\_ch} (9): qubit drive DAC.
+  \item \texttt{ro\_chs}: list of ADC ``virtual'' channel indices, one per readout.
+  \item \texttt{fast\_flux\_chs}: list of FF DAC channels (typically \texttt{[0,1,2,...,7]}).
+  \item \texttt{res\_nqz} / \texttt{qubit\_nqz}: Nyquist zone integers (1 or 2).
+  \item \texttt{mixer\_freq} (-1750): the LO offset on the readout side.
+  \item \texttt{qubit\_mixer\_freq} (4000): the LO offset on the qubit side.
+  \item \texttt{res\_LO} (9000): the actual mixer LO; the readout MHz frequency is \texttt{res\_freqs[i] + res\_LO}.
+  \item \texttt{qubit\_LO} (0): same role on the qubit side.
+\end{itemize}
+
+\subsection{Per-qubit / per-readout (multi-element lists, indexed by readout)}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{res\_freqs}: IF frequencies (MHz). Actual = \texttt{res\_freqs[i] + res\_LO}.
+  \item \texttt{res\_gains}: normalised DAC gains (\(\in[0,1]\)).
+  \item \texttt{readout\_lengths}: us per readout.
+  \item \texttt{adc\_trig\_delays}: us; how long after the readout drive starts to trigger the ADC.
+  \item \texttt{qubit\_freqs}, \texttt{qubit\_gains}, \texttt{sigma}: qubit-side equivalents.
+  \item \texttt{Qubit\_Readout\_List}: integer qubit numbers being read (e.g., \texttt{[1, 3]}).
+  \item \texttt{angle}, \texttt{threshold}: lists of single-shot rotation angle and discrimination threshold, indexed by readout. Set by \texttt{SingleShot} or written into \texttt{Qubit\_Parameters[Q]["Readout"]}.
+  \item \texttt{confusion\_matrix}: list of 2x2 numpy matrices, one per readout. Required by \texttt{SweepExperimentND} to allocate the \texttt{population\_corrected} array.
+\end{itemize}
+
+\subsection{FF\_Qubits dict}
+Already covered above. The five \texttt{Gain\_*} fields per qubit, plus \texttt{channel}, \texttt{delay\_time}, \texttt{ramp\_initial\_gain}.
+
+\subsection{Experiment-specific}
+Whatever the program reads. Stage tabs surface them in \texttt{param\_spec}; e.g. for Transmission: \texttt{TransSpan}, \texttt{TransNumPoints}, \texttt{readout\_length}, \texttt{cav\_relax\_delay}, \texttt{reps}.
+
+\section{Demos}
+The companion file \texttt{2026-05-06\_qick\_quench\_tutorial\_demos.py} is a runnable script. Each demo is a function; running the file executes them in order. Demos that need an RFSoC are gated on a constant at the top---you can run the others standalone.
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Inspect a saved \texttt{.h5}.} Open a previous run's data file; print every key and the array shapes; plot \texttt{avgi} vs frequency.
+  \item \textbf{Build a tProc dump without hardware.} Use \texttt{QickConfig} (loaded from a saved cfg dict) to compile a small program and print its instruction listing. Verifies you can read what your program will execute.
+  \item \textbf{Cfg builder walkthrough.} Build a single-qubit cfg via the calibration GUI's \texttt{state.build\_single\_qubit\_config} and pretty-print every key. Compare it to the multi-qubit \texttt{build\_two\_qubit\_chevron\_config}.
+  \item \textbf{FF crosstalk math.} Without hardware: load \texttt{FFEnvelope\_Helpers.CompensatedRampArrays}, build a tiny ramp, plot the 8 per-channel waveforms. Visualise crosstalk compensation.
+  \item \textbf{Custom experiment.} Subclass \texttt{ExperimentClass} + \texttt{FFAveragerProgramV2} to write a 5-line ``echo'' experiment: pi pulse, T-delay, pi pulse, readout. Run via Desq's \texttt{Load Exp}.
+  \item \textbf{Read a confusion matrix.} Load a SingleShot run's \texttt{.h5}, pull the \texttt{confusion\_matrix} key, apply it to a fake population matrix using \texttt{rotate\_SS\_data.correct\_occ}.
+\end{enumerate}
+
+\section{Pitfalls reference}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Module-level \texttt{soc} import.} Files like \texttt{mGainSweepQubitOscillationsR.py:7} do \texttt{from MUXInitialize import soc}. Under any sandbox (Desq, the calibration GUI's experiment-library tab) this captures \texttt{None} and later \texttt{soc.reset\_gens()} crashes. Either patch the file to use \texttt{self.soc} or inject a real soc into the import sandbox (the calibration GUI does the latter).
+  \item \textbf{\texttt{plt.sca(ax)} on an embedded canvas.} If the canvas figure was created via \texttt{Figure(...)} and not \texttt{plt.figure(...)}, matplotlib 3.10 raises \texttt{ValueError: figure not managed by pyplot}. Fix: replace \texttt{plt.sca(ax) + plt.plot(...)} with \texttt{ax.plot(...)} throughout the \texttt{display} method.
+  \item \textbf{\texttt{population\_corrected} KeyError.} \texttt{SweepExperimentND} only allocates that array if \texttt{cfg} contains a \texttt{confusion\_matrix} key. If \texttt{z\_value=='population'} and the cfg lacks one, \texttt{analyze} dies looking for it. Add \texttt{cfg["confusion\_matrix"] = [np.eye(2), ...]} (one per readout) to disable correction without breaking the contract.
+  \item \textbf{\texttt{cfg[\textquotesingle angle\textquotesingle]} KeyError.} \texttt{AveragerProgramFF.acquire\_populations} reads \texttt{cfg["angle"]} and \texttt{cfg["threshold"]} as lists. Run a SingleShot first, or pre-fill them from \texttt{Qubit\_Parameters[Q]["Readout"]}.
+  \item \textbf{Worker-thread plot calls.} In-acquire \texttt{plt.show(block=False)}, \texttt{fig.canvas.draw()}, \texttt{plt.savefig(...)} from a worker thread on Qt5Agg deadlocks the GUI. Set \texttt{plotDisp=False, plotSave=False}; if the experiment's gating expression is buggy (cf. \texttt{SweepExperimentND}), wrap the experiment with an off-screen Agg canvas (see \texttt{TwoQubitChevronWorker} for an example).
+  \item \textbf{Forgetting the FF compensation pulse.} Every FF pulse needs a matching \(-1 \cdot\)FF pulse later in the same shot, otherwise DC drift on the FF lines will pollute the next shot. The standard pattern at the end of \texttt{\_body} is two negative-FF lines.
+\end{itemize}
+
+\section{Reading order}
+If you only have an hour:
+\begin{enumerate}[leftmargin=*]
+  \item This document chapters 1--4.
+  \item \texttt{Experiment.py}---the \texttt{ExperimentClass} base. About 200 lines.
+  \item \texttt{Experimental\_Scripts/Basic\_Experiments/mTransmissionFFMUX.py}---read top to bottom.
+  \item \texttt{Experimental\_Scripts/Program\_Templates/AveragerProgramFF.py}---focus on \texttt{FFPulses}, \texttt{FFPulses\_direct}, \texttt{acquire\_populations}.
+\end{enumerate}
+
+If you have an afternoon, add:
+\begin{enumerate}[leftmargin=*,resume]
+  \item \texttt{quench\_experiments/mQuenchExperiment.py}.
+  \item \texttt{Helpers/FFEnvelope\_Helpers.py} and \texttt{Helpers/Compensated\_Pulse\_Josh.py}.
+  \item One concrete sweep, e.g. \texttt{mAmplitudeRabiFFMUX.py}.
+\end{enumerate}
+
+If you have the whole day:
+\begin{enumerate}[leftmargin=*,resume]
+  \item \texttt{Program\_Templates/SweepExperimentND.py}---all of it.
+  \item \texttt{calibration\_scripts/coupling\_strength\_calibration.py}---read alongside \texttt{mGainSweepQubitOscillationsR.py}.
+  \item \texttt{Run\_Experiments/UPDATE\_CONFIG\_function.py}---understand the cfg-from-Qubit\_Parameters mapping; the calibration GUI's \texttt{build\_*\_config} methods are simplified versions of this.
+  \item All six demos.
+\end{enumerate}
+
+\section{Compiling this PDF}
+This source is plain LaTeX---no exotic packages. To produce a PDF locally:
+\begin{enumerate}[leftmargin=*]
+  \item Install MikTeX (Windows), MacTeX (mac), or TeXLive (Linux).
+  \item From a terminal in this directory: \texttt{pdflatex 2026-05-06\_qick\_quench\_tutorial.tex} (run twice for the table of contents to settle).
+\end{enumerate}
+Or upload the \texttt{.tex} file to \url{https://www.overleaf.com}---no install needed. Choose ``New Project'' \(\to\) ``Upload Project'' \(\to\) drop the file in \(\to\) Overleaf compiles it automatically and gives you a downloadable PDF.
+\end{document}
