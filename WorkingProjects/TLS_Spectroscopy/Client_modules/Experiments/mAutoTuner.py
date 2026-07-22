@@ -736,7 +736,7 @@ DEFAULTS = {
                   "relax_delay_us": 50.0, "expected_fwhm_mhz": 0.3},
     "spec": {"span_mhz": 20.0, "points": 121, "max_span_mhz": 150.0, "shots": 500,
              "gain": None, "len_us": None, "relax_delay_us": 500.0,
-             "power_ratios": (1.0, 0.35, 0.12)},
+             "power_ratios": (1.0, 0.35, 0.12, 0.04)},
     "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500, "relax_delay_us": None},
     "chi": {"span_mhz": 4.0, "points": 81, "shots": 500, "relax_delay_us": None},
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),

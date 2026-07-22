@@ -45,10 +45,9 @@ BaseConfig = {
     "ff_ch": FF_CH,       # DAC gen 3 (3_230, JHC4): fast-flux line
     "ro_chs": [0],        # ADC readout 0 (0_226, JHC7)
     "nqz": 2,             # readout DAC Nyquist zone (7248.95 MHz, as in initialize4Q)
-    "qubit_nqz": 2,       # qubit DAC zone: f_q = 5112 MHz is ABOVE fs/2, so zone 2
-                          # (same as initialize4Q on this board).  With nqz=1 a request
-                          # above fs/2 aliases back down and the DAC never emits 5112 --
-                          # which is why RFSoC spec could not find the qubit at all.
+    "qubit_nqz": 1,       # qubit DAC zone: f_q = 2512 MHz is below fs/2 = 3440.6 MHz
+                          # (gen fs = 6881.28), so zone 1.  nqz=2 is mix-mode and would
+                          # SUPPRESS a zone-1 tone.
     "ff_nqz": 1,          # fast flux is baseband/DC-like
     "mixer_freq": 0.0,    # direct digital synthesis
     "cavity_LO": 0,
@@ -67,14 +66,13 @@ BaseConfig = {
 
     # ---- qubit drive (Qubit_Parameters["4"]["Qubit"]) ----
     "qubit_pulse_style": "arb",
-    # PNAX-verified at 0 flux: resonator 7249 MHz, qubit 5112 MHz (seen at -55 dBm).
-    # The previous 2557.25 was 5112/2 -- the qubit was only ever being driven at HALF
-    # its frequency (two-photon / 2nd harmonic), which needs enormous power and is why
-    # the pi gain sat at ~12850 with poor contrast.
-    "qubit_freq": 5112.0,      # MHz; spec center
-    "qubit_pi_freq": 5112.0,   # MHz; refined by the tuner
-    "qubit_pi_gain": 5000,     # DAC units; placeholder, the Rabi sweep re-finds it
-    "qubit_pi2_gain": 2500,
+    # PNAX-verified at 0 flux: resonator 7249 MHz, qubit 2512 MHz (seen at -55 dBm).
+    # RFSoC spec has been finding a line near 2500-2535 in the same window, so these
+    # agree; the tuner refines the exact centre by power extrapolation.
+    "qubit_freq": 2512.0,      # MHz; spec center
+    "qubit_pi_freq": 2512.0,   # MHz; refined by the tuner
+    "qubit_pi_gain": 11500,    # DAC units; last measured value, the Rabi re-finds it
+    "qubit_pi2_gain": 5750,
     "qubit_gain": 7000,        # spec/saturation drive gain (Spec_relevant_params)
     "qubit_length": 0.5,       # us; short const spec probe for FF steps 3/4
     "sigma": 0.125,            # us; gaussian pi-pulse sigma
