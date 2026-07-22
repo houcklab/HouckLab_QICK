@@ -654,16 +654,20 @@ DEFAULTS = {
     "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500, "relax_delay_us": None},
     "chi": {"span_mhz": 4.0, "points": 81, "shots": 500, "relax_delay_us": None},
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
-                      "shots": 1500, "outlier_max": 0.02, "relax_delay_us": None},
-    "t1": {"points": 12, "shots": 600, "t_max_us": None, "relax_delay_us": None},
+                      "shots": 1500, "outlier_max": 0.08, "outlier_weight": 1.0,
+                      "relax_delay_us": None},
+    "t1": {"points": 12, "shots": 600, "t_max_us": None, "relax_delay_us": None,
+           "max_frac_err": 0.35},
     "readout_len": {"lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0, 45.0),
-                    "shots": 1500, "relax_delay_us": None},
+                    "shots": 1500, "relax_delay_us": None, "max_extensions": 4,
+                    "extend_factor": 1.5},
     "single_shot": {"shots": 4000, "min_sep_sigma": 2.0, "target_sep_sigma": 4.0,
-                    "relax_delay_us": None},
+                    "relax_delay_us": None, "verify_tol_frac": 0.15},
     "fine_pi_freq": {"M": 8, "span_mhz": 1.2, "points": 11, "shots": 500,
                      "relax_delay_us": None},
     "fine_pi_amp": {"M_list": (4, 10, 20), "frac": (0.14, 0.05, 0.025), "points": 13,
-                    "shots": 500, "tol_frac": 0.004, "relax_delay_us": None},
+                    "shots": 500, "tol_frac": 0.004, "relax_delay_us": None,
+                    "reject_sigma": 2.5, "anchor_floor_frac": 0.015},
 }
 
 
@@ -681,17 +685,19 @@ def merge_params(user):
 
 GRAPH = [
     ("resonator",     [],                              "_cal_resonator"),
-    ("spec",          ["resonator", "chi", "readout_power", "readout_len"], "_cal_spec"),
-    ("rough_pi",      ["spec", "resonator", "chi", "readout_power", "readout_len"],
-                                                       "_cal_rough_pi"),
-    ("t1",            ["rough_pi"],                    "_cal_t1"),
-    ("chi",           ["resonator", "rough_pi"],       "_cal_chi"),
-    ("readout_power", ["chi", "rough_pi"],             "_cal_readout_power"),
+    ("spec",          ["resonator"],                   "_cal_spec"),
+    ("rough_pi",      ["spec"],                        "_cal_rough_pi"),
+    ("t1",            ["rough_pi", "single_shot"],     "_cal_t1"),
+    ("chi",           ["resonator", "rough_pi", "fine_pi_amp"],   "_cal_chi"),
+    ("readout_power", ["chi", "rough_pi", "fine_pi_amp"],         "_cal_readout_power"),
     ("readout_len",   ["readout_power", "t1"],         "_cal_readout_len"),
     ("single_shot",   ["readout_len"],                 "_cal_single_shot"),
     ("fine_pi_freq",  ["single_shot", "rough_pi"],     "_cal_fine_pi_freq"),
-    ("fine_pi_amp",   ["fine_pi_freq"],                "_cal_fine_pi_amp"),
+    ("fine_pi_amp",   ["fine_pi_freq", "single_shot"], "_cal_fine_pi_amp"),
 ]
+
+RECOVERABLE = ("spec", "t1", "chi", "readout_power", "readout_len", "single_shot",
+               "fine_pi_freq", "fine_pi_amp")
 
 
 class AutoTuner(ExperimentClass):
@@ -708,6 +714,7 @@ class AutoTuner(ExperimentClass):
         self.report_lines = []
         self.stale = {name: True for name, _, _ in GRAPH}
         self.node_data = {}
+        self.drifted = []
 
     def _say(self, node, status, msg):
         line = "[%-13s] %-4s %s" % (node, status, msg)
@@ -812,14 +819,17 @@ class AutoTuner(ExperimentClass):
                 best = (fit, fs, sig, span, gain)
             if fit["ok"]:
                 break
+            failed_span, failed_gain = span, gain
             if span < float(P["max_span_mhz"]):
                 span, npts = min(span * 4.0, float(P["max_span_mhz"])), min(npts * 3, 601)
             elif gain < 30000:
                 gain = min(gain * 3, 30000)
             else:
                 break
-            self._say("spec", "WARN", "no line in %.0f MHz at gain %d -- widening"
-                      % (span, gain))
+            self._say("spec", "WARN", "nothing in +/-%.0f MHz of %.3f at gain %d (snr %.1f)"
+                                      " -- retrying at +/-%.0f MHz, gain %d"
+                      % (failed_span / 2, self.w["qubit_freq"], failed_gain, fit["snr"],
+                         span / 2, gain))
         fit, fs, sig, span_used, gain_used = best
         if not fit["ok"]:
             raise TunerError("spec: no qubit line within +/-%.0f MHz of %.3f (best snr "
@@ -918,6 +928,7 @@ class AutoTuner(ExperimentClass):
         pi0 = int(round(min(fit["pi_gain"], 32000)))
         pi0 = self._harmonic_check(pi0, cfg, int(P["shots"]))
         self.w["pi_gain"] = pi0
+        self.w["pi_gain_anchor_err"] = max(0.03 * pi0, 50.0)
         self.w["updated"].add("qubit_pi_gain")
         self._say("rough_pi", "OK", "pi gain %d DAC (period %.0f, r2 %.2f)"
                   % (pi0, fit["period"], fit["r2"]))
@@ -1092,11 +1103,27 @@ class AutoTuner(ExperimentClass):
                              "(min outlier fraction %.3f) -- the readout is not behaving "
                              "dispersively at any tested power."
                              % min(r["outlier"] for r in rows))
-        best = max(ok_rows, key=lambda r: r["sep"])
+        w_out = float(P["outlier_weight"])
+        best = max(ok_rows, key=lambda r: r["fid"] - w_out * r["outlier"])
+        widest = max((r for r in rows if np.isfinite(r["sep"])), key=lambda r: r["sep"])
+        if widest["gain"] != best["gain"]:
+            self._say("readout_power", "OK",
+                      "gain %d gave more separation (%.2f sigma, F=%.3f) but %.1f%% "
+                      "non-two-blob shots; scored on F - %.0f*outlier it loses to gain %d "
+                      "(%.2f sigma, F=%.3f, %.1f%%)"
+                      % (widest["gain"], widest["sep"], widest["fid"],
+                         100 * widest["outlier"], w_out, best["gain"], best["sep"],
+                         best["fid"], 100 * best["outlier"]))
         self.w["read_pulse_gain"] = int(best["gain"])
         self.w["updated"].add("read_pulse_gain")
-        self._say("readout_power", "OK", "best eligible power: gain %d (%.2f sigma, F=%.3f)"
-                  % (best["gain"], best["sep"], best["fid"]))
+        self._say("readout_power", "OK", "best eligible power: gain %d (%.2f sigma, F=%.3f, "
+                                         "outliers %.3f)"
+                  % (best["gain"], best["sep"], best["fid"], best["outlier"]))
+        if best["gain"] == max(r["gain"] for r in rows):
+            self._say("readout_power", "WARN",
+                      "the chosen power is the HIGHEST tested -- extend "
+                      "params['readout_power']['ratios'] upward, the optimum may be beyond "
+                      "the ladder")
         return {"g": best["gain"]}, {"g": max(0.15 * best["gain"], 20)}
 
     def _cal_t1(self):
@@ -1132,48 +1159,94 @@ class AutoTuner(ExperimentClass):
         if not fit["ok"] or not np.isfinite(fit["tau"]):
             self._say("t1", "WARN", "T1 fit failed; assuming 30 us for downstream bounds")
             self.w["t1_us"] = 30.0
+            self.w["t1_lo_us"], self.w["t1_hi_us"] = 30.0, 30.0
             return {"t1": 30.0}, {"t1": 1e9}
-        self.w["t1_us"] = float(fit["tau"])
+        tau = float(fit["tau"])
+        tau_err = float(fit["tau_err"]) if np.isfinite(fit.get("tau_err", np.nan)) else np.inf
+        frac_err = tau_err / max(tau, 1e-9)
+        if np.isfinite(tau_err):
+            t1_lo = max(tau - 2.0 * tau_err, 0.25 * tau, 2.0)
+            t1_hi = min(tau + 2.0 * tau_err, 4.0 * tau)
+        else:
+            t1_lo, t1_hi = max(0.25 * tau, 2.0), 4.0 * tau
+        if frac_err > float(P["max_frac_err"]):
+            self._say("t1", "WARN",
+                      "T1 = %.1f +/- %.1f us is only %.0f%%-determined, so the downstream "
+                      "bounds use the SIGN-APPROPRIATE end of the interval, not tau: the "
+                      "readout-length cap and pi-train length use the LOW end %.1f us "
+                      "(shorter is the safe side), relax_delay uses the HIGH end %.1f us "
+                      "(a possibly-longer T1 needs a LONGER wait, not a shorter one)"
+                      % (tau, tau_err, 100 * frac_err, t1_lo, t1_hi))
+        self.w["t1_us"] = tau
+        self.w["t1_lo_us"], self.w["t1_hi_us"] = float(t1_lo), float(t1_hi)
         old_relax = float(self.w["relax_delay"])
-        new_relax = float(np.clip(5.0 * fit["tau"], 20.0, old_relax))
+        new_relax = float(np.clip(5.0 * t1_hi, 20.0, old_relax))
         if new_relax < 0.8 * old_relax:
             self.w["relax_delay"] = new_relax
-            self._say("t1", "OK", "relax_delay %.0f -> %.0f us (5*T1; ~%.0fx less idle "
-                                  "time per shot downstream)"
-                      % (old_relax, new_relax, old_relax / max(new_relax, 1e-9)))
-        self._say("t1", "OK", "T1 = %.1f +/- %.1f us" % (fit["tau"], fit["tau_err"]))
-        return {"t1": fit["tau"]}, {"t1": max(0.3 * fit["tau"], 3 * fit["tau_err"])}
+            self._say("t1", "OK", "relax_delay %.0f -> %.0f us (5 x the UPPER T1 bound "
+                                  "%.1f us; ~%.0fx less idle time per shot downstream)"
+                      % (old_relax, new_relax, t1_hi, old_relax / max(new_relax, 1e-9)))
+        self._say("t1", "OK", "T1 = %.1f +/- %.1f us" % (tau, fit["tau_err"]))
+        return {"t1": tau}, {"t1": max(0.3 * tau, 3 * tau_err if np.isfinite(tau_err) else 0.0)}
 
     def _cal_readout_len(self):
         """Integration length: SNR grows as sqrt(T) but the |e> state decays as T/T1, so
         there is a genuine optimum.  Candidates are capped at T1/2 -- beyond that the
         measurement is mostly watching the qubit decay."""
         P = self.P["readout_len"]
-        t1 = float(self.w.get("t1_us", 30.0))
-        cands = [L for L in P["lengths_us"] if L <= max(0.5 * t1, 2.0)]
+        t1 = float(self.w.get("t1_lo_us", self.w.get("t1_us", 30.0)))
+        cap = max(0.5 * t1, 2.0)
+        cands = [L for L in P["lengths_us"] if L <= cap]
         if not cands:
             cands = [min(P["lengths_us"])]
         def _apply(cfg, L):
             cfg["read_length"] = float(L)
 
-        sep, fid, out, _spread = self._sweep_readout("readout_len", cands, _apply, P["shots"])
         rows = []
-        for j, L in enumerate(cands):
-            rows.append({"len": float(L), "sep": float(sep[j]), "fid": float(fid[j]),
-                         "outlier": float(out[j])})
-            self._say("readout_len", "OK", "%5.1f us -> %.2f sigma, F=%.3f"
-                      % (L, sep[j], fid[j]))
+
+        def _measure(lengths):
+            sep, fid, out, _spread = self._sweep_readout("readout_len", lengths, _apply,
+                                                         P["shots"])
+            for j, L in enumerate(lengths):
+                rows.append({"len": float(L), "sep": float(sep[j]), "fid": float(fid[j]),
+                             "outlier": float(out[j])})
+                self._say("readout_len", "OK", "%5.1f us -> %.2f sigma, F=%.3f"
+                          % (L, sep[j], fid[j]))
+
+        _measure(cands)
+        for _ in range(int(P.get("max_extensions", 4))):
+            ok = [r for r in rows if np.isfinite(r["fid"])]
+            if not ok:
+                break
+            best = max(ok, key=lambda r: r["fid"])
+            top = max(r["len"] for r in ok)
+            if best["len"] < top - 1e-9 or top >= cap - 1e-9:
+                break
+            nxt = round(min(top * float(P.get("extend_factor", 1.5)), cap), 1)
+            if nxt <= top + 0.5:
+                break
+            self._say("readout_len", "OK",
+                      "F is still rising at the top of the ladder (%.1f us) and T1/2 = "
+                      "%.1f us allows more -- extending to %.1f us rather than stopping "
+                      "at the range limit" % (top, cap, nxt))
+            _measure([nxt])
         self.node_data["readout_len"] = rows
         ok_rows = [r for r in rows if np.isfinite(r["fid"])]
         if not ok_rows:
             raise TunerError("readout_len: no usable length.")
         best = max(ok_rows, key=lambda r: r["fid"])
-        if len(ok_rows) > 1 and best["len"] in (ok_rows[0]["len"], ok_rows[-1]["len"]):
+        lo = min(r["len"] for r in ok_rows)
+        hi = max(r["len"] for r in ok_rows)
+        if len(ok_rows) > 1 and best["len"] >= hi - 1e-9 and hi >= cap - 1e-9:
             self._say("readout_len", "WARN",
-                      "the best length %.1f us is at an END of the tested ladder (%.1f-%.1f "
-                      "us) -- the RANGE may be the limit rather than the optimum; extend "
-                      "params['readout_len']['lengths_us'] (T1/2 = %.1f us allows more)"
-                      % (best["len"], ok_rows[0]["len"], ok_rows[-1]["len"], 0.5 * t1))
+                      "the best length %.1f us is the T1/2 cap (%.1f us) -- the LIMIT is "
+                      "the qubit lifetime, not the ladder; a longer readout would keep "
+                      "helping if T1 were longer" % (best["len"], cap))
+        elif len(ok_rows) > 1 and best["len"] <= lo + 1e-9:
+            self._say("readout_len", "WARN",
+                      "the best length %.1f us is the SHORTEST tested (%.1f-%.1f us) -- "
+                      "shorten params['readout_len']['lengths_us'] to find the real optimum"
+                      % (best["len"], lo, hi))
         self.w["read_length"] = float(best["len"])
         self.w["updated"].add("read_length")
         self._say("readout_len", "OK", "best length %.1f us (F=%.3f, %.2f sigma; capped at "
@@ -1293,23 +1366,46 @@ class AutoTuner(ExperimentClass):
 
         The residual at the minimum is a decoherence floor and says nothing about how
         well the minimum is located; the calibration error is sigma(vertex), which the
-        parabola fit gives directly.  We also require the vertex found at different M to
-        AGREE -- a disagreement means one of them was noise or edge-pinned."""
+        parabola fit gives directly.
+
+        A pi train may only REFINE the Rabi estimate, never relocate it.  sin^2(M dtheta/2)
+        has sidelobes, so a large-M pass can lock onto the wrong lobe and report a tiny
+        error bar for it; the Rabi fit has no sidelobes.  Every vertex is therefore tested
+        against the anchor before it is adopted, and the window for the next M is centred
+        on the ACCEPTED estimate -- otherwise one bad pass drags each later window further
+        off, which is exactly how an M=4 vertex 868 DAC low once pushed the M=10 window
+        clean past the true pi."""
         P = self.P["fine_pi_amp"]
         cfg = self._cfg_for("fine_pi_amp")
         shots = int(P["shots"])
-        t1 = float(self.w.get("t1_us", 30.0))
+        t1 = float(self.w.get("t1_lo_us", self.w.get("t1_us", 30.0)))
         t_pi = 4.0 * float(self.cfg["sigma"])
-        base = int(self.w["pi_gain"])
-        history = []
+        anchor = float(self.w["pi_gain"])
+        anchor_err = max(float(self.w.get("pi_gain_anchor_err", 0.03 * anchor)),
+                         float(P["anchor_floor_frac"]) * anchor)
+        est, est_err = anchor, anchor_err
+        accepted, history = [], []
         for M, frac in zip(P["M_list"], P["frac"]):
             M = int(M)
             if M * t_pi > 0.5 * t1:
                 self._say("fine_pi_amp", "WARN", "skipping M=%d (%.1f us train vs T1/2 = "
                           "%.1f us)" % (M, M * t_pi, 0.5 * t1))
                 continue
-            gains = np.unique(np.round(base * np.linspace(1 - frac, 1 + frac,
-                                                          int(P["points"]))).astype(int))
+            alias = 1.0 / M
+            need = 2.0 * est_err / max(est, 1.0)
+            if need > 0.75 * alias:
+                self._say("fine_pi_amp", "WARN",
+                          "skipping M=%d: the estimate is only +/-%.0f DAC (%.2f%%), so a "
+                          "window wide enough to contain it (%.2f%%) plus that same "
+                          "uncertainty could reach the first sidelobe of "
+                          "sin^2(M dtheta/2) at %.2f%% -- amplifying now would risk "
+                          "fitting the wrong lobe"
+                          % (M, est_err, 100 * est_err / max(est, 1.0), 100 * need,
+                             200 * alias))
+                continue
+            half = float(np.clip(frac, need, 1.5 * alias - need)) * est
+            gains = np.unique(np.round(np.linspace(est - half, est + half,
+                                                   int(P["points"]))).astype(int))
             gains = gains[(gains > 0) & (gains <= 32000)]
             if gains.size < 5:
                 continue
@@ -1326,49 +1422,89 @@ class AutoTuner(ExperimentClass):
                 continue
             self.node_data.setdefault("fine_pi_amp", {})["M%d" % M] = \
                 {"gains": gains, "res": res, "vertex": v["x_min"], "err": v["x_err"]}
+            floor = float(np.nanmin(res))
+            history.append({"M": M, "gain": float(v["x_min"]), "err": float(v["x_err"]),
+                            "floor": floor, "used": False})
             if not v["interior"]:
-                self._say("fine_pi_amp", "WARN", "M=%d minimum at a window edge (%.0f in "
-                          "%d-%d) -- widening next pass instead of narrowing"
-                          % (M, v["x_min"], gains[0], gains[-1]))
-                base = int(round(v["x_min"]))
-                history.append({"M": M, "gain": base, "err": np.inf,
-                                "floor": float(np.nanmin(res))})
+                est_err = min(est_err * 1.5, 0.5 * est)
+                self._say("fine_pi_amp", "WARN",
+                          "M=%d minimum at a window edge (%.0f in %d-%d) -- NOT adopted; "
+                          "the estimate stays %.0f DAC and its uncertainty widens to "
+                          "+/-%.0f so the next window covers more ground"
+                          % (M, v["x_min"], gains[0], gains[-1], est, est_err))
                 continue
-            base = int(round(min(max(v["x_min"], 1), 32000)))
-            history.append({"M": M, "gain": base, "err": float(v["x_err"]),
-                            "floor": float(np.nanmin(res))})
+            d = abs(v["x_min"] - anchor)
+            comb = float(np.hypot(anchor_err, v["x_err"]))
+            if d > float(P["reject_sigma"]) * comb:
+                self._say("fine_pi_amp", "WARN",
+                          "M=%d vertex %.0f is %.0f DAC from the Rabi anchor %.0f "
+                          "(%.1f sigma of the combined %.0f) -- REJECTED as a sidelobe, "
+                          "not adopted; a pi train refines the anchor, it does not move "
+                          "it, so the estimate stays %.0f +/- %.0f and the next M looks "
+                          "in the same place" % (M, v["x_min"], d, anchor,
+                                                 d / max(comb, 1e-9), comb, est, est_err))
+                continue
+            wv, we = 1.0 / max(v["x_err"], 1e-9) ** 2, 1.0 / max(est_err, 1e-9) ** 2
+            new = (v["x_min"] * wv + est * we) / (wv + we)
+            new_err = 1.0 / np.sqrt(wv + we)
+            tension = abs(v["x_min"] - est) / max(float(np.hypot(est_err, v["x_err"])), 1e-9)
+            if tension > 1.0:
+                new_err *= tension
+            est, est_err = float(new), float(new_err)
+            history[-1]["used"] = True
+            accepted.append(history[-1])
             self._say("fine_pi_amp", "OK",
-                      "M=%2d: pi gain %d +/- %.0f DAC (%.2f%% of pi); residual floor at the "
-                      "minimum %.3f (a DECOHERENCE floor, not an angle error)"
-                      % (M, base, v["x_err"], 100 * v["x_err"] / max(base, 1),
-                         history[-1]["floor"]))
-        if not history:
-            raise TunerError("fine_pi_amp: no usable pass (all NaN, edge-pinned, or the "
-                             "train exceeds T1/2).")
-        finals = [h for h in history if np.isfinite(h["err"])]
-        if not finals:
-            raise TunerError("fine_pi_amp: every pass was edge-pinned -- widen "
-                             "params['fine_pi_amp']['frac'].")
-        best = min(finals, key=lambda h: h["err"])
-        self.w["pi_gain"] = int(best["gain"])
-        self.w["pi_gain_err"] = float(best["err"])
-        self.w["updated"].add("qubit_pi_gain")
-        agree = True
-        if len(finals) >= 2:
-            spread = max(h["gain"] for h in finals) - min(h["gain"] for h in finals)
-            tol = 3.0 * max(h["err"] for h in finals) + 0.005 * best["gain"]
+                      "M=%2d: vertex %.0f +/- %.0f DAC -> estimate %.0f +/- %.0f DAC "
+                      "(%.2f%% of pi); residual floor at the minimum %.3f (a DECOHERENCE "
+                      "floor, not an angle error)"
+                      % (M, v["x_min"], v["x_err"], est, est_err,
+                         100 * est_err / max(est, 1.0), floor))
+        if not accepted:
+            self.w["pi_gain"] = int(round(anchor))
+            self.w["pi_gain_err"] = float(anchor_err)
+            self.w["pi_gain_anchor_err"] = float(anchor_err)
+            self.w["pi_converged"] = False
+            self.w["pi_n_agree"] = 0
+            self.w["updated"].add("qubit_pi_gain")
+            self._say("fine_pi_amp", "WARN",
+                      "no pi-train pass was both interior to its window and consistent "
+                      "with the Rabi anchor, so the amplitude is NOT error-amplified this "
+                      "run -- keeping the Rabi value %d +/- %.0f DAC (%.1f%%), which is a "
+                      "real pi pulse from an r^2-verified fit, just a less precise one"
+                      % (int(round(anchor)), anchor_err, 100 * anchor_err / max(anchor, 1)))
+            return {"g": anchor}, {"g": max(3 * anchor_err, 0.004 * anchor)}
+        spread = (max(h["gain"] for h in accepted) - min(h["gain"] for h in accepted)
+                  if len(accepted) >= 2 else 0.0)
+        if len(accepted) >= 2:
+            tol = float(P["reject_sigma"]) * max(h["err"] for h in accepted) + 0.005 * est
             agree = spread <= tol
             self._say("fine_pi_amp", "OK" if agree else "WARN",
-                      "cross-M agreement: vertices %s spread %d DAC vs %.0f tolerance -> %s"
-                      % ([h["gain"] for h in finals], spread, tol,
-                         "consistent" if agree else "INCONSISTENT (one pass is unreliable)"))
-        frac_err = best["err"] / max(best["gain"], 1)
-        self.w["pi_converged"] = bool(agree and frac_err <= float(P["tol_frac"]))
+                      "cross-M agreement: adopted vertices %s spread %.0f DAC vs %.0f "
+                      "tolerance -> %s"
+                      % ([int(round(h["gain"])) for h in accepted], spread, tol,
+                         "consistent" if agree else
+                         "INCONSISTENT (the reported uncertainty is inflated to cover it)"))
+            if not agree:
+                est_err = max(est_err, spread / 2.0)
+        self.w["pi_gain"] = int(round(est))
+        self.w["pi_gain_err"] = float(est_err)
+        self.w["pi_gain_anchor_err"] = float(est_err)
+        self.w["pi_n_agree"] = len(accepted)
+        self.w["updated"].add("qubit_pi_gain")
+        frac_err = est_err / max(est, 1.0)
+        self.w["pi_converged"] = bool(frac_err <= float(P["tol_frac"]))
+        reasons = []
+        if frac_err > float(P["tol_frac"]):
+            reasons.append("+/-%.3f%% is wider than the %.1f%% target"
+                           % (100 * frac_err, 100 * P["tol_frac"]))
+        if len(accepted) < 2:
+            reasons.append("only one M passed, so nothing cross-checks it")
         self._say("fine_pi_amp", "OK" if self.w["pi_converged"] else "WARN",
-                  "FINAL pi gain %d +/- %.0f DAC = %.3f%% (target %.1f%%) -> %s"
-                  % (best["gain"], best["err"], 100 * frac_err, 100 * P["tol_frac"],
-                     "converged" if self.w["pi_converged"] else "not converged"))
-        return {"g": best["gain"]}, {"g": max(3 * best["err"], 0.004 * best["gain"])}
+                  "FINAL pi gain %d +/- %.0f DAC = %.3f%% over %d M -> %s"
+                  % (int(round(est)), est_err, 100 * frac_err, len(accepted),
+                     "converged" if self.w["pi_converged"]
+                     else "not converged (" + "; ".join(reasons) + ")"))
+        return {"g": est}, {"g": max(3 * est_err, 0.004 * est)}
 
     def _score(self):
         """Scalar quality used for best-so-far.  Single-shot separation is the thing
@@ -1395,6 +1531,7 @@ class AutoTuner(ExperimentClass):
             "chi":           {"f": float(self.w["read_pulse_freq"])},
             "readout_power": {"g": float(self.w["read_pulse_gain"])},
             "readout_len":   {"L": float(self.w["read_length"])},
+            "fine_pi_amp":   {"g": float(self.w["pi_gain"])},
         }
         best_score, best_state = -np.inf, None
         for rnd in range(1, int(self.P["max_rounds"]) + 1):
@@ -1407,9 +1544,26 @@ class AutoTuner(ExperimentClass):
             for name, deps, meth in GRAPH:
                 if not self.stale[name]:
                     continue
-                new, tol = getattr(self, meth)()
+                try:
+                    new, tol = getattr(self, meth)()
+                except TunerError as exc:
+                    if rnd == 1 or name not in RECOVERABLE or name not in values:
+                        raise
+                    self.stale[name] = False
+                    self._say("graph", "WARN",
+                              "%s failed on re-measurement (%s) -- KEEPING the round-1 "
+                              "value %s and carrying on; the device has moved since it was "
+                              "measured, so treat the committed config as provisional"
+                              % (name, str(exc).split(".")[0].strip(),
+                                 ", ".join("%s=%.4g" % kv for kv in values[name].items())))
+                    self.drifted.append(name)
+                    continue
                 self.stale[name] = False
+                if name == "readout_power":
+                    self.w["pi_at_readout"] = float(self.w["pi_gain"])
                 old = values.get(name)
+                if name == "fine_pi_amp" and np.isfinite(self.w.get("pi_at_readout", np.nan)):
+                    old = {"g": float(self.w["pi_at_readout"])}
                 values[name] = new
                 if old is not None:
                     moved = [k for k in new
@@ -1433,7 +1587,56 @@ class AutoTuner(ExperimentClass):
         if best_state is not None and self._score() < best_score:
             self.w = best_state
             self._say("graph", "OK", "restored best-so-far state (score %.3f)" % best_score)
+        self._verify_final()
         return best_score
+
+    def _verify_final(self):
+        """Re-measure the committed state on the hardware AS IT IS NOW.
+
+        Everything in self.w was measured at some earlier point in the run, and this
+        device moves within a run -- the same readout settings gave 2.07 sigma and then
+        1.81 sigma minutes apart.  Committing a best-so-far state the device has since
+        left would write a config that was true once and is not true now, so the final
+        numbers get one more measurement and any disagreement is reported rather than
+        assumed away."""
+        was_sep = float(self.w.get("ss_sep_sigma", np.nan))
+        try:
+            cfg = self._cfg_for("single_shot")
+            shots = int(self.P["single_shot"]["shots"])
+            ig, qg = _shots(self, cfg, [], self.w["drive_freq"], shots)
+            ie, qe = _shots(self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0)],
+                            self.w["drive_freq"], shots)
+            ss = single_shot_analysis(ig, qg, ie, qe)
+        except Exception as exc:
+            self._say("verify", "WARN", "the final re-measurement failed (%s) -- the "
+                      "committed config is UNVERIFIED" % exc)
+            self.w["verified"] = False
+            return
+        now_sep, now_fid = float(ss["sep_sigma"]), float(ss["fidelity"])
+        self.w["ss_verify_sigma"], self.w["ss_verify_fidelity"] = now_sep, now_fid
+        self.w["ss_sep_sigma"], self.w["ss_fidelity"] = now_sep, now_fid
+        tol = float(self.P["single_shot"]["verify_tol_frac"])
+        if not np.isfinite(was_sep) or was_sep <= 0:
+            self.w["verified"] = True
+            self._say("verify", "OK", "committed state re-measured: %.2f sigma, F=%.3f"
+                      % (now_sep, now_fid))
+            return
+        drift = abs(now_sep - was_sep) / was_sep
+        self.w["verified"] = bool(drift <= tol)
+        self._say("verify", "OK" if self.w["verified"] else "WARN",
+                  "committed state re-measured: %.2f sigma / F=%.3f now vs %.2f sigma when "
+                  "it was chosen (%.0f%% %s)%s"
+                  % (now_sep, now_fid, was_sep, 100 * drift,
+                     "lower" if now_sep < was_sep else "higher",
+                     "" if self.w["verified"] else
+                     " -- the device moved during the run, so these values are the best "
+                     "MEASURED but no longer reproduce; re-run to confirm before trusting "
+                     "them"))
+        if self.drifted:
+            self._say("verify", "WARN",
+                      "%s could not be re-measured this run and kept an earlier value -- "
+                      "the committed config mixes values from different times"
+                      % ", ".join(sorted(set(self.drifted))))
 
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
@@ -1493,7 +1696,7 @@ class AutoTuner(ExperimentClass):
                           "does not need single-shot discrimination, and %d independent M "
                           "values agree."
                           % (self.w["pi_gain"], self.w.get("pi_gain_err", float('nan')),
-                             len(self.node_data.get("fine_pi_amp", {}))))
+                             int(self.w.get("pi_n_agree", 0))))
                 self._say("verdict", "WARN",
                           "READOUT separation %.2f sigma is below the %.1f sigma floor, so "
                           "the readout values are the best FOUND but are not a good "

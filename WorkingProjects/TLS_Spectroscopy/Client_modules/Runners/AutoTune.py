@@ -43,6 +43,8 @@ def main():
         "kappa_mhz": data["working"].get("kappa_mhz"),
         "ss_fidelity": data["working"].get("ss_fidelity"),
         "ss_sep_sigma": data["working"].get("ss_sep_sigma"),
+        "verified": data["working"].get("verified"),
+        "ss_verify_sigma": data["working"].get("ss_verify_sigma"),
         "report": data.get("report", []),
     })
 
