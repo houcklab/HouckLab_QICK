@@ -98,14 +98,20 @@ def fit_notch_complex(freqs, z, f0_guess=None, kappa_guess=None):
 
     Model, to first order in the environment across a narrow span:
 
-        z(f) = A + B*x - C / (1 + 2i*x/kappa),      x = f - f0
+        z(f) = exp(-2i*pi*tau*x) * [A + B*x - C / (1 + 2i*x/kappa)],   x = f - f0
 
     A (background), B (chain slope) and C (resonance) are COMPLEX and enter LINEARLY, so
-    for any trial (f0, kappa) they follow from an exact least-squares solve and only two
-    real parameters are ever searched.  The phase of C/A is the mismatch angle: 0 for a
-    symmetric dip, non-zero for a Fano-asymmetric one.  Fitting the complex trace rather
+    for any trial (f0, kappa, tau) they follow from an exact least-squares solve and only
+    three real parameters are ever searched.  The phase of C/A is the mismatch angle: 0 for
+    a symmetric dip, non-zero for a Fano-asymmetric one.  Fitting the complex trace rather
     than |S21| is also what makes kappa right -- magnitude-fitting discards the phase,
-    which is where most of the linewidth information lives."""
+    which is where most of the linewidth information lives.
+
+    tau (cable delay) is NOT optional.  Over a few MHz a metre of cable winds the phase by
+    more than a radian and no linear background can absorb it.  Omitting it is exactly why
+    this fit converged on synthetic traces with a flat background and then failed on real
+    hardware data -- the synthetic test had been built to match the model's own
+    assumption."""
     f = np.asarray(freqs, dtype=float)
     zz = np.asarray(z, dtype=complex)
     good = np.isfinite(f) & np.isfinite(zz.real) & np.isfinite(zz.imag)
@@ -123,24 +129,35 @@ def fit_notch_complex(freqs, z, f0_guess=None, kappa_guess=None):
     if kappa_guess is None or not np.isfinite(kappa_guess) or kappa_guess <= 0:
         kappa_guess = max(span / 10.0, 1e-6)
 
-    def solve(fr, kap):
+    tau_max = 2.0 / span
+    try:
+        ph = np.unwrap(np.angle(zz))
+        k = max(int(0.3 * n), 4)
+        idx = np.r_[0:k, n - k:n]
+        slope = float(np.polyfit(f[idx], ph[idx], 1)[0])
+        tau0 = float(np.clip(-slope / (2.0 * np.pi), -tau_max, tau_max))
+    except Exception:
+        tau0 = 0.0
+
+    def solve(fr, kap, tau):
         x = f - fr
         M = np.column_stack([np.ones(n), x, -1.0 / (1.0 + 2j * x / kap)])
+        w = zz * np.exp(2j * np.pi * tau * x)
         try:
-            p, _res, _rank, _sv = np.linalg.lstsq(M, zz, rcond=None)
+            p, _res, _rank, _sv = np.linalg.lstsq(M, w, rcond=None)
         except np.linalg.LinAlgError:
             return np.inf, None, None
-        r = zz - M.dot(p)
+        r = w - M.dot(p)
         return float(np.real(np.vdot(r, r))), p, M
 
     def cost(theta):
-        fr, lk = float(theta[0]), float(theta[1])
+        fr, lk, tau = float(theta[0]), float(theta[1]), float(theta[2])
         kap = float(np.exp(lk))
         if not (f.min() - span <= fr <= f.max() + span):
             return 1e30
-        if not (1e-7 <= kap <= 10.0 * span):
+        if not (1e-7 <= kap <= 10.0 * span) or abs(tau) > tau_max:
             return 1e30
-        s = solve(fr, kap)[0]
+        s = solve(fr, kap, tau)[0]
         return s if np.isfinite(s) else 1e30
 
     from scipy.optimize import minimize
@@ -148,11 +165,12 @@ def fit_notch_complex(freqs, z, f0_guess=None, kappa_guess=None):
     starts = []
     for fr0 in (f0_guess, f0_guess - 0.1 * span, f0_guess + 0.1 * span):
         for kr in (0.3, 1.0, 3.0):
-            starts.append((fr0, np.log(max(kappa_guess * kr, 1e-7))))
+            for t0 in (tau0, 0.0):
+                starts.append((fr0, np.log(max(kappa_guess * kr, 1e-7)), t0))
     for th0 in starts:
         try:
             r = minimize(cost, np.array(th0), method="Nelder-Mead",
-                         options={"xatol": span * 1e-7, "fatol": 1e-12, "maxiter": 2000})
+                         options={"xatol": span * 1e-7, "fatol": 1e-12, "maxiter": 4000})
         except Exception:
             continue
         if r.fun < 1e29 and (best is None or r.fun < best.fun):
@@ -161,22 +179,28 @@ def fit_notch_complex(freqs, z, f0_guess=None, kappa_guess=None):
         return out
     fr = float(best.x[0])
     kap = float(np.exp(best.x[1]))
-    smin, p, M = solve(fr, kap)
+    tau = float(best.x[2])
+    smin, p, M = solve(fr, kap, tau)
     if p is None or not np.isfinite(smin):
         return out
     if not (f.min() <= fr <= f.max()) or not (0 < kap <= 2.0 * span):
         return out
 
-    dof = max(2 * n - 8, 1)
+    dof = max(2 * n - 9, 1)
     sigma2 = smin / dof
     hf, hk = span * 1e-3, kap * 1e-2
+    lk = np.log(kap)
+
+    def _c(a, b):
+        return cost([a, b, tau])
+
     try:
-        sff = (cost([fr + hf, np.log(kap)]) - 2 * smin + cost([fr - hf, np.log(kap)])) / hf ** 2
-        skk = (cost([fr, np.log(kap + hk)]) - 2 * smin
-               + cost([fr, np.log(max(kap - hk, 1e-9))])) / hk ** 2
-        sfk = (cost([fr + hf, np.log(kap + hk)]) - cost([fr + hf, np.log(max(kap - hk, 1e-9))])
-               - cost([fr - hf, np.log(kap + hk)])
-               + cost([fr - hf, np.log(max(kap - hk, 1e-9))])) / (4 * hf * hk)
+        sff = (_c(fr + hf, lk) - 2 * smin + _c(fr - hf, lk)) / hf ** 2
+        skk = (_c(fr, np.log(kap + hk)) - 2 * smin
+               + _c(fr, np.log(max(kap - hk, 1e-9)))) / hk ** 2
+        sfk = (_c(fr + hf, np.log(kap + hk)) - _c(fr + hf, np.log(max(kap - hk, 1e-9)))
+               - _c(fr - hf, np.log(kap + hk))
+               + _c(fr - hf, np.log(max(kap - hk, 1e-9)))) / (4 * hf * hk)
         H = np.array([[sff, sfk], [sfk, skk]], dtype=float)
         cov = 2.0 * sigma2 * np.linalg.inv(H)
         f0_err = float(np.sqrt(abs(cov[0, 0])))
@@ -785,7 +809,8 @@ DEFAULTS = {
     "spec": {"span_mhz": 20.0, "points": 121, "max_span_mhz": 150.0, "shots": 500,
              "gain": None, "len_us": None, "relax_delay_us": 500.0,
              "confirm_min_snr": 5.0, "confirm_steps": 3, "confirm_repeat_sigma": 4.0,
-             "confirm_min_lever": 0.5},
+             "confirm_min_lever": 0.5, "confirm_min_points": 4,
+             "confirm_max_shift_frac": 1.0, "confirm_shift_sigma": 3.0},
     "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500, "relax_delay_us": None},
     "chi": {"span_mhz": 4.0, "points": 81, "shots": 500, "relax_delay_us": None},
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
@@ -1048,28 +1073,50 @@ class AutoTuner(ExperimentClass):
                 centres.append(f3["f0"])
                 powers.append(float(g) ** 2)
         f_q, lever = float(centres[0]), min(powers) / max(powers)
-        if len(centres) >= 2 and lever <= float(P["confirm_min_lever"]):
-            f_ex = float(np.polyfit(np.array(powers), np.array(centres), 1)[-1])
+        n_need = int(P["confirm_min_points"])
+        if len(centres) >= n_need and lever <= float(P["confirm_min_lever"]):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                c, cov = np.polyfit(np.array(powers), np.array(centres), 1, cov=True)
+            f_ex = float(c[-1])
+            f_ex_err = float(np.sqrt(abs(cov[-1, -1])))
             shift = abs(f_ex - centres[0])
-            cap = max(0.5 * fit["fwhm"], 3.0 * float(np.std(centres)))
-            if shift <= cap:
+            cap = float(P["confirm_max_shift_frac"]) * fit["fwhm"]
+            nsig = float(P["confirm_shift_sigma"])
+            why = None
+            if not np.isfinite(f_ex_err) or f_ex_err > 0.5 * fit["fwhm"]:
+                why = ("the intercept is only determined to +/-%.3f MHz, half a linewidth"
+                       % f_ex_err)
+            elif shift < nsig * f_ex_err:
+                why = ("the %.3f MHz correction is under %.0f sigma of its own %.3f MHz "
+                       "uncertainty, so it is scatter and not a measured shift"
+                       % (shift, nsig, f_ex_err))
+            elif shift > cap:
+                why = ("it would move the line %.3f MHz, more than the %.3f MHz runaway "
+                       "guard (%.1f linewidths)"
+                       % (shift, cap, float(P["confirm_max_shift_frac"])))
+            if why is None:
                 f_q = f_ex
-                self._say("spec", "OK", "qubit line %.4f MHz (zero-power extrapolation over "
-                                        "%d powers; highest-power centre %.4f)"
-                          % (f_q, len(centres), centres[0]))
+                self._say("spec", "OK", "qubit line %.4f MHz +/- %.4f (zero-power "
+                                        "extrapolation over %d powers; highest-power "
+                                        "centre %.4f)"
+                          % (f_q, f_ex_err, len(centres), centres[0]))
             else:
                 self._say("spec", "WARN",
-                          "the zero-power extrapolation would move the line %.3f MHz, more "
-                          "than the %.3f MHz the scatter of the %d centres supports -- over "
-                          "this short a power lever arm that is amplified fit noise, not a "
-                          "Stark shift, so the full-power centre %.4f is kept"
-                          % (shift, cap, len(centres), centres[0]))
+                          "the zero-power extrapolation is REJECTED (%s) -- over this short "
+                          "a power lever arm that is amplified fit noise, not a Stark "
+                          "shift, so the full-drive centre %.4f is kept. A wrong centre "
+                          "here detunes the Rabi and wrecks everything downstream."
+                          % (why, centres[0]))
         elif len(centres) >= 2:
             self._say("spec", "OK",
-                      "qubit line %.4f MHz (reproduced at %d powers, but the weakest was "
-                      "still %.0f%% of the strongest -- too short a lever arm to extrapolate "
-                      "to zero power, so this is the full-drive centre)"
-                      % (f_q, len(centres), 100 * lever))
+                      "qubit line %.4f MHz (reproduced at %d powers, but %s -- not enough "
+                      "to extrapolate to zero power, so this is the full-drive centre)"
+                      % (f_q, len(centres),
+                         "the weakest was still %.0f%% of the strongest" % (100 * lever)
+                         if lever > float(P["confirm_min_lever"])
+                         else "%d points is under the %d needed for a trustworthy intercept"
+                              % (len(centres), n_need)))
         else:
             self._say("spec", "OK",
                       "qubit line %.4f MHz (reproduced at full drive; only one power was "

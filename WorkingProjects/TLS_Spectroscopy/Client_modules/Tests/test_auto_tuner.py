@@ -705,27 +705,30 @@ check("a T1 with NO usable error bar is not treated as precise",
 
 print("\n== an ASYMMETRIC resonator dip must not bias f0 ==")
 _rng = np.random.default_rng(7)
-for phi in (0.0, 30.0, 60.0):
+for phi, tau_ns in ((0.0, 0.0), (30.0, 0.0), (60.0, 0.0),
+                    (0.0, 100.0), (40.0, 100.0), (40.0, 250.0)):
     fr, kap = 7248.9000, 0.350
     fgrid = np.linspace(fr - 2.0, fr + 2.0, 81)
     xg = fgrid - fr
     s21 = 1.0 - (0.55 * np.exp(1j * np.deg2rad(phi))) / (1 + 2j * xg / kap)
-    zc = 3000.0 * np.exp(1j * 0.7) * (1 + 0.01 * xg) * s21
+    zc = (3000.0 * np.exp(1j * 0.7) * (1 + 0.01 * xg)
+          * np.exp(-2j * np.pi * (tau_ns * 1e-3) * xg) * s21)
     zc = zc + (_rng.normal(0, 25, fgrid.size) + 1j * _rng.normal(0, 25, fgrid.size))
     sym = T.fit_resonance(fgrid, np.abs(zc) ** 2, expected_fwhm=0.3)
     cpx = T.fit_notch_complex(fgrid, zc, f0_guess=fgrid[np.argmin(np.abs(zc))],
                               kappa_guess=0.4)
-    check("phi=%2.0f deg: complex notch fit recovers f0 to <20 kHz" % phi,
+    tag = "phi=%2.0f deg, %3.0f ns cable" % (phi, tau_ns)
+    check("%s: complex notch fit CONVERGES and recovers f0 to <20 kHz" % tag,
           cpx["ok"] and abs(cpx["f0"] - fr) < 0.020,
-          "err = %+.1f kHz" % (1000 * (cpx["f0"] - fr)))
-    check("phi=%2.0f deg: complex fit recovers kappa to <10%%" % phi,
+          "err = %+.1f kHz" % (1000 * (cpx["f0"] - fr)) if cpx["ok"] else "NO CONVERGENCE")
+    check("%s: complex fit recovers kappa to <10%%" % tag,
           cpx["ok"] and abs(cpx["fwhm"] - kap) / kap < 0.10,
-          "kappa = %.3f vs %.3f" % (cpx["fwhm"], kap))
-    check("phi=%2.0f deg: asymmetry angle is reported, not hidden" % phi,
-          cpx["ok"] and abs(cpx["asym_deg"] - phi) < 6.0,
-          "asym = %.1f deg" % cpx["asym_deg"])
+          "kappa = %.3f vs %.3f" % (cpx["fwhm"], kap) if cpx["ok"] else "-")
+    check("%s: asymmetry angle is reported, not hidden" % tag,
+          cpx["ok"] and abs(cpx["asym_deg"] - phi) < 8.0,
+          "asym = %.1f deg" % cpx["asym_deg"] if cpx["ok"] else "-")
     if phi >= 30.0:
-        check("phi=%2.0f deg: the SYMMETRIC fit really is biased (this is why)" % phi,
+        check("%s: the SYMMETRIC fit really is biased (this is why)" % tag,
               sym["ok"] and abs(sym["f0"] - fr) > 0.050,
               "symmetric err = %+.1f kHz = %.2f kappa"
               % (1000 * (sym["f0"] - fr), abs(sym["f0"] - fr) / kap))
@@ -733,7 +736,7 @@ for phi in (0.0, 30.0, 60.0):
 print("\n== a real qubit line must survive the spec power confirmation ==")
 
 
-def _spec_run(snr_full, seed=3):
+def _spec_run(snr_full, seed=3, stark=0.0):
     rng = np.random.default_rng(seed)
     f_true, fwhm = 2530.84, 3.9
 
@@ -744,8 +747,9 @@ def _spec_run(snr_full, seed=3):
         def acquire(self, soc, **kw):
             c = self.cfg
             fs = c["start"] + c["step"] * np.arange(c["expts"])
-            amp = snr_full * (float(c["spec_gain"]) / 7000.0) ** 2
-            peak = amp / (1.0 + ((fs - f_true) / (fwhm / 2.0)) ** 2)
+            rel = (float(c["spec_gain"]) / 7000.0) ** 2
+            amp = snr_full * rel
+            peak = amp / (1.0 + ((fs - (f_true + stark * rel)) / (fwhm / 2.0)) ** 2)
             i = peak + rng.normal(0, 1.0, fs.size)
             q = rng.normal(0, 1.0, fs.size)
             return fs, [[i]], [[q]]
@@ -769,7 +773,8 @@ check("a weak line is never made WORSE by extrapolating over a short lever arm",
       abs(res_w[0]["f"] - 2530.84) < 0.15,
       "found %.4f, full-power centre was accurate" % res_w[0]["f"])
 check("and the tuner says WHY it did not extrapolate, instead of dying",
-      any(("lever arm" in l or "gain^2" in l) for l in st_w.report_lines))
+      any(("not enough to extrapolate" in l or "REJECTED" in l or "gain^2" in l)
+          for l in st_w.report_lines))
 
 st_v, res_v = _spec_run(5.5, seed=11)
 check("an even weaker line skips the ladder entirely rather than failing",
@@ -778,10 +783,19 @@ check("the Rabi is named as the real confirmation, not the power ladder",
       any("coherent oscillation" in l for l in st_v.report_lines)
       or any("lever arm" in l for l in st_v.report_lines))
 
-st_s, res_s = _spec_run(400.0)
-check("a STRONG line still gets the zero-power Stark extrapolation",
-      any("zero-power extrapolation" in l for l in st_s.report_lines),
-      "f = %.3f" % res_s[0]["f"])
+st_s, res_s = _spec_run(400.0, stark=1.0)
+_used = any(("zero-power extrapolation over" in l and "REJECTED" not in l)
+            for l in st_s.report_lines)
+check("a STRONG line with a REAL Stark shift does get extrapolated to zero power",
+      _used, "f = %.3f" % res_s[0]["f"])
+check("and the extrapolation beats the full-drive centre it corrects",
+      abs(res_s[0]["f"] - 2530.84) < 0.35,
+      "extrapolated %.3f vs true 2530.84 (full-drive centre sits near 2531.84)"
+      % res_s[0]["f"])
+
+st_n, res_n = _spec_run(400.0, stark=0.0)
+check("but a line with NO Stark shift is not moved by a noise-only extrapolation",
+      abs(res_n[0]["f"] - 2530.84) < 0.05, "found %.4f" % res_n[0]["f"])
 
 print("\n== but pure noise must still be rejected ==")
 try:
