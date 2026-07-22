@@ -1,22 +1,3 @@
-"""
-Safe programmatic editor for Calib/initialize.py's BaseConfig -- the auto-tuner's
-"update the config" step.
-
-Design: the values live as literals in a plain dict in a human-edited Python file, so
-the editor must (a) change ONLY the requested values, byte-preserving everything else
-(comments, alignment, ordering), and (b) never leave the file broken.  Approach:
-
-  1. locate the BaseConfig dict's line span with `ast` (no regex guessing of the block);
-  2. regex-replace each key's value ON ITS OWN LINE inside that span only;
-  3. re-parse the RESULT STRING with `ast` and verify every requested key now literal-
-     equals the requested value -- BEFORE anything touches the disk;
-  4. only then: write a timestamped backup next to the file, then atomically replace.
-
-Also keeps `pi_calibration_history.json` in Calib/: an append-only record of every
-tuner run (old -> new values, residuals, and the hardware-measured Ramsey sign
-convention, which later runs reuse instead of re-probing).
-"""
-
 import ast
 import datetime
 import json
@@ -67,11 +48,11 @@ def read_baseconfig(path=None):
 def _fmt(v):
     if isinstance(v, (bool, np.bool_)):
         return repr(bool(v))
-    if isinstance(v, (int, np.integer)):    # np.int64 is NOT a python int -- check both
+    if isinstance(v, (int, np.integer)):
         return str(int(v))
     f = float(v)
     s = ("%.4f" % f).rstrip("0").rstrip(".")
-    return s if "." in s else s + ".0"      # keep floats visibly float
+    return s if "." in s else s + ".0"
 
 
 def update_baseconfig(updates, path=None, backup=True):
@@ -83,7 +64,7 @@ def update_baseconfig(updates, path=None, backup=True):
         src = f.read()
     tree = ast.parse(src)
     node = _baseconfig_node(tree)
-    lo, hi = node.lineno, node.end_lineno            # 1-indexed, inclusive
+    lo, hi = node.lineno, node.end_lineno
     lines = src.splitlines(keepends=True)
 
     changed = {}
@@ -100,7 +81,6 @@ def update_baseconfig(updates, path=None, backup=True):
         changed[key] = (m.group(2).strip(), new_val)
 
     new_src = "".join(lines)
-    # verify BEFORE touching the disk
     new_vals = {}
     new_node = _baseconfig_node(ast.parse(new_src))
     for k, v in zip(new_node.value.keys, new_node.value.values):
@@ -111,9 +91,6 @@ def update_baseconfig(updates, path=None, backup=True):
                 pass
     for key, val in updates.items():
         got = new_vals.get(key)
-        # verify against what was WRITTEN (the formatted literal), not the raw request:
-        # 4-decimal float formatting is part of the contract, and an exact re-read of the
-        # written literal is the strongest possible check that the file is correct.
         want = ast.literal_eval(_fmt(val))
         ok = (got == want) if isinstance(want, int) else (
             got is not None and abs(float(got) - float(want)) < 1e-12)
@@ -134,7 +111,6 @@ def update_baseconfig(updates, path=None, backup=True):
     return changed
 
 
-# ---------------------------------------------------------------------------- history
 
 def history_path(path=None):
     return os.path.join(os.path.dirname(path or config_path()), "pi_calibration_history.json")
@@ -151,7 +127,6 @@ def append_history(record, path=None):
             with open(hp, encoding="utf-8") as f:
                 records = json.load(f)
         except Exception:
-            # never silently drop an unreadable history -- keep it alongside
             try:
                 os.replace(hp, hp + ".corrupt_" +
                            datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))

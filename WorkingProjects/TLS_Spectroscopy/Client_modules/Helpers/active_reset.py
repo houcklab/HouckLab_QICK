@@ -1,32 +1,3 @@
-"""
-tProc-v1 active (feedback) reset for QICK 0.2.133 -- the faithful analog of the QUA
-active reset  ``while_(I_reset > thr): play('X180')``.
-
-STATUS: the tProc-v1 primitives are CONFIRMED present in qick 0.2.133 -- ``read`` (reads a
-readout accumulator half into a tProc register; opcode 0b01010011, args ``read ch, p, oper
-$r`` with oper in {lower, upper}), ``condj`` (conditional branch to a label), and
-``label`` -- all callable via QickProgram.__getattr__.  What CANNOT be confirmed off the
-board:
-  (1) whether THIS board's firmware routes the readout buffer into a tProc input port
-      (the feedback path).  This is firmware-dependent: the QICK docs call the 4 feedback
-      input channels an "updated tProcessor" feature, and qick.py sets the buffer's
-      ``tproc_ch = -1`` when "this buffer doesn't feed back into the tProc".  RUNTIME CHECK:
-      ``feedback_channel(soccfg, ro_ch) >= 0``.
-  (2) which accumulator half (lower/upper) is I, the raw-accumulator threshold value, and
-      the discrimination axis.  The tProc ``read`` returns the RAW accumulator (not the
-      host-side rotated/divided I), so the threshold must be in raw units and the readout
-      phase must be set so ground/excited separate along the read axis.
-
-=> Run ``Experiments/mActiveResetProbe.py`` FIRST.  It (a) reports feedback_channel, and
-   (b) if >=0, measures the raw ``read`` value for prepared ground vs excited states,
-   confirming the read works and giving you the raw threshold to pass here.  Until then,
-   passive relax remains the default everywhere (this module is opt-in).
-
-References: qick_demos 03_Conditional_logic (condj) + 04_Reading_Math_Writing; QICK papers
-(conditional-logic feedback latency ~42 ns).
-"""
-
-
 def to_signed32(v):
     """Interpret a 32-bit word as a SIGNED int.  The tProc readout accumulator is signed, but
     soc.tproc.single_read / read_dmem hand the word back UNSIGNED, so a small negative like
@@ -52,7 +23,6 @@ def active_reset_supported(soccfg, ro_ch=0):
     return feedback_channel(soccfg, ro_ch) >= 0
 
 
-# unique-label counter so multiple reset blocks in one program don't collide
 _UID = [0]
 
 
@@ -99,29 +69,22 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
             "firmware cannot do active reset.  Use reset_mode='passive'.")
 
     page = prog.ch_page(qubit_ch) if page is None else page
-    reg_val = 20 if reg_val is None else reg_val      # scratch: read value
-    reg_thr = 21 if reg_thr is None else reg_thr      # scratch: threshold
+    reg_val = 20 if reg_val is None else reg_val
+    reg_thr = 21 if reg_thr is None else reg_thr
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
 
     _UID[0] += 1
-    # ground satisfies (value <op> threshold); we then SKIP the pi (not jump out of the loop).
     ground_op = "<" if ground_below else ">"
 
-    # FIXED count: always exactly max_iters measurements (each: measure -> read -> if excited,
-    # pi).  Once the qubit reaches ground the remaining iterations measure ground and skip the
-    # pi (no-op), so the final state is ground AND the number of readout triggers is
-    # DETERMINISTIC (= max_iters).  This matters: the enclosing AveragerProgram counts readouts
-    # via readouts_per_experiment, so a variable count (early jump-out) would corrupt the data
-    # buffer.  Callers MUST add active_reset_readouts(cfg) to their readouts_per_experiment.
     prog.regwi(page, reg_thr, int(threshold_raw), "active-reset threshold (raw)")
     for i in range(int(max_iters)):
         prog.measure(pulse_ch=res_ch, adcs=[ro_ch], adc_trig_offset=off,
                      wait=True, syncdelay=prog.us2cycles(meas_syncdelay_us))
-        prog.read(tproc_ch, page, oper, reg_val)          # accumulator half -> register
+        prog.read(tproc_ch, page, oper, reg_val)
         skip = f"AR_SKIP_{_UID[0]}_{i}"
-        prog.condj(page, reg_val, ground_op, reg_thr, skip)   # ground -> skip the pi
-        prog.pulse(ch=qubit_ch)                               # excited -> pi
+        prog.condj(page, reg_val, ground_op, reg_thr, skip)
+        prog.pulse(ch=qubit_ch)
         prog.label(skip)
         prog.sync_all(prog.us2cycles(settle_us))
 

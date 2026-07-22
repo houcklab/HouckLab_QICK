@@ -1,22 +1,3 @@
-"""
-Rabi chevron, averaged-IQ readout -- QICK port of Houck-Lab-Qua
-LabCode/Experiments/Rabi/m_Rabi_Chevron_IQ.py::RabiChevronIQ.
-
-QUA parity (only units translate: Volts->DAC gain, IF Hz->absolute MHz, ns->us):
-  * 2D sweep, qubit-drive frequency detuning (df) x pulse amplitude (gain).
-  * Each point plays num_pi X180 pulses (or 2*num_pi X90 pulses -- 2 X90 == 1 X180)
-    at the swept gain, then reads out I/Q averaged over `shots` reps.
-  * QUA already uses a passive wait(reset_time) between shots here (NO active reset),
-    so this is a byte-faithful port -- relax_delay is the QUA reset_time.
-  * analyze(): argmax(I^2 + Q^2) over the (df, gain) map -> the drive detuning and gain
-    that maximize the excited-state signal (rough pi frequency + amplitude), and the
-    QUA 2-panel I/Q chevron PNG (amplitude [DAC] x detuning [MHz]).
-
-The amplitude axis is the ABSOLUTE qubit-drive DAC gain (QICK sets gain directly), so
-there is no QUA pi_amp normalization: `amp_start/amp_stop` ARE gains.  The frequency axis
-is the drive detuning around cfg['qubit_pi_freq'] (absolute MHz; q_LO = 0 in this port).
-"""
-
 import datetime
 
 import numpy as np
@@ -28,12 +9,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 
 
-# ---- optional fast-flux hold: tune the pi at an arbitrary DC offset (the sweet spot may
-# ---- be at any flux).  cfg['ff_hold_gain'] == 0 -> no hold (native/park, QUA YOKO=0).
-# ---- Non-zero -> ramp park->hold at ff_hold_gain across the drive (and the readout if
-# ---- cfg['readout_after_park'] is False), then ramp back -- the step-3 flux-delivery
-# ---- sequence.  When holding, set qubit_pi_freq to the qubit freq AT that flux (from a
-# ---- spec there); readout stays at park by default (uses the park single-shot cal).
 def flux_hold_us(cfg, cover_readout):
     hold = int(cfg["n_pulses"]) * (4.0 * float(cfg["sigma"]) + 0.010) + 0.05
     if cover_readout:
@@ -72,13 +47,13 @@ def _rabi_feedback_reset(prog):
     cfg = prog.cfg
     page = prog.ch_page(cfg["qubit_ch"])
     r_gain = prog.sreg(cfg["qubit_ch"], "gain")
-    prog.mathi(page, 27, r_gain, "+", 0)                    # save swept gain -> scratch 27
-    prog.regwi(page, r_gain, int(cfg["qubit_pi_gain"]))     # gain = pi for the reset pulses
+    prog.mathi(page, 27, r_gain, "+", 0)
+    prog.regwi(page, r_gain, int(cfg["qubit_pi_gain"]))
     active_reset.active_reset_block(
         prog, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
         oper=cfg.get("reset_oper", "lower"), ground_below=cfg.get("reset_ground_below", True),
         max_iters=int(cfg.get("reset_max_iters", 3)), page=page, reg_val=25, reg_thr=26)
-    prog.mathi(page, r_gain, 27, "+", 0)                    # restore swept gain for the drive
+    prog.mathi(page, r_gain, 27, "+", 0)
 
 
 def rabi_flux_body(prog):
@@ -90,14 +65,14 @@ def rabi_flux_body(prog):
     cfg = prog.cfg
     feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
     if feedback:
-        _rabi_feedback_reset(prog)                 # reset to ground at park before the shot
+        _rabi_feedback_reset(prog)
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
         ff_pulse.assert_park(prog, prog.ff_segs)
         prog.sync_all(prog.us2cycles(max(float(cfg.get("baseline_rearm_us", 0.5)), 0.05)))
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         prog.sync_all(prog.us2cycles(0.01))
-    for _ in range(int(cfg["n_pulses"])):        # QUA: num_pi X180 (or 2*num_pi X90)
+    for _ in range(int(cfg["n_pulses"])):
         prog.pulse(ch=cfg["qubit_ch"])
         prog.sync_all(prog.us2cycles(0.010))
     read_at_park = (not hold) or bool(cfg.get("readout_after_park", True))
@@ -189,7 +164,7 @@ class RabiChevronIQ(ExperimentClass):
 
         cfg["amp_start"] = int(round(cfg["amp_start"]))
         cfg["amp_step"] = int(round((cfg["amp_stop"] - cfg["amp_start"]) / max(int(cfg["amp_expts"]) - 1, 1)))
-        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(int(cfg["amp_expts"]))  # actual HW sweep
+        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(int(cfg["amp_expts"]))
         df_vec = np.linspace(-cfg["freq_span"] / 2.0, cfg["freq_span"] / 2.0, int(cfg["freq_points"]))
         pi_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
 

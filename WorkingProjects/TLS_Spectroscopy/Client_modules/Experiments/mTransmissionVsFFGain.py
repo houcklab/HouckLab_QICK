@@ -1,16 +1,3 @@
-"""
-STEP 1: resonator transmission vs flux (all-fast-flux) -- QUA-identical behavior.
-
-Structural port of Houck-Lab-Qua m_transmission_vs_flux.py::TransmissionVsFlux with
-the OPX set_dc_offset flux axis replaced by the ff-DAC gain axis (readout happens
-AT the held flux via stdysel='last').  Order of operations, prints, live plotting,
-progress counter, file artifacts (4-column lookup CSV written BEFORE the fits,
-lookup PNG, final overlay PNG, pickle), data keys, and both fits (raw-trace cosine,
-smoothed-trace dispersive with the exact QUA seeds/branch/bounds) mirror the QUA
-source line by line.  Units: flux in ff_gain DAC units, frequencies absolute Hz
-(r_lo = 0), so the CSV keeps the QUA Hz column semantics honestly.
-"""
-
 import time
 import datetime
 
@@ -91,36 +78,30 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def acquire(self, progress=False, plotDisp=False, figNum=1):
         cfg = self.cfg
-        f_vec = self._freq_vec()          # MHz absolute
-        dc_vec = self._gain_vec()         # ff_gain DAC units (the QUA dc_vec analog)
-        r_lo = 0.0                        # QICK synthesizes absolute tones
+        f_vec = self._freq_vec()
+        dc_vec = self._gain_vec()
+        r_lo = 0.0
         qubit_lo_hz = cfg.get("qubit_freq", 0.0) * 1e6
 
         self.data = {'qubit': self.path, 'f_vec': f_vec, 'dc_vec': dc_vec,
                      'meta_dict': dict(cfg)}
 
-        R = np.full((len(f_vec), len(dc_vec)), np.nan)       # (num_f, num_dc), dBm-style
+        R = np.full((len(f_vec), len(dc_vec)), np.nan)
         phase_raw = np.full((len(f_vec), len(dc_vec)), np.nan)
 
-        # QUA-style shot-interleaved acquisition (m_transmission_vs_flux averages the
-        # shot loop OUTERMOST): sweep the whole flux x freq map `rounds` times with
-        # reps ~= shots/rounds per pass, so slow drift averages uniformly into the map
-        # instead of imprinting a gradient along the flux axis.  rounds=1 reproduces the
-        # old fast per-point average; rounds=shots is exact single-shot interleaving.
         shots = int(cfg.get("reps", cfg.get("shots", 200)))
         rounds = resolve_rounds(cfg, shots, default=cfg.get("trans_rounds"))
         n_f, n_dc = len(f_vec), len(dc_vec)
-        points = [(i_dc, j_f) for i_dc in range(n_dc) for j_f in range(n_f)]  # flux-major
+        points = [(i_dc, j_f) for i_dc in range(n_dc) for j_f in range(n_f)]
 
         def run_point(idx, reps):
             i_dc, j_f = points[idx]
             cfg["ff_gain"] = float(dc_vec[i_dc])
             cfg["read_pulse_freq"] = float(f_vec[j_f])
             cfg["reps"] = int(reps)
-            with suppress_stdout():      # keep qick per-program chatter off the progress line
+            with suppress_stdout():
                 prog = FFTransProgram(self.soccfg, cfg)
                 res = prog.acquire(self.soc, load_pulses=True, progress=False)
-            # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q)
             return np.array(res[0]).mean() + 1j * np.array(res[1]).mean()
 
         live = LiveFigure(figsize=(8, 7)) if plotDisp else None
@@ -128,7 +109,7 @@ class TransmissionVsFFGain(ExperimentClass):
         interrupted = False
 
         def _fill_map(running):
-            Smap = np.asarray(running).reshape(n_dc, n_f).T      # (n_f, n_dc)
+            Smap = np.asarray(running).reshape(n_dc, n_f).T
             R[:, :] = 20 * np.log10(np.abs(Smap) + 1e-12)
             phase_raw[:, :] = np.angle(Smap)
             self.data.update({"IQ_mag": R.copy(), "IQ_phase": phase_raw.copy()})
@@ -171,12 +152,10 @@ class TransmissionVsFFGain(ExperimentClass):
             self.pickle_data()
             return {'config': cfg, 'data': self.data}
 
-        # ---- dip extraction (RAW): per flux column, freq of minimum dB magnitude
         minima = np.zeros(len(dc_vec))
         for i in range(len(dc_vec)):
             minima[i] = f_vec[np.argmin(R.T[i])]
 
-        # ---- smoothing (always; feeds lookup CSV/plot, dip prints, dispersive fit)
         minima_lookup, smooth_window = ff.smooth_resonator_dip_trace(
             minima, self.resonator_lookup_smooth_points)
 
@@ -187,7 +166,6 @@ class TransmissionVsFFGain(ExperimentClass):
         print(f"Resonator dip MIN freq {_dip_hz[_imin] / 1e9:.6f} GHz at DC = {dc_vec[_imin]:+.5f} DAC")
         print(f"DC scan range: {float(np.min(dc_vec)):+.5f} .. {float(np.max(dc_vec)):+.5f} DAC")
 
-        # ---- lookup CSV (BEFORE the fits, so it survives a fit failure) + PNG
         if self.save_resonator_lookup:
             import os
             lookup_csv_path = os.path.splitext(self.iname)[0] + "_resonator_lookup.csv"
@@ -227,14 +205,12 @@ class TransmissionVsFFGain(ExperimentClass):
             self.data['resonator_lookup_png'] = lookup_png_path
             print(f"Saved resonator dip lookup plot: {lookup_png_path}")
 
-        # ---- cosine fit on the RAW minima (QUA-exact seeds; failure propagates)
         fit_params, initial_guess = ff.cosine_fit_qua(dc_vec, minima)
         print("initial guesses", ','.join(map(str, initial_guess)))
         print("cosine fit parameters (legacy)", ','.join(map(str, fit_params)))
         self.data['resonator_fit_parameters_cosine'] = [float(v) for v in fit_params]
         fitted_curve = ff.cosine_vs_flux(dc_vec, *fit_params)
 
-        # ---- dispersive fit on the SMOOTHED trace (period seeded from cosine)
         dispersive_params = None
         try:
             period_seed = 1.0 / fit_params[1]
@@ -248,7 +224,6 @@ class TransmissionVsFFGain(ExperimentClass):
         except Exception as exc:
             print(f"Dispersive resonator fit failed ({exc}); cosine fit (legacy) remains available.")
 
-        # ---- final saved figure (single panel, cosine + dispersive overlays)
         while plt.fignum_exists(num=figNum):
             figNum += 1
         plt.figure(figNum)

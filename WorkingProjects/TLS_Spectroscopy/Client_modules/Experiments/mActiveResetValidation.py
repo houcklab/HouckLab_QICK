@@ -1,23 +1,3 @@
-"""
-Active-reset validation -- the one-number yes/no that the FULL feedback loop resets the
-qubit (not just that the read works, which mActiveResetProbe already showed).
-
-Runs three configs and reads the FINAL measurement each time:
-  |g> ref   : no pi, no reset                       -> (Ig, Qg)
-  |e> ref   : pi, no reset                          -> (Ie, Qe)
-  |e>+reset : pi, then the active-reset feedback    -> (Ir, Qr)
-
-Metric: the residual excited fraction = projection of (reset - |g>) onto the (|e> - |g>)
-readout vector.  ~0 -> the qubit was driven to ground (reset works); ~1 -> still excited.
-Uses the full IQ vector (no assumption about which quadrature discriminates), so it is
-robust even though this board's separation is on Q, not I.
-
-Self-contained buffer handling: the fixed-count reset adds exactly reset_max_iters readout
-triggers, so readouts_per_experiment = (max_iters if reset else 0) + 1 and the final
-measurement is the LAST readout.  This is purely diagnostic -- it changes no calibration.
-Run it (board back up) BEFORE trusting reset_mode='feedback' in the T1/SS Rabis.
-"""
-
 import datetime
 
 import numpy as np
@@ -47,7 +27,6 @@ class ResetValidationProgram(AveragerProgram):
         qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]), gen_ch=cfg["qubit_ch"])
         self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
                        sigma=self.us2cycles(cfg["sigma"]), length=self.us2cycles(cfg["sigma"]) * 4)
-        # pulse register sits at the pi gain -> used for BOTH the |e> prep and the reset pi
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq, phase=0,
                                  gain=int(cfg["qubit_pi_gain"]), waveform="qubit")
         self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
@@ -58,7 +37,7 @@ class ResetValidationProgram(AveragerProgram):
     def body(self):
         cfg = self.cfg
         if cfg.get("prep_excited", True):
-            self.pulse(ch=cfg["qubit_ch"])           # |e> prep
+            self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
         if cfg.get("do_reset", False):
             ar.active_reset_block(
@@ -74,7 +53,6 @@ class ResetValidationProgram(AveragerProgram):
         reads = (int(self.cfg.get("reset_max_iters", 3)) if self.cfg.get("do_reset", False) else 0) + 1
         avg_di, avg_dq = super().acquire(soc, readouts_per_experiment=reads,
                                          load_pulses=load_pulses, progress=progress)
-        # the final measurement is the LAST readout of the experiment
         return float(np.asarray(avg_di)[0][-1]), float(np.asarray(avg_dq)[0][-1])
 
 
@@ -122,24 +100,21 @@ class ActiveResetValidation(ExperimentClass):
             raise ValueError("reset_threshold_raw is required (run mActiveResetProbe first).")
         cfg["tproc_ch"] = tproc_ch
 
-        # ---- (1) CURRENT raw |g>/|e> reads -> is the stored threshold still valid? ----------
         def _raw_read(gain):
             cfg["probe_gain"] = int(gain)
             avgi, avgq = ReadProbeProgram(self.soccfg, cfg).acquire(self.soc, load_pulses=True,
                                                                     progress=False)
             return (float(np.asarray(avgi).ravel()[0]), float(np.asarray(avgq).ravel()[0]),
-                    self._read_dmem(_ADDR_I), self._read_dmem(_ADDR_Q))   # host I,Q ; raw lower,upper
+                    self._read_dmem(_ADDR_I), self._read_dmem(_ADDR_Q))
 
-        Ig, Qg, gl, gu = _raw_read(0)            # |g>  (raw lower/upper now SIGNED)
-        Ie, Qe, el, eu = _raw_read(pi_gain)      # |e>
-        # recommend the discriminating half + threshold + sign from the CURRENT reads (as the probe does)
+        Ig, Qg, gl, gu = _raw_read(0)
+        Ie, Qe, el, eu = _raw_read(pi_gain)
         sep_lower, sep_upper = abs(el - gl), abs(eu - gu)
         rec_oper = "lower" if sep_lower >= sep_upper else "upper"
         rgv, rev = ((gl, el) if rec_oper == "lower" else (gu, eu))
         rec_thr = int(round(0.5 * (rgv + rev)))
         rec_ground_below = rgv < rev
         rec_sep = abs(rev - rgv)
-        # validity of the STORED config (oper/threshold/sign) against the current reads
         gv, ev = ((gu, eu) if oper == "upper" else (gl, el))
         thr_between = min(gv, ev) < thr < max(gv, ev)
         sign_ok = (bool(cfg.get("reset_ground_below", True)) == (gv < ev))
@@ -162,10 +137,6 @@ class ActiveResetValidation(ExperimentClass):
             print("    *** the |g>/|e> readout contrast is very small: the single-shot readout is "
                   "NOT calibrated at this tuning.  Run SS_Cal (+Rabi for the pi) FIRST -- active "
                   "reset can't discriminate until the blobs separate cleanly on one quadrature.")
-        # If the stored discrimination is stale/inverted, run the sweep with the RECOMMENDED one so
-        # a single run shows BOTH the corrected config and how the reset actually performs with it.
-        # (A wrong ground_below inverts condj: it fires the pi on |g> and skips on |e>, which PUMPS
-        # the qubit up -- residual grows with iters instead of falling.)
         if not stored_ok:
             print(f"    --> running the sweep below with the RECOMMENDED discrimination "
                   f"(oper='{rec_oper}', thr={rec_thr}, ground_below={rec_ground_below}), "
@@ -174,7 +145,6 @@ class ActiveResetValidation(ExperimentClass):
             cfg["reset_threshold_raw"] = int(rec_thr)
             cfg["reset_ground_below"] = bool(rec_ground_below)
 
-        # ---- (2) residual-excited vs max_iters (the trend diagnoses the failure mode) --------
         dx, dy = Ie - Ig, Qe - Qg
         denom = dx * dx + dy * dy
 
@@ -198,16 +168,12 @@ class ActiveResetValidation(ExperimentClass):
             print(f"    max_iters={k}:  residual={res:+.3f}   (reset I={Ir:+.4g} Q={Qr:+.4g})")
 
         by_k = {s["max_iters"]: s["residual"] for s in sweep}
-        r0 = by_k[0]                                          # no-reset baseline
-        r1 = by_k[1]                                          # one pass
-        rmax = by_k[max(iters_list)]                          # most passes
-        resid_on = [by_k[k] for k in iters_list if k > 0]     # all with reset enabled
+        r0 = by_k[0]
+        r1 = by_k[1]
+        rmax = by_k[max(iters_list)]
+        resid_on = [by_k[k] for k in iters_list if k > 0]
         rbest, rworst = min(resid_on), max(resid_on)
-        # SANITY: max_iters=0 IS the |e> reference by construction, so it must read ~1.0.  If it
-        # doesn't, the reference run and the sweep runs disagree about what |e> is (drift or
-        # marginal SNR) and NO residual here means anything -- refuse to declare success.
         baseline_sane = abs(r0 - 1.0) <= 0.25
-        # a real reset stays low once it reaches ground; one low point among high ones is noise
         consistent = rworst < 0.15
         print("-" * 72)
         print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}  (must be ~1.000 -- it IS the |e> "

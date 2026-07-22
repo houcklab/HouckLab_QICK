@@ -1,34 +1,3 @@
-"""
-Shot-interleaved averaging for QICK experiments  --  QUA drift-immunity parity.
-
-WHY
----
-QUA runs the shot loop OUTERMOST and stream-averages over it, so every sweep point is
-revisited on every shot: slow drift (1/f, thermal, flux, TLS-bath) averages uniformly
-into all points instead of imprinting as a systematic gradient along the sweep axis.
-This is the standard drift-immunization for fitted quantities (T1/T2 decays, step
-responses) and it also protects position-vs-flux maps.
-
-QICK hardware-averages ``reps`` per program execution, and our flux/delay sweeps are
-Python loops (each sweep point is a different DAC waveform), so the naive port averages
-each point FULLY before moving on -- sequential acquisition, which is vulnerable to
-drift.  QICK cannot fold the whole map + shot loop into one FPGA program the way QUA
-does, so exact single-shot interleaving would cost ``shots`` x more program loads.
-
-``interleaved_average`` restores the QUA structure at the Python level with a tunable
-speed/robustness knob:  it runs ``rounds`` passes over the whole sweep, each pass
-hardware-averaging ``reps ~= shots/rounds``, and accumulates a running mean.
-
-    rounds = 1       -> fast per-point average (the original sequential behaviour)
-    rounds = shots   -> exact single-shot interleaving (QUA-equivalent; slowest)
-    rounds = 5..20   -> most of the drift immunity at bounded cost; each point is
-                        sampled ``rounds`` times spread across the acquisition
-
-The running mean is EXACTLY the mean over ``shots`` shots (reps-weighted accumulation),
-so for a stationary system the result is bit-for-bit what the sequential average would
-give -- only the drift robustness (and the live-plot semantics) change.
-"""
-
 import os as _os
 import sys as _sys
 import contextlib as _contextlib
@@ -111,13 +80,13 @@ def interleaved_average(run_point, n_points, shots, rounds=None, live=None, prog
             if acc is None:
                 acc = np.zeros((n_points,) + val.shape,
                                dtype=complex if np.iscomplexobj(val) else float)
-            acc[idx] = acc[idx] + val * reps          # sum over shots in this pass
+            acc[idx] = acc[idx] + val * reps
             done_units += 1
             if progress is not None:
-                progress(done_units, total_units)      # smooth per-point bar (QUA feel)
+                progress(done_units, total_units)
         done += reps
         if live is not None:
-            live(r, acc / done)                        # running mean (partial average)
+            live(r, acc / done)
     if acc is None:
         raise RuntimeError("interleaved_average collected no shots (shots/rounds = 0).")
     return acc / max(done, 1)

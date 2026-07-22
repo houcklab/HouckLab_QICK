@@ -1,34 +1,3 @@
-"""
-Shared fast-flux (ff) pulse playback for the TLS FF experiments (steps 3, 4, 6).
-
-This is the QICK stand-in for the QUA flux "step" (QUA used an OPX ``set_dc_offset``
-staircase; QICK has no in-program DC primitive).  We synthesize the flux step as a
-shaped pulse on a dedicated fast-flux DAC channel (``ff_ch``), exactly like the
-escher FF stack (mFFRampHoldTest_wPulsePreDist): a linear ramp up, a
-piecewise-constant HOLD streamed via ``safe_regwi`` on the ff gain register (so the
-hold length is not bounded by arb-envelope memory), then a ramp down -- with the
-whole thing PRE-DISTORTED to cancel the flux line's slow settling.
-
-Two predistortion sources are supported (pick one):
-  * ``compensation`` : the QUA-faithful piecewise-multiplier dict from step 3
-    (flux_predistortion.calculate_piecewise_dc_correction / a loaded JSON).
-  * ``distortion_model`` : an escher PulseFunctions.Simple*TailDistortion instance
-    (recursive IIR inverse).  Its ``.predistort(waveform)`` is applied to the
-    ideal sample array.
-
-Usage (inside a QICK Program's initialize()/body()):
-    from ...Helpers import ff_pulse
-    # in initialize(): ff_pulse.declare_ff(self)
-    # build once (in initialize or body-prep):
-    segs = ff_pulse.build_ramp_hold_ramp(self, hold_us, ff_gain, dt_play_us=..,
-                                         ramp_us=.., dt_def_us=.., compensation=..)
-    # in body(): ff_pulse.play_ramp_hold_ramp(self, segs, dt_play_us=..)
-
-The static DC baseline (QUA baseline_dc_offset / park) is set OUT of band by the
-Yokogawa GS200 (see the runner); ``ff_gain`` here is the *additional* fast-flux
-excursion in DAC-gain units on top of that DC bias.
-"""
-
 import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import PulseFunctions
@@ -87,7 +56,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
         return int(np.clip(park_gain + float(mult) * delta, -maxv, maxv))
 
     if compensation is not None and distortion_model is None:
-        # QUA-faithful piecewise staircase at the compensation segment edges.
         edges_us = np.asarray(compensation['segment_edges_ns'], dtype=float) / 1e3
         mult = np.asarray(compensation['multipliers'], dtype=float)
         bounds = sorted(set([0.0] + [float(e) for e in edges_us if 0.0 < e < hold_us - 1e-9]))
@@ -103,8 +71,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
         if not hold_segs:
             hold_segs = [(int(ff_gain), hold_us)]
     elif distortion_model is not None:
-        # escher IIR path: predistort the ideal step, coarse-bin the hold at dt_play,
-        # extend the last bin so the total played hold == hold_us.
         total = 2 * ramp_us + hold_us + 4 * dt_play_us
         pb = PulseFunctions.PulseBuilder(dt_def_us, total)
         pb.add_trapezoid(start=dt_play_us, rise=ramp_us, flat=hold_us, fall=ramp_us, amp=delta)
@@ -118,13 +84,10 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
         last_dur = max(hold_us - dt_play_us * (len(hold_segs) - 1), dt_def_us)
         hold_segs[-1] = (hold_segs[-1][0], last_dur)
     else:
-        hold_segs = [(int(ff_gain), hold_us)]      # plain constant hold, exact duration
+        hold_segs = [(int(ff_gain), hold_us)]
 
     first_level, last_level = hold_segs[0][0], hold_segs[-1][0]
 
-    # register the ramp arbs: park -> first hold level, last hold level -> park.
-    # NOTE create_ff_ramp(reversed=True) plays ff_ramp_stop -> ff_ramp_start
-    # (escher convention), so for the down-ramp: stop = FROM (hold end), start = TO (park).
     cfg["ff_ramp_style"] = "linear"
     cfg["ff_ramp_length"] = ramp_us
     cfg["ff_ramp_start"] = int(park_gain)
@@ -140,9 +103,6 @@ def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
             "ff_gain": ff_gain, "park": int(park_gain)}
 
 
-# tProc const-pulse length is a 16-bit field: 3 <= length <= 65535 cycles.  A single
-# const pulse can therefore hold for at most ~150 us; longer holds must be emitted as
-# several back-to-back const pulses (all at the same gain -> a continuous level).
 _MAX_CONST_LEN = 65000
 
 
@@ -157,7 +117,7 @@ def play_ramp_up_hold(prog, segs, dt_play_us=None):
     prog.pulse(ch=cfg["ff_ch"])
     for g, dur_us in segs["hold_segs"]:
         total = max(int(prog.us2cycles(dur_us, gen_ch=cfg["ff_ch"])), 3)
-        n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)   # ceil
+        n_chunks = max(1, (total + _MAX_CONST_LEN - 1) // _MAX_CONST_LEN)
         base, extra = divmod(total, n_chunks)
         for c in range(n_chunks):
             length = max(base + (1 if c < extra else 0), 3)

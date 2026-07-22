@@ -1,16 +1,3 @@
-"""
-STEP 5: single-shot readout calibration -- QUA-identical behavior.
-
-Port of Houck-Lab-Qua m_single_shot_1Q.py::SingleShot1Q.  The analyze() algorithm
-is the EXACT QUA one (theta from blob MEDIANS via ss_helpers.find_blob_median,
-the verbatim 100-threshold find_threshold sweep, thresh_0 = leftmost F >
-confidence_threshold crossing, the ground<thresh sign-flip rule with
-scale_factor = +/-1, the 2x2 confusion matrix, read_theta accumulation), the
-calib_params dict has the QUA keys {scale_factor, threshold, read_theta,
-ground_threshold}, both QUA PNGs are reproduced panel-for-panel, and the '###'
-console block prints verbatim.  analyze() returns max_F.
-"""
-
 import datetime
 
 import numpy as np
@@ -60,7 +47,6 @@ class SingleShotProgram(RAveragerProgram):
                                  gen_ch=cfg["res_ch"])
 
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
-        # the excited-blob preparation is a pi pulse -> use the calibrated pi freq
         qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
                                    gen_ch=cfg["qubit_ch"])
 
@@ -92,7 +78,7 @@ class SingleShotProgram(RAveragerProgram):
     def body(self):
         cfg = self.cfg
         if cfg["qubit_gain"] != 0:
-            for _ in range(int(cfg.get("repeats", 1))):   # QUA: X180 x repeats
+            for _ in range(int(cfg.get("repeats", 1))):
                 self.pulse(ch=cfg["qubit_ch"])
                 self.sync_all(self.us2cycles(0.010))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
@@ -195,7 +181,6 @@ class SingleShot1Q(ExperimentClass):
 
         self.thresh = thresh
         self.c_factor = c_factor
-        # measured rotation ADDED to any pre-existing demod rotation (QUA behavior)
         self.c_theta = c_theta + cfg.get("read_theta", 0.0)
         self.confusion = confusion
 

@@ -1,20 +1,3 @@
-"""
-STEP 2 of the TLS pipeline: two-tone qubit spectroscopy vs DC flux.
-
-QUA analog: LabCode/Experiments/Flux_Sweeps/m_qubit_spec_vs_flux_full_range.py
-QICK model: escher mSpecSlice_SaraTest.LoopbackProgramSpecSlice + mSpecVsFlux.
-
-For each DC flux voltage we (optionally) retune the readout to the flux-shifted
-resonator (from step 1's lookup CSV or a cosine fit), then run one qubit-spec slice
-with an on-chip frequency sweep.  We stack the slices into a 2D map, extract the
-qubit dip/peak per flux, and fit the asymmetric-SQUID transmon arc -> FLUX_FIT_PARAMS
-(printed paste-ready, matching TLSSpectroscopy.py).
-
-Wide-range note: the QUA version tiled the range into <=400 MHz external-LO bands.
-QICK synthesizes digitally, so within a Nyquist zone you can sweep qubit_freq
-directly; for a range that crosses zones, run this experiment per zone.
-"""
-
 import time
 
 import numpy as np
@@ -65,7 +48,7 @@ class QubitSpecProgram(RAveragerProgram):
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="flat_top", freq=self.f_start,
                                      phase=0, gain=cfg["qubit_gain"], waveform="qubit",
                                      length=self.us2cycles(cfg["flat_top_length"], gen_ch=cfg["qubit_ch"]))
-        else:  # const CW/saturation spec tone
+        else:
             kw = dict(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
                       gain=cfg["qubit_gain"],
                       length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
@@ -171,7 +154,6 @@ class QubitSpecVsFlux(ExperimentClass):
                          'phase': Z_phase, 'qubit_dip_MHz': qubit_dip}}
         self.data = data
 
-        # raw_sweep CSV (long form) -- primary offline product
         raw_csv = self.iname[:-4] + "_raw_sweep.csv"
         rows = []
         for i, v in enumerate(volts):
@@ -182,7 +164,6 @@ class QubitSpecVsFlux(ExperimentClass):
         data['data']['raw_sweep_csv'] = raw_csv
         print(f"[2] raw sweep CSV: {raw_csv}")
 
-        # transmon-arc fit -> FLUX_FIT_PARAMS (GHz model, so convert dip MHz->GHz)
         if self.fit_flux:
             params, perr = fx.fit_qubit_freq_vs_flux(volts, qubit_dip / 1e3)
             if params is not None:

@@ -1,32 +1,3 @@
-"""
-Single-qubit pi/pi-2 pulse calibration -- QICK port of Houck-Lab-Qua
-LabCode/Control/Flux_Tunable/gate_calibration_flux_tunable.py.
-
-Ports the experiments actually used in the QUA workflow (omitted per user: Frequency
-Calibration, DRAG, the two Timed Rabis, Chi measurement).  Kept here:
-  * Transmission       -- 1D readout-freq sweep -> resonator dip (reuse step-1 TransmissionVsFFGain)
-  * Transmission_Sweep -- readout-power x freq map -> pick read_pulse_gain (loops FFTransProgram)
-  * Qubit_Spec         -- 1D qubit-drive-freq sweep -> qubit dip (reuse step-2 QubitLongTimeSpecVsFlux)
-  * SS_Cal             -- single-shot readout discrimination (reuse Experiments/mSingleShot1Q)
-  * Rabi_Chevron_IQ    -- 2D amp x detuning, averaged IQ -> rough pi gain + freq
-  * Rabi_Chevron_SS    -- 2D amp x detuning, single-shot + 5x error amp -> refined
-  * Rabi_Linecut_SS    -- 1D amp at fixed freq, single-shot, cosine^2 fit -> precise pi gain
-
-Transmission / spec run at FF_HOLD_GAIN (the calibration flux) by reusing the FF-based
-step-1/2 experiments at a single flux point, so the whole bring-up is self-contained here.
-
-Calibration is done at PARK (ff_gain = 0, native flux point) -- the QUA analog of YOKO=0.
-Amplitudes are ABSOLUTE qubit-drive DAC gains (no QUA pi_amp normalization).
-
-RESET: the single-shot Rabis use a PASSIVE relax_delay instead of the QUA active feedback
-reset (tProc v1 cannot do mid-circuit feedback) -- same substitution as the TLS T1.  Set
-relax_delay_us ~ 5x T1.
-
-Result: read Rabi_Linecut_SS's printed "pi gain" and paste it into
-Calib/initialize.py BaseConfig['qubit_pi_gain'] (or qubit_pi2_gain for X90), and the
-Rabi_Chevron drive detuning into BaseConfig['qubit_pi_freq'].
-"""
-
 import gc
 import os
 
@@ -51,60 +22,38 @@ QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
 LIVE_PLOTS = True
 
-# Flux point to tune the pi at.  The sweet spot can be at any DC offset, so set this to the
-# fast-flux DAC gain of your operating point.  0 = park/native (the QUA YOKO=0 analog).
-# Non-zero -> the Rabi ramps park->hold there during the drive (and the readout if
-# READOUT_AFTER_PARK=False), then ramps back -- the same flux delivery as TLS step 3.
-#   *** When FF_HOLD_GAIN != 0, set BaseConfig['qubit_pi_freq'] to the qubit frequency AT
-#       this flux (measure it with a qubit spec there / TLS step 2 first). ***
 FF_HOLD_GAIN = 0
-# Readout location.  True: ramp back to park and read there (uses the park single-shot cal
-# -- simplest, recommended).  False: read AT the held flux (then read_pulse_freq must be the
-# resonator freq at FF_HOLD_GAIN AND the single-shot cal must be taken at that flux too).
 READOUT_AFTER_PARK = True
 
-# Reset for the SINGLE-SHOT Rabis (Chevron_SS, Linecut_SS).  QUA used active reset here, so
-# "feedback" is the QUA-faithful target.  Everything CODE-side is now in place: the probe
-# CONFIRMED the feedback path (tproc_ch=0; |g>/|e> separate on the Q half), and the SS-Rabi/T1
-# readout-buffer accounting for the reset's extra measurements is wired (fixed-count reset ->
-# deterministic readout count -> collect_shots skips past them).  The ONLY thing left before
-# flipping to "feedback" is confirming the LOOP actually resets on THIS board.  ==> Run
-# RUN_ACTIVE_RESET_VALIDATION=True; if it reports residual_excited < 0.15, set RESET_MODE=
-# "feedback".  Until that's confirmed, "passive" (relax_delay) stays the default.
 RESET_MODE = "passive"
-RESET_THRESHOLD_RAW = 2153     # from mActiveResetProbe on this board (raw accumulator, Q half)
-RESET_OPER = "upper"           # discriminating half: Q (|g>=429, |e>=3877)
-RESET_GROUND_BELOW = True      # |g> reads below threshold
+RESET_THRESHOLD_RAW = 2153
+RESET_OPER = "upper"
+RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
-RUN_ACTIVE_RESET_PROBE = False       # True -> run only the capability/threshold probe and exit
-RUN_ACTIVE_RESET_VALIDATION = False  # True -> run only the reset-validation experiment and exit
+RUN_ACTIVE_RESET_PROBE = False
+RUN_ACTIVE_RESET_VALIDATION = False
 
-# ----------------------------------------------------------------------------------------
-# Per-experiment params (QUA experiment_dict analog).  Amplitudes are DAC gain (absolute).
-# Transmission / spec run at FF_HOLD_GAIN (the calibration flux) via the FF-based step-1/2
-# experiments (TransmissionVsFFGain, QubitLongTimeSpecVsFlux) evaluated at one flux point.
-# ----------------------------------------------------------------------------------------
-P_TRANSMISSION = {                # QUA Transmission: 1D readout-freq sweep -> resonator dip
+P_TRANSMISSION = {
     "run": True,
     "shots": 1000,
-    "freq_center_mhz": None,      # None -> BaseConfig['read_pulse_freq']
+    "freq_center_mhz": None,
     "freq_span_mhz": 4.0,
     "freq_points": 201,
 }
-P_TRANSMISSION_SWEEP = {          # QUA Transmission_Sweep: readout-power x freq map
+P_TRANSMISSION_SWEEP = {
     "run": False,
     "shots": 500,
     "freq_center_mhz": None,
     "freq_span_mhz": 4.0,
     "freq_points": 101,
-    "gain_min": 1000,             # readout DAC gain
+    "gain_min": 1000,
     "gain_max": 10000,
     "gain_points": 10,
 }
-P_QUBIT_SPEC = {                  # QUA Qubit_Spec: 1D qubit-drive-freq sweep -> qubit dip
+P_QUBIT_SPEC = {
     "run": True,
     "shots": 1000,
-    "spec_amp": 7000,             # qubit drive gain (DAC)
+    "spec_amp": 7000,
     "spec_len_us": 2.0,
     "freq_min_mhz": 2300.0,
     "freq_max_mhz": 2700.0,
@@ -114,30 +63,30 @@ P_QUBIT_SPEC = {                  # QUA Qubit_Spec: 1D qubit-drive-freq sweep ->
 P_SS_CAL = {
     "run": True,
     "shots": 1000,
-    "number_pi_pulses": 1,      # excited-blob prep: X180 x this many (QUA parity knob)
-    "ground_threshold": 0.6,    # SS-cal confidence_threshold -> calib_params['ground_threshold']
-    "relax_delay_us": 2000.0,   # passive reset (~5x T1)
+    "number_pi_pulses": 1,
+    "ground_threshold": 0.6,
+    "relax_delay_us": 2000.0,
 }
 
 P_RABI_CHEVRON_IQ = {
     "run": True,
     "shots": 100,
     "num_pi": 1,
-    "pulse_type": "X180",       # 'X180' or 'X90'
-    "a_min": 500,               # DAC gain
-    "a_max": 30000,             # DAC gain
+    "pulse_type": "X180",
+    "a_min": 500,
+    "a_max": 30000,
     "a_points": 41,
-    "freq_span_mhz": 20.0,      # drive detuning span around qubit_pi_freq
+    "freq_span_mhz": 20.0,
     "freq_points": 21,
     "relax_delay_us": 500.0,
 }
 
 P_RABI_CHEVRON_SS = {
-    "run": False,               # needs SS_Cal; run after IQ narrows the window
+    "run": False,
     "shots": 200,
-    "num_pi": 5,                # error amplification
+    "num_pi": 5,
     "pulse_type": "X180",
-    "a_min": 10000,             # DAC gain (narrow around the IQ pi estimate)
+    "a_min": 10000,
     "a_max": 15000,
     "a_points": 21,
     "freq_span_mhz": 1.0,
@@ -146,11 +95,11 @@ P_RABI_CHEVRON_SS = {
 }
 
 P_RABI_LINECUT_SS = {
-    "run": False,               # needs SS_Cal; the final precise pi-gain fit
+    "run": False,
     "shots": 1000,
-    "num_pi": 1,                # scalar, or a list e.g. [1, 3, 5, 7] for an error-amp sweep
+    "num_pi": 1,
     "pulse_type": "X180",
-    "a_span": 6000,             # DAC gain, full span centered on the current pi gain
+    "a_span": 6000,
     "a_points": 51,
     "relax_delay_us": 2000.0,
 }
@@ -162,8 +111,8 @@ def _base_cfg(p, extra=None):
     cfg["shots"] = int(p["shots"])
     cfg["reps"] = int(p["shots"])
     cfg["relax_delay"] = float(p.get("relax_delay_us", 2000.0))
-    cfg["ff_gain"] = int(FF_HOLD_GAIN)                  # the flux point being calibrated at
-    cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)             # 0 -> Rabi plays no flux pulse (park)
+    cfg["ff_gain"] = int(FF_HOLD_GAIN)
+    cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
     cfg["reset_mode"] = RESET_MODE
@@ -192,7 +141,7 @@ def run_transmission(outer_folder, soc, soccfg):
         "TransNumPoints": int(p["freq_points"]),
         "ff_gain_vec": [int(FF_HOLD_GAIN)], "ff_settle_us": 20.0,
     })
-    cfg["relax_delay"] = 50           # cavity ring-down only (no qubit drive)
+    cfg["relax_delay"] = 50
     print(f"[transmission] {p['freq_points']} freqs around {center:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
     exp = TransmissionVsFFGain(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                                suffix="GateCal_Transmission", cfg=cfg, save_resonator_lookup=False)
@@ -252,7 +201,7 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_gain": int(p["spec_amp"]), "qubit_length": float(p["spec_len_us"]),
         "qubit_pulse_style": "const", "interleave_rounds": 1,
     })
-    cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))   # weak spec probe
+    cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
           f"({n} pts) @ gain {p['spec_amp']} at ff_gain={FF_HOLD_GAIN}")
     exp = QubitLongTimeSpecVsFlux(
@@ -285,7 +234,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
-        "reset_mode": "passive",   # QUA Rabi_Chevron_IQ used wait(reset_time), NOT active reset
+        "reset_mode": "passive",
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
@@ -314,7 +263,6 @@ def run_rabi_chevron_ss(outer_folder, soc, soccfg, calib_params):
 def run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params):
     p = P_RABI_LINECUT_SS
     num_pi = p["num_pi"]
-    # QUA behavior: a list of num_pi values -> run each, stack the population curves.
     if isinstance(num_pi, (list, tuple)):
         stacked, last = [], None
         for npi in num_pi:

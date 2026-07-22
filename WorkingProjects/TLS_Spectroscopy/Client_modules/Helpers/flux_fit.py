@@ -1,18 +1,3 @@
-"""
-Flux -> qubit-frequency model for a flux-tunable (asymmetric-SQUID) transmon,
-plus the forward evaluator and a numeric local inverse (freq -> voltage).
-
-Ported from the QUA repo:
-  - LabCode/Helpers/fit_functions.py::flux_tunable_transmon_frequency
-  - LabCode/Control/Flux_Tunable/flux_predistortion.py::_estimate_fit_frequency_ghz_array
-                                                         _frequency_to_local_flux_branch
-
-FLUX_FIT_PARAMS convention (matches TLSSpectroscopy.py):
-    [EJmax (GHz), Ec (GHz), period (V), phase_offset (V), d, tilt (GHz/V, optional)]
-
-Pure numpy; unit-tested without hardware.
-"""
-
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -75,7 +60,6 @@ def frequency_to_local_flux_branch(flux_fit_params, freq_ghz, baseline_v, target
         hi = lo + 1e-9
     v_grid = np.linspace(lo, hi, int(fine_points))
     f_grid = estimate_fit_frequency_ghz_array(flux_fit_params, v_grid)
-    # make f monotone-increasing in the interp domain
     if f_grid[-1] < f_grid[0]:
         f_grid = f_grid[::-1]
         v_grid = v_grid[::-1]

@@ -1,19 +1,3 @@
-"""
-STEP 1 of the TLS pipeline: resonator transmission vs DC flux.
-
-QUA analog: LabCode/Experiments/Flux_Sweeps/m_transmission_vs_flux.py::TransmissionVsFlux
-QICK model: escher mTransmission_SaraTest.LoopbackProgramTrans + mSpecVsFlux yoko loop.
-
-For each DC flux voltage (Yokogawa GS200) we sweep the readout frequency, record
-|S21|, and locate the resonator dip.  We fit the dip-vs-flux trace with a cosine
-(flux periodicity) and export a measured-dip lookup CSV so step 2 can keep its
-readout on the flux-shifted resonator.
-
-Flux note: QUA set the flux with an OPX ``set_dc_offset`` inside the program; QICK
-has no in-program DC primitive, so the DC flux sweep is a Python loop over
-``flux_source.SetVoltage`` (a Yokogawa GS200), exactly as the escher SpecVsFlux does.
-"""
-
 import os
 import time
 
@@ -97,7 +81,6 @@ class TransmissionVsFlux(ExperimentClass):
             self.cfg["read_pulse_freq"] = float(f)
             prog = TransmissionProgram(self.soccfg, self.cfg)
             res = prog.acquire(self.soc, load_pulses=True, progress=False)
-            # qick 0.2.133 AveragerProgram.acquire -> (avg_i, avg_q): res[0]=I, res[1]=Q
             I[j] = np.array(res[0]).mean()
             Q[j] = np.array(res[1]).mean()
         return I, Q
@@ -110,7 +93,7 @@ class TransmissionVsFlux(ExperimentClass):
 
         Z_mag = np.full((len(volts), len(fpts)), np.nan)
         Z_phase = np.full((len(volts), len(fpts)), np.nan)
-        dip_freq = np.full(len(volts), np.nan)   # absolute MHz of the dip per flux
+        dip_freq = np.full(len(volts), np.nan)
 
         if self.flux_source is not None:
             self.flux_source.SetVoltage(float(volts[0]))
@@ -136,12 +119,10 @@ class TransmissionVsFlux(ExperimentClass):
                          'mag_db': Z_mag, 'phase': Z_phase, 'dip_freq': dip_freq}}
         self.data = data
 
-        # cosine fit of dip-vs-flux (flux periodicity)
         params, _ = ff.fit_cosine_vs_flux(volts, dip_freq)
         if params is not None:
             data['data']['resonator_cosine_fit'] = params
 
-        # export the measured-dip lookup CSV (consumed by step 2)
         lookup_csv = None
         if self.save_resonator_lookup:
             lookup_csv = self.iname[:-4] + "_resonator_lookup.csv"

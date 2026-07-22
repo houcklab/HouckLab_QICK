@@ -1,37 +1,4 @@
-"""
-AUTO TUNE -- run once.  Maintains the calibration GRAPH to a fixed point and, on
-success, writes the result into Calib/initialize.py's BaseConfig.
-
-    python WorkingProjects/TLS_Spectroscopy/Client_modules/Runners/AutoTune.py
-
-The graph (dependencies in brackets) mirrors the QUA gate_calibration_flux_tunable
-bring-up, with the manual "read the number, paste it, re-run" loop automated:
-
-    resonator      []                        -> read_pulse_freq, kappa
-    spec           [resonator]               -> qubit_freq        (power-extrapolated)
-    rough_pi       [spec, resonator]         -> pi gain           (harmonic-checked)
-    chi            [rough_pi]                -> chi, and the ANALYTIC optimal readout freq
-    readout_power  [chi, rough_pi]           -> read_pulse_gain   (two-blob outlier gate)
-    t1             [rough_pi]                -> T1
-    readout_len    [readout_power, t1]       -> read_length       (capped at T1/2)
-    single_shot    [readout_len]             -> fidelity, rotation angle
-    fine_pi_freq   [single_shot, rough_pi]   -> qubit_pi_freq     (pi-train minimum)
-    fine_pi_amp    [fine_pi_freq]            -> qubit_pi_gain     (vertex + cross-M)
-
-Recalibrating a node whose value MOVED by more than its own uncertainty marks its
-dependents stale, so e.g. a readout change forces the spec and Rabi that were measured
-through the old readout to be re-measured.  Iterates until nothing is stale, keeping the
-best-so-far state so a round that makes things worse is never committed.
-
-Nothing uses a pi/2 pulse or any free evolution, so a short T2* cannot block the tune.
-
-WRITES on success only: read_pulse_freq, read_pulse_gain, read_length, res_phase,
-qubit_freq, qubit_pi_freq, qubit_pi_gain -- and only those a node actually MEASURED.
-A timestamped initialize.py backup and an entry in Calib/pi_calibration_history.json are
-made either way.  Ctrl-C is safe: partial data is saved and nothing is written.
-"""
-
-import matplotlib.pyplot as plt  # noqa: F401
+import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
@@ -40,20 +7,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 
 QUBIT = "q4"
 LIVE_PLOTS = False
-APPLY_CONFIG = True          # False -> measure and report only, never touch initialize.py
-WRITE_READOUT = True         # gates ALL readout keys (freq, gain, length, phase)
-WRITE_QUBIT = True           # gates qubit_freq / qubit_pi_freq / qubit_pi_gain
+APPLY_CONFIG = True
+WRITE_READOUT = True
+WRITE_QUBIT = True
 
-# Per-node overrides; defaults live in mAutoTuner.DEFAULTS.
 P_TUNER = {
-    # "max_rounds": 4,
-    # "resonator":     {"span_mhz": 4.0, "expected_fwhm_mhz": 0.3},
-    # "spec":          {"span_mhz": 20.0, "power_ratios": (1.0, 0.35, 0.12)},
-    # "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
-    #                   "outlier_max": 0.02},
-    # "readout_len":   {"lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0)},
-    # "single_shot":   {"shots": 4000, "min_sep_sigma": 2.0},
-    # "fine_pi_amp":   {"M_list": (4, 10, 20), "tol_frac": 0.004},
 }
 
 READOUT_KEYS = ("read_pulse_freq", "read_pulse_gain", "read_length", "res_phase")
@@ -98,8 +56,6 @@ def main():
             tuned.pop(k, None)
         print("\n[auto-tune] qubit calibration did not converge -- its keys are NOT written.")
     if not readout_ok:
-        # keep them: they are the best settings FOUND, and are still an improvement over
-        # an unoptimised readout even when the chip cannot reach the target separation
         print("\n[auto-tune] readout is below the separation floor; its keys are the best "
               "FOUND\n            (write them with WRITE_READOUT, or set it False to keep "
               "the current readout).")

@@ -1,33 +1,3 @@
-"""
-STEPS 2 & 4: qubit spectroscopy vs flux (full-range / long-time) -- QUA-identical.
-
-Port of Houck-Lab-Qua m_qubit_long_time_frequency_vs_flux.py::QubitLongTimeFrequencyVsFlux
-(whose machinery also serves step 2 in the all-FF workflow, as QUA's step-2 class
-shares the same map+fit structure).  Behaviors mirrored exactly:
-
-- raw (n_freq, n_dc, n_tau) magnitude(dBm)/phase cube kept and ALWAYS dumped to the
-  9-column *_raw_sweep.csv (dc_offset_V,frequency_Hz,frequency_GHz,probe_time_ns,
-  resonator_if_Hz,readout_resonator_if_Hz,target_resonator_if_Hz,magnitude_dBm,
-  phase_rad; C-order ravel) -- the offline re-fit input
-- per-(dc,tau) dip extraction: SavGol(9,2,'interp') -> argmin -> 3-point quadratic
-  refine (clip +-1) -> local Lorentzian within max(10 MHz, 0.15*span) with the
-  containment check; method strings 'local_dip_lorentzian'/'local_smoothed_minimum'
-- per-dc robust tau average: MAD rejection with tol = max(6 MHz, 5*1.4826*MAD),
-  MEAN of kept, std of kept, n_valid, source 'tau_window_mean'; zero-success
-  fallback fits the tau-AVERAGED column ('avg_map_<method>')
-- fit_trace artifacts: 13-column *_long_time_frequency.csv, 8-column *_trace.csv
-  (consumed by the flux->freq CSV lookup), *_trace_interpolation.png,
-  *_long_time_frequency_trace.png, the 2-panel summary PNG, pickle
-- advanced_fit: the VERBATIM qubit_spec_trace_fit pipeline (ridge tracking +
-  iterative transmon fit) run on a volts-scaled axis (DAC/30000, so the pipeline's
-  volts-calibrated constants apply) with the result rescaled back to DAC units for
-  print_fit_report's paste-ready FLUX_FIT_PARAMS block + *_raw_map.png /
-  *_advanced_fit.png
-- resonator-IF bookkeeping via the QUA _build_resonator_curve dispatch (lookup CSV
-  -> 4-param cosine -> 7-param dispersive -> flat), progress_counter + live map
-  with interrupt-on-close, classmethod JSON helpers with QUA validation semantics.
-"""
-
 import os
 import copy
 import time
@@ -48,8 +18,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepR
     FFStepResponseSpecProgram,
 )
 
-# DAC-gain -> pseudo-volts scale so the verbatim volts-calibrated trace-fit
-# pipeline (trims, DP jump limits, transmon bounds) operates in its home regime.
 DAC_TO_VOLT_SCALE = 1.0 / 30000.0
 
 
@@ -113,7 +81,6 @@ def _extract_dip_frequency_hz(f_hz, mag_dbm):
 class QubitLongTimeSpecVsFlux(ExperimentClass):
     """Long-time qubit spec vs fast-flux target (QUA QubitLongTimeFrequencyVsFlux)."""
 
-    # --- predistortion-JSON helpers (QUA classmethods, same validation) ---
     @staticmethod
     def find_latest_dc_compensation_json(outer_folder, qubit, baseline_dc_offset=None,
                                          dc_offset=None, require_success=True):
@@ -144,7 +111,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.element = str(path)
         self.dc_vec = np.asarray(dc_vec if dc_vec is not None else cfg["ff_gain_vec"],
                                  dtype=float)
-        # QUA wait normalization: 4 ns grid, minimum 16 ns
         self.long_time_ns = max(16, int(round(float(long_time_ns) / 4.0)) * 4)
         self.average_window_ns = float(average_window_ns)
         self.average_step_ns = max(float(average_step_ns), 4.0)
@@ -163,7 +129,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         if flux_tail_compensation is not None:
             cfg["flux_tail_compensation"] = flux_tail_compensation
 
-    # --- QUA _build_resonator_curve dispatch (per-DC readout/target IF in Hz) ---
     def _build_resonator_curve(self):
         cfg = self.cfg
         park_if_hz = cfg["read_pulse_freq"] * 1e6
@@ -185,8 +150,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                 target_if_hz = ff.cosine_vs_flux(self.dc_vec, *params)
                 source = "cosine_fit"
         target_if_hz = np.asarray(target_if_hz, dtype=float)
-        # reject non-finite OR nonsensical (<=0, or >2 GHz off the bare resonator) fit
-        # values from a poorly-constrained fit and fall back to the flat readout IF.
         bad = (~np.isfinite(target_if_hz) | (target_if_hz <= 0)
                | (np.abs(target_if_hz - park_if_hz) > 2e9))
         if np.any(bad):
@@ -209,15 +172,12 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         pts = np.unique(np.maximum(np.round(pts / 4.0) * 4.0, 16.0))
         return pts
 
-    # ------------------------------------------------------------------ #
     def acquire(self, progress=False, plotDisp=None, figNum=1):
         cfg = self.cfg
         if plotDisp is None:
             plotDisp = self.live_plot
         cfg["start"] = cfg["qubit_freq_start"]
         cfg["expts"] = int(cfg["qubit_freq_expts"])
-        # QUA-exact half-open grid: start + step*i (arange), NOT a stretched linspace
-        # that includes the endpoint (which would resize the step).
         if "qubit_freq_step" in cfg:
             cfg["step"] = float(cfg["qubit_freq_step"])
             fpts_mhz = cfg["qubit_freq_start"] + cfg["step"] * np.arange(cfg["expts"])
@@ -229,19 +189,11 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         n_f, n_dc, n_tau = len(fpts_mhz), len(dc_vec), len(t_probe_ns)
 
         readout_if_hz, target_if_hz, curve_source = self._build_resonator_curve()
-        # QUA reads out where the step demands: step 2 AT the held flux with a per-flux
-        # resonator IF, step 4 back at park.  _build_resonator_curve already returns the
-        # right readout_if per point; push it to hardware per flux column (below).
         cfg["readout_after_park"] = bool(self.readout_after_park)
 
         mag_dbm = np.full((n_f, n_dc, n_tau), np.nan)
         phase_rad = np.full((n_f, n_dc, n_tau), np.nan)
 
-        # QUA-style shot-interleaved acquisition: the inner qubit-freq sweep is already
-        # RAverager-interleaved on the FPGA; here we additionally interleave the OUTER
-        # (dc, tau) sweep across `rounds` passes (reps ~= shots/rounds each) so slow
-        # drift averages uniformly into the map rather than tilting it along the flux
-        # axis.  rounds=1 = the old sequential per-point average; rounds=shots = exact.
         shots = int(cfg.get("reps", 100))
         rounds = resolve_rounds(cfg, shots, default=cfg.get("spec_rounds"))
         points = [(i_dc, k_tau) for i_dc in range(n_dc) for k_tau in range(n_tau)]
@@ -251,19 +203,17 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             cfg["ff_gain"] = float(dc_vec[i_dc])
             cfg["ff_hold"] = float(t_probe_ns[k_tau]) / 1e3
             cfg["reps"] = int(reps)
-            # per-flux readout IF (step 2: dip at the held flux; step 4: flat park IF)
             cfg["read_pulse_freq"] = float(readout_if_hz[i_dc]) / 1e6
-            with suppress_stdout():      # keep qick per-program chatter off the progress line
+            with suppress_stdout():
                 prog = FFStepResponseSpecProgram(self.soccfg, cfg)
                 _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])      # (n_f,) complex
+            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
 
         live = LiveFigure(figsize=(8, 6)) if plotDisp else None
         start_time = time.time()
         interrupted = False
 
         def _fill(running):
-            # (n_points, n_f) -> (n_dc, n_tau, n_f) -> (n_f, n_dc, n_tau)
             cube = np.asarray(running).reshape(n_dc, n_tau, n_f).transpose(2, 0, 1)
             mag_dbm[:, :, :] = 20 * np.log10(np.abs(cube) + 1e-12)
             phase_rad[:, :, :] = np.angle(cube)
@@ -295,7 +245,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             _fill(S_mean)
         except KeyboardInterrupt:
             pass
-        cfg["reps"] = shots      # restore (run_point set it to the per-round rep count)
+        cfg["reps"] = shots
         if live is not None:
             live.close()
 
@@ -317,7 +267,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             self.pickle_data()
             return {'config': cfg, 'data': self.data}
 
-        # ---- raw sweep CSV (ALWAYS; the offline re-fit input) ----
         raw_csv_path = os.path.splitext(self.iname)[0] + "_raw_sweep.csv"
         freq_hz = fpts_mhz * 1e6
         F, D, T = np.meshgrid(freq_hz, dc_vec, t_probe_ns, indexing="ij")
@@ -335,7 +284,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.data['raw_sweep_csv'] = raw_csv_path
         self.data['raw_sweep_csv_path'] = raw_csv_path
 
-        # ---- long-time frequency extraction (QUA 4a/4b verbatim) ----
         tau_fit_frequency_hz = np.full((n_dc, n_tau), np.nan)
         tau_fit_fwhm_hz = np.full((n_dc, n_tau), np.nan)
         tau_fit_method = np.empty((n_dc, n_tau), dtype=object)
@@ -357,7 +305,7 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         long_time_frequency_std_ghz = np.full(n_dc, np.nan)
         n_valid_tau_fits = np.zeros(n_dc, dtype=int)
         extraction_source = np.empty(n_dc, dtype=object)
-        long_time_mag_dbm = np.nanmean(mag_dbm, axis=2)   # (n_f, n_dc)
+        long_time_mag_dbm = np.nanmean(mag_dbm, axis=2)
         for i in range(n_dc):
             row = tau_fit_frequency_hz[i]
             valid = row[np.isfinite(row)]
@@ -415,7 +363,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    # ---- fit_trace artifacts (QUA schemas) ----
     def _write_summary_csv(self):
         import csv as _csv
         path = os.path.splitext(self.iname)[0] + "_long_time_frequency.csv"
@@ -534,7 +481,6 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         else:
             plt.close(fig)
 
-    # ---- advanced fit: verbatim pipeline on a volts-scaled axis ----
     def _run_advanced_fit(self, mag_dbm_2d, fpts_mhz):
         dc_scaled = self.dc_vec * DAC_TO_VOLT_SCALE
         freq_ghz = fpts_mhz / 1e3
@@ -557,10 +503,9 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                                        f"(DC axis scaled x{DAC_TO_VOLT_SCALE:g})")
         self.data['advanced_fit_png'] = overlay_png
 
-        # rescale the result back to ff_gain DAC units before reporting/storing
         S = DAC_TO_VOLT_SCALE
         result_dac = copy.deepcopy(result)
-        p = result_dac["params"]                 # [EJmax, Ec, period, offset, d, tilt]
+        p = result_dac["params"]
         p[2] = p[2] / S
         p[3] = p[3] / S
         if len(p) > 5:

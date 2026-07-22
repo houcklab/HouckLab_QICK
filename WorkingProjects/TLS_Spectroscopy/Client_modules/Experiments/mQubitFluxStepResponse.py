@@ -1,31 +1,3 @@
-"""
-STEP 3 of the TLS pipeline: fast-flux step response + rise-decay-bump DC compensation.
-
-QUA analog (line-for-line): LabCode/Experiments/Flux_Predistortion/m_qubit_step_response.py
-(QubitFluxStepResponse) driven by _run_qubit_flux_step_response.  Every artifact of the
-QUA class is reproduced: the live 2-panel magnitude/phase map, the per-shot progress bar
-(here per delay column, the QICK acquisition unit), the *_raw_sweep.csv (written BEFORE
-any analysis), the ridge/independent-slices trace extraction on the dBm map, the signed
-frequency- and voltage-domain step responses, the rise_decay_bump model fit (600 seeds,
-BIC), the piecewise DC correction SOLVED ON THE FITTED MODEL CURVE, the
-*_rise_decay_bump_dc_compensation.json (schema-identical via save_predistortion_json;
-never written on failure), the *_frequency_drift.csv + *_frequency_drift_zoom.png, the
-standalone *_step_response.png, and the 3-panel summary PNG.
-
-Unit translation only (per the QUA->QICK port convention):
-  - flux volts -> ff_gain DAC units (CSV headers keep the QUA *_V names byte-identical);
-  - external LO + IF -> absolute-frequency synthesis (q_LO = 0, IF = absolute Hz);
-  - OPX set_dc_offset staircase -> predistorted arb staircase on ff_ch (ff_pulse),
-    played at cfg['dt_pulseplay'] resolution (default 0.5 us here so the 500 ns QUA
-    early segments are resolved; the QUA staircase is exact per segment);
-  - spec_amp V -> qubit_gain DAC, spec_len ns -> qubit_length us.
-Sequencing parity: baseline re-arm at park (default 500 us, QUA reset_time), bare or
-compensated step to the target, spec tone AND readout at the held target flux
-(restore_target_at_end=False semantics via stdysel='last'; readout IF looked up at the
-target from the step-1 resonator lookup CSV / dispersive / cosine fit), then back to park.
-The OPX output-filter path (fit_predistortion) has no QICK analog and raises if enabled.
-"""
-
 import os
 import inspect
 import time
@@ -68,23 +40,16 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
             print(f"WARNING: dc_vec [{dc_vec.min():+.4f}, {dc_vec.max():+.4f}] V extends beyond the "
                   f"resonator lookup range [{lut_dc.min():+.4f}, {lut_dc.max():+.4f}] V; edge values used.")
         print(f"Using resonator dip lookup table for readout IF: {resonator_lookup_csv}")
-        # NOTE: dtype=np.int64, NOT dtype=int -- numpy's default int is int32 on Windows,
-        # and a readout frequency in Hz (~7.2e9) overflows int32 (max 2.1e9), wrapping to a
-        # negative garbage frequency.  This bit us on the measurement PC (Windows) while
-        # working fine on Linux/Mac (int64).  Hz values must always be int64 here.
         return np.asarray(np.round(np.interp(dc_vec, lut_dc, lut_if)), dtype=np.int64)
     fit_params = meta_dict.get("resonator_fit_parameters")
     r_if = float(meta_dict["r_IF"])
     if fit_params is None:
-        return np.full(len(dc_vec), int(round(r_if)), dtype=np.int64)  # int64: Hz overflows int32 on Windows
+        return np.full(len(dc_vec), int(round(r_if)), dtype=np.int64)
     if len(fit_params) == 7:
         vals = ff.resonator_dispersive_func_hz(dc_vec, *fit_params)
     else:
         vals = ff.cosine_vs_flux(dc_vec, *fit_params)
     vals = np.asarray(vals, dtype=float)
-    # a poorly-constrained resonator fit (barely-moving resonator) can extrapolate to
-    # NaN/inf OR to a finite-but-nonsensical frequency (negative, or GHz off the bare
-    # resonator).  Reject anything non-finite, <=0, or >2 GHz from r_IF and fall back.
     bad = ~np.isfinite(vals) | (vals <= 0) | (np.abs(vals - r_if) > 2e9)
     if np.any(bad):
         example = float(vals[bad][0]) / 1e6
@@ -93,7 +58,7 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
               f"r_IF={r_if / 1e6:.4f} MHz there. Set RESONATOR_FIT_PARAMS=None (a flat readout "
               f"is correct for a resonator that barely tunes).")
         vals = np.where(bad, r_if, vals)
-    return np.asarray(np.round(vals), dtype=np.int64)  # int64: Hz overflows int32 on Windows
+    return np.asarray(np.round(vals), dtype=np.int64)
 
 
 class FFStepResponseSpecProgram(RAveragerProgram):
@@ -125,7 +90,6 @@ class FFStepResponseSpecProgram(RAveragerProgram):
         self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
         self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
 
-        # short const spec probe (QUA constant_tone of cw_amp/cw_len)
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
                                  gain=cfg["qubit_gain"],
                                  length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
@@ -133,7 +97,6 @@ class FFStepResponseSpecProgram(RAveragerProgram):
                                  freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
-        # build the predistorted ramp-hold-ramp for this delay (hold = ff_hold)
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=cfg["ff_hold"], ff_gain=cfg["ff_gain"],
             dt_play_us=cfg.get("dt_pulseplay", 5.0), ramp_us=cfg.get("ff_ramp_length", 0.02),
@@ -145,25 +108,23 @@ class FFStepResponseSpecProgram(RAveragerProgram):
     def body(self):
         cfg = self.cfg
         ff_pulse.assert_park(self, self.ff_segs)
-        # QUA baseline_rearm_time: dwell at park so each shot starts settled
         rearm = cfg.get("baseline_rearm_us", 0.0)
         self.sync_all(self.us2cycles(max(rearm, 0.05)))
         ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
-        self.sync_all(self.us2cycles(0.01))          # flux held at target (stdysel='last')
-        self.pulse(ch=cfg["qubit_ch"])                # spec probe at the target flux point
+        self.sync_all(self.us2cycles(0.01))
+        self.pulse(ch=cfg["qubit_ch"])
         self.sync_all(self.us2cycles(0.01))
         if cfg.get("readout_after_park", True):
-            ff_pulse.play_ramp_down(self, self.ff_segs)   # back to park
+            ff_pulse.play_ramp_down(self, self.ff_segs)
             self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
         else:
-            # QUA step 3: measure AT the held target flux (restore_target_at_end=False)
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(0.01))
-            ff_pulse.play_ramp_down(self, self.ff_segs)   # back to park
+            ff_pulse.play_ramp_down(self, self.ff_segs)
             self.sync_all(self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
@@ -266,26 +227,24 @@ class QubitFluxStepResponse(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, **kw)
         self.element = str(element if element is not None else path)
-        # f_vec: absolute Hz (QUA IF + LO -> QICK absolute, q_LO = 0)
         if f_vec is None:
             f_vec = np.linspace(cfg["qubit_freq_start"], cfg["qubit_freq_stop"],
                                 int(cfg["qubit_freq_expts"])) * 1e6
         self.f_vec = np.asarray(f_vec, dtype=float)
         if t_vec is None:
             t_vec = np.asarray(cfg["t_vec_ns"], dtype=float)
-        self.t_vec = np.asarray(t_vec, dtype=float)          # ns, QUA units
+        self.t_vec = np.asarray(t_vec, dtype=float)
         self.dc_offset = float(dc_offset if dc_offset is not None else cfg["dc_offset"])
         self.baseline_dc_offset = float(baseline_dc_offset)
         self.shots = int(shots if shots is not None else cfg["reps"])
-        # meta_dict: the QUA-format summary the artifact strings/metadata read from
         self.meta_dict = {
             "q_name": self.element,
             "r_name": f"r{self.element[1:]}" if len(self.element) > 1 else "r",
             "flux_name": f"ff_ch{cfg['ff_ch']}",
             "flux_channel": int(cfg["ff_ch"]),
-            "cw_amp": cfg["qubit_gain"],                     # DAC (QUA: V)
-            "cw_len": float(cfg["qubit_length"]) * 1e3,      # ns
-            "read_len": float(cfg["read_length"]) * 1e3,     # ns
+            "cw_amp": cfg["qubit_gain"],
+            "cw_len": float(cfg["qubit_length"]) * 1e3,
+            "read_len": float(cfg["read_length"]) * 1e3,
             "reset_time": float(cfg.get("reset_time_ns", 500_000)),
             "q_LO": {"LO_freq": 0.0},
             "r_IF": float(cfg["read_pulse_freq"]) * 1e6,
@@ -514,11 +473,9 @@ class QubitFluxStepResponse(ExperimentClass):
 
     def _compute_expected_frequencies(self):
         if self.flux_trace_interp is not None:
-            # Direct lookup from the measured trace -- no model error
             baseline_frequency_ghz = float(self.flux_trace_interp(self.baseline_dc_offset))
             target_frequency_ghz = float(self.flux_trace_interp(self.dc_offset))
         else:
-            # Fallback: parametric transmon model
             baseline_frequency_ghz = self._evaluate_flux_model_frequency(self.baseline_dc_offset)
             target_frequency_ghz = self._evaluate_flux_model_frequency(self.dc_offset)
         frequency_margin_ghz = max(0.040, 0.50 * abs(target_frequency_ghz - baseline_frequency_ghz))
@@ -538,17 +495,6 @@ class QubitFluxStepResponse(ExperimentClass):
         if self.flux_fit_params is None:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
-        # Local inversion branch = [baseline, target] PLUS a bounded pad past each end.  The
-        # qubit routinely settles a few MHz PAST the flux-model target (the model target sits
-        # a hair above where it lands -- normal, and it shifts only the absolute step, not its
-        # flatness).  With the tight [baseline, target] branch that overshoot inverts-and-
-        # CLAMPS to exactly V_target (np.interp left/right), flattening the whole voltage-domain
-        # settling tail to 1.0 -> the rise_decay_bump fit sees no drift -> unity multipliers ->
-        # no correction.  The pad lets the overshoot invert to a real past-target voltage so the
-        # drift survives.  (This is the ONE deliberate departure from the QUA branch, which
-        # clamps; QUA never tripped it because its overshoots stayed inside [baseline, target].)
-        # The monotonicity guard below falls back to the tight QUA branch if the pad wanders off
-        # the local SQUID branch, so the normal (in-branch) inversion is never degraded.
         def _sample_branch(pad_frac):
             pad = pad_frac * abs(self.dc_offset - self.baseline_dc_offset)
             lo = min(self.baseline_dc_offset, self.dc_offset) - pad
@@ -563,7 +509,7 @@ class QubitFluxStepResponse(ExperimentClass):
         if branch_frequency.size < 3 or not (
             np.all(_bf_diff >= -1e-9) or np.all(_bf_diff <= 1e-9)
         ):
-            branch_voltage, branch_frequency = _sample_branch(0.0)   # QUA-tight branch
+            branch_voltage, branch_frequency = _sample_branch(0.0)
         if branch_voltage.size < 3:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
@@ -588,9 +534,6 @@ class QubitFluxStepResponse(ExperimentClass):
                 right=float(interp_voltage[-1]),
             )
         else:
-            # Last-resort local nearest-neighbor inversion for a non-monotonic
-            # target interval. This should be rare for the short validation
-            # windows we use here.
             for flat_index in np.flatnonzero(finite_frequency):
                 nearest_index = int(np.nanargmin(np.abs(branch_frequency - frequency_ghz[flat_index])))
                 effective_dc[flat_index] = float(branch_voltage[nearest_index])
@@ -610,9 +553,6 @@ class QubitFluxStepResponse(ExperimentClass):
         self.data["fit_frequency_axis_ghz"] = frequency_axis_ghz
         self.data["fit_frequency_window_mask"] = expected_window_mask.tolist()
 
-        # the helper re-derives the window, raises the QUA no-overlap ValueError,
-        # runs the ridge engine and falls back to independent slices with the
-        # QUA fallback print
         trace_result = trx.extract_trace_from_map(
             iq_magnitude_dbm,
             frequency_axis_ghz,
@@ -637,11 +577,6 @@ class QubitFluxStepResponse(ExperimentClass):
         extracted_supported = np.asarray(trace_result["supported"], dtype=bool)
         extraction_method = trace_result["method"]
 
-        # Signed step normalization:
-        #   0 -> still at baseline
-        #   1 -> exactly at target
-        #  <1 -> did not reach the target yet
-        #  >1 -> overshot past the target
         step_denominator_ghz = target_frequency_ghz - baseline_frequency_ghz
         if abs(step_denominator_ghz) < 1e-12:
             measured_step_response = np.full(len(self.t_vec), np.nan)
@@ -902,10 +837,7 @@ class QubitFluxStepResponse(ExperimentClass):
         cfg["ff_gain"] = self.dc_offset
         cfg["ff_park_gain"] = self.baseline_dc_offset
         cfg["baseline_rearm_us"] = self.baseline_rearm_time_ns / 1e3
-        cfg.setdefault("dt_pulseplay", 0.5)   # resolve the 500 ns QUA early segments
-        # QUA reads out AT the held target flux; set cfg['readout_after_park']=True to
-        # read at PARK instead (a useful diagnostic: if the qubit only appears with park
-        # readout, the resonator IF at the target flux is off).
+        cfg.setdefault("dt_pulseplay", 0.5)
         cfg["readout_after_park"] = bool(cfg.get("readout_after_park", False))
         cfg["read_pulse_freq"] = self.resonator_if / 1e6
         _rfp = cfg.get("resonator_fit_parameters")
@@ -933,26 +865,22 @@ class QubitFluxStepResponse(ExperimentClass):
         iq_magnitude_dbm = np.full((n_f, n_t), np.nan)
         iq_phase = np.full((n_f, n_t), np.nan)
 
-        # QUA-style shot-interleaved acquisition: the inner qubit-freq sweep is already
-        # RAverager-interleaved; here we interleave the OUTER delay axis across `rounds`
-        # passes so slow drift doesn't imprint on the step-response trace (which is then
-        # FIT, so drift bias would corrupt the extracted late/rise/bump time constants).
         shots = int(self.shots)
         rounds = resolve_rounds(cfg, shots, default=cfg.get("step_rounds"))
 
         def run_point(idx, reps):
             cfg["ff_hold"] = float(self.t_vec[idx]) / 1e3
             cfg["reps"] = int(reps)
-            with suppress_stdout():      # keep qick per-program chatter off the progress line
+            with suppress_stdout():
                 prog = FFStepResponseSpecProgram(self.soccfg, cfg)
                 _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])       # (n_f,) complex
+            return np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
 
         live_fig = LiveFigure() if plotDisp else None
         start_time = time.time()
 
         def _fill(running):
-            cube = np.asarray(running).T          # (n_points, n_f) -> (n_f, n_t)
+            cube = np.asarray(running).T
             iq_magnitude_dbm[:, :] = 20 * np.log10(np.abs(cube) + 1e-12)
             iq_phase[:, :] = np.angle(cube)
 
@@ -972,7 +900,7 @@ class QubitFluxStepResponse(ExperimentClass):
             _fill(S_mean)
         except KeyboardInterrupt:
             pass
-        cfg["reps"] = shots       # restore (run_point set it to the per-round rep count)
+        cfg["reps"] = shots
 
         self.data.update({
             "IQ_mag": iq_magnitude_dbm,
@@ -1327,7 +1255,6 @@ class QubitFluxStepResponse(ExperimentClass):
     def save_data(self, data=None):
         print(f'Saving {self.fname}')
         d = self.data if data is None else data.get('data', data)
-        # h5-safe subset: arrays and scalars (dict/str/None artifacts live in the pickle/JSON)
         arr = {}
         for k, v in d.items():
             if isinstance(v, (dict, str)) or v is None:

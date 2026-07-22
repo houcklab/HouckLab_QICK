@@ -1,15 +1,3 @@
-"""
-End-to-end verification of the AutoTuner calibration graph against a SIMULATED qubit
-with known ground truth.
-
-This is the strongest check available without hardware: a virtual device with a
-dispersive resonator (chi, kappa), a transmon (true pi gain, true frequency, T1, T2*),
-realistic shot noise, T1 decay during readout, and ionization above a critical readout
-power.  The tuner is then run against it and must recover the true parameters.
-
-Run:  python WorkingProjects/TLS_Spectroscopy/Client_modules/Tests/test_auto_tuner.py
-"""
-
 import os
 import sys
 import types
@@ -20,7 +8,6 @@ import numpy as np
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 sys.path.insert(0, REPO)
 
-# ---- mock qick before importing the tuner ----
 qick = types.ModuleType("qick")
 qick.AveragerProgram = type("AveragerProgram", (), {})
 qick.RAveragerProgram = type("RAveragerProgram", (), {})
@@ -40,27 +27,23 @@ def check(name, cond, detail=""):
         FAIL.append(name)
 
 
-# ======================================================================================
-# Virtual device
-# ======================================================================================
 
 class VirtualQubit:
-    F_R = 7248.9000          # bare resonator (MHz)
-    KAPPA = 0.35             # linewidth (MHz)
-    CHI = -0.12              # dispersive shift (MHz)
-    F_Q = 2534.4000          # qubit (MHz)
-    PI_GAIN = 11500.0        # DAC units for a pi
-    T1 = 25.0                # us
-    T2 = 0.6                 # us (short, like the real device)
-    T_PI = 0.5               # us (4*sigma)
-    G_CRIT = 14000.0         # readout gain above which the device ionizes
-    NOISE = 0.055            # per-shot amplitude noise at 1 us integration
+    F_R = 7248.9000
+    KAPPA = 0.35
+    CHI = -0.12
+    F_Q = 2534.4000
+    PI_GAIN = 11500.0
+    T1 = 25.0
+    T2 = 0.6
+    T_PI = 0.5
+    G_CRIT = 14000.0
+    NOISE = 0.055
 
     def __init__(self, rng):
         self.rng = rng
         self.calls = 0
 
-    # ---- resonator response ----
     def alpha(self, f_read, gain, p_e):
         eps = gain / 4300.0
         ag = eps / ((f_read - (self.F_R - self.CHI)) + 0.5j * self.KAPPA)
@@ -73,16 +56,14 @@ class VirtualQubit:
         f = float(cfg["read_pulse_freq"])
         g = float(cfg["read_pulse_gain"])
         L = float(cfg["read_length"])
-        # T1 decay during integration: the time-averaged excited population
         p_eff = p_e * (self.T1 / L) * (1.0 - np.exp(-L / self.T1))
         a = self.alpha(f, g, p_eff)
-        # noise: amplitude noise integrates down as sqrt(L)
         sd = self.NOISE / np.sqrt(max(L, 1e-6))
         n = int(shots)
         self.calls += n
         I = self.rng.normal(a.real, sd, n)
         Q = self.rng.normal(a.imag, sd, n)
-        if g > self.G_CRIT:                       # ionization -> a third, smeared blob
+        if g > self.G_CRIT:
             frac = min(0.6, (g / self.G_CRIT - 1.0) * 2.0)
             k = self.rng.random(n) < frac
             I[k] = self.rng.normal(0.0, 4 * sd, k.sum())
@@ -92,7 +73,6 @@ class VirtualQubit:
         return float(I.mean()), float(Q.mean()), float(I.std(ddof=1) / np.sqrt(n)), \
             float(Q.std(ddof=1) / np.sqrt(n))
 
-    # ---- Bloch evolution ----
     def _rotate(self, v, axis, angle):
         axis = np.asarray(axis, dtype=float)
         nrm = np.linalg.norm(axis)
@@ -109,11 +89,11 @@ class VirtualQubit:
     def run_seq(self, seq, drive_freq):
         """Return the excited population after a sequence.  z=+1 is |g>."""
         v = np.array([0.0, 0.0, 1.0])
-        delta = float(drive_freq) - self.F_Q          # MHz
+        delta = float(drive_freq) - self.F_Q
         for op in seq:
             if op[0] == "pulse":
                 g, ph = float(op[1]), np.deg2rad(float(op[2]))
-                omega = np.pi * (g / self.PI_GAIN) / self.T_PI     # rad/us
+                omega = np.pi * (g / self.PI_GAIN) / self.T_PI
                 dz = 2 * np.pi * delta
                 axis = np.array([omega * np.cos(ph), omega * np.sin(ph), dz])
                 ang = np.linalg.norm(axis) * self.T_PI
@@ -128,16 +108,13 @@ class VirtualQubit:
     def spec_response(self, f, gain, length_us):
         """Saturation spectroscopy: power-broadened Lorentzian with a Stark shift."""
         omega = np.pi * (gain / self.PI_GAIN) / self.T_PI
-        stark = 2.5e-9 * gain ** 2                       # MHz, pushes the line up
+        stark = 2.5e-9 * gain ** 2
         d = 2 * np.pi * (np.asarray(f, dtype=float) - (self.F_Q + stark))
         gam = 1.0 / self.T2
         s = (omega ** 2 / 2.0) / (d ** 2 + gam ** 2 + omega ** 2 / 2.0)
         return 0.5 * s
 
 
-# ======================================================================================
-# Patch the tuner's measurement primitives to talk to the virtual device
-# ======================================================================================
 
 def install_simulator(dev):
     def _avg_iq(exp, prog_cls, cfg):
@@ -195,9 +172,6 @@ def install_simulator(dev):
     T.RabiProgram = FakeRabi
 
 
-# ======================================================================================
-# Unit checks on the pure analysis
-# ======================================================================================
 
 rng = np.random.default_rng(11)
 print("== pure analysis ==")
@@ -208,8 +182,7 @@ r = T.fit_resonance(f, dip, expected_fwhm=0.35)
 check("Lorentzian on a SLOPED baseline: f0 within 20 kHz",
       r["ok"] and abs(r["f0"] - 7248.953) < 0.02, "f0=%.4f slope-tolerant" % r["f0"])
 
-# the fixed-7-boxcar bug: a narrow scan must still find a narrow feature
-fn = np.linspace(7248.95 - 1.5, 7248.95 + 1.5, 61)          # 50 kHz spacing
+fn = np.linspace(7248.95 - 1.5, 7248.95 + 1.5, 61)
 dipn = T.lorentzian(fn, 7248.9378, 0.216, -3.0, 10.0) + rng.normal(0, 0.06, fn.size)
 rn = T.fit_resonance(fn, dipn, expected_fwhm=0.216)
 check("narrow 3 MHz/61pt scan finds a 216 kHz dip (old fixed kernel erased it)",
@@ -218,20 +191,15 @@ check("narrow 3 MHz/61pt scan finds a 216 kHz dip (old fixed kernel erased it)",
 check("pure noise rejected", not T.fit_resonance(f, rng.normal(0, 0.05, f.size))["ok"])
 
 print("== noise estimator: the two hardware pathologies ==")
-# (1) a well-averaged (nearly noiseless) trace must NOT report an astronomical SNR --
-#     on hardware this read 8.2e15 and made every fit pass its snr>5 gate
 fq = np.linspace(2547.25, 2567.25, 121)
 smoothbump = 0.30 + 0.002 * np.exp(-((fq - 2561.76) / 1.5) ** 2)
 rs = T.fit_resonance(fq, smoothbump, polarity="peak", expected_fwhm=2.0)
 check("smooth trace does not produce a 1e15 SNR", rs["snr"] < 1e4, "snr=%.3g" % rs["snr"])
-# (2) QUANTIZED flat baseline (averaged accumulator values repeat exactly) must not
-#     collapse the noise estimate to zero
 qstep = 1e-4
 quant = np.round(smoothbump / qstep) * qstep
 rq = T.fit_resonance(fq, quant, polarity="peak", expected_fwhm=2.0)
 check("quantized baseline does not collapse the noise estimate", rq["snr"] < 1e4,
       "snr=%.3g" % rq["snr"])
-# and a genuine resonance must still be found and pure noise still rejected
 rgood = T.fit_resonance(fq, 0.30 - 0.05 / (1 + ((fq - 2557.0) / 1.0) ** 2)
                         + rng.normal(0, 0.002, fq.size), expected_fwhm=2.0)
 check("a real dip is still found after the noise fix", rgood["ok"]
@@ -261,7 +229,6 @@ for M, npts in ((4, 13), (20, 13)):
           "%.0f +/- %.0f (%.2f%%)" % (v["x_min"], v["x_err"], 100 * v["x_err"] / gpi))
     check("M=%d reports a FINITE uncertainty (old code used the floor)" % M,
           np.isfinite(v["x_err"]) and v["x_err"] > 0)
-# a residual FLOOR must not masquerade as an angle error
 res_floor = 0.30 + np.sin(20 * np.pi * (g / gpi - 1.0) / 2.0) ** 2
 v = T.parabola_vertex(g, res_floor)
 check("a 0.30 decoherence floor does not move the vertex",
@@ -284,7 +251,6 @@ ss2 = T.single_shot_analysis(ig, qg, ie2, qe2)
 check("a 20% bad pi shows up as P(g|e) (not P(e|g))",
       abs(ss2["p_g_given_e"] - 0.20) < 0.04 and ss2["p_e_given_g"] < 0.03,
       "P(g|e)=%.3f P(e|g)=%.3f" % (ss2["p_g_given_e"], ss2["p_e_given_g"]))
-# ionization -> third blob -> outlier gate must fire
 ie3 = np.concatenate([rng.normal(6, 1, n // 2), rng.normal(0, 5, n // 2)])
 qe3 = np.concatenate([rng.normal(0, 1, n // 2), rng.normal(0, 5, n // 2)])
 ss3 = T.single_shot_analysis(ig, qg, ie3, qe3)
@@ -299,9 +265,6 @@ check("nan_argmin returns None for all-NaN", T.nan_argmin([np.nan, np.nan]) is N
 v = T.parabola_vertex(np.arange(13.0), np.full(13, np.nan))
 check("parabola_vertex survives an all-NaN column", not np.isfinite(v["x_err"]))
 
-# ======================================================================================
-# End-to-end: run the whole graph against the virtual qubit
-# ======================================================================================
 print("\n== END-TO-END: full calibration graph vs a virtual qubit ==")
 dev = VirtualQubit(np.random.default_rng(5))
 install_simulator(dev)
@@ -328,7 +291,7 @@ out = tuner.acquire(plotDisp=False)
 w = out["data"]["working"]
 
 print("\n  --- recovered vs truth ---")
-f_dressed_g = dev.F_R - dev.CHI       # the |g> scan sees the dressed resonance
+f_dressed_g = dev.F_R - dev.CHI
 check("resonator finds the DRESSED |g> resonance within kappa/3",
       abs(w.get("resonator_f0", 0) - f_dressed_g) < dev.KAPPA / 3.0,
       "%.4f vs %.4f" % (w.get("resonator_f0", float('nan')), f_dressed_g))
@@ -368,8 +331,6 @@ check("qubit_pi_freq only written because fine_pi_freq measured it",
 check("qubit_pi2_gain NOT written (never measured)", "qubit_pi2_gain" not in tuned)
 
 print("\n== the graph must actually ITERATE (this is what the old test missed) ==")
-# The previous test asserted only recovered VALUES, so it passed while maintain() ran a
-# single straight-line pass and printed "FIXED POINT reached".  Count calibrations.
 calls = {}
 for _name, _deps, _meth in T.GRAPH:
     orig_fn = getattr(T.AutoTuner, _meth)
@@ -415,10 +376,8 @@ check("magnitude is the same for +chi and -chi (D is even)",
       abs(T.optimal_readout_detuning(0.5, 0.35) - T.optimal_readout_detuning(-0.5, 0.35)) < 1e-9)
 
 print("\n== drift-robust readout sweep (hardware: 1.89 vs 1.06 sigma, same settings) ==")
-# a ladder measured under a monotonic drift: one pass ranks by TIME, two opposed passes
-# averaged rank by value
-true_q = np.array([1.0, 1.5, 1.6, 1.5, 1.0])          # true quality, shallow peak at 2
-drift = 0.70                                            # 70% decline across a pass
+true_q = np.array([1.0, 1.5, 1.6, 1.5, 1.0])
+drift = 0.70
 n = true_q.size
 one_pass = np.array([true_q[j] * (1 - drift * j / (n - 1)) for j in range(n)])
 fwd = np.array([true_q[j] * (1 - drift * j / (n - 1)) for j in range(n)])
@@ -435,7 +394,7 @@ def dsep(c, k):
     d = np.linspace(-3*max(abs(c), k), 3*max(abs(c), k), 2001)
     ag, ae = 1.0/((d-c)+0.5j*k), 1.0/((d+c)+0.5j*k)
     return float(np.max(np.abs(ag-ae))/np.max(np.abs(ag)))
-pen = dsep(0.5*0.36, 0.36) / dsep(0.065, 0.36)          # measured chi=0.065, kappa=0.36
+pen = dsep(0.5*0.36, 0.36) / dsep(0.065, 0.36)
 check("2|chi|/kappa=0.36 is flagged as ~1.6x below the design optimum",
       1.4 < pen < 1.8, "penalty=%.2fx" % pen)
 check("at the 2|chi|=kappa optimum the penalty is 1.0",

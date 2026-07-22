@@ -1,26 +1,3 @@
-"""
-STEP 6: T1 vs flux (the TLS map) -- QUA-identical behavior.
-
-Port of Houck-Lab-Qua m_swap_spec_vs_flux.py restricted to what TLSSpectroscopy.py
-uses, with the SAME module surface the QUA runner imports:
-    T1FullCurveVsFlux, T1FullCurveVsFluxFromFit, T13PointVsFlux,
-    build_wall_clock_repeat_metadata, get_wall_clock_repeat_spec,
-    get_wall_clock_repeat_full_spec, save_wall_clock_repeat_full_outputs,
-    _csv_base_from_pickle
-plus the internal helpers (_compute_3pt_t1, _fit_T1_map, _safe_inverse_t1_us,
-_save_flux_curve_csv, _save_flux_map_csv, save_wall_clock_repeat_outputs,
-NOTEBOOK_FIT_PARAM_ORDER, _coerce_notebook_fit_params,
-_predict_qubit_frequency_hz_from_flux_fit) -- estimators and CSV/PNG schemas are
-verbatim QUA.
-
-Hardware mapping: the QUA flux step (set_dc_offset hold) is a predistorted
-fast-flux ramp-hold-ramp on ff_ch; the P0/P1 references are measured AT PARK with
-NO flux pulse at t~0 (do_ff=False), exactly like QUA.  QUA's on-FPGA classify +
-active reset maps to herald + post-selection with the QUA [threshold, scale_factor,
-read_theta] discrimination (reset_mode='active'); 'passive' uses all shots.
-Flux-axis units are ff_gain DAC; time keys keep QUA's _ns names with ns values.
-"""
-
 import csv
 import time
 import datetime
@@ -38,9 +15,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 
 
-# --------------------------------------------------------------------------- #
-#  Notebook-fit-params coercion + flux->frequency prediction (QUA verbatim)
-# --------------------------------------------------------------------------- #
 NOTEBOOK_FIT_PARAM_ORDER = ("f_max_GHz", "E_C_GHz", "d", "V_period_V", "V_sweet_V")
 
 
@@ -81,9 +55,6 @@ def _predict_qubit_frequency_hz_from_flux_fit(dc_values, flux_fit_params):
     return np.asarray(f_ghz, dtype=float) * 1e9
 
 
-# --------------------------------------------------------------------------- #
-#  Estimators (QUA verbatim)
-# --------------------------------------------------------------------------- #
 def _compute_3pt_t1(P0, P1, Ps, Ts_ns, min_ref_contrast=0.05, max_t1_multiple=20.0):
     P0 = np.asarray(P0, dtype=float)
     P1 = np.asarray(P1, dtype=float)
@@ -165,9 +136,6 @@ def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
     return T1_fit, T1_err, fit_ok
 
 
-# --------------------------------------------------------------------------- #
-#  CSV writers (QUA verbatim schemas)
-# --------------------------------------------------------------------------- #
 def _csv_base_from_pickle(pname):
     return pname[:-4] if str(pname).endswith(".pkl") else str(pname)
 
@@ -213,9 +181,6 @@ def _save_flux_map_csv(csv_path, dc_vec, t_us, map2d, value_name="population_pe"
     return _write_csv_rows(csv_path, fieldnames, rows)
 
 
-# --------------------------------------------------------------------------- #
-#  Wall-clock repeat helper API (QUA verbatim)
-# --------------------------------------------------------------------------- #
 def build_wall_clock_repeat_metadata(run_start_dt, series_start_dt, run_index):
     elapsed_minutes = (run_start_dt - series_start_dt).total_seconds() / 60.0
     return {
@@ -370,9 +335,6 @@ def save_wall_clock_repeat_full_outputs(csv_base_path, file_tag, per_run_full_da
     return _write_csv_rows(csv_path, fieldnames, rows)
 
 
-# --------------------------------------------------------------------------- #
-#  The QICK measurement program (one flux point, one wait)
-# --------------------------------------------------------------------------- #
 class FFT1Program(AveragerProgram):
     """One (flux target, wait) point with herald + final single-shot readouts.
 
@@ -419,8 +381,6 @@ class FFT1Program(AveragerProgram):
                                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
 
         if cfg.get("do_ff", True):
-            # hold the flux for the EXACT requested wait (no dt_pulseplay floor): the
-            # decay window must equal the wait the 3-point/curve estimator divides by.
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
                 self, hold_us=cfg["ff_hold"],
                 ff_gain=cfg["ff_gain"], dt_play_us=cfg.get("dt_pulseplay", 5.0),
@@ -434,17 +394,11 @@ class FFT1Program(AveragerProgram):
         if cfg.get("do_ff", True):
             ff_pulse.assert_park(self, self.ff_segs)
         if str(cfg.get("reset_mode", "passive")).lower() == "feedback":
-            # TRUE tProc feedback reset before the shot (measure -> conditional pi -> loop),
-            # the faithful QUA active reset.  The pi register (qubit_pi_gain) is reused
-            # directly (fixed gain -> no conflict).  Requires the probe-confirmed feedback
-            # path + raw threshold; with it, relax_delay can be short since the NEXT shot's
-            # feedback reset does the thermalization.
             active_reset.active_reset_block(
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)))
-        # herald readout (post-selection reference / active-reset analog) at park
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 0.5)))
@@ -461,9 +415,6 @@ class FFT1Program(AveragerProgram):
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        # feedback reset adds active_reset_readouts() FIXED measurements BEFORE herald+final, so
-        # readouts_per_experiment grows by exactly that (0 unless reset_mode=='feedback').  The
-        # fixed count keeps the buffer shape deterministic; collect_shots skips past them.
         n_reset = active_reset.active_reset_readouts(self.cfg)
         super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=2 + n_reset,
                         progress=progress)
@@ -471,8 +422,8 @@ class FFT1Program(AveragerProgram):
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        n_reset = active_reset.active_reset_readouts(self.cfg)   # reset measures precede herald+final
-        h, f = n_reset, n_reset + 1                              # herald, final readout indices
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        h, f = n_reset, n_reset + 1
         raw = np.array(self.get_raw())
         i0 = raw[0, 0, :, h, 0] / length
         q0 = raw[0, 0, :, h, 1] / length
@@ -481,7 +432,6 @@ class FFT1Program(AveragerProgram):
         return i0, q0, i1, q1
 
 
-# --------------------------------------------------------------------------- #
 class _T1VsFluxBase(ExperimentClass):
     """Shared ctor/knobs/data-dict scaffolding (QUA base behavior)."""
 
@@ -498,9 +448,6 @@ class _T1VsFluxBase(ExperimentClass):
             raise ValueError("calib_params is required (run SingleShot1Q first).")
         if reset_mode not in ("passive", "active", "feedback"):
             raise ValueError(f"reset_mode must be 'passive', 'active', or 'feedback', got {reset_mode!r}")
-        # 'passive' = relax_delay; 'active' = herald post-selection (below); 'feedback' = TRUE
-        # tProc active reset (mid-circuit measure->conditional pi).  Feedback needs a readout
-        # that drives a tProc input -- guard on it so it fails loudly, not silently.
         if reset_mode == "feedback" and self.soccfg is not None and not \
                 active_reset.active_reset_supported(self.soccfg, cfg["ro_chs"][0]):
             raise RuntimeError(
@@ -517,7 +464,7 @@ class _T1VsFluxBase(ExperimentClass):
         self.flux_settle_time_ns = (flux_settle_time_ns if flux_settle_time_ns is not None
                                     else cfg.get("flux_settle_time", 0))
         self.reset_mode = reset_mode
-        cfg["reset_mode"] = reset_mode        # FFT1Program.body reads this for feedback reset
+        cfg["reset_mode"] = reset_mode
         self.repeat_metadata = dict(repeat_metadata or {})
         self.write_outputs = bool(write_outputs)
         if flux_tail_compensation is not None:
@@ -534,7 +481,6 @@ class _T1VsFluxBase(ExperimentClass):
         if self.repeat_metadata:
             self.data.update(self.repeat_metadata)
 
-    # ---- one (flux, wait) point -> excited/kept counts (interleave-accumulable) ----
     def _run_point_counts(self, ff_gain, wait_us, do_pi=True, do_ff=True, reps=None):
         """Run one (flux, wait) point; return (n_excited, n_kept) from the
         SS-discriminated shots.  Counts (rather than a per-call mean) let shots be
@@ -546,13 +492,12 @@ class _T1VsFluxBase(ExperimentClass):
         cfg["do_pi"] = bool(do_pi)
         cfg["do_ff"] = bool(do_ff)
         if reps is not None:
-            cfg["shots"] = int(reps)      # FFT1Program copies cfg['shots'] -> reps
-        with suppress_stdout():           # keep qick per-program chatter off the progress line
+            cfg["shots"] = int(reps)
+        with suppress_stdout():
             prog = FFT1Program(self.soccfg, cfg)
             i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if self.reset_mode == "active":
-            # herald must be confidently ground (QUA ground_confidence_threshold)
             herald_calib = dict(self.calib_params)
             herald_calib["threshold"] = self.calib_params.get(
                 "ground_threshold", self.calib_params["threshold"])
@@ -561,7 +506,6 @@ class _T1VsFluxBase(ExperimentClass):
             return float(np.sum(final[keep])), int(np.sum(keep))
         return float(np.sum(final)), int(final.size)
 
-    # ---- one (flux, wait) point -> P(e), QUA-discriminated + reset analog ----
     def _run_point(self, ff_gain, wait_us, do_pi=True, do_ff=True):
         exc, kept = self._run_point_counts(ff_gain, wait_us, do_pi=do_pi, do_ff=do_ff)
         if kept == 0:
@@ -575,7 +519,7 @@ class _T1VsFluxBase(ExperimentClass):
         returned P(e) is the exact pooled fraction over all shots.  rounds =
         cfg['interleave_rounds'] (default min(shots,10); 'full'/0 -> shots = exact QUA).
         Returns P(e) per point, in point_specs order."""
-        shots = int(self.cfg.get("shots", self.shots))   # honors a temp shot count (park probe)
+        shots = int(self.cfg.get("shots", self.shots))
         rounds = resolve_rounds(self.cfg, shots, default=self.cfg.get("t1_rounds"))
         n = len(point_specs)
         exc = np.zeros(n)
@@ -598,7 +542,7 @@ class _T1VsFluxBase(ExperimentClass):
                 exc[idx] += e
                 kept[idx] += k
                 done_units += 1
-                if start_time is not None:           # smooth per-point bar (QUA feel)
+                if start_time is not None:
                     progress_counter(done_units - 1, total_units, start_time=start_time)
             if live is not None:
                 with np.errstate(invalid="ignore", divide="ignore"):
@@ -611,7 +555,6 @@ class _T1VsFluxBase(ExperimentClass):
         """Full T1 decay at park (the QUA m_T1 AUTO probe analog)."""
         p = dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71, num_pulses=1)
         for k, v in (probe_cfg or {}).items():
-            # accept both *_ns (QUA) and *_us key spellings
             if k.endswith("_ns"):
                 p[k[:-3] + "_us"] = float(v) / 1e3
             else:
@@ -622,7 +565,7 @@ class _T1VsFluxBase(ExperimentClass):
                                np.log10(p["t_max_us"]), int(p["t_points"]))
         print(f"[{suffix_tag}] park T1 probe: {len(t_vec_us)} waits x {self.cfg['shots']} shots")
         specs = [(self.park_voltage, float(t), True, True) for t in t_vec_us]
-        pe = self._interleaved_populations(specs)      # shot-interleaved like the maps
+        pe = self._interleaved_populations(specs)
         self.cfg["shots"] = shots_saved
         T1_fit, _, ok = _fit_T1_map(pe[None, :], t_vec_us)
         if not ok[0]:
@@ -662,14 +605,11 @@ class T13PointVsFlux(_T1VsFluxBase):
         dc_vec = self.dc_vec
         Ts_us = self.Ts_ns / 1e3
         start_time = time.time()
-        # QUA shots-outermost interleaving: pool P0/P1/Ps over ALL flux points and shots
-        # so slow drift can't tilt the T1(flux) map (P0/P1 are the shared references the
-        # 3-point estimator divides by, so a drift gradient in them would fake TLS dips).
         specs = []
         for dc in dc_vec:
-            specs.append((self.park_voltage, 0.0, False, False))   # P0: park, no pi, t~0
-            specs.append((self.park_voltage, 0.0, True, False))    # P1: park, pi,   t~0
-            specs.append((float(dc), Ts_us, True, True))           # Ps: target, pi, hold Ts
+            specs.append((self.park_voltage, 0.0, False, False))
+            specs.append((self.park_voltage, 0.0, True, False))
+            specs.append((float(dc), Ts_us, True, True))
         pe = self._interleaved_populations(specs, start_time=start_time)
         P0 = pe[0::3]
         P1 = pe[1::3]
@@ -805,9 +745,6 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
         ss = np.full((len(dc_vec), len(t_us)), np.nan)
         valid = np.zeros((len(dc_vec), len(t_us)), dtype=np.int8)
         start_time = time.time()
-        # QUA shots-outermost interleaving of the WHOLE decay-vs-flux map: each (flux,
-        # wait) point is revisited every round, so slow drift can't bias the fitted T1
-        # (sequential per-point acquisition of a decay curve is the classic drift-bias).
         specs = []
         index_map = []
         for i, dc in enumerate(dc_vec):

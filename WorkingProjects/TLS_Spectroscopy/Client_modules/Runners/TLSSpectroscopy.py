@@ -1,27 +1,7 @@
-"""
-TLS spectroscopy pipeline -- QICK port of Houck-Lab-Qua/.../Flux_Tunable/TLSSpectroscopy.py,
-kept STRUCTURALLY IDENTICAL to the QUA original: same steps in the same order
-(1 -> 2 -> 3a -> 3b -> 4 -> 5 -> 6), same top-level constants, same param-dict
-knobs, same artifact threading, same printouts.
-
-Unit translation (the only difference from QUA -- the flux actuator changed):
-  - flux axis  : OPX DC volts  ->  fast-flux DAC gain units (ff_ch = gen 3);
-                 keys keep their QUA names (dc_min/dc_max/dc_step, BASELINE/
-                 TARGET_DC_OFFSET) but hold DAC-gain values.
-  - frequencies: OPX IF Hz (LO-relative)  ->  absolute MHz (freq_min/max/step).
-  - times      : ns keys -> _us keys with microsecond values.
-  - spec_amp   : OPX volts -> DAC gain units.
-
-Run from the HouckLab_QICK repo root on the measurement PC:
-    python -m WorkingProjects.TLS_Spectroscopy.Client_modules.Runners.TLSSpectroscopy
-"""
-
 import os
 import sys
 from datetime import datetime
 
-# find the HouckLab_QICK repo root so the script runs from anywhere (QUA-style
-# repo-root finder: the OPX file walked up until it found LabCode/)
 _d = os.path.dirname(os.path.abspath(__file__))
 while _d != os.path.dirname(_d):
     if os.path.isdir(os.path.join(_d, "WorkingProjects")):
@@ -55,8 +35,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predist
 
 
 LIVE_PLOTS = True
-# QUA-identical backend switch (TLSSpectroscopy.py lines 49-52): interactive TkAgg
-# for live plots, headless Agg otherwise
 import matplotlib
 matplotlib.use("TkAgg" if LIVE_PLOTS else "Agg", force=True)
 import matplotlib.pyplot as plt
@@ -71,47 +49,28 @@ YOKO_VISA = "USB0::0x0B21::0x0039::91S929899::0::INSTR"
 YOKO_VOLTAGE = 0.0
 
 
-# Flux -> qubit-frequency fit, [EJmax(GHz), Ec(GHz), period, offset, d, tilt] with
-# the flux axis in ff_gain DAC units.  None until measured: run step 2, then paste
-# the printed FLUX_FIT_PARAMS here (same workflow as QUA, where step 2 printed the
-# paste-ready values for this spot).
 FLUX_FIT_PARAMS = None
 
-BASELINE_DC_OFFSET = 0        # ff DAC units (park level; QUA: OPX volts)
-TARGET_DC_OFFSET = 8000       # ff DAC units (step-3 distortion-probe target)
+BASELINE_DC_OFFSET = 0
+TARGET_DC_OFFSET = 8000
 FLUX_TAIL_COMPENSATION_GAIN = 0.75
 
 SAVE_RESONATOR_LOOKUP = True
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
-# Resonator-dip-vs-flux DISPERSIVE model fit -- the QUA resonator_fit_parameters
-# workflow.  Paste the 7 values step 1 prints under "dispersive fit parameters
-# [f_bare_Hz, g_Hz, EJmax_GHz, Ec_GHz, period, offset, d]" here, and steps 2/3/4 will
-# DYNAMICALLY track the readout frequency with flux via the dispersive model (readout
-# at the flux-pulled dip), exactly like the OPX code -- instead of a flat IF.  Takes
-# effect only when USE_RESONATOR_LOOKUP=False (the CSV lookup, if enabled, wins).
-# (A 4-value list is accepted too and evaluated as the legacy cosine fit.)
 RESONATOR_FIT_PARAMS = None
 
-# Shot-interleaving passes -- QUA drift-immunity parity.  QUA averages the shot loop
-# OUTERMOST, so every sweep point is revisited on every shot and slow drift averages
-# uniformly into the map instead of tilting it along the sweep axis.  QICK can't fold
-# the shot loop + Python flux/delay sweeps into one FPGA program, so instead we sweep
-# the whole map INTERLEAVE_ROUNDS times with reps ~= shots/rounds each (exact same
-# averaged result for a stable system; drift-robust like QUA).  10 captures nearly all
-# the drift immunity at ~10x the program loads; set "full" (or 0) for exact single-shot
-# QUA interleaving (slowest), or 1 for the old fast per-point average.
 INTERLEAVE_ROUNDS = 10
 
 
 P1_RESONATOR = {
     "run": False,
     "shots": 200,
-    "freq_min": 7245.0,       # MHz absolute (QUA: IF relative to r_LO)
+    "freq_min": 7245.0,
     "freq_max": 7252.0,
     "freq_step": 0.05,
-    "dc_min": 0,              # ff DAC units (QUA: volts)
+    "dc_min": 0,
     "dc_max": 12000,
     "dc_step": 300,
     "lookup_smooth_points": None,
@@ -121,10 +80,10 @@ P2_QUBIT_SPEC_FULL = {
     "run": False,
     "advanced_fit": True,
     "shots": 100,
-    "relax_delay_us": 100.0,  # spec thermalization (bump if the probe saturates the qubit)
-    "spec_amp": 7000,         # DAC units (QUA: OPX volts)
-    "spec_len_us": 0.5,       # us (QUA: spec_len in ns)
-    "freq_min": 2250.0,       # MHz absolute
+    "relax_delay_us": 100.0,
+    "spec_amp": 7000,
+    "spec_len_us": 0.5,
+    "freq_min": 2250.0,
     "freq_max": 2570.0,
     "freq_step": 2.0,
     "dc_min": 0,
@@ -149,7 +108,7 @@ P3_STEP_RESPONSE = {
     "baseline_rearm_us": 100.0,
     "piecewise_min_multiplier": 0.5,
     "piecewise_max_multiplier": 1.5,
-    "readout_after_park": False,   # QUA reads AT the held flux; True = read at park (diagnostic)
+    "readout_after_park": False,
     "live_plot": True,
 }
 
@@ -157,7 +116,7 @@ P4_LONG_TIME = {
     "run": False,
     "advanced_fit": False,
     "shots": 100,
-    "relax_delay_us": 100.0,  # spec thermalization (bump if the probe saturates the qubit)
+    "relax_delay_us": 100.0,
     "spec_amp": 7000,
     "spec_len_us": 0.5,
     "freq_min": 2250.0,
@@ -179,27 +138,6 @@ P5_SS_CAL = {
     "min_F": 0.60,
 }
 
-# P6_FULL_T1 = {
-#     "run": False,
-#     "shots": 300,
-#     "dc_min": 0,
-#     "dc_max": 12000,
-#     "dc_step": 60,
-#     "freq_step_mhz": 2,
-#     "wall_clock_duration_min": 2880,
-#     "auto_tmax_factor": 3.0,
-#     "t_max_us": None,
-#     "t_min_us_default": 1.0,
-#     "t_points_default": 21,
-#     "reset_mode": "passive",
-#     "T1_probe_cfg": {
-#         "shots_T1": 300,
-#         "t_min_us": 1.0,
-#         "t_max_us": 300.0,
-#         "t_points": 21,
-#         "num_pulses": 1,
-#     },
-# }
 
 P6_3PT_T1 = {
     "run": False,
@@ -209,30 +147,15 @@ P6_3PT_T1 = {
     "dc_step": 60,
     "freq_step_mhz": 1,
     "wall_clock_duration_min": None,
-    "Ts_us": 100.0,           # (QUA: Ts_ns = 100 us)
+    "Ts_us": 100.0,
     "auto_Ts_factor": 0.5,
     "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    # QUA-faithful default: average EVERY shot (like QUA's unconditioned .average()) and
-    # reset passively via relax_delay.  'active' = herald POST-SELECTION (a different,
-    # herald-conditioned measurement), opt-in.  'feedback' = TRUE tProc active reset
-    # (measure->conditional pi->loop, the faithful QUA reset) -- now available on tProc-v1
-    # 0.2.133 IF the firmware routes the readout into the tProc; RUN Experiments/
-    # mActiveResetProbe.py first (it confirms the path + prints reset_threshold_raw), then
-    # set reset_mode="feedback" and paste the three values below.
-    # QUA T1 used TRUE active reset (audit AR-1), so 'feedback' is the QUA-faithful TARGET.  All
-    # CODE-side pieces are in place: the probe CONFIRMED the path (tproc_ch=0; discrimination on
-    # the Q half), and FFT1Program's readout-buffer accounting for the reset's extra measurements
-    # is wired (fixed-count reset -> deterministic count; collect_shots skips past them to the
-    # herald+final).  The ONLY thing left is confirming the LOOP resets on THIS board: run
-    # Experiments/mActiveResetValidation.py (from GateCalibration, RUN_ACTIVE_RESET_VALIDATION=
-    # True).  If residual_excited < 0.15, flip this to 'feedback' (then relax_delay's 2 ms can
-    # drop toward the herald time).  'active' = herald post-selection; 'passive' = relax (default).
     "reset_mode": "passive",
-    "reset_threshold_raw": 2153,   # raw accumulator (Q half) -- from mActiveResetProbe, for later
-    "reset_oper": "upper",         # discriminating half: Q (|g>=429, |e>=3877)
-    "reset_ground_below": True,    # |g> reads below threshold
+    "reset_threshold_raw": 2153,
+    "reset_oper": "upper",
+    "reset_ground_below": True,
     "reset_max_iters": 3,
     "T1_probe_cfg": {
         "shots_T1": 1000,
@@ -243,7 +166,7 @@ P6_3PT_T1 = {
     },
 }
 
-STEP3B_GAIN_SWEEP = None      # e.g. [0.5, 0.75, 1.0] -> gain sweep in step 3b
+STEP3B_GAIN_SWEEP = None
 
 
 def _set_yoko_if_requested():
@@ -267,14 +190,7 @@ def _spec_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
     cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
-    # Spec is a weak probe -- QUA used essentially no reset here.  BaseConfig's 3 ms
-    # relax_delay makes spectroscopy ~30x slower than it needs to be (it dominates the
-    # per-shot time).  Use a short spec thermalization; bump relax_delay_us in the P-dict
-    # if your qubit needs more.  (Steps 5/6 keep their own longer relax for T1.)
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
-    # dispersive (or cosine) resonator-vs-flux fit -> dynamic per-flux readout IF for
-    # steps 2/3/4 (QUA resonator_fit_parameters).  Only used when USE_RESONATOR_LOOKUP
-    # is False; the CSV lookup, if enabled, takes priority in _build_resonator_curve.
     if RESONATOR_FIT_PARAMS is not None and not USE_RESONATOR_LOOKUP:
         cfg["resonator_fit_parameters"] = list(RESONATOR_FIT_PARAMS)
     if "spec_amp" in p:
@@ -338,7 +254,7 @@ def _auto_freq_window(p, dc_baseline, dc_target):
     if not (p.get("auto_center_frequency_window", True) and FLUX_FIT_PARAMS is not None):
         return p["auto_freq_absolute_min_mhz"], p["auto_freq_absolute_max_mhz"]
     f = fx.estimate_fit_frequency_ghz_array(
-        FLUX_FIT_PARAMS, np.array([float(dc_baseline), float(dc_target)])) * 1e3  # MHz
+        FLUX_FIT_PARAMS, np.array([float(dc_baseline), float(dc_target)])) * 1e3
     margin = max(40.0, 0.5 * abs(f[1] - f[0]))
     lo = max(min(f) - margin, p["auto_freq_absolute_min_mhz"])
     hi = min(max(f) + margin, p["auto_freq_absolute_max_mhz"])
@@ -365,7 +281,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
     cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
-    cfg["relax_delay"] = 50           # no qubit excitation; cavity ring-down only
+    cfg["relax_delay"] = 50
     cfg["trans_freq_start"] = p["freq_min"]
     cfg["trans_freq_stop"] = p["freq_max"]
     cfg["TransNumPoints"] = len(f_vec)
@@ -401,8 +317,8 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix="Qubit_Spec_vs_Flux_Full_Range", cfg=cfg, step_tag="2",
         dc_vec=dc_vec,
-        long_time_ns=2000.0, average_window_ns=0.0,          # settle-then-probe slice
-        readout_after_park=False,                            # QUA step 2 reads AT the held flux
+        long_time_ns=2000.0, average_window_ns=0.0,
+        readout_after_park=False,
         park_voltage=BASELINE_DC_OFFSET,
         fit_trace=False, advanced_fit=bool(p.get("advanced_fit", True)),
         live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
@@ -541,12 +457,6 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         dc_offset=TARGET_DC_OFFSET, baseline_dc_offset=BASELINE_DC_OFFSET,
         shots=int(p["shots"]),
         flux_fit_params=FLUX_FIT_PARAMS, flux_lookup_mode="fit",
-        # QUA default is "voltage" (invert measured freq -> flux, correct the flux).  Set
-        # P3_STEP_RESPONSE["piecewise_response_domain"]="frequency" when the qubit settles
-        # PAST the flux-model target frequency: the voltage inversion clamps that overshoot
-        # to a flat 1.0 -> unity multipliers -> no correction, while the frequency-domain
-        # response preserves the measured drift the fit needs.  (piecewise_response_domain
-        # is a QUA-exposed parameter, so either value is QUA-faithful.)
         piecewise_response_domain=p.get("piecewise_response_domain", "voltage"),
         live_plot=live_plot,
         fit_rise_decay_bump_dc_correction=fit_rise_decay_bump_dc_correction,
@@ -566,7 +476,6 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
             f"old JSON. Fit info: success={fit_info.get('success')}, "
             f"error={fit_info.get('error')!r}. Check the just-saved raw sweep and trace plots."
         )
-    # QUA wrapper: tear down this iteration's figures in the MAIN thread (TkAgg)
     plt.close("all")
     gc.collect()
     print(f"Flux step response for {QUBIT} at dc_offset={TARGET_DC_OFFSET:+.6f} DAC complete")
@@ -753,12 +662,9 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "ff_gain_vec": dc_vec,
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        # passive reset between shots (us).  2 ms placeholder; once step-6's park-T1
-        # probe measures T1, size this to ~5-7x T1_max for the real speedup.
         "relax_delay": 2000,
         "qubit_pulse_style": "arb",
     })
-    # TRUE tProc active reset (reset_mode='feedback'): threshold from the active-reset probe.
     if p.get("reset_mode") == "feedback":
         if p.get("reset_threshold_raw") is None:
             raise RuntimeError("reset_mode='feedback' needs reset_threshold_raw in P6_3PT_T1 "
@@ -794,7 +700,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             dc_vec=dc_vec, Ts_ns=(None if p.get("Ts_us") is None
                                   else int(round(p["Ts_us"] * 1e3))),
             shots=int(p["shots"]), calib_params=calib_params,
-            park_voltage=BASELINE_DC_OFFSET,       # QUA parks refs at baseline_dc_offset
+            park_voltage=BASELINE_DC_OFFSET,
             min_ref_contrast=float(p.get("min_ref_contrast", 0.05)),
             max_plot_t1_multiple=p.get("max_plot_t1_multiple", 20.0),
             auto_Ts_factor=float(p.get("auto_Ts_factor", 0.5)),
@@ -840,7 +746,7 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
         common = dict(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="TLS_Full_T1_vs_Flux_distortion_corrected", cfg=dict(base),
                       dc_vec=dc_vec, shots=int(p["shots"]), calib_params=calib_params,
-                      park_voltage=BASELINE_DC_OFFSET,       # QUA parks refs at baseline_dc_offset
+                      park_voltage=BASELINE_DC_OFFSET,
                       auto_tmax_factor=float(p.get("auto_tmax_factor", 3.0)),
                       T1_probe_cfg=p.get("T1_probe_cfg", None),
                       t_min_ns_default=float(p.get("t_min_us_default", 1.0)) * 1e3,
@@ -876,7 +782,6 @@ def main():
         ("3b_step_response_correct", P3_STEP_RESPONSE["run_correct"]),
         ("4_long_time_spec_vs_flux", P4_LONG_TIME["run"]),
         ("5_single_shot_cal", P5_SS_CAL["run"]),
-        # ("6_full_t1_vs_flux", P6_FULL_T1["run"]),
         ("6_3pt_t1_vs_flux", P6_3PT_T1["run"]),
     ]
     for name, on in steps_enabled:
@@ -902,11 +807,6 @@ def main():
             _resolve_resonator_lookup(latest_resonator_lookup_csv))
     if P5_SS_CAL["run"]:
         calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
-    # if P6_FULL_T1["run"]:
-    #     if calib_params is None:
-    #         print("[6] Step 5 was skipped; running single-shot calibration for the T1.")
-    #         calib_params = run_step5_single_shot_cal(outer_folder, soc, soccfg)
-    #     run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correction_json)
     if P6_3PT_T1["run"]:
         if calib_params is None:
             print("[6] Step 5 was skipped; running single-shot calibration for the T1.")

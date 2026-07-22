@@ -1,57 +1,3 @@
-"""
-Automatic qubit tuner -- a calibration GRAPH with fixed-point iteration.
-
-Replaces the previous straight-line pipeline (mAutoPiTuner.py).  The stages are mutually
-dependent -- readout optimization needs a pi, the pi needs a readout, and a better
-readout invalidates the spec/Rabi measured through the old one -- so the correct
-structure is a dependency graph iterated to a fixed point, not a sequence.  Architecture
-follows Optimus (Kelly et al., arXiv:1803.03226) and the QUAlibrate/QUA bring-up DAGs:
-
-  * every node declares DEPENDENCIES, a cheap check() and a full calibrate(), and a spec
-  * calibrating a node marks its dependents STALE (that is the invalidation engine)
-  * maintain() sweeps the graph until nothing is stale and nothing is out of spec
-  * BEST-SO-FAR state: a round that makes things worse can never be committed
-
-Node order mirrors the QUA gate_calibration_flux_tunable workflow, which is:
-    Transmission_Sweep (punch-out) -> Transmission -> Chi -> Qubit_Spec -> SS_Cal
-    -> Rabi_Chevron_IQ -> Rabi_Chevron_SS -> Rabi_Linecut_SS
-with the manual "read the number off the plot, paste it into the meta dict, re-run"
-loop that a physicist performs replaced by the automatic fixed point.
-
-KEY PHYSICS THIS ENCODES (and the old tuner did not)
-----------------------------------------------------
-* The optimal READOUT FREQUENCY is not the resonator dip.  With alpha_{g,e} =
-  eps/((delta -/+ chi) + i kappa/2), the state separation D = |alpha_g - alpha_e| is
-  maximized at the MIDPOINT between the dressed resonances when 2|chi| <= kappa, and on
-  a dressed peak (offset ~ +/-chi) when 2|chi| > kappa.  So we measure chi and kappa from
-  two scans (|g> and |e>) and place the tone analytically, then confirm with a scan of D.
-* Readout POWER before FREQUENCY (power sets the regime), with an OUTLIER-FRACTION gate
-  that rejects powers where measurement-induced transitions/ionization break the
-  two-blob model -- raw fidelity alone does not catch that.
-* Readout LENGTH trades sqrt(T_int) SNR against T1 decay during the measurement, so T1
-  must be measured, not guessed.
-* A same-phase pi TRAIN is CPMG-like: it refocuses quasi-static detuning, so its limit is
-  T1/driven coherence, NOT T2*.  That is what makes pi calibration possible on a qubit
-  whose T2* is too short for Ramsey.
-* The pi-train residual is quadratically sensitive to DETUNING as well as amplitude, so
-  the drive frequency is calibrated by minimizing the same residual (sign-free and
-  T2*-free) instead of by a Ramsey.
-
-CONVERGENCE STATISTIC (this was the previous tuner's worst bug)
---------------------------------------------------------------
-The residual AT THE MINIMUM of a gain sweep is the decoherence/readout-noise FLOOR, not
-an angle error -- at the minimum the angle error is zero by construction.  Using it as
-the convergence test makes the tuner report FAILED on a perfect pulse.  We instead use
-the UNCERTAINTY ON THE PARABOLA VERTEX (propagated from the fit covariance) and the
-agreement of the vertex ACROSS M, which are the quantities that actually bound the
-calibration error.
-
-Everything is park-only (ff_gain = 0) and asserts it.  All frequencies are MHz floats
-(never Hz ints -- Windows int32 trap), gains DAC ints, times us.  Prints are ASCII-only.
-Verified against qick 0.2.133: AveragerProgram.acquire -> 2-tuple, RAveragerProgram ->
-3-tuple, no get_raw() (per-shot data is di_buf/dq_buf).
-"""
-
 import datetime
 import warnings
 
@@ -65,9 +11,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
 
 
-# ======================================================================================
-# Part 1 -- pure analysis (numpy/scipy only; importable and testable without a board)
-# ======================================================================================
 
 def lorentzian(f, f0, fwhm, a, off, slope=0.0):
     """Lorentzian on a LINEAR baseline.  The baseline term matters: over the wide spans
@@ -97,9 +40,6 @@ def _noise_sigma(y):
         return _mad_sigma(y)
     d2 = np.diff(y, n=2)
     s = float(np.median(np.abs(d2 - np.median(d2)))) * 1.4826 / np.sqrt(6.0)
-    # Averaged accumulator values are QUANTIZED, so a flat baseline can repeat exactly and
-    # drive every difference-based estimate to zero.  The noise can never be smaller than
-    # the quantization step / sqrt(12).
     uniq = np.unique(y)
     if uniq.size > 1:
         step = float(np.min(np.diff(uniq)))
@@ -138,7 +78,6 @@ def fit_resonance(freqs, mag, polarity=None, expected_fwhm=None):
     df = float(np.mean(np.diff(freqs)))
     npts_feat = None if expected_fwhm is None else max(expected_fwhm / max(df, 1e-9), 3.0)
     sm = _smooth(mag, npts_per_feature=npts_feat)
-    # de-trend with a robust line before deciding polarity/depth
     coef = np.polyfit(freqs, sm, 1)
     base = np.polyval(coef, freqs)
     dev0 = sm - base
@@ -169,13 +108,7 @@ def fit_resonance(freqs, mag, polarity=None, expected_fwhm=None):
                 ok = True
         except Exception:
             pass
-    # Noise from the second difference of the RAW trace.  Neither the residual to the
-    # model (which collapses when curve_fit falls back to the smoothed data) nor
-    # MAD(mag - smooth) (which collapses on a well-averaged trace) is a valid noise
-    # estimate -- both produce astronomically large SNRs that defeat the ok gate.
     snr = depth / _noise_sigma(mag)
-    # require significance AND that the feature is actually resolved by this scan (at
-    # least ~2 samples across it) and not absurdly wide compared with the window
     ok = bool(ok and snr > 5.0 and fwhm > 1.5 * abs(df)
               and fwhm < 0.7 * (freqs.max() - freqs.min()))
     return {"ok": ok, "f0": float(f0), "fwhm": float(fwhm), "snr": float(snr),
@@ -204,7 +137,7 @@ def optimal_readout_detuning(chi_mhz, kappa_mhz):
     if not np.isfinite(chi) or abs(chi) < 1e-9:
         return 0.0
     span = 3.0 * max(abs(chi), kap)
-    d = np.linspace(0.0, span, 2001)          # D is EVEN in d -- only |d| is determined
+    d = np.linspace(0.0, span, 2001)
     ag = 1.0 / ((d - chi) + 0.5j * kap)
     ae = 1.0 / ((d + chi) + 0.5j * kap)
     return float(abs(d[int(np.argmax(np.abs(ag - ae)))]))
@@ -233,11 +166,6 @@ def parabola_vertex(x, y, yerr=None):
     if yerr is not None:
         e = np.asarray(yerr, dtype=float)[good][lo:hi]
         sigma = np.where(np.isfinite(e) & (e > 0), e, np.nanmedian(e[np.isfinite(e)]) or 1.0)
-    # Weighted least squares done explicitly: np.polyfit(cov=True) RESCALES the
-    # covariance by chi2/dof, so supplied per-point sigmas act only as relative weights
-    # and the absolute error comes from the scatter of the few points chosen AT the noise
-    # dip -- systematically optimistic.  cov = inv(A^T W A) with W = 1/sigma^2 gives the
-    # true absolute uncertainty.
     A = np.vstack([(xs - xc) ** 2, (xs - xc), np.ones_like(xs)]).T
     if sigma is None:
         try:
@@ -257,13 +185,12 @@ def parabola_vertex(x, y, yerr=None):
         except Exception:
             return {"x_min": float(x[k]), "x_err": np.inf, "interior": False, "curvature": 0.0}
     a, b = float(c[0]), float(c[1])
-    if a <= 0:                                   # not a minimum -> fall back to the sample
+    if a <= 0:
         return {"x_min": float(x[k]), "x_err": np.inf,
                 "interior": bool(0 < k < x.size - 1), "curvature": a}
     xv = -b / (2.0 * a) + xc
     xerr = np.inf
     if np.all(np.isfinite(cov)):
-        # var(-b/2a) by first-order propagation
         dvda, dvdb = b / (2.0 * a * a), -1.0 / (2.0 * a)
         var = (dvda ** 2) * cov[0, 0] + (dvdb ** 2) * cov[1, 1] + 2 * dvda * dvdb * cov[0, 1]
         if np.isfinite(var) and var >= 0:
@@ -312,14 +239,10 @@ def single_shot_analysis(ig, qg, ie, qe):
         return float(cand[k])
 
     h = n // 2
-    thr = _thr_fid(xg[:h], xe[:h])                       # chosen on the train half
-    p_eg = float((xg[h:] >= thr).mean())                 # scored on the test half
+    thr = _thr_fid(xg[:h], xe[:h])
+    p_eg = float((xg[h:] >= thr).mean())
     p_ge = float((xe[h:] < thr).mean())
     fid = 1.0 - p_eg - p_ge
-    # Outlier fraction: shots far from BOTH blob centres.  The yardstick must be a
-    # ROBUST width taken from the TIGHTER blob -- using the pooled variance lets a
-    # smeared/ionized population inflate the very scale it is being judged against, so
-    # ionization would hide itself.
     cg = np.array([np.median(xg), np.median(yg)])
     ce = np.array([np.median(xe), np.median(ye)])
 
@@ -331,7 +254,7 @@ def single_shot_analysis(ig, qg, ie, qe):
     s2 = max(min(s_g, s_e), 1e-12) ** 2
     allpts = np.column_stack([np.concatenate([xg, xe]), np.concatenate([yg, ye])])
     d2 = np.minimum(((allpts - cg) ** 2).sum(1), ((allpts - ce) ** 2).sum(1)) / s2
-    outlier_frac = float((d2 > 16.0).mean())             # >4 robust sigma from both
+    outlier_frac = float((d2 > 16.0).mean())
     return {"ok": True, "fidelity": float(fid), "sep_sigma": float(sep_sigma),
             "theta": th, "threshold": float(thr), "p_e_given_g": p_eg,
             "p_g_given_e": p_ge, "outlier_frac": outlier_frac,
@@ -456,9 +379,6 @@ def nan_argmax(y):
     return int(np.nanargmax(y))
 
 
-# ======================================================================================
-# Part 2 -- tProc programs (qick 0.2.133, tProc v1)
-# ======================================================================================
 
 def _declare_common(prog, include_qubit=True):
     cfg = prog.cfg
@@ -610,9 +530,6 @@ class SeqProgram(AveragerProgram):
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
 
 
-# ======================================================================================
-# Part 3 -- measurement primitives
-# ======================================================================================
 
 class TunerError(RuntimeError):
     """A node failed unrecoverably; the graph stops and nothing is written."""
@@ -722,13 +639,10 @@ def _pop_with_local_refs(exp, cfg, seq, drive_freq, pi_gain, shots):
     Im, Qm, sIm, sQm = _run_seq(exp, cfg, list(seq), drive_freq, shots)
     sep = float(np.hypot(Ie - Ig, Qe - Qg))
     pop = float(iq_to_pop(Im, Qm, (Ig, Qg), (Ie, Qe)))
-    sem = float(np.hypot(sIm, sQm) / max(sep, 1e-12))     # population uncertainty
+    sem = float(np.hypot(sIm, sQm) / max(sep, 1e-12))
     return pop, sep, sem
 
 
-# ======================================================================================
-# Part 4/5 -- calibration graph
-# ======================================================================================
 
 DEFAULTS = {
     "max_rounds": 4,
@@ -765,20 +679,11 @@ def merge_params(user):
     return p
 
 
-# node name -> (dependencies, method name, significance key)
-# Dependencies are deliberately CYCLIC: spec/rough_pi are measured THROUGH the readout,
-# so a readout change must invalidate them, while chi/readout_* need a pi to prepare |e>.
-# _mark_dependents_stale grows a bounded set and maintain() is bounded by max_rounds, so
-# the cycle is safe -- and it is the whole point: without these back-edges a better
-# readout could never force the spec and Rabi that were measured through the old one to
-# be re-measured.
 GRAPH = [
     ("resonator",     [],                              "_cal_resonator"),
     ("spec",          ["resonator", "chi", "readout_power", "readout_len"], "_cal_spec"),
     ("rough_pi",      ["spec", "resonator", "chi", "readout_power", "readout_len"],
                                                        "_cal_rough_pi"),
-    # t1 runs EARLY: relax_delay defaults to a blind 3 ms, which dominates the wall
-    # clock of every later node.  Measuring T1 first lets the rest run at 5*T1.
     ("t1",            ["rough_pi"],                    "_cal_t1"),
     ("chi",           ["resonator", "rough_pi"],       "_cal_chi"),
     ("readout_power", ["chi", "rough_pi"],             "_cal_readout_power"),
@@ -804,7 +709,6 @@ class AutoTuner(ExperimentClass):
         self.stale = {name: True for name, _, _ in GRAPH}
         self.node_data = {}
 
-    # ------------------------------------------------------------------ plumbing
     def _say(self, node, status, msg):
         line = "[%-13s] %-4s %s" % (node, status, msg)
         self.report_lines.append(line)
@@ -822,10 +726,6 @@ class AutoTuner(ExperimentClass):
         c["res_phase"] = float(w.get("res_phase", c.get("res_phase", 0.0)))
         rd = self.P[node].get("relax_delay_us")
         c["relax_delay"] = float(rd) if rd is not None else float(w["relax_delay"])
-        # adc_trig_offset is the fixed DAC->cable->ADC round-trip delay, NOT a fraction
-        # of the window: scaling it with read_length would open the ADC before the pulse
-        # arrives and would unfairly penalise the short-length candidates in exactly the
-        # comparison readout_len exists to make.
         c["adc_trig_offset"] = float(self.cfg.get("adc_trig_offset", 0.5))
         return c
 
@@ -840,7 +740,6 @@ class AutoTuner(ExperimentClass):
                     self.stale[name] = True
                     changed = True
 
-    # ------------------------------------------------------------------ nodes
     def _cal_resonator(self):
         P = self.P["resonator"]
         cfg = self._cfg_for("resonator")
@@ -862,9 +761,6 @@ class AutoTuner(ExperimentClass):
         span, npts = float(P["span_mhz"]), int(P["points"])
         while True:
             fs, z = scan(f0, span, npts)
-            # fit the POWER |S21|^2: it is the quantity that is Lorentzian with FWHM =
-            # kappa.  Fitting the amplitude |S21| inflates the fitted width by ~1.7x,
-            # which would then mis-place the analytic optimal readout detuning.
             fit = fit_resonance(fs, np.abs(z) ** 2, expected_fwhm=P["expected_fwhm_mhz"])
             if _better_fit(fit, best[0] if best else None):
                 best = (fit, fs, z)
@@ -904,12 +800,9 @@ class AutoTuner(ExperimentClass):
                 _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             fs = cfg["start"] + cfg["step"] * np.arange(cfg["expts"])
             z = np.asarray(avgi[0][0], float) + 1j * np.asarray(avgq[0][0], float)
-            # complex-median baseline (not a rectified magnitude, which makes the noise
-            # Rayleigh and biases the MAD-based snr)
             base = np.median(z.real) + 1j * np.median(z.imag)
             return fs, np.abs(z - base)
 
-        # ---- find the line (escalate span, then power) ----
         span, npts, gain = float(P["span_mhz"]), int(P["points"]), gain0
         best = None
         while True:
@@ -934,8 +827,6 @@ class AutoTuner(ExperimentClass):
         self._say("spec", "OK", "candidate line at %.4f MHz (span %.0f MHz, gain %d, "
                                 "snr %.1f, fwhm %.3f) -- confirming against power"
                   % (fit["f0"], span_used, gain_used, fit["snr"], fit["fwhm"]))
-        # ---- re-centre if the peak sits near a scan edge (a clipped peak's centre is
-        #      biased inward and may be the shoulder of a line outside the window) ----
         for _ in range(3):
             if min(abs(fit["f0"] - fs[0]), abs(fit["f0"] - fs[-1])) > 0.15 * span_used:
                 break
@@ -947,9 +838,6 @@ class AutoTuner(ExperimentClass):
                 raise TunerError("spec: the line vanished when re-centred on %.3f -- the "
                                  "original peak was a scan-edge artifact." % fit["f0"])
             fit = f2
-        # ---- POWER EXTRAPOLATION: the saturation line is power-broadened and AC-Stark
-        #      shifted, so a single low-power pass is not enough.  Take a ladder of
-        #      powers and extrapolate the centre to zero power. ----
         centres, powers = [], []
         narrow = max(6.0 * fit["fwhm"], 1.5)
         for ratio in P["power_ratios"]:
@@ -958,19 +846,15 @@ class AutoTuner(ExperimentClass):
             f2 = fit_resonance(fs2, sig2, polarity="peak", expected_fwhm=fit["fwhm"])
             if f2["ok"]:
                 centres.append(f2["f0"])
-                powers.append(float(g) ** 2)          # Stark shift ~ drive power
+                powers.append(float(g) ** 2)
                 self.node_data["spec"] = {"freqs": fs2, "sig": sig2, "fit": f2["yfit"]}
         if len(centres) >= 2:
             c = np.polyfit(np.array(powers), np.array(centres), 1)
-            f_q = float(c[-1])                        # zero-power intercept
+            f_q = float(c[-1])
             self._say("spec", "OK", "qubit line %.4f MHz (zero-power extrapolation over "
                                     "%d powers; highest-power centre %.4f)"
                       % (f_q, len(centres), centres[0]))
         else:
-            # A REAL qubit line persists (and sharpens) as the drive comes down; a noise
-            # artifact does not.  Failing to reproduce it at ANY lower power means the
-            # candidate was not the qubit -- accepting it here is how a spurious bump in
-            # the first window prevents the search from ever widening to the real line.
             raise TunerError(
                 "spec: the candidate at %.4f MHz did NOT reproduce at any reduced drive "
                 "power (%d of %d power steps found it), so it is not the qubit line. "
@@ -1004,13 +888,8 @@ class AutoTuner(ExperimentClass):
         u = vv[:, int(np.argmax(wv))]
         sig = di * u[0] + dq * u[1]
         if sig[nan_argmax(np.abs(sig))] < 0:
-            sig = -sig                                # make g=0 the low end
+            sig = -sig
         fit = fit_rabi(gains, sig)
-        # If the fitted period is a small fraction of the swept range the oscillation is
-        # badly undersampled -- which is exactly what happens the first time the drive
-        # becomes efficient (e.g. moving from half-frequency to direct resonant driving,
-        # where the pi can drop by an order of magnitude).  Re-sweep around the found
-        # scale so the fit sees a couple of clean periods instead of dozens of aliased ones.
         if fit["ok"] and np.isfinite(fit["period"]) and fit["period"] < 0.25 * gains.max():
             new_max = int(np.clip(2.5 * fit["period"], 200, 32000))
             self._say("rough_pi", "OK", "period %.0f DAC is small next to the %d sweep -- "
@@ -1115,20 +994,16 @@ class AutoTuner(ExperimentClass):
             chi = 0.5 * (fe["f0"] - fg["f0"])
             kappa = 0.5 * (fg["fwhm"] + fe["fwhm"])
             f_mid = 0.5 * (fg["f0"] + fe["f0"])
-            # |alpha_g - alpha_e| is exactly EVEN in the detuning, so the two dressed-peak
-            # optima are degenerate and only |d| is determined by the model.  Pick the
-            # branch the measured separation trace actually prefers.
             d_opt = optimal_readout_detuning(chi, kappa)
             cands = [f_mid - d_opt, f_mid + d_opt]
             f_analytic = min(cands, key=lambda x: abs(x - f_dmax))
             self.w["chi_mhz"], self.w["kappa_mhz"] = float(chi), float(kappa)
-            # separation-per-photon versus the 2|chi| = kappa design optimum
             def _dsep(c, k):
                 d = np.linspace(-3 * max(abs(c), k), 3 * max(abs(c), k), 2001)
                 ag, ae = 1.0 / ((d - c) + 0.5j * k), 1.0 / ((d + c) + 0.5j * k)
                 return float(np.max(np.abs(ag - ae)) / np.max(np.abs(ag)))
             d_now = _dsep(chi, kappa)
-            d_opt = _dsep(0.5 * kappa, kappa)          # 2|chi| = kappa
+            d_opt = _dsep(0.5 * kappa, kappa)
             self.w["chi_kappa_penalty"] = float(d_opt / max(d_now, 1e-9))
             self._say("chi", "OK",
                       "separation-per-photon %.2f vs %.2f at the 2|chi|=kappa design "
@@ -1138,7 +1013,6 @@ class AutoTuner(ExperimentClass):
             self._say("chi", "OK", "chi/2pi = %+.4f MHz, kappa/2pi = %.4f MHz, 2|chi|/kappa "
                                    "= %.2f -> %s" % (chi, kappa, abs(2 * chi) / max(kappa, 1e-9),
                       "drive the midpoint" if abs(2 * chi) <= kappa else "drive a dressed peak"))
-            # trust the measured D-maximum, but only if it agrees with the model
             if abs(f_dmax - f_analytic) < max(kappa, 0.2):
                 f_use = f_dmax
                 note = "measured D-max (agrees with the analytic optimum to %.3f MHz)" % abs(f_dmax - f_analytic)
@@ -1235,7 +1109,6 @@ class AutoTuner(ExperimentClass):
         tmax = P["t_max_us"]
         if tmax is None:
             tmax = 60.0
-            # coarse bracket first so the fine grid is not wasted
             for probe in (10.0, 30.0, 90.0, 250.0):
                 pop, sep, _ = _pop_with_local_refs(
                     self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0), ("delay", probe)],
@@ -1245,7 +1118,7 @@ class AutoTuner(ExperimentClass):
                     break
                 tmax = float(min(3.0 * probe, 400.0))
         ts = np.linspace(0.05, float(tmax), int(P["points"]))
-        order = np.random.permutation(ts.size)      # randomized: drift must not alias
+        order = np.random.permutation(ts.size)
         pops = np.full(ts.size, np.nan)
         errs = np.full(ts.size, np.nan)
         for idx in order:
@@ -1261,9 +1134,6 @@ class AutoTuner(ExperimentClass):
             self.w["t1_us"] = 30.0
             return {"t1": 30.0}, {"t1": 1e9}
         self.w["t1_us"] = float(fit["tau"])
-        # relax_delay was a blind BaseConfig value (3 ms here) applied to EVERY shot of
-        # every later node.  5*T1 leaves <1% residual excitation and is typically 10-20x
-        # faster, which is the difference between a 30-minute and a 3-hour run.
         old_relax = float(self.w["relax_delay"])
         new_relax = float(np.clip(5.0 * fit["tau"], 20.0, old_relax))
         if new_relax < 0.8 * old_relax:
@@ -1325,8 +1195,6 @@ class AutoTuner(ExperimentClass):
                                        "outliers %.3f | angle %.1f deg"
                   % (ss["fidelity"], ss["p_e_given_g"], ss["p_g_given_e"], ss["sep_sigma"],
                      ss["outlier_frac"], np.rad2deg(ss["theta"])))
-        # separate what is readout overlap from what is real: at separation S the ideal
-        # per-direction overlap error is Q(S/2); anything at or below that is pure overlap
         from math import erfc
         q_ideal = 0.5 * erfc(ss["sep_sigma"] / (2 * np.sqrt(2)))
         asym = ss["p_g_given_e"] - ss["p_e_given_g"]
@@ -1338,11 +1206,6 @@ class AutoTuner(ExperimentClass):
                   "%.1f us window" % (ss["sep_sigma"], q_ideal, asym,
                                       0.5 * decay if np.isfinite(decay) else float('nan'),
                                       self.w["read_length"]))
-        # Persist the discrimination rotation so every OTHER runner integrates on the
-        # separating axis.  theta was measured WITH the current res_phase already applied,
-        # so the update must ACCUMULATE (overwriting rotates the axis to 2*theta and
-        # compounds run over run); and the hardware sign convention is not knowable a
-        # priori, so apply it, RE-MEASURE, and keep it only if the angle actually shrank.
         theta_deg = float(np.rad2deg(ss["theta"]))
         if abs(((theta_deg + 180.0) % 360.0) - 180.0) > 2.0:
             cur = float(self.w.get("res_phase", 0.0))
@@ -1371,7 +1234,7 @@ class AutoTuner(ExperimentClass):
                           "not writing res_phase (an unverified sign would rotate every "
                           "other runner's readout the wrong way)")
         if ss["sep_sigma"] < float(P["min_sep_sigma"]):
-            f_ideal = 1.0 - 2.0 * q_ideal          # best possible F at this separation
+            f_ideal = 1.0 - 2.0 * q_ideal
             at_limit = (f_ideal - ss["fidelity"]) < 0.03
             self._say("single_shot", "WARN",
                       "%.2f sigma < %.1f: single-shot discrimination is not meaningful. "
@@ -1441,7 +1304,7 @@ class AutoTuner(ExperimentClass):
         history = []
         for M, frac in zip(P["M_list"], P["frac"]):
             M = int(M)
-            if M * t_pi > 0.5 * t1:                  # train longer than T1/2 is noise
+            if M * t_pi > 0.5 * t1:
                 self._say("fine_pi_amp", "WARN", "skipping M=%d (%.1f us train vs T1/2 = "
                           "%.1f us)" % (M, M * t_pi, 0.5 * t1))
                 continue
@@ -1490,7 +1353,6 @@ class AutoTuner(ExperimentClass):
         self.w["pi_gain"] = int(best["gain"])
         self.w["pi_gain_err"] = float(best["err"])
         self.w["updated"].add("qubit_pi_gain")
-        # cross-M agreement: independent passes must land in the same place
         agree = True
         if len(finals) >= 2:
             spread = max(h["gain"] for h in finals) - min(h["gain"] for h in finals)
@@ -1508,7 +1370,6 @@ class AutoTuner(ExperimentClass):
                      "converged" if self.w["pi_converged"] else "not converged"))
         return {"g": best["gain"]}, {"g": max(3 * best["err"], 0.004 * best["gain"])}
 
-    # ------------------------------------------------------------------ engine
     def _score(self):
         """Scalar quality used for best-so-far.  Single-shot separation is the thing
         everything else is measured through, so it leads; the pi precision breaks ties."""
@@ -1527,10 +1388,6 @@ class AutoTuner(ExperimentClass):
         automatically forces the spec/Rabi that were measured through the old readout to
         be re-measured -- the invalidation Optimus formalises and the manual QUA loop does
         by hand."""
-        # Seed from the PRE-calibration state.  With an empty dict, `old` is None on
-        # every node's first visit, the moved/stale block is skipped, and the graph
-        # degenerates into exactly one straight-line pass while printing "FIXED POINT
-        # reached" -- i.e. the entire architecture becomes dead code.
         values = {
             "resonator":     {"f0": float(self.w["read_pulse_freq"])},
             "spec":          {"f": float(self.w["qubit_freq"])},
@@ -1578,7 +1435,6 @@ class AutoTuner(ExperimentClass):
             self._say("graph", "OK", "restored best-so-far state (score %.3f)" % best_score)
         return best_score
 
-    # ------------------------------------------------------------------ orchestration
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         self.data = {}
@@ -1631,11 +1487,6 @@ class AutoTuner(ExperimentClass):
             self.w["qubit_ok"], self.w["readout_ok"] = pi_ok, bool(ss_ok)
             success = bool(pi_ok and ss_ok)
             if pi_ok and not ss_ok:
-                # The pi calibration is a MINIMUM-LOCATION measurement, which is far more
-                # robust to readout SNR than an absolute fidelity -- and three independent
-                # M values agreeing is strong evidence on its own.  Withholding a good pi
-                # because the chip's readout is weak would be the wrong call, so the qubit
-                # and readout results are gated separately.
                 self._say("verdict", "OK",
                           "QUBIT calibration converged (pi %d +/- %.0f DAC) and IS "
                           "trustworthy: the pi-train vertex is a minimum LOCATION, which "
@@ -1712,7 +1563,6 @@ class AutoTuner(ExperimentClass):
         self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    # ------------------------------------------------------------------ plotting
     @staticmethod
     def _pair(ax, x, y, *a, **kw):
         x, y = np.asarray(x), np.asarray(y)

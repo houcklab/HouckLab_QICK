@@ -1,24 +1,3 @@
-"""
-Rabi linecut, single-shot readout -- QICK port of Houck-Lab-Qua
-LabCode/Experiments/Rabi/m_Rabi_Linecut_SS.py::RabiLinecutSS.
-
-The final, precise pi-amplitude calibration.  QUA parity (reset substituted, see below):
-  * 1D amplitude (gain) sweep at the FIXED drive frequency (cfg['qubit_pi_freq']),
-    centered on the current pi gain +/- a_span/2; each point plays num_pi X180 (or
-    2*num_pi X90) pulses, single-shot readout -> excited population vs gain.
-  * analyze(): the VERBATIM QUA cosine^2 fit  A*cos((pi/T)*x)^2 + B  (curve_fit,
-    p0=[gain_span, 1, 0]); the calibrated pi gain is argmax of the fitted curve over the
-    sweep -- exactly the QUA "Max Amp".
-
-RESET SUBSTITUTION: the QUA active feedback reset (measure -> conditional X180 -> loop)
-is not possible on tProc v1; a passive relax_delay is used instead (shared RabiSSProgram
-in mRabiChevronSS), identical to the TLS T1.  Only the reset physics differs.
-
-Error amplification: pass a scalar num_pi_pulses (>1 amplifies a small per-pulse gain
-error into a sharper cosine near the pi point).  The runner may loop over a list of
-num_pi values (QUA behavior) and stack the resulting curves.
-"""
-
 import datetime
 
 import numpy as np
@@ -62,14 +41,13 @@ class RabiLinecutSS(ExperimentClass):
         cfg["n_pulses"] = n_drive_pulses(self.pulse_type, self.num_pi)
         cfg["shots"] = int(cfg.get("shots", cfg.get("reps", 1000)))
 
-        # sweep centered on the current pi gain (QUA: amp +/- a_span/2 around pi_amp/pi2_amp)
         center = float(cfg["qubit_pi2_gain"] if self.pulse_type == "X90" else cfg["qubit_pi_gain"])
         a_span = float(cfg["a_span"])
         a_points = int(cfg["a_points"])
         cfg["amp_start"] = int(round(center - a_span / 2.0))
         cfg["amp_expts"] = a_points
         cfg["amp_step"] = int(round(a_span / max(a_points - 1, 1)))
-        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(a_points)   # actual HW sweep
+        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(a_points)
         cfg["amp_stop"] = int(gains[-1])
         pi_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
         cfg["rabi_drive_freq"] = pi_freq

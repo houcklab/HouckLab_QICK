@@ -1,24 +1,3 @@
-"""
-Rabi chevron, single-shot readout -- QICK port of Houck-Lab-Qua
-LabCode/Experiments/Rabi/m_Rabi_Chevron_SS.py::RabiChevronSS.
-
-QUA parity, with the ONE unavoidable substitution flagged below:
-  * 2D sweep, drive detuning (df) x pulse amplitude (gain); each point plays num_pi
-    X180 (or 2*num_pi X90) pulses, then a SINGLE-SHOT readout discriminated with the
-    step-5 SS-cal params (scale_factor/threshold/read_theta) -> excited population.
-  * QUA used 5x error amplification (num_pi_pulses=5) so a small per-pulse amplitude
-    error compounds into a resolvable population shift near the pi point.
-  * analyze(): argmax over the (df, gain) population map -> refined pi frequency + gain.
-
-RESET SUBSTITUTION (tProc v1 cannot do the QUA active feedback reset -- measure ->
-conditionally replay X180 -> re-measure -> loop): replaced by a passive relax_delay
-between shots, exactly as the TLS T1 does.  The single-shot readout, error amplification,
-and the population map are otherwise identical to QUA; only the reset physics differs.
-`relax_delay` should be ~5x T1 so each shot starts in the ground state.
-
-The shared RabiSSProgram (single-shot hardware gain sweep) is reused by mRabiLinecutSS.
-"""
-
 import datetime
 
 import numpy as np
@@ -74,15 +53,12 @@ class RabiSSProgram(RAveragerProgram):
         self.synci(200)
 
     def body(self):
-        rabi_flux_body(self)          # (optional) flux hold -> drive -> readout, passive relax
+        rabi_flux_body(self)
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        # feedback reset adds active_reset_readouts() FIXED measurements BEFORE the Rabi readout
-        # (0 unless reset_mode=='feedback'); grow readouts_per_experiment so the buffer keeps its
-        # (expts, reps, readouts) shape and collect_shots picks the Rabi readout after them.
         n_reset = active_reset.active_reset_readouts(self.cfg)
         super().acquire(soc, load_pulses=load_pulses, readouts_per_experiment=1 + n_reset,
                         progress=progress)
@@ -90,7 +66,7 @@ class RabiSSProgram(RAveragerProgram):
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg["read_length"], ro_ch=self.cfg["ro_chs"][0])
-        n_reset = active_reset.active_reset_readouts(self.cfg)   # Rabi readout follows the reset measures
+        n_reset = active_reset.active_reset_readouts(self.cfg)
         raw = np.array(self.get_raw())
         shots_i = raw[0, :, :, n_reset, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
         shots_q = raw[0, :, :, n_reset, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
@@ -135,7 +111,7 @@ class RabiChevronSS(ExperimentClass):
 
         cfg["amp_start"] = int(round(cfg["amp_start"]))
         cfg["amp_step"] = int(round((cfg["amp_stop"] - cfg["amp_start"]) / max(int(cfg["amp_expts"]) - 1, 1)))
-        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(int(cfg["amp_expts"]))  # actual HW sweep
+        gains = cfg["amp_start"] + cfg["amp_step"] * np.arange(int(cfg["amp_expts"]))
         df_vec = np.linspace(-cfg["freq_span"] / 2.0, cfg["freq_span"] / 2.0, int(cfg["freq_points"]))
         pi_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
 

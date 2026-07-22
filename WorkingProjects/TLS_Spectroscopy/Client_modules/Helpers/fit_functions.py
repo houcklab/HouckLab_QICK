@@ -1,19 +1,7 @@
-"""
-Fit models + fitters for the TLS spectroscopy pipeline (pure numpy / scipy).
-
-Ported from the QUA repo's LabCode/Helpers/fit_functions.py, trimmed to what the
-six TLS steps actually use, and wrapped in convenience ``fit_*`` helpers that
-return ``(params_dict, perr_dict)`` so the QICK ExperimentClass ``analyze`` methods
-stay short.  Everything here is host-side numpy and unit-tested without hardware.
-"""
-
 import numpy as np
 from scipy.optimize import curve_fit
 
 
-# --------------------------------------------------------------------------- #
-#  Model functions
-# --------------------------------------------------------------------------- #
 def exp_decay(t, P0, P1, T1):
     """T1 relaxation: population(t) = P0 + (P1 - P0) * exp(-t / T1)."""
     return P0 + (P1 - P0) * np.exp(-t / T1)
@@ -43,9 +31,6 @@ def asymmetric_lorentzian_peak(x, ofs, height, phi, fr, fwhm):
     return 20.0 * np.log10(np.abs(z)) + ofs
 
 
-# --------------------------------------------------------------------------- #
-#  Fitters (return dicts so callers don't juggle positional params)
-# --------------------------------------------------------------------------- #
 def fit_T1(t_us, y, require_monotone=False):
     """Fit an exponential T1 decay.  Returns (params, perr).
 
@@ -59,7 +44,6 @@ def fit_T1(t_us, y, require_monotone=False):
     if t.size < 4:
         return None, None
     ymin, ymax = float(np.min(y)), float(np.max(y))
-    # seed T1 from the time to fall to ~1/e of the span
     span = ymax - ymin
     if span <= 0:
         return None, None
@@ -122,7 +106,7 @@ def fit_resonator_dip(freq, mag_db):
         return None, None
     ofs = float(np.median(m))
     fr_seed = f[np.argmin(m)]
-    depth_lin = 10 ** ((float(np.min(m)) - ofs) / 20.0) - 1.0  # negative
+    depth_lin = 10 ** ((float(np.min(m)) - ofs) / 20.0) - 1.0
     span = float(f[-1] - f[0]) or 1.0
     p0 = [ofs, depth_lin, 0.0, fr_seed, abs(span) / 10.0]
     try:
@@ -305,7 +289,6 @@ def fit_cosine_vs_flux(dc, dip):
     if x.size < 4:
         return None, None
     y0 = y - np.mean(y)
-    # seed period from the dominant FFT bin of the (nonuniform-tolerant) trace
     amp_seed = (np.max(y) - np.min(y)) / 2.0 or 1.0
     span = float(x[-1] - x[0]) or 1.0
     freq_seed = 1.0 / span
