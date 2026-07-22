@@ -618,6 +618,53 @@ class TunerError(RuntimeError):
     """A node failed unrecoverably; the graph stops and nothing is written."""
 
 
+def gen_sample_rate(soccfg, gen_ch):
+    """Generator sample rate in MHz, or None if soccfg does not expose it."""
+    try:
+        g = soccfg['gens'][int(gen_ch)]
+    except Exception:
+        return None
+    for key in ("fs", "f_dds", "fs_dac", "f_fabric"):
+        v = g.get(key) if hasattr(g, "get") else None
+        if v:
+            return float(v)
+    return None
+
+
+def check_nyquist(soccfg, gen_ch, freq_mhz, nqz, label):
+    """Refuse to drive a frequency that the declared Nyquist zone cannot produce.
+
+    This is not a theoretical concern: this project ran for a long time with
+    qubit_nqz=1 while the qubit sat at 5112 MHz (above fs/2).  A request above fs/2
+    with nqz=1 does NOT emit that tone -- freq2reg wraps it modulo fs and the DAC
+    puts out the alias instead -- so spectroscopy at the true qubit frequency found
+    nothing, and the only response ever seen came from driving at half the frequency.
+    qick's own warning about this goes to stdout, which the acquisition helpers
+    suppress, so it was invisible.  Fail loudly instead."""
+    fs = gen_sample_rate(soccfg, gen_ch)
+    if fs is None or not np.isfinite(freq_mhz):
+        return None
+    nqz = int(nqz)
+    lo, hi = (nqz - 1) * fs / 2.0, nqz * fs / 2.0
+    if not (lo <= float(freq_mhz) <= hi):
+        need = int(np.floor(float(freq_mhz) / (fs / 2.0))) + 1
+        raise TunerError(
+            "%s: %.4f MHz is not in Nyquist zone %d for generator %d (zone %d spans "
+            "%.1f-%.1f MHz at fs = %.1f MHz). The DAC would emit an alias, not this "
+            "frequency. Set the zone to %d (it contains %.4f MHz) and re-run."
+            % (label, float(freq_mhz), nqz, int(gen_ch), nqz, lo, hi, fs, need,
+               float(freq_mhz)))
+    # zero-order-hold rolloff: |sinc(f/fs)|.  Only warn when the output is genuinely
+    # weak, not merely because the tone is near a zone boundary.
+    x = np.pi * float(freq_mhz) / fs
+    sinc = abs(np.sin(x) / x) if x > 0 else 1.0
+    if sinc < 0.25:
+        return ("%s: %.4f MHz sits where the DAC sinc rolloff leaves only %.0f%% of full "
+                "amplitude, so the drive is inefficient here."
+                % (label, float(freq_mhz), 100 * sinc))
+    return None
+
+
 def _read_shots(prog, cfg):
     """Per-shot I/Q, tolerant of the qick build.  0.2.133 (this board) exposes
     di_buf/dq_buf and has NO get_raw(); other builds used in this lab (0.2.401, the
@@ -966,6 +1013,32 @@ class AutoTuner(ExperimentClass):
         if sig[nan_argmax(np.abs(sig))] < 0:
             sig = -sig                                # make g=0 the low end
         fit = fit_rabi(gains, sig)
+        # If the fitted period is a small fraction of the swept range the oscillation is
+        # badly undersampled -- which is exactly what happens the first time the drive
+        # becomes efficient (e.g. moving from half-frequency to direct resonant driving,
+        # where the pi can drop by an order of magnitude).  Re-sweep around the found
+        # scale so the fit sees a couple of clean periods instead of dozens of aliased ones.
+        if fit["ok"] and np.isfinite(fit["period"]) and fit["period"] < 0.25 * gains.max():
+            new_max = int(np.clip(2.5 * fit["period"], 200, 32000))
+            self._say("rough_pi", "OK", "period %.0f DAC is small next to the %d sweep -- "
+                      "re-sweeping 0-%d so it is properly sampled"
+                      % (fit["period"], int(gains.max()), new_max))
+            step = max(int(round(new_max / (npts - 1))), 1)
+            cfg["start"], cfg["step"], cfg["expts"] = 0, step, npts
+            with suppress_stdout():
+                prog = RabiProgram(self.soccfg, cfg)
+                _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            gains = np.arange(npts) * step
+            I = np.asarray(avgi[0][0], float)
+            Q = np.asarray(avgq[0][0], float)
+            di, dq = I - I.mean(), Q - Q.mean()
+            cov = np.array([[di @ di, di @ dq], [di @ dq, dq @ dq]])
+            wv, vv = np.linalg.eigh(cov)
+            u = vv[:, int(np.argmax(wv))]
+            sig = di * u[0] + dq * u[1]
+            if sig[nan_argmax(np.abs(sig))] < 0:
+                sig = -sig
+            fit = fit_rabi(gains, sig)
         self.node_data["rough_pi"] = {"gains": gains, "sig": sig, "fit": fit["yfit"]}
         if not fit["ok"]:
             raise TunerError("rough_pi: no clean Rabi (r2 %.2f). Check drive freq/power "
@@ -1516,6 +1589,20 @@ class AutoTuner(ExperimentClass):
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         self.data = {}
+        if self.soccfg is not None:
+            for ch, f, z, lbl in ((cfg["qubit_ch"], cfg.get("qubit_pi_freq", cfg["qubit_freq"]),
+                                   cfg["qubit_nqz"], "qubit drive"),
+                                  (cfg["res_ch"], cfg["read_pulse_freq"], cfg["nqz"], "readout")):
+                warn = check_nyquist(self.soccfg, ch, f, z, lbl)
+                if warn:
+                    self._say("nyquist", "WARN", warn)
+            fsq = gen_sample_rate(self.soccfg, cfg["qubit_ch"])
+            if fsq:
+                self._say("nyquist", "OK", "qubit gen fs = %.1f MHz -> zone %d spans "
+                          "%.0f-%.0f MHz; driving %.4f MHz"
+                          % (fsq, cfg["qubit_nqz"], (cfg["qubit_nqz"] - 1) * fsq / 2,
+                             cfg["qubit_nqz"] * fsq / 2,
+                             cfg.get("qubit_pi_freq", cfg["qubit_freq"])))
         if int(cfg.get("ff_park_gain", 0)) != 0:
             raise TunerError("this tuner is PARK-ONLY but ff_park_gain=%s; calibrating "
                              "here would write a pi measured at the wrong flux."
