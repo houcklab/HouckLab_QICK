@@ -2,7 +2,7 @@
 Device configuration for FTTv02_SiOxJJ **qubit 4** (TLS spectroscopy, all-fast-flux).
 
 Values confirmed 2026-07 against the measurement PC's working setup:
-  - socProxy nameserver 192.168.1.107 (board: ZCU216, 7x axis_signal_gen_v4,
+  - socProxy nameserver 192.168.1.110 (board: ZCU216, 7x axis_signal_gen_v4,
     2 readouts; tProc program memory 8192 words)
   - SingleShot_FF runner, Device 3: FTTv02_SiOxJJ (3.0 nm), Qubit_Parameters["4"]
   - flux line physically wired to the DAC 3_230 P/N differential pigtails (JHC4),

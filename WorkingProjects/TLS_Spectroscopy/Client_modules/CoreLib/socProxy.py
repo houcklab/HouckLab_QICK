@@ -16,7 +16,8 @@ from qick import QickConfig
 # Default nameserver for the FTTv02_SiOxJJ RFSoC (the board actually in use;
 # confirmed 2026-07 from the measurement PC's socProxy).  Override per-call if the
 # board is served from a different host.
-DEFAULT_NS_HOST = "192.168.1.107"
+# The board's Pyro nameserver. THIS is the single place to change when the IP moves.
+DEFAULT_NS_HOST = "192.168.1.110"
 NS_PORT = 8888
 SERVER_NAME = "myqick"
 

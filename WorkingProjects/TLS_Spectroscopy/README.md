@@ -3,7 +3,7 @@
 A self-contained QICK/RFSoC implementation of the De Leon–Houck lab's QUA (Quantum
 Machines OPX) TLS-spectroscopy workflow
 (`Houck-Lab-Qua/LabCode/Control/Flux_Tunable/TLSSpectroscopy.py`), configured for
-**FTTv02_SiOxJJ qubit 4** (ZCU216 board, nameserver `192.168.1.107`) in the
+**FTTv02_SiOxJJ qubit 4** (ZCU216 board, nameserver `192.168.1.110`) in the
 **all-fast-flux workflow**: every flux operation — park, sweep, step — is the
 `ff_ch` DAC (generator 3 → DAC `3_230` P/N pigtails); no Yokogawa is required
 (matching the QUA original, which also left its Yoko untouched).
