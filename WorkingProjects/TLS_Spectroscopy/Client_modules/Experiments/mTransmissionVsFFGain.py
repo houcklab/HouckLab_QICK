@@ -160,6 +160,33 @@ class TransmissionVsFFGain(ExperimentClass):
         minima_lookup, smooth_window = ff.smooth_resonator_dip_trace(
             minima, self.resonator_lookup_smooth_points)
 
+        if len(dc_vec) <= 1:
+            # QUA `Transmission` analog (gate calibration): a single-flux resonator
+            # frequency sweep.  With one flux point there is no flux arc, so there is no
+            # cosine/dispersive-vs-flux fit and no flux pcolor -- report the dip and plot
+            # |S21| vs frequency on ONE panel, exactly like m_transmission.Transmission.
+            dip_mhz = float(minima[0])
+            self.data['resonator_dip_freq_mhz'] = dip_mhz
+            print(f"Resonator dip at {dip_mhz:.4f} MHz (ff_gain={float(dc_vec[0]):+.0f} DAC) "
+                  f"-> set BaseConfig['read_pulse_freq'].")
+            while plt.fignum_exists(num=figNum):
+                figNum += 1
+            plt.figure(figNum)
+            plt.suptitle(f"Resonator transmission - {self.path}")
+            plt.plot(f_vec, R.T[0], ".-")
+            plt.axvline(dip_mhz, color="red", linestyle="--",
+                        label=f"dip {dip_mhz:.4f} MHz")
+            plt.xlabel("Readout freq [MHz]")
+            plt.ylabel("|S21| [a.u.]")
+            plt.legend(loc="best", fontsize=8)
+            plt.savefig(self.iname, bbox_inches="tight")
+            if plotDisp:
+                plt.show(block=False)
+                plt.pause(0.1)
+            self.data['time'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.pickle_data()
+            return {'config': cfg, 'data': self.data}
+
         _dip_hz = np.asarray(minima_lookup) * 1e6 + r_lo
         _imax = int(np.nanargmax(_dip_hz))
         _imin = int(np.nanargmin(_dip_hz))

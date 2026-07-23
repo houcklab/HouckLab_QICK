@@ -33,8 +33,10 @@ RESET_MAX_ITERS = 3
 P_TRANSMISSION = {
     "run": True,
     "shots": 1000,
-    "freq_center_mhz": None,
-    "freq_span_mhz": 4.0,
+    # QUA m_transmission defines an explicit start/stop readout-frequency window (MHz).
+    # None -> auto window of read_pulse_freq +/- 2 MHz.
+    "freq_start_mhz": None,
+    "freq_stop_mhz": None,
     "freq_points": 201,
 }
 P_TRANSMISSION_SWEEP = {
@@ -130,16 +132,17 @@ def run_transmission(outer_folder, soc, soccfg):
     """QUA Transmission analog: 1D readout-freq sweep at the cal flux -> resonator dip.
     Reuses the step-1 FF transmission at a single ff_gain."""
     p = P_TRANSMISSION
-    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
-              else float(BaseConfig["read_pulse_freq"]))
+    f0 = float(BaseConfig["read_pulse_freq"])
+    start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else f0 - 2.0
+    stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
     cfg = _base_cfg(p, extra={
-        "trans_freq_start": center - p["freq_span_mhz"] / 2.0,
-        "trans_freq_stop": center + p["freq_span_mhz"] / 2.0,
+        "trans_freq_start": float(start),
+        "trans_freq_stop": float(stop),
         "TransNumPoints": int(p["freq_points"]),
         "ff_gain_vec": [int(FF_HOLD_GAIN)], "ff_settle_us": 20.0,
     })
     cfg["relax_delay"] = 50
-    print(f"[transmission] {p['freq_points']} freqs around {center:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
+    print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
     exp = TransmissionVsFFGain(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                                suffix="GateCal_Transmission", cfg=cfg, save_resonator_lookup=False)
     exp.acquire(plotDisp=LIVE_PLOTS)
