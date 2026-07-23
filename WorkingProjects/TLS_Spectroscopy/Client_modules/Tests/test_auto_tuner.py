@@ -714,6 +714,9 @@ check("chi sign and magnitude within 50%",
 check("qubit frequency within 0.5 MHz (found from 22.9 MHz away)",
       abs(w.get("qubit_freq", 0) - dev.F_Q) < 0.5,
       "%.4f vs %.4f" % (w.get("qubit_freq", float('nan')), dev.F_Q))
+check("blind reacquisition is promoted only after the coherent gate evidence passes",
+      w.get("target_reacquisition_used") is True
+      and w.get("target_reacquisition_status") == "coherent_validation_passed")
 check("pi drive frequency within 0.25 MHz",
       abs(w.get("drive_freq", 0) - dev.F_Q) < 0.25,
       "%.4f vs %.4f" % (w.get("drive_freq", float('nan')), dev.F_Q))
@@ -951,6 +954,26 @@ _runner_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Ru
                                             "AutoTune.py"))
 with open(_runner_path, encoding="utf-8") as _rf:
     _runner_tree = ast.parse(_rf.read(), filename=_runner_path)
+_runner_assignments = {
+    target.id: node.value
+    for node in _runner_tree.body if isinstance(node, ast.Assign)
+    for target in node.targets if isinstance(target, ast.Name)
+}
+check("the shipped blind runner cannot overwrite BaseConfig",
+      ast.literal_eval(_runner_assignments["APPLY_CONFIG"]) is False)
+check("the shipped runner explicitly enables broad blind target acquisition",
+      isinstance(_runner_assignments["BLIND_TARGET_ACQUISITION"], ast.Constant)
+      and _runner_assignments["BLIND_TARGET_ACQUISITION"].value is True
+      and any(isinstance(n, ast.Name) and n.id == "BLIND_TARGET_ACQUISITION"
+              for n in ast.walk(_runner_assignments["P_TUNER"])))
+_runner_main_guard = next(
+    n for n in _runner_tree.body
+    if isinstance(n, ast.If)
+    and any(isinstance(x, ast.Name) and x.id == "__name__" for x in ast.walk(n.test)))
+check("a failed hardware run now returns a nonzero process exit status",
+      any(isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)
+          and isinstance(n.exc.func, ast.Name) and n.exc.func.id == "SystemExit"
+          for n in ast.walk(_runner_main_guard)))
 _history_node = next(n for n in _runner_tree.body
                      if isinstance(n, ast.FunctionDef) and n.name == "_history_entry")
 _select_node = next(n for n in _runner_tree.body
@@ -1713,6 +1736,9 @@ check("the safe default refuses to relabel a line 19 MHz from the trusted target
 st_w, res_w = _spec_run(14.1)
 check("a REAL line at the snr that just failed on hardware is now accepted",
       abs(res_w[0]["f"] - 2530.84) < 1.0, "found %.3f MHz" % res_w[0]["f"])
+check("a distant spectral candidate is explicitly provisional before coherent tests",
+      st_w.w.get("target_reacquisition_used") is True
+      and st_w.w.get("target_reacquisition_status") == "pending_coherent_validation")
 check("a weak line is never made WORSE by extrapolating over a short lever arm",
       abs(res_w[0]["f"] - 2530.84) < 0.15,
       "found %.4f, full-power centre was accurate" % res_w[0]["f"])

@@ -7,11 +7,21 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 
 QUBIT = "q4"
 LIVE_PLOTS = False
-APPLY_CONFIG = True
+# A blind acquisition deliberately treats the configured qubit frequency as a search
+# centre, not as a trusted target identity.  The result must therefore be inspected and
+# compared with the hidden manual calibration before anything is written to BaseConfig.
+BLIND_TARGET_ACQUISITION = True
+APPLY_CONFIG = False
 WRITE_READOUT = True
 WRITE_QUBIT = True
 
 P_TUNER = {
+    "spec": {
+        # A distant, repeatedly observed line is only a provisional candidate.  The
+        # calibration graph must still demonstrate a coherent Rabi, signed frequency
+        # and amplitude convergence, and fresh held-out pi/readout verification.
+        "allow_target_reacquisition": BLIND_TARGET_ACQUISITION,
+    },
 }
 
 READOUT_KEYS = ("read_pulse_freq", "read_pulse_gain", "read_length", "res_phase")
@@ -65,6 +75,12 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
         "pi_fidelity_verified": data["working"].get("pi_fidelity_verified"),
         "pi_fidelity_binding": data["working"].get("pi_fidelity_binding"),
         "pulse_fingerprint": data["working"].get("pulse_fingerprint"),
+        "target_reacquisition_detected": data["working"].get(
+            "target_reacquisition_detected", False),
+        "target_reacquisition_used": data["working"].get(
+            "target_reacquisition_used", False),
+        "target_reacquisition_status": data["working"].get(
+            "target_reacquisition_status"),
         # A calibrated X180 does not prove that half its DAC code is an X90 when the
         # microwave chain is nonlinear.  Preserve the old value, but make its invalidity
         # explicit and auditable whenever this runner applies a changed pi gain.
@@ -100,7 +116,7 @@ def main():
         config_updater.append_history(_history_entry(data, eligible, {}, False))
         print("\n[auto-tune] nothing converged -- BaseConfig untouched.\n"
               "            Summary plot: %s" % exp.iname)
-        return
+        return 1
     if not qubit_ok:
         print("\n[auto-tune] qubit calibration did not converge -- its keys are NOT written.")
     if not readout_ok:
@@ -109,13 +125,13 @@ def main():
     if not tuned:
         config_updater.append_history(_history_entry(data, eligible, {}, False))
         print("\n[auto-tune] nothing eligible to write after verification and write flags.")
-        return
+        return 1
     if not APPLY_CONFIG:
         config_updater.append_history(_history_entry(data, eligible, tuned, False))
         print("\n[auto-tune] APPLY_CONFIG=False -- measured but NOT written:")
         for k in sorted(tuned):
             print("   %-18s %-14s (was %s)" % (k, tuned[k], BaseConfig.get(k)))
-        return
+        return 0
     try:
         changed = config_updater.update_baseconfig(tuned)
     except Exception as exc:
@@ -134,7 +150,8 @@ def main():
               "It was deliberately left unchanged; run GateCalibration with X90 before "
               "using an X90 pulse (half the X180 DAC code is not treated as evidence).")
     print("[auto-tune] backup + history written; done.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

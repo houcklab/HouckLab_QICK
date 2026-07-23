@@ -1756,8 +1756,18 @@ class AutoTuner(ExperimentClass):
         target_shift = abs(float(f_q) - target_prior)
         self.node_data["spec"]["target_prior"] = target_prior
         self.node_data["spec"]["target_shift_mhz"] = target_shift
-        if (target_shift > float(target_radius)
-                and not bool(P.get("allow_target_reacquisition", False))):
+        self.node_data["spec"]["target_identity_radius_mhz"] = float(target_radius)
+        target_outside_identity = target_shift > float(target_radius)
+        allow_reacquisition = bool(P.get("allow_target_reacquisition", False))
+        self.w["target_reacquisition_detected"] = bool(target_outside_identity)
+        self.w["target_reacquisition_used"] = bool(
+            target_outside_identity and allow_reacquisition)
+        self.w["target_reacquisition_status"] = (
+            "outside_identity_radius_rejected"
+            if target_outside_identity and not allow_reacquisition else
+            "pending_coherent_validation"
+            if target_outside_identity else "within_identity_radius")
+        if target_outside_identity and not allow_reacquisition:
             raise TunerError(
                 "spec: reproducible transition %.4f MHz is %.3f MHz from the trusted "
                 "target %.4f, outside the %.3f MHz identity radius. A coherent Rabi "
@@ -1765,11 +1775,15 @@ class AutoTuner(ExperimentClass):
                 "refusing to jump targets. Update the target prior deliberately or set "
                 "params['spec']['allow_target_reacquisition']=True after identifying it."
                 % (f_q, target_shift, target_prior, target_radius))
-        if target_shift > float(target_radius):
+        if target_outside_identity:
             self._say("spec", "WARN",
-                      "TARGET REACQUISITION was explicitly enabled: %.4f -> %.4f MHz "
-                      "(%.3f MHz). Verify this is the intended transition, not a nearby "
-                      "TLS/qubit, before applying the result."
+                      "BLIND TARGET REACQUISITION was explicitly enabled: %.4f -> "
+                      "%.4f MHz (%.3f MHz). This is a PROVISIONAL spectral candidate, "
+                      "not an accepted pi calibration: coherent Rabi, signed frequency/"
+                      "amplitude refinement, and fresh held-out audits must all pass. "
+                      "Those tests establish a controllable transition but cannot by "
+                      "themselves name it q4 rather than a nearby TLS/qubit; keep this "
+                      "blind run dry until the final frequency is reviewed."
                       % (target_prior, f_q, target_shift))
         self.w["qubit_freq"] = round(f_q, 4)
         self.w["spec_fwhm"] = float(fit["fwhm"])
@@ -4140,6 +4154,12 @@ class AutoTuner(ExperimentClass):
                          and t1_domain_ok
                          and self.w.get("pi_fidelity_verified", False)
                          and pi_map_bound and state_ok)
+            if self.w.get("target_reacquisition_used", False):
+                self.w["target_reacquisition_status"] = (
+                    "coherent_validation_passed" if pi_ok
+                    else "coherent_validation_failed")
+                self.node_data.setdefault("spec", {})["target_reacquisition_status"] = (
+                    self.w["target_reacquisition_status"])
             ro_ok = bool(ss_ok and self.w.get("readout_verified", False)
                          and pi_ok and self.w.get("fixed_point", False)
                          and not self.drifted)
@@ -4185,6 +4205,10 @@ class AutoTuner(ExperimentClass):
                           "not be written because %s" % reason)
         except TunerError as err:
             failure = str(err)
+            if self.w.get("target_reacquisition_used", False):
+                self.w["target_reacquisition_status"] = "coherent_validation_failed"
+                self.node_data.setdefault("spec", {})["target_reacquisition_status"] = (
+                    self.w["target_reacquisition_status"])
             self._say("verdict", "FAIL", failure)
         except KeyboardInterrupt:
             failure = "interrupted by user"
