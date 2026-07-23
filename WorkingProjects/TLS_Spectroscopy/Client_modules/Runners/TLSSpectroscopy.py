@@ -16,6 +16,7 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
@@ -152,9 +153,9 @@ P6_3PT_T1 = {
     "run_park_T1_if_Ts_none": True,
     "min_ref_contrast": 0.05,
     "max_plot_t1_multiple": 20.0,
-    "reset_mode": "passive",
-    "reset_threshold_raw": 2153,
-    "reset_oper": "upper",
+    "reset_mode": "feedback",
+    "reset_threshold_raw": 7087,
+    "reset_oper": "lower",
     "reset_ground_below": True,
     "reset_max_iters": 3,
     "T1_probe_cfg": {
@@ -667,8 +668,8 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
     })
     if p.get("reset_mode") == "feedback":
         if p.get("reset_threshold_raw") is None:
-            raise RuntimeError("reset_mode='feedback' needs reset_threshold_raw in P6_3PT_T1 "
-                               "(run Experiments/mActiveResetProbe.py first).")
+            raise RuntimeError("reset_mode='feedback' needs a reset threshold, but the "
+                               "start-of-step-6 probe did not set one.")
         base.update({
             "reset_threshold_raw": int(p["reset_threshold_raw"]),
             "reset_oper": p.get("reset_oper", "lower"),
@@ -681,7 +682,18 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
 def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
-    p = P6_3PT_T1
+    p = dict(P6_3PT_T1)
+    if p.get("reset_mode") == "feedback":
+        rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
+                                 outer_folder=outer_folder,
+                                 shots=int(p.get("reset_probe_shots", 2000)))
+        if rec is None:
+            print("[6] no feedback discrimination this session -- using passive relax.")
+            p["reset_mode"] = "passive"
+        else:
+            p["reset_threshold_raw"] = int(rec["threshold_raw"])
+            p["reset_oper"] = str(rec["oper"])
+            p["reset_ground_below"] = bool(rec["ground_below"])
     freq_step_mhz = p.get("freq_step_mhz", None)
     if freq_step_mhz is not None and FLUX_FIT_PARAMS is not None:
         dc_vec = _build_freq_uniform_dc_vec(p)

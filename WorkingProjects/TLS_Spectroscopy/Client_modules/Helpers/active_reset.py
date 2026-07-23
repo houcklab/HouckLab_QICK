@@ -95,3 +95,36 @@ def active_reset_readouts(cfg):
     if str(cfg.get("reset_mode", "passive")).strip().lower() != "feedback":
         return 0
     return int(cfg.get("reset_max_iters", 3))
+
+
+def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000):
+    """Measure a FRESH active-reset discrimination (raw threshold, quadrature half, sign).
+
+    The raw |g>/|e> accumulator reads on this readout drift between sessions -- enough to
+    move the threshold severalfold and even swap which side |g> sits on -- so a threshold
+    saved in the config goes stale, and a stale sign makes the feedback play X180 when the
+    qubit is ALREADY in |g>, pumping it the wrong way.  Re-measuring live at the start of a
+    run (intra-run drift is small) keeps it correct.
+
+    Returns the recommended dict {'oper','threshold_raw','ground_below'}, or None if the
+    firmware has no feedback path or the readout cannot discriminate -- in which case the
+    caller must fall back to passive relax rather than trust a bad threshold."""
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
+        ActiveResetProbe)
+    cfg = dict(base_cfg)
+    cfg["shots"] = int(shots)
+    cfg["qubit_gain"] = int(cfg.get("qubit_pi_gain", cfg.get("qubit_gain", 0)))
+    try:
+        probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=path,
+                                 outerFolder=outer_folder, suffix="Reset_Threshold", cfg=cfg)
+        data = probe.acquire().get("data", {})
+    except Exception as exc:
+        print(f"[reset] threshold probe failed ({exc}) -- falling back to passive relax.")
+        return None
+    if not data.get("supported") or not data.get("recommended"):
+        print("[reset] no usable feedback discrimination -- falling back to passive relax.")
+        return None
+    rec = data["recommended"]
+    print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
+          f"ground_below={rec['ground_below']}")
+    return rec

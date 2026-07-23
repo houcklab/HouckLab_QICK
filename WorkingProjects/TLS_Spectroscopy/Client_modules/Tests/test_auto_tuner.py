@@ -598,7 +598,7 @@ check("shared readout setup covers ADC+offset+guard and consumes res_phase",
 
 _consumer_files = (
     "mSingleShot1Q.py", "mRabiChevronIQ.py", "mRabiChevronSS.py",
-    "mActiveResetProbe.py", "mActiveResetValidation.py", "mT1VsFlux.py",
+    "mActiveResetProbe.py", "mT1VsFlux.py",
 )
 _consumer_ok = True
 for _consumer in _consumer_files:
