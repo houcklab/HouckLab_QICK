@@ -54,22 +54,26 @@ P_QUBIT_SPEC = {
     "run": True,
     "shots": 1000,
     "spec_amp": 7000,
-    # A longer saturation tone narrows the line and lifts it out of the ripple; 2 us matches
-    # what reliably finds the qubit in the basic tuner.
-    "spec_len_us": 2.0,
+    # A strongly-driven qubit line is power-broadened to many MHz; a longer saturation tone
+    # gives a bigger, cleaner feature (the QM two-tone spec uses 20 us).  10 us is a good
+    # balance of contrast and run time; raise toward 20 if the feature is weak.
+    "spec_len_us": 10.0,
     # Quasi-CW sweep (no qubit reset, like QUA); a few us clears the readout photons.  The old
     # 100 us default made every shot ~4x slower than the OPX for no parity reason.
     "relax_delay_us": 5.0,
-    # Default window around the known line at a fine step; widen if you are searching blind.
+    # Default window around the known line; widen if you are searching blind.
     "freq_min_mhz": 2490.0,
     "freq_max_mhz": 2580.0,
     "freq_step_mhz": 0.5,
-    # The spec analysis subtracts the resonator baseline and thresholds residual SNR instead
-    # of eyeballing raw |S21|; a candidate must reproduce across spec_passes independent sweeps
-    # (kills the random dip-comb) and clear spec_min_snr to be reported as the qubit line.
-    # More passes reject a heavier comb (2 fast, 3 is a safe default, 4-5 if it is severe).
-    "spec_min_snr": 4.0,
-    "spec_passes": 3,
+    # Detector: a WIDE baseline (spec_baseline_frac of the span) removes only the slow
+    # resonator background -- a narrow one would erase a power-broadened line.  A matched
+    # filter (smooth the complex residual over ~spec_smooth_mhz) then finds the line whether
+    # it is broad or sharp.  The strongest line is always reported; spec_passes independent
+    # sweeps + spec_min_snr set the confidence tag (reproduced + above SNR = high).
+    "spec_baseline_frac": 0.5,
+    "spec_smooth_mhz": 5.0,
+    "spec_min_snr": 3.0,
+    "spec_passes": 2,
 }
 
 P_SS_CAL = {
@@ -214,8 +218,10 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_gain": int(p["spec_amp"]),
         "qubit_length": float(p["spec_len_us"]),
         "qubit_pulse_style": "const",
-        "spec_min_snr": float(p.get("spec_min_snr", 4.0)),
+        "spec_min_snr": float(p.get("spec_min_snr", 3.0)),
         "spec_passes": int(p.get("spec_passes", 2)),
+        "spec_baseline_frac": float(p.get("spec_baseline_frac", 0.5)),
+        "spec_smooth_mhz": float(p.get("spec_smooth_mhz", 5.0)),
     })
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
