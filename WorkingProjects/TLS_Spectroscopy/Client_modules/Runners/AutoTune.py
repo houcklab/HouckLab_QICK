@@ -2,7 +2,9 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mAutoTuner import AutoTuner
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mAutoTuner import (
+    AUTOTUNER_REVISION, AutoTuner,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updater
 
 QUBIT = "q4"
@@ -11,21 +13,46 @@ LIVE_PLOTS = False
 # centre, not as a trusted target identity.  The result must therefore be inspected and
 # compared with the hidden manual calibration before anything is written to BaseConfig.
 BLIND_TARGET_ACQUISITION = True
+# Keep this True for the next run.  It replays only the exact 90%-known-good BaseConfig
+# tuple through the autotuner's own pulse program, then exits before spectroscopy or
+# optimization.  Only after this short control passes should a full search be attempted.
+CONTROL_VALIDATION_ONLY = True
 APPLY_CONFIG = False
 WRITE_READOUT = True
 WRITE_QUBIT = True
 
 P_TUNER = {
+    "safety": {
+        "baseline_only": CONTROL_VALIDATION_ONLY,
+        "expected_min_fidelity_lcb": 0.85,
+        "baseline_shots": 1500,
+        "baseline_blocks": 4,
+        "max_runtime_minutes": 45.0,
+    },
     "spec": {
         # A distant, repeatedly observed line is only a provisional candidate.  The
         # calibration graph must still demonstrate a coherent Rabi, signed frequency
         # and amplitude convergence, and fresh held-out pi/readout verification.
         "allow_target_reacquisition": BLIND_TARGET_ACQUISITION,
     },
+    # Search the physical 4-sigma Gaussian duration.  Frequency and amplitude are
+    # retuned and independently confirmed at every duration before leakage/DRAG.
+    "pulse_duration": {
+        "enabled": True,
+        "required_for_certification": True,
+    },
+    # This runner is for the transmon q4 tune-up.  Leakage measurement is mandatory
+    # for certification; failure still returns the best empirical pi candidate and
+    # simply blocks automatic writes.
+    "leakage": {
+        "enabled": True,
+        "required_for_certification": True,
+    },
 }
 
 READOUT_KEYS = ("read_pulse_freq", "read_pulse_gain", "read_length", "res_phase")
-QUBIT_KEYS = ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain")
+QUBIT_KEYS = ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
+              "qubit_drag_beta")
 SHARED_TIMING_KEYS = ("relax_delay",)
 
 
@@ -49,11 +76,21 @@ def _select_updates(data, write_readout=True, write_qubit=True):
 def _history_entry(data, eligible, selected, applied, write_error=None):
     """History distinguishes measured, eligible, attempted, and actually applied keys."""
     pi2_would_be_stale = bool(
-        "qubit_pi_gain" in selected
-        and "qubit_pi2_gain" in BaseConfig
-        and int(selected["qubit_pi_gain"]) != int(BaseConfig.get("qubit_pi_gain", -1)))
+        "qubit_pi2_gain" in BaseConfig
+        and (("qubit_pi_gain" in selected
+              and int(selected["qubit_pi_gain"])
+              != int(BaseConfig.get("qubit_pi_gain", -1)))
+             or ("qubit_drag_beta" in selected
+                 and abs(float(selected["qubit_drag_beta"])
+                         - float(BaseConfig.get("qubit_drag_beta", 0.0))) > 1e-12)
+             or ("sigma" in selected
+                 and abs(float(selected["sigma"])
+                         - float(BaseConfig.get("sigma", 0.0))) > 1e-12)))
     return {
         "time": data["time"], "qubit": QUBIT, "success": bool(data["success"]),
+        "autotuner_revision": data.get("autotuner_revision", "protected-control-v1"),
+        "control_validation_only": data.get("control_validation_only", False),
+        "control_validation_passed": data.get("control_validation_passed", False),
         "failure": data.get("failure"), "write_error": write_error,
         "best_found": data.get("best_found"),
         "best_observed": data.get("best_observed"),
@@ -80,6 +117,18 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
         "pi_verified": data["working"].get("pi_verified"),
         "pi_fidelity_verified": data["working"].get("pi_fidelity_verified"),
         "pi_fidelity_binding": data["working"].get("pi_fidelity_binding"),
+        "duration_active": data.get("duration_active", False),
+        "duration_optimized": data.get("duration_optimized", False),
+        "duration_verified": data.get("duration_verified", False),
+        "gate_duration_ns": 4000.0 * float(data["working"].get(
+            "sigma_us", BaseConfig["sigma"])),
+        "leakage_active": data.get("leakage_active", False),
+        "leakage_optimized": data.get("leakage_optimized", False),
+        "leakage_verified": data.get("leakage_verified", False),
+        "leakage_max_ucb": data["working"].get("leakage_max_ucb"),
+        "ef_freq": data["working"].get("ef_freq"),
+        "ef_pi_gain": data["working"].get("ef_pi_gain"),
+        "anharmonicity_mhz": data["working"].get("anharmonicity_mhz"),
         "pulse_fingerprint": data["working"].get("pulse_fingerprint"),
         "target_reacquisition_detected": data["working"].get(
             "target_reacquisition_detected", False),
@@ -123,15 +172,31 @@ def main():
     if not (qubit_ok or readout_ok):
         config_updater.append_history(_history_entry(data, eligible, {}, False))
         best = data.get("best_found")
+        if data.get("control_validation_only", False):
+            print("\n[auto-tune] protected-control validation %s; no search ran and "
+                  "BaseConfig is untouched.\n"
+                  "            exact tuple F=%.3f +/- %.3f (95%% LCB %.3f)\n"
+                  "            revision: %s\n"
+                  "            Summary plot: %s"
+                  % ("PASSED" if data.get("control_validation_passed", False)
+                     else "FAILED",
+                     best["fidelity"] if best else float("nan"),
+                     best["fidelity_se"] if best else float("nan"),
+                     best["fidelity_lcb_95"] if best else float("nan"),
+                     data.get("autotuner_revision", AUTOTUNER_REVISION), exp.iname))
+            return 0 if data.get("control_validation_passed", False) else 1
         if best:
             print("\n[auto-tune] best empirical candidate returned; it is NOT certified "
                   "and BaseConfig is untouched:\n"
                   "            read %.4f MHz / %d DAC / %.1f us | pi %.4f MHz @ %d "
-                  "DAC | F=%.3f +/- %.3f\n"
+                  "DAC / %.1f ns | DRAG %+.5f | F=%.3f +/- %.3f\n"
                   "            Summary plot: %s"
                   % (best["read_pulse_freq"], best["read_pulse_gain"],
                      best["read_length"], best["qubit_pi_freq"],
-                     best["qubit_pi_gain"], best["fidelity"],
+                     best["qubit_pi_gain"],
+                     4000.0 * best.get("qubit_sigma_us", BaseConfig["sigma"]),
+                     best.get("qubit_drag_beta", 0.0),
+                     best["fidelity"],
                      best["fidelity_se"], exp.iname))
             # Exit zero means the requested experiment completed and returned a usable
             # artifact.  Certification/write status is carried explicitly in the data;
@@ -167,8 +232,16 @@ def main():
     for k in sorted(changed):
         o, n = changed[k]
         print("   %-18s %-14s -> %s" % (k, o, n))
-    if ("qubit_pi_gain" in tuned and "qubit_pi2_gain" in BaseConfig
-            and int(tuned["qubit_pi_gain"]) != int(BaseConfig["qubit_pi_gain"])):
+    if ("qubit_pi2_gain" in BaseConfig
+            and (("qubit_pi_gain" in tuned
+                  and int(tuned["qubit_pi_gain"])
+                  != int(BaseConfig["qubit_pi_gain"]))
+                 or ("qubit_drag_beta" in tuned
+                     and abs(float(tuned["qubit_drag_beta"])
+                             - float(BaseConfig.get("qubit_drag_beta", 0.0))) > 1e-12)
+                 or ("sigma" in tuned
+                     and abs(float(tuned["sigma"])
+                             - float(BaseConfig.get("sigma", 0.0))) > 1e-12))):
         print("[auto-tune] WARNING: qubit_pi2_gain was not measured and is now STALE. "
               "It was deliberately left unchanged; run GateCalibration with X90 before "
               "using an X90 pulse (half the X180 DAC code is not treated as evidence).")

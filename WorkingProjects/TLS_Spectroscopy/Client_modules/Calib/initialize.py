@@ -37,6 +37,12 @@ BaseConfig = {
     "qubit_pi_freq": 2534.7,
     "qubit_pi_gain": 5790,
     "qubit_pi2_gain": 2895,
+    # Peak derivative-Q / peak Gaussian-I ratio.  Zero is the legacy Gaussian; a
+    # nonzero value is replayed by the shared pulse helper in tuner and consumers.
+    "qubit_drag_beta": 0.0,
+    # Seed only.  AutoTuner verifies the e-f line with shelving spectroscopy and Rabi
+    # before using it for direct leakage measurement.
+    "qubit_anharmonicity_mhz": -200.0,
     "qubit_gain": 7000,
     "qubit_length": 0.5,
     "sigma": 0.25,

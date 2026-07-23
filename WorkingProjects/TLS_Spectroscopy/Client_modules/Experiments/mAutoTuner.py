@@ -1,5 +1,6 @@
 import copy
 import datetime
+import time
 import warnings
 from statistics import NormalDist
 
@@ -15,6 +16,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
     add_qubit_gaussian, explicit_flat_top_fields, pulse_fingerprint,
     readout_drive_length_us, set_readout_pulse,
 )
+
+
+AUTOTUNER_REVISION = "protected-control-v1"
 
 
 
@@ -778,6 +782,75 @@ def single_shot_analysis(ig, qg, ie, qe):
             "sigma_classical": sd_classical}
 
 
+def binary_ground_fraction(i, q, theta, threshold):
+    """Ground-labelled fraction and Jeffreys uncertainty for a fixed discriminator.
+
+    The discriminator must be trained on independent g/e references.  This helper is
+    intentionally ignorant of leakage: the leakage stage obtains two complementary
+    measurements (ordinary readout and f->e->g shelving) and solves the calibrated
+    three-population response matrix instead of folding |f> into the e cloud.
+    """
+    i, q = np.asarray(i, dtype=float), np.asarray(q, dtype=float)
+    n = min(i.size, q.size)
+    if n < 10 or not np.isfinite(theta) or not np.isfinite(threshold):
+        return np.nan, np.inf
+    x = i[:n] * np.cos(float(theta)) + q[:n] * np.sin(float(theta))
+    k = int(np.count_nonzero(x < float(threshold)))
+    p = float(k) / float(n)
+    a, b = k + 0.5, n - k + 0.5
+    se = float(np.sqrt(a * b / ((a + b) ** 2 * (a + b + 1.0))))
+    return p, se
+
+
+def solve_shelved_qutrit_population(calibration, target_identity, target_shelved,
+                                    max_condition=100.0):
+    """Estimate (P0, P1, P2) from identity and f-selective shelving measurements.
+
+    ``calibration[state]`` contains ``(p_ground_identity, se_identity,
+    p_ground_shelved, se_shelved)`` for prepared g/e/f references.  The shelving
+    sequence is e-f pi followed by g-e pi: it maps f to g while mapping g/e out of g.
+    Together with ordinary readout and normalization, this forms a measured 3x3
+    response matrix.  Calibration uncertainty is propagated analytically; a nearly
+    singular matrix is rejected rather than reporting a fictitiously precise leakage.
+    """
+    try:
+        cols = [calibration[name] for name in ("g", "e", "f")]
+        A = np.array([[float(col[0]) for col in cols],
+                      [float(col[2]) for col in cols],
+                      [1.0, 1.0, 1.0]], dtype=float)
+        Ase = np.array([[float(col[1]) for col in cols],
+                        [float(col[3]) for col in cols],
+                        [0.0, 0.0, 0.0]], dtype=float)
+        b = np.array([float(target_identity[0]), float(target_shelved[0]), 1.0])
+        bse = np.array([float(target_identity[1]), float(target_shelved[1]), 0.0])
+        condition = float(np.linalg.cond(A))
+        inv = np.linalg.inv(A)
+        raw = inv @ b
+    except Exception:
+        return {"ok": False, "population": np.full(3, np.nan),
+                "population_se": np.full(3, np.inf), "condition": np.inf}
+    cov = inv @ np.diag(bse ** 2) @ inv.T
+    # d(A^-1 b)/dA_rc = -A^-1[:, r] * p[c].
+    for r in range(2):
+        for c in range(3):
+            grad = -inv[:, r] * raw[c]
+            cov += np.outer(grad, grad) * Ase[r, c] ** 2
+    se = np.sqrt(np.maximum(np.diag(cov), 0.0))
+    physical = np.clip(raw, 0.0, None)
+    if float(np.sum(physical)) > 0:
+        physical /= float(np.sum(physical))
+    matrix_ok = bool(np.isfinite(condition) and condition <= float(max_condition))
+    physical_ok = bool(np.all(raw >= -3.0 * se) and np.all(raw <= 1.0 + 3.0 * se))
+    return {
+        "ok": bool(matrix_ok and physical_ok and np.all(np.isfinite(se))),
+        "population": physical, "population_raw": raw, "population_se": se,
+        "p2": float(physical[2]), "p2_raw": float(raw[2]),
+        "p2_se": float(se[2]), "condition": condition,
+        "response_matrix": A, "response_matrix_se": Ase,
+        "matrix_ok": matrix_ok, "physical_ok": physical_ok,
+    }
+
+
 def fidelity_lower_bound(fid, fid_se, confidence_sigma=1.96):
     """Finite-sample lower confidence score used consistently by search and gates."""
     fid, fid_se = float(fid), float(fid_se)
@@ -860,6 +933,56 @@ def select_verified_2d_candidate(rows, incumbent=None, confidence_sigma=1.96,
     best["regret"] = regret
     best["improvement_significant"] = significant
     return best
+
+
+def select_duration_candidate(rows, incumbent_sigma, confidence_sigma=1.96,
+                              equivalence_margin=0.005, max_fidelity_drop=0.01,
+                              prefer_shorter=True):
+    """Select duration without exchanging measured inversion for raw gate speed.
+
+    The best held-out fidelity lower bound defines a statistical frontier.  A faster
+    pulse may be selected only when its upper confidence bound reaches that frontier and
+    its lower bound is not materially below the incumbent.  A longer pulse must clear
+    both uncertainty bars.  Direct qutrit leakage remains a separate hard constraint
+    after this computational-subspace screen.
+    """
+    z = float(confidence_sigma)
+    valid = [dict(r) for r in rows
+             if bool(r.get("verified", False))
+             and np.isfinite(r.get("sigma_us", np.nan))
+             and np.isfinite(r.get("fid", np.nan))
+             and np.isfinite(r.get("fid_se", np.nan))]
+    if not valid:
+        return None
+    for row in valid:
+        row["fidelity_lcb"] = float(row["fid"] - z * row["fid_se"])
+        row["fidelity_ucb"] = float(row["fid"] + z * row["fid_se"])
+        row["gate_ns"] = float(4000.0 * row["sigma_us"])
+    best = max(valid, key=lambda r: (r["fidelity_lcb"], r["fid"],
+                                     -r["gate_ns"]))
+    incumbent = min(valid, key=lambda r: abs(float(r["sigma_us"])
+                                              - float(incumbent_sigma)))
+    frontier = float(best["fidelity_lcb"] - float(equivalence_margin))
+    equivalent = [r for r in valid
+                  if r["fidelity_ucb"] >= frontier
+                  and r["fidelity_lcb"] >=
+                      incumbent["fidelity_lcb"] - float(max_fidelity_drop)]
+    chosen = (min(equivalent, key=lambda r: (r["gate_ns"],
+                                              -r["fidelity_lcb"]))
+              if prefer_shorter and equivalent else best)
+    # Never lengthen for an apparent improvement that is still inside the two
+    # candidates' held-out uncertainty bars.
+    if (chosen["gate_ns"] > incumbent["gate_ns"] + 1e-9
+            and chosen["fidelity_lcb"] <= incumbent["fidelity_ucb"]):
+        chosen = incumbent
+    chosen = dict(chosen)
+    chosen.update({
+        "incumbent": incumbent,
+        "best_fidelity": best,
+        "frontier_lcb": frontier,
+        "statistically_equivalent": bool(chosen["fidelity_ucb"] >= frontier),
+    })
+    return chosen
 
 
 def fit_rabi(gains, sig):
@@ -1135,15 +1258,23 @@ class RabiProgram(RAveragerProgram):
 
 
 class SeqProgram(AveragerProgram):
-    """Generic sequence: cfg['seq'] is a list of ('pulse', gain, phase_deg) and
-    ('delay', us) ops, then one readout.  Covers references, pi trains, T1 and any
-    phase-swept sequence."""
+    """Generic sequence followed by one readout.
+
+    ``('pulse', gain, phase_deg)`` emits the calibrated g-e waveform at
+    ``drive_freq``.  ``('pulse_at', gain, phase_deg, freq_mhz, waveform)`` supports the
+    independently calibrated e-f Gaussian used for shelving/leakage measurements;
+    waveform is ``'gaussian'`` or ``'qubit'``.  Keeping both in this canonical program
+    prevents leakage calibration from using a different clock or envelope convention.
+    """
 
     def initialize(self):
         cfg = self.cfg
         cfg.setdefault("reps", int(cfg.get("shots", 400)))
         _declare_common(self, include_qubit=True)
         _add_qubit_gauss(self)
+        if any(op[0] == "pulse_at" and len(op) > 4 and op[4] == "gaussian"
+               for op in cfg.get("seq", [])):
+            add_qubit_gaussian(self, name="qubit_ef", drag_beta=0.0)
         self.synci(200)
 
     def body(self):
@@ -1155,11 +1286,29 @@ class SeqProgram(AveragerProgram):
         for op in cfg["seq"]:
             if op[0] == "pulse":
                 gain, ph = int(op[1]), float(op[2])
-                if (gain, ph) != last:
+                key = (gain, ph, float(cfg["drive_freq"]), "qubit")
+                if key != last:
                     self.set_pulse_registers(ch=qch, style="arb", freq=freq_reg,
                                              phase=self.deg2reg(ph, gen_ch=qch),
                                              gain=gain, waveform="qubit")
-                    last = (gain, ph)
+                    last = key
+                self.pulse(ch=qch)
+                if gap > 0:
+                    self.sync_all(gap)
+            elif op[0] == "pulse_at":
+                gain, ph, freq = int(op[1]), float(op[2]), float(op[3])
+                family = str(op[4]) if len(op) > 4 else "qubit"
+                if family not in ("qubit", "gaussian"):
+                    raise ValueError("unknown pulse_at waveform %r" % family)
+                waveform = "qubit_ef" if family == "gaussian" else "qubit"
+                key = (gain, ph, freq, waveform)
+                if key != last:
+                    self.set_pulse_registers(
+                        ch=qch, style="arb",
+                        freq=self.freq2reg(freq, gen_ch=qch),
+                        phase=self.deg2reg(ph, gen_ch=qch),
+                        gain=gain, waveform=waveform)
+                    last = key
                 self.pulse(ch=qch)
                 if gap > 0:
                     self.sync_all(gap)
@@ -1175,6 +1324,10 @@ class SeqProgram(AveragerProgram):
 
 class TunerError(RuntimeError):
     """A node failed unrecoverably; writes stop, but measured candidates are retained."""
+
+
+class ControlValidationComplete(RuntimeError):
+    """Internal control flow for the deliberately short baseline-only hardware run."""
 
 
 def gen_sample_rate(soccfg, gen_ch):
@@ -1322,7 +1475,22 @@ def _pop_with_local_refs(exp, cfg, seq, drive_freq, pi_gain, shots):
 
 
 DEFAULTS = {
-    "max_rounds": 8,
+    "max_rounds": 4,
+    # A direct replay of the exact input tuple is the optimizer's immutable control.
+    # The search may explore elsewhere, but it cannot promote or write a tuple that
+    # loses to this control.  ``baseline_only`` is intended for the first short hardware
+    # A/B after a code revision: it diagnoses pulse-path/metric mismatches before any
+    # spectroscopy or high-dimensional search consumes the session.
+    "safety": {"baseline_only": False,
+               "baseline_shots": 1500, "baseline_blocks": 4,
+               "expected_min_fidelity_lcb": None,
+               "guard_shots": 1000, "guard_blocks": 2,
+               "confidence_sigma": 1.96, "min_improvement": 0.005,
+               "max_fidelity_regression": 0.01,
+               "max_block_spread": 0.06,
+               "max_unstable_decisions": 2,
+               "max_remeasurement_failures": 1,
+               "max_runtime_minutes": 45.0},
     "resonator": {"span_mhz": 4.0, "points": 81, "max_span_mhz": 60.0, "shots": 400,
                   "relax_delay_us": 50.0, "expected_fwhm_mhz": 0.3,
                   "asym_warn_deg": 10.0},
@@ -1414,6 +1582,59 @@ DEFAULTS = {
                     "validation_max_shot_multiplier": 4,
                     "validation_retry_bound_factor": 2.0,
                     "relax_delay_us": None},
+    # Pulse duration is a calibrated coordinate, not a fixed hardware constant.  It is
+    # disabled in the library default so legacy projects do not unexpectedly launch a
+    # large waveform search; the q4 AutoTune runner explicitly enables it.  Each duration
+    # receives its own local frequency/gain map and interleaved held-out confirmation.
+    "pulse_duration": {
+                "enabled": False, "required_for_certification": True,
+                "gate_durations_ns": (20, 30, 45, 70, 110, 170, 260, 400, 650, 1000),
+                "minimum_gate_ns": 20.0,
+                "maximum_gate_ns": 1500.0,
+                "max_gain": 30000,
+                "predicted_gain_margin": 1.25,
+                "gain_span_frac": 0.35, "gain_points": 9,
+                "base_freq_span_mhz": 2.4,
+                "bandwidth_freq_fraction": 0.20,
+                "max_freq_span_mhz": 12.0, "freq_points": 7,
+                "coarse_shots": 250, "confirm_shots": 900,
+                "confirm_blocks": 3, "max_block_spread": 0.06,
+                "familywise_alpha": 0.05, "confidence_sigma": 1.96,
+                "equivalence_margin": 0.005, "max_fidelity_drop": 0.01,
+                "prefer_shorter": True, "outlier_max": 0.25,
+                "max_leakage_fallbacks": 2,
+                "relax_delay_us": None},
+    # Leakage-aware single-qubit control.  ``auto`` activates only when BaseConfig
+    # supplies an anharmonicity prior or an e-f frequency; this prevents a legacy
+    # non-transmon project from silently acquiring a meaningless qutrit scan.  The
+    # calibrated objective is direct P(f), obtained by f->e->g shelving, not the tail
+    # fraction of a two-cluster readout.
+    "leakage": {"enabled": "auto", "required_for_certification": True,
+                "anharmonicity_prior_mhz": None,
+                "ef_span_mhz": 120.0, "ef_points": 121,
+                "ef_spec_gain": 7000, "ef_spec_shots": 400,
+                "ef_confirm_min_snr": 4.0,
+                "ef_gain_max": 30000, "ef_gain_points": 61,
+                "ef_rabi_shots": 400, "ef_min_rabi_contrast": 0.20,
+                "ef_max_return_fraction": 0.35,
+                # Conventional Gaussian DRAG is not advertised as state of the art in
+                # the sub-20-ns regime, where FAST/HD-DRAG and predistortion matter.
+                "fast_shape_required_below_ns": 20.0,
+                # beta is peak derivative-Q / peak Gaussian-I.  Both signs are scanned
+                # because cable/mixer conventions reverse the analytical DRAG sign.
+                "beta_span": 0.08, "beta_points": 9,
+                "max_beta_span": 0.25, "max_extensions": 2,
+                "beta_refine_points": 7, "beta_refine_rounds": 2,
+                "depths": (2, 4, 8), "gap_phases": (0.0, 0.25, 0.5, 0.75),
+                "shots": 350, "reference_shots": 500,
+                "verify_shots": 1000, "verify_blocks": 3,
+                "familywise_alpha": 0.05,
+                "max_response_condition": 40.0,
+                "min_shelving_selectivity": 0.60,
+                "max_fidelity_drop": 0.01,
+                "max_amplified_p2": 0.02,
+                "confidence_sigma": 1.96,
+                "relax_delay_us": None},
 }
 
 
@@ -1496,6 +1717,9 @@ class AutoTuner(ExperimentClass):
         c["read_pulse_gain"] = int(w["read_pulse_gain"])
         c["read_length"] = float(w["read_length"])
         c["res_phase"] = float(w.get("res_phase", c.get("res_phase", 0.0)))
+        c["sigma"] = float(w.get("sigma_us", c["sigma"]))
+        c["qubit_drag_beta"] = float(w.get(
+            "drag_beta", c.get("qubit_drag_beta", 0.0)))
         rd = self.P[node].get("relax_delay_us")
         c["relax_delay"] = float(rd) if rd is not None else float(w["relax_delay"])
         c["adc_trig_offset"] = float(self.cfg.get("adc_trig_offset", 0.5))
@@ -1513,7 +1737,12 @@ class AutoTuner(ExperimentClass):
     def _current_pulse_fingerprint(self):
         """Exact saved identity for the waveform that the current working state emits."""
         c = self._cfg_for("pi_fidelity") if hasattr(self, "w") else dict(self.cfg)
-        c["pulse_implementation"] = "tls_canonical_gaussian_v1"
+        if hasattr(self, "w"):
+            c["qubit_drag_beta"] = float(self.w.get("drag_beta", 0.0))
+        c["pulse_implementation"] = (
+            "tls_canonical_drag_v1"
+            if abs(float(c.get("qubit_drag_beta", 0.0))) > 1e-15
+            else "tls_canonical_gaussian_v1")
         c["switch_triggered"] = False
         # ``length`` is a QM legacy key with different semantics.  Pin the fingerprint
         # to the duration the TLS canonical helper will actually emit so a leftover QM
@@ -1549,7 +1778,10 @@ class AutoTuner(ExperimentClass):
             "read_pulse_gain": int(read_gain),
             "qubit_pi_freq": float(drive_freq),
             "qubit_pi_gain": int(pi_gain),
-            "pulse_implementation": "tls_canonical_gaussian_v1",
+            "pulse_implementation": (
+                "tls_canonical_drag_v1"
+                if abs(float(cfg.get("qubit_drag_beta", 0.0))) > 1e-15
+                else "tls_canonical_gaussian_v1"),
             "switch_triggered": False,
         })
         cfg["read_pulse_length"] = readout_drive_length_us(cfg)
@@ -1567,6 +1799,8 @@ class AutoTuner(ExperimentClass):
             "res_phase": float(cfg.get("res_phase", 0.0)),
             "qubit_pi_freq": float(drive_freq),
             "qubit_pi_gain": int(pi_gain),
+            "qubit_sigma_us": float(cfg.get("sigma", self.cfg.get("sigma", 0.0))),
+            "qubit_drag_beta": float(cfg.get("qubit_drag_beta", 0.0)),
             "fidelity": fid, "fidelity_se": fid_se,
             "fidelity_lcb_95": fidelity_lower_bound(fid, fid_se, 1.96),
             "separation_sigma": float(row.get("sep", np.nan)),
@@ -1600,7 +1834,9 @@ class AutoTuner(ExperimentClass):
                     round(float(e["read_length"]), 9),
                     round(float(e["res_phase"]), 3),
                     round(float(e["qubit_pi_freq"]), 6), int(e["qubit_pi_gain"]),
-                    str(e["pulse_fingerprint"].get("qubit_envelope")))
+                    round(float(e.get("qubit_sigma_us", self.cfg.get("sigma", 0.0))), 9),
+                    str(e["pulse_fingerprint"].get("qubit_envelope")),
+                    round(float(e.get("qubit_drag_beta", 0.0)), 8))
 
         groups = {}
         for entry in rankable:
@@ -1633,6 +1869,310 @@ class AutoTuner(ExperimentClass):
         observed = max(observed_pool, key=lambda e: (
             e["fidelity"], -float(e.get("fidelity_se", np.inf))))
         return best, dict(observed)
+
+    def _working_control_tuple(self):
+        """Return every physical coordinate needed to replay one candidate exactly."""
+        return {
+            "read_pulse_freq": float(self.w["read_pulse_freq"]),
+            "read_pulse_gain": int(self.w["read_pulse_gain"]),
+            "read_length": float(self.w["read_length"]),
+            "res_phase": float(self.w.get("res_phase", 0.0)),
+            "relax_delay": float(self.w["relax_delay"]),
+            "qubit_freq": float(self.w["qubit_freq"]),
+            "qubit_pi_freq": float(self.w["drive_freq"]),
+            "qubit_pi_gain": int(self.w["pi_gain"]),
+            "sigma": float(self.w["sigma_us"]),
+            "qubit_drag_beta": float(self.w.get("drag_beta", 0.0)),
+        }
+
+    def _control_cfg(self, control):
+        """Build a production-equivalent config without consulting mutable ``self.w``."""
+        c = dict(self.cfg)
+        c.update(copy.deepcopy(control))
+        c["adc_trig_offset"] = float(self.cfg.get("adc_trig_offset", 0.5))
+        c["readout_guard_us"] = float(self.cfg.get("readout_guard_us", 1.0))
+        c["read_pulse_length"] = readout_drive_length_us(c)
+        return c
+
+    @staticmethod
+    def _same_control_tuple(left, right):
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+        exact_int = ("read_pulse_gain", "qubit_pi_gain")
+        for key in exact_int:
+            if int(left.get(key, -1)) != int(right.get(key, -2)):
+                return False
+        tolerances = {
+            "read_pulse_freq": 1e-6, "read_length": 1e-9,
+            "res_phase": 1e-6, "relax_delay": 1e-9,
+            "qubit_freq": 1e-6, "qubit_pi_freq": 1e-6,
+            "sigma": 1e-10, "qubit_drag_beta": 1e-8,
+        }
+        for key, tol in tolerances.items():
+            if abs(float(left.get(key, np.nan)) - float(right.get(key, np.nan))) > tol:
+                return False
+        return True
+
+    def _measure_control_tuple(self, control, shots, evidence):
+        """Measure and archive an atomic readout+drive+waveform tuple."""
+        cfg = self._control_cfg(control)
+        ss = self._balanced_single_shot(
+            cfg, float(control["qubit_pi_freq"]), int(control["qubit_pi_gain"]),
+            int(shots), strict=True)
+        row = {
+            "freq": float(control["read_pulse_freq"]),
+            "gain": int(control["read_pulse_gain"]),
+            "fid": float(ss["fidelity"]),
+            "fid_se": float(ss.get("fidelity_se", np.inf)),
+            "sep": float(ss["sep_sigma"]),
+            "outlier": float(ss["outlier_frac"]),
+            "verified": bool(ss.get("ok", True)), "ss": ss,
+        }
+        entry = self._record_empirical_candidate(
+            "protected_control", row, control["read_pulse_freq"],
+            control["read_pulse_gain"], control["qubit_pi_freq"],
+            control["qubit_pi_gain"], int(shots), True,
+            evidence=evidence, measured_cfg=cfg)
+        if entry is not None:
+            row["archive_index"] = int(entry["index"])
+        return row
+
+    def _capture_protected_control(self):
+        """Replay the exact input config before the optimizer changes one coordinate."""
+        P = self.P["safety"]
+        control = self._working_control_tuple()
+        rows = [self._measure_control_tuple(
+            control, int(P["baseline_shots"]), "exact_input_block_%d" % (j + 1))
+                for j in range(max(int(P["baseline_blocks"]), 2))]
+        agg = self._aggregate_ss_blocks(rows, P.get("max_block_spread", 0.06))
+        if agg is None:
+            raise TunerError(
+                "protected_control: the exact input tuple produced no finite direct "
+                "ground/excited measurement; optimization is unsafe")
+        z = float(P.get("confidence_sigma", 1.96))
+        agg["lcb"] = fidelity_lower_bound(agg["fid"], agg["fid_se"], z)
+        agg["ucb"] = float(agg["fid"] + z * agg["fid_se"])
+        expected = P.get("expected_min_fidelity_lcb")
+        passed = bool(agg.get("verified", False)
+                      and (expected is None or agg["lcb"] >= float(expected)))
+        self.protected_control = {
+            "tuple": copy.deepcopy(control), "aggregate": copy.deepcopy(agg),
+            "source": "exact_input", "promotion_count": 0,
+        }
+        self.w["control_validation_passed"] = passed
+        self.w["control_validation_only"] = bool(P.get("baseline_only", False))
+        self.node_data["protected_control"] = {
+            "revision": AUTOTUNER_REVISION,
+            "input_tuple": copy.deepcopy(control), "baseline": copy.deepcopy(agg),
+            "comparisons": [], "validation_only": bool(P.get("baseline_only", False)),
+            "expected_min_fidelity_lcb": expected, "passed": passed,
+        }
+        self._say(
+            "control", "OK" if passed else "WARN",
+            "EXACT input tuple replay: F=%.3f +/- %.3f (95%% LCB %.3f, spread %.3f; "
+            "%d blocks)%s"
+            % (agg["fid"], agg["fid_se"], agg["lcb"], agg["block_spread"],
+               len(rows),
+               "" if expected is None else " -- required LCB %.3f" % float(expected)))
+        if P.get("baseline_only", False):
+            self.w["ss_fidelity"] = float(agg["fid"])
+            self.w["ss_fidelity_se"] = float(agg["fid_se"])
+            self.w["ss_fidelity_lcb"] = float(agg["lcb"])
+            self.w["ss_sep_sigma"] = float(agg["sep"])
+            self.w["duration_active"] = False
+            self.w["leakage_active"] = False
+            if passed:
+                self._say(
+                    "control", "OK",
+                    "baseline-only validation complete -- no search was started and "
+                    "no setting was changed")
+            else:
+                self.w["control_validation_failure"] = (
+                    "the tuner program did not reproduce the configured known-good "
+                    "control; inspect pulse/readout path identity before optimizing")
+                self._say(
+                    "control", "WARN",
+                    "baseline-only validation FAILED -- stopping before spectroscopy "
+                    "or optimization so a pulse-path mismatch cannot be hidden")
+            raise ControlValidationComplete()
+
+    def _register_unstable_decision(self, node, detail):
+        counts = self.w.setdefault("unstable_decisions", {})
+        counts[node] = int(counts.get(node, 0)) + 1
+        total = int(sum(counts.values()))
+        limit = max(int(self.P["safety"].get("max_unstable_decisions", 2)), 1)
+        self.node_data.setdefault("safety", {}).setdefault(
+            "unstable_decisions", []).append({
+                "node": str(node), "detail": str(detail), "node_count": counts[node],
+                "total": total, "limit": limit})
+        return total >= limit
+
+    def _runtime_budget_exhausted(self):
+        limit = self.P["safety"].get("max_runtime_minutes")
+        if limit is None or not hasattr(self, "_run_started_monotonic"):
+            return False
+        return (time.monotonic() - self._run_started_monotonic) >= 60.0 * float(limit)
+
+    def _restore_protected_control(self, reason):
+        protected = getattr(self, "protected_control", None)
+        if not isinstance(protected, dict):
+            return
+        c = protected["tuple"]
+        self.w.update({
+            "read_pulse_freq": float(c["read_pulse_freq"]),
+            "read_pulse_gain": int(c["read_pulse_gain"]),
+            "read_length": float(c["read_length"]),
+            "res_phase": float(c["res_phase"]),
+            "relax_delay": float(c["relax_delay"]),
+            "qubit_freq": float(c["qubit_freq"]),
+            "drive_freq": float(c["qubit_pi_freq"]),
+            "pi_gain": int(c["qubit_pi_gain"]),
+            "sigma_us": float(c["sigma"]),
+            "drag_beta": float(c["qubit_drag_beta"]),
+            "pi_converged": False, "fine_freq_converged": False,
+            "pi_verified": False, "freq_verified": False,
+            "pi_fidelity_verified": False, "readout_verified": False,
+            "readout_power_verified": False, "readout_len_verified": False,
+            "duration_verified": False, "leakage_verified": False,
+            "fixed_point": False, "qubit_fixed_point": False,
+            "qubit_ok": False, "readout_ok": False,
+            "protected_control_restored": True,
+            "safety_stop_reason": str(reason),
+        })
+        self.w.pop("pi_fidelity_binding", None)
+        updated = set()
+        mapping = {
+            "read_pulse_freq": "read_pulse_freq", "read_pulse_gain": "read_pulse_gain",
+            "read_length": "read_length", "res_phase": "res_phase",
+            "relax_delay": "relax_delay", "qubit_freq": "qubit_freq",
+            "qubit_pi_freq": "qubit_pi_freq", "qubit_pi_gain": "qubit_pi_gain",
+            "sigma": "sigma", "qubit_drag_beta": "qubit_drag_beta",
+        }
+        for key, source in mapping.items():
+            old = self.cfg.get(key, 0.0)
+            new = c[source]
+            if ((key in ("read_pulse_gain", "qubit_pi_gain") and int(old) != int(new))
+                    or (key not in ("read_pulse_gain", "qubit_pi_gain")
+                        and abs(float(old) - float(new)) > 1e-12)):
+                updated.add(key)
+        self.w["updated"] = updated
+        self.stale = {name: True for name, _, _ in GRAPH}
+        self.node_data.setdefault("safety", {})["stop_reason"] = str(reason)
+
+    def _guard_working_control(self, checkpoint, final=False):
+        """Interleave the whole working tuple against the protected best-so-far tuple.
+
+        A coordinate-wise optimizer may pass every local test while the combined tuple
+        is worse.  This is the atomic acceptance gate: only a statistically superior
+        complete tuple can replace the protected control.  A clear regression stops the
+        search and restores the control; an equivalent intermediate may keep exploring.
+        """
+        protected = getattr(self, "protected_control", None)
+        if not isinstance(protected, dict):
+            return True
+        challenger = self._working_control_tuple()
+        incumbent = copy.deepcopy(protected["tuple"])
+        if self._same_control_tuple(challenger, incumbent):
+            return True
+        P = self.P["safety"]
+        blocks = max(int(P.get("guard_blocks", 2)), 2)
+        shots = int(P.get("guard_shots", 1000))
+        rows = {"incumbent": [], "challenger": []}
+        for block in range(blocks):
+            order = ("incumbent", "challenger") if np.random.randint(2) == 0 \
+                else ("challenger", "incumbent")
+            for label in order:
+                control = incumbent if label == "incumbent" else challenger
+                rows[label].append(self._measure_control_tuple(
+                    control, shots, "%s_%s_block_%d" %
+                    (checkpoint, label, block + 1)))
+        inc = self._aggregate_ss_blocks(
+            rows["incumbent"], P.get("max_block_spread", 0.06))
+        cand = self._aggregate_ss_blocks(
+            rows["challenger"], P.get("max_block_spread", 0.06))
+        z = float(P.get("confidence_sigma", 1.96))
+        for row in (inc, cand):
+            if row is not None:
+                row["lcb"] = fidelity_lower_bound(row["fid"], row["fid_se"], z)
+                row["ucb"] = float(row["fid"] + z * row["fid_se"])
+        comparison = {
+            "checkpoint": str(checkpoint), "incumbent": copy.deepcopy(inc),
+            "challenger": copy.deepcopy(cand), "challenger_tuple": challenger,
+            "final": bool(final), "decision": "unresolved",
+        }
+        self.node_data.setdefault("protected_control", {}).setdefault(
+            "comparisons", []).append(comparison)
+        valid = bool(inc is not None and cand is not None
+                     and inc.get("verified", False) and cand.get("verified", False))
+        improved = bool(valid and cand["lcb"] > inc["ucb"]
+                        + float(P.get("min_improvement", 0.005)))
+        noninferior = bool(valid and cand["lcb"]
+                           + float(P.get("max_fidelity_regression", 0.01))
+                           >= inc["lcb"])
+        regressed = bool(valid and cand["ucb"]
+                         + float(P.get("max_fidelity_regression", 0.01)) < inc["lcb"])
+        if improved:
+            comparison["decision"] = "promoted"
+            self.protected_control = {
+                "tuple": copy.deepcopy(challenger), "aggregate": copy.deepcopy(cand),
+                "source": str(checkpoint),
+                "promotion_count": int(protected.get("promotion_count", 0)) + 1,
+            }
+            self._say(
+                "control", "OK",
+                "%s atomic challenger F=%.3f +/- %.3f beat protected F=%.3f +/- "
+                "%.3f -- promoted" % (checkpoint, cand["fid"], cand["fid_se"],
+                                        inc["fid"], inc["fid_se"]))
+            return True
+        if not valid:
+            comparison["decision"] = "unstable_rejected"
+            reason = ("%s: atomic incumbent/challenger blocks were unstable; the "
+                      "challenger is rejected and the protected tuple is restored"
+                      % checkpoint)
+            self._restore_protected_control(reason)
+            self._say("control", "WARN", reason)
+            if not final:
+                raise TunerError(reason)
+            return False
+        if regressed:
+            comparison["decision"] = "regression_rejected"
+            reason = ("%s: atomic challenger F=%.3f +/- %.3f is worse than protected "
+                      "F=%.3f +/- %.3f; restored the protected tuple and stopped"
+                      % (checkpoint, cand["fid"], cand["fid_se"],
+                         inc["fid"], inc["fid_se"]))
+            self._restore_protected_control(reason)
+            self._say("control", "WARN", reason)
+            if not final:
+                raise TunerError(reason)
+            return False
+        comparison["decision"] = "not_better"
+        if final:
+            if noninferior:
+                comparison["decision"] = "final_noninferior_accepted"
+                self.protected_control = {
+                    "tuple": copy.deepcopy(challenger),
+                    "aggregate": copy.deepcopy(cand),
+                    "source": str(checkpoint),
+                    "promotion_count": int(protected.get("promotion_count", 0)),
+                }
+                self._say(
+                    "control", "OK",
+                    "final atomic challenger is noninferior to the protected control "
+                    "within %.3f fidelity and retains all fresh calibration evidence"
+                    % float(P.get("max_fidelity_regression", 0.01)))
+                return True
+            reason = ("final atomic challenger did not meet the protected-control "
+                      "noninferiority bound; restored the protected tuple")
+            self._restore_protected_control(reason)
+            self._say("control", "OK", reason)
+            return False
+        self._say(
+            "control", "OK",
+            "%s challenger is statistically tied with the protected control; keeping "
+            "the protected incumbent while exploration continues" % checkpoint)
+        # Refresh the protected tuple's uncertainty with the contemporaneous block.
+        self.protected_control["aggregate"] = copy.deepcopy(inc)
+        return True
 
     def _mark_dependents_stale(self, node):
         changed = True
@@ -2534,25 +3074,19 @@ class AutoTuner(ExperimentClass):
                     "readout_power: no finite empirical or independently reproduced "
                     "frequency/gain candidate. %s"
                     % self._confirmation_diagnostics(screen_confirmed))
-            self.w["read_pulse_freq"] = round(float(empirical["freq"]), 4)
-            self.w["read_pulse_gain"] = int(empirical["gain"])
             self.w["readout_power_verified"] = False
-            self.w["updated"].update(("read_pulse_freq", "read_pulse_gain"))
             self.node_data["readout_power"].update({
                 "selected": dict(empirical), "challenger": dict(empirical),
-                "status": "best_empirical_not_certified",
+                "status": "unstable_challenger_rejected",
             })
-            self._say(
-                "readout_power", "WARN",
-                "independent confirmation was unstable; continuing with the best "
-                "empirical map point %.4f MHz/%d DAC (F=%.3f +/- %.3f) as an "
-                "UNCERTIFIED exploration seed. It remains in best_found even if later "
-                "validation fails. Diagnostics: %s"
-                % (empirical["freq"], empirical["gain"], empirical["fid"],
-                   empirical["fid_se"],
-                   self._confirmation_diagnostics(screen_confirmed)))
-            return {"f": float(empirical["freq"]), "g": float(empirical["gain"])}, \
-                {"f": 0.0, "g": 0.0}
+            detail = ("independent readout confirmation was unstable; empirical %.4f "
+                      "MHz/%d DAC (F=%.3f +/- %.3f) was archived but NOT installed. %s"
+                      % (empirical["freq"], empirical["gain"], empirical["fid"],
+                         empirical["fid_se"],
+                         self._confirmation_diagnostics(screen_confirmed)))
+            self._register_unstable_decision("readout_power", detail)
+            self._restore_protected_control(detail)
+            raise TunerError("readout_power: " + detail)
 
         # The screen is independent of the coarse map but still selects among several
         # candidates.  If it nominates a challenger, make the actual write decision on
@@ -2576,23 +3110,20 @@ class AutoTuner(ExperimentClass):
             max_outlier=float(P["outlier_max"]))
         if best is None:
             chosen = screen_best
-            self.w["read_pulse_freq"] = round(float(chosen["freq"]), 4)
-            self.w["read_pulse_gain"] = int(chosen["gain"])
             self.w["readout_power_verified"] = False
-            self.w["updated"].update(("read_pulse_freq", "read_pulse_gain"))
             self.node_data["readout_power"].update({
                 "selected": dict(chosen), "challenger": dict(chosen),
-                "status": "screened_best_fresh_decision_unstable",
+                "status": "fresh_unstable_challenger_rejected",
             })
-            self._say(
-                "readout_power", "WARN",
-                "the fresh winner/incumbent decision was unstable; continuing with the "
-                "independently screened point %.4f MHz/%d DAC (F=%.3f +/- %.3f) as an "
-                "UNCERTIFIED exploration seed. Diagnostics: %s"
-                % (chosen["freq"], chosen["gain"], chosen["fid"], chosen["fid_se"],
-                   self._confirmation_diagnostics(decision_confirmed)))
-            return {"f": float(chosen["freq"]), "g": float(chosen["gain"])}, \
-                {"f": 0.0, "g": 0.0}
+            detail = ("fresh readout challenger/incumbent decision was unstable; "
+                      "screened %.4f MHz/%d DAC (F=%.3f +/- %.3f) was archived but "
+                      "NOT installed. %s"
+                      % (chosen["freq"], chosen["gain"], chosen["fid"],
+                         chosen["fid_se"],
+                         self._confirmation_diagnostics(decision_confirmed)))
+            self._register_unstable_decision("readout_power", detail)
+            self._restore_protected_control(detail)
+            raise TunerError("readout_power: " + detail)
         chosen = (best if decision_incumbent is None
                   or best["improvement_significant"] else decision_incumbent)
         moved = (abs(float(chosen["freq"]) - f_inc) > 1e-9
@@ -2622,6 +3153,7 @@ class AutoTuner(ExperimentClass):
                       "because this heuristic is not a QND/ionization test; the fresh "
                       "fidelity verification, not an isotropic blob model, decides the "
                       "winner" % (100 * best["outlier"]))
+        self._guard_working_control("readout_power")
         return {"f": float(chosen["freq"]), "g": float(chosen["gain"])}, \
             ({"f": 0.0, "g": 0.0} if moved else
              {"f": max(abs(df) / max(nr - 1, 1), 0.002),
@@ -2857,21 +3389,17 @@ class AutoTuner(ExperimentClass):
                     "sep": float(coarse_best["sep"]),
                     "outlier": float(coarse_best["outlier"]),
                     "fid_se": np.nan}
-            self.w["read_length"] = float(best["len"])
             self.w["readout_len_verified"] = False
-            self.w["updated"].add("read_length")
             self.node_data["readout_len"].update({
-                "selected": dict(best), "status": "best_empirical_not_certified",
+                "selected": dict(best), "status": "unstable_challenger_rejected",
             })
-            self._say(
-                "readout_len", "WARN",
-                "independent length confirmation was unstable; continuing at the "
-                "best opposed-sweep point %.1f us (F=%.3f) as an UNCERTIFIED "
-                "exploration seed. Diagnostics: %s"
-                % (best["len"], best["fid"],
-                   self._confirmation_diagnostics(screen_confirmed)))
-            return {"L": best["len"]}, {
-                "L": 0.0 if abs(best["len"] - old_length) > 1e-12 else 0.05}
+            detail = ("independent length confirmation was unstable; empirical %.1f "
+                      "us (F=%.3f) was archived but NOT installed. %s"
+                      % (best["len"], best["fid"],
+                         self._confirmation_diagnostics(screen_confirmed)))
+            self._register_unstable_decision("readout_len", detail)
+            self._restore_protected_control(detail)
+            raise TunerError("readout_len: " + detail)
         decision_candidates = [(float(screen_best["freq"]), 0)]
         if incumbent is not None and (old_length, 0) not in decision_candidates:
             decision_candidates.append((old_length, 0))
@@ -2890,22 +3418,19 @@ class AutoTuner(ExperimentClass):
                     "sep": float(selected["sep"]),
                     "outlier": float(selected["outlier"]),
                     "fid_se": float(selected["fid_se"])}
-            self.w["read_length"] = float(best["len"])
             self.w["readout_len_verified"] = False
-            self.w["updated"].add("read_length")
             self.node_data["readout_len"].update({
                 "confirmed": decision_confirmed, "selected": dict(best),
-                "status": "screened_best_fresh_decision_unstable",
+                "status": "fresh_unstable_challenger_rejected",
             })
-            self._say(
-                "readout_len", "WARN",
-                "the fresh length decision was unstable; continuing at the "
-                "independently screened %.1f us point (F=%.3f +/- %.3f) as an "
-                "UNCERTIFIED exploration seed. Diagnostics: %s"
-                % (best["len"], best["fid"], best["fid_se"],
-                   self._confirmation_diagnostics(decision_confirmed)))
-            return {"L": best["len"]}, {
-                "L": 0.0 if abs(best["len"] - old_length) > 1e-12 else 0.05}
+            detail = ("fresh length challenger/incumbent decision was unstable; "
+                      "screened %.1f us (F=%.3f +/- %.3f) was archived but NOT "
+                      "installed. %s"
+                      % (best["len"], best["fid"], best["fid_se"],
+                         self._confirmation_diagnostics(decision_confirmed)))
+            self._register_unstable_decision("readout_len", detail)
+            self._restore_protected_control(detail)
+            raise TunerError("readout_len: " + detail)
         selected = (decision_best if decision_incumbent is None
                     or decision_best["improvement_significant"] else decision_incumbent)
         best = {"len": float(selected["freq"]), "fid": float(selected["fid"]),
@@ -2935,6 +3460,7 @@ class AutoTuner(ExperimentClass):
                                        "capped at T1/2 = %.1f us)"
                   % (best["len"], best["fid"], best["fid_se"], best["sep"],
                      coarse_best["len"], 0.5 * t1))
+        self._guard_working_control("readout_len")
         # Frequency/gain were measured with the old ADC window.  Any selected duration
         # change therefore invalidates that 2-D map; this is a pulse-timing identity,
         # not a 40%-heuristic movement test.
@@ -3025,6 +3551,7 @@ class AutoTuner(ExperimentClass):
                          if at_limit else
                          "BELOW the limit, so there is headroom in the discrimination "
                          "itself (rotation angle, threshold, integration weights)"))
+        self._guard_working_control("single_shot")
         return {"F": ss["fidelity"]}, {"F": 0.02}
 
     def _cal_pi_fidelity(self):
@@ -3186,37 +3713,32 @@ class AutoTuner(ExperimentClass):
                 self.w.pop("pi_fidelity_binding", None)
                 seed = empirical_seed
                 if seed is not None:
-                    self.w["drive_freq"] = round(float(seed["freq"]), 4)
-                    self.w["pi_gain"] = int(seed["gain"])
-                    self.w["pi_gain_anchor_err"] = max(
-                        abs(dg) / 2.0, 0.02 * float(seed["gain"]), 20.0)
-                    self.w["pi_converged"] = False
-                    self.w["fine_freq_converged"] = False
-                    self.w["pi_verified"] = False
-                    self.w["freq_verified"] = False
-                    self.w["updated"].update(("qubit_pi_freq", "qubit_pi_gain"))
                     self.node_data["pi_fidelity"]["provisional_seed"] = dict(seed)
-                self._say(
-                    "pi_fidelity", "WARN",
-                    "the first local 2-D confirmation was unstable. Keeping the "
-                    "%s PROVISIONALLY so signed frequency and amplitude refinement can "
-                    "run; the map must pass when retried at that refined pulse. "
-                    "Diagnostics: %s"
-                    % (("best empirical map point %.4f/%d (F=%.3f)" %
+                detail = (
+                    "the first local 2-D confirmation was unstable. The empirical "
+                    "%s was archived but NOT installed; keeping incumbent %.4f/%d "
+                    "for signed coherent refinement. Diagnostics: %s"
+                    % (("map point %.4f/%d (F=%.3f)" %
                         (seed["freq"], seed["gain"], seed["fid"]))
-                       if seed is not None else "coherent rough-Rabi anchor", diag))
-                return {"f": float(self.w["drive_freq"]),
-                        "g": float(self.w["pi_gain"])}, {"f": 0.0, "g": 0.0}
+                       if seed is not None else "map", f0, g0, diag))
+                stop = self._register_unstable_decision("pi_fidelity", detail)
+                self._say("pi_fidelity", "WARN", detail)
+                if stop:
+                    self._restore_protected_control(detail)
+                    raise TunerError("pi_fidelity: " + detail)
+                return {"f": f0, "g": float(g0)}, {"f": 0.02, "g": 20.0}
             self.w["pi_fidelity_verified"] = False
             self.w["pi_fidelity_retry_required"] = False
             self.w["pi_fidelity_audit_failed"] = True
             self.w.pop("pi_fidelity_binding", None)
-            self._say(
-                "pi_fidelity", "WARN",
-                "the post-refinement local audit remained unstable. Automatic writes "
-                "are blocked, but the coherent candidate and every empirical map point "
-                "are retained; continuing to final best-effort reporting. Diagnostics: %s"
-                % diag)
+            detail = ("the post-refinement local audit remained unstable; every map "
+                      "point is archived, the incumbent is unchanged, and writes are "
+                      "blocked. Diagnostics: %s" % diag)
+            stop = self._register_unstable_decision("pi_fidelity", detail)
+            self._say("pi_fidelity", "WARN", detail)
+            if stop:
+                self._restore_protected_control(detail)
+                raise TunerError("pi_fidelity: " + detail)
             return {"f": float(self.w["drive_freq"]),
                     "g": float(self.w["pi_gain"])}, {"f": 0.02, "g": 20.0}
 
@@ -3251,36 +3773,32 @@ class AutoTuner(ExperimentClass):
                 self.w.pop("pi_fidelity_binding", None)
                 seed = screen_best if screen_best is not None else empirical_seed
                 if seed is not None:
-                    self.w["drive_freq"] = round(float(seed["freq"]), 4)
-                    self.w["pi_gain"] = int(seed["gain"])
-                    self.w["pi_gain_anchor_err"] = max(
-                        abs(dg) / 2.0, 0.02 * float(seed["gain"]), 20.0)
-                    self.w["pi_converged"] = False
-                    self.w["fine_freq_converged"] = False
-                    self.w["pi_verified"] = False
-                    self.w["freq_verified"] = False
-                    self.w["updated"].update(("qubit_pi_freq", "qubit_pi_gain"))
                     self.node_data["pi_fidelity"]["provisional_seed"] = dict(seed)
-                self._say(
-                    "pi_fidelity", "WARN",
-                    "the first fresh challenger/incumbent decision was unstable. "
-                    "Keeping %s provisionally for signed coherent refinement, then "
-                    "requiring a new map. Diagnostics: %s"
-                    % (("the best screened point %.4f/%d (F=%.3f)" %
+                detail = (
+                    "the fresh challenger/incumbent decision was unstable. The %s "
+                    "was archived but NOT installed; keeping incumbent %.4f/%d. "
+                    "Diagnostics: %s"
+                    % (("screened point %.4f/%d (F=%.3f)" %
                         (seed["freq"], seed["gain"], seed["fid"]))
-                       if seed is not None else "the rough-Rabi anchor", diag))
-                return {"f": float(self.w["drive_freq"]),
-                        "g": float(self.w["pi_gain"])}, {"f": 0.0, "g": 0.0}
+                       if seed is not None else "map", f0, g0, diag))
+                stop = self._register_unstable_decision("pi_fidelity", detail)
+                self._say("pi_fidelity", "WARN", detail)
+                if stop:
+                    self._restore_protected_control(detail)
+                    raise TunerError("pi_fidelity: " + detail)
+                return {"f": f0, "g": float(g0)}, {"f": 0.02, "g": 20.0}
             self.w["pi_fidelity_verified"] = False
             self.w["pi_fidelity_retry_required"] = False
             self.w["pi_fidelity_audit_failed"] = True
             self.w.pop("pi_fidelity_binding", None)
-            self._say(
-                "pi_fidelity", "WARN",
-                "the post-refinement fresh decision remained unstable. Automatic writes "
-                "are blocked, but the coherent candidate and every empirical map point "
-                "are retained; continuing to final best-effort reporting. Diagnostics: %s"
-                % diag)
+            detail = ("the post-refinement fresh decision remained unstable; every "
+                      "point is archived, the incumbent is unchanged, and writes are "
+                      "blocked. Diagnostics: %s" % diag)
+            stop = self._register_unstable_decision("pi_fidelity", detail)
+            self._say("pi_fidelity", "WARN", detail)
+            if stop:
+                self._restore_protected_control(detail)
+                raise TunerError("pi_fidelity: " + detail)
             return {"f": float(self.w["drive_freq"]),
                     "g": float(self.w["pi_gain"])}, {"f": 0.02, "g": 20.0}
         improve = bool(best["improvement_significant"])
@@ -3321,6 +3839,7 @@ class AutoTuner(ExperimentClass):
                 "gain_radius": max(abs(dg) / max(nr - 1, 1), 20.0),
             }
             chosen = decision_incumbent
+        self._guard_working_control("pi_fidelity")
         return {"f": float(chosen["freq"]), "g": float(chosen["gain"])}, \
             ({"f": 0.0, "g": 0.0} if improve else
              {"f": max(abs(df) / max(nr - 1, 1), 0.02),
@@ -3775,7 +4294,7 @@ class AutoTuner(ExperimentClass):
         P = self.P["fine_pi_amp"]
         audit_shots = max(20, int(P["shots"] if shots is None else shots))
         gap = float(cfg.get("seq_gap_us", 0.01) if gap_us is None else gap_us)
-        t_pi = 4.0 * float(self.cfg["sigma"])
+        t_pi = 4.0 * float(self.w.get("sigma_us", self.cfg["sigma"]))
         t1 = float(self.w.get("t1_lo_us", self.w.get("t1_us", np.inf)))
         if np.isfinite(t1) and t1 > 0:
             max_depth = max(1, int(np.floor(0.5 * t1 / max(t_pi + gap, 1e-12))))
@@ -3893,7 +4412,7 @@ class AutoTuner(ExperimentClass):
                          float(P["anchor_floor_frac"]) * anchor)
         est_err = anchor_err
         t1 = float(self.w.get("t1_lo_us", self.w.get("t1_us", 30.0)))
-        t_pi = 4.0 * float(self.cfg["sigma"])
+        t_pi = 4.0 * float(self.w.get("sigma_us", self.cfg["sigma"]))
         gap = float(cfg.get("seq_gap_us", 0.01))
         depths = [1]
         for raw in P["M_list"]:
@@ -4132,6 +4651,723 @@ class AutoTuner(ExperimentClass):
             {"g": max(3.0 * applied_err,
                       float(P["tol_frac"]) * max(float(self.w["pi_gain"]), 1.0))}
 
+    def _duration_ss_point(self, cfg, sigma_us, drive_freq, pi_gain, shots,
+                           strict, evidence):
+        """One pulse-duration point using the exact candidate waveform and readout."""
+        c = dict(cfg)
+        c["sigma"] = float(sigma_us)
+        ss = self._balanced_single_shot(
+            c, float(drive_freq), int(pi_gain), int(shots), strict=bool(strict))
+        row = {
+            "sigma_us": float(sigma_us), "gate_ns": 4000.0 * float(sigma_us),
+            "freq": float(drive_freq), "gain": int(pi_gain),
+            "fid": float(ss.get("fidelity", np.nan)),
+            "fid_se": float(ss.get("fidelity_se", np.inf)),
+            "sep": float(ss.get("sep_sigma", np.nan)),
+            "outlier": float(ss.get("outlier_frac", np.inf)),
+            "verified": bool(ss.get("ok", False)), "ss": ss,
+        }
+        entry = self._record_empirical_candidate(
+            "pulse_duration", row, c["read_pulse_freq"], c["read_pulse_gain"],
+            drive_freq, pi_gain, shots, strict, evidence=evidence, measured_cfg=c)
+        if entry is not None:
+            row["archive_index"] = int(entry["index"])
+        return row
+
+    def _cal_pulse_duration(self):
+        """Screen and confirm Gaussian duration with a fresh map at every duration.
+
+        Pulse area gives only a branch-safe gain seed.  Every candidate receives an
+        independent frequency x gain map because drive compression and ac-Stark shift
+        invalidate inverse-duration scaling.  Final duration comparisons are interleaved
+        by block, preventing a slow readout drift from masquerading as a duration trend.
+        The full graph is rerun after adoption, and the direct leakage/DRAG stage remains
+        a mandatory downstream constraint.
+        """
+        P = self.P["pulse_duration"]
+        incumbent_sigma = float(self.w["sigma_us"])
+        incumbent_gain = max(float(self.w["pi_gain"]), 1.0)
+        durations = [float(v) for v in P.get("gate_durations_ns", ())]
+        durations.append(4000.0 * incumbent_sigma)
+        lo, hi = float(P["minimum_gate_ns"]), float(P["maximum_gate_ns"])
+        durations = np.unique(np.round(
+            [v for v in durations if np.isfinite(v) and lo <= v <= hi], 6))
+        if durations.size < 1:
+            raise TunerError("pulse_duration: the configured duration grid is empty")
+        max_gain = int(P["max_gain"])
+        base_cfg = self._cfg_for("pulse_duration")
+        seeds, scans, skipped = [], [], []
+        z_screen = simultaneous_confidence_sigma(
+            max(int(durations.size), 1), P.get("familywise_alpha", 0.05),
+            P.get("confidence_sigma", 1.96))
+        for gate_ns in durations:
+            sigma_us = float(gate_ns) / 4000.0
+            predicted = incumbent_gain * incumbent_sigma / sigma_us
+            is_incumbent = abs(sigma_us - incumbent_sigma) <= 1e-10
+            if (predicted > float(P["predicted_gain_margin"]) * max_gain
+                    and not is_incumbent):
+                skipped.append({"gate_ns": float(gate_ns),
+                                "predicted_gain": float(predicted),
+                                "reason": "gain_limit"})
+                self._say("pulse_duration", "OK",
+                          "skipping %.1f ns: pulse-area seed %.0f DAC exceeds the %d "
+                          "DAC search authority" % (gate_ns, predicted, max_gain))
+                continue
+            predicted = float(np.clip(predicted, 30.0, max_gain))
+            gate_us = max(float(gate_ns) / 1000.0, 1e-6)
+            fspan = max(float(P["base_freq_span_mhz"]),
+                        min(float(P["max_freq_span_mhz"]),
+                            float(P["bandwidth_freq_fraction"]) / gate_us))
+            candidate_rows = []
+            for extension in range(2):
+                factor = 1.0 if extension == 0 else 1.5
+                frac = min(float(P["gain_span_frac"]) * factor, 0.60)
+                freqs = np.linspace(float(self.w["drive_freq"]) - factor * fspan / 2.0,
+                                    float(self.w["drive_freq"]) + factor * fspan / 2.0,
+                                    max(int(P["freq_points"]), 3))
+                gains = np.unique(np.clip(np.round(np.linspace(
+                    predicted * (1.0 - frac), predicted * (1.0 + frac),
+                    max(int(P["gain_points"]), 5))), 30, max_gain).astype(int))
+                cfg = dict(base_cfg)
+                cfg["sigma"] = sigma_us
+                rows = []
+                settings = [(float(f), int(g), fi, gi)
+                            for gi, g in enumerate(gains)
+                            for fi, f in enumerate(freqs)]
+                for raw in np.random.permutation(len(settings)):
+                    f, g, fi, gi = settings[int(raw)]
+                    row = self._duration_ss_point(
+                        cfg, sigma_us, f, g, int(P["coarse_shots"]), False,
+                        "duration_coarse")
+                    row.update({"freq_index": fi, "gain_index": gi,
+                                "extension": extension})
+                    rows.append(row)
+                candidate_rows.extend(rows)
+                eligible = [r for r in rows if r.get("verified")
+                            and np.isfinite(r.get("fid_se", np.inf))
+                            and r.get("outlier", np.inf) <= float(P["outlier_max"])]
+                if not eligible:
+                    continue
+                winner = max(eligible, key=lambda r: fidelity_lower_bound(
+                    r["fid"], r["fid_se"], z_screen))
+                edge = (winner["freq_index"] in (0, len(freqs) - 1)
+                        or winner["gain_index"] in (0, len(gains) - 1))
+                if not edge:
+                    break
+                if extension == 0:
+                    self._say("pulse_duration", "WARN",
+                              "%.1f-ns screen winner lies on its frequency/gain edge; "
+                              "expanding once" % gate_ns)
+            usable = [r for r in candidate_rows if r.get("verified")
+                      and np.isfinite(r.get("fid_se", np.inf))
+                      and r.get("outlier", np.inf) <= float(P["outlier_max"])]
+            scans.append({"gate_ns": float(gate_ns), "sigma_us": sigma_us,
+                          "predicted_gain": predicted, "rows": candidate_rows})
+            if not usable:
+                self._say("pulse_duration", "WARN",
+                          "%.1f ns produced no valid frequency/gain screen point" % gate_ns)
+                continue
+            seed = max(usable, key=lambda r: fidelity_lower_bound(
+                r["fid"], r["fid_se"], z_screen))
+            seeds.append(dict(seed))
+            self._say("pulse_duration", "OK",
+                      "%.1f ns screen -> %.4f MHz/%d DAC, F %.3f +/- %.3f"
+                      % (gate_ns, seed["freq"], seed["gain"], seed["fid"],
+                         seed["fid_se"]))
+        if not seeds:
+            raise TunerError(
+                "pulse_duration: no duration produced a valid frequency/gain seed")
+
+        # Held-out decisions are block-interleaved across *all* durations.  The same
+        # temporal block therefore contains every duration exactly once.
+        nblocks = max(int(P["confirm_blocks"]), 2)
+        blocks = [[] for _ in seeds]
+        for block in range(nblocks):
+            for raw in np.random.permutation(len(seeds)):
+                j = int(raw)
+                seed = seeds[j]
+                cfg = dict(base_cfg)
+                cfg["sigma"] = float(seed["sigma_us"])
+                blocks[j].append(self._duration_ss_point(
+                    cfg, seed["sigma_us"], seed["freq"], seed["gain"],
+                    int(P["confirm_shots"]), True,
+                    "duration_confirm_block_%d" % (block + 1)))
+        confirmed = []
+        for seed, vals in zip(seeds, blocks):
+            agg = self._aggregate_ss_blocks(
+                vals, max_disagreement=float(P["max_block_spread"]))
+            if agg is not None:
+                agg["sigma_us"] = float(seed["sigma_us"])
+                agg["gate_ns"] = 4000.0 * float(seed["sigma_us"])
+                confirmed.append(agg)
+        if len(confirmed) == len(seeds) and len(seeds) >= 2:
+            centres = np.asarray([[float(blocks[j][b]["fid"])
+                                   for j in range(len(seeds))]
+                                  for b in range(nblocks)], dtype=float)
+            if np.all(np.isfinite(centres)):
+                common = np.median(centres, axis=1)
+                for j, agg in enumerate(confirmed):
+                    relative = centres[:, j] - common
+                    spread = float(np.ptp(relative)) if relative.size > 1 else 0.0
+                    agg["relative_block_spread"] = spread
+                    agg["common_mode_block_spread"] = (
+                        float(np.ptp(common)) if common.size > 1 else 0.0)
+                    agg["relative_stable"] = bool(
+                        spread <= float(P["max_block_spread"]))
+                    agg["verified"] = bool(
+                        agg["measurement_valid"]
+                        and (agg["absolute_stable"] or agg["relative_stable"]))
+        z = simultaneous_confidence_sigma(
+            max(len(confirmed), 1), P.get("familywise_alpha", 0.05),
+            P.get("confidence_sigma", 1.96))
+        chosen = select_duration_candidate(
+            confirmed, incumbent_sigma, confidence_sigma=z,
+            equivalence_margin=float(P["equivalence_margin"]),
+            max_fidelity_drop=float(P["max_fidelity_drop"]),
+            prefer_shorter=bool(P["prefer_shorter"]))
+        self.node_data["pulse_duration"] = {
+            "scans": scans, "skipped": skipped, "seeds": seeds,
+            "confirmed": confirmed, "selection_sigma": float(z),
+            "chosen": chosen,
+        }
+        if chosen is None:
+            raise TunerError(
+                "pulse_duration: held-out duration comparisons did not reproduce")
+        old_sigma = incumbent_sigma
+        moved = abs(float(chosen["sigma_us"]) - old_sigma) > 1e-10
+        self.w["duration_optimized"] = True
+        self.w["duration_verified"] = bool(chosen.get("verified", False))
+        if moved:
+            self.w.update(sigma_us=float(chosen["sigma_us"]),
+                          drive_freq=float(chosen["freq"]),
+                          pi_gain=int(chosen["gain"]))
+            self.w["updated"].update(("sigma", "qubit_pi_freq", "qubit_pi_gain"))
+            self._say("pulse_duration", "OK",
+                      "adopting %.1f ns (sigma %.6f us) from %.1f ns: held-out "
+                      "F %.3f +/- %.3f; the full calibration graph and leakage/DRAG "
+                      "audit will now rerun on this waveform"
+                      % (chosen["gate_ns"], chosen["sigma_us"], 4000.0 * old_sigma,
+                         chosen["fid"], chosen["fid_se"]))
+        else:
+            self._say("pulse_duration", "OK",
+                      "keeping %.1f ns: no other duration offered a statistically "
+                      "equivalent faster pulse or a significant fidelity improvement"
+                      % chosen["gate_ns"])
+        return moved
+
+    def _invalidate_waveform_dependents(self):
+        """Invalidate every graph node that measured the old physical qubit pulse."""
+        self.stale["rough_pi"] = True
+        self._mark_dependents_stale("rough_pi")
+        self.w.update(pi_converged=False, fine_freq_converged=False,
+                      pi_verified=False, freq_verified=False,
+                      pi_fidelity_verified=False, fixed_point=False)
+        self.w.pop("pi_fidelity_binding", None)
+
+    def _run_leakage_stage(self):
+        """Optimize DRAG, re-close the graph, and run fresh leakage verification."""
+        try:
+            drag_moved = self._cal_leakage()
+        except TunerError as leak_err:
+            self.w["leakage_failure"] = str(leak_err)
+            self.w["leakage_optimized"] = False
+            self.w["leakage_verified"] = False
+            self.node_data.setdefault("leakage", {})["failure"] = str(leak_err)
+            self._say(
+                "leakage", "WARN",
+                "%s. The best measured pi candidate is still retained, but a "
+                "two-state readout cannot certify leakage." % leak_err)
+            return False
+        if drag_moved:
+            self._invalidate_waveform_dependents()
+            self.maintain()
+        if self.w.get("leakage_optimized", False):
+            try:
+                self._verify_leakage()
+            except Exception as leak_verify_err:
+                self.w["leakage_verified"] = False
+                self.w["leakage_failure"] = str(leak_verify_err)
+                self._say("leakage", "WARN",
+                          "fresh leakage verification failed (%s); best pulse is "
+                          "retained but not certified" % leak_verify_err)
+        return bool(self.w.get("leakage_verified", False))
+
+    def _duration_leakage_fallbacks(self):
+        """Longer held-out duration candidates for leakage-constrained recovery."""
+        pd = self.node_data.get("pulse_duration", {})
+        rows = [r for r in pd.get("confirmed", [])
+                if r.get("verified", False)
+                and float(r.get("sigma_us", 0.0)) > float(self.w["sigma_us"]) + 1e-10]
+        return sorted(rows, key=lambda r: (float(r["sigma_us"]),
+                                            -float(r.get("fid", -np.inf))))
+
+    def _leakage_enabled(self):
+        """Whether the device configuration identifies a transmon leakage target."""
+        mode = self.P["leakage"].get("enabled", "auto")
+        if isinstance(mode, str) and mode.lower() == "auto":
+            def finite(value):
+                try:
+                    return bool(np.isfinite(float(value)))
+                except (TypeError, ValueError):
+                    return False
+            return bool(finite(self.cfg.get("qubit_ef_freq"))
+                        or finite(self.cfg.get("qubit_anharmonicity_mhz"))
+                        or finite(self.P["leakage"].get(
+                            "anharmonicity_prior_mhz")))
+        return bool(mode)
+
+    @staticmethod
+    def _ef_pulse(gain, freq, phase=0.0):
+        return ("pulse_at", int(gain), float(phase), float(freq), "gaussian")
+
+    def _cal_ef_transition(self):
+        """Calibrate e-f frequency and pi gain with a g-e/e-f/g-e shelving witness."""
+        P = self.P["leakage"]
+        cfg = self._cfg_for("leakage")
+        ge = ("pulse", int(self.w["pi_gain"]), 0.0)
+        try:
+            configured_ef = float(self.cfg.get("qubit_ef_freq", np.nan))
+        except (TypeError, ValueError):
+            configured_ef = np.nan
+        alpha_prior = P.get("anharmonicity_prior_mhz")
+        if alpha_prior is None:
+            alpha_prior = self.cfg.get("qubit_anharmonicity_mhz", np.nan)
+        try:
+            alpha_prior = float(alpha_prior)
+        except (TypeError, ValueError):
+            alpha_prior = np.nan
+        centre = (configured_ef if np.isfinite(configured_ef)
+                  else float(self.w["drive_freq"]) + alpha_prior)
+        if not np.isfinite(centre):
+            raise TunerError(
+                "leakage: no e-f frequency or anharmonicity prior is configured")
+        span, npts = float(P["ef_span_mhz"]), max(int(P["ef_points"]), 31)
+        freqs = np.linspace(centre - span / 2.0, centre + span / 2.0, npts)
+
+        def scan(grid):
+            grid = np.asarray(grid, dtype=float)
+            passes = np.full((2, grid.size), np.nan + 1j * np.nan, dtype=complex)
+            for pidx, order in enumerate((range(grid.size),
+                                          range(grid.size - 1, -1, -1))):
+                for j in order:
+                    seq = [ge, self._ef_pulse(P["ef_spec_gain"], grid[j]), ge]
+                    I, Q, _, _ = _run_seq(
+                        self, cfg, seq, self.w["drive_freq"],
+                        int(P["ef_spec_shots"]))
+                    passes[pidx, j] = complex(I, Q)
+            zz = np.mean(passes, axis=0)
+            direction = self._principal_iq_axis(zz, center=True)
+            yy = ((zz.real - np.mean(zz.real)) * direction[0]
+                  + (zz.imag - np.mean(zz.imag)) * direction[1])
+            return zz, yy, passes
+
+        z, axis, spec_passes = scan(freqs)
+        fit = fit_resonance(
+            freqs, axis, polarity=None,
+            expected_fwhm=max(1.0, span / 50.0))
+        if not fit["ok"]:
+            raise TunerError(
+                "leakage: e-f shelving spectroscopy found no reproducible line in "
+                "%.1f +/- %.1f MHz" % (centre, span / 2.0))
+        narrow_span = max(6.0 * float(fit["fwhm"]), 2.0)
+        narrow_freqs = np.linspace(float(fit["f0"]) - narrow_span / 2.0,
+                                   float(fit["f0"]) + narrow_span / 2.0,
+                                   max(41, npts // 2))
+        narrow_z, narrow_axis, narrow_passes = scan(narrow_freqs)
+        repeat = fit_resonance(
+            narrow_freqs, narrow_axis, polarity=None,
+            expected_fwhm=float(fit["fwhm"]))
+        repeat_snr = peak_significance(
+            narrow_freqs, narrow_axis, float(fit["f0"]), float(fit["fwhm"]))
+        centre_agrees = bool(
+            repeat.get("ok") and abs(float(repeat["f0"]) - float(fit["f0"]))
+            <= max(float(fit["fwhm"]), 0.5))
+        if (repeat_snr < float(P["ef_confirm_min_snr"]) or not centre_agrees):
+            raise TunerError(
+                "leakage: the e-f shelving line at %.4f MHz did not reproduce at the "
+                "same power (%.1f sigma)" % (fit["f0"], repeat_snr))
+        ef_freq = float(repeat["f0"])
+        alpha = ef_freq - float(self.w["drive_freq"])
+        # A transmon e-f line must lie below g-e.  A positive/near-zero result is more
+        # likely another TLS or a residual g-e response and must not seed DRAG.
+        if alpha >= -5.0:
+            raise TunerError(
+                "leakage: candidate e-f line %.4f MHz gives anharmonicity %.3f MHz; "
+                "that is not a credible transmon e-f transition" % (ef_freq, alpha))
+        gate_ns = 4000.0 * float(self.w.get("sigma_us", self.cfg["sigma"]))
+        if gate_ns < float(P.get("fast_shape_required_below_ns", 20.0)):
+            raise TunerError(
+                "leakage: the %.1f-ns pulse is in the fast-gate regime where a plain "
+                "Gaussian-DRAG beta scan is not sufficient; FAST/HD-DRAG plus microwave "
+                "predistortion must be implemented and benchmarked before certification"
+                % gate_ns)
+
+        gains = np.unique(np.round(np.linspace(
+            0, int(P["ef_gain_max"]), max(int(P["ef_gain_points"]), 21))).astype(int))
+        pops, sems = np.full(gains.size, np.nan), np.full(gains.size, np.inf)
+        for raw in np.random.permutation(gains.size):
+            j = int(raw)
+            seq = [ge, self._ef_pulse(gains[j], ef_freq), ge]
+            pops[j], _, sems[j] = _pop_with_local_refs(
+                self, cfg, seq, self.w["drive_freq"], self.w["pi_gain"],
+                int(P["ef_rabi_shots"]))
+        rabi = fit_rabi(gains, pops)
+        if (not rabi["ok"] or not np.isfinite(rabi["pi_gain"])
+                or rabi["pi_gain"] >= float(P["ef_gain_max"])):
+            raise TunerError(
+                "leakage: the e-f candidate did not produce a coherent Rabi return "
+                "inside the authorized gain range")
+        ef_gain = int(round(rabi["pi_gain"]))
+        # Fresh exact 0/pi/2pi points reject a damped monotonic response that a flexible
+        # cosine fit can otherwise mislabel as a Rabi.  The criterion is relative to the
+        # observed shelving contrast, so an arbitrary f-state IQ projection is allowed.
+        harmonic = []
+        for ratio in (0.0, 1.0, 2.0):
+            seq = [ge, self._ef_pulse(int(round(ratio * ef_gain)), ef_freq), ge]
+            pop, _, sem = _pop_with_local_refs(
+                self, cfg, seq, self.w["drive_freq"], self.w["pi_gain"],
+                int(P["ef_rabi_shots"]))
+            harmonic.append((float(pop), float(sem)))
+        baseline = 0.5 * (harmonic[0][0] + harmonic[2][0])
+        contrast = abs(harmonic[1][0] - baseline)
+        return_error = abs(harmonic[2][0] - harmonic[0][0])
+        return_allow = (float(P["ef_max_return_fraction"]) * contrast
+                        + 3.0 * np.hypot(harmonic[0][1], harmonic[2][1]))
+        if (not np.isfinite(contrast) or contrast < float(P["ef_min_rabi_contrast"])
+                or return_error > return_allow):
+            raise TunerError(
+                "leakage: the e-f Rabi harmonic audit failed (contrast %.3f, "
+                "0-to-2pi return %.3f, allowed %.3f)"
+                % (contrast, return_error, return_allow))
+        self.w.update(ef_freq=ef_freq, ef_pi_gain=ef_gain,
+                      anharmonicity_mhz=float(alpha))
+        self.node_data["leakage"] = {
+            "ef_spec_freqs": freqs, "ef_spec_signal": axis,
+            "ef_spec_passes": spec_passes,
+            "ef_spec_fit": fit["yfit"], "ef_spec": fit,
+            "ef_confirm_freqs": narrow_freqs, "ef_confirm_signal": narrow_axis,
+            "ef_confirm_passes": narrow_passes,
+            "ef_confirm_fit": repeat["yfit"], "ef_confirm": repeat,
+            "ef_confirm_snr": float(repeat_snr),
+            "ef_rabi_gains": gains, "ef_rabi_population": pops,
+            "ef_rabi_sem": sems, "ef_rabi_fit": rabi["yfit"],
+            "ef_rabi": rabi, "ef_harmonic": harmonic,
+            "ef_harmonic_contrast": float(contrast),
+            "ef_harmonic_return_error": float(return_error),
+            "ef_freq": ef_freq, "ef_pi_gain": ef_gain,
+            "anharmonicity_mhz": float(alpha),
+        }
+        self._say("leakage", "OK",
+                  "shelving-calibrated e-f %.4f MHz (anharmonicity %.3f MHz), "
+                  "e-f pi %d +/- %.0f DAC"
+                  % (ef_freq, alpha, ef_gain, rabi.get("pi_err", np.inf)))
+        return ef_freq, ef_gain, alpha
+
+    def _leakage_response_calibration(self, cfg, ef_freq, ef_gain, shots):
+        """Train binary readout, then measure the identity/shelving response matrix."""
+        ge = ("pulse", int(self.w["pi_gain"]), 0.0)
+        ef = self._ef_pulse(ef_gain, ef_freq)
+        ig, qg = _shots(self, cfg, [], self.w["drive_freq"], shots)
+        ie, qe = _shots(self, cfg, [ge], self.w["drive_freq"], shots)
+        ss = single_shot_analysis(ig, qg, ie, qe)
+        if not ss.get("ok") or not np.isfinite(ss.get("threshold", np.nan)):
+            return {"ok": False, "reason": "binary discriminator failed"}
+        prep = {"g": [], "e": [ge], "f": [ge, ef]}
+        seqs = {}
+        for state in ("g", "e", "f"):
+            seqs[(state, "identity")] = list(prep[state])
+            seqs[(state, "shelved")] = list(prep[state]) + [ef, ge]
+        # Interleave four microblocks of every state/measurement pair.  Each label has
+        # the same acquisition-time centroid, limiting readout drift in matrix inversion.
+        each = max(10, int(np.ceil(float(shots) / 4.0)))
+        got = {key: [[], []] for key in seqs}
+        labels = list(seqs) * 4
+        for raw in np.random.permutation(len(labels)):
+            key = labels[int(raw)]
+            i, q = _shots(self, cfg, seqs[key], self.w["drive_freq"], each)
+            got[key][0].append(np.asarray(i, dtype=float))
+            got[key][1].append(np.asarray(q, dtype=float))
+        cal = {}
+        for state in ("g", "e", "f"):
+            vals = []
+            for mode in ("identity", "shelved"):
+                i = np.concatenate(got[(state, mode)][0])
+                q = np.concatenate(got[(state, mode)][1])
+                vals.extend(binary_ground_fraction(
+                    i, q, ss["theta"], ss["threshold"]))
+            cal[state] = tuple(vals)
+        dummy = solve_shelved_qutrit_population(
+            cal, (cal["g"][0], cal["g"][1]),
+            (cal["g"][2], cal["g"][3]),
+            self.P["leakage"]["max_response_condition"])
+        identity_selectivity = float(
+            cal["g"][0] - max(cal["e"][0], cal["f"][0]))
+        shelving_selectivity = float(
+            cal["f"][2] - max(cal["g"][2], cal["e"][2]))
+        min_sel = float(self.P["leakage"]["min_shelving_selectivity"])
+        ok = bool(dummy["matrix_ok"] and identity_selectivity >= min_sel
+                  and shelving_selectivity >= min_sel)
+        return {"ok": ok, "single_shot": ss, "calibration": cal,
+                "condition": dummy["condition"],
+                "response_matrix": dummy["response_matrix"],
+                "response_matrix_se": dummy["response_matrix_se"],
+                "identity_selectivity": identity_selectivity,
+                "shelving_selectivity": shelving_selectivity,
+                "reason": None if ok else "ill-conditioned/nonselective shelving"}
+
+    def _leakage_target_population(self, cfg, seq, response, ef_freq, ef_gain, shots):
+        """Interleave ordinary and shelved target shots and solve P0/P1/P2."""
+        ge = ("pulse", int(self.w["pi_gain"]), 0.0)
+        ef = self._ef_pulse(ef_gain, ef_freq)
+        seqs = {"identity": list(seq), "shelved": list(seq) + [ef, ge]}
+        got = {key: [[], []] for key in seqs}
+        each = max(10, int(np.ceil(float(shots) / 4.0)))
+        first = ["identity", "shelved", "shelved", "identity",
+                 "shelved", "identity", "identity", "shelved"]
+        if int(np.random.randint(2)):
+            first = ["shelved" if x == "identity" else "identity" for x in first]
+        for label in first:
+            i, q = _shots(self, cfg, seqs[label], self.w["drive_freq"], each)
+            got[label][0].append(np.asarray(i, dtype=float))
+            got[label][1].append(np.asarray(q, dtype=float))
+        ss = response["single_shot"]
+        fractions = {}
+        for label in ("identity", "shelved"):
+            fractions[label] = binary_ground_fraction(
+                np.concatenate(got[label][0]), np.concatenate(got[label][1]),
+                ss["theta"], ss["threshold"])
+        result = solve_shelved_qutrit_population(
+            response["calibration"], fractions["identity"], fractions["shelved"],
+            self.P["leakage"]["max_response_condition"])
+        result["ground_fractions"] = fractions
+        return result
+
+    def _measure_leakage_beta(self, beta, ef_freq, ef_gain, alpha, shots, ref_shots,
+                              strict_fidelity=False):
+        """Measure coherent leakage witnesses and one-pulse fidelity for one DRAG beta."""
+        P = self.P["leakage"]
+        cfg = self._cfg_for("leakage")
+        cfg["qubit_drag_beta"] = float(beta)
+        response = self._leakage_response_calibration(
+            cfg, ef_freq, ef_gain, int(ref_shots))
+        ss = self._balanced_single_shot(
+            cfg, self.w["drive_freq"], self.w["pi_gain"], int(ref_shots),
+            strict=bool(strict_fidelity))
+        fid = float(ss.get("fidelity", np.nan))
+        fid_se = float(ss.get("fidelity_se", np.inf))
+        candidate_row = {"fid": fid, "fid_se": fid_se,
+                         "sep": float(ss.get("sep_sigma", np.nan)),
+                         "outlier": float(ss.get("outlier_frac", np.inf)),
+                         "verified": bool(ss.get("ok", False))}
+        self._record_empirical_candidate(
+            "leakage", candidate_row, self.w["read_pulse_freq"],
+            self.w["read_pulse_gain"], self.w["drive_freq"], self.w["pi_gain"],
+            int(ref_shots), False, evidence="drag_beta_scan", measured_cfg=cfg)
+        row = {"beta": float(beta), "response": response, "fidelity": fid,
+               "fidelity_se": fid_se, "fidelity_lcb": fidelity_lower_bound(
+                   fid, fid_se, P["confidence_sigma"]), "witnesses": []}
+        if not response.get("ok"):
+            row.update(valid=False, leakage_ucb=np.inf, leakage_max=np.nan,
+                       leakage_se=np.inf)
+            return row
+        base_gap = float(cfg.get("seq_gap_us", 0.01))
+        period_us = 1.0 / max(abs(float(alpha)), 1e-12)
+        z = simultaneous_confidence_sigma(
+            max(len(P["depths"]) * len(P["gap_phases"]), 1),
+            P.get("familywise_alpha", 0.05), P["confidence_sigma"])
+        for depth in P["depths"]:
+            for phase in P["gap_phases"]:
+                c = dict(cfg)
+                c["seq_gap_us"] = base_gap + float(phase) * period_us
+                seq = [("pulse", int(self.w["pi_gain"]), 0.0)] * int(depth)
+                result = self._leakage_target_population(
+                    c, seq, response, ef_freq, ef_gain, int(shots))
+                result.update(depth=int(depth), gap_phase=float(phase),
+                              gap_us=float(c["seq_gap_us"]))
+                row["witnesses"].append(result)
+        good = [r for r in row["witnesses"] if r.get("ok")]
+        if len(good) != len(row["witnesses"]):
+            row.update(valid=False, leakage_ucb=np.inf, leakage_max=np.nan,
+                       leakage_se=np.inf)
+            return row
+        worst = max(good, key=lambda r: float(r["p2"] + z * r["p2_se"]))
+        row.update(valid=bool(np.isfinite(fid) and np.isfinite(fid_se)),
+                   leakage_ucb=float(worst["p2"] + z * worst["p2_se"]),
+                   leakage_max=float(worst["p2"]),
+                   leakage_se=float(worst["p2_se"]), worst_witness=worst)
+        return row
+
+    def _cal_leakage(self):
+        """Jointly select a DRAG beta by held-out inversion fidelity and measured P(f)."""
+        P = self.P["leakage"]
+        ef_freq, ef_gain, alpha = self._cal_ef_transition()
+        incumbent_beta = float(self.w.get("drag_beta", 0.0))
+        rows, scans = [], []
+        for extension in range(max(1, int(P["max_extensions"]))):
+            span = min(float(P["beta_span"]) * (1.7 ** extension),
+                       float(P["max_beta_span"]))
+            values = list(np.linspace(incumbent_beta - span, incumbent_beta + span,
+                                      max(int(P["beta_points"]), 5)))
+            values.extend((0.0, incumbent_beta))
+            values = np.unique(np.round(values, 7))
+            scan_rows = []
+            for raw in np.random.permutation(values.size):
+                beta = float(values[int(raw)])
+                rd = self._measure_leakage_beta(
+                    beta, ef_freq, ef_gain, alpha, int(P["shots"]),
+                    int(P["reference_shots"]))
+                rows.append(rd); scan_rows.append(rd)
+                self._say("leakage", "OK" if rd.get("valid") else "WARN",
+                          "DRAG beta %+.5f -> F %.3f +/- %.3f, amplified P(f) UCB %s"
+                          % (beta, rd.get("fidelity", np.nan),
+                             rd.get("fidelity_se", np.inf),
+                             ("%.4f" % rd["leakage_ucb"])
+                             if np.isfinite(rd.get("leakage_ucb", np.inf)) else "FAILED"))
+            valid_scan = [r for r in scan_rows if r.get("valid")]
+            scans.append({"span": span, "rows": scan_rows})
+            if not valid_scan:
+                continue
+            edge_best = min(valid_scan, key=lambda r: r["leakage_ucb"])
+            if (abs(edge_best["beta"] - values[0]) > 1e-8
+                    and abs(edge_best["beta"] - values[-1]) > 1e-8):
+                break
+        # Refine only when the coarse data show a real leakage problem or a reproduced
+        # improvement.  If beta=0 is already below the bound, resolving a theoretical
+        # 0.2%-quadrature correction would merely optimize shot noise and add waveform
+        # complexity without measurable benefit.
+        coarse_usable = [r for r in rows if r.get("valid")
+                         and np.isfinite(r.get("fidelity_lcb", -np.inf))]
+        if coarse_usable:
+            coarse_fid = max(r["fidelity_lcb"] for r in coarse_usable)
+            coarse_feasible = [r for r in coarse_usable if r["fidelity_lcb"] >=
+                               coarse_fid - float(P["max_fidelity_drop"])]
+            coarse_best = min(coarse_feasible, key=lambda r: r["leakage_ucb"])
+            coarse_inc = min(coarse_usable,
+                             key=lambda r: abs(r["beta"] - incumbent_beta))
+            z0 = float(P["confidence_sigma"])
+            refine_needed = bool(
+                coarse_inc["leakage_ucb"] > float(P["max_amplified_p2"])
+                or coarse_best["leakage_max"] + z0 * coarse_best["leakage_se"]
+                < coarse_inc["leakage_max"] - z0 * coarse_inc["leakage_se"])
+            centre_beta = float(coarse_best["beta"])
+            sorted_beta = np.unique(sorted(r["beta"] for r in coarse_usable))
+            step = (float(np.min(np.diff(sorted_beta))) if sorted_beta.size > 1
+                    else float(P["beta_span"]) / max(int(P["beta_points"]) - 1, 1))
+            for refine_round in range(int(P.get("beta_refine_rounds", 0))
+                                      if refine_needed else 0):
+                nr = max(int(P.get("beta_refine_points", 7)), 5)
+                values = np.unique(np.round(np.linspace(
+                    centre_beta - step, centre_beta + step, nr), 8))
+                measured = {round(float(r["beta"]), 8) for r in rows}
+                values = np.asarray([b for b in values
+                                     if round(float(b), 8) not in measured])
+                refine_rows = []
+                for raw in np.random.permutation(values.size):
+                    beta = float(values[int(raw)])
+                    rd = self._measure_leakage_beta(
+                        beta, ef_freq, ef_gain, alpha, int(P["shots"]),
+                        int(P["reference_shots"]))
+                    rows.append(rd); refine_rows.append(rd)
+                    self._say("leakage", "OK" if rd.get("valid") else "WARN",
+                              "refine %d DRAG beta %+.6f -> F %.3f +/- %.3f, "
+                              "amplified P(f) UCB %s"
+                              % (refine_round + 1, beta,
+                                 rd.get("fidelity", np.nan),
+                                 rd.get("fidelity_se", np.inf),
+                                 ("%.4f" % rd["leakage_ucb"])
+                                 if np.isfinite(rd.get("leakage_ucb", np.inf))
+                                 else "FAILED"))
+                scans.append({"kind": "refine", "round": refine_round + 1,
+                              "span": 2.0 * step, "rows": refine_rows})
+                now = [r for r in rows if r.get("valid")
+                       and np.isfinite(r.get("fidelity_lcb", -np.inf))]
+                now_fid = max(r["fidelity_lcb"] for r in now)
+                now = [r for r in now if r["fidelity_lcb"] >=
+                       now_fid - float(P["max_fidelity_drop"])]
+                centre_beta = float(min(now, key=lambda r: r["leakage_ucb"])["beta"])
+                step = 2.0 * step / max(nr - 1, 1)
+        usable = [r for r in rows if r.get("valid") and np.isfinite(r["fidelity_lcb"])]
+        if not usable:
+            raise TunerError(
+                "leakage: no DRAG point had a valid shelving response matrix")
+        best_fid_lcb = max(r["fidelity_lcb"] for r in usable)
+        feasible = [r for r in usable if r["fidelity_lcb"] >=
+                    best_fid_lcb - float(P["max_fidelity_drop"])]
+        chosen = min(feasible, key=lambda r: (r["leakage_ucb"],
+                                               -r["fidelity_lcb"],
+                                               abs(r["beta"])))
+        incumbent = min(usable, key=lambda r: abs(r["beta"] - incumbent_beta))
+        # Do not move for noise.  A candidate must improve the amplified leakage beyond
+        # the combined 95% uncertainty, unless the incumbent fails the absolute ceiling
+        # and the candidate passes it.
+        z = float(P["confidence_sigma"])
+        significant = bool(
+            chosen["leakage_max"] + z * chosen["leakage_se"]
+            < incumbent["leakage_max"] - z * incumbent["leakage_se"])
+        crosses_limit = bool(
+            incumbent["leakage_ucb"] > float(P["max_amplified_p2"])
+            and chosen["leakage_ucb"] <= float(P["max_amplified_p2"]))
+        if not significant and not crosses_limit:
+            chosen = incumbent
+        self.node_data["leakage"].update({
+            "beta_scans": scans, "beta_rows": rows,
+            "incumbent_beta": incumbent_beta, "chosen": chosen,
+            "selection_fidelity_lcb": best_fid_lcb,
+            "selection_significant": significant,
+            "selection_crosses_limit": crosses_limit,
+        })
+        moved = abs(float(chosen["beta"]) - incumbent_beta) > 1e-8
+        self.w["drag_beta"] = float(chosen["beta"])
+        self.w["leakage_optimized"] = True
+        self.w["leakage_verified"] = False
+        if moved:
+            self.w["updated"].add("qubit_drag_beta")
+            self._say("leakage", "OK",
+                      "adopting DRAG beta %+.5f (amplified P(f) UCB %.4f vs %.4f); "
+                      "frequency, amplitude, readout and fresh pi maps will now be "
+                      "recalibrated on this exact two-quadrature waveform"
+                      % (chosen["beta"], chosen["leakage_ucb"],
+                         incumbent["leakage_ucb"]))
+        else:
+            self._say("leakage", "OK",
+                      "keeping DRAG beta %+.5f: no leakage reduction reproduced beyond "
+                      "uncertainty (amplified P(f) UCB %.4f)"
+                      % (chosen["beta"], chosen["leakage_ucb"]))
+        return moved
+
+    def _verify_leakage(self):
+        """Fresh independent leakage audits on the final re-tuned pulse."""
+        P = self.P["leakage"]
+        beta = float(self.w.get("drag_beta", 0.0))
+        rows = []
+        for _ in range(max(1, int(P["verify_blocks"]))):
+            rows.append(self._measure_leakage_beta(
+                beta, self.w["ef_freq"], self.w["ef_pi_gain"],
+                self.w["anharmonicity_mhz"], int(P["verify_shots"]),
+                int(P["verify_shots"]), strict_fidelity=True))
+        valid = bool(len(rows) == max(1, int(P["verify_blocks"]))
+                     and all(r.get("valid") for r in rows))
+        max_ucb = max((float(r.get("leakage_ucb", np.inf)) for r in rows),
+                      default=np.inf)
+        max_drop = float(P["max_fidelity_drop"])
+        ref_lcb = float(self.node_data.get("leakage", {}).get(
+            "selection_fidelity_lcb", -np.inf))
+        fidelity_ok = bool(all(r.get("fidelity_lcb", -np.inf) >= ref_lcb - max_drop
+                               for r in rows))
+        passed = bool(valid and fidelity_ok
+                      and max_ucb <= float(P["max_amplified_p2"]))
+        self.w["leakage_verified"] = passed
+        self.w["leakage_max_ucb"] = float(max_ucb)
+        self.node_data.setdefault("leakage", {})["verification"] = rows
+        self.node_data["leakage"]["verified"] = passed
+        self._say("leakage", "OK" if passed else "WARN",
+                  "%d fresh leakage blocks: worst amplified P(f) 95%% UCB %s "
+                  "(limit %.4f), one-pulse fidelity %s"
+                  % (len(rows), ("%.4f" % max_ucb) if np.isfinite(max_ucb) else "FAILED",
+                     float(P["max_amplified_p2"]),
+                     "reproduced" if fidelity_ok else "DID NOT reproduce"))
+        return passed
+
     def _score(self):
         """Best-so-far score: safe pi state, then fidelity; bounded diagnostics last.
 
@@ -4251,6 +5487,12 @@ class AutoTuner(ExperimentClass):
         }
         best_score, best_state = -np.inf, None
         for rnd in range(1, int(self.P["max_rounds"]) + 1):
+            if self._runtime_budget_exhausted():
+                reason = ("runtime circuit breaker reached %.1f minutes before graph "
+                          "convergence" % float(
+                              self.P["safety"].get("max_runtime_minutes", 0.0)))
+                self._restore_protected_control(reason)
+                raise TunerError(reason)
             self._invalidate_pi_fidelity_if_unbound()
             todo = [n for n, _, _ in GRAPH if self.stale[n]]
             if not todo:
@@ -4264,11 +5506,29 @@ class AutoTuner(ExperimentClass):
             for name, deps, meth in GRAPH:
                 if not self.stale[name]:
                     continue
+                if self._runtime_budget_exhausted():
+                    reason = ("runtime circuit breaker reached %.1f minutes before %s"
+                              % (float(self.P["safety"].get(
+                                  "max_runtime_minutes", 0.0)), name))
+                    self._restore_protected_control(reason)
+                    raise TunerError(reason)
                 try:
                     new, tol = getattr(self, meth)()
                 except TunerError as exc:
                     if rnd == 1 or name not in RECOVERABLE or name not in values:
                         raise
+                    failures = int(self.w.get("remeasurement_failures", 0)) + 1
+                    self.w["remeasurement_failures"] = failures
+                    limit = max(int(self.P["safety"].get(
+                        "max_remeasurement_failures", 1)), 1)
+                    if failures >= limit:
+                        reason = (
+                            "%s failed on re-measurement (%s); the evidence is now "
+                            "mixed-vintage, so the circuit breaker restored the "
+                            "protected control instead of repeating the full graph"
+                            % (name, str(exc).split(".")[0].strip()))
+                        self._restore_protected_control(reason)
+                        raise TunerError(reason)
                     self.stale[name] = False
                     self._say("graph", "WARN",
                               "%s failed on re-measurement (%s) -- KEEPING the round-1 "
@@ -4321,9 +5581,13 @@ class AutoTuner(ExperimentClass):
                        "fine_pi_freq", "fine_pi_amp")
         self.w["qubit_fixed_point"] = not any(self.stale[n] for n in qubit_nodes)
         if not fixed:
-            self._say("graph", "WARN", "max_rounds exhausted with stale nodes %s -- this is "
-                      "NOT a fixed point and no affected calibration may be written"
+            reason = ("max_rounds exhausted with stale nodes %s -- restored the "
+                      "protected control instead of spending more time on an "
+                      "uncertifiable mixed state"
                       % ", ".join(n for n, _, _ in GRAPH if self.stale[n]))
+            self._say("graph", "WARN", reason)
+            self._restore_protected_control(reason)
+            return best_score
         self._verify_final()
         return best_score
 
@@ -4454,6 +5718,7 @@ class AutoTuner(ExperimentClass):
         cfg = self.cfg
         self.data = {}
         self.candidate_archive = []
+        self._run_started_monotonic = time.monotonic()
         q_style = str(cfg.get("qubit_pulse_style", "arb")).lower()
         plateau_fields = explicit_flat_top_fields(cfg)
         if q_style == "arb" and plateau_fields:
@@ -4541,6 +5806,8 @@ class AutoTuner(ExperimentClass):
             "qubit_freq": float(cfg["qubit_freq"]),
             "drive_freq": float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
             "pi_gain": int(cfg["qubit_pi_gain"]),
+            "sigma_us": float(cfg["sigma"]),
+            "drag_beta": float(cfg.get("qubit_drag_beta", 0.0)),
             "pi_gain_err": np.inf,
             "pi_converged": False,
             "fine_freq_converged": False,
@@ -4552,6 +5819,14 @@ class AutoTuner(ExperimentClass):
             "readout_verified": False,
             "readout_power_verified": False,
             "readout_len_verified": False,
+            "duration_active": bool(self.P["pulse_duration"].get("enabled", False)),
+            "duration_optimized": False,
+            "duration_verified": False,
+            "duration_failure": None,
+            "leakage_active": bool(self._leakage_enabled()),
+            "leakage_optimized": False,
+            "leakage_verified": False,
+            "leakage_failure": None,
             "fixed_point": False,
             "updated": set(),
         }
@@ -4561,16 +5836,116 @@ class AutoTuner(ExperimentClass):
         orig = {k: cfg.get(k) for k in
                 ("read_pulse_freq", "read_pulse_gain", "read_length", "res_phase",
                  "relax_delay",
-                 "qubit_freq", "qubit_pi_freq", "qubit_pi_gain")}
+                 "qubit_freq", "qubit_pi_freq", "qubit_pi_gain",
+                 "sigma", "qubit_drag_beta")}
         print("=" * 78)
-        print("AUTO TUNER (calibration graph, fixed-point)  %s" % self.element)
-        print("  start: read %.4f MHz / gain %d / %.1f us | qubit %.4f | pi %.4f @ %d"
+        print("AUTO TUNER %s (calibration graph, protected control)  %s"
+              % (AUTOTUNER_REVISION, self.element))
+        print("  start: read %.4f MHz / gain %d / %.1f us | qubit %.4f | "
+              "pi %.4f @ %d / %.1f ns | DRAG beta %+.5f"
               % (self.w["read_pulse_freq"], self.w["read_pulse_gain"], self.w["read_length"],
-                 self.w["qubit_freq"], self.w["drive_freq"], self.w["pi_gain"]))
+                 self.w["qubit_freq"], self.w["drive_freq"], self.w["pi_gain"],
+                 4000.0 * self.w["sigma_us"], self.w["drag_beta"]))
         print("=" * 78)
         failure, success = None, False
         try:
+            self._capture_protected_control()
             self.maintain()
+            if self.w["duration_active"]:
+                try:
+                    duration_moved = self._cal_pulse_duration()
+                except TunerError as duration_err:
+                    duration_moved = False
+                    self.w["duration_failure"] = str(duration_err)
+                    self.w["duration_optimized"] = False
+                    self.w["duration_verified"] = False
+                    self.node_data.setdefault("pulse_duration", {})["failure"] = str(
+                        duration_err)
+                    self._say(
+                        "pulse_duration", "WARN",
+                        "%s. The fixed-duration best candidate is retained, but duration "
+                        "was not optimized and automatic qubit writes are blocked."
+                        % duration_err)
+                if duration_moved:
+                    self._invalidate_waveform_dependents()
+                    self.maintain()
+            if self.w["leakage_active"]:
+                leakage_attempts = []
+                max_fallbacks = (int(self.P["pulse_duration"].get(
+                    "max_leakage_fallbacks", 0))
+                    if self.w.get("duration_active", False)
+                    and self.w.get("duration_verified", False) else 0)
+                used_fallbacks = 0
+                while True:
+                    self.w.pop("leakage_max_ucb", None)
+                    passed = self._run_leakage_stage()
+                    chosen_leak = self.node_data.get("leakage", {}).get("chosen", {})
+                    metric = float(self.w.get(
+                        "leakage_max_ucb", chosen_leak.get("leakage_ucb", np.inf)))
+                    leakage_attempts.append({
+                        "sigma_us": float(self.w["sigma_us"]),
+                        "gate_ns": 4000.0 * float(self.w["sigma_us"]),
+                        "verified": bool(passed), "leakage_max_ucb": metric,
+                        "failure": self.w.get("leakage_failure"),
+                        "snapshot": self._snapshot(),
+                    })
+                    if passed or used_fallbacks >= max_fallbacks:
+                        break
+                    fallbacks = self._duration_leakage_fallbacks()
+                    if not fallbacks:
+                        break
+                    nxt = fallbacks[0]
+                    used_fallbacks += 1
+                    self._say(
+                        "pulse_duration", "WARN",
+                        "%.1f-ns pulse did not meet the direct leakage bound; trying the "
+                        "next independently confirmed longer duration %.1f ns instead "
+                        "of aborting" % (4000.0 * self.w["sigma_us"],
+                                         4000.0 * float(nxt["sigma_us"])))
+                    self.w.update(
+                        sigma_us=float(nxt["sigma_us"]),
+                        drive_freq=float(nxt["freq"]), pi_gain=int(nxt["gain"]),
+                        drag_beta=0.0, leakage_optimized=False,
+                        leakage_verified=False, leakage_failure=None)
+                    self.w["updated"].update(
+                        ("sigma", "qubit_pi_freq", "qubit_pi_gain",
+                         "qubit_drag_beta"))
+                    self.node_data["pulse_duration"]["chosen"] = dict(nxt)
+                    self._invalidate_waveform_dependents()
+                    self.maintain()
+                if not self.w.get("leakage_verified", False) and leakage_attempts:
+                    # If every tried duration fails, report the best measured
+                    # fidelity-constrained leakage point rather than whichever duration
+                    # happened to be attempted last.
+                    best_attempt = min(
+                        leakage_attempts,
+                        key=lambda a: (float(a["leakage_max_ucb"]), a["gate_ns"]))
+                    if best_attempt["snapshot"] is not None:
+                        self._restore_snapshot(best_attempt["snapshot"])
+                        self._say(
+                            "pulse_duration", "OK",
+                            "no duration passed leakage certification; restored the "
+                            "best measured leakage candidate at %.1f ns (UCB %s)"
+                            % (best_attempt["gate_ns"],
+                               "%.4f" % best_attempt["leakage_max_ucb"]
+                               if np.isfinite(best_attempt["leakage_max_ucb"])
+                               else "FAILED"))
+                # Snapshots are internal control state and must not enter saved pickle/HDF5.
+                for attempt in leakage_attempts:
+                    attempt.pop("snapshot", None)
+                self.node_data.setdefault("pulse_duration", {})[
+                    "leakage_attempts"] = leakage_attempts
+                if self.P["leakage"].get("required_for_certification", True):
+                    self.w["verified"] = bool(
+                        self.w.get("verified", False)
+                        and self.w.get("leakage_verified", False))
+            else:
+                self._say("leakage", "WARN",
+                          "leakage calibration is inactive because no e-f frequency or "
+                          "anharmonicity prior is configured; this run calibrates X180 "
+                          "in the computational subspace but does not claim a measured "
+                          "leakage bound")
+            self._guard_working_control("final_candidate", final=True)
             ss_lcb = fidelity_lower_bound(
                 self.w.get("ss_fidelity", np.nan),
                 self.w.get("ss_fidelity_se", np.inf),
@@ -4605,6 +5980,28 @@ class AutoTuner(ExperimentClass):
                          and t1_domain_ok
                          and self.w.get("pi_fidelity_verified", False)
                          and pi_map_bound and state_ok)
+            duration_required = bool(
+                self.w.get("duration_active", False)
+                and self.P["pulse_duration"].get("required_for_certification", True))
+            duration_ok = bool(
+                not duration_required or self.w.get("duration_verified", False))
+            if pi_ok and not duration_ok:
+                self._say("verdict", "WARN",
+                          "frequency/amplitude calibration passed at the starting pulse "
+                          "length, but the duration search did not certify that length; "
+                          "the best candidate is retained and qubit writes are blocked")
+            pi_ok = bool(pi_ok and duration_ok)
+            leakage_required = bool(
+                self.w.get("leakage_active", False)
+                and self.P["leakage"].get("required_for_certification", True))
+            leakage_ok = bool(
+                not leakage_required or self.w.get("leakage_verified", False))
+            if pi_ok and not leakage_ok:
+                self._say("verdict", "WARN",
+                          "coherent frequency/amplitude calibration passed, but direct "
+                          "leakage certification did not; the pulse remains a usable "
+                          "best-found candidate and qubit writes are blocked")
+            pi_ok = bool(pi_ok and leakage_ok)
             if self.w.get("target_reacquisition_used", False):
                 self.w["target_reacquisition_status"] = (
                     "coherent_validation_passed" if pi_ok
@@ -4656,8 +6053,15 @@ class AutoTuner(ExperimentClass):
                     reason = "the readout evidence mixes measurements from different times."
                 self._say("verdict", "WARN", "READOUT keys are diagnostic only and will "
                           "not be written because %s" % reason)
+        except ControlValidationComplete:
+            failure = self.w.get("control_validation_failure")
+            self.w["qubit_ok"], self.w["readout_ok"] = False, False
+            self.w["fixed_point"] = False
         except TunerError as err:
             failure = str(err)
+            if hasattr(self, "protected_control") and not self.w.get(
+                    "protected_control_restored", False):
+                self._restore_protected_control(failure)
             if self.w.get("target_reacquisition_used", False):
                 self.w["target_reacquisition_status"] = "coherent_validation_failed"
                 self.node_data.setdefault("spec", {})["target_reacquisition_status"] = (
@@ -4665,7 +6069,20 @@ class AutoTuner(ExperimentClass):
             self._say("verdict", "FAIL", failure)
         except KeyboardInterrupt:
             failure = "interrupted by user"
+            if hasattr(self, "protected_control"):
+                self._restore_protected_control(failure)
             self._say("verdict", "WARN", "interrupted -- partial data is still saved")
+
+        if (failure is None and self.w.get("leakage_active", False)
+                and self.P["leakage"].get("required_for_certification", True)
+                and not self.w.get("leakage_verified", False)):
+            failure = (self.w.get("leakage_failure")
+                       or "direct leakage audit did not pass its held-out bound")
+        if (failure is None and self.w.get("duration_active", False)
+                and self.P["pulse_duration"].get("required_for_certification", True)
+                and not self.w.get("duration_verified", False)):
+            failure = (self.w.get("duration_failure")
+                       or "pulse-duration search did not pass held-out verification")
 
         # Saved artifacts carry the exact final waveform identity.  This gives a manual
         # QM run an objective A/B key instead of relying on similarly named gain fields.
@@ -4686,7 +6103,11 @@ class AutoTuner(ExperimentClass):
                         - 180.0) <= 1e-6
                 and abs(float(best_found["qubit_pi_freq"])
                         - float(self.w["drive_freq"])) <= 1e-6
-                and int(best_found["qubit_pi_gain"]) == int(self.w["pi_gain"]))
+                and int(best_found["qubit_pi_gain"]) == int(self.w["pi_gain"])
+                and abs(float(best_found.get("qubit_sigma_us", self.cfg["sigma"]))
+                        - float(self.w["sigma_us"])) <= 1e-10
+                and abs(float(best_found.get("qubit_drag_beta", 0.0))
+                        - float(self.w.get("drag_beta", 0.0))) <= 1e-8)
             best_found.update({
                 "matches_final_working_state": exact_final,
                 "qubit_certified": bool(exact_final and self.w.get("qubit_ok", False)),
@@ -4715,13 +6136,16 @@ class AutoTuner(ExperimentClass):
                   ("read_length", "read_length"), ("res_phase", "res_phase"),
                   ("relax_delay", "relax_delay"),
                   ("qubit_freq", "qubit_freq"), ("qubit_pi_freq", "drive_freq"),
-                  ("qubit_pi_gain", "pi_gain")]
+                  ("qubit_pi_gain", "pi_gain"),
+                  ("sigma", "sigma_us"),
+                  ("qubit_drag_beta", "drag_beta")]
         for cfg_key, w_key in keymap:
             if cfg_key in self.w["updated"]:
                 v = self.w[w_key]
                 tuned[cfg_key] = int(v) if cfg_key in ("read_pulse_gain", "qubit_pi_gain") else float(v)
         readout_keys = {"read_pulse_freq", "read_pulse_gain", "read_length", "res_phase"}
-        qubit_keys = {"qubit_freq", "qubit_pi_freq", "qubit_pi_gain"}
+        qubit_keys = {"qubit_freq", "qubit_pi_freq", "qubit_pi_gain",
+                      "sigma", "qubit_drag_beta"}
         shared_timing_keys = {"relax_delay"}
         eligible_tuned = {k: v for k, v in tuned.items()
                           if ((k in qubit_keys and self.w.get("qubit_ok", False))
@@ -4730,7 +6154,11 @@ class AutoTuner(ExperimentClass):
                                   and (self.w.get("qubit_ok", False)
                                        or self.w.get("readout_ok", False))))}
         completed_with_candidate = best_found is not None
-        if success:
+        control_only = bool(self.w.get("control_validation_only", False))
+        control_passed = bool(self.w.get("control_validation_passed", False))
+        if control_only:
+            outcome = "control_validated" if control_passed else "control_mismatch"
+        elif success:
             outcome = "certified"
         elif self.w.get("qubit_ok", False) or self.w.get("readout_ok", False):
             outcome = "partially_certified"
@@ -4744,6 +6172,8 @@ class AutoTuner(ExperimentClass):
             print("  " + line)
         print("-" * 78)
         result_label = (
+            "CONTROL VALIDATED -- SEARCH NOT STARTED" if outcome == "control_validated" else
+            "CONTROL MISMATCH -- SEARCH NOT STARTED" if outcome == "control_mismatch" else
             "SUCCESS -- CERTIFIED" if outcome == "certified" else
             "QUBIT CONVERGED / READOUT BLOCKED" if outcome == "partially_certified" else
             "BEST EFFORT -- CANDIDATE RETURNED, WRITES BLOCKED%s"
@@ -4756,13 +6186,16 @@ class AutoTuner(ExperimentClass):
             tag = "" if k in eligible_tuned else "  [diagnostic only]"
             print("   %-18s %-14s (was %s)%s" % (k, tuned[k], was, tag))
         if best_found is not None:
-            print("   BEST FOUND%s     read %.4f/%d/%.1fus | pi %.4f @ %d | "
+            print("   BEST FOUND%s     read %.4f/%d/%.1fus | pi %.4f @ %d / %.1fns | "
+                  "DRAG %+.5f | "
                   "F=%.3f +/- %.3f (selection LCB %.3f, %d measurements)"
                   % (" [CERTIFIED]" if best_found["certified_to_write"]
                      else " [NOT CERTIFIED]",
                      best_found["read_pulse_freq"], best_found["read_pulse_gain"],
                      best_found["read_length"], best_found["qubit_pi_freq"],
-                     best_found["qubit_pi_gain"], best_found["fidelity"],
+                     best_found["qubit_pi_gain"],
+                     4000.0 * best_found.get("qubit_sigma_us", self.cfg["sigma"]),
+                     best_found.get("qubit_drag_beta", 0.0), best_found["fidelity"],
                      best_found["fidelity_se"], best_found["selection_lcb"],
                      best_found["measurement_count"]))
             print("   evidence quality   %s; sources: %s"
@@ -4776,8 +6209,28 @@ class AutoTuner(ExperimentClass):
             if k in self.w and np.isfinite(self.w[k]):
                 print("   %-18s %.4g%s" % (label, self.w[k],
                                            " us" if k == "t1_us" else
-                                           (" MHz" if "mhz" in k else
-                                            (" sigma" if "sep" in k else ""))))
+                                            (" MHz" if "mhz" in k else
+                                             (" sigma" if "sep" in k else ""))))
+        if self.w.get("duration_active", False):
+            print("   %-18s %s; %.1f ns (sigma %.6f us)" % (
+                "duration search",
+                "VERIFIED" if self.w.get("duration_verified", False)
+                else "NOT VERIFIED",
+                4000.0 * self.w["sigma_us"], self.w["sigma_us"]))
+        if self.w.get("leakage_active", False):
+            print("   %-18s %s" % (
+                "leakage audit",
+                ("VERIFIED; amplified P(f) 95% UCB %.4f"
+                 % self.w.get("leakage_max_ucb", np.nan))
+                if self.w.get("leakage_verified", False) else
+                "NOT VERIFIED%s" %
+                ((" (%s)" % self.w["leakage_failure"])
+                 if self.w.get("leakage_failure") else "")))
+            if np.isfinite(self.w.get("ef_freq", np.nan)):
+                print("   %-18s %.4f MHz @ %d DAC; anharmonicity %.3f MHz"
+                      % ("e-f calibration", self.w["ef_freq"],
+                         self.w.get("ef_pi_gain", -1),
+                         self.w.get("anharmonicity_mhz", np.nan)))
         if not success:
             if eligible_tuned:
                 print("   (only the evidence-eligible key group above may be written)")
@@ -4787,6 +6240,10 @@ class AutoTuner(ExperimentClass):
 
         self.data.update({
             "success": success, "failure": failure, "tuned": tuned,
+            "autotuner_revision": AUTOTUNER_REVISION,
+            "control_validation_only": control_only,
+            "control_validation_passed": control_passed,
+            "runtime_minutes": ((time.monotonic() - self._run_started_monotonic) / 60.0),
             "eligible_tuned": eligible_tuned,
             "best_found": copy.deepcopy(best_found),
             "best_observed": copy.deepcopy(best_observed),
@@ -4797,6 +6254,12 @@ class AutoTuner(ExperimentClass):
                 best_found is not None and best_found.get("certified_to_write", False)),
             "qubit_ok": bool(self.w.get("qubit_ok", False)),
             "readout_ok": bool(self.w.get("readout_ok", False)),
+            "duration_active": bool(self.w.get("duration_active", False)),
+            "duration_optimized": bool(self.w.get("duration_optimized", False)),
+            "duration_verified": bool(self.w.get("duration_verified", False)),
+            "leakage_active": bool(self.w.get("leakage_active", False)),
+            "leakage_optimized": bool(self.w.get("leakage_optimized", False)),
+            "leakage_verified": bool(self.w.get("leakage_verified", False)),
             "working": {k: (sorted(v) if isinstance(v, set) else v) for k, v in self.w.items()},
             "nodes": self.node_data, "report": list(self.report_lines),
             "time": datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -4943,27 +6406,46 @@ class AutoTuner(ExperimentClass):
         ax.set_ylabel("gain")
 
         ax = axs[3, 1]
-        final_ss = d.get("final_verify", {}).get("single_shot")
-        if final_ss and len(final_ss.get("xg", [])):
-            bins = np.linspace(min(final_ss["xg"].min(), final_ss["xe"].min()),
-                               max(final_ss["xg"].max(), final_ss["xe"].max()), 70)
-            ax.hist(final_ss["xg"], bins=bins, alpha=0.6, label="|g>")
-            ax.hist(final_ss["xe"], bins=bins, alpha=0.6, label="|e>")
+        leak = d.get("leakage", {})
+        leak_rows = leak.get("beta_rows", []) if isinstance(leak, dict) else []
+        leak_rows = [r for r in leak_rows if np.isfinite(r.get("leakage_ucb", np.inf))]
+        if leak_rows:
+            ax.plot([r["beta"] for r in leak_rows],
+                    [r["leakage_ucb"] for r in leak_rows], "o", ms=4,
+                    label="amplified P(f) UCB")
+            chosen = leak.get("chosen")
+            if chosen:
+                ax.plot(chosen["beta"], chosen["leakage_ucb"], "r*", ms=11,
+                        label="chosen")
+            ax.axhline(float(self.P["leakage"]["max_amplified_p2"]),
+                       color="k", ls="--", lw=0.8, label="certificate limit")
             ax.legend(fontsize=7)
-            ax.set_title("fresh final F=%.3f +/- %.3f" %
-                         (final_ss["fidelity"], final_ss.get("fidelity_se", np.nan)))
+        ax.set_title("direct leakage (shelving + gap/depth amplification)")
+        ax.set_xlabel("DRAG beta (peak Q/I)"); ax.set_ylabel("P(f) upper bound")
         axs[3, 2].axis("off")
         bf = self.data.get("best_found") if hasattr(self, "data") else None
         best_text = ("none" if not bf else
-                     "F=%.3f+/-%.3f\n%.4f MHz @ %d DAC\n%s"
+                     "F=%.3f+/-%.3f\n%.4f MHz @ %d DAC / %.1f ns\n%s"
                      % (bf["fidelity"], bf["fidelity_se"],
-                        bf["qubit_pi_freq"], bf["qubit_pi_gain"], bf["status"]))
+                        bf["qubit_pi_freq"], bf["qubit_pi_gain"],
+                        4000.0 * bf.get("qubit_sigma_us", self.cfg["sigma"]),
+                        bf["status"]))
         axs[3, 2].text(0.0, 1.0,
                        "best found: %s\n\nfidelity LCB: %.3f\npi-map bound: %s\n"
-                       "fixed point: %s"
+                       "fixed point: %s\nduration: %.1f ns (%s)\n"
+                       "DRAG beta: %+.5f\nleakage verified: %s\n"
+                       "amplified P(f) UCB: %s"
                        % (best_text, self.w.get("ss_fidelity_lcb", np.nan),
                           self._pi_fidelity_binding_valid(),
-                          self.w.get("fixed_point", False)),
+                          self.w.get("fixed_point", False),
+                          4000.0 * self.w.get("sigma_us", self.cfg["sigma"]),
+                          "verified" if self.w.get("duration_verified", False)
+                          else "not verified",
+                          self.w.get("drag_beta", 0.0),
+                          self.w.get("leakage_verified", False),
+                          ("%.4f" % self.w["leakage_max_ucb"])
+                          if np.isfinite(self.w.get("leakage_max_ucb", np.nan))
+                          else "n/a"),
                        va="top", family="monospace")
         fig.suptitle("AutoTuner %s  %s  %s" % (self.element, self.time_string,
                                                "SUCCESS" if success else "FAILED"))
@@ -5027,6 +6509,25 @@ class AutoTuner(ExperimentClass):
                 if hasattr(self, "w") else None,
                 "readout_len_verified": self.w.get("readout_len_verified")
                 if hasattr(self, "w") else None,
+                "duration_active": self.w.get("duration_active")
+                if hasattr(self, "w") else None,
+                "duration_optimized": self.w.get("duration_optimized")
+                if hasattr(self, "w") else None,
+                "duration_verified": self.w.get("duration_verified")
+                if hasattr(self, "w") else None,
+                "sigma_us": self.w.get("sigma_us") if hasattr(self, "w") else None,
+                "gate_duration_ns": (4000.0 * self.w.get("sigma_us", self.cfg["sigma"])
+                                     if hasattr(self, "w") else None),
+                "leakage_active": self.w.get("leakage_active")
+                if hasattr(self, "w") else None,
+                "leakage_optimized": self.w.get("leakage_optimized")
+                if hasattr(self, "w") else None,
+                "leakage_verified": self.w.get("leakage_verified")
+                if hasattr(self, "w") else None,
+                "leakage_max_ucb": self.w.get("leakage_max_ucb")
+                if hasattr(self, "w") else None,
+                "ef_freq": self.w.get("ef_freq") if hasattr(self, "w") else None,
+                "ef_pi_gain": self.w.get("ef_pi_gain") if hasattr(self, "w") else None,
                 "pi_audit_bound_frac": self.w.get("pi_audit_bound_frac")
                 if hasattr(self, "w") else None,
                 "report": self.data.get("report", []),

@@ -453,6 +453,68 @@ check("the 2-D witness exposes about thirty fidelity points of staged-search reg
       0.27 <= _selected_2d["regret"] <= 0.32,
       "regret=%.3f" % _selected_2d["regret"])
 
+print("== pulse duration is an evidence-gated search coordinate ==")
+_duration_rows = [
+    {"sigma_us": 0.25, "fid": 0.900, "fid_se": 0.004, "verified": True},
+    {"sigma_us": 0.10, "fid": 0.899, "fid_se": 0.004, "verified": True},
+    {"sigma_us": 0.05, "fid": 0.880, "fid_se": 0.004, "verified": True},
+]
+_duration_pick = T.select_duration_candidate(
+    _duration_rows, 0.25, confidence_sigma=1.96,
+    equivalence_margin=0.005, max_fidelity_drop=0.01)
+check("a faster pulse is selected only when held-out fidelity is equivalent",
+      _duration_pick is not None
+      and abs(_duration_pick["sigma_us"] - 0.10) < 1e-12,
+      "selection=%s" % _duration_pick)
+_duration_slow = T.select_duration_candidate([
+    {"sigma_us": 0.25, "fid": 0.900, "fid_se": 0.004, "verified": True},
+    {"sigma_us": 0.35, "fid": 0.905, "fid_se": 0.004, "verified": True},
+], 0.25, confidence_sigma=1.96)
+check("a longer pulse is rejected when its apparent gain is inside uncertainty",
+      _duration_slow is not None
+      and abs(_duration_slow["sigma_us"] - 0.25) < 1e-12,
+      "selection=%s" % _duration_slow)
+
+_duration_tuner = T.AutoTuner.__new__(T.AutoTuner)
+_duration_tuner.cfg = {
+    "sigma": 0.25, "qubit_drag_beta": 0.0, "read_pulse_freq": 7248.9,
+    "read_pulse_gain": 4300, "read_length": 20.0, "res_phase": 0.0,
+    "relax_delay": 500.0, "adc_trig_offset": 0.5,
+}
+_duration_tuner.P = T.merge_params({"pulse_duration": {
+    "enabled": True, "gate_durations_ns": (400, 1000),
+    "gain_points": 5, "freq_points": 3, "confirm_blocks": 2,
+}})
+_duration_tuner.w = {
+    "sigma_us": 0.25, "pi_gain": 10000, "drive_freq": 2534.4,
+    "drag_beta": 0.0, "read_pulse_freq": 7248.9, "read_pulse_gain": 4300,
+    "read_length": 20.0, "res_phase": 0.0, "relax_delay": 500.0,
+    "updated": set(),
+}
+_duration_tuner.node_data = {}
+_duration_tuner.report_lines = []
+
+
+def _synthetic_duration_point(cfg, sigma_us, drive_freq, pi_gain, shots,
+                              strict, evidence):
+    target_gain = 2500.0 / float(sigma_us)
+    fid = (0.900 - 2e-5 * abs(float(pi_gain) - target_gain)
+           - 0.02 * abs(float(drive_freq) - 2534.4))
+    return {"sigma_us": float(sigma_us), "gate_ns": 4000.0 * float(sigma_us),
+            "freq": float(drive_freq), "gain": int(pi_gain),
+            "fid": float(fid), "fid_se": 0.003, "sep": 3.0,
+            "outlier": 0.01, "verified": True, "ss": {"ok": True}}
+
+
+_duration_tuner._duration_ss_point = _synthetic_duration_point
+_duration_moved = _duration_tuner._cal_pulse_duration()
+check("the duration stage retunes gain per duration and adopts the faster equivalent",
+      _duration_moved and abs(_duration_tuner.w["sigma_us"] - 0.10) < 1e-12
+      and abs(_duration_tuner.w["pi_gain"] - 25000) <= 1
+      and "sigma" in _duration_tuner.w["updated"],
+      "sigma=%.4f gain=%d" % (_duration_tuner.w["sigma_us"],
+                                _duration_tuner.w["pi_gain"]))
+
 _score_tuner = T.AutoTuner.__new__(T.AutoTuner)
 _score_tuner.w = {"ss_fidelity": 0.60, "ss_fidelity_se": 0.005,
                   "ss_sep_sigma": 100.0, "pi_gain": 11500, "pi_gain_err": 2.0,
@@ -520,6 +582,27 @@ check("finite-shot uncertainty never becomes zero just because no errors were ob
       T.single_shot_analysis(np.full(100, -1.0), np.zeros(100),
                              np.full(100, 1.0), np.zeros(100))["fidelity_se"] > 0.0)
 
+print("== leakage population is measured, not inferred from two-blob tails ==")
+_leak_cal = {
+    "g": (0.97, 0.003, 0.03, 0.003),
+    "e": (0.04, 0.003, 0.04, 0.003),
+    "f": (0.05, 0.003, 0.95, 0.004),
+}
+_leak_truth = np.array([0.20, 0.70, 0.10])
+_leak_id = sum(_leak_truth[j] * _leak_cal[s][0]
+               for j, s in enumerate(("g", "e", "f")))
+_leak_sh = sum(_leak_truth[j] * _leak_cal[s][2]
+               for j, s in enumerate(("g", "e", "f")))
+_leak_solved = T.solve_shelved_qutrit_population(
+    _leak_cal, (_leak_id, 0.003), (_leak_sh, 0.003))
+check("identity+shelving response inversion recovers a 10% f population",
+      _leak_solved["ok"] and abs(_leak_solved["p2"] - 0.10) < 1e-10,
+      "P(f)=%.4f +/- %.4f" % (_leak_solved["p2"], _leak_solved["p2_se"]))
+_singular_cal = {s: (0.5, 0.01, 0.5, 0.01) for s in ("g", "e", "f")}
+check("a nonselective/ill-conditioned shelving measurement cannot certify leakage",
+      not T.solve_shelved_qutrit_population(
+          _singular_cal, (0.5, 0.01), (0.5, 0.01))["ok"])
+
 # A tail-sensitive classical standard deviation can be <2 sigma even when the robust
 # held-out discriminator exceeds 90%; only the fidelity LCB is an eligibility gate.
 _classical_sep = _ax_ss["sep"] / _ax_ss["sigma_classical"]
@@ -571,13 +654,18 @@ class _PulseCapture(object):
                     "read_length": 20.0, "adc_trig_offset": 0.5,
                     "readout_guard_us": 1.0, "read_pulse_style": "const",
                     "read_pulse_gain": 4300, "res_phase": 17.0}
-        self.gauss = self.read = None
+        self.gauss = self.read = self.arb = None
+        self.soccfg = {"gens": [{}, {"samps_per_clk": 16,
+                                      "maxv": 32766, "maxv_scale": 1.0}]}
 
     def us2cycles(self, value, gen_ch=None, ro_ch=None):
         return int(round(float(value) * ({1: 100, 0: 20}.get(gen_ch, 1))))
 
     def add_gauss(self, **kw):
         self.gauss = kw
+
+    def add_pulse(self, **kw):
+        self.arb = kw
 
     def deg2reg(self, value, gen_ch=None):
         return 1000 + int(round(value)) + 10 * int(gen_ch)
@@ -592,6 +680,17 @@ T.set_readout_pulse(_pc, read_freq=1234)
 check("shared Gaussian setup uses the qubit generator clock",
       _pc.gauss["sigma"] == 12 and _pc.gauss["length"] == 48,
       "gauss=%s" % _pc.gauss)
+_pc_drag = _PulseCapture()
+_pc_drag.cfg["qubit_drag_beta"] = 0.10
+T.add_qubit_gaussian(_pc_drag)
+_drag_i, _drag_q = _pc_drag.arb["idata"], _pc_drag.arb["qdata"]
+check("nonzero DRAG beta emits a replayable symmetric-I/antisymmetric-Q envelope",
+      _pc_drag.gauss is None and _drag_i.size == 4 * 12 * 16
+      and np.array_equal(_drag_i, _drag_i[::-1])
+      and np.array_equal(_drag_q, -_drag_q[::-1])
+      and abs(np.max(np.abs(_drag_q)) / np.max(_drag_i) - 0.10) < 2e-4,
+      "samples=%d peak Q/I=%.5f" %
+      (_drag_i.size, np.max(np.abs(_drag_q)) / np.max(_drag_i)))
 check("shared readout setup covers ADC+offset+guard and consumes res_phase",
       _pc.read["length"] == 430 and _pc.read["phase"] == 1017,
       "read=%s" % _pc.read)
@@ -646,6 +745,7 @@ _fingerprint_variant_cfg.update(
     flat_top_length=0.30, use_switch=True, seq_gap_us=0.02,
     res_phase=17.0, read_pulse_length=30.0, ff_hold_gain=1200)
 _fingerprint_variant = T.pulse_fingerprint(_fingerprint_variant_cfg)
+_fingerprint_drag = T.pulse_fingerprint(dict(BaseConfig, qubit_drag_beta=0.025))
 _qm_fingerprint = T.pulse_fingerprint({
     "qubit_ch": 1, "qubit_nqz": 1, "qubit_pulse_style": "arb",
     "sigma": 0.125, "flattop_length": 0.30, "f_ge": 2534.4,
@@ -667,7 +767,9 @@ check("pulse fingerprints expose every manual-vs-auto path ambiguity",
       and _qm_fingerprint["qubit_freq_mhz"] == 2534.4
       and _qm_fingerprint["readout_integration_us"] == 20.0
       and _qm_fingerprint["readout_generator_us"] == 30.0
-      and _qm_fingerprint["switch_enabled"])
+      and _qm_fingerprint["switch_enabled"]
+      and _fingerprint_drag["qubit_envelope"] == "gaussian_4sigma_drag"
+      and _fingerprint_drag["qubit_drag_beta"] == 0.025)
 _identity_tuner = T.AutoTuner.__new__(T.AutoTuner)
 _identity_tuner.cfg = dict(BaseConfig, length=30.0)
 _identity_tuner.P = T.merge_params(None)
@@ -967,6 +1069,12 @@ check("the shipped runner explicitly enables broad blind target acquisition",
       and _runner_assignments["BLIND_TARGET_ACQUISITION"].value is True
       and any(isinstance(n, ast.Name) and n.id == "BLIND_TARGET_ACQUISITION"
               for n in ast.walk(_runner_assignments["P_TUNER"])))
+check("the shipped q4 runner requires direct leakage certification",
+      '"leakage"' in _runner_src and '"required_for_certification": True' in _runner_src
+      and '"enabled": True' in _runner_src)
+check("the shipped q4 runner searches and certifies pulse duration",
+      '"pulse_duration"' in _runner_src and '"sigma"' in _runner_src
+      and _runner_src.count('"required_for_certification": True') >= 2)
 _runner_main_guard = next(
     n for n in _runner_tree.body
     if isinstance(n, ast.If)
@@ -986,8 +1094,10 @@ _select_node = next(n for n in _runner_tree.body
 _history_ns = {
     "QUBIT": "q4",
     "BaseConfig": {"qubit_pi_gain": 11100, "qubit_pi2_gain": 5550,
-                   "read_pulse_gain": 3900, "relax_delay": 3000.0},
-    "QUBIT_KEYS": ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"),
+                   "read_pulse_gain": 3900, "relax_delay": 3000.0,
+                   "sigma": 0.25, "qubit_drag_beta": 0.0},
+    "QUBIT_KEYS": ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
+                   "qubit_drag_beta"),
     "READOUT_KEYS": ("read_pulse_freq", "read_pulse_gain", "read_length", "res_phase"),
     "SHARED_TIMING_KEYS": ("relax_delay",),
 }
@@ -1123,6 +1233,42 @@ class _StubTuner(T.AutoTuner):
         return c
 
 
+class _LeakageSelectionTuner(_StubTuner):
+    def __init__(self):
+        super().__init__(11500, 11500, params={
+            "leakage": {"beta_span": 0.08, "beta_points": 5,
+                        "max_extensions": 1, "beta_refine_rounds": 0,
+                        "max_fidelity_drop": 0.01}})
+        self.candidate_archive = []
+        self.w.update(drag_beta=0.0, leakage_verified=False,
+                      leakage_optimized=False)
+
+    def _cal_ef_transition(self):
+        self.node_data["leakage"] = {}
+        self.w.update(ef_freq=2334.4, ef_pi_gain=9000,
+                      anharmonicity_mhz=-200.0)
+        return 2334.4, 9000, -200.0
+
+    def _measure_leakage_beta(self, beta, *args, **kwargs):
+        leak = 0.002 + 3.0 * (float(beta) - 0.04) ** 2
+        se = 0.0005
+        fid, fid_se = 0.90, 0.002
+        return {"beta": float(beta), "valid": True,
+                "fidelity": fid, "fidelity_se": fid_se,
+                "fidelity_lcb": T.fidelity_lower_bound(fid, fid_se, 1.96),
+                "leakage_max": leak, "leakage_se": se,
+                "leakage_ucb": leak + 1.96 * se,
+                "response": {"ok": True}, "witnesses": []}
+
+
+_leak_select = _LeakageSelectionTuner()
+_leak_moved = _leak_select._cal_leakage()
+check("leakage optimizer selects a significant low-P(f) beta without sacrificing pi fidelity",
+      _leak_moved and abs(_leak_select.w["drag_beta"] - 0.04) < 1e-12
+      and "qubit_drag_beta" in _leak_select.w["updated"],
+      "beta=%+.5f" % _leak_select.w["drag_beta"])
+
+
 print("\n== best-found archive survives a later certification failure ==")
 
 
@@ -1165,6 +1311,32 @@ check("repeat disagreement is retained in the best-found uncertainty",
       _best_effort_point["measurement_count"] == 2
       and abs(_best_effort_point["block_spread"] - 0.02) < 1e-12
       and _best_effort_point["fidelity_se"] > 0.006)
+_best_effort.candidate_archive = []
+for _beta, _fid in ((0.0, 0.89), (0.02, 0.90)):
+    _bcfg = _best_effort._cfg_for("pi_fidelity")
+    _bcfg["qubit_drag_beta"] = _beta
+    _best_effort._record_empirical_candidate(
+        "leakage", {"fid": _fid, "fid_se": 0.004, "sep": 3.0,
+                    "outlier": 0.01, "verified": True},
+        7248.95, 4300, 2534.7, 11500, 500, False,
+        evidence="beta_identity", measured_cfg=_bcfg)
+_beta_best, _ = _best_effort._summarize_candidate_archive()
+check("candidate aggregation never averages two physically different DRAG betas",
+      _beta_best["measurement_count"] == 1
+      and abs(_beta_best["qubit_drag_beta"] - 0.02) < 1e-12)
+_best_effort.candidate_archive = []
+for _sigma, _fid in ((0.25, 0.89), (0.10, 0.90)):
+    _dcfg = _best_effort._cfg_for("pi_fidelity")
+    _dcfg["sigma"] = _sigma
+    _best_effort._record_empirical_candidate(
+        "pulse_duration", {"fid": _fid, "fid_se": 0.004, "sep": 3.0,
+                           "outlier": 0.01, "verified": True},
+        7248.95, 4300, 2534.7, 11500, 500, False,
+        evidence="duration_identity", measured_cfg=_dcfg)
+_duration_best, _ = _best_effort._summarize_candidate_archive()
+check("candidate aggregation never averages two physically different durations",
+      _duration_best["measurement_count"] == 1
+      and abs(_duration_best["qubit_sigma_us"] - 0.10) < 1e-12)
 
 
 class _PiOnlyTuner(_StubTuner):
@@ -1176,6 +1348,154 @@ class _PiOnlyTuner(_StubTuner):
                       t1_us=dev.T1, t1_lo_us=dev.T1,
                       pi_gain_anchor_err=0.03 * anchor,
                       fine_freq_converged=True)
+
+
+print("\n== protected control: exact replay and monotonic atomic acceptance ==")
+
+
+class _ControlOnlyTuner(T.AutoTuner):
+    def _balanced_single_shot(self, cfg, drive_freq, pi_gain, shots, strict=True):
+        return {"fidelity": 0.90, "fidelity_se": 0.003, "sep_sigma": 4.0,
+                "outlier_frac": 0.01, "ok": True}
+
+    def maintain(self):
+        raise AssertionError("baseline-only mode must never start the graph")
+
+    def _plot(self, success):
+        return plt.figure()
+
+    def pickle_data(self, *args, **kwargs):
+        return None
+
+
+_control_only = _ControlOnlyTuner(
+    soc=None, soccfg=None, path="control_only", outerFolder=tmp,
+    suffix="ControlOnly", cfg=dict(BaseConfig), params={
+        "safety": {"baseline_only": True, "expected_min_fidelity_lcb": 0.85,
+                   "baseline_blocks": 4, "baseline_shots": 100}})
+_control_out = _control_only.acquire(plotDisp=False)["data"]
+check("baseline-only validation measures the exact input four times and starts no search",
+      _control_out["outcome"] == "control_validated"
+      and _control_out["control_validation_passed"]
+      and _control_out["best_found"]["measurement_count"] == 4
+      and _control_out["tuned"] == {})
+check("saved output is stamped with the executable tuner revision",
+      _control_out["autotuner_revision"] == T.AUTOTUNER_REVISION
+      and T.AUTOTUNER_REVISION == "protected-control-v1")
+
+
+class _AtomicGuardTuner(T.AutoTuner):
+    def __init__(self, incumbent_fid, challenger_fid, challenger_verified=True):
+        self.cfg = dict(BaseConfig)
+        self.P = T.merge_params({"safety": {"guard_blocks": 2,
+                                             "guard_shots": 100}})
+        self.report_lines, self.node_data, self.drifted = [], {}, []
+        self.stale = {name: False for name, _, _ in T.GRAPH}
+        self.candidate_archive = []
+        self.w = {
+            "read_pulse_freq": float(BaseConfig["read_pulse_freq"]),
+            "read_pulse_gain": int(BaseConfig["read_pulse_gain"]),
+            "read_length": float(BaseConfig["read_length"]),
+            "res_phase": float(BaseConfig.get("res_phase", 0.0)),
+            "relax_delay": float(BaseConfig["relax_delay"]),
+            "qubit_freq": float(BaseConfig["qubit_freq"]),
+            "drive_freq": float(BaseConfig["qubit_pi_freq"]),
+            "pi_gain": int(BaseConfig["qubit_pi_gain"]),
+            "sigma_us": float(BaseConfig["sigma"]),
+            "drag_beta": float(BaseConfig.get("qubit_drag_beta", 0.0)),
+            "updated": set(),
+        }
+        initial = self._working_control_tuple()
+        self.protected_control = {"tuple": dict(initial), "aggregate": {},
+                                  "source": "test", "promotion_count": 0}
+        self._incumbent_gain = int(initial["qubit_pi_gain"])
+        self._incumbent_fid = float(incumbent_fid)
+        self._challenger_fid = float(challenger_fid)
+        self._challenger_verified = bool(challenger_verified)
+
+    def _measure_control_tuple(self, control, shots, evidence):
+        incumbent = int(control["qubit_pi_gain"]) == self._incumbent_gain
+        return {"freq": float(control["read_pulse_freq"]),
+                "gain": int(control["read_pulse_gain"]),
+                "fid": self._incumbent_fid if incumbent else self._challenger_fid,
+                "fid_se": 0.004, "sep": 3.0, "outlier": 0.01,
+                "verified": True if incumbent else self._challenger_verified}
+
+
+_regression = _AtomicGuardTuner(0.708, 0.638)
+_original_gain = _regression.w["pi_gain"]
+_regression.w["pi_gain"] = 6058 if _original_gain != 6058 else 5790
+try:
+    _regression._guard_working_control("hardware_log_regression")
+    _regression_blocked = False
+except T.TunerError:
+    _regression_blocked = True
+check("a fresh 63.8% challenger can never replace a fresh 70.8% incumbent",
+      _regression_blocked
+      and _regression.w["pi_gain"] == _original_gain
+      and _regression.w.get("protected_control_restored", False))
+
+_unstable = _AtomicGuardTuner(0.90, 0.93, challenger_verified=False)
+_unstable_original = _unstable.w["pi_gain"]
+_unstable.w["pi_gain"] = 6058 if _unstable_original != 6058 else 5790
+try:
+    _unstable._guard_working_control("unstable_challenger")
+    _unstable_blocked = False
+except T.TunerError:
+    _unstable_blocked = True
+check("an unreproduced challenger is archived but never installed",
+      _unstable_blocked and _unstable.w["pi_gain"] == _unstable_original)
+
+_better = _AtomicGuardTuner(0.60, 0.90)
+_better.w["pi_gain"] = 6058 if _better.w["pi_gain"] != 6058 else 5790
+_better_gain = _better.w["pi_gain"]
+check("a statistically superior complete tuple is promoted",
+      _better._guard_working_control("clear_improvement")
+      and _better.protected_control["tuple"]["qubit_pi_gain"] == _better_gain)
+
+
+class _UnstablePiDecisionTuner(_StubTuner):
+    def __init__(self):
+        super().__init__(11500, 11500, params={"pi_fidelity": {
+            "gain_points": 3, "freq_points": 3, "refine_points": 3,
+            "refine_cells": 1, "shortlist": 2, "confirm_blocks": 2,
+            "decision_blocks": 2, "coarse_shots": 20, "shots": 20}})
+        self.candidate_archive = []
+        self.w.update(qubit_freq=2534.4, sigma_us=0.25, drag_beta=0.0,
+                      pi_converged=False, fine_freq_converged=False,
+                      pi_verified=False, freq_verified=False,
+                      pi_fidelity_verified=False,
+                      pi_fidelity_retry_required=False)
+        self._confirm_calls = 0
+
+    def _single_shot_point(self, node, read_freq, read_gain, drive_freq, pi_gain,
+                           shots, strict=True):
+        fid = 0.90 - 0.2 * abs(float(drive_freq) - 2534.55) \
+            - 1e-5 * abs(int(pi_gain) - 12000)
+        return {"freq": float(read_freq), "gain": int(read_gain), "fid": fid,
+                "fid_se": 0.004, "sep": 3.0, "outlier": 0.01,
+                "verified": True}
+
+    def _confirm_candidate_blocks(self, candidates, measure, nblocks,
+                                  max_disagreement=0.06):
+        self._confirm_calls += 1
+        rows = []
+        for j, (freq, gain) in enumerate(candidates):
+            is_incumbent = abs(float(freq) - 2534.4) < 1e-9 and int(gain) == 11500
+            rows.append({"freq": float(freq), "gain": int(gain),
+                         "fid": 0.70 if is_incumbent else 0.90,
+                         "fid_se": 0.004, "sep": 3.0, "outlier": 0.01,
+                         "verified": self._confirm_calls == 1})
+        return rows
+
+
+_unstable_pi = _UnstablePiDecisionTuner()
+_pi_before = (_unstable_pi.w["drive_freq"], _unstable_pi.w["pi_gain"])
+_unstable_pi._cal_pi_fidelity()
+check("pi_fidelity fresh-decision instability cannot mutate frequency or gain",
+      (_unstable_pi.w["drive_freq"], _unstable_pi.w["pi_gain"]) == _pi_before
+      and "qubit_pi_freq" not in _unstable_pi.w["updated"]
+      and "qubit_pi_gain" not in _unstable_pi.w["updated"])
 
 
 def _pi_case(seed, anchor_frac=1.0, params=None, drive_offset=0.0, setup=None):
@@ -1415,12 +1735,16 @@ class _UnstableLenTuner(_LenTuner):
 _unstable_len = _UnstableLenTuner(best_len=8.0, params={"readout_len": {
     "lengths_us": (4.0, 8.0, 12.0), "shortlist": 3}})
 _unstable_len.w.update(read_length=4.0, t1_us=100.0, t1_lo_us=100.0)
-_unstable_len._cal_readout_len()
-check("an unstable length audit retains the empirical winner without certifying it",
-      _unstable_len.w["read_length"] == 8.0
+try:
+    _unstable_len._cal_readout_len()
+    _unstable_len_blocked = False
+except T.TunerError:
+    _unstable_len_blocked = True
+check("an unstable length audit archives the winner but cannot replace the incumbent",
+      _unstable_len_blocked and _unstable_len.w["read_length"] == 4.0
       and _unstable_len.w["readout_len_verified"] is False
       and _unstable_len.node_data["readout_len"]["status"]
-      == "best_empirical_not_certified")
+      == "unstable_challenger_rejected")
 
 print("\n== readout_power: verified fidelity wins; tails are diagnostic, not a cliff ==")
 
@@ -1556,12 +1880,18 @@ _unstable_readout = _UnstableReadoutTuner(
     11500.0, 11500.0, params=_joint_params)
 _unstable_readout.w.update(read_pulse_freq=_CoupledReadoutTuner.F0,
                            read_pulse_gain=4300, kappa_mhz=0.1)
-_unstable_readout._cal_readout_power()
-check("an unstable readout decision keeps the ~90% map point but blocks certification",
-      _unstable_readout.node_data["readout_power"]["selected"]["fid"] > 0.89
+try:
+    _unstable_readout._cal_readout_power()
+    _unstable_readout_blocked = False
+except T.TunerError:
+    _unstable_readout_blocked = True
+check("an unstable readout map is retained as evidence but cannot replace the incumbent",
+      _unstable_readout_blocked
+      and _unstable_readout.node_data["readout_power"]["selected"]["fid"] > 0.89
+      and _unstable_readout.w["read_pulse_gain"] == 4300
       and _unstable_readout.w["readout_power_verified"] is False
       and _unstable_readout.node_data["readout_power"]["status"]
-      == "best_empirical_not_certified")
+      == "unstable_challenger_rejected")
 
 
 class _MissedPiTuner(_StubTuner):
@@ -1604,8 +1934,9 @@ _unstable_map.w.update(pi_gain=10000, drive_freq=2534.40,
                        pi_fidelity_verified=False)
 _unstable_new, _unstable_tol = _unstable_map._cal_pi_fidelity()
 check("an unstable first pi map defers to signed coherent refinement instead of aborting",
-      _unstable_new == {"f": _MissedPiTuner.F_OPT,
-                        "g": float(_MissedPiTuner.G_OPT)}
+      _unstable_new == {"f": 2534.40, "g": 10000.0}
+      and _unstable_map.w["drive_freq"] == 2534.40
+      and _unstable_map.w["pi_gain"] == 10000
       and _unstable_map.w["pi_fidelity_retry_required"]
       and _unstable_map.node_data["pi_fidelity"]["status"].startswith("provisional")
       and _unstable_map.node_data["pi_fidelity"]["provisional_seed"]["fid"] > 0.89)
@@ -1615,10 +1946,15 @@ _unstable_map.stale["pi_fidelity"] = False
 check("the provisional map is automatically scheduled after coherent refinement",
       _unstable_map._invalidate_pi_fidelity_if_unbound()
       and _unstable_map.stale["pi_fidelity"])
-_unstable_final, _unstable_final_tol = _unstable_map._cal_pi_fidelity()
-check("persistent post-refinement instability blocks writes without aborting results",
-      _unstable_final == {"f": _MissedPiTuner.F_OPT,
-                          "g": float(_MissedPiTuner.G_OPT)}
+try:
+    _unstable_map._cal_pi_fidelity()
+    _persistent_instability_stopped = False
+except T.TunerError:
+    _persistent_instability_stopped = True
+check("persistent post-refinement instability trips the graph circuit breaker",
+      _persistent_instability_stopped
+      and _unstable_map.w["drive_freq"] == 2534.40
+      and _unstable_map.w["pi_gain"] == 10000
       and _unstable_map.w["pi_fidelity_audit_failed"]
       and not _unstable_map.w["pi_fidelity_verified"]
       and not _unstable_map.w["pi_fidelity_retry_required"]
@@ -1698,11 +2034,14 @@ t3 = T.AutoTuner(soc=None, soccfg=None, path="q4", outerFolder=tmp, suffix="Reco
 out3 = t3.acquire(plotDisp=False)
 T.AutoTuner._cal_spec = _real_spec
 T.AutoTuner._cal_fine_pi_amp = _orig_fine
-check("a round-2 spec failure did not abort the run",
-      bool(out3["data"].get("tuned")), "tuned=%s" % bool(out3["data"].get("tuned")))
-check("the fallback is reported, not silent",
-      any("KEEPING the round-1 value" in l for l in t3.report_lines))
-check("the mixed-vintage config is flagged", "spec" in t3.drifted)
+check("a round-2 spec failure returns the measured best candidate rather than losing it",
+      out3["data"].get("best_found") is not None
+      and out3["data"]["outcome"] == "best_effort")
+check("the repeated-node circuit breaker is reported, not silent",
+      any("mixed-vintage" in l and "circuit breaker" in l for l in t3.report_lines))
+check("mixed-vintage evidence restores the protected control and blocks writes",
+      out3["data"]["working"].get("protected_control_restored", False)
+      and out3["data"]["eligible_tuned"] == {})
 
 print("\n== T1 must be identifiable and must own its downstream timing domain ==")
 
