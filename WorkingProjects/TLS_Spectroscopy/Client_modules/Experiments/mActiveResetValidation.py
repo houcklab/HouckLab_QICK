@@ -159,58 +159,84 @@ class ActiveResetValidation(ExperimentClass):
             return Ir, Qr, _resid(Ir, Qr)
 
         iters_list = [0, 1, 2, 3, 5]
+        # Two passes in OPPOSITE order.  This readout drifts within a batch and every point
+        # is a separate acquisition, so a single pass confounds "how good is the reset at k"
+        # with "when in the drift was k measured".  Averaging opposite orders cancels a
+        # monotonic drift to first order; the pass-to-pass spread is the drift that is left,
+        # which is what separates a genuinely unstable reset from a drifting readout.
+        res_passes = {k: [] for k in iters_list}
+        iq_by_k = {}
+        for order in (list(iters_list), list(reversed(iters_list))):
+            for k in order:
+                Ir, Qr, res = _reset_run(k)
+                res_passes[k].append(res)
+                iq_by_k[k] = (Ir, Qr)
+
         sweep = []
+        drift_spread = 0.0
         print("-" * 72)
-        print("  residual-excited vs max_iters  (0 = full |e>, 1 = still excited):")
+        print("  residual-excited vs max_iters  (0 = full |e>, 1 = still excited; two")
+        print("  opposite-order passes, so the +/- is readout drift, not reset instability):")
         for k in iters_list:
-            Ir, Qr, res = _reset_run(k)
-            sweep.append({"max_iters": k, "residual": res, "I": Ir, "Q": Qr})
-            print(f"    max_iters={k}:  residual={res:+.3f}   (reset I={Ir:+.4g} Q={Qr:+.4g})")
+            r_mean = float(np.mean(res_passes[k]))
+            r_spread = float(abs(res_passes[k][0] - res_passes[k][1]))
+            drift_spread = max(drift_spread, r_spread)
+            Ir, Qr = iq_by_k[k]
+            sweep.append({"max_iters": k, "residual": r_mean, "drift_spread": r_spread,
+                          "I": Ir, "Q": Qr})
+            print(f"    max_iters={k}:  residual={r_mean:+.3f} (drift +/-{r_spread:.3f})   "
+                  f"(reset I={Ir:+.4g} Q={Qr:+.4g})")
 
         by_k = {s["max_iters"]: s["residual"] for s in sweep}
         r0 = by_k[0]
-        r1 = by_k[1]
-        rmax = by_k[max(iters_list)]
         resid_on = [by_k[k] for k in iters_list if k > 0]
         rbest, rworst = min(resid_on), max(resid_on)
+        on_spread = rworst - rbest
         baseline_sane = abs(r0 - 1.0) <= 0.25
-        consistent = rworst < 0.15
+        reduction = (r0 - rbest) / r0 if r0 > 1e-9 else 0.0
+        # The residual floor is set by readout misidentification P(g|e): a PERFECT reset
+        # cannot push below it, so an absolute "<0.15" bar fails a working reset on a
+        # finite-fidelity readout.  The physical question is whether reset drives |e> toward
+        # |g> and HOLDS it there -- a large reduction that is stable to within the measured
+        # drift.  "Stable" is judged against the drift, not an absolute number.
+        stable = on_spread <= max(0.10, 2.0 * drift_spread)
+        reduced = rbest <= 0.20
+        does_nothing = abs(rbest - r0) < 0.12
+        consistent = bool(reduced and stable)
+        stale_note = ("" if stored_ok else
+                      "\n     Bake the discovered discrimination into production first: "
+                      f"RESET_OPER='{rec_oper}', RESET_THRESHOLD_RAW={rec_thr}, "
+                      f"RESET_GROUND_BELOW={rec_ground_below}.")
         print("-" * 72)
-        print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}  (must be ~1.000 -- it IS the |e> "
-              f"reference) -> {'ok' if baseline_sane else '*** INCONSISTENT ***'}")
+        print(f"  no-reset baseline (max_iters=0) = {r0:+.3f}  (must be ~1.000 -- it IS the "
+              f"|e> reference) -> {'ok' if baseline_sane else '*** INCONSISTENT ***'}")
         print(f"  with reset: best={rbest:+.3f}  worst={rworst:+.3f}  "
-              f"({'stable' if consistent else 'NOT stable across iters'})")
+              f"(reduced {100 * reduction:.0f}% from baseline; readout drift +/-{drift_spread:.3f})")
         if not baseline_sane:
             print(f"  -> INCONCLUSIVE: the no-reset baseline should be 1.000 by construction but "
-                  f"reads {r0:+.3f}.  The reference and sweep measurements disagree, so the "
-                  "residuals above are not trustworthy (marginal readout SNR / unreliable pi).")
-            print("     Run SS_Cal + Rabi to calibrate the readout discrimination and the pi, "
-                  "then re-run this.  Do NOT enable reset_mode='feedback' yet.")
+                  f"reads {r0:+.3f}.  The reference and sweep disagree, so the residuals are not "
+                  "trustworthy (marginal readout SNR / unreliable pi).  Calibrate the readout + "
+                  "pi (SS_Cal + Rabi), then re-run.  Do NOT enable reset_mode='feedback' yet.")
         elif host_sep < 0.06:
-            print(f"  -> READOUT NOT CALIBRATED (|g>/|e> contrast {host_sep:.3g}): the blobs barely "
-                  "separate, so NEITHER the tProc discrimination NOR this residual is meaningful "
-                  "(that is why the numbers above are erratic).  Run SS_Cal + Rabi to calibrate "
-                  "the readout and the pi, then re-probe the threshold and re-run this.")
-        elif not stored_ok:
-            print("  -> reset config is STALE (see above): apply the RECOMMENDED oper/threshold/"
-                  "ground_below, then re-run.  (Other diagnoses unreliable until fixed.)")
+            print(f"  -> READOUT NOT CALIBRATED (|g>/|e> contrast {host_sep:.3g}): the blobs "
+                  "barely separate, so neither the tProc discrimination nor this residual is "
+                  "meaningful.  Run SS_Cal + Rabi, re-probe the threshold, then re-run.")
         elif consistent:
-            print("  -> ACTIVE RESET WORKS: residual stays low at EVERY iteration count.")
-        elif rbest < 0.15:
-            print(f"  -> NOT CONFIRMED (unstable): residual dips to {rbest:+.3f} but reaches "
-                  f"{rworst:+.3f} at other iteration counts.  A real reset STAYS low once the "
-                  "qubit is in |g> (the conditional just skips the pi), so a single low point is "
-                  "noise, not reset.  Calibrate the readout + pi (SS_Cal + Rabi), then re-run.")
-        elif abs(rbest - r0) < 0.12:
-            print("  -> reset does NOTHING vs baseline: the conditional isn't firing as intended "
-                  "-> discrimination broken (oper/ground_below sign, threshold, or read timing).")
-        elif rmax < r1 - 0.10:
-            print("  -> reset CONVERGING (residual still dropping at max iters) but not finished: "
-                  "the pi is under-rotated (weak/detuned).  Calibrate the pi (run SS_Cal+Rabi) "
-                  "and/or raise RESET_MAX_ITERS.")
+            print(f"  -> ACTIVE RESET WORKS: reset drives |e> ({r0:.2f}) down to ~{rbest:.2f} and "
+                  f"holds it there across iterations (within the {drift_spread:.2f} readout "
+                  f"drift).  The residual floor is readout misidentification P(g|e), not a reset "
+                  f"failure -- more iterations cannot beat the readout fidelity." + stale_note)
+        elif reduced and not stable:
+            print(f"  -> RESET IS ACTING (|e> {r0:.2f} -> ~{rbest:.2f}) but the reset-on points "
+                  f"scatter {on_spread:.2f}, more than the {drift_spread:.2f} readout drift "
+                  f"explains.  Raise shots or stabilise the readout, then re-run to confirm." + stale_note)
+        elif does_nothing:
+            print("  -> reset does NOTHING vs baseline: the conditional isn't firing -> "
+                  "discrimination broken (oper/ground_below sign, threshold, or read timing)." + stale_note)
         else:
-            print("  -> reset PLATEAUS partway (helps but caps out): most likely an under-rotated "
-                  "pi -- calibrate it (SS_Cal+Rabi) -- or marginal discrimination.")
+            print(f"  -> reset PARTIAL: residual only reaches {rbest:.2f} (|e> baseline {r0:.2f}) "
+                  "-- most likely an under-rotated pi (calibrate it with SS_Cal + Rabi) or "
+                  "marginal discrimination." + stale_note)
         print("=" * 72)
 
         self.data = {
