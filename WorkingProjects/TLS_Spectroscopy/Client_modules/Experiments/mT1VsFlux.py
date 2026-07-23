@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, set_readout_pulse,
+)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
@@ -364,21 +367,18 @@ class FFT1Program(AveragerProgram):
 
         style = cfg.get("qubit_pulse_style", "arb")
         if style == "flat_top":
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(cfg["sigma"]), length=self.us2cycles(cfg["sigma"]) * 4)
+            add_qubit_gaussian(self)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="flat_top", freq=qubit_freq, phase=0,
                                      gain=cfg["qubit_pi_gain"], waveform="qubit",
-                                     length=self.us2cycles(cfg["flat_top_length"]))
+                                     length=self.us2cycles(cfg["flat_top_length"],
+                                                           gen_ch=cfg["qubit_ch"]))
         else:
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(cfg["sigma"]), length=self.us2cycles(cfg["sigma"]) * 4)
+            add_qubit_gaussian(self)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
                                      phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                      gain=cfg["qubit_pi_gain"], waveform="qubit")
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, read_freq)
 
         if cfg.get("do_ff", True):
             self.ff_segs = ff_pulse.build_ramp_hold_ramp(
@@ -424,11 +424,13 @@ class FFT1Program(AveragerProgram):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
         n_reset = active_reset.active_reset_readouts(self.cfg)
         h, f = n_reset, n_reset + 1
-        raw = np.array(self.get_raw())
-        i0 = raw[0, 0, :, h, 0] / length
-        q0 = raw[0, 0, :, h, 1] / length
-        i1 = raw[0, 0, :, f, 0] / length
-        q1 = raw[0, 0, :, f, 1] / length
+        reads = 2 + n_reset
+        buf_i = self.di_buf[0].reshape((self.cfg["reps"], reads))
+        buf_q = self.dq_buf[0].reshape((self.cfg["reps"], reads))
+        i0 = buf_i[:, h] / length
+        q0 = buf_q[:, h] / length
+        i1 = buf_i[:, f] / length
+        q1 = buf_q[:, f] / length
         return i0, q0, i1, q1
 
 

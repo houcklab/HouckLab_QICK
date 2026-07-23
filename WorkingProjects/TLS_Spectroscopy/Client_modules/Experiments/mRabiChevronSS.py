@@ -9,6 +9,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
     n_drive_pulses, flux_hold_declare, flux_hold_build, rabi_flux_body)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, set_readout_pulse,
+)
 
 
 class RabiSSProgram(RAveragerProgram):
@@ -39,16 +42,12 @@ class RabiSSProgram(RAveragerProgram):
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                       sigma=self.us2cycles(cfg["sigma"]),
-                       length=self.us2cycles(cfg["sigma"]) * 4)
+        add_qubit_gaussian(self)
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=drive_freq,
                                  phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                  gain=cfg["start"], waveform="qubit")
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, read_freq)
         flux_hold_build(self)
         self.synci(200)
 
@@ -67,9 +66,11 @@ class RabiSSProgram(RAveragerProgram):
     def collect_shots(self):
         length = self.us2cycles(self.cfg["read_length"], ro_ch=self.cfg["ro_chs"][0])
         n_reset = active_reset.active_reset_readouts(self.cfg)
-        raw = np.array(self.get_raw())
-        shots_i = raw[0, :, :, n_reset, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
-        shots_q = raw[0, :, :, n_reset, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        reads = 1 + n_reset
+        buf_i = self.di_buf[0].reshape((self.cfg["expts"], self.cfg["reps"], reads))
+        buf_q = self.dq_buf[0].reshape((self.cfg["expts"], self.cfg["reps"], reads))
+        shots_i = buf_i[:, :, n_reset] / length
+        shots_q = buf_q[:, :, n_reset] / length
         return shots_i, shots_q
 
 

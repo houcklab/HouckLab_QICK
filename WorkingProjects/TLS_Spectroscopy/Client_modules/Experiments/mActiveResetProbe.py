@@ -5,6 +5,9 @@ from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, set_readout_pulse,
+)
 
 _ADDR_I, _ADDR_Q = 100, 101
 _REG_I, _REG_Q = 30, 31
@@ -26,13 +29,10 @@ class ReadProbeProgram(AveragerProgram):
                                  gen_ch=cfg["res_ch"])
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         qubit_freq = self.freq2reg(cfg.get("qubit_pi_freq", cfg["qubit_freq"]), gen_ch=cfg["qubit_ch"])
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                       sigma=self.us2cycles(cfg["sigma"]), length=self.us2cycles(cfg["sigma"]) * 4)
+        add_qubit_gaussian(self)
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq, phase=0,
                                  gain=int(cfg["probe_gain"]), waveform="qubit")
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, read_freq)
         self.synci(200)
 
     def body(self):

@@ -7,6 +7,9 @@ from qick import RAveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, set_readout_pulse,
+)
 
 
 def flux_hold_us(cfg, cover_readout):
@@ -114,16 +117,12 @@ class RabiChevronIQProgram(RAveragerProgram):
         read_freq = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
-        self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                       sigma=self.us2cycles(cfg["sigma"]),
-                       length=self.us2cycles(cfg["sigma"]) * 4)
+        add_qubit_gaussian(self)
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=drive_freq,
                                  phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                  gain=cfg["start"], waveform="qubit")
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, read_freq)
         flux_hold_build(self)
         self.synci(200)
 

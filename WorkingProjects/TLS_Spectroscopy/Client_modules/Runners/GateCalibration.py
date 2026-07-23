@@ -219,6 +219,10 @@ def run_qubit_spec(outer_folder, soc, soccfg):
 def run_ss_cal(outer_folder, soc, soccfg):
     p = P_SS_CAL
     cfg = _base_cfg(p)
+    # SingleShot1Q intentionally sweeps/prepares with ``qubit_gain``.  For a readout
+    # calibration its |e> reference must replay the committed X180, not the unrelated
+    # spectroscopy gain left in BaseConfig.  TLSSpectroscopy uses the same mapping.
+    cfg["qubit_gain"] = int(cfg["qubit_pi_gain"])
     print(f"[SS] single-shot readout calibration ({p['shots']} shots, "
           f"{p['number_pi_pulses']}x pi prep)")
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,

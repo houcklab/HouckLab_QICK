@@ -492,7 +492,9 @@ def create_qubit_pulse(prog: AcquireProgram, freq: float) -> float:
         prog.add_gauss(ch=prog.cfg["qubit_ch"], name="qubit", sigma=sigma_reg, length=sigma_reg * 4)
         prog.set_pulse_registers(ch=prog.cfg["qubit_ch"], style=prog.cfg["qubit_pulse_style"], freq=freq_reg,
                                  phase=prog.deg2reg(0, gen_ch=prog.cfg["qubit_ch"]), gain=prog.cfg["qubit_gain"],
-                                 waveform="qubit", length=prog.us2cycles(prog.cfg["flat_top_length"]))
+                                 waveform="qubit", length=prog.us2cycles(
+                                     prog.cfg["flat_top_length"],
+                                     gen_ch=prog.cfg["qubit_ch"]))
         pulse_length = prog.cfg["sigma"] * 4 + prog.cfg["flat_top_length"]  # [us]
     # Constant
     elif prog.cfg["qubit_pulse_style"] == "const":

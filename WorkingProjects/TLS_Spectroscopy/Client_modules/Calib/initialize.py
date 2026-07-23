@@ -26,6 +26,9 @@ BaseConfig = {
 
     "read_pulse_style": "const",
     "read_length": 20.0,
+    # Generator tone extends beyond the delayed ADC window by this guard.  The same
+    # canonical pulse helper is used by AutoTuner and all production consumers.
+    "readout_guard_us": 1.0,
     "read_pulse_gain": 4300,
     "read_pulse_freq": 7248.95,
 
@@ -37,7 +40,9 @@ BaseConfig = {
     "qubit_gain": 7000,
     "qubit_length": 0.5,
     "sigma": 0.125,
-    "flat_top_length": 0.30,
+    # Must be None for an arb Gaussian.  A populated plateau field is interpreted as a
+    # flat-top selector by some QM-Team programs regardless of qubit_pulse_style.
+    "flat_top_length": None,
 
     "ff_park_gain": 0,
     "FF_Qubits": FF_Qubits,
@@ -58,5 +63,3 @@ FF_PARK_GAIN = 0
 FF_STEP_TARGET_GAIN = 8000
 
 outerFolder = "Z:/FluxTeam/Data/FTT02_SiOxJJ_2026_06_25/RFSOC"
-
-

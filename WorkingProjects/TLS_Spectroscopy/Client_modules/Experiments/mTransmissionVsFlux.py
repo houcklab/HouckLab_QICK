@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 
 
@@ -23,13 +24,7 @@ class TransmissionProgram(AveragerProgram):
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
                                  freq=cfg["read_pulse_freq"], gen_ch=cfg["res_ch"])
         f_res = self.freq2reg(cfg["read_pulse_freq"], gen_ch=cfg["res_ch"], ro_ch=cfg["ro_chs"][0])
-        style = cfg.get("read_pulse_style", "const")
-        kw = dict(ch=cfg["res_ch"], style=style, freq=f_res, phase=0,
-                  gain=cfg["read_pulse_gain"],
-                  length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
-        if cfg.get("ro_mode_periodic", False):
-            kw["mode"] = "periodic"
-        self.set_pulse_registers(**kw)
+        set_readout_pulse(self, f_res)
         self.synci(200)
 
     def body(self):

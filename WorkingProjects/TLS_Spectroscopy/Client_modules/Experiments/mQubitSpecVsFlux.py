@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 
@@ -56,10 +57,7 @@ class QubitSpecProgram(RAveragerProgram):
                 kw["mode"] = "periodic"
             self.set_pulse_registers(**kw)
 
-        style_r = cfg.get("read_pulse_style", "const")
-        self.set_pulse_registers(ch=cfg["res_ch"], style=style_r, freq=f_res, phase=0,
-                                 gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, f_res)
         self.sync_all(self.us2cycles(1))
 
     def body(self):

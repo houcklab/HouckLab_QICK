@@ -8,6 +8,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
     find_blob_median, find_threshold,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, set_readout_pulse,
+)
 
 
 def discriminate_shots(i, q, calib_params):
@@ -52,27 +55,22 @@ class SingleShotProgram(RAveragerProgram):
 
         style = cfg.get("qubit_pulse_style", "arb")
         if style == "arb":
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(cfg["sigma"]),
-                           length=self.us2cycles(cfg["sigma"]) * 4)
+            add_qubit_gaussian(self)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
                                      phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                      gain=cfg["start"], waveform="qubit")
         elif style == "flat_top":
-            self.add_gauss(ch=cfg["qubit_ch"], name="qubit",
-                           sigma=self.us2cycles(cfg["sigma"]),
-                           length=self.us2cycles(cfg["sigma"]) * 4)
+            add_qubit_gaussian(self)
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="flat_top", freq=qubit_freq,
                                      phase=0, gain=cfg["start"], waveform="qubit",
-                                     length=self.us2cycles(cfg["flat_top_length"]))
+                                     length=self.us2cycles(cfg["flat_top_length"],
+                                                           gen_ch=cfg["qubit_ch"]))
         else:
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=qubit_freq,
                                      phase=0, gain=cfg["start"],
                                      length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
 
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=read_freq, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, read_freq)
         self.synci(200)
 
     def body(self):

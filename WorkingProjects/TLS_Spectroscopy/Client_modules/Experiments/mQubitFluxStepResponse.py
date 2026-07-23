@@ -10,6 +10,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predistortion as fpd
@@ -93,9 +94,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
                                  gain=cfg["qubit_gain"],
                                  length=self.us2cycles(cfg["qubit_length"], gen_ch=cfg["qubit_ch"]))
-        self.set_pulse_registers(ch=cfg["res_ch"], style=cfg.get("read_pulse_style", "const"),
-                                 freq=f_res, phase=0, gain=cfg["read_pulse_gain"],
-                                 length=self.us2cycles(cfg["read_length"], gen_ch=cfg["res_ch"]))
+        set_readout_pulse(self, f_res)
 
         self.ff_segs = ff_pulse.build_ramp_hold_ramp(
             self, hold_us=cfg["ff_hold"], ff_gain=cfg["ff_gain"],
