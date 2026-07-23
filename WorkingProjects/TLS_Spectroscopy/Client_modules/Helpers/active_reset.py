@@ -32,10 +32,11 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        page=None, reg_val=None, reg_thr=None):
     """Emit a QUA-style feedback reset into ``prog`` (a QICK tProc-v1 program).
 
-    Bounded loop, ``max_iters`` passes:  measure -> read accumulator I -> if the qubit is
-    ground, jump out; else play one X180 and repeat.  This is the exact QUA
-    ``while_(I_reset > thr): play('X180')`` intent, bounded (tProc-friendly, and a hedge
-    against an infinite loop if discrimination is marginal).
+    Fixed-count bounded loop, ``max_iters`` passes: measure -> read one accumulator
+    half -> play X180 only when classified excited.  Every pass is still measured so
+    QICK returns a deterministic number of buffers per repetition; later ground results
+    simply skip their correction pulses.  This implements the QUA conditional-reset
+    intent without an unbounded loop or variable buffer shape.
 
     Requires ``feedback_channel(prog.soccfg, ro_ch) >= 0`` (verify with the probe).
 
@@ -97,8 +98,9 @@ def active_reset_readouts(cfg):
     return int(cfg.get("reset_max_iters", 3))
 
 
-def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000):
-    """Measure a FRESH active-reset discrimination (raw threshold, quadrature half, sign).
+def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000,
+                       validate=True, min_raw_fidelity=0.80, min_raw_shots=200):
+    """Measure and, by default, end-to-end validate fresh active-reset parameters.
 
     The raw |g>/|e> accumulator reads on this readout drift between sessions -- enough to
     move the threshold severalfold and even swap which side |g> sits on -- so a threshold
@@ -106,13 +108,16 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     qubit is ALREADY in |g>, pumping it the wrong way.  Re-measuring live at the start of a
     run (intra-run drift is small) keeps it correct.
 
-    Returns the recommended dict {'oper','threshold_raw','ground_below'}, or None if the
-    firmware has no feedback path or the readout cannot discriminate -- in which case the
-    caller must fall back to passive relax rather than trust a bad threshold."""
+    Returns the recommended dict or ``None`` if the firmware has no feedback path, the
+    raw separation is split across both accumulator halves, or the conditional reset
+    does not reduce a prepared excited reference below the validation bound.  A caller
+    must fall back to passive relaxation rather than trust a merely plausible threshold.
+    """
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
     cfg["shots"] = int(shots)
+    cfg["reps"] = int(shots)
     cfg["qubit_gain"] = int(cfg.get("qubit_pi_gain", cfg.get("qubit_gain", 0)))
     try:
         probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=path,
@@ -124,7 +129,50 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
     if not data.get("supported") or not data.get("recommended"):
         print("[reset] no usable feedback discrimination -- falling back to passive relax.")
         return None
-    rec = data["recommended"]
+    results = data.get("results", {})
+    try:
+        lower = abs(int(results["excited"]["raw_lower"])
+                    - int(results["ground"]["raw_lower"]))
+        upper = abs(int(results["excited"]["raw_upper"])
+                    - int(results["ground"]["raw_upper"]))
+        purity_ok = max(lower, upper) >= 3 * max(1, min(lower, upper))
+    except Exception:
+        purity_ok = False
+    if not purity_ok:
+        print("[reset] discrimination is not concentrated on one raw accumulator "
+              "half -- falling back to passive relax.")
+        return None
+    raw_fidelity = float(data.get("raw_assignment_fidelity", -float("inf")))
+    try:
+        buffered_shots = int(data.get("raw_assignment_shots", 0))
+    except Exception:
+        buffered_shots = 0
+    if buffered_shots < int(min_raw_shots):
+        print(f"[reset] only {buffered_shots} buffered threshold shots were available "
+              f"(need {int(min_raw_shots)}) -- falling back to passive relax.")
+        return None
+    if not raw_fidelity >= float(min_raw_fidelity):
+        print(f"[reset] raw held-shot assignment F={raw_fidelity:.3f} is below "
+              f"{float(min_raw_fidelity):.3f} -- falling back to passive relax.")
+        return None
+    rec = dict(data["recommended"])
+    rec["raw_assignment_fidelity"] = raw_fidelity
+    rec["raw_assignment_errors"] = dict(data.get("raw_assignment_errors", {}))
+    rec["raw_assignment_shots"] = buffered_shots
+    if validate:
+        try:
+            residual = probe._residual_at(
+                float(cfg.get("res_phase", 0.0)), int(rec["threshold_raw"]),
+                bool(rec["ground_below"]), max(500, int(shots)))
+        except Exception as exc:
+            print(f"[reset] end-to-end validation failed ({exc}) -- falling back to "
+                  "passive relax.")
+            return None
+        if not residual.get("works", False):
+            print("[reset] conditional reset did not pass its prepared-|e> residual "
+                  "check -- falling back to passive relax.")
+            return None
+        rec["validation"] = residual
     print(f"[reset] fresh discrimination: oper={rec['oper']} threshold_raw={rec['threshold_raw']} "
           f"ground_below={rec['ground_below']}")
     return rec

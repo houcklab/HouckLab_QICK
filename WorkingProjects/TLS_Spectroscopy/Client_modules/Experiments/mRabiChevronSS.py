@@ -17,8 +17,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 class RabiSSProgram(RAveragerProgram):
     """Hardware gain sweep at a fixed drive frequency (cfg['rabi_drive_freq']); body plays
     cfg['n_pulses'] gaussian pulses at the swept gain, then a single-shot readout with a
-    passive relax_delay (the T1-style substitute for QUA active reset).  collect_shots()
-    returns per-gain single shots of shape (amp_expts, shots)."""
+    validated feedback reset when requested, otherwise passive relax_delay.  Reset
+    readouts are discarded; collect_shots() returns only the final per-gain shots with
+    shape (amp_expts, shots)."""
 
     def initialize(self):
         cfg = self.cfg
@@ -43,6 +44,12 @@ class RabiSSProgram(RAveragerProgram):
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
         add_qubit_gaussian(self)
+        if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+            add_qubit_gaussian(
+                self, name="qubit_reset",
+                sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+                drag_beta=float(cfg.get(
+                    "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))))
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=drive_freq,
                                  phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                  gain=cfg["start"], waveform="qubit")
@@ -118,9 +125,11 @@ class RabiChevronSS(ExperimentClass):
 
         n_f, n_a = len(df_vec), len(gains)
         pop = np.full((n_f, n_a), np.nan)
+        reset_note = ("validated feedback reset" if str(cfg.get(
+            "reset_mode", "passive")).strip().lower() == "feedback"
+                      else f"passive relax {cfg['relax_delay']} us")
         print(f"[Rabi Chevron SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
-              f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; passive relax "
-              f"{cfg['relax_delay']} us")
+              f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; {reset_note}")
 
         for i, df in enumerate(df_vec):
             cfg["rabi_drive_freq"] = pi_freq + df

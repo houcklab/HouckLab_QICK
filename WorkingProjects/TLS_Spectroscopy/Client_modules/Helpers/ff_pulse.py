@@ -9,6 +9,29 @@ def declare_ff(prog):
     prog.declare_gen(ch=prog.cfg["ff_ch"], nqz=prog.cfg.get("ff_nqz", 1))
 
 
+def static_park_configured(cfg):
+    """Whether a program has an explicit static fast-flux operating point.
+
+    The value of ``ff_park_gain`` is deliberately irrelevant here: zero is a real
+    operating point too.  Explicitly replaying zero prevents a nonzero ``stdysel``
+    value left latched by an earlier program from leaking into a calibration run.
+    """
+    return (cfg.get("ff_ch", None) is not None
+            and "ff_park_gain" in cfg
+            and cfg.get("ff_park_gain", None) is not None)
+
+
+def declare_static_park(prog):
+    """Declare the FF generator when ``cfg`` specifies a static park point.
+
+    This helper never chooses or changes the operating point; it only makes the
+    value already present in the run configuration physically reproducible.
+    """
+    prog.do_static_ff_park = bool(static_park_configured(prog.cfg))
+    if prog.do_static_ff_park:
+        declare_ff(prog)
+
+
 def _avg_segs(seg, dt_def_us, dt_play_us):
     """Downsample a fine (dt_def) waveform to coarse (dt_play) staircase means.
     (Mirrors escher FFRampHoldTest.create_avg_segs.)"""
@@ -137,21 +160,36 @@ def play_ramp_down(prog, segs):
     prog.safe_regwi(ff_rp, ff_gain_reg, int(segs.get("park", 0)))
 
 
-def assert_park(prog, segs, dt_us=0.1):
+def assert_park(prog, segs, dt_us=0.1, force=False):
     """Force the ff DAC to the park level (held via stdysel='last').
 
     Call at the top of body() when ff_park_gain != 0 so the first rep after a
     program load (when the DAC may sit at 0) starts from park like every other rep.
-    No-op when park == 0.
+    No-op when park == 0 unless ``force=True``.  Static-operating-point calibration
+    uses ``force=True`` so a requested zero reliably clears a previously latched
+    nonzero FF output.
     """
     park = int(segs.get("park", 0))
-    if park == 0:
+    if park == 0 and not force:
         return
     cfg = prog.cfg
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='const', phase=0,
                              stdysel='last', gain=park,
                              length=prog.us2cycles(dt_us, gen_ch=cfg["ff_ch"]))
     prog.pulse(ch=cfg["ff_ch"])
+
+
+def play_static_park(prog, settle_us=0.05):
+    """Replay and hold the configured FF park level without tuning or ramping it."""
+    if not getattr(prog, "do_static_ff_park", False):
+        return
+    assert_park(
+        prog, {"park": int(prog.cfg.get("ff_park_gain", 0) or 0)},
+        force=True,
+    )
+    settle_us = max(float(settle_us), 0.0)
+    if settle_us > 0:
+        prog.sync_all(prog.us2cycles(settle_us))
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):

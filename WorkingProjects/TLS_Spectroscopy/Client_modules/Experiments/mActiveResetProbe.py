@@ -5,6 +5,7 @@ from qick import AveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset as ar
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, set_readout_pulse,
 )
@@ -23,6 +24,7 @@ class ReadProbeProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        ff_pulse.declare_static_park(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -37,6 +39,8 @@ class ReadProbeProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
+        ff_pulse.play_static_park(
+            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         page = self.ch_page(cfg["qubit_ch"])
         tproc_ch = int(cfg["tproc_ch"])
         if int(cfg["probe_gain"]) != 0:
@@ -63,6 +67,7 @@ class ResetCheckProgram(AveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        ff_pulse.declare_static_park(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -77,6 +82,8 @@ class ResetCheckProgram(AveragerProgram):
 
     def body(self):
         cfg = self.cfg
+        ff_pulse.play_static_park(
+            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         if cfg.get("prep_excited", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))
@@ -122,6 +129,84 @@ class ActiveResetProbe(ExperimentClass):
         raise RuntimeError("could not read tProc data memory via the soc proxy; the "
                            "single_read/read_dmem API differs on this board -- tell me the error.")
 
+    def _raw_shots(self, program):
+        """Return every buffered raw accumulator result from a probe program.
+
+        The data-memory words written by :class:`ReadProbeProgram` are useful as a
+        firmware sanity check, but after ``reps`` iterations they contain only the
+        *last* measurement.  A reset threshold must be estimated from the complete
+        |g>/|e> distributions instead of that one arbitrary shot.  QICK's ``di_buf``
+        and ``dq_buf`` contain those per-trigger accumulator values in the same
+        unnormalised units consumed by the tProc comparison.
+        """
+        try:
+            lower = np.asarray(program.di_buf[0]).ravel()
+            upper = np.asarray(program.dq_buf[0]).ravel()
+            good = np.isfinite(lower) & np.isfinite(upper)
+            lower, upper = lower[good], upper[good]
+            if lower.size >= 20:
+                # Normal QICK buffers are already signed.  Converting through
+                # to_signed32 also handles client versions returning uint32.
+                lower = np.asarray([ar.to_signed32(v) for v in lower], dtype=np.int64)
+                upper = np.asarray([ar.to_signed32(v) for v in upper], dtype=np.int64)
+                return lower, upper
+        except Exception:
+            pass
+        # Compatibility fallback for an old client which does not expose acquisition
+        # buffers.  One point is deliberately marked as such so the caller's minimum
+        # shot-quality check will refuse to activate feedback.
+        return (np.asarray([self._read_dmem(_ADDR_I)], dtype=np.int64),
+                np.asarray([self._read_dmem(_ADDR_Q)], dtype=np.int64))
+
+    @staticmethod
+    def _fit_raw_discriminator(ground, excited):
+        """Exact balanced-accuracy threshold search in integer tProc units."""
+        ground = np.asarray(ground, dtype=np.int64).ravel()
+        excited = np.asarray(excited, dtype=np.int64).ravel()
+        values = np.unique(np.concatenate((ground, excited)))
+        # ``ground_below`` classifies x < threshold as |g>; every distinct
+        # partition is represented by value+1.  ``ground_above`` classifies
+        # x > threshold as |g>; every partition is represented by value.
+        candidates = np.unique(np.concatenate((values, values + 1)))
+        best = None
+        for ground_below in (True, False):
+            for threshold in candidates:
+                if ground_below:
+                    p_e_given_g = float(np.mean(ground >= threshold))
+                    p_g_given_e = float(np.mean(excited < threshold))
+                else:
+                    p_e_given_g = float(np.mean(ground <= threshold))
+                    p_g_given_e = float(np.mean(excited > threshold))
+                fidelity = 1.0 - 0.5 * (p_e_given_g + p_g_given_e)
+                item = {
+                    "threshold_raw": int(threshold),
+                    "ground_below": bool(ground_below),
+                    "fidelity": fidelity,
+                    "p_e_given_g": p_e_given_g,
+                    "p_g_given_e": p_g_given_e,
+                }
+                if best is None or item["fidelity"] > best["fidelity"]:
+                    best = item
+        return best
+
+    @staticmethod
+    def _score_raw_discriminator(ground, excited, discriminator):
+        """Evaluate a frozen raw discriminator without refitting it."""
+        ground = np.asarray(ground, dtype=np.int64).ravel()
+        excited = np.asarray(excited, dtype=np.int64).ravel()
+        threshold = int(discriminator["threshold_raw"])
+        if bool(discriminator["ground_below"]):
+            p_e_given_g = float(np.mean(ground >= threshold))
+            p_g_given_e = float(np.mean(excited < threshold))
+        else:
+            p_e_given_g = float(np.mean(ground <= threshold))
+            p_g_given_e = float(np.mean(excited > threshold))
+        return {
+            "fidelity": 1.0 - 0.5 * (p_e_given_g + p_g_given_e),
+            "p_e_given_g": p_e_given_g,
+            "p_g_given_e": p_g_given_e,
+        }
+
     def acquire(self, progress=False, plotDisp=False):
         cfg = self.cfg
         ro_ch = cfg["ro_chs"][0]
@@ -138,31 +223,60 @@ class ActiveResetProbe(ExperimentClass):
 
         print("  -> feedback path present; measuring raw read values for |g> and |e> ...")
         cfg["tproc_ch"] = tproc_ch
-        cfg.setdefault("reps", int(cfg.get("shots", 200)))
+        cfg["reps"] = int(cfg.get("shots", cfg.get("reps", 200)))
         results = {}
+        raw_shots = {}
         for label, gain in [("ground", 0), ("excited", int(cfg.get("qubit_pi_gain", cfg["qubit_gain"])))]:
             cfg["probe_gain"] = gain
             prog = ReadProbeProgram(self.soccfg, cfg)
             avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
-            raw_i = self._read_dmem(_ADDR_I)
-            raw_q = self._read_dmem(_ADDR_Q)
+            lower, upper = self._raw_shots(prog)
+            raw_shots[label] = {"lower": lower, "upper": upper}
+            raw_i = int(round(float(np.median(lower))))
+            raw_q = int(round(float(np.median(upper))))
             host_i = float(np.asarray(avgi).ravel()[0])
-            results[label] = {"raw_lower": raw_i, "raw_upper": raw_q, "host_avgi": host_i}
+            results[label] = {
+                "raw_lower": raw_i, "raw_upper": raw_q, "host_avgi": host_i,
+                "raw_lower_mad": float(np.median(np.abs(lower - np.median(lower)))),
+                "raw_upper_mad": float(np.median(np.abs(upper - np.median(upper)))),
+                "shots": int(min(lower.size, upper.size)),
+            }
             print(f"    {label:8s}: read lower(I?)={raw_i:>12d}  upper(Q?)={raw_q:>12d}  "
-                  f"| host avgi={host_i:+.4g}")
+                  f"| host avgi={host_i:+.4g} ({results[label]['shots']} buffered shots)")
 
         g, e = results["ground"], results["excited"]
         sep_lower = abs(e["raw_lower"] - g["raw_lower"])
         sep_upper = abs(e["raw_upper"] - g["raw_upper"])
         oper = "lower" if sep_lower >= sep_upper else "upper"
-        gv, ev = (g[f"raw_{oper}"], e[f"raw_{oper}"])
-        thr = int(round((gv + ev) / 2))
-        ground_below = gv < ev
+        ground_raw = raw_shots["ground"][oper]
+        excited_raw = raw_shots["excited"][oper]
+        # Alternating train/audit shots avoids optimistic threshold reporting while
+        # keeping slow drift represented in both halves.
+        if min(ground_raw.size, excited_raw.size) >= 4:
+            discrimination = self._fit_raw_discriminator(
+                ground_raw[::2], excited_raw[::2])
+            audit = self._score_raw_discriminator(
+                ground_raw[1::2], excited_raw[1::2], discrimination)
+            discrimination["training_fidelity"] = discrimination["fidelity"]
+            discrimination.update(audit)
+            audit_shots = int(min(ground_raw[1::2].size, excited_raw[1::2].size))
+        else:
+            discrimination = self._fit_raw_discriminator(ground_raw, excited_raw)
+            discrimination["training_fidelity"] = discrimination["fidelity"]
+            discrimination.update({"fidelity": float("nan"),
+                                   "p_e_given_g": float("nan"),
+                                   "p_g_given_e": float("nan")})
+            audit_shots = 0
+        thr = int(discrimination["threshold_raw"])
+        ground_below = bool(discrimination["ground_below"])
         print("-" * 68)
         print(f"  discriminating half: '{oper}' (|g>-|e> separation "
               f"{max(sep_lower, sep_upper)} vs {min(sep_lower, sep_upper)} on the other)")
         print(f"  -> active_reset_block(oper='{oper}', threshold_raw={thr}, "
               f"ground_below={ground_below})")
+        print(f"  held-out raw assignment: F={discrimination['fidelity']:.3f} "
+              f"[P(e|g)={discrimination['p_e_given_g']:.3f}, "
+              f"P(g|e)={discrimination['p_g_given_e']:.3f}]")
         if max(sep_lower, sep_upper) < 3 * max(1, min(sep_lower, sep_upper)):
             print("  WARNING: |g> and |e> barely separate in the raw read -- discrimination "
                   "is marginal.  Improve readout SNR / set the readout phase so the blobs "
@@ -172,6 +286,13 @@ class ActiveResetProbe(ExperimentClass):
         self.data = {
             'tproc_ch': tproc_ch, 'supported': True, 'results': results,
             'recommended': {'oper': oper, 'threshold_raw': thr, 'ground_below': ground_below},
+            'raw_assignment_fidelity': discrimination['fidelity'],
+            'raw_assignment_training_fidelity': discrimination['training_fidelity'],
+            'raw_assignment_shots': audit_shots,
+            'raw_assignment_errors': {
+                'p_e_given_g': discrimination['p_e_given_g'],
+                'p_g_given_e': discrimination['p_g_given_e'],
+            },
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         self.pickle_data()
@@ -184,9 +305,11 @@ class ActiveResetProbe(ExperimentClass):
                             ("e", int(cfg.get("qubit_pi_gain", cfg["qubit_gain"])))):
             c = dict(cfg)
             c["probe_gain"] = int(gain)
-            avgi, avgq = ReadProbeProgram(self.soccfg, c).acquire(self.soc, load_pulses=True,
-                                                                 progress=False)
-            out[label] = {"lower": self._read_dmem(_ADDR_I), "upper": self._read_dmem(_ADDR_Q),
+            prog = ReadProbeProgram(self.soccfg, c)
+            avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            lower, upper = self._raw_shots(prog)
+            out[label] = {"lower": int(round(float(np.median(lower)))),
+                          "upper": int(round(float(np.median(upper)))),
                           "I": float(np.asarray(avgi).ravel()[0]),
                           "Q": float(np.asarray(avgq).ravel()[0])}
         return out
@@ -286,17 +409,24 @@ class ActiveResetProbe(ExperimentClass):
 
         cb = dict(cfg); cb["prep_excited"] = True; cb["do_reset"] = False
         r0 = _resid(*ResetCheckProgram(self.soccfg, cb).acquire(self.soc, load_pulses=True))
-        cr = dict(cfg); cr["prep_excited"] = True; cr["do_reset"] = True
-        r1 = _resid(*ResetCheckProgram(self.soccfg, cr).acquire(self.soc, load_pulses=True))
-        works = bool(abs(r0 - 1.0) <= 0.3 and r1 <= 0.2)
+        crg = dict(cfg); crg["prep_excited"] = False; crg["do_reset"] = True
+        rg = _resid(*ResetCheckProgram(self.soccfg, crg).acquire(self.soc, load_pulses=True))
+        cre = dict(cfg); cre["prep_excited"] = True; cre["do_reset"] = True
+        re = _resid(*ResetCheckProgram(self.soccfg, cre).acquire(self.soc, load_pulses=True))
+        # Reset must do both jobs: remove a deliberately prepared excitation and
+        # preserve a deliberately prepared ground state.  Checking only the first can
+        # accept a noisy discriminator which pumps |g> while occasionally resetting |e>.
+        works = bool(abs(r0 - 1.0) <= 0.3 and abs(rg) <= 0.2 and abs(re) <= 0.2)
         print("-" * 72)
         print(f"  end-to-end check at res_phase={res_phase:.1f} deg:")
         print(f"    no-reset baseline (must be ~1.0): {r0:+.3f}")
-        print(f"    with active reset (want ~0):      {r1:+.3f}")
+        print(f"    reset prepared |g> (want ~0):    {rg:+.3f}")
+        print(f"    reset prepared |e> (want ~0):    {re:+.3f}")
         print(f"  -> ACTIVE RESET {'WORKS' if works else 'NOT confirmed'} "
-              f"(residual {r1:+.3f} vs baseline {r0:+.3f})")
+              f"(residuals g={rg:+.3f}, e={re:+.3f}; baseline {r0:+.3f})")
         print("=" * 72)
-        return {"baseline": r0, "reset": r1, "works": works}
+        return {"baseline": r0, "reset_ground": rg, "reset_excited": re,
+                "reset": re, "works": works}
 
     def save_data(self, data=None):
         if data is None:

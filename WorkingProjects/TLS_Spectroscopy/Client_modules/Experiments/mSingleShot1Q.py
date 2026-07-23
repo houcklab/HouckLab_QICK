@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
     find_blob_median, find_threshold,
 )
@@ -28,8 +29,9 @@ class SingleShotProgram(RAveragerProgram):
     The excited prep plays the pi pulse ``repeats`` times (QUA parity knob).
 
     ``single_shot_state_order='eg'`` is available to calibration code for an exact
-    reverse-order companion acquisition.  The default remains ``'ge'``, so existing
-    TLS spectroscopy step-5 runs are bit-for-bit unchanged.
+    reverse-order companion acquisition.  Passive mode retains the legacy pulse path;
+    feedback mode prepends a freshly calibrated fixed-count reset and discards those
+    reset readouts from the returned ground/excited shot arrays.
     """
 
     def __init__(self, soccfg, cfg):
@@ -53,6 +55,10 @@ class SingleShotProgram(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+        # The configured FF park value is the operating point, not a calibration
+        # parameter.  Replaying it here keeps manual TLS step 5 and BasicAutoTuner on
+        # the exact same pulse/flux path at both zero and nonzero park bias.
+        ff_pulse.declare_static_park(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
                                  length=self.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
@@ -63,8 +69,18 @@ class SingleShotProgram(RAveragerProgram):
                                    gen_ch=cfg["qubit_ch"])
 
         style = cfg.get("qubit_pulse_style", "arb")
+        if (str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
+                and style != "arb"):
+            raise ValueError("feedback-reset SingleShotProgram requires the canonical "
+                             "arb Gaussian/DRAG pulse")
         if style == "arb":
             add_qubit_gaussian(self)
+            if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+                add_qubit_gaussian(
+                    self, name="qubit_reset",
+                    sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+                    drag_beta=float(cfg.get(
+                        "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))))
             self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=qubit_freq,
                                      phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                      gain=cfg["start"], waveform="qubit")
@@ -84,26 +100,72 @@ class SingleShotProgram(RAveragerProgram):
 
     def body(self):
         cfg = self.cfg
+        ff_pulse.play_static_park(
+            self, settle_us=cfg.get("ff_park_settle_us", 0.05))
+        feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
+        if feedback:
+            # The experiment register is swept between gain=0 and gain=X180.  Save it,
+            # install the calibrated X180 while the feedback loop runs, then restore
+            # the exact state-preparation gain.  Without this save/restore, the ground
+            # arm would try to reset with a zero-amplitude pulse.
+            page = self.ch_page(cfg["qubit_ch"])
+            self.mathi(page, 27, self.r_gain, "+", 0)
+            self.mathi(page, 28, self.r_gain2, "+", 0)
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb",
+                freq=self.freq2reg(
+                    float(cfg.get("reset_pi_freq", cfg.get(
+                        "qubit_pi_freq", cfg["qubit_freq"]))),
+                    gen_ch=cfg["qubit_ch"]),
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+                gain=int(cfg.get("reset_pi_gain", cfg["qubit_pi_gain"])),
+                waveform="qubit_reset")
+            active_reset.active_reset_block(
+                self, ro_ch=cfg["ro_chs"][0],
+                threshold_raw=cfg["reset_threshold_raw"],
+                oper=cfg.get("reset_oper", "lower"),
+                ground_below=cfg.get("reset_ground_below", True),
+                max_iters=int(cfg.get("reset_max_iters", 3)),
+                page=page, reg_val=25, reg_thr=26)
+            # Restore every pulse-register field to the candidate waveform; restoring
+            # only gain would leave the reset frequency/waveform selected.
+            self.set_pulse_registers(
+                ch=cfg["qubit_ch"], style="arb", freq=self.freq2reg(
+                    float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
+                    gen_ch=cfg["qubit_ch"]),
+                phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+                gain=0, waveform="qubit")
+            self.mathi(page, self.r_gain, 27, "+", 0)
+            self.mathi(page, self.r_gain2, 28, "+", 0)
         if cfg["qubit_gain"] != 0:
             for _ in range(int(cfg.get("repeats", 1))):
                 self.pulse(ch=cfg["qubit_ch"])
                 self.sync_all(self.us2cycles(0.010))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+                     wait=True, syncdelay=self.us2cycles(
+                         cfg.get("active_reset_post_measure_delay_us", 0.05)
+                         if feedback else cfg["relax_delay"]))
 
     def update(self):
         self.mathi(self.q_rp, self.r_gain, self.r_gain, '+', self.cfg["step"])
         self.mathi(self.q_rp, self.r_gain2, self.r_gain2, '+', int(self.cfg["step"] / 2))
 
     def acquire(self, soc, load_pulses=True, progress=False, **kw):
-        super().acquire(soc, load_pulses=load_pulses, progress=progress)
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        super().acquire(
+            soc, load_pulses=load_pulses,
+            readouts_per_experiment=1 + n_reset, progress=progress)
         return self.collect_shots()
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        shots_i = self.di_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
-        shots_q = self.dq_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        n_reset = active_reset.active_reset_readouts(self.cfg)
+        reads = 1 + n_reset
+        shots_i = self.di_buf[0].reshape(
+            (self.cfg["expts"], self.cfg["reps"], reads))[:, :, n_reset] / length
+        shots_q = self.dq_buf[0].reshape(
+            (self.cfg["expts"], self.cfg["reps"], reads))[:, :, n_reset] / length
         if str(self.cfg.get("single_shot_state_order", "ge")).lower() == "eg":
             shots_i = shots_i[::-1]
             shots_q = shots_q[::-1]

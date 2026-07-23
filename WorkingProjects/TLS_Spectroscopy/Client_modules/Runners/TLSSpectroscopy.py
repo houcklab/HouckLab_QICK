@@ -142,6 +142,9 @@ P5_SS_CAL = {
     "run": False,
     "ss_shots": 1000,
     "min_F": 0.60,
+    "reset_mode": "feedback",
+    "reset_probe_shots": 2000,
+    "reset_max_iters": 3,
 }
 
 
@@ -610,6 +613,23 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     cfg["shots"] = int(P5_SS_CAL["ss_shots"])
     cfg["qubit_pulse_style"] = "arb"
     cfg["qubit_gain"] = BaseConfig["qubit_pi_gain"]
+    cfg["reset_mode"] = str(P5_SS_CAL.get("reset_mode", "passive"))
+    if cfg["reset_mode"] == "feedback":
+        rec = probe_reset_params(
+            soc, soccfg, cfg, path=QUBIT, outer_folder=outer_folder,
+            shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True)
+        if rec is None:
+            print("[5] active-reset validation failed -- using the configured passive "
+                  f"{cfg['relax_delay']} us fallback.")
+            cfg["reset_mode"] = "passive"
+        else:
+            cfg.update({
+                "reset_threshold_raw": int(rec["threshold_raw"]),
+                "reset_oper": str(rec.get("oper", "lower")),
+                "reset_ground_below": bool(rec.get("ground_below", True)),
+                "reset_max_iters": int(P5_SS_CAL.get("reset_max_iters", 3)),
+                "active_reset_post_measure_delay_us": 0.05,
+            })
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="SS_Cal", cfg=cfg, save=True, plot=True, min_F=0.0)
     ss.acquire(plotDisp=LIVE_PLOTS)

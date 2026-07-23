@@ -8,6 +8,7 @@ step-5 analysis, confirmation, and finalization code under test.
 
 from __future__ import annotations
 
+import ast
 import copy
 import os
 import sys
@@ -35,6 +36,7 @@ matplotlib.use("Agg")
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (  # noqa: E402
     mBasicAutoTuner as T,
+    mActiveResetProbe as ARP,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (  # noqa: E402
     find_blob_median,
@@ -42,6 +44,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (  # noqa: E402
     config_updater,
+    ff_pulse,
 )
 
 
@@ -71,6 +74,8 @@ def _base_config():
         "qubit_drag_beta": 0.07,
         "relax_delay": 1000.0,
         "use_switch": False,
+        "ff_ch": 3,
+        "ff_nqz": 1,
         "ff_park_gain": 0,
         "ff_hold_gain": 0,
         "FF_Qubits": {"4": {
@@ -321,6 +326,288 @@ def test_step5_metric_matches_shared_helpers():
     assert measured["visibility"] == 2.0 * measured["fidelity"] - 1.0
 
 
+def test_third_blob_guard_catches_binary_invisible_excited_cloud():
+    """A remote f-like cloud can score as excited and leave binary F near one."""
+    n = 2000
+    base = ndtri((np.arange(n, dtype=float) + 0.5) / n)
+    ig, qg = -2.0 + 0.18 * base, 0.18 * np.sin(np.linspace(0, 8, n))
+    ie, qe = 2.0 + 0.18 * base, 0.18 * np.cos(np.linspace(0, 8, n))
+    # Ten percent of excited preparations occupy a well-separated third cloud, but
+    # remain on the excited side of the binary threshold.
+    leaked = np.arange(n) < n // 10
+    ie[leaked] = 2.0 + 0.12 * base[leaked]
+    qe[leaked] = 4.0 + 0.12 * base[leaked]
+    measured = T.step5_metrics(ig, qg, ie, qe)
+    assert measured["fidelity"] > 0.98
+    assert measured["excited_outlier_frac"] > 0.08
+    assert measured["ground_outlier_frac"] < 0.02
+    assert measured["third_blob_excess_ucb_95"] > 0.08
+
+
+def test_shelving_inversion_recovers_direct_f_population():
+    calibration = {
+        "g": (0.98, 0.003, 0.04, 0.004),
+        "e": (0.05, 0.004, 0.03, 0.004),
+        "f": (0.03, 0.004, 0.96, 0.004),
+    }
+    matrix = np.array([
+        [calibration[state][0] for state in ("g", "e", "f")],
+        [calibration[state][2] for state in ("g", "e", "f")],
+        [1.0, 1.0, 1.0],
+    ])
+    population = np.array([0.18, 0.72, 0.10])
+    observed = matrix @ population
+    solved = T.solve_shelved_qutrit_population(
+        calibration, (observed[0], 0.003), (observed[1], 0.003))
+    assert solved["ok"] is True
+    assert abs(solved["p2"] - 0.10) < 1e-9
+    assert solved["p2_se"] > 0.0
+
+
+def test_independent_long_reference_exposes_candidate_one_pulse_leakage():
+    """Candidate leakage must not be absorbed into its own prepared-e reference."""
+    class QutritVirtualTuner(VirtualBasicAutoTuner):
+        @staticmethod
+        def _cloud(population, shots):
+            population = np.asarray(population, dtype=float)
+            population = np.clip(population, 0.0, None)
+            population /= np.sum(population)
+            counts = np.floor(population * int(shots)).astype(int)
+            counts[np.argmax(population)] += int(shots) - int(np.sum(counts))
+            centres = ((-2.0, 0.0), (2.0, 0.0), (2.0, 4.0))
+            i_parts, q_parts = [], []
+            for count, (ci, cq) in zip(counts, centres):
+                if count <= 0:
+                    continue
+                quantile = ndtri((np.arange(count, dtype=float) + 0.5) / count)
+                i_parts.append(ci + 0.16 * quantile)
+                q_parts.append(cq + 0.13 * quantile[::-1])
+            return np.concatenate(i_parts), np.concatenate(q_parts)
+
+        @staticmethod
+        def _candidate_leakage(candidate):
+            beta = float(candidate.get("qubit_drag_beta", 0.0))
+            return float(0.002 + 0.078 * min(abs(beta - 0.04) / 0.04, 1.0) ** 2)
+
+        def _acquire_sequence(self, candidate, sequence_ops, shots, seq_gap_us=None):
+            del seq_gap_us
+            state = np.array([1.0, 0.0, 0.0])
+            for operation in sequence_ops:
+                if operation[0] == "pulse":
+                    leak = self._candidate_leakage(candidate)
+                    state = np.array([
+                        state[1], (1.0 - leak) * state[0],
+                        state[2] + leak * state[0],
+                    ])
+                elif operation[0] == "pulse_at":
+                    frequency = float(operation[3])
+                    if abs(frequency - float(candidate["qubit_pi_freq"])) < 50.0:
+                        state = state[[1, 0, 2]]  # independent long g-e pi
+                    else:
+                        state = state[[0, 2, 1]]  # independent long e-f pi
+                elif operation[0] != "delay":
+                    raise AssertionError("unexpected virtual sequence operation")
+            return self._cloud(state, int(shots))
+
+        def _acquire_ss_pair(self, candidate, shots, state_order="ge"):
+            del state_order
+            ig, qg = self._acquire_sequence(candidate, [], shots)
+            ie, qe = self._acquire_sequence(
+                candidate, [self._ge_pulse(candidate)], shots)
+            return ig, qg, ie, qe
+
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": True, "depths": [1, 2, 4], "gap_phases": [0.0],
+        "shots": 700, "reference_shots": 900,
+        "max_single_p2": 0.02, "max_amplified_p2": 0.03,
+        "max_third_blob_excess": 0.05,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = QutritVirtualTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        ef = {
+            "ef_frequency": tuner.working["qubit_pi_freq"] - 200.0,
+            "ef_gain": 9000, "anharmonicity_mhz": -200.0,
+            "ge_reference_gain": 5000, "reference_sigma_us": 0.5,
+        }
+        unsafe = T._with_candidate(tuner.working, qubit_drag_beta=0.0)
+        unsafe_row = tuner._measure_leakage_candidate(
+            unsafe, ef, 700, 900, "virtual unsafe")
+        safe = T._with_candidate(tuner.working, qubit_drag_beta=0.04)
+        safe_row = tuner._measure_leakage_candidate(
+            safe, ef, 700, 900, "virtual safe")
+    direct_unsafe = [row for row in unsafe_row["witnesses"] if row["depth"] == 1]
+    assert direct_unsafe
+    assert direct_unsafe[0]["p2"] > 0.06
+    assert unsafe_row["single_p2_ucb"] > 0.06
+    assert unsafe_row["leakage_safe"] is False
+    assert safe_row["single_p2_ucb"] < 0.02
+    assert safe_row["leakage_safe"] is True
+
+
+def test_single_shot_feedback_buffers_return_only_the_final_readout():
+    """Three reset reads per shot must never leak into the step-5 histograms."""
+    program = object.__new__(T.SingleShotProgram)
+    program.cfg = {
+        "read_length": 1.0, "ro_chs": [0], "expts": 2, "reps": 2,
+        "reset_mode": "feedback", "reset_max_iters": 3,
+        "single_shot_state_order": "ge",
+    }
+    program.us2cycles = lambda *_args, **_kwargs: 1
+    # [reset0, reset1, reset2, FINAL] for each rep and experiment.
+    program.di_buf = [np.arange(16, dtype=float)]
+    program.dq_buf = [100.0 + np.arange(16, dtype=float)]
+    shot_i, shot_q = program.collect_shots()
+    assert shot_i.tolist() == [[3.0, 7.0], [11.0, 15.0]]
+    assert shot_q.tolist() == [[103.0, 107.0], [111.0, 115.0]]
+
+
+def test_sequence_feedback_buffers_return_only_the_final_readout():
+    program = types.SimpleNamespace(
+        di_buf=[np.arange(8, dtype=float)],
+        dq_buf=[50.0 + np.arange(8, dtype=float)],
+        us2cycles=lambda *_args, **_kwargs: 1,
+    )
+    cfg = {
+        "read_length": 1.0, "ro_chs": [0], "reps": 2,
+        "reset_mode": "feedback", "reset_max_iters": 3,
+    }
+    shot_i, shot_q = T._shots_from_program(program, cfg)
+    assert shot_i.tolist() == [3.0, 7.0]
+    assert shot_q.tolist() == [53.0, 57.0]
+
+
+def test_feedback_threshold_is_bound_to_one_exact_readout_tuple():
+    cfg = _base_config()
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        tuner._reset_runtime = {
+            "reset_mode": "feedback", "reset_threshold_raw": 1234,
+            "reset_oper": "lower", "reset_ground_below": True,
+            "reset_max_iters": 3, "reset_pi_freq": 2534.5,
+            "reset_pi_gain": 5790, "reset_pi_sigma": 0.25,
+            "reset_pi_drag_beta": 0.04,
+        }
+        tuner._reset_readout_key = tuner._reset_readout_signature(tuner.working)
+        exact = tuner._cfg_for(tuner.working)
+        mismatched = tuner._cfg_for(T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.working["read_pulse_freq"] + 0.1))
+    assert exact["reset_mode"] == "feedback"
+    assert exact["reset_pi_gain"] == 5790
+    assert mismatched["reset_mode"] == "passive"
+
+
+def test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word():
+    probe = object.__new__(ARP.ActiveResetProbe)
+    probe._read_dmem = lambda _addr: 999999
+    program = types.SimpleNamespace(
+        di_buf=[np.asarray([-20, -19, -18, -17, -16] * 5, dtype=np.int64)],
+        dq_buf=[np.asarray([4, 3, 2, 1, 0] * 5, dtype=np.int64)],
+    )
+    lower, upper = probe._raw_shots(program)
+    assert lower.size == 25 and upper.size == 25
+    assert int(np.median(lower)) == -18
+    assert int(np.median(upper)) == 2
+    assert 999999 not in lower and 999999 not in upper
+
+
+def test_reset_raw_threshold_maximizes_held_shot_assignment():
+    discrimination = ARP.ActiveResetProbe._fit_raw_discriminator(
+        np.asarray([-5, -4, -3, -2, 8]),
+        np.asarray([2, 3, 4, 5, -8]),
+    )
+    assert discrimination["ground_below"] is True
+    assert np.isclose(discrimination["fidelity"], 0.8)
+    threshold = discrimination["threshold_raw"]
+    assert -2 < threshold <= 2
+
+
+def test_static_fast_flux_is_replayed_but_never_tuned():
+    """Any signed park value is fixed context and survives every candidate config."""
+    cfg = _base_config()
+    cfg["ff_park_gain"] = -7341
+    untouched = copy.deepcopy(cfg)
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        tuner._preflight()
+        run_cfg = tuner._cfg_for(T._with_candidate(
+            tuner.working, qubit_pi_freq=tuner.working["qubit_pi_freq"] + 1.0,
+            qubit_pi_gain=tuner.working["qubit_pi_gain"] + 1000))
+
+    assert cfg == untouched
+    assert run_cfg["ff_ch"] == 3
+    assert run_cfg["ff_park_gain"] == -7341
+    assert "ff_park_gain" not in T.TUNED_KEYS
+    context = tuner.data["fast_flux_operating_point"]
+    assert context == {
+        "mode": "static_park", "configured": True, "ff_ch": 3,
+        "ff_park_gain": -7341, "tuned": False,
+    }
+
+
+def test_static_fast_flux_helper_forces_zero_and_nonzero_park():
+    """Zero must also be emitted so a stale nonzero latched output is cleared."""
+    class FakeProgram:
+        def __init__(self, gain):
+            self.cfg = {"ff_ch": 3, "ff_nqz": 1, "ff_park_gain": gain}
+            self.events = []
+
+        def declare_gen(self, **kwargs):
+            self.events.append(("declare", kwargs))
+
+        def set_pulse_registers(self, **kwargs):
+            self.events.append(("registers", kwargs))
+
+        def us2cycles(self, value, **kwargs):
+            del kwargs
+            return int(round(100 * float(value)))
+
+        def pulse(self, **kwargs):
+            self.events.append(("pulse", kwargs))
+
+        def sync_all(self, cycles):
+            self.events.append(("sync", cycles))
+
+    for gain in (0, -7341, 8123):
+        program = FakeProgram(gain)
+        ff_pulse.declare_static_park(program)
+        ff_pulse.play_static_park(program, settle_us=0.05)
+        registers = [event[1] for event in program.events
+                     if event[0] == "registers"]
+        assert len(registers) == 1
+        assert registers[0]["gain"] == gain
+        assert any(event[0] == "pulse" for event in program.events)
+
+
+def test_dynamic_flux_excursion_is_not_mistaken_for_static_park():
+    cfg = _base_config()
+    cfg["ff_park_gain"] = 4200
+    cfg["ff_hold_gain"] = 7600
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        try:
+            tuner._preflight()
+        except ValueError as exc:
+            assert "dynamic flux excursion" in str(exc)
+        else:
+            raise AssertionError("dynamic ff_hold_gain was silently treated as park")
+
+
 def test_bad_start_recovers_and_preserves_best_effort_contract():
     cfg = _base_config()
     untouched = copy.deepcopy(cfg)
@@ -347,6 +634,9 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     assert "fine_frequency" in data["maps"]
     assert "fine_frequency_post_duration" in data["maps"]
     assert "amplified_error" in data["maps"]
+    assert (data["maps"]["amplified_error"]["calibration_kind"]
+            == "amplified_amplitude_error_x180")
+    assert data["maps"]["amplified_error"]["leakage_measurement"] is False
 
     # A recoverable optional-stage exception is recorded and cannot erase direct SS data.
     parity = [row for row in data["stages"] if row["name"] == "parity_chevron"]
@@ -392,11 +682,13 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
         assert len(set(int(row["qubit_pi_gain"]) for row in rows)) >= 3
 
     # The experiment is dry by construction: neither the caller's dict nor returned cfg
-    # is rewritten.  Only the explicitly supported seven calibration keys may be eligible.
+    # is rewritten.  Only explicitly supported calibration keys may be eligible.
     assert cfg == untouched
     assert result["config"] == untouched
-    assert set(data["eligible_tuned"]) == set(T.TUNED_KEYS)
-    for forbidden in ("res_phase", "qubit_pi2_gain", "qubit_drag_beta"):
+    # DRAG remains exactly equal to the input because this virtual device does not
+    # activate the optional e-f leakage stage; unchanged keys need no source rewrite.
+    assert set(data["eligible_tuned"]) == set(T.TUNED_KEYS) - {"qubit_drag_beta"}
+    for forbidden in ("res_phase", "qubit_pi2_gain"):
         assert forbidden not in data["eligible_tuned"]
     assert untouched["res_phase"] == 37.0
     assert untouched["qubit_pi2_gain"] == 1111
@@ -520,8 +812,9 @@ def test_partial_direct_grid_with_failed_confirmation_has_no_key_evidence():
         assert np.count_nonzero(np.isfinite(archived_map["fidelity"])) == 4
         assert all(not rows for rows in tuner.data["key_evidence"].values())
 
-        # Even a subsequent stable replay of a changed coarse candidate cannot turn
-        # that unconfirmed map into exact-value search evidence retroactively.
+        # A subsequent stable exact replay does not fabricate coordinate-search
+        # provenance, but it directly measures the whole physical tuple and therefore
+        # provides sufficient atomic write evidence in its own right.
         tuner._measure_candidate = original_measure
         replay = T.BasicAutoTuner._confirm_candidates(
             tuner, [candidates[-1]], shots=101,
@@ -535,11 +828,17 @@ def test_partial_direct_grid_with_failed_confirmation_has_no_key_evidence():
         assert tuner.data["eligibility"]["missing_evidence"] == [
             "read_pulse_freq"
         ]
-        assert tuner.data["eligible_tuned"] == {}
+        assert tuner.data["eligibility"]["search_provenance_complete"] is False
+        assert tuner.data["eligibility"]["eligibility_basis"] == (
+            "stable_exact_full_tuple_replay")
+        assert tuner.data["eligibility"]["atomic_tuple_safe"] is True
+        assert tuner.data["eligible_tuned"] == {
+            "read_pulse_freq": replay["read_pulse_freq"]
+        }
 
 
-def test_atomic_eligibility_rejects_partially_evidenced_final_tuple():
-    """Never emit a hybrid payload when one changed dimension lacks evidence."""
+def test_stable_full_tuple_replay_authorizes_atomic_update():
+    """The jointly replayed tuple outranks incomplete per-axis bookkeeping."""
     cfg = _base_config()
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
@@ -568,14 +867,161 @@ def test_atomic_eligibility_rejects_partially_evidenced_final_tuple():
     assert eligibility["exact_value_evidence"]["read_pulse_freq"] is True
     assert eligibility["exact_value_evidence"]["qubit_pi_gain"] is False
     assert eligibility["missing_evidence"] == ["qubit_pi_gain"]
-    assert eligibility["atomic_tuple_safe"] is False
-    assert tuner.data["eligible_tuned"] == {}
+    assert eligibility["search_provenance_complete"] is False
+    assert eligibility["eligibility_basis"] == "stable_exact_full_tuple_replay"
+    assert eligibility["atomic_tuple_safe"] is True
+    assert tuner.data["eligible_tuned"] == {
+        "read_pulse_freq": replay["read_pulse_freq"],
+        "qubit_pi_gain": replay["qubit_pi_gain"],
+    }
 
     applied = copy.deepcopy(cfg)
     applied.update(tuner.data["eligible_tuned"])
-    assert applied == cfg
-    assert applied["read_pulse_freq"] != replay["read_pulse_freq"]
-    assert applied["qubit_pi_gain"] != replay["qubit_pi_gain"]
+    assert applied["read_pulse_freq"] == replay["read_pulse_freq"]
+    assert applied["qubit_pi_gain"] == replay["qubit_pi_gain"]
+
+
+def test_leakage_constraint_prefers_safe_waveform_over_higher_binary_fidelity():
+    """Fidelity wins only after the direct leakage constraints are satisfied."""
+    class LeakageConstraintTuner(VirtualBasicAutoTuner):
+        def _leakage_waveform_pool(self):
+            unsafe = T._with_candidate(
+                self.working, sigma=0.10, qubit_pi_gain=14475)
+            safe = T._with_candidate(
+                self.working, sigma=0.25, qubit_pi_gain=5790)
+            return [unsafe, safe]
+
+        def _calibrate_ef_transition(self, candidate):
+            return {
+                "ef_frequency": candidate["qubit_pi_freq"] - 200.0,
+                "ef_gain": 9000,
+                "anharmonicity_mhz": -200.0,
+            }
+
+        def _measure_leakage_candidate(self, candidate, ef_calibration, shots,
+                                       reference_shots, label):
+            del ef_calibration, shots, reference_shots
+            safe = float(candidate["sigma"]) >= 0.20
+            fidelity = 0.93 if safe else 0.97
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity, "fidelity_se": 0.003,
+                "fidelity_lcb_95": fidelity - 1.96 * 0.003,
+                "single_p2_ucb": 0.009 if safe else 0.08,
+                "amplified_p2_ucb": 0.014 if safe else 0.12,
+                "third_blob_excess_ucb": 0.012 if safe else 0.09,
+                "valid": True, "leakage_safe": safe, "label": label,
+            })
+            return row
+
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": True, "max_candidate_waveforms": 2,
+        "beta_span": 0.04, "beta_points": 5,
+        "max_beta_span": 0.08, "max_extensions": 1,
+        "max_single_p2": 0.02, "max_amplified_p2": 0.03,
+        "max_third_blob_excess": 0.05,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = LeakageConstraintTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        chosen = tuner._stage_leakage()
+    assert chosen["leakage_safe"] is True
+    assert chosen["screening_fidelity"] == 0.93
+    assert chosen["confirmation_blocks"] == 3
+    assert chosen["selection_confirmation_complete"] is True
+    assert tuner.working["sigma"] == 0.25
+    assert tuner.data["leakage"]["selection_safe"] is True
+
+
+def test_direct_leakage_verification_is_a_hard_write_gate():
+    cfg = _base_config()
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.working["read_pulse_freq"] + 0.5)
+        replay = tuner._confirm_candidates(
+            [candidate], shots=101, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact leakage-gate regression", add_to_history=False,
+        )[0]
+        tuner._final_replay_completed = True
+        tuner.data["leakage"].update({
+            "active": True, "required_for_write": True, "verified": False,
+        })
+        tuner._finalize(replay)
+    assert tuner.data["final_stable"] is False
+    assert tuner.data["eligibility"]["leakage_required"] is True
+    assert tuner.data["eligibility"]["leakage_verified"] is False
+    assert tuner.data["eligible_tuned"] == {}
+
+
+def test_verified_leakage_tuple_can_atomically_write_drag_beta():
+    """A certified final tuple includes DRAG rather than silently dropping it."""
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working, qubit_drag_beta=0.04,
+            read_pulse_freq=tuner.working["read_pulse_freq"] + 0.5)
+        replay = tuner._confirm_candidates(
+            [candidate], shots=101, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact verified leakage tuple regression",
+            add_to_history=False,
+        )[0]
+        tuner._final_replay_completed = True
+        tuner.data["leakage"].update({
+            "active": True, "required_for_write": True, "verified": True,
+        })
+        tuner._leakage_verified_candidate_key = T._candidate_key(candidate)
+        tuner._final_replay_kind = "leakage_constrained"
+        tuner._finalize(replay)
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligibility"]["leakage_verified"] is True
+    assert tuner.data["eligible_tuned"]["qubit_drag_beta"] == 0.04
+    assert tuner.data["eligible_tuned"]["read_pulse_freq"] == (
+        candidate["read_pulse_freq"])
+
+
+def test_leakage_certificate_cannot_authorize_a_different_final_tuple():
+    """An older unconstrained replay cannot borrow another tuple's P(f) audit."""
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        certified = T._with_candidate(tuner.working, qubit_drag_beta=0.04)
+        older = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.working["read_pulse_freq"] + 0.5)
+        replay = tuner._confirm_candidates(
+            [older], shots=101, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact unconstrained stale regression",
+            add_to_history=False,
+        )[0]
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._leakage_verified_candidate_key = T._candidate_key(certified)
+        tuner.data["leakage"].update({
+            "active": True, "required_for_write": True, "verified": True,
+        })
+        tuner._finalize(replay)
+    assert tuner.data["eligibility"]["leakage_verified"] is True
+    assert tuner.data["eligibility"]["leakage_tuple_match"] is False
+    assert tuner.data["final_stable"] is False
+    assert tuner.data["eligible_tuned"] == {}
 
 
 def test_refined_rabi_candidate_cannot_evict_a_spectral_basin():
@@ -708,6 +1154,25 @@ def test_interrupt_after_final_replay_never_emits_eligibility():
     assert tuner.data["final_stable"] is False
     assert tuner.data["interrupted"] is True
     assert tuner.data["eligible_tuned"] == {}
+
+
+def test_runner_enables_only_the_guarded_initialize_update_by_default():
+    """The shipped runner applies stable replayed tuples, never partial results."""
+    runner_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "Runners", "BasicAutoTune.py"))
+    with open(runner_path, encoding="utf-8") as stream:
+        source = stream.read()
+    tree = ast.parse(source, filename=runner_path)
+    assignments = {
+        target.id: node.value
+        for node in tree.body if isinstance(node, ast.Assign)
+        for target in node.targets if isinstance(target, ast.Name)
+    }
+    assert ast.literal_eval(assignments["APPLY_CONFIG"]) is True
+    assert 'not bool(result.get("final_stable", False))' in source
+    assert 'bool(result.get("interrupted", False))' in source
+    assert "expected_source_hash=startup_source_hash" in source
+    assert 'eligible = result.get("eligible_tuned", {})' in source
 
 
 def test_config_update_compare_and_swap_refuses_stale_input():
@@ -1028,14 +1493,30 @@ def test_confirmation_fault_retains_raw_basin_for_final_replay():
 def main():
     tests = [
         test_step5_metric_matches_shared_helpers,
+        test_third_blob_guard_catches_binary_invisible_excited_cloud,
+        test_shelving_inversion_recovers_direct_f_population,
+        test_independent_long_reference_exposes_candidate_one_pulse_leakage,
+        test_single_shot_feedback_buffers_return_only_the_final_readout,
+        test_sequence_feedback_buffers_return_only_the_final_readout,
+        test_feedback_threshold_is_bound_to_one_exact_readout_tuple,
+        test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
+        test_reset_raw_threshold_maximizes_held_shot_assignment,
+        test_static_fast_flux_is_replayed_but_never_tuned,
+        test_static_fast_flux_helper_forces_zero_and_nonzero_park,
+        test_dynamic_flux_excursion_is_not_mistaken_for_static_park,
         test_bad_start_recovers_and_preserves_best_effort_contract,
         test_interrupt_retains_a_completed_unconfirmed_measurement,
         test_failed_search_cannot_make_replayed_input_write_eligible,
         test_partial_direct_grid_with_failed_confirmation_has_no_key_evidence,
-        test_atomic_eligibility_rejects_partially_evidenced_final_tuple,
+        test_stable_full_tuple_replay_authorizes_atomic_update,
+        test_leakage_constraint_prefers_safe_waveform_over_higher_binary_fidelity,
+        test_direct_leakage_verification_is_a_hard_write_gate,
+        test_verified_leakage_tuple_can_atomically_write_drag_beta,
+        test_leakage_certificate_cannot_authorize_a_different_final_tuple,
         test_refined_rabi_candidate_cannot_evict_a_spectral_basin,
         test_partial_wrapper_grid_can_report_but_not_authorize,
         test_interrupt_after_final_replay_never_emits_eligibility,
+        test_runner_enables_only_the_guarded_initialize_update_by_default,
         test_config_update_compare_and_swap_refuses_stale_input,
         test_config_source_hash_refuses_untuned_physical_change,
         test_config_source_hash_is_stable_for_windows_crlf,

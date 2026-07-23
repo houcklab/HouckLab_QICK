@@ -20,9 +20,10 @@ def flux_hold_us(cfg, cover_readout):
 
 
 def flux_hold_declare(prog):
-    """Declare the FF gen if cfg['ff_hold_gain'] != 0; sets prog.do_flux_hold.  Call early."""
+    """Declare FF for either a dynamic hold or the configured static park point."""
     prog.do_flux_hold = bool(prog.cfg.get("ff_hold_gain", 0))
-    if prog.do_flux_hold:
+    prog.do_static_ff_park = bool(ff_pulse.static_park_configured(prog.cfg))
+    if prog.do_flux_hold or prog.do_static_ff_park:
         ff_pulse.declare_ff(prog)
 
 
@@ -51,11 +52,24 @@ def _rabi_feedback_reset(prog):
     page = prog.ch_page(cfg["qubit_ch"])
     r_gain = prog.sreg(cfg["qubit_ch"], "gain")
     prog.mathi(page, 27, r_gain, "+", 0)
-    prog.regwi(page, r_gain, int(cfg["qubit_pi_gain"]))
+    prog.set_pulse_registers(
+        ch=cfg["qubit_ch"], style="arb",
+        freq=prog.freq2reg(float(cfg.get(
+            "reset_pi_freq", cfg.get("qubit_pi_freq", cfg["qubit_freq"]))),
+            gen_ch=cfg["qubit_ch"]),
+        phase=prog.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+        gain=int(cfg.get("reset_pi_gain", cfg["qubit_pi_gain"])),
+        waveform="qubit_reset")
     active_reset.active_reset_block(
         prog, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
         oper=cfg.get("reset_oper", "lower"), ground_below=cfg.get("reset_ground_below", True),
         max_iters=int(cfg.get("reset_max_iters", 3)), page=page, reg_val=25, reg_thr=26)
+    prog.set_pulse_registers(
+        ch=cfg["qubit_ch"], style="arb",
+        freq=prog.freq2reg(float(cfg["rabi_drive_freq"]),
+                           gen_ch=cfg["qubit_ch"]),
+        phase=prog.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+        gain=0, waveform="qubit")
     prog.mathi(page, r_gain, 27, "+", 0)
 
 
@@ -64,17 +78,25 @@ def rabi_flux_body(prog):
     -> n_pulses gaussian drive -> readout (at park after ramp-down by default, or AT the held
     flux) -> ramp down.  reset_mode: 'passive' (default) uses relax_delay (the tProc-v1
     substitute for QUA active reset); 'feedback' runs the TRUE tProc active reset first and
-    then a short relax (next shot's feedback does the thermalization)."""
+    then a reset_thermalization_us (default 25) photon-clearing wait before the drive."""
     cfg = prog.cfg
     feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
     if feedback:
         _rabi_feedback_reset(prog)
+        # Thermalization / photon-clearing after the reset so residual cavity photons from
+        # the last reset readout do not AC-Stark the drive (QUA waits ~10/kappa here).
+        prog.sync_all(prog.us2cycles(float(cfg.get("reset_thermalization_us", 25.0))))
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
-        ff_pulse.assert_park(prog, prog.ff_segs)
+        # Force even a zero park value so a previous program's latched FF output
+        # cannot become the unrecorded starting point of this ramp.
+        ff_pulse.assert_park(prog, prog.ff_segs, force=True)
         prog.sync_all(prog.us2cycles(max(float(cfg.get("baseline_rearm_us", 0.5)), 0.05)))
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
         prog.sync_all(prog.us2cycles(0.01))
+    elif getattr(prog, "do_static_ff_park", False):
+        ff_pulse.play_static_park(
+            prog, settle_us=cfg.get("ff_park_settle_us", 0.05))
     for _ in range(int(cfg["n_pulses"])):
         prog.pulse(ch=cfg["qubit_ch"])
         prog.sync_all(prog.us2cycles(0.010))
@@ -118,6 +140,12 @@ class RabiChevronIQProgram(RAveragerProgram):
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
         add_qubit_gaussian(self)
+        if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+            add_qubit_gaussian(
+                self, name="qubit_reset",
+                sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+                drag_beta=float(cfg.get(
+                    "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))))
         self.set_pulse_registers(ch=cfg["qubit_ch"], style="arb", freq=drive_freq,
                                  phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                                  gain=cfg["start"], waveform="qubit")

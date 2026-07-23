@@ -1,8 +1,9 @@
 """Run the streamlined, manual-workflow single-qubit autotuner.
 
-This is intentionally a separate entry point from ``AutoTune.py``.  The basic
-tuner measures a best candidate and saves all of its evidence by default, but it
-does not modify ``BaseConfig`` unless ``APPLY_CONFIG`` is deliberately enabled.
+This is intentionally a separate entry point from ``AutoTune.py``.  After a
+completed run, the basic tuner writes only the physical tuple that passed its
+stable, repeated, exact final replay.  Interrupted, partial, or unstable runs
+still save and report their best measurement without modifying ``BaseConfig``.
 """
 
 import copy
@@ -25,9 +26,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-# Safe default: acquire, save, and report the result without changing initialize.py.
-# Turn this on only after reviewing a dry run's maps and repeated final measurement.
-APPLY_CONFIG = False
+# The write path remains guarded by a completed, stable exact final replay and a
+# compare-and-swap check that initialize.py has not changed during acquisition.
+# Set this to False only when an explicitly dry diagnostic run is desired.
+APPLY_CONFIG = True
 
 # This is a private deep copy so edits made for a run cannot mutate the module defaults
 # or leak into a second experiment in the same Python process.
@@ -92,6 +94,9 @@ def _print_best(result):
     read_length = _number(best, ("read_length", "read_length_us", "readout_length"))
     qubit_freq = _number(best, ("qubit_pi_freq", "drive_freq", "qubit_freq"))
     qubit_gain = _number(best, ("qubit_pi_gain", "pi_gain", "qubit_gain"))
+    drag_beta = _number(
+        best, ("qubit_drag_beta", "drag_beta"),
+        BaseConfig.get("qubit_drag_beta", 0.0))
     sigma_us = _number(
         best, ("sigma", "sigma_us", "qubit_sigma_us"), BaseConfig.get("sigma", 0.0))
     fidelity = _number(best, ("fidelity", "ss_fidelity", "fid", "mean_fidelity"))
@@ -106,9 +111,10 @@ def _print_best(result):
           % (_fmt_float(read_freq, 6, " MHz"), _fmt_int(read_gain, " DAC"),
              _fmt_float(read_length, 3, " us")))
     gate_ns = 4000.0 * sigma_us if _finite(sigma_us) else float("nan")
-    print("   X180      %s / %s / %s (sigma %s)"
+    print("   X180      %s / %s / %s (sigma %s, DRAG %s)"
           % (_fmt_float(qubit_freq, 6, " MHz"), _fmt_int(qubit_gain, " DAC"),
-             _fmt_float(gate_ns, 1, " ns"), _fmt_float(sigma_us, 6, " us")))
+             _fmt_float(gate_ns, 1, " ns"), _fmt_float(sigma_us, 6, " us"),
+             _fmt_float(drag_beta, 5)))
     if _finite(fidelity_se):
         print("   step-5 F  %.4f +/- %.4f%s"
               % (fidelity, fidelity_se,
@@ -118,6 +124,25 @@ def _print_best(result):
         print("   step-5 F  %.4f" % fidelity)
     else:
         print("   step-5 F  n/a")
+    leakage = result.get("leakage", {})
+    if isinstance(leakage, dict) and leakage.get("active", False):
+        single = _number(leakage, ("worst_single_p2_ucb",))
+        amplified = _number(leakage, ("worst_amplified_p2_ucb",))
+        third = _number(leakage, ("worst_third_blob_excess_ucb",))
+        print("   leakage   %s | P(f) UCB one/amplified %s/%s | "
+              "third-cloud excess UCB %s"
+              % ("VERIFIED" if leakage.get("verified", False) else "NOT VERIFIED",
+                 _fmt_float(single, 4), _fmt_float(amplified, 4),
+                 _fmt_float(third, 4)))
+    reset = result.get("reset", {})
+    if isinstance(reset, dict):
+        mode = str(reset.get("mode", "passive"))
+        if mode == "feedback":
+            print("   reset      feedback (%s, threshold %s, end-to-end validated)"
+                  % (reset.get("oper", "?"), reset.get("threshold_raw", "?")))
+        else:
+            print("   reset      passive fallback (%s us)" % _fmt_float(
+                _number(reset, ("fallback_relax_delay_us",)), 1))
     return best
 
 
@@ -142,6 +167,12 @@ def _save_artifacts(experiment):
 
 
 def _history_entry(result, eligible, applied, error=None):
+    leakage = result.get("leakage", {})
+    if not isinstance(leakage, dict):
+        leakage = {}
+    reset = result.get("reset", {})
+    if not isinstance(reset, dict):
+        reset = {}
     return {
         "time": result.get(
             "time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -152,6 +183,24 @@ def _history_entry(result, eligible, applied, error=None):
         "failure": result.get("failure"),
         "runner_error": error,
         "best_found": result.get("best_found"),
+        "leakage": {
+            "active": bool(leakage.get("active", False)),
+            "verified": bool(leakage.get("verified", False)),
+            "selection_safe": bool(leakage.get("selection_safe", False)),
+            "worst_single_p2_ucb": leakage.get("worst_single_p2_ucb"),
+            "worst_amplified_p2_ucb": leakage.get("worst_amplified_p2_ucb"),
+            "worst_third_blob_excess_ucb": leakage.get(
+                "worst_third_blob_excess_ucb"),
+            "failure": leakage.get("failure"),
+        },
+        "reset": {
+            "mode": reset.get("mode"), "fresh": reset.get("fresh"),
+            "readout_key": reset.get("readout_key"),
+            "threshold_raw": reset.get("threshold_raw"),
+            "oper": reset.get("oper"),
+            "ground_below": reset.get("ground_below"),
+            "validation": reset.get("validation"),
+        },
         "eligible": dict(eligible),
         "applied": bool(applied),
         "old": {key: BaseConfig.get(key) for key in eligible},
@@ -161,7 +210,7 @@ def _history_entry(result, eligible, applied, error=None):
 
 def main():
     # Capture the complete physical configuration before the first acquisition.  A
-    # change to an untuned field (DRAG, channels, switch/FF state, ADC timing, etc.) is
+    # change to an untuned field (channels, switch/FF state, ADC timing, etc.) is
     # just as capable of creating an unmeasured hybrid tuple as a changed pi gain.
     startup_source_hash = config_updater.baseconfig_source_hash()
     soc, soccfg = makeProxy()
@@ -276,7 +325,8 @@ def main():
         print("   %-18s %-14s -> %s" % (key, old, new))
     if ("qubit_pi2_gain" in BaseConfig
             and any(key in eligible for key in
-                    ("qubit_pi_gain", "qubit_pi_freq", "sigma"))):
+                    ("qubit_pi_gain", "qubit_pi_freq", "sigma",
+                     "qubit_drag_beta"))):
         print("[basic-auto-tune] WARNING: qubit_pi2_gain was not calibrated and is "
               "now stale; it was deliberately left unchanged.")
     return 0
