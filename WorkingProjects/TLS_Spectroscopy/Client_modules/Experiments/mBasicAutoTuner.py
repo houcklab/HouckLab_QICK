@@ -1,0 +1,3216 @@
+"""A deliberately simple, measurement-first single-qubit auto tuner.
+
+This module automates the tune-up that has worked manually in this repository:
+
+    resonator -> wide qubit spectrum -> provisional IQ Rabi
+    -> bootstrap readout grid -> canonical single-shot control selection
+    -> error-amplified SS control -> joint readout/control/duration refinement
+
+The implementation is intentionally independent of :mod:`mAutoTuner`.  Early
+averaged-IQ experiments are *seeds*, never verdicts.  The optimization objective is
+always the exact paired ground/excited ``SingleShotProgram`` used by
+``TLSSpectroscopy.py`` step 5.  A weak starting point never prevents the search, and
+an optional-stage failure never erases the best directly measured candidate.
+
+The tuner uses bounded coordinate descent rather than one enormous simultaneous
+search.  A full Cartesian search over readout frequency/gain/length and qubit
+frequency/gain/length would require millions of long-relax single-shot acquisitions.
+Cheap spectroscopy and Rabi maps locate the basin; small direct-SS grids then optimize
+the actual quantity of interest and independently remeasure their winners.
+"""
+
+from __future__ import annotations
+
+import copy
+import datetime
+import json
+import math
+import os
+import pickle
+import warnings
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.optimize import OptimizeWarning, curve_fit
+from scipy.signal import find_peaks, savgol_filter
+from qick import AveragerProgram, RAveragerProgram
+
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import (
+    ExperimentClass, NpEncoder,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import (
+    RabiSSProgram,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+    SingleShotProgram,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
+    add_qubit_gaussian, explicit_flat_top_fields, set_readout_pulse,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
+    find_blob_median, find_threshold,
+)
+
+
+BASIC_AUTOTUNER_REVISION = "manual-workflow-v1"
+
+
+BASIC_DEFAULTS = {
+    "random_seed": 271828,
+    "max_consecutive_point_failures": 5,
+    "calibration_drift": {
+        "max_angle_degrees": 25.0,
+        "max_independent_fidelity_change": 0.08,
+        "max_fixed_discriminator_fidelity_loss": 0.08,
+        "max_midpoint_shift_fraction": 0.25,
+    },
+    "baseline": {"shots": 800, "blocks": 2},
+    "resonator": {
+        "enabled": True, "span_mhz": 4.0, "points": 61, "shots": 120,
+        "polarity": "dip", "wide_span_mhz": 12.0, "wide_points": 101,
+        "min_contrast_snr": 3.0, "always_wide": True,
+        # Averaged discovery must not inherit a deliberately bad/zero input readout.
+        # The input gain is also tried; whichever gives the clearest local response is
+        # used only as a bootstrap and never written without direct SS optimization.
+        "discovery_gain": 5000, "discovery_length_us": 10.0,
+    },
+    "spectroscopy": {
+        "enabled": True, "local_span_mhz": 20.0, "local_points": 81,
+        "wide_span_mhz": 80.0, "wide_points": 121, "gain": 7000,
+        "pulse_length_us": 2.0, "shots": 80, "max_candidates": 3,
+        "min_feature_snr": 3.0, "always_wide": True,
+    },
+    "iq_rabi": {
+        "enabled": True, "local_span_mhz": 4.0,
+        "freq_points_per_candidate": 5, "gain_min": 0, "gain_max": 30000,
+        "gain_points": 31, "shots": 60, "min_r2": 0.55,
+        "fine_gain_points": 41, "shortlist": 4,
+    },
+    "rough_single_shot": {
+        # A small direct-SS chevron is run independently in every retained spectral
+        # basin before any basin is discarded.  This is the automated counterpart of
+        # the manual SS Rabi-chevron step and protects a weak true qubit from a strong
+        # but irrelevant TLS ridge or a poor averaged-IQ fit.
+        "coarse_shots": 140, "freq_span_mhz": 2.0, "freq_points": 3,
+        "gain_fraction": 0.35, "gain_points": 5,
+        "shots": 700, "blocks": 2,
+    },
+    "parity_chevron": {
+        "enabled": True, "freq_span_mhz": 1.5, "freq_points": 9,
+        "gain_fraction": 0.22, "gain_points": 9, "pulse_counts": [3, 4, 5],
+        "shots": 100, "confirm_shots": 600, "confirm_blocks": 2,
+        "min_contrast_sigma": 5.0, "min_depth_correctness": 0.55,
+        "min_consistent_depth_fraction": 0.67,
+    },
+    "fine_frequency": {
+        # Repeated (+Xpi,-Xpi) pseudoidentity pairs amplify coherent detuning without
+        # assuming that half of the X180 DAC code is a calibrated X90.
+        "enabled": True, "span_mhz": 1.0, "points": 17, "pairs": 5,
+        "shots": 220, "calibration_shots": 500,
+        "confirm_shots": 700, "confirm_blocks": 2,
+        "min_contrast_sigma": 5.0,
+    },
+    "amplified_error": {
+        # Multi-depth odd/even parity is the X180 analogue of amplified amplitude
+        # error (AAE).  Several depths suppress repeated-pulse aliases.
+        "enabled": True, "freq_span_mhz": 0.5, "freq_points": 3,
+        "gain_fraction": 0.08, "gain_points": 11,
+        "pulse_counts": [5, 6, 7, 9, 10, 11, 13, 14, 15],
+        "shots": 80, "calibration_shots": 500,
+        "confirm_shots": 700, "confirm_blocks": 2,
+        "min_contrast_sigma": 5.0, "min_depth_correctness": 0.55,
+        "min_consistent_depth_fraction": 0.67,
+    },
+    "readout": {
+        "enabled": True, "freq_span_mhz": 2.0, "freq_points": 11,
+        "gain_min": 1000, "gain_max": 10000, "gain_points": 11,
+        "shots": 140, "shortlist": 3, "confirm_shots": 600,
+        "confirm_blocks": 2,
+        "local_freq_span_mhz": 0.8, "local_freq_points": 5,
+        "local_gain_fraction": 0.25, "local_gain_points": 5,
+    },
+    "readout_length": {
+        "enabled": True, "values_us": [4.0, 8.0, 14.0, 20.0, 30.0, 45.0],
+        "min_us": 1.0, "max_us": 100.0,
+        "freq_span_mhz": 0.8, "freq_points": 3,
+        # A separate broad power axis is measured at every length.  Reusing one
+        # +/-25% neighborhood biases the comparison because short integrations can
+        # need several times the drive of long integrations.
+        "gain_min": 1000, "gain_max": 10000, "gain_points": 7,
+        "shots": 160, "shortlist": 3, "confirm_shots": 700,
+        "confirm_blocks": 2,
+    },
+    "qubit": {
+        "enabled": True, "freq_span_mhz": 3.0, "freq_points": 11,
+        "gain_fraction": 0.50, "gain_points": 11, "shots": 140,
+        "shortlist": 3, "confirm_shots": 700, "confirm_blocks": 2,
+        "local_freq_span_mhz": 0.8, "local_freq_points": 7,
+        "local_gain_fraction": 0.22, "local_gain_points": 7,
+    },
+    "pulse_duration": {
+        # The physical Gaussian gate length is 4*sigma.  Every sigma gets its own
+        # local frequency/gain retune; comparing sigma at one fixed gain is invalid.
+        "enabled": True,
+        "sigma_values_us": [0.05, 0.10, 0.15, 0.25, 0.35, 0.50],
+        "freq_span_mhz": 1.0, "freq_points": 3,
+        "gain_fraction": 0.28, "gain_points": 5, "shots": 160,
+        "shortlist": 3, "confirm_shots": 700, "confirm_blocks": 2,
+    },
+    "coordinate_descent_repeat": True,
+    "final": {
+        "top_candidates": 3, "shots": 1200, "blocks": 3,
+        "confidence_sigma": 1.96, "max_block_spread": 0.08,
+        # Exact tuples whose confirmation batch was incomplete are audited regardless
+        # of raw-score rank, so later coarse outliers cannot erase a real Rabi basin.
+        "max_unconfirmed_contenders": 16,
+    },
+}
+
+
+TUNED_KEYS = (
+    "read_pulse_freq", "read_pulse_gain", "read_length",
+    "qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
+)
+
+
+def _qubit_gain_sweep_supported(soccfg, gen_ch):
+    """Whether ``sreg(ch, 'gain')`` is a real standalone amplitude register.
+
+    Interpolated generators pack amplitude into another register.  Incrementing the
+    nominal gain register can then compile while leaving the physical pulse amplitude
+    fixed, so unknown/packed generators use slower point-by-point compiled pulses.
+    """
+    try:
+        generator = soccfg["gens"][int(gen_ch)]
+        gtype = str(generator.get("type", "")).lower()
+    except Exception:
+        return None
+    if not gtype:
+        return None
+    return bool(gtype.startswith("axis_signal_gen_v"))
+
+
+def _deep_merge(base, update):
+    out = copy.deepcopy(base)
+    for key, value in (update or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def _robust_scale(x):
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    if not x.size:
+        return np.nan
+    return float(1.4826 * np.median(np.abs(x - np.median(x))))
+
+
+def _candidate_key(candidate):
+    return (
+        round(float(candidate["read_pulse_freq"]), 9),
+        int(round(candidate["read_pulse_gain"])),
+        round(float(candidate["read_length"]), 9),
+        round(float(candidate["qubit_pi_freq"]), 9),
+        int(round(candidate["qubit_pi_gain"])),
+        round(float(candidate["sigma"]), 9),
+    )
+
+
+def _candidate_from_cfg(cfg):
+    # Do not use ``dict.get(key, cfg[other])`` here: Python evaluates the default
+    # expression eagerly, so a perfectly valid config containing only
+    # ``qubit_pi_freq`` would still raise KeyError while constructing its fallback.
+    qf = float(cfg["qubit_pi_freq"] if "qubit_pi_freq" in cfg
+               else cfg["qubit_freq"])
+    return {
+        "read_pulse_freq": float(cfg["read_pulse_freq"]),
+        "read_pulse_gain": int(round(cfg["read_pulse_gain"])),
+        "read_length": float(cfg["read_length"]),
+        "qubit_freq": qf,
+        "qubit_pi_freq": qf,
+        "qubit_pi_gain": int(round(cfg["qubit_pi_gain"])),
+        "sigma": float(cfg["sigma"]),
+        # Preserved as part of physical identity, but basic v1 does not optimize it.
+        "qubit_drag_beta": float(cfg.get("qubit_drag_beta", 0.0) or 0.0),
+    }
+
+
+def _with_candidate(candidate, **changes):
+    out = dict(candidate)
+    out.update(changes)
+    if "qubit_pi_freq" in changes and "qubit_freq" not in changes:
+        out["qubit_freq"] = float(changes["qubit_pi_freq"])
+    if "qubit_freq" in changes and "qubit_pi_freq" not in changes:
+        out["qubit_pi_freq"] = float(changes["qubit_freq"])
+    out["read_pulse_gain"] = int(round(out["read_pulse_gain"]))
+    out["qubit_pi_gain"] = int(round(out["qubit_pi_gain"]))
+    return out
+
+
+def _unique_candidates(candidates):
+    out, seen = [], set()
+    for candidate in candidates:
+        key = _candidate_key(candidate)
+        if key not in seen:
+            seen.add(key)
+            out.append(dict(candidate))
+    return out
+
+
+def step5_metrics(ig, qg, ie, qe):
+    """Reproduce TLS step-5 fidelity and return its operational discriminator.
+
+    This intentionally uses ``find_blob_median`` and the same 100-threshold
+    ``find_threshold`` sweep as :class:`SingleShot1Q`.  Consequently a manual step-5
+    result such as 0.9165 is reported on the same scale here (balanced assignment
+    fidelity), rather than the older visibility convention ``2*F-1``.
+    """
+    ig, qg = np.asarray(ig, dtype=float), np.asarray(qg, dtype=float)
+    ie, qe = np.asarray(ie, dtype=float), np.asarray(qe, dtype=float)
+    n = min(ig.size, qg.size, ie.size, qe.size)
+    if n < 20:
+        raise ValueError("at least 20 paired ground/excited shots are required")
+    ig, qg, ie, qe = ig[:n], qg[:n], ie[:n], qe[:n]
+    good = np.isfinite(ig) & np.isfinite(qg) & np.isfinite(ie) & np.isfinite(qe)
+    ig, qg, ie, qe = ig[good], qg[good], ie[good], qe[good]
+    n = ig.size
+    if n < 20:
+        raise ValueError("too few finite paired ground/excited shots")
+
+    c0, c1 = ig + 1j * qg, ie + 1j * qe
+    center_g = complex(find_blob_median(c0))
+    center_e = complex(find_blob_median(c1))
+    theta = float(np.angle(center_e - center_g))
+    xg = np.real(np.exp(-1j * theta) * c0)
+    xe = np.real(np.exp(-1j * theta) * c1)
+    thresholds, fidelities = find_threshold(xg.astype(complex), xe.astype(complex))
+    k = int(np.nanargmax(fidelities))
+    threshold = float(thresholds[k])
+    fidelity = float(fidelities[k])
+
+    factor = 1.0
+    if float(np.mean(xg)) > threshold:
+        factor = -1.0
+        xg, xe, threshold = -xg, -xe, -threshold
+    p_e_given_g = float(np.mean(xg > threshold))
+    p_g_given_e = float(np.mean(xe < threshold))
+    confusion = np.array([
+        [1.0 - p_e_given_g, p_g_given_e],
+        [p_e_given_g, 1.0 - p_g_given_e],
+    ])
+    # The exact helper's finite threshold grid defines fidelity.  The confusion matrix
+    # is retained for directional errors and uncertainty and should agree to O(1/n).
+    var = (p_e_given_g * (1.0 - p_e_given_g)
+           + p_g_given_e * (1.0 - p_g_given_e)) / (4.0 * n)
+    # Jeffreys-scale floor avoids claiming zero uncertainty after observing zero errors.
+    fidelity_se = float(math.sqrt(max(var, 0.25 / (n + 1.0) ** 2)))
+    sg = max(_robust_scale(xg), 1e-12)
+    se = max(_robust_scale(xe), 1e-12)
+    sep_sigma = float(abs(np.median(xe) - np.median(xg)) / (0.5 * (sg + se)))
+    return {
+        "fidelity": fidelity,
+        "fidelity_se": fidelity_se,
+        "fidelity_lcb_95": float(fidelity - 1.96 * fidelity_se),
+        "visibility": float(2.0 * fidelity - 1.0),
+        "p_e_given_g": p_e_given_g,
+        "p_g_given_e": p_g_given_e,
+        "confusion": confusion,
+        "read_theta": theta,
+        "scale_factor": factor,
+        "threshold": threshold,
+        "sep_sigma": sep_sigma,
+        "shots_per_state": int(n),
+        "ground_center_i": float(center_g.real),
+        "ground_center_q": float(center_g.imag),
+        "excited_center_i": float(center_e.real),
+        "excited_center_q": float(center_e.imag),
+        "projected_ground_center": float(
+            factor * np.real(np.exp(-1j * theta) * center_g)),
+        "projected_excited_center": float(
+            factor * np.real(np.exp(-1j * theta) * center_e)),
+    }
+
+
+def discriminate_with_metrics(i, q, metrics):
+    c = np.asarray(i, dtype=float) + 1j * np.asarray(q, dtype=float)
+    x = float(metrics["scale_factor"]) * np.real(
+        np.exp(-1j * float(metrics["read_theta"])) * c)
+    return (x > float(metrics["threshold"])).astype(np.int8)
+
+
+def fit_anchored_rabi(gains, signal):
+    """Fit a damped Rabi cosine whose phase is anchored by the zero-gain point."""
+    x, y = np.asarray(gains, dtype=float), np.asarray(signal, dtype=float)
+    good = np.isfinite(x) & np.isfinite(y)
+    x, y = x[good], y[good]
+    if x.size < 9 or np.ptp(x) <= 0:
+        return {"ok": False, "pi_gain": np.nan, "r2": -np.inf,
+                "contrast": 0.0, "yfit": np.full_like(y, np.nan)}
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+    x = x - x[0]
+    span = float(np.ptp(x))
+    step = float(np.median(np.diff(np.unique(x))))
+
+    def model(g, offset, amp, pi_gain, decay):
+        return offset + amp * np.exp(-g / decay) * np.cos(np.pi * g / pi_gain)
+
+    # FFT plus geometric seeds make the first physical period identifiable even when
+    # the high-gain oscillations are strongly damped.
+    centred = y - np.mean(y)
+    fft = np.fft.rfft(centred * np.hanning(x.size))
+    ff = np.fft.rfftfreq(x.size, d=max(step, 1e-9))
+    if ff.size > 1:
+        fft_pi = 0.5 / max(float(ff[1 + np.argmax(np.abs(fft[1:]))]), 1e-12)
+    else:
+        fft_pi = span / 3.0
+    seeds = [fft_pi, span / 8.0, span / 6.0, span / 4.0,
+             span / 3.0, span / 2.0, 0.75 * span]
+    best = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", OptimizeWarning)
+        for p0 in seeds:
+            if not np.isfinite(p0):
+                continue
+            try:
+                popt, pcov = curve_fit(
+                    model, x, y,
+                    p0=[float(np.mean(y)), float(y[0] - np.mean(y)),
+                        float(np.clip(p0, 0.6 * step, span)), 3.0 * span],
+                    # pi_gain below one gain step is a discrete-time alias of a much
+                    # slower Rabi oscillation, not a resolvable first inversion.
+                    bounds=([-np.inf, -np.inf, 1.05 * step, 0.20 * span],
+                            [np.inf, np.inf, 1.25 * span, 1e5 * span]),
+                    maxfev=30000,
+                )
+                yf = model(x, *popt)
+                sse = float(np.sum((y - yf) ** 2))
+                if best is None or sse < best[0]:
+                    best = (sse, popt, pcov, yf)
+            except Exception:
+                pass
+    if best is None:
+        return {"ok": False, "pi_gain": np.nan, "r2": -np.inf,
+                "contrast": float(np.ptp(y)), "yfit": np.full_like(y, np.nan)}
+    sse, popt, pcov, yf = best
+    total = float(np.sum((y - np.mean(y)) ** 2)) + 1e-15
+    r2 = float(1.0 - sse / total)
+    offset, amp, pi_gain, decay = [float(v) for v in popt]
+    try:
+        pi_err = float(math.sqrt(max(float(pcov[2, 2]), 0.0)))
+    except Exception:
+        pi_err = np.inf
+    ok = bool(np.isfinite(pi_gain) and 1.05 * step <= pi_gain <= span
+              and r2 > 0.45 and abs(amp) > 0)
+    return {
+        "ok": ok, "pi_gain": pi_gain, "pi_gain_err": pi_err,
+        "period": 2.0 * pi_gain, "r2": r2,
+        "contrast": float(2.0 * abs(amp)), "decay_gain": decay,
+        "offset": offset, "amplitude": amp, "x": x, "y": y, "yfit": yf,
+    }
+
+
+def analyze_iq_chevron(freqs, gains, i_map, q_map, min_r2=0.55):
+    """Find a coherent Rabi ridge after removing each row's common IQ offset.
+
+    This is the key correction to the existing TLS/QM chevrons: absolute ``I**2+Q**2``
+    is dominated by the readout baseline and has no reason to identify a pi pulse.
+    """
+    freqs, gains = np.asarray(freqs, float), np.asarray(gains, float)
+    z = np.asarray(i_map, float) + 1j * np.asarray(q_map, float)
+    if z.shape != (freqs.size, gains.size):
+        raise ValueError("IQ chevron shape does not match its axes")
+    rows = []
+    for row, freq in zip(z, freqs):
+        d = row - row[0]
+        xy = np.column_stack([d.real, d.imag])
+        xy -= np.nanmean(xy, axis=0)
+        try:
+            _, _, vh = np.linalg.svd(np.nan_to_num(xy), full_matrices=False)
+            axis = vh[0]
+        except Exception:
+            axis = np.array([1.0, 0.0])
+        projection = d.real * axis[0] + d.imag * axis[1]
+        fit = fit_anchored_rabi(gains, projection)
+        residual = projection - np.asarray(fit.get("yfit", projection))
+        noise = max(_robust_scale(residual), 1e-12)
+        snr = float(np.ptp(projection) / noise)
+        score = float(max(fit.get("r2", -1.0), -1.0) * math.log1p(max(snr, 0.0)))
+        rows.append({"frequency": float(freq), "projection": projection,
+                     "fit": fit, "snr": snr, "raw_score": score,
+                     "contrast_observed": float(np.ptp(projection))})
+    max_contrast = max(max(row["contrast_observed"] for row in rows), 1e-15)
+    for row in rows:
+        # A vanishing but perfectly sinusoidal numerical/noise trace can have an
+        # excellent scale-free r2.  The physical ridge must also carry a substantial
+        # fraction of the largest drive-induced displacement in the map.
+        relative = float(row["contrast_observed"] / max_contrast)
+        row["relative_contrast"] = relative
+        row["score"] = float(row["raw_score"] * relative)
+    valid = [row for row in rows
+             if row["fit"].get("ok") and row["fit"].get("r2", -1) >= min_r2]
+    pool = valid if valid else rows
+    best = max(pool, key=lambda row: row["score"])
+    return {"ok": bool(valid), "best": best, "rows": rows}
+
+
+def _declare_common(program, include_qubit=True):
+    cfg = program.cfg
+    program.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
+                        mixer_freq=cfg.get("mixer_freq", 0),
+                        ro_ch=cfg["ro_chs"][0])
+    if include_qubit:
+        program.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
+    for ro_ch in cfg["ro_chs"]:
+        program.declare_readout(
+            ch=ro_ch, freq=cfg["read_pulse_freq"],
+            length=program.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0]),
+            gen_ch=cfg["res_ch"],
+        )
+    set_readout_pulse(program)
+
+
+class BasicTransmissionProgram(AveragerProgram):
+    """Park-only readout point using the same canonical readout pulse as step 5."""
+
+    def initialize(self):
+        self.cfg.setdefault("reps", int(self.cfg.get("shots", 300)))
+        _declare_common(self, include_qubit=False)
+        self.synci(200)
+
+    def body(self):
+        cfg = self.cfg
+        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+
+class BasicSpecProgram(RAveragerProgram):
+    """Hardware frequency sweep of a constant saturation-spectroscopy pulse."""
+
+    def initialize(self):
+        cfg = self.cfg
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
+        self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
+        _declare_common(self, include_qubit=True)
+        self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
+        self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
+            gain=int(cfg["spec_gain"]),
+            length=self.us2cycles(cfg["spec_len_us"], gen_ch=cfg["qubit_ch"]),
+        )
+        self.synci(200)
+
+    def body(self):
+        cfg = self.cfg
+        self.pulse(ch=cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(0.02))
+        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+    def update(self):
+        self.mathi(self.q_rp, self.r_freq, self.r_freq, "+", self.f_step)
+
+
+class BasicRabiProgram(RAveragerProgram):
+    """Hardware gain sweep of the canonical 4-sigma Gaussian pulse."""
+
+    def initialize(self):
+        cfg = self.cfg
+        self.q_rp = self.ch_page(cfg["qubit_ch"])
+        self.r_gain = self.sreg(cfg["qubit_ch"], "gain")
+        _declare_common(self, include_qubit=True)
+        add_qubit_gaussian(self)
+        self.set_pulse_registers(
+            ch=cfg["qubit_ch"], style="arb",
+            freq=self.freq2reg(float(cfg["drive_freq"]), gen_ch=cfg["qubit_ch"]),
+            phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
+            gain=int(cfg["start"]), waveform="qubit",
+        )
+        self.synci(200)
+
+    def body(self):
+        cfg = self.cfg
+        self.pulse(ch=cfg["qubit_ch"])
+        self.sync_all(self.us2cycles(0.01))
+        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+    def update(self):
+        self.mathi(self.q_rp, self.r_gain, self.r_gain, "+", int(self.cfg["step"]))
+
+
+class BasicSequenceProgram(AveragerProgram):
+    """Fixed Gaussian phase sequence followed by one per-shot readout."""
+
+    def initialize(self):
+        cfg = self.cfg
+        cfg["reps"] = int(cfg.get("shots", cfg.get("reps", 200)))
+        _declare_common(self, include_qubit=True)
+        add_qubit_gaussian(self)
+        self.synci(200)
+
+    def body(self):
+        cfg = self.cfg
+        qch = cfg["qubit_ch"]
+        freq = self.freq2reg(float(cfg["drive_freq"]), gen_ch=qch)
+        gap = self.us2cycles(float(cfg.get("seq_gap_us", 0.01)))
+        last_phase = None
+        for phase in cfg["sequence_phases_deg"]:
+            phase = float(phase)
+            if phase != last_phase:
+                self.set_pulse_registers(
+                    ch=qch, style="arb", freq=freq,
+                    phase=self.deg2reg(phase, gen_ch=qch),
+                    gain=int(cfg["sequence_gain"]), waveform="qubit")
+                last_phase = phase
+            self.pulse(ch=qch)
+            if gap > 0:
+                self.sync_all(gap)
+        self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
+                     adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
+                     wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
+
+
+def _curve_from_qick(value, n):
+    arr = np.asarray(value, dtype=float).squeeze()
+    if arr.ndim == 0:
+        arr = np.repeat(float(arr), int(n))
+    arr = arr.reshape(-1)
+    if arr.size < n:
+        raise RuntimeError("QICK returned %d points, expected %d" % (arr.size, n))
+    return arr[:n]
+
+
+def _mean_from_qick(value):
+    arr = np.asarray(value, dtype=float)
+    if not arr.size:
+        raise RuntimeError("QICK returned an empty acquisition")
+    return float(np.mean(arr))
+
+
+def _shots_from_program(program, cfg):
+    length = program.us2cycles(cfg["read_length"], ro_ch=cfg["ro_chs"][0])
+    n = int(cfg["reps"])
+    di, dq = getattr(program, "di_buf", None), getattr(program, "dq_buf", None)
+    if di is not None and dq is not None:
+        return (np.asarray(di, dtype=float)[0].reshape(-1)[:n] / length,
+                np.asarray(dq, dtype=float)[0].reshape(-1)[:n] / length)
+    get_raw = getattr(program, "get_raw", None)
+    if callable(get_raw):
+        raw = np.asarray(get_raw(), dtype=float).reshape(-1, 2)
+        return raw[:n, 0] / length, raw[:n, 1] / length
+    raise RuntimeError("QICK exposes neither di_buf/dq_buf nor get_raw per-shot data")
+
+
+class BasicAutoTuner(ExperimentClass):
+    """Streamlined autotuner built around direct TLS step-5 fidelity.
+
+    Hardware methods beginning with ``_acquire_`` are deliberately narrow injection
+    boundaries.  The test suite replaces them with a virtual device; production uses
+    the exact QICK programs in this module and ``mSingleShot1Q``.
+    """
+
+    def __init__(self, soc=None, soccfg=None, path="", outerFolder="", prefix="data",
+                 suffix="Basic_Auto_Tune", cfg=None, meta_dict=None, params=None, **kw):
+        super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
+                         prefix=prefix, suffix=suffix, cfg=copy.deepcopy(cfg),
+                         meta_dict=meta_dict, **kw)
+        if cfg is None:
+            raise ValueError("BasicAutoTuner requires a configuration dictionary")
+        self.input_cfg = copy.deepcopy(cfg)
+        self.params = _deep_merge(BASIC_DEFAULTS, params)
+        self.rng = np.random.default_rng(int(self.params["random_seed"]))
+        self.initial = _candidate_from_cfg(self.input_cfg)
+        self.working = dict(self.initial)
+        self._archive = []
+        self._confirmed = []
+        self._unconfirmed_contenders = []
+        self._maps = {}
+        self._stages = []
+        self._report = []
+        self._key_evidence = {key: [] for key in TUNED_KEYS}
+        self._resonator_seed = float(self.initial["read_pulse_freq"])
+        self._discovery_readout = dict(self.initial)
+        self._spec_candidates_mhz = [float(self.initial["qubit_pi_freq"])]
+        self._rabi_candidates = []
+        self._interrupted = False
+        self._final_replay_completed = False
+        self._fast_gain_sweep = None
+        self.data = {
+            "revision": BASIC_AUTOTUNER_REVISION,
+            "autotuner_revision": BASIC_AUTOTUNER_REVISION,
+            "fidelity_definition": "TLS step-5 balanced assignment fidelity",
+            "initial": dict(self.initial),
+            "working": dict(self.working),
+            "best_found": None,
+            "candidate_archive": self._archive,
+            "confirmed_candidates": self._confirmed,
+            "unconfirmed_contenders": self._unconfirmed_contenders,
+            "maps": self._maps,
+            "stages": self._stages,
+            "report": self._report,
+            "confirmation_failures": [],
+            "key_evidence": self._key_evidence,
+            "eligible_tuned": {},
+            "tuned": {},
+            "outcome": "not_started",
+            "success": False,
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    # ------------------------------------------------------------------ invariants
+    def _preflight(self):
+        cfg = self.input_cfg
+        required = (
+            "res_ch", "qubit_ch", "ro_chs", "nqz", "qubit_nqz",
+            "read_pulse_freq", "read_pulse_gain", "read_length",
+            "qubit_pi_gain", "sigma", "adc_trig_offset", "relax_delay",
+        )
+        missing = [key for key in required if key not in cfg]
+        if "qubit_pi_freq" not in cfg and "qubit_freq" not in cfg:
+            missing.append("qubit_pi_freq (or qubit_freq)")
+        if missing:
+            raise ValueError("missing BasicAutoTuner config keys: %s" % ", ".join(missing))
+        if int(cfg["res_ch"]) == int(cfg["qubit_ch"]):
+            raise ValueError(
+                "res_ch and qubit_ch are both %d; their pulse registers would collide"
+                % int(cfg["res_ch"]))
+        if len(cfg["ro_chs"]) != 1:
+            raise ValueError(
+                "basic tuner v1 requires exactly one readout channel; got %r"
+                % (cfg["ro_chs"],))
+        if str(cfg.get("qubit_pulse_style", "arb")).lower() != "arb":
+            raise ValueError("basic tuner requires the canonical arb Gaussian pulse")
+        if explicit_flat_top_fields(cfg):
+            raise ValueError("basic tuner does not mix flat-top and 4-sigma Gaussian paths")
+        if str(cfg.get("read_pulse_style", "const")).lower() != "const":
+            raise ValueError("basic tuner requires the canonical constant readout pulse")
+        if bool(cfg.get("use_switch", False)) or bool(
+                cfg.get("switch_triggered", False)):
+            raise ValueError("basic tuner v1 reproduces the step-5 switch-off pulse path")
+        if int(cfg.get("ff_park_gain", 0) or 0) != 0 \
+                or int(cfg.get("ff_hold_gain", 0) or 0) != 0:
+            raise ValueError("basic tuner v1 is park-only (ff_park_gain=ff_hold_gain=0)")
+        for row in (cfg.get("FF_Qubits", {}) or {}).values():
+            if not hasattr(row, "get"):
+                continue
+            for key in ("Gain_Readout", "Gain_Expt", "Gain_Pulse"):
+                if int(row.get(key, 0) or 0) != 0:
+                    raise ValueError("basic tuner v1 requires inactive nested fast-flux gains")
+        if float(cfg["sigma"]) <= 0 or float(cfg["read_length"]) <= 0:
+            raise ValueError("sigma and read_length must be positive")
+        self._fast_gain_sweep = _qubit_gain_sweep_supported(
+            self.soccfg, cfg["qubit_ch"])
+        if self.soccfg is not None and self._fast_gain_sweep is not True:
+            self._log(
+                "preflight", "WARN",
+                "qubit generator does not advertise a standalone gain register; "
+                "using slower point-by-point compiled pulses so amplitude really changes")
+
+    def _cfg_for(self, candidate=None, **extra):
+        c = self.working if candidate is None else candidate
+        cfg = copy.deepcopy(self.input_cfg)
+        cfg.update({key: c[key] for key in (
+            "read_pulse_freq", "read_pulse_gain", "read_length",
+            "qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
+        )})
+        cfg["qubit_drag_beta"] = float(c.get(
+            "qubit_drag_beta", self.input_cfg.get("qubit_drag_beta", 0.0)) or 0.0)
+        # This key is the RAverager register step used by SingleShotProgram.  Omitting
+        # it was the exact kind of pulse-path mismatch that made older automatic runs
+        # disagree with a 91.65% manual step-5 run.
+        cfg["qubit_gain"] = int(round(c["qubit_pi_gain"]))
+        cfg["qubit_pulse_style"] = "arb"
+        cfg["reset_mode"] = "passive"
+        # Per-shot buffers and requested shot counts must have one unambiguous meaning;
+        # inherited software averaging would otherwise make seeds and direct SS use
+        # different effective sample sets.
+        cfg["rounds"] = 1
+        cfg["soft_avgs"] = 1
+        cfg["ff_park_gain"] = 0
+        cfg["ff_hold_gain"] = 0
+        cfg["use_switch"] = False
+        cfg["switch_triggered"] = False
+        cfg.update(extra)
+        return cfg
+
+    def _log(self, stage, level, message):
+        level = str(level).upper()
+        row = {"stage": str(stage), "level": level, "message": str(message),
+               "time": datetime.datetime.now().strftime("%H:%M:%S")}
+        self._report.append(row)
+        print("  [%-16s] %-4s %s" % (str(stage)[:16], level, message))
+
+    def _run_stage(self, name, function):
+        row = {"name": name, "status": "running", "error": None}
+        self._stages.append(row)
+        try:
+            result = function()
+            row["status"] = "ok"
+            return result
+        except KeyboardInterrupt:
+            row["status"] = "interrupted"
+            self._interrupted = True
+            raise
+        except Exception as exc:
+            row["status"] = "warning"
+            row["error"] = "%s: %s" % (type(exc).__name__, exc)
+            self._log(name, "WARN", "%s -- continuing with the best measured tuple"
+                      % row["error"])
+            return None
+        finally:
+            self.data["working"] = dict(self.working)
+            # A long hardware run must survive a client crash or operator interrupt.
+            # The pickle is the lossless checkpoint; HDF5/PNG are finalized by runner.
+            try:
+                self._checkpoint()
+            except Exception as exc:
+                self._log(name, "WARN", "checkpoint failed: %s" % exc)
+
+    # ---------------------------------------------------------- production backends
+    def _acquire_transmission(self, freqs_mhz, candidate, shots):
+        freqs = np.asarray(freqs_mhz, dtype=float)
+        z = np.full(freqs.size, np.nan + 1j * np.nan)
+        order = self.rng.permutation(freqs.size)
+        for index in order:
+            cfg = self._cfg_for(candidate, read_pulse_freq=float(freqs[index]),
+                                shots=int(shots), reps=int(shots))
+            program = BasicTransmissionProgram(self.soccfg, cfg)
+            avgi, avgq = program.acquire(
+                self.soc, load_pulses=True, progress=False)
+            z[index] = _mean_from_qick(avgi) + 1j * _mean_from_qick(avgq)
+        return z
+
+    def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                              pulse_length_us):
+        freqs = np.asarray(freqs_mhz, dtype=float)
+        if freqs.size < 2:
+            raise ValueError("spectroscopy needs at least two frequencies")
+        step = float(freqs[1] - freqs[0])
+        cfg = self._cfg_for(
+            candidate, start=float(freqs[0]), step=step, expts=int(freqs.size),
+            reps=int(shots), shots=int(shots), spec_gain=int(round(gain)),
+            spec_len_us=float(pulse_length_us),
+        )
+        program = BasicSpecProgram(self.soccfg, cfg)
+        _x, avgi, avgq = program.acquire(
+            self.soc, load_pulses=True, progress=False)
+        return (_curve_from_qick(avgi, freqs.size)
+                + 1j * _curve_from_qick(avgq, freqs.size))
+
+    def _acquire_iq_chevron(self, freqs_mhz, gains, candidate, shots):
+        freqs, gains = np.asarray(freqs_mhz, float), np.asarray(gains, int)
+        if gains.size < 2:
+            raise ValueError("Rabi gain sweep needs at least two gains")
+        steps = np.diff(gains)
+        if not np.all(steps == steps[0]):
+            raise ValueError("hardware Rabi sweep requires equally spaced integer gains")
+        i_map = np.full((freqs.size, gains.size), np.nan)
+        q_map = np.full_like(i_map, np.nan)
+        if self._fast_gain_sweep is True:
+            for row, freq in enumerate(freqs):
+                cfg = self._cfg_for(
+                    candidate, drive_freq=float(freq), start=int(gains[0]),
+                    step=int(steps[0]), expts=int(gains.size), reps=int(shots),
+                    shots=int(shots),
+                )
+                program = BasicRabiProgram(self.soccfg, cfg)
+                _x, avgi, avgq = program.acquire(
+                    self.soc, load_pulses=True, progress=False)
+                i_map[row] = _curve_from_qick(avgi, gains.size)
+                q_map[row] = _curve_from_qick(avgq, gains.size)
+            return i_map, q_map
+
+        # Packed/unknown generator: compile every amplitude into the pulse registers.
+        # This costs uploads but cannot silently produce a flat fake gain sweep.
+        jobs = [(fi, gi) for fi in range(freqs.size) for gi in range(gains.size)]
+        for job_index in self.rng.permutation(len(jobs)):
+            fi, gi = jobs[int(job_index)]
+            cfg = self._cfg_for(
+                candidate, drive_freq=float(freqs[fi]), start=int(gains[gi]),
+                step=0, expts=1, reps=int(shots), shots=int(shots),
+            )
+            program = BasicRabiProgram(self.soccfg, cfg)
+            _x, avgi, avgq = program.acquire(
+                self.soc, load_pulses=True, progress=False)
+            i_map[fi, gi] = _curve_from_qick(avgi, 1)[0]
+            q_map[fi, gi] = _curve_from_qick(avgq, 1)[0]
+        return i_map, q_map
+
+    def _acquire_ss_pair(self, candidate, shots, state_order="ge"):
+        # This is the production TLS step-5 program, not a lookalike sequence program.
+        if self._fast_gain_sweep is not True:
+            # SingleShotProgram obtains g/e by sweeping the qubit gain register.  On a
+            # packed generator, two fixed compiled programs are the only safe physical
+            # equivalent.  Return arrays in canonical [ground, excited] order.
+            acquired = {}
+            states = ("ground", "excited") if state_order == "ge" \
+                else ("excited", "ground")
+            for state in states:
+                cfg = self._cfg_for(
+                    candidate, drive_freq=float(candidate["qubit_pi_freq"]),
+                    sequence_gain=(0 if state == "ground"
+                                   else int(candidate["qubit_pi_gain"])),
+                    # Match SingleShotProgram's gain-zero ground arm exactly: it still
+                    # emits the zero-amplitude waveform and the same 10 ns post-pulse gap.
+                    sequence_phases_deg=[0.0], shots=int(shots), reps=int(shots),
+                )
+                program = BasicSequenceProgram(self.soccfg, cfg)
+                program.acquire(self.soc, load_pulses=True, progress=False)
+                acquired[state] = _shots_from_program(program, cfg)
+            return (acquired["ground"][0], acquired["ground"][1],
+                    acquired["excited"][0], acquired["excited"][1])
+
+        cfg = self._cfg_for(
+            candidate, qubit_gain=int(candidate["qubit_pi_gain"]),
+            qubit_pi_gain=int(candidate["qubit_pi_gain"]),
+            qubit_pi_freq=float(candidate["qubit_pi_freq"]),
+            shots=int(shots), repeats=1,
+            single_shot_state_order=str(state_order),
+        )
+        program = SingleShotProgram(self.soccfg, cfg)
+        shot_i, shot_q = program.acquire(
+            self.soc, load_pulses=True, progress=False)
+        shot_i, shot_q = np.asarray(shot_i, float), np.asarray(shot_q, float)
+        if shot_i.ndim != 2 or shot_q.ndim != 2 \
+                or shot_i.shape[0] < 2 or shot_q.shape[0] < 2:
+            raise RuntimeError("SingleShotProgram did not return [ground, excited] shots")
+        return shot_i[0], shot_q[0], shot_i[1], shot_q[1]
+
+    def _acquire_parity_chevron(self, freqs_mhz, gains, candidate, shots,
+                                pulse_counts, calibration):
+        """Return a joint odd/even parity score, using a fixed fresh discriminator."""
+        freqs, gains = np.asarray(freqs_mhz, float), np.asarray(gains, int)
+        if gains.size < 2 or not np.all(np.diff(gains) == np.diff(gains)[0]):
+            raise ValueError("parity chevron requires an equally spaced gain axis")
+        populations = np.full((len(pulse_counts), freqs.size, gains.size), np.nan)
+        if self._fast_gain_sweep is not True:
+            jobs = [(ci, fi, gi) for ci in range(len(pulse_counts))
+                    for fi in range(freqs.size) for gi in range(gains.size)]
+            for job_index in self.rng.permutation(len(jobs)):
+                ci, fi, gi = jobs[int(job_index)]
+                cfg = self._cfg_for(
+                    candidate, drive_freq=float(freqs[fi]),
+                    sequence_gain=int(gains[gi]),
+                    sequence_phases_deg=[0.0] * int(pulse_counts[ci]),
+                    shots=int(shots), reps=int(shots),
+                )
+                program = BasicSequenceProgram(self.soccfg, cfg)
+                program.acquire(self.soc, load_pulses=True, progress=False)
+                shot_i, shot_q = _shots_from_program(program, cfg)
+                populations[ci, fi, gi] = float(np.mean(
+                    discriminate_with_metrics(shot_i, shot_q, calibration)))
+            targets = np.asarray(
+                [1.0 if int(n) % 2 else 0.0 for n in pulse_counts])
+            correctness = np.where(targets[:, None, None] > 0.5,
+                                   populations, 1.0 - populations)
+            return np.mean(correctness, axis=0), populations
+
+        jobs = [(count_index, freq_index)
+                for count_index in range(len(pulse_counts))
+                for freq_index in range(freqs.size)]
+        for job_number, job_index in enumerate(self.rng.permutation(len(jobs))):
+            count_index, freq_index = jobs[int(job_index)]
+            count, freq = pulse_counts[count_index], freqs[freq_index]
+            run_gains = gains if job_number % 2 == 0 else gains[::-1]
+            cfg = self._cfg_for(
+                candidate, rabi_drive_freq=float(freq), n_pulses=int(count),
+                amp_start=int(run_gains[0]),
+                amp_step=int(np.diff(run_gains)[0]),
+                amp_expts=int(gains.size), shots=int(shots), reps=int(shots),
+                reset_mode="passive", ff_hold_gain=0,
+            )
+            program = RabiSSProgram(self.soccfg, cfg)
+            shot_i, shot_q = program.acquire(
+                self.soc, load_pulses=True, progress=False)
+            shot_i, shot_q = np.asarray(shot_i), np.asarray(shot_q)
+            row = np.empty(gains.size, dtype=float)
+            for gain_index in range(gains.size):
+                row[gain_index] = float(
+                    np.mean(discriminate_with_metrics(
+                        shot_i[gain_index], shot_q[gain_index], calibration)))
+            populations[count_index, freq_index] = (
+                row if job_number % 2 == 0 else row[::-1])
+        targets = np.asarray([1.0 if int(n) % 2 else 0.0 for n in pulse_counts])
+        correctness = np.where(targets[:, None, None] > 0.5,
+                               populations, 1.0 - populations)
+        return np.mean(correctness, axis=0), populations
+
+    def _acquire_inverse_pair_scan(self, freqs_mhz, candidate, shots, pairs,
+                                   calibration):
+        freqs = np.asarray(freqs_mhz, dtype=float)
+        populations = np.full(freqs.size, np.nan)
+        phases = [phase for _ in range(int(pairs)) for phase in (0.0, 180.0)]
+        for index in self.rng.permutation(freqs.size):
+            cfg = self._cfg_for(
+                candidate, drive_freq=float(freqs[index]),
+                sequence_gain=int(candidate["qubit_pi_gain"]),
+                sequence_phases_deg=phases, shots=int(shots), reps=int(shots),
+            )
+            program = BasicSequenceProgram(self.soccfg, cfg)
+            program.acquire(self.soc, load_pulses=True, progress=False)
+            shot_i, shot_q = _shots_from_program(program, cfg)
+            populations[index] = float(np.mean(
+                discriminate_with_metrics(shot_i, shot_q, calibration)))
+        return populations
+
+    # ----------------------------------------------------------- direct SS objective
+    def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                           archive=True, reference_discriminator=None):
+        ig, qg, ie, qe = self._acquire_ss_pair(
+            dict(candidate), int(shots), state_order=state_order)
+        metrics = step5_metrics(ig, qg, ie, qe)
+        row = dict(candidate)
+        row.update({key: value for key, value in metrics.items()
+                    if key != "confusion"})
+        row["confusion"] = np.asarray(metrics["confusion"])
+        if reference_discriminator is not None:
+            ground_state = discriminate_with_metrics(
+                ig, qg, reference_discriminator)
+            excited_state = discriminate_with_metrics(
+                ie, qe, reference_discriminator)
+            p_e_given_g = float(np.mean(ground_state > 0))
+            p_g_given_e = float(np.mean(excited_state < 1))
+            row.update({
+                "reference_fidelity": float(
+                    1.0 - 0.5 * (p_e_given_g + p_g_given_e)),
+                "reference_p_e_given_g": p_e_given_g,
+                "reference_p_g_given_e": p_g_given_e,
+            })
+        row["label"] = str(label)
+        row["state_order"] = str(state_order)
+        row["measurement_index"] = len(self._archive)
+        if archive:
+            self._archive.append(row)
+        return row
+
+    @staticmethod
+    def _aggregate(candidate, measurements, label):
+        if not measurements:
+            raise ValueError("cannot aggregate zero measurements")
+        fids = np.asarray([row["fidelity"] for row in measurements], dtype=float)
+        shot_ses = np.asarray([row["fidelity_se"] for row in measurements], dtype=float)
+        mean = float(np.mean(fids))
+        if fids.size > 1:
+            between = float(np.std(fids, ddof=1) / np.sqrt(fids.size))
+        else:
+            between = 0.0
+        within = float(np.sqrt(np.sum(shot_ses ** 2)) / fids.size)
+        se = float(max(between, within))
+        out = dict(candidate)
+        out.update({
+            "fidelity": mean, "fidelity_se": se,
+            "fidelity_lcb_95": float(mean - 1.96 * se),
+            "confirmation_blocks": int(fids.size),
+            "block_fidelities": fids,
+            "block_spread": float(np.ptp(fids)) if fids.size else np.inf,
+            "label": str(label),
+            "measurement_indices": [int(row["measurement_index"])
+                                    for row in measurements],
+            "sep_sigma": float(np.mean([row["sep_sigma"] for row in measurements])),
+        })
+        return out
+
+    def _confirm_candidates(self, candidates, shots, blocks, label,
+                            add_to_history=True):
+        candidates = _unique_candidates(candidates)
+        if not candidates:
+            raise ValueError("cannot confirm an empty candidate list")
+        requested_blocks = max(int(blocks), 1)
+        buckets = [[] for _ in candidates]
+        failures = []
+        # Round-robin, randomized candidate order prevents one candidate from owning a
+        # uniquely favorable drift window.  GE/EG order alternates between blocks.  A
+        # transient failure is isolated to that candidate/block: successful contenders
+        # remain available to this stage and to the final replay.
+        for block in range(requested_blocks):
+            for index in self.rng.permutation(len(candidates)):
+                try:
+                    row = self._measure_candidate(
+                        candidates[index], shots,
+                        "%s block %d" % (label, block + 1),
+                        state_order="ge" if block % 2 == 0 else "eg")
+                    buckets[index].append(row)
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    failure = {
+                        "label": str(label), "candidate_index": int(index),
+                        "block": int(block + 1),
+                        "error": "%s: %s" % (type(exc).__name__, exc),
+                    }
+                    failures.append(failure)
+                    self.data["confirmation_failures"].append(failure)
+        batch_complete = bool(
+            not failures and all(len(rows) == requested_blocks for rows in buckets))
+        aggregates = []
+        for candidate, rows in zip(candidates, buckets):
+            key = _candidate_key(candidate)
+            existing = next((entry for entry in self._unconfirmed_contenders
+                             if _candidate_key(entry["candidate"]) == key), None)
+            if not batch_complete:
+                entry = {
+                    "candidate": {name: candidate[name] for name in self.initial},
+                    "missing_blocks": int(requested_blocks - len(rows)),
+                    "completed_blocks": int(len(rows)),
+                    "scheduled_blocks": int(requested_blocks),
+                    "batch_incomplete": True,
+                    "label": str(label),
+                    "order": int(len(self.data["confirmation_failures"])),
+                }
+                if existing is None:
+                    self._unconfirmed_contenders.append(entry)
+                elif entry["missing_blocks"] >= existing["missing_blocks"]:
+                    existing.update(entry)
+            elif existing is not None:
+                self._unconfirmed_contenders.remove(existing)
+            if not rows:
+                continue
+            aggregate = self._aggregate(candidate, rows, label)
+            aggregate.update({
+                "scheduled_confirmation_blocks": requested_blocks,
+                "completed_confirmation_blocks": len(rows),
+                "missing_confirmation_blocks": requested_blocks - len(rows),
+                "confirmation_complete": bool(len(rows) == requested_blocks),
+                "confirmation_batch_complete": batch_complete,
+                "confirmation_failure_count": len(failures),
+            })
+            aggregates.append(aggregate)
+        limit = max(int(self.params["final"].get(
+            "max_unconfirmed_contenders", 16)), 1)
+        # Fully failed tuples sort ahead of partially measured ones.  Preserve earlier
+        # discovery order within a priority class so a later storm of backend faults
+        # cannot continually evict the first unresolved spectral basins.
+        self._unconfirmed_contenders[:] = sorted(
+            self._unconfirmed_contenders,
+            key=lambda entry: (-int(entry["missing_blocks"]), int(entry["order"])),
+        )[:limit]
+        if failures:
+            self._log(
+                "confirmation", "WARN",
+                "%s retained %d/%d successful candidate-block measurements; "
+                "the batch remains usable for best-effort reporting but is not "
+                "calibration evidence"
+                % (label, sum(len(rows) for rows in buckets),
+                   len(candidates) * requested_blocks))
+        if not aggregates:
+            raise RuntimeError("%s completed no confirmation measurements" % label)
+        if add_to_history:
+            self._confirmed.extend(aggregates)
+        return aggregates
+
+    @staticmethod
+    def _confirmation_batch_complete(aggregates):
+        return bool(aggregates and all(
+            row.get("confirmation_batch_complete", False) for row in aggregates))
+
+    @staticmethod
+    def _best_aggregate(rows):
+        if not rows:
+            return None
+        return max(rows, key=lambda row: (
+            float(row.get("fidelity_lcb_95", -np.inf)),
+            float(row.get("fidelity", -np.inf)),
+            -float(row.get("read_length", np.inf)),
+        ))
+
+    @staticmethod
+    def _noninferior_seed(aggregates, seed, incumbent, margin=0.005):
+        by_key = {_candidate_key(row): row for row in aggregates}
+        seed_row = by_key.get(_candidate_key(seed))
+        incumbent_row = by_key.get(_candidate_key(incumbent))
+        if seed_row is None:
+            return BasicAutoTuner._best_aggregate(aggregates)
+        if incumbent_row is None:
+            return seed_row
+        floor = (float(incumbent_row["fidelity"])
+                 - 1.96 * float(incumbent_row["fidelity_se"]) - float(margin))
+        if float(seed_row["fidelity_lcb_95"]) >= floor:
+            return seed_row
+        return BasicAutoTuner._best_aggregate(aggregates)
+
+    @staticmethod
+    def _calibration_drift(before, after):
+        angle = float(np.angle(np.exp(1j * (
+            float(after["read_theta"]) - float(before["read_theta"])))))
+        theta = float(before["read_theta"])
+        factor = float(before["scale_factor"])
+
+        def project(row, state):
+            center = complex(float(row["%s_center_i" % state]),
+                             float(row["%s_center_q" % state]))
+            return float(factor * np.real(np.exp(-1j * theta) * center))
+
+        pre_g = project(before, "ground")
+        pre_e = project(before, "excited")
+        post_g = project(after, "ground")
+        post_e = project(after, "excited")
+        separation = max(abs(pre_e - pre_g), 1e-12)
+        midpoint_shift_fraction = abs(
+            0.5 * (post_g + post_e) - 0.5 * (pre_g + pre_e)) / separation
+        reference_fidelity = float(after.get("reference_fidelity", np.nan))
+        return {
+            "angle_degrees": float(abs(np.degrees(angle))),
+            "fidelity_change": float(after["fidelity"] - before["fidelity"]),
+            "fixed_discriminator_fidelity": reference_fidelity,
+            "fixed_discriminator_fidelity_loss": float(
+                before["fidelity"] - reference_fidelity),
+            "midpoint_shift_fraction": float(midpoint_shift_fraction),
+            "separation_change_fraction": float(
+                ((post_e - post_g) - (pre_e - pre_g)) / separation),
+        }
+
+    def _calibration_is_stable(self, drift):
+        limits = self.params["calibration_drift"]
+        return bool(
+            np.isfinite(drift["fixed_discriminator_fidelity"])
+            and float(drift["angle_degrees"])
+            <= float(limits["max_angle_degrees"])
+            and abs(float(drift["fidelity_change"]))
+            <= float(limits["max_independent_fidelity_change"])
+            and float(drift["fixed_discriminator_fidelity_loss"])
+            <= float(limits["max_fixed_discriminator_fidelity_loss"])
+            and float(drift["midpoint_shift_fraction"])
+            <= float(limits["max_midpoint_shift_fraction"]))
+
+    def _require_stable_calibration(self, drift, stage):
+        if not self._calibration_is_stable(drift):
+            raise RuntimeError(
+                "%s discriminator drifted during its map (angle %.1f deg, "
+                "independent dF %+.3f, fixed-discriminator loss %+.3f, "
+                "midpoint shift %.2f separation)"
+                % (stage, drift["angle_degrees"], drift["fidelity_change"],
+                   drift["fixed_discriminator_fidelity_loss"],
+                   drift["midpoint_shift_fraction"]))
+
+    def _adopt(self, aggregate, stage):
+        if aggregate is None:
+            return
+        self.working = {key: aggregate[key] for key in self.initial}
+        self._log(stage, "OK",
+                  "selected read %.6f/%d/%.1fus | pi %.6f @ %d / %.1fns; "
+                  "step-5 F=%.4f +/- %.4f"
+                  % (self.working["read_pulse_freq"],
+                     self.working["read_pulse_gain"], self.working["read_length"],
+                     self.working["qubit_pi_freq"], self.working["qubit_pi_gain"],
+                     4000.0 * self.working["sigma"], aggregate["fidelity"],
+                     aggregate["fidelity_se"]))
+
+    def _record_key_evidence(self, keys, stage, complete):
+        for key in keys:
+            self._key_evidence[key].append({
+                "value": self.working[key], "stage": str(stage),
+                "complete": bool(complete),
+            })
+
+    def _key_has_evidence(self, key, value):
+        for row in reversed(self._key_evidence.get(key, [])):
+            measured = row.get("value")
+            try:
+                matches = (int(measured) == int(value) if key.endswith("gain")
+                           else math.isclose(float(measured), float(value),
+                                             rel_tol=0.0, abs_tol=1e-9))
+            except Exception:
+                matches = measured == value
+            if matches:
+                return bool(row.get("complete", False))
+        return False
+
+    @staticmethod
+    def _tuned_values_match(key, first, second):
+        """Compare two persisted calibration values without gain truncation leaks."""
+        try:
+            if key.endswith("gain"):
+                return int(round(float(first))) == int(round(float(second)))
+            return math.isclose(float(first), float(second),
+                                rel_tol=0.0, abs_tol=1e-9)
+        except (TypeError, ValueError, OverflowError):
+            return first == second
+
+    def _input_tuned_value(self, key):
+        """Return the value that would remain if the runner did not write ``key``."""
+        return self.input_cfg.get(key, self.initial[key])
+
+    # --------------------------------------------------------------- map utilities
+    @staticmethod
+    def _integer_axis(start, stop, points, lower=0, upper=32767):
+        start = int(np.clip(round(start), lower, upper))
+        stop = int(np.clip(round(stop), lower, upper))
+        if stop < start:
+            start, stop = stop, start
+        points = max(int(points), 2)
+        step = max(int(round((stop - start) / float(points - 1))), 1)
+        axis = start + step * np.arange(points, dtype=int)
+        axis = axis[(axis <= upper) & (axis <= stop)]
+        if axis.size < 2:
+            axis = np.array([max(lower, start - 1), min(upper, start + 1)], dtype=int)
+        return axis
+
+    @staticmethod
+    def _float_axis(center, span, points, include=()):
+        axis = np.linspace(float(center) - float(span) / 2.0,
+                           float(center) + float(span) / 2.0, int(points))
+        for value in include:
+            if np.isfinite(value):
+                axis[int(np.argmin(np.abs(axis - float(value))))] = float(value)
+        return np.sort(np.unique(axis))
+
+    @staticmethod
+    def _gain_axis(start, stop, points, include=()):
+        axis = np.rint(np.linspace(float(start), float(stop), int(points))).astype(int)
+        axis = np.clip(axis, 0, 32767)
+        for value in include:
+            if np.isfinite(value):
+                axis[int(np.argmin(np.abs(axis - int(round(value)))))] = int(
+                    np.clip(round(value), 0, 32767))
+        return np.sort(np.unique(axis))
+
+    def _direct_grid(self, stage, candidates, shape, axes, shots, shortlist,
+                     confirm_shots, confirm_blocks):
+        candidates = [dict(candidate) for candidate in candidates]
+        if int(np.prod(shape)) != len(candidates):
+            raise ValueError("candidate list does not match grid shape")
+        score = np.full(len(candidates), np.nan)
+        score_se = np.full(len(candidates), np.nan)
+        order = self.rng.permutation(len(candidates))
+        failures = 0
+        consecutive_failures = 0
+        aborted = False
+        cache = {}
+        self._log(stage, "OK", "%d-point direct step-5 grid (%d shots/state)"
+                  % (len(candidates), int(shots)))
+        progress_step = max(len(candidates) // 10, 1)
+        for count, index in enumerate(order):
+            key = _candidate_key(candidates[index])
+            if key in cache:
+                score[index], score_se[index] = cache[key]
+                consecutive_failures = 0
+                continue
+            try:
+                measured = self._measure_candidate(
+                    candidates[index], int(shots), "%s coarse" % stage,
+                    state_order="ge" if count % 2 == 0 else "eg")
+                score[index] = measured["fidelity"]
+                score_se[index] = measured["fidelity_se"]
+                cache[key] = (score[index], score_se[index])
+                consecutive_failures = 0
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                failures += 1
+                consecutive_failures += 1
+                self._log(stage, "WARN", "grid point %d/%d failed (%s: %s)"
+                          % (count + 1, len(candidates), type(exc).__name__, exc))
+                if consecutive_failures >= int(self.params.get(
+                        "max_consecutive_point_failures", 5)):
+                    self._log(stage, "WARN",
+                              "%d consecutive backend failures; stopping this grid"
+                              % consecutive_failures)
+                    aborted = True
+                    break
+            if (count + 1) % progress_step == 0 or count + 1 == len(candidates):
+                print("      %s progress: %d/%d" % (stage, count + 1, len(candidates)))
+        if not np.any(np.isfinite(score)):
+            raise RuntimeError("every direct single-shot grid point failed")
+        coverage = float(np.count_nonzero(np.isfinite(score)) / max(len(score), 1))
+        selection_usable = bool(not aborted and coverage >= 0.80)
+        # A partially measured map may still nominate useful candidates for fresh
+        # confirmation, but it is never complete evidence for an automatic write.
+        search_complete = bool(not aborted and coverage >= 1.0 - 1e-12)
+        self._maps[stage] = {
+            "axes": {key: np.asarray(value) for key, value in axes.items()},
+            "fidelity": score.reshape(shape),
+            "fidelity_se": score_se.reshape(shape),
+            "failed_points": int(failures),
+            "coverage": coverage, "aborted": bool(aborted),
+            "selection_coverage_usable": selection_usable,
+            "search_complete": search_complete, "selection_confirmed": False,
+        }
+        if not selection_usable:
+            raise RuntimeError(
+                "%s grid incomplete (%.1f%% finite coverage); partial points archived"
+                % (stage, 100.0 * coverage))
+        if not search_complete:
+            self._log(
+                stage, "WARN",
+                "%.1f%% map coverage is enough to confirm/report candidates, but only "
+                "100%% coverage can authorize a config write" % (100.0 * coverage))
+        finite = np.flatnonzero(np.isfinite(score))
+        ranked = finite[np.argsort(score[finite])[::-1]]
+        selected = [candidates[int(index)]
+                    for index in ranked[:max(int(shortlist), 1)]]
+        # The current incumbent is freshly remeasured beside the grid winners.  Thus a
+        # noisy maximum can never silently replace a genuinely better manual tuple.
+        incumbent = dict(self.working)
+        selected.append(incumbent)
+        confirmed = self._confirm_candidates(
+            selected, int(confirm_shots), int(confirm_blocks), "%s confirm" % stage)
+        confirmation_complete = self._confirmation_batch_complete(confirmed)
+        self._maps[stage]["selection_confirmation_complete"] = bool(
+            confirmation_complete)
+        if not confirmation_complete:
+            self._maps[stage]["search_complete"] = False
+        direct_best = self._best_aggregate(confirmed)
+        # When held-out evidence cannot distinguish the incumbent from the apparent
+        # winner, keep the incumbent.  This prevents a flat bootstrap map from turning
+        # a coherent Rabi/readout seed into an arbitrary noise-selected tuple.
+        best = self._noninferior_seed(
+            confirmed, incumbent, direct_best, margin=0.003)
+        self._adopt(best, stage)
+        self._maps[stage]["selection_confirmed"] = True
+        return best
+
+    @staticmethod
+    def _smooth_trace(values):
+        values = np.asarray(values, dtype=float)
+        n = values.size
+        if n < 5:
+            return values.copy()
+        # Keep the kernel deliberately short.  A 15-point kernel erased a narrow
+        # resonator in coarse scans and moved the apparent dip by multiple linewidths.
+        window = 5
+        return savgol_filter(values, window_length=window, polyorder=2, mode="interp")
+
+    @staticmethod
+    def _parabolic_vertex(x, y, index):
+        if index <= 0 or index >= len(x) - 1:
+            return float(x[index])
+        xx = np.asarray(x[index - 1:index + 2], float)
+        yy = np.asarray(y[index - 1:index + 2], float)
+        try:
+            a, b, _ = np.polyfit(xx, yy, 2)
+            vertex = -b / (2.0 * a)
+            if a != 0 and xx[0] <= vertex <= xx[-1]:
+                return float(vertex)
+        except Exception:
+            pass
+        return float(x[index])
+
+    @staticmethod
+    def _spectral_features(freqs, response, max_candidates=3):
+        freqs = np.asarray(freqs, float)
+        z = np.asarray(response, complex)
+        n = freqs.size
+        if n < 9 or z.size != n:
+            raise ValueError("invalid spectroscopy trace")
+        # A wide Savitzky-Golay curve models slow gain/phase drift.  Spectral lines are
+        # ranked by complex distance from that local baseline, independent of whether
+        # they appear as a dip, peak, or phase rotation.
+        window = min(n if n % 2 else n - 1, max(11, 2 * (n // 8) + 1))
+        if window % 2 == 0:
+            window -= 1
+        if window < 7:
+            baseline = np.linspace(z[0], z[-1], n)
+        else:
+            baseline = (savgol_filter(z.real, window, 2, mode="interp")
+                        + 1j * savgol_filter(z.imag, window, 2, mode="interp"))
+        residual = np.abs(z - baseline)
+        noise = max(_robust_scale(residual), 1e-15)
+        floor = float(np.median(residual))
+        snr_trace = (residual - floor) / noise
+        distance = max(1, n // 40)
+        peaks, properties = find_peaks(snr_trace, distance=distance, prominence=1.0)
+        if not peaks.size:
+            peaks = np.array([int(np.nanargmax(snr_trace))])
+            prominences = snr_trace[peaks]
+        else:
+            prominences = properties.get("prominences", snr_trace[peaks])
+        order = peaks[np.argsort(prominences)[::-1]]
+        chosen = [int(index) for index in order[:max(int(max_candidates), 1)]]
+        return {
+            "candidates_mhz": [float(freqs[index]) for index in chosen],
+            "candidate_indices": chosen,
+            "best_snr": float(np.nanmax(snr_trace)),
+            "residual": residual,
+            "snr_trace": snr_trace,
+            "baseline": baseline,
+        }
+
+    def _inverse_pair_map(self, stage, incumbent, params, center_frequency):
+        """Acquire one drift-bracketed inverse-pair frequency map.
+
+        The returned ``data_complete`` flag is deliberately stricter than merely
+        finding a finite minimum.  A map with one missing point may still nominate a
+        candidate for direct replay, but it cannot provide automatic-write evidence.
+        """
+        calibration_row = self._measure_candidate(
+            incumbent, params["calibration_shots"],
+            "%s discriminator" % stage)
+        calibration = {key: calibration_row[key] for key in
+                       ("read_theta", "scale_factor", "threshold")}
+        freqs = self._float_axis(
+            center_frequency, params["span_mhz"], params["points"],
+            include=[center_frequency, incumbent["qubit_pi_freq"]])
+        populations = self._acquire_inverse_pair_scan(
+            freqs, incumbent, params["shots"], params["pairs"], calibration)
+        post_calibration = self._measure_candidate(
+            incumbent, params["calibration_shots"],
+            "%s discriminator post" % stage,
+            reference_discriminator=calibration)
+        drift = self._calibration_drift(calibration_row, post_calibration)
+        drift_stable = self._calibration_is_stable(drift)
+        finite = np.isfinite(populations)
+        coverage = float(np.count_nonzero(finite) / max(populations.size, 1))
+        self._maps[stage] = {
+            "axes": {"qubit_frequency_mhz": freqs},
+            "residual_excited_population": populations,
+            "pairs": int(params["pairs"]),
+            "calibration_drift": drift,
+            "calibration_stable": drift_stable,
+            "coverage": coverage,
+            "data_complete": bool(np.all(finite)),
+            "search_complete": False,
+            "selection_confirmed": False,
+        }
+        self._require_stable_calibration(drift, stage)
+        if not np.any(finite):
+            raise RuntimeError("inverse-pair frequency scan returned no finite data")
+        # Searching many frequencies turns an ordinary largest/smallest binomial
+        # fluctuation into an apparently structured range.  A 3-sigma pointwise rule
+        # is therefore not a valid post-selection information test.  Use the measured
+        # two-point uncertainty with a conservative 5-sigma default before allowing
+        # the inverse-pair minimum to move or authorize the drive frequency.
+        low_index = int(np.nanargmin(populations))
+        high_index = int(np.nanargmax(populations))
+        shot_count = max(int(params["shots"]), 1)
+        point_variance = populations * (1.0 - populations) / shot_count
+        point_variance = np.maximum(
+            point_variance, 0.25 / float(shot_count + 1) ** 2)
+        contrast = float(populations[high_index] - populations[low_index])
+        contrast_se = float(math.hypot(
+            math.sqrt(float(point_variance[low_index])),
+            math.sqrt(float(point_variance[high_index]))))
+        contrast_sigma = contrast / max(contrast_se, 1e-12)
+        informative = bool(
+            np.all(finite) and np.isfinite(contrast_sigma)
+            and contrast_sigma >= float(params.get("min_contrast_sigma", 5.0)))
+        self._maps[stage].update({
+            "map_contrast": contrast,
+            "map_contrast_se": contrast_se,
+            "map_contrast_sigma": contrast_sigma,
+            "information_complete": informative,
+        })
+        if not informative:
+            self._maps[stage]["search_complete"] = False
+            raise RuntimeError(
+                "inverse-pair frequency response has insufficient post-selection "
+                "information (contrast %.2f sigma, require %.2f)"
+                % (contrast_sigma,
+                   float(params.get("min_contrast_sigma", 5.0))))
+        index = low_index
+        frequency = self._parabolic_vertex(freqs, populations, index)
+        seed = _with_candidate(incumbent, qubit_pi_freq=float(frequency))
+        return {
+            "stage": stage, "frequencies": freqs,
+            "populations": populations, "index": index, "seed": seed,
+            "data_complete": bool(np.all(finite)),
+        }
+
+    def _parity_map(self, stage, incumbent, params, center_frequency,
+                    center_gain, calibration_shots, discriminator_label):
+        """Acquire one drift-bracketed odd/even parity map."""
+        calibration_row = self._measure_candidate(
+            incumbent, int(calibration_shots),
+            "%s discriminator" % discriminator_label)
+        calibration = {key: calibration_row[key] for key in
+                       ("read_theta", "scale_factor", "threshold")}
+        freqs = self._float_axis(
+            center_frequency, params["freq_span_mhz"], params["freq_points"],
+            include=[center_frequency, incumbent["qubit_pi_freq"]])
+        fraction = float(params["gain_fraction"])
+        gains = self._integer_axis(
+            float(center_gain) * (1.0 - fraction),
+            float(center_gain) * (1.0 + fraction), params["gain_points"])
+        score, populations = self._acquire_parity_chevron(
+            freqs, gains, incumbent, params["shots"], params["pulse_counts"],
+            calibration)
+        post_calibration = self._measure_candidate(
+            incumbent, int(calibration_shots),
+            "%s discriminator post" % discriminator_label,
+            reference_discriminator=calibration)
+        drift = self._calibration_drift(calibration_row, post_calibration)
+        drift_stable = self._calibration_is_stable(drift)
+        finite = np.isfinite(score)
+        coverage = float(np.count_nonzero(finite) / max(score.size, 1))
+        self._maps[stage] = {
+            "axes": {"qubit_frequency_mhz": freqs,
+                     "qubit_gain_dac": gains,
+                     "pulse_count": np.asarray(params["pulse_counts"], int)},
+            "parity_score": score, "excited_populations": populations,
+            "calibration_drift": drift,
+            "calibration_stable": drift_stable,
+            "coverage": coverage,
+            "data_complete": bool(np.all(finite)),
+            "search_complete": False,
+            "selection_confirmed": False,
+        }
+        self._require_stable_calibration(drift, discriminator_label)
+        if not np.any(finite):
+            raise RuntimeError("%s returned no finite parity score" % stage)
+        index = np.unravel_index(int(np.nanargmax(score)), score.shape)
+        # A flat repeated-pulse surface contains no amplitude/frequency information.
+        # Its numerical argmax is merely the largest shot-noise fluctuation, and the
+        # direct one-pulse replay is intentionally too insensitive to reject a small
+        # coherent miscalibration.  Require both a multiple-comparison-resistant map
+        # contrast and agreement across the independently amplified pulse depths before
+        # the raw optimum may move the control tuple or become write evidence.
+        targets = np.asarray(
+            [1.0 if int(count) % 2 else 0.0
+             for count in params["pulse_counts"]], dtype=float)
+        correctness = np.where(
+            targets[:, None, None] > 0.5, populations, 1.0 - populations)
+        depth_count = max(correctness.shape[0], 1)
+        shot_count = max(int(params["shots"]), 1)
+        depth_variance = correctness * (1.0 - correctness) / shot_count
+        # Avoid zero nominal uncertainty when finite shots happen to observe no errors.
+        depth_variance = np.maximum(
+            depth_variance, 0.25 / float(shot_count + 1) ** 2)
+        cell_se = np.sqrt(np.nansum(depth_variance, axis=0)) / depth_count
+        low_index = np.unravel_index(int(np.nanargmin(score)), score.shape)
+        contrast = float(score[index] - score[low_index])
+        contrast_se = float(math.hypot(
+            float(cell_se[index]), float(cell_se[low_index])))
+        contrast_sigma = contrast / max(contrast_se, 1e-12)
+        winning_depths = np.asarray(correctness[(slice(None),) + index], float)
+        depth_median = float(np.nanmedian(winning_depths))
+        depth_consistent_fraction = float(np.mean(winning_depths > 0.5))
+        informative = bool(
+            np.isfinite(contrast_sigma)
+            and contrast_sigma >= float(params.get("min_contrast_sigma", 5.0))
+            and depth_median >= float(params.get("min_depth_correctness", 0.55))
+            and depth_consistent_fraction >= float(params.get(
+                "min_consistent_depth_fraction", 0.67)))
+        self._maps[stage].update({
+            "map_contrast": contrast,
+            "map_contrast_se": contrast_se,
+            "map_contrast_sigma": contrast_sigma,
+            "winning_depth_correctness": winning_depths,
+            "winning_depth_median": depth_median,
+            "winning_depth_consistent_fraction": depth_consistent_fraction,
+            "information_complete": informative,
+        })
+        if not informative:
+            self._maps[stage]["search_complete"] = False
+            raise RuntimeError(
+                "%s has insufficient repeated-pulse information "
+                "(contrast %.2f sigma, median depth correctness %.3f, "
+                "consistent depths %.0f%%)"
+                % (stage, contrast_sigma, depth_median,
+                   100.0 * depth_consistent_fraction))
+        seed = _with_candidate(
+            incumbent, qubit_pi_freq=float(freqs[index[0]]),
+            qubit_pi_gain=int(gains[index[1]]))
+        return {
+            "stage": stage, "frequencies": freqs, "gains": gains,
+            "score": score, "populations": populations,
+            "index": index, "seed": seed,
+            "data_complete": bool(np.all(finite)),
+        }
+
+    # --------------------------------------------------------------------- stages
+    def _stage_baseline(self):
+        p = self.params["baseline"]
+        rows = self._confirm_candidates(
+            [self.initial], p["shots"], p["blocks"], "exact input tuple")
+        best = rows[0]
+        self._adopt(best, "baseline")
+        self._log("baseline", "OK",
+                  "exact step-5 replay measured; low fidelity does not gate the search")
+        return best
+
+    def _stage_resonator(self):
+        p = self.params["resonator"]
+        if not p.get("enabled", True):
+            self._log("resonator", "SKIP", "disabled")
+            return None
+        def run(span, points, readout):
+            axis = self._float_axis(
+                self.initial["read_pulse_freq"], span, points,
+                include=[self.initial["read_pulse_freq"]])
+            response = self._acquire_transmission(axis, readout, p["shots"])
+            amplitude = np.abs(response)
+            smooth = self._smooth_trace(amplitude)
+            if str(p.get("polarity", "dip")).lower() == "peak":
+                idx = int(np.nanargmax(smooth))
+                fit = -smooth
+            else:
+                idx = int(np.nanargmin(smooth))
+                fit = smooth
+            noise = max(_robust_scale(amplitude - smooth), 1e-15)
+            snr = float(np.ptp(smooth) / noise)
+            return axis, response, amplitude, smooth, idx, fit, snr
+
+        safe = _with_candidate(
+            self.working,
+            read_pulse_gain=int(np.clip(round(p.get(
+                "discovery_gain", self.working["read_pulse_gain"])), 1, 32767)),
+            read_length=max(float(p.get(
+                "discovery_length_us", self.working["read_length"])), 0.1),
+        )
+        # Safe bootstrap wins exact ties; normalized contrast SNR can be identical at
+        # two gains even though the near-zero input trace has unusably small absolute IQ.
+        trial_candidates = _unique_candidates([safe, self.working])
+        trials = []
+        for trial in trial_candidates:
+            try:
+                result = run(p["span_mhz"], p["points"], trial)
+                trials.append((float(result[-1]), trial, result))
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                self._log(
+                    "resonator", "WARN",
+                    "bootstrap readout %d DAC/%.1f us failed (%s: %s)"
+                    % (trial["read_pulse_gain"], trial["read_length"],
+                       type(exc).__name__, exc))
+        if not trials:
+            raise RuntimeError("all resonator bootstrap settings failed")
+        _, discovery, local_result = max(trials, key=lambda row: row[0])
+        freqs, z, mag, smoothed, index, fit_values, snr = local_result
+        local_seed = self._parabolic_vertex(freqs, fit_values, index)
+        used_wide = bool(p.get("always_wide", True)
+                         or index <= 1 or index >= freqs.size - 2
+                         or snr < float(p.get("min_contrast_snr", 3.0)))
+        if used_wide:
+            self._log("resonator",
+                      "OK" if p.get("always_wide", True) else "WARN",
+                      "checking the full %.1f MHz span with bootstrap readout %d DAC/%.1f us"
+                      % (p["wide_span_mhz"], discovery["read_pulse_gain"],
+                         discovery["read_length"]))
+            wide_result = run(
+                p["wide_span_mhz"], p["wide_points"], discovery)
+            wide_freqs, wide_z, wide_mag, wide_smoothed, wide_index, \
+                wide_fit_values, wide_snr = wide_result
+            wide_seed = self._parabolic_vertex(
+                wide_freqs, wide_fit_values, wide_index)
+            # Prefer the finer local estimate only when the wide scan independently
+            # places the same response inside that local basin.
+            local_step = abs(float(np.median(np.diff(freqs))))
+            if abs(local_seed - wide_seed) <= max(2.0 * local_step, 0.15):
+                seed = local_seed
+            else:
+                seed = wide_seed
+                freqs, z, mag, smoothed, index, fit_values, snr = wide_result
+        else:
+            seed = local_seed
+        self._resonator_seed = seed
+        self._discovery_readout = _with_candidate(
+            discovery, read_pulse_freq=float(seed))
+        self._maps["resonator"] = {
+            "axes": {"read_frequency_mhz": freqs},
+            "magnitude": mag, "smoothed_magnitude": smoothed,
+            "complex_response": z, "contrast_snr": snr,
+            "used_wide_scan": bool(used_wide),
+            "bootstrap_gain_dac": int(discovery["read_pulse_gain"]),
+            "bootstrap_length_us": float(discovery["read_length"]),
+            "trial_gain_dac": np.asarray(
+                [row[1]["read_pulse_gain"] for row in trials], dtype=int),
+            "trial_length_us": np.asarray(
+                [row[1]["read_length"] for row in trials], dtype=float),
+            "trial_contrast_snr": np.asarray(
+                [row[0] for row in trials], dtype=float),
+        }
+        if used_wide:
+            self._maps["resonator"].update({
+                "wide_frequency_mhz": wide_freqs,
+                "wide_magnitude": wide_mag,
+                "wide_smoothed_magnitude": wide_smoothed,
+                "wide_complex_response": wide_z,
+                "wide_contrast_snr": float(wide_snr),
+            })
+        self._log("resonator", "OK",
+                  "response seed %.6f MHz using %d DAC/%.1f us (direct SS still decides)"
+                  % (seed, discovery["read_pulse_gain"], discovery["read_length"]))
+        return seed
+
+    def _stage_spectroscopy(self):
+        p = self.params["spectroscopy"]
+        if not p.get("enabled", True):
+            self._log("spectroscopy", "SKIP", "disabled")
+            return None
+        prior = float(self.initial["qubit_pi_freq"])
+        # Temporarily read near the resonator response seed to maximize spectroscopy
+        # contrast.  This does not adopt the seed as the optimized SS readout.
+        seed_candidate = dict(self._discovery_readout)
+
+        def run(span, points):
+            freqs = self._float_axis(prior, span, points, include=[prior])
+            z = self._acquire_spectroscopy(
+                freqs, seed_candidate, p["shots"], p["gain"],
+                p["pulse_length_us"])
+            features = self._spectral_features(
+                freqs, z, max_candidates=p["max_candidates"])
+            return freqs, z, features
+
+        local_freqs, local_z, local_features = run(
+            p["local_span_mhz"], p["local_points"])
+        used_wide = bool(p.get("always_wide", True)
+                         or local_features["best_snr"]
+                         < float(p["min_feature_snr"]))
+        if used_wide:
+            reason = ("the starting frequency is deliberately treated as untrusted"
+                      if p.get("always_wide", True)
+                      else "local feature SNR is %.2f" % local_features["best_snr"])
+            self._log(
+                "spectroscopy", "OK",
+                "%s; also scanning the full %.1f MHz span so a nearby TLS cannot "
+                "hide the intended transition" % (reason, p["wide_span_mhz"]))
+            wide_freqs, wide_z, wide_features = run(
+                p["wide_span_mhz"], p["wide_points"])
+        else:
+            wide_freqs = wide_z = wide_features = None
+
+        candidate_rows = []
+        for source, source_freqs, source_features in (
+                ("local", local_freqs, local_features),
+                ("wide", wide_freqs, wide_features)):
+            if source_features is None:
+                continue
+            for index in source_features["candidate_indices"]:
+                candidate_rows.append({
+                    "frequency": float(source_freqs[index]),
+                    "score": float(source_features["snr_trace"][index]),
+                    "source": source,
+                })
+        candidate_rows.sort(key=lambda row: row["score"], reverse=True)
+        steps = [abs(float(np.median(np.diff(local_freqs))))]
+        if wide_freqs is not None:
+            steps.append(abs(float(np.median(np.diff(wide_freqs)))))
+        # Merge duplicate representations of one line from the fine and wide scans,
+        # while keeping genuinely separate nearby basins for coherent-Rabi arbitration.
+        tolerance = 0.6 * max(steps)
+        unique = [prior]
+        retained_rows = []
+        for row in candidate_rows:
+            if any(abs(row["frequency"] - old) <= tolerance for old in unique):
+                continue
+            unique.append(row["frequency"])
+            retained_rows.append(row)
+            if len(unique) >= 1 + int(p["max_candidates"]):
+                break
+        self._spec_candidates_mhz = [float(value) for value in unique]
+        freqs = wide_freqs if wide_freqs is not None else local_freqs
+        z = wide_z if wide_z is not None else local_z
+        features = wide_features if wide_features is not None else local_features
+        self._maps["spectroscopy"] = {
+            "axes": {"qubit_frequency_mhz": freqs},
+            "complex_response": z, "feature_residual": features["residual"],
+            "feature_snr": features["snr_trace"],
+            "used_wide_scan": bool(used_wide),
+            "candidate_frequencies_mhz": np.asarray(self._spec_candidates_mhz),
+            "candidate_scores": np.asarray(
+                [row["score"] for row in retained_rows], dtype=float),
+            "local_frequency_mhz": local_freqs,
+            "local_complex_response": local_z,
+            "local_feature_snr": local_features["snr_trace"],
+        }
+        if wide_freqs is not None:
+            self._maps["spectroscopy"].update({
+                "wide_frequency_mhz": wide_freqs,
+                "wide_complex_response": wide_z,
+                "wide_feature_snr": wide_features["snr_trace"],
+            })
+        self._log("spectroscopy", "OK",
+                  "retained spectral seeds %s; coherent Rabi/direct SS choose among them"
+                  % ", ".join("%.4f" % f for f in self._spec_candidates_mhz))
+        return self._spec_candidates_mhz
+
+    def _stage_iq_rabi(self):
+        p = self.params["iq_rabi"]
+        if not p.get("enabled", True):
+            self._log("iq_rabi", "SKIP", "disabled")
+            return None
+        # Resonator spectroscopy already established a better readout-frequency seed.
+        # Use it for the cheap averaged-IQ maps and carry it into the rough direct-SS
+        # candidates; otherwise a bad input readout can erase the Rabi we need in order
+        # to escape that same bad starting tuple.
+        rabi_base = dict(self._discovery_readout)
+        local_freqs = []
+        for center in self._spec_candidates_mhz:
+            local_freqs.extend(self._float_axis(
+                center, p["local_span_mhz"], p["freq_points_per_candidate"],
+                include=[center]))
+        # Register resolution makes sub-Hz distinctions irrelevant here.
+        freqs = np.asarray(sorted(set(round(float(f), 6) for f in local_freqs)))
+        gains = self._integer_axis(
+            p["gain_min"], p["gain_max"], p["gain_points"])
+        i_map, q_map = self._acquire_iq_chevron(
+            freqs, gains, rabi_base, p["shots"])
+        analysis = analyze_iq_chevron(
+            freqs, gains, i_map, q_map, min_r2=p["min_r2"])
+        best = analysis["best"]
+        rough_freq = float(best["frequency"])
+        rough_gain = float(best["fit"].get("pi_gain", np.nan))
+        if not np.isfinite(rough_gain):
+            # Still return a physical first-response lobe if a heavily damped trace did
+            # not satisfy the coherent fit.  Direct SS confirmation remains sovereign.
+            projection = np.asarray(best["projection"])
+            rough_gain = float(gains[int(np.nanargmax(np.abs(projection - projection[0])))])
+        rough_gain = int(np.clip(round(rough_gain), 1, 32767))
+        self._maps["iq_rabi"] = {
+            "axes": {"qubit_frequency_mhz": freqs, "qubit_gain_dac": gains},
+            "I": i_map, "Q": q_map,
+            "row_scores": np.asarray([row["score"] for row in analysis["rows"]]),
+            "row_r2": np.asarray([row["fit"].get("r2", np.nan)
+                                  for row in analysis["rows"]]),
+            "row_pi_gain": np.asarray([row["fit"].get("pi_gain", np.nan)
+                                       for row in analysis["rows"]]),
+        }
+
+        ranked_rows = sorted(analysis["rows"], key=lambda row: row["score"],
+                             reverse=True)
+        rabi_candidates = []
+        selected_rows = []
+        # Preserve at least one coherent candidate from every spectral basin.  Without
+        # this non-maximum suppression, four adjacent samples around one strong TLS can
+        # crowd the configured-prior/qubit basin out of the direct-SS shortlist.
+        spectral_centers = np.asarray(self._spec_candidates_mhz, dtype=float)
+        for center_index, center in enumerate(spectral_centers):
+            # Use disjoint nearest-centre (Voronoi) assignment.  Overlapping +/- local
+            # windows must not let several nearby spectral seeds all select the same
+            # strong Rabi row and silently erase a weaker basin.
+            basin = [
+                row for row in ranked_rows
+                if int(np.argmin(np.abs(
+                    spectral_centers - float(row["frequency"])))) == center_index
+            ]
+            if basin:
+                selected_rows.append(basin[0])
+        selected_rows.extend(ranked_rows)
+        seen_frequencies = set()
+        rabi_capacity = max(
+            int(p.get("shortlist", 4)), len(self._spec_candidates_mhz))
+        for row in selected_rows:
+            fkey = round(float(row["frequency"]), 6)
+            if fkey in seen_frequencies:
+                continue
+            seen_frequencies.add(fkey)
+            gain = row["fit"].get("pi_gain", np.nan)
+            if not np.isfinite(gain):
+                projection = np.asarray(row["projection"])
+                gain = gains[int(np.nanargmax(np.abs(projection - projection[0])))]
+            rabi_candidates.append(_with_candidate(
+                rabi_base, qubit_pi_freq=float(row["frequency"]),
+                qubit_pi_gain=int(np.clip(round(gain), 1, 32767))))
+            if len(_unique_candidates(rabi_candidates)) >= rabi_capacity:
+                break
+
+        fine_stop = min(32767, max(int(round(2.4 * rough_gain)), rough_gain + 4))
+        fine_gains = self._integer_axis(0, fine_stop, p["fine_gain_points"])
+        fi, fq = self._acquire_iq_chevron(
+            np.asarray([rough_freq]), fine_gains, rabi_base, p["shots"])
+        fine = analyze_iq_chevron(
+            np.asarray([rough_freq]), fine_gains, fi, fq,
+            min_r2=max(0.45, 0.8 * float(p["min_r2"])))
+        fine_gain = fine["best"]["fit"].get("pi_gain", np.nan)
+        if np.isfinite(fine_gain):
+            rough_gain = int(np.clip(round(fine_gain), 1, 32767))
+        self._maps["rough_amplitude_rabi"] = {
+            "axes": {"qubit_frequency_mhz": np.asarray([rough_freq]),
+                     "qubit_gain_dac": fine_gains},
+            "I": fi, "Q": fq,
+            "projection": np.asarray(fine["best"]["projection"])[None, :],
+            "fit": np.asarray(fine["best"]["fit"].get("yfit", []))[None, :],
+        }
+        self.working = _with_candidate(
+            rabi_base, qubit_pi_freq=rough_freq, qubit_pi_gain=rough_gain)
+        # Refinement replaces the coarse representative of its own basin; it must not
+        # consume an extra shortlist slot and evict the weaker fourth basin (which may
+        # be the intended qubit behind stronger TLS lines).
+        rabi_candidates = _unique_candidates(rabi_candidates)
+        if rabi_candidates:
+            replace_index = int(np.argmin([
+                abs(float(candidate["qubit_pi_freq"]) - rough_freq)
+                for candidate in rabi_candidates
+            ]))
+            rabi_candidates[replace_index] = dict(self.working)
+        else:
+            rabi_candidates = [dict(self.working)]
+        self._rabi_candidates = _unique_candidates(rabi_candidates)[:rabi_capacity]
+        self._log("iq_rabi", "OK" if analysis["ok"] else "WARN",
+                  "common-mode-subtracted Rabi seed %.6f MHz @ %d DAC (r2 %.3f)"
+                  % (rough_freq, rough_gain, best["fit"].get("r2", np.nan)))
+        return self.working
+
+    def _stage_rough_single_shot(self):
+        p = self.params["rough_single_shot"]
+        incumbent = dict(self.working)
+        seeds = list(self._rabi_candidates) or [incumbent]
+        frequency_offsets = np.linspace(
+            -float(p["freq_span_mhz"]) / 2.0,
+            float(p["freq_span_mhz"]) / 2.0, int(p["freq_points"]))
+        gain_scales = np.linspace(
+            1.0 - float(p["gain_fraction"]),
+            1.0 + float(p["gain_fraction"]), int(p["gain_points"]))
+        actual_gains = np.empty((len(seeds), len(gain_scales)), dtype=int)
+        candidates = []
+        for basin_index, seed in enumerate(seeds):
+            actual_gains[basin_index] = np.clip(
+                np.rint(float(seed["qubit_pi_gain"]) * gain_scales),
+                1, 32767).astype(int)
+            for offset in frequency_offsets:
+                for gain in actual_gains[basin_index]:
+                    # Candidates discovered before readout optimization are always
+                    # grafted onto the current read tuple.
+                    candidates.append(_with_candidate(
+                        incumbent, sigma=float(seed["sigma"]),
+                        qubit_pi_freq=float(seed["qubit_pi_freq"] + offset),
+                        qubit_pi_gain=int(gain)))
+
+        shape = (len(seeds), len(frequency_offsets), len(gain_scales))
+        score = np.full(int(np.prod(shape)), np.nan)
+        score_se = np.full_like(score, np.nan)
+        order = self.rng.permutation(len(candidates))
+        cache = {}
+        failures = 0
+        consecutive_failures = 0
+        aborted = False
+        self._log(
+            "rough_ss", "OK",
+            "%d-basin direct-SS Rabi chevron (%d points, %d shots/state)"
+            % (len(seeds), len(candidates), int(p["coarse_shots"])))
+        progress_step = max(len(candidates) // 10, 1)
+        for count, index in enumerate(order):
+            key = _candidate_key(candidates[index])
+            if key in cache:
+                score[index], score_se[index] = cache[key]
+                consecutive_failures = 0
+                continue
+            try:
+                measured = self._measure_candidate(
+                    candidates[index], int(p["coarse_shots"]),
+                    "rough_ss chevron coarse",
+                    state_order="ge" if count % 2 == 0 else "eg")
+                score[index] = measured["fidelity"]
+                score_se[index] = measured["fidelity_se"]
+                cache[key] = (score[index], score_se[index])
+                consecutive_failures = 0
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                failures += 1
+                consecutive_failures += 1
+                self._log(
+                    "rough_ss", "WARN", "chevron point %d/%d failed (%s: %s)"
+                    % (count + 1, len(candidates), type(exc).__name__, exc))
+                if consecutive_failures >= int(self.params.get(
+                        "max_consecutive_point_failures", 5)):
+                    aborted = True
+                    self._log("rough_ss", "WARN",
+                              "backend failure circuit breaker stopped the SS chevron")
+                    break
+            if (count + 1) % progress_step == 0 or count + 1 == len(candidates):
+                print("      rough_ss chevron progress: %d/%d"
+                      % (count + 1, len(candidates)))
+
+        score_map = score.reshape(shape)
+        coverage = float(np.count_nonzero(np.isfinite(score)) / max(score.size, 1))
+        self._maps["rough_ss_chevron"] = {
+            "axes": {
+                "basin_seed_frequency_mhz": np.asarray(
+                    [seed["qubit_pi_freq"] for seed in seeds], dtype=float),
+                "frequency_offset_mhz": frequency_offsets,
+                "gain_scale": gain_scales,
+            },
+            "actual_gain_dac": actual_gains,
+            "fidelity": score_map,
+            "fidelity_se": score_se.reshape(shape),
+            "coverage": coverage,
+            "failed_points": int(failures),
+            "aborted": bool(aborted),
+            "search_complete": bool(not aborted and coverage >= 1.0 - 1e-12),
+            "selection_confirmed": False,
+        }
+        basin_winners = []
+        for basin_index, seed in enumerate(seeds):
+            flat = score_map[basin_index].reshape(-1)
+            finite = np.flatnonzero(np.isfinite(flat))
+            if finite.size:
+                local_index = int(finite[np.argmax(flat[finite])])
+                global_index = (basin_index * len(frequency_offsets)
+                                * len(gain_scales) + local_index)
+                basin_winners.append(candidates[global_index])
+            else:
+                basin_winners.append(_with_candidate(
+                    incumbent, sigma=float(seed["sigma"]),
+                    qubit_pi_freq=float(seed["qubit_pi_freq"]),
+                    qubit_pi_gain=int(seed["qubit_pi_gain"])))
+        if not basin_winners:
+            raise RuntimeError("no Rabi basin is available for direct SS confirmation")
+        confirmed = self._confirm_candidates(
+            basin_winners + [incumbent, self.initial],
+            p["shots"], p["blocks"],
+            "rough pulse exact step-5")
+        confirmation_complete = self._confirmation_batch_complete(confirmed)
+        self._maps["rough_ss_chevron"]["selection_confirmed"] = True
+        self._maps["rough_ss_chevron"]["selection_confirmation_complete"] = bool(
+            confirmation_complete)
+        if not confirmation_complete:
+            self._maps["rough_ss_chevron"]["search_complete"] = False
+        direct_best = self._best_aggregate(confirmed)
+        best = self._noninferior_seed(
+            confirmed, incumbent, direct_best, margin=0.005)
+        self._adopt(best, "rough_ss")
+        return best
+
+    def _stage_parity_chevron(self):
+        p = self.params["parity_chevron"]
+        if not p.get("enabled", True):
+            self._log("parity_chevron", "SKIP", "disabled")
+            return None
+        incumbent = dict(self.working)
+        calibration_shots = max(int(p["shots"]), 300)
+        initial = self._parity_map(
+            "parity_chevron", incumbent, p,
+            incumbent["qubit_pi_freq"], incumbent["qubit_pi_gain"],
+            calibration_shots, "parity chevron")
+        index = initial["index"]
+        initial_edge = (index[0] in (0, initial["frequencies"].size - 1)
+                        or index[1] in (0, initial["gains"].size - 1))
+        self._maps["parity_chevron"]["initial_edge_winner"] = bool(initial_edge)
+        seeds = [initial["seed"]]
+        preferred = initial["seed"]
+        maps = [initial]
+        final_edge = bool(initial_edge)
+        expansion_ok = False
+        if initial_edge:
+            self._maps["parity_chevron"]["search_complete"] = False
+            self._log(
+                "parity_chevron", "WARN",
+                "raw amplified optimum is on a boundary; running one centered/outward "
+                "frequency/gain expansion before deciding")
+            try:
+                expanded = self._parity_map(
+                    "parity_chevron_edge", incumbent, p,
+                    initial["seed"]["qubit_pi_freq"],
+                    initial["seed"]["qubit_pi_gain"], calibration_shots,
+                    "parity chevron expansion")
+                expanded_index = expanded["index"]
+                final_edge = bool(
+                    expanded_index[0] in (0, expanded["frequencies"].size - 1)
+                    or expanded_index[1] in (0, expanded["gains"].size - 1))
+                self._maps["parity_chevron_edge"]["edge_winner"] = final_edge
+                self._maps["parity_chevron_edge"]["search_complete"] = bool(
+                    expanded["data_complete"] and not final_edge)
+                seeds.insert(0, expanded["seed"])
+                preferred = expanded["seed"]
+                maps.append(expanded)
+                expansion_ok = True
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                final_edge = True
+                self._maps["parity_chevron"]["expansion_failure"] = \
+                    "%s: %s" % (type(exc).__name__, exc)
+                self._log(
+                    "parity_chevron", "WARN",
+                    "boundary expansion failed (%s: %s); directly confirming the "
+                    "best measured edge point and incumbent anyway"
+                    % (type(exc).__name__, exc))
+        confirmed = self._confirm_candidates(
+            seeds + [incumbent], p["confirm_shots"], p["confirm_blocks"],
+            "parity winner direct step-5")
+        confirmation_complete = self._confirmation_batch_complete(confirmed)
+        # One-pulse assignment fidelity is intentionally insensitive to the coherent
+        # error amplified by this map.  Keep the map optimum when its direct replay is
+        # noninferior, exactly as in the final variable-depth refinement.
+        best = self._noninferior_seed(confirmed, preferred, incumbent)
+        self._adopt(best, "parity_chevron")
+        for mapping in maps:
+            self._maps[mapping["stage"]]["selection_confirmed"] = True
+            self._maps[mapping["stage"]]["selection_confirmation_complete"] = bool(
+                confirmation_complete)
+            if not confirmation_complete:
+                self._maps[mapping["stage"]]["search_complete"] = False
+        complete = bool(
+            confirmation_complete and initial["data_complete"]
+            and (not initial_edge
+                 or (expansion_ok and maps[-1]["data_complete"] and not final_edge)))
+        self._maps["parity_chevron"]["expanded"] = bool(initial_edge)
+        self._maps["parity_chevron"]["edge_winner"] = bool(
+            initial_edge and final_edge)
+        self._maps["parity_chevron"]["search_complete"] = complete
+        self._record_key_evidence(
+            ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"),
+            "parity_chevron", complete)
+        if initial_edge and not final_edge and complete:
+            self._log("parity_chevron", "OK",
+                      "expanded amplified optimum is interior; joint control search "
+                      "is complete")
+        elif initial_edge:
+            self._log("parity_chevron", "WARN",
+                      "expanded amplified optimum remains boundary-limited or incomplete; "
+                      "best candidate retained but control is not write-eligible")
+        elif not complete:
+            self._log("parity_chevron", "WARN",
+                      "parity map was incomplete; confirmed candidate retained but "
+                      "control is not write-eligible")
+        return best
+
+    def _stage_fine_frequency(self, stage="fine_frequency"):
+        p = self.params["fine_frequency"]
+        if not p.get("enabled", True):
+            self._log(stage, "SKIP", "disabled")
+            return None
+        incumbent = dict(self.working)
+        initial = self._inverse_pair_map(
+            stage, incumbent, p, incumbent["qubit_pi_freq"])
+        initial_edge = initial["index"] in (
+            0, initial["frequencies"].size - 1)
+        self._maps[stage]["initial_edge_winner"] = bool(initial_edge)
+        seeds = [initial["seed"]]
+        preferred = initial["seed"]
+        maps = [initial]
+        final_edge = bool(initial_edge)
+        expansion_ok = False
+        if initial_edge:
+            self._maps[stage]["search_complete"] = False
+            self._log(
+                stage, "WARN",
+                "inverse-pair minimum is on a boundary; running one centered/outward "
+                "frequency expansion before deciding")
+            try:
+                expanded = self._inverse_pair_map(
+                    stage + "_edge", incumbent, p,
+                    initial["seed"]["qubit_pi_freq"])
+                final_edge = expanded["index"] in (
+                    0, expanded["frequencies"].size - 1)
+                self._maps[expanded["stage"]]["edge_winner"] = bool(final_edge)
+                self._maps[expanded["stage"]]["search_complete"] = bool(
+                    expanded["data_complete"] and not final_edge)
+                seeds.insert(0, expanded["seed"])
+                preferred = expanded["seed"]
+                maps.append(expanded)
+                expansion_ok = True
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                final_edge = True
+                self._maps[stage]["expansion_failure"] = \
+                    "%s: %s" % (type(exc).__name__, exc)
+                self._log(
+                    stage, "WARN",
+                    "boundary expansion failed (%s: %s); directly confirming the "
+                    "best measured edge point and incumbent anyway"
+                    % (type(exc).__name__, exc))
+        confirmed = self._confirm_candidates(
+            seeds + [incumbent], p["confirm_shots"], p["confirm_blocks"],
+            "%s direct replay" % stage)
+        confirmation_complete = self._confirmation_batch_complete(confirmed)
+        chosen = self._noninferior_seed(confirmed, preferred, incumbent)
+        self._adopt(chosen, stage)
+        for mapping in maps:
+            self._maps[mapping["stage"]]["selection_confirmed"] = True
+            self._maps[mapping["stage"]]["selection_confirmation_complete"] = bool(
+                confirmation_complete)
+            if not confirmation_complete:
+                self._maps[mapping["stage"]]["search_complete"] = False
+        complete = bool(
+            confirmation_complete and initial["data_complete"]
+            and (not initial_edge
+                 or (expansion_ok and maps[-1]["data_complete"] and not final_edge)))
+        self._maps[stage]["expanded"] = bool(initial_edge)
+        self._maps[stage]["edge_winner"] = bool(initial_edge and final_edge)
+        self._maps[stage]["search_complete"] = complete
+        self._record_key_evidence(
+            ("qubit_freq", "qubit_pi_freq"), stage, complete)
+        if initial_edge and not final_edge and complete:
+            self._log(stage, "OK",
+                      "expanded inverse-pair minimum is interior; frequency search "
+                      "is complete")
+        elif initial_edge:
+            self._log(stage, "WARN",
+                      "expanded inverse-pair minimum remains boundary-limited or "
+                      "incomplete; best candidate retained but frequency is not "
+                      "write-eligible")
+        elif not complete:
+            self._log(stage, "WARN",
+                      "inverse-pair map was incomplete; confirmed candidate retained "
+                      "but frequency is not write-eligible")
+        return chosen
+
+    def _stage_amplified_error(self):
+        p = self.params["amplified_error"]
+        if not p.get("enabled", True):
+            self._log("amplified_error", "SKIP", "disabled")
+            return None
+        incumbent = dict(self.working)
+        initial = self._parity_map(
+            "amplified_error", incumbent, p,
+            incumbent["qubit_pi_freq"], incumbent["qubit_pi_gain"],
+            p["calibration_shots"], "amplified error")
+        index = initial["index"]
+        initial_edge = (index[0] in (0, initial["frequencies"].size - 1)
+                        or index[1] in (0, initial["gains"].size - 1))
+        self._maps["amplified_error"]["initial_edge_winner"] = bool(initial_edge)
+        seeds = [initial["seed"]]
+        preferred = initial["seed"]
+        maps = [initial]
+        final_edge = bool(initial_edge)
+        expansion_ok = False
+        if initial_edge:
+            self._maps["amplified_error"]["search_complete"] = False
+            self._log(
+                "amplified_error", "WARN",
+                "raw variable-depth optimum is on a boundary; running one centered/"
+                "outward frequency/gain expansion before deciding")
+            try:
+                expanded = self._parity_map(
+                    "amplified_error_edge", incumbent, p,
+                    initial["seed"]["qubit_pi_freq"],
+                    initial["seed"]["qubit_pi_gain"],
+                    p["calibration_shots"], "amplified error expansion")
+                expanded_index = expanded["index"]
+                final_edge = bool(
+                    expanded_index[0] in (0, expanded["frequencies"].size - 1)
+                    or expanded_index[1] in (0, expanded["gains"].size - 1))
+                self._maps["amplified_error_edge"]["edge_winner"] = final_edge
+                self._maps["amplified_error_edge"]["search_complete"] = bool(
+                    expanded["data_complete"] and not final_edge)
+                seeds.insert(0, expanded["seed"])
+                preferred = expanded["seed"]
+                maps.append(expanded)
+                expansion_ok = True
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                final_edge = True
+                self._maps["amplified_error"]["expansion_failure"] = \
+                    "%s: %s" % (type(exc).__name__, exc)
+                self._log(
+                    "amplified_error", "WARN",
+                    "boundary expansion failed (%s: %s); directly confirming the "
+                    "best measured edge point and incumbent anyway"
+                    % (type(exc).__name__, exc))
+        confirmed = self._confirm_candidates(
+            seeds + [incumbent], p["confirm_shots"], p["confirm_blocks"],
+            "amplified-error direct replay")
+        confirmation_complete = self._confirmation_batch_complete(confirmed)
+        chosen = self._noninferior_seed(confirmed, preferred, incumbent)
+        self._adopt(chosen, "amplified_error")
+        for mapping in maps:
+            self._maps[mapping["stage"]]["selection_confirmed"] = True
+            self._maps[mapping["stage"]]["selection_confirmation_complete"] = bool(
+                confirmation_complete)
+            if not confirmation_complete:
+                self._maps[mapping["stage"]]["search_complete"] = False
+        complete = bool(
+            confirmation_complete and initial["data_complete"]
+            and (not initial_edge
+                 or (expansion_ok and maps[-1]["data_complete"] and not final_edge)))
+        self._maps["amplified_error"]["expanded"] = bool(initial_edge)
+        self._maps["amplified_error"]["edge_winner"] = bool(
+            initial_edge and final_edge)
+        self._maps["amplified_error"]["search_complete"] = complete
+        self._record_key_evidence(
+            ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"),
+            "amplified_error", complete)
+        if initial_edge and not final_edge and complete:
+            self._log("amplified_error", "OK",
+                      "expanded variable-depth optimum is interior; amplified control "
+                      "search is complete")
+        elif initial_edge:
+            self._log("amplified_error", "WARN",
+                      "expanded variable-depth optimum remains boundary-limited or "
+                      "incomplete; best candidate retained but control is not "
+                      "write-eligible")
+        elif not complete:
+            self._log("amplified_error", "WARN",
+                      "variable-depth map was incomplete; confirmed candidate retained "
+                      "but control is not write-eligible")
+        return chosen
+
+    def _stage_readout_grid(self, stage="readout_grid", local=False,
+                            record_evidence=True, prior_complete=True):
+        p = self.params["readout"]
+        if not p.get("enabled", True):
+            self._log(stage, "SKIP", "disabled")
+            return None
+        if local:
+            center_freq = float(self.working["read_pulse_freq"])
+            span = p["local_freq_span_mhz"]
+            nfreq = p["local_freq_points"]
+            center_gain = int(self.working["read_pulse_gain"])
+            fraction = float(p["local_gain_fraction"])
+            gains = self._gain_axis(
+                center_gain * (1.0 - fraction), center_gain * (1.0 + fraction),
+                p["local_gain_points"], include=[center_gain])
+        else:
+            incumbent = float(self.working["read_pulse_freq"])
+            seed = float(self._resonator_seed)
+            center_freq = 0.5 * (incumbent + seed)
+            span = max(float(p["freq_span_mhz"]),
+                       abs(incumbent - seed) + 0.5 * float(p["freq_span_mhz"]))
+            nfreq = p["freq_points"]
+            gains = self._gain_axis(
+                p["gain_min"], p["gain_max"], p["gain_points"],
+                include=[self.working["read_pulse_gain"]])
+        freqs = self._float_axis(
+            center_freq, span, nfreq,
+            include=[self.working["read_pulse_freq"], self._resonator_seed])
+        candidates = [
+            _with_candidate(self.working, read_pulse_freq=float(freq),
+                            read_pulse_gain=int(gain))
+            for freq in freqs for gain in gains
+        ]
+        result = self._direct_grid(
+            stage, candidates, (freqs.size, gains.size),
+            {"read_frequency_mhz": freqs, "read_gain_dac": gains},
+            p["shots"], p["shortlist"], p["confirm_shots"],
+            p["confirm_blocks"])
+        coverage_complete = bool(
+            prior_complete and self._maps[stage].get("search_complete", False))
+        at_edge = (np.isclose(self.working["read_pulse_freq"], freqs[0])
+                   or np.isclose(self.working["read_pulse_freq"], freqs[-1])
+                   or int(self.working["read_pulse_gain"]) in
+                   (int(gains[0]), int(gains[-1])))
+        self._maps[stage]["edge_winner"] = bool(at_edge)
+        self._maps[stage]["eligibility_evidence_enabled"] = bool(record_evidence)
+        if at_edge:
+            self._maps[stage]["search_complete"] = False
+            if record_evidence:
+                self._record_key_evidence(
+                    ("read_pulse_freq", "read_pulse_gain"), stage, False)
+        if at_edge and not stage.endswith("_edge"):
+            self._log(stage, "WARN",
+                      "confirmed winner is on a grid edge; expanding once around it")
+            return self._stage_readout_grid(
+                stage + "_edge", local=True, record_evidence=record_evidence,
+                prior_complete=coverage_complete)
+        if at_edge:
+            self._log(stage, "WARN",
+                      "winner remains on the expanded edge; result retained but this "
+                      "readout search is not write-eligible")
+        elif record_evidence:
+            self._record_key_evidence(
+                ("read_pulse_freq", "read_pulse_gain"), stage,
+                coverage_complete)
+            if not coverage_complete:
+                self._log(stage, "WARN",
+                          "winner confirmed, but incomplete upstream/map coverage makes "
+                          "this readout result report-only")
+        return result
+
+    def _stage_readout_length(self):
+        p = self.params["readout_length"]
+        if not p.get("enabled", True):
+            self._log("readout_length", "SKIP", "disabled")
+            return None
+        values = sorted(set(float(v) for v in p["values_us"]
+                            if np.isfinite(v) and float(v) > 0)
+                        | {float(self.working["read_length"])})
+        center_frequency = float(self.working["read_pulse_freq"])
+        frequency_offsets = np.linspace(
+            -float(p["freq_span_mhz"]) / 2.0,
+            float(p["freq_span_mhz"]) / 2.0, int(p["freq_points"]))
+        actual_gains = self._gain_axis(
+            p.get("gain_min", self.params["readout"]["gain_min"]),
+            p.get("gain_max", self.params["readout"]["gain_max"]),
+            p["gain_points"], include=[self.working["read_pulse_gain"]])
+        candidates = [
+            _with_candidate(
+                self.working, read_length=value,
+                read_pulse_freq=float(center_frequency + offset),
+                read_pulse_gain=int(gain))
+            for value in values for offset in frequency_offsets for gain in actual_gains
+        ]
+        result = self._direct_grid(
+            "readout_length", candidates,
+            (len(values), len(frequency_offsets), len(actual_gains)),
+            {"read_length_us": np.asarray(values),
+             "frequency_offset_mhz": frequency_offsets,
+             "read_gain_dac": actual_gains}, p["shots"], p["shortlist"],
+            p["confirm_shots"], p["confirm_blocks"])
+        initial_coverage_complete = bool(
+            self._maps["readout_length"].get("search_complete", False))
+        self._maps["readout_length"]["actual_gain_dac"] = actual_gains
+        selected_length = float(self.working["read_length"])
+        length_edge = (np.isclose(selected_length, values[0])
+                       or np.isclose(selected_length, values[-1]))
+        frequency_edge = (
+            np.isclose(self.working["read_pulse_freq"],
+                       center_frequency + frequency_offsets[0])
+            or np.isclose(self.working["read_pulse_freq"],
+                          center_frequency + frequency_offsets[-1]))
+        gain_edge = int(self.working["read_pulse_gain"]) in (
+            int(actual_gains[0]), int(actual_gains[-1]))
+        at_edge = bool(length_edge or frequency_edge or gain_edge)
+        self._maps["readout_length"]["edge_winner"] = bool(at_edge)
+        self._maps["readout_length"]["edge_dimensions"] = {
+            "read_length": bool(length_edge),
+            "read_pulse_freq": bool(frequency_edge),
+            "read_pulse_gain": bool(gain_edge),
+        }
+        if at_edge:
+            self._maps["readout_length"]["search_complete"] = False
+            extension = (max(float(p["min_us"]), 0.5 * selected_length)
+                         if np.isclose(selected_length, values[0])
+                         else min(float(p["max_us"]), 1.5 * selected_length))
+            self._record_key_evidence(
+                ("read_pulse_freq", "read_pulse_gain", "read_length"),
+                "readout_length", False)
+            if length_edge and not np.isclose(extension, selected_length):
+                self._log("readout_length", "WARN",
+                          "length winner is on an edge; testing %.1f us once" % extension)
+                incumbent = dict(self.working)
+                edge_lengths = np.asarray([selected_length, extension], dtype=float)
+                edge_gains = self._gain_axis(
+                    p.get("gain_min", self.params["readout"]["gain_min"]),
+                    p.get("gain_max", self.params["readout"]["gain_max"]),
+                    p["gain_points"], include=[incumbent["read_pulse_gain"]])
+                edge_candidates = [
+                    _with_candidate(
+                        incumbent, read_length=float(length),
+                        read_pulse_freq=float(incumbent["read_pulse_freq"] + offset),
+                        read_pulse_gain=int(gain))
+                    for length in edge_lengths for offset in frequency_offsets
+                    for gain in edge_gains
+                ]
+                result = self._direct_grid(
+                    "readout_length_edge", edge_candidates,
+                    (2, len(frequency_offsets), len(edge_gains)),
+                    {"read_length_us": edge_lengths,
+                     "frequency_offset_mhz": frequency_offsets,
+                     "read_gain_dac": edge_gains}, p["shots"], p["shortlist"],
+                    p["confirm_shots"], p["confirm_blocks"])
+                extension_coverage_complete = bool(
+                    self._maps["readout_length_edge"].get(
+                        "search_complete", False))
+                self._maps["readout_length_edge"]["actual_gain_dac"] = edge_gains
+                extension_won = np.isclose(float(self.working["read_length"]), extension)
+                edge_frequency_limited = (
+                    np.isclose(self.working["read_pulse_freq"],
+                               incumbent["read_pulse_freq"] + frequency_offsets[0])
+                    or np.isclose(self.working["read_pulse_freq"],
+                                  incumbent["read_pulse_freq"] + frequency_offsets[-1]))
+                edge_gain_limited = int(self.working["read_pulse_gain"]) in (
+                    int(edge_gains[0]), int(edge_gains[-1]))
+                unresolved = bool(
+                    extension_won or edge_frequency_limited or edge_gain_limited)
+                self._maps["readout_length_edge"]["edge_winner"] = unresolved
+                self._maps["readout_length_edge"]["edge_dimensions"] = {
+                    "read_length": bool(extension_won),
+                    "read_pulse_freq": bool(edge_frequency_limited),
+                    "read_pulse_gain": bool(edge_gain_limited),
+                }
+                extension_complete = bool(
+                    initial_coverage_complete and extension_coverage_complete
+                    and not unresolved)
+                self._maps["readout_length_edge"]["search_complete"] = \
+                    extension_complete
+                self._record_key_evidence(
+                    ("read_pulse_freq", "read_pulse_gain", "read_length"),
+                    "readout_length_edge", extension_complete)
+                if unresolved:
+                    self._log("readout_length_edge", "WARN",
+                              "expanded joint search remains boundary-limited in %s; "
+                              "retained but not write-eligible"
+                              % ", ".join(key for key, value in
+                                          self._maps["readout_length_edge"]
+                                          ["edge_dimensions"].items() if value))
+            elif at_edge:
+                self._log(
+                    "readout_length", "WARN",
+                    "joint length search is boundary-limited in %s; retained and a "
+                    "local readout refinement will follow, but this length comparison "
+                    "is not write evidence"
+                    % ", ".join(key for key, value in
+                                self._maps["readout_length"]["edge_dimensions"].items()
+                                if value))
+        else:
+            self._record_key_evidence(
+                ("read_pulse_freq", "read_pulse_gain", "read_length"),
+                "readout_length", initial_coverage_complete)
+            if not initial_coverage_complete:
+                self._log(
+                    "readout_length", "WARN",
+                    "winner confirmed, but incomplete map coverage makes the joint "
+                    "length result report-only")
+        # Every length was compared after its own local f/g retune.  One final fine
+        # pass around the winning three-dimensional cell removes coarse-grid error.
+        if self.params["readout"].get("enabled", True):
+            self._stage_readout_grid("readout_after_length", local=True)
+        return result
+
+    def _stage_qubit_grid(self, stage="qubit_grid", local=False,
+                          prior_complete=True):
+        p = self.params["qubit"]
+        if not p.get("enabled", True):
+            self._log(stage, "SKIP", "disabled")
+            return None
+        if local:
+            span, nfreq = p["local_freq_span_mhz"], p["local_freq_points"]
+            fraction, ngain = p["local_gain_fraction"], p["local_gain_points"]
+        else:
+            span, nfreq = p["freq_span_mhz"], p["freq_points"]
+            fraction, ngain = p["gain_fraction"], p["gain_points"]
+        center_freq = float(self.working["qubit_pi_freq"])
+        center_gain = int(self.working["qubit_pi_gain"])
+        freqs = self._float_axis(center_freq, span, nfreq, include=[center_freq])
+        gains = self._gain_axis(
+            center_gain * (1.0 - float(fraction)),
+            center_gain * (1.0 + float(fraction)), ngain, include=[center_gain])
+        candidates = [
+            _with_candidate(self.working, qubit_pi_freq=float(freq),
+                            qubit_pi_gain=int(gain))
+            for freq in freqs for gain in gains
+        ]
+        result = self._direct_grid(
+            stage, candidates, (freqs.size, gains.size),
+            {"qubit_frequency_mhz": freqs, "qubit_gain_dac": gains},
+            p["shots"], p["shortlist"], p["confirm_shots"],
+            p["confirm_blocks"])
+        coverage_complete = bool(
+            prior_complete and self._maps[stage].get("search_complete", False))
+        at_edge = (np.isclose(self.working["qubit_pi_freq"], freqs[0])
+                   or np.isclose(self.working["qubit_pi_freq"], freqs[-1])
+                   or int(self.working["qubit_pi_gain"]) in
+                   (int(gains[0]), int(gains[-1])))
+        self._maps[stage]["edge_winner"] = bool(at_edge)
+        if at_edge:
+            self._maps[stage]["search_complete"] = False
+            self._record_key_evidence(
+                ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"), stage, False)
+        if at_edge and not stage.endswith("_edge"):
+            self._log(stage, "WARN",
+                      "confirmed winner is on a grid edge; expanding once around it")
+            return self._stage_qubit_grid(
+                stage + "_edge", local=True,
+                prior_complete=coverage_complete)
+        if at_edge:
+            self._log(stage, "WARN",
+                      "winner remains on the expanded edge; result retained but this "
+                      "control search is not write-eligible")
+        else:
+            self._record_key_evidence(
+                ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"), stage,
+                coverage_complete)
+            if not coverage_complete:
+                self._log(stage, "WARN",
+                          "winner confirmed, but incomplete upstream/map coverage makes "
+                          "this control result report-only")
+        return result
+
+    def _stage_pulse_duration(self):
+        p = self.params["pulse_duration"]
+        if not p.get("enabled", True):
+            self._log("pulse_duration", "SKIP", "disabled")
+            return None
+        sigma_values = sorted(set(float(v) for v in p["sigma_values_us"]
+                                  if np.isfinite(v) and float(v) > 0)
+                              | {float(self.working["sigma"])})
+        frequency_offsets = np.linspace(
+            -float(p["freq_span_mhz"]) / 2.0,
+            float(p["freq_span_mhz"]) / 2.0, int(p["freq_points"]))
+        gain_scales = np.linspace(
+            1.0 - float(p["gain_fraction"]),
+            1.0 + float(p["gain_fraction"]), int(p["gain_points"]))
+        old_sigma = float(self.working["sigma"])
+        old_gain = float(self.working["qubit_pi_gain"])
+        old_frequency = float(self.working["qubit_pi_freq"])
+        candidates = []
+        actual_gains = np.empty((len(sigma_values), len(gain_scales)), dtype=int)
+        for si, sigma in enumerate(sigma_values):
+            # Gaussian rotation area is approximately gain*sigma.  The area scaling is
+            # only a center; every duration then gets a real local gain/frequency grid.
+            predicted_gain = old_gain * old_sigma / sigma
+            for gi, scale in enumerate(gain_scales):
+                actual_gains[si, gi] = int(np.clip(
+                    round(predicted_gain * scale), 1, 32767))
+            for offset in frequency_offsets:
+                for gain in actual_gains[si]:
+                    candidates.append(_with_candidate(
+                        self.working, sigma=float(sigma),
+                        qubit_pi_freq=float(old_frequency + offset),
+                        qubit_pi_gain=int(gain)))
+        result = self._direct_grid(
+            "pulse_duration", candidates,
+            (len(sigma_values), len(frequency_offsets), len(gain_scales)),
+            {"sigma_us": np.asarray(sigma_values),
+             "frequency_offset_mhz": frequency_offsets,
+             "gain_scale": gain_scales},
+            p["shots"], p["shortlist"], p["confirm_shots"],
+            p["confirm_blocks"])
+        initial_coverage_complete = bool(
+            self._maps["pulse_duration"].get("search_complete", False))
+        self._maps["pulse_duration"]["actual_gain_dac"] = actual_gains
+        selected_sigma = float(self.working["sigma"])
+        selected_sigma_index = int(np.argmin(
+            np.abs(np.asarray(sigma_values, dtype=float) - selected_sigma)))
+        sigma_edge = (np.isclose(selected_sigma, sigma_values[0])
+                      or np.isclose(selected_sigma, sigma_values[-1]))
+        frequency_edge = (
+            np.isclose(self.working["qubit_pi_freq"],
+                       old_frequency + frequency_offsets[0])
+            or np.isclose(self.working["qubit_pi_freq"],
+                          old_frequency + frequency_offsets[-1]))
+        selected_gain_axis = actual_gains[selected_sigma_index]
+        gain_edge = int(self.working["qubit_pi_gain"]) in (
+            int(selected_gain_axis[0]), int(selected_gain_axis[-1]))
+        at_edge = bool(sigma_edge or frequency_edge or gain_edge)
+        self._maps["pulse_duration"]["edge_winner"] = bool(at_edge)
+        self._maps["pulse_duration"]["edge_dimensions"] = {
+            "sigma": bool(sigma_edge),
+            "qubit_pi_freq": bool(frequency_edge),
+            "qubit_pi_gain": bool(gain_edge),
+        }
+        if at_edge:
+            self._maps["pulse_duration"]["search_complete"] = False
+            self._record_key_evidence(
+                ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma"),
+                "pulse_duration", False)
+            if np.isclose(selected_sigma, sigma_values[0]):
+                extension = max(0.025, 0.5 * selected_sigma)
+            else:
+                extension = min(1.0, 1.5 * selected_sigma)
+            if sigma_edge and not np.isclose(extension, selected_sigma):
+                self._log("pulse_duration", "WARN",
+                          "duration winner is on an edge; testing %.1f ns once"
+                          % (4000.0 * extension))
+                incumbent = dict(self.working)
+                extension_sigmas = np.asarray([selected_sigma, extension], dtype=float)
+                edge_candidates = []
+                edge_gains = np.empty((2, len(gain_scales)), dtype=int)
+                for si, sigma in enumerate(extension_sigmas):
+                    predicted = (float(incumbent["qubit_pi_gain"])
+                                 * selected_sigma / sigma)
+                    edge_gains[si] = np.clip(
+                        np.rint(predicted * gain_scales), 1, 32767).astype(int)
+                    for offset in frequency_offsets:
+                        for gain in edge_gains[si]:
+                            edge_candidates.append(_with_candidate(
+                                incumbent, sigma=float(sigma),
+                                qubit_pi_freq=float(
+                                    incumbent["qubit_pi_freq"] + offset),
+                                qubit_pi_gain=int(gain)))
+                edge_result = self._direct_grid(
+                    "pulse_duration_edge", edge_candidates,
+                    (2, len(frequency_offsets), len(gain_scales)),
+                    {"sigma_us": extension_sigmas,
+                     "frequency_offset_mhz": frequency_offsets,
+                     "gain_scale": gain_scales},
+                    p["shots"], p["shortlist"], p["confirm_shots"],
+                    p["confirm_blocks"])
+                extension_coverage_complete = bool(
+                    self._maps["pulse_duration_edge"].get(
+                        "search_complete", False))
+                self._maps["pulse_duration_edge"]["actual_gain_dac"] = edge_gains
+                extension_won = np.isclose(float(self.working["sigma"]), extension)
+                selected_edge_sigma = int(np.argmin(np.abs(
+                    extension_sigmas - float(self.working["sigma"]))))
+                edge_frequency_limited = (
+                    np.isclose(self.working["qubit_pi_freq"],
+                               incumbent["qubit_pi_freq"] + frequency_offsets[0])
+                    or np.isclose(self.working["qubit_pi_freq"],
+                                  incumbent["qubit_pi_freq"] + frequency_offsets[-1]))
+                edge_gain_limited = int(self.working["qubit_pi_gain"]) in (
+                    int(edge_gains[selected_edge_sigma, 0]),
+                    int(edge_gains[selected_edge_sigma, -1]))
+                unresolved = bool(
+                    extension_won or edge_frequency_limited or edge_gain_limited)
+                self._maps["pulse_duration_edge"]["edge_winner"] = unresolved
+                self._maps["pulse_duration_edge"]["edge_dimensions"] = {
+                    "sigma": bool(extension_won),
+                    "qubit_pi_freq": bool(edge_frequency_limited),
+                    "qubit_pi_gain": bool(edge_gain_limited),
+                }
+                extension_complete = bool(
+                    initial_coverage_complete and extension_coverage_complete
+                    and not unresolved)
+                self._maps["pulse_duration_edge"]["search_complete"] = \
+                    extension_complete
+                self._record_key_evidence(
+                    ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma"),
+                    "pulse_duration_edge", extension_complete)
+                if unresolved:
+                    self._log("pulse_duration_edge", "WARN",
+                              "expanded joint duration search remains boundary-limited "
+                              "in %s; candidate is retained but not write-eligible"
+                              % ", ".join(key for key, value in
+                                          self._maps["pulse_duration_edge"]
+                                          ["edge_dimensions"].items() if value))
+                return edge_result
+            self._log(
+                "pulse_duration", "WARN",
+                "joint duration search is boundary-limited in %s; candidate is retained "
+                "but this duration comparison is not write evidence"
+                % ", ".join(key for key, value in
+                            self._maps["pulse_duration"]["edge_dimensions"].items()
+                            if value))
+        else:
+            self._record_key_evidence(
+                ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma"),
+                "pulse_duration", initial_coverage_complete)
+            if not initial_coverage_complete:
+                self._log(
+                    "pulse_duration", "WARN",
+                    "winner confirmed, but incomplete map coverage makes the joint "
+                    "duration result report-only")
+        return result
+
+    def _current_best_for_partial_run(self):
+        pool = list(self._confirmed)
+        if self._archive:
+            # Completed individual measurements are real evidence even when an
+            # interrupt prevented their surrounding grid/confirmation from finishing.
+            # They are explicitly labeled unconfirmed and can never become eligible.
+            observed = max(self._archive, key=lambda row: (
+                float(row.get("fidelity_lcb_95", -np.inf)),
+                float(row.get("fidelity", -np.inf))))
+            pool.append(self._aggregate(
+                observed, [observed], "partial best direct measurement (unconfirmed)"))
+        return self._best_aggregate(pool)
+
+    def _stage_final(self):
+        p = self.params["final"]
+        ranked = sorted(
+            self._confirmed,
+            key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
+                             float(row.get("fidelity", -np.inf))), reverse=True)
+        raw_ranked = sorted(
+            self._archive,
+            key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
+                             float(row.get("fidelity", -np.inf))), reverse=True)
+
+        def physical_candidate(row):
+            return {key: row[key] for key in self.initial}
+
+        # A contender whose confirmation blocks all suffered transient faults is still
+        # present in the raw archive.  Re-introduce the top raw measurements here; a
+        # false coarse maximum is harmless because this final replay is fresh and held
+        # out, while omitting it could permanently lose the correct Rabi basin.
+        candidates = [physical_candidate(row)
+                      for row in ranked[:int(p["top_candidates"])]]
+        candidates.extend(dict(entry["candidate"])
+                          for entry in self._unconfirmed_contenders)
+        candidates.extend(physical_candidate(row)
+                          for row in raw_ranked[:int(p["top_candidates"])])
+        candidates.extend([dict(self.working), dict(self.initial)])
+        candidates = _unique_candidates(candidates)
+        if not candidates:
+            raise RuntimeError("no measured candidate is available for final replay")
+        finals = self._confirm_candidates(
+            candidates, p["shots"], p["blocks"], "final exact step-5 replay",
+            add_to_history=True)
+        # All final records have identical shots and block count, so comparing their
+        # lower confidence bounds is fair and resistant to a one-block fluctuation.
+        # Protect the final fine-frequency/AAE tuple when its one-pulse score is
+        # statistically noninferior: a one-pulse histogram is insensitive to the small
+        # coherent errors that those amplified sequences were designed to expose.
+        direct_best = self._best_aggregate(finals)
+        best = self._noninferior_seed(
+            finals, self.working, direct_best, margin=0.003)
+        self._adopt(best, "final")
+        self.data["final_candidates"] = finals
+        self._final_replay_completed = self._confirmation_batch_complete(finals)
+        self.data["final_confirmation_complete"] = bool(
+            self._final_replay_completed)
+        return best
+
+    def _estimate_default_measurement_repetitions(self):
+        """Conservative workload estimate used only for the upfront operator ETA."""
+        p = self.params
+        total = 0
+        total += 2 * int(p["baseline"]["shots"]) * int(p["baseline"]["blocks"])
+        if p["resonator"].get("enabled", True):
+            total += int(p["resonator"]["shots"]) * (
+                2 * int(p["resonator"]["points"])
+                + int(p["resonator"]["wide_points"]))
+        if p["spectroscopy"].get("enabled", True):
+            total += int(p["spectroscopy"]["shots"]) * (
+                int(p["spectroscopy"]["local_points"])
+                + int(p["spectroscopy"]["wide_points"]))
+        if p["iq_rabi"].get("enabled", True):
+            basins = 1 + int(p["spectroscopy"].get("max_candidates", 2))
+            total += int(p["iq_rabi"]["shots"]) * (
+                basins * int(p["iq_rabi"]["freq_points_per_candidate"])
+                * int(p["iq_rabi"]["gain_points"])
+                + int(p["iq_rabi"]["fine_gain_points"]))
+        r = p["rough_single_shot"]
+        rabi_capacity = max(
+            int(p["iq_rabi"].get("shortlist", 4)),
+            1 + int(p["spectroscopy"].get("max_candidates", 3)))
+        total += (2 * rabi_capacity * int(r["freq_points"])
+                  * int(r["gain_points"]) * int(r["coarse_shots"]))
+        total += (2 * int(r["shots"]) * int(r["blocks"])
+                  * (rabi_capacity + 2))
+        for _ in range(2):
+            f = p["fine_frequency"]
+            if f.get("enabled", True):
+                total += 2 * int(f["calibration_shots"])
+                total += int(f["points"]) * int(f["shots"])
+                total += 4 * int(f["confirm_shots"]) * int(f["confirm_blocks"])
+        parity = p["parity_chevron"]
+        if parity.get("enabled", True):
+            total += 2 * max(int(parity["shots"]), 300)
+            total += (len(parity["pulse_counts"]) * int(parity["freq_points"])
+                      * int(parity["gain_points"]) * int(parity["shots"]))
+            total += 4 * int(parity["confirm_shots"]) * int(parity["confirm_blocks"])
+        readout = p["readout"]
+        if readout.get("enabled", True):
+            total += (2 * int(readout["freq_points"]) * int(readout["gain_points"])
+                      * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+            # Local readout replay after direct/amplified control selection.
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+        length = p["readout_length"]
+        if length.get("enabled", True):
+            total += (2 * (len(length["values_us"]) + 1)
+                      * int(length["freq_points"]) * int(length["gain_points"])
+                      * int(length["shots"]))
+            total += (2 * (int(length["shortlist"]) + 1)
+                      * int(length["confirm_shots"]) * int(length["confirm_blocks"]))
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+        qubit = p["qubit"]
+        if qubit.get("enabled", True):
+            total += (2 * int(qubit["freq_points"]) * int(qubit["gain_points"])
+                      * int(qubit["shots"]))
+            total += (2 * (int(qubit["shortlist"]) + 1)
+                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
+        duration = p["pulse_duration"]
+        if duration.get("enabled", True):
+            total += (2 * (len(duration["sigma_values_us"]) + 1)
+                      * int(duration["freq_points"]) * int(duration["gain_points"])
+                      * int(duration["shots"]))
+            total += (2 * (int(duration["shortlist"]) + 1)
+                      * int(duration["confirm_shots"]) * int(duration["confirm_blocks"]))
+        if p.get("coordinate_descent_repeat", True):
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+            total += (2 * int(qubit["local_freq_points"])
+                      * int(qubit["local_gain_points"]) * int(qubit["shots"]))
+            total += (2 * (int(qubit["shortlist"]) + 1)
+                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
+        amplified = p["amplified_error"]
+        if amplified.get("enabled", True):
+            total += 2 * int(amplified["calibration_shots"])
+            total += (len(amplified["pulse_counts"])
+                      * int(amplified["freq_points"])
+                      * int(amplified["gain_points"]) * int(amplified["shots"]))
+            total += 4 * int(amplified["confirm_shots"]) * int(amplified["confirm_blocks"])
+        final = p["final"]
+        # Normal final replay: top confirmed + top raw + working + input.  Explicit
+        # recovery-queue candidates are added only after actual confirmation faults.
+        total += (2 * (2 * int(final["top_candidates"]) + 2)
+                  * int(final["shots"]) * int(final["blocks"]))
+        return int(total)
+
+    # --------------------------------------------------------------- orchestration
+    def acquire(self, progress=False, debug=False, plotDisp=False):
+        del progress, debug
+        self._preflight()
+        print("=" * 78)
+        print("BASIC AUTO TUNER %s  %s" % (BASIC_AUTOTUNER_REVISION, self.path))
+        print("  exact TLS step-5 objective; weak input never aborts; dry-run runner default")
+        print("  start: read %.6f/%d/%.1fus | pi %.6f @ %d / %.1fns"
+              % (self.initial["read_pulse_freq"], self.initial["read_pulse_gain"],
+                 self.initial["read_length"], self.initial["qubit_pi_freq"],
+                 self.initial["qubit_pi_gain"], 4000.0 * self.initial["sigma"]))
+        repetitions = self._estimate_default_measurement_repetitions()
+        passive_minutes = (repetitions * float(self.input_cfg["relax_delay"]) / 1e6 / 60.0)
+        print("  planned baseline workload: about %.0fk measurement repetitions; "
+              "passive-delay floor %.1f min (edge retries, fault recovery, program "
+              "upload/compilation add overhead)"
+              % (repetitions / 1000.0, passive_minutes))
+        print("=" * 78)
+
+        try:
+            self._run_stage("baseline", self._stage_baseline)
+            self._run_stage("resonator", self._stage_resonator)
+            self._run_stage("spectroscopy", self._stage_spectroscopy)
+            self._run_stage("iq_rabi", self._stage_iq_rabi)
+            # Break the control/readout chicken-and-egg loop: coherent averaged Rabi is
+            # a provisional preparation, then a broad direct-SS readout search makes the
+            # later exact comparison among all Rabi basins meaningful.  This bootstrap
+            # map is deliberately not write evidence; readout is re-optimized after the
+            # direct/amplified control choice.
+            self._run_stage("readout_grid", lambda: self._stage_readout_grid(
+                "readout_grid", local=False, record_evidence=False))
+            self._run_stage("rough_ss", self._stage_rough_single_shot)
+            self._run_stage("fine_frequency", lambda: self._stage_fine_frequency(
+                "fine_frequency"))
+            self._run_stage("parity_chevron", self._stage_parity_chevron)
+            self._run_stage("readout_after_control", lambda: self._stage_readout_grid(
+                "readout_after_control", local=True))
+            self._run_stage("readout_length", self._stage_readout_length)
+            self._run_stage("qubit_grid", lambda: self._stage_qubit_grid(
+                "qubit_grid", local=False))
+            self._run_stage("pulse_duration", self._stage_pulse_duration)
+            if bool(self.params.get("coordinate_descent_repeat", True)):
+                self._run_stage("readout_repeat", lambda: self._stage_readout_grid(
+                    "readout_repeat", local=True))
+                self._run_stage("qubit_repeat", lambda: self._stage_qubit_grid(
+                    "qubit_repeat", local=True))
+            # These amplified control refinements must be last.  A later one-pulse
+            # grid could otherwise undo a correction it is not sensitive enough to see.
+            self._run_stage("fine_frequency_post_duration",
+                            lambda: self._stage_fine_frequency(
+                                "fine_frequency_post_duration"))
+            self._run_stage("amplified_error", self._stage_amplified_error)
+            final = self._run_stage("final", self._stage_final)
+        except KeyboardInterrupt:
+            self._interrupted = True
+            final = None
+            self._log("run", "WARN", "operator interrupted; retaining completed measurements")
+
+        if final is None:
+            final = self._current_best_for_partial_run()
+        self._finalize(final)
+        try:
+            self._checkpoint()
+        except Exception as exc:
+            self._log("save", "WARN", "pickle save failed: %s" % exc)
+        try:
+            self.save_plot(plotDisp=plotDisp)
+        except Exception as exc:
+            self._log("plot", "WARN", "summary plot failed: %s" % exc)
+        return {"config": copy.deepcopy(self.input_cfg), "data": self.data}
+
+    def _finalize(self, final):
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.data["time"] = now
+        self.data["working"] = dict(self.working)
+        self.data["candidate_count"] = len(self._archive)
+        self.data["interrupted"] = bool(self._interrupted)
+        if self._archive:
+            observed = max(self._archive, key=lambda row: float(
+                row.get("fidelity", -np.inf)))
+            self.data["best_observed_single_block"] = {
+                key: observed[key] for key in (
+                    "read_pulse_freq", "read_pulse_gain", "read_length",
+                    "qubit_pi_freq", "qubit_pi_gain", "sigma", "fidelity",
+                    "fidelity_se", "fidelity_lcb_95", "label", "measurement_index")
+            }
+        if final is None:
+            self.data.update({
+                "outcome": "no_measurement", "success": False,
+                "failure": "no direct single-shot candidate was completed",
+                "best_found": None, "tuned": {}, "eligible_tuned": {},
+            })
+            return
+        best = dict(final)
+        # Convert arrays to ordinary lists only in the compact top-level result; full
+        # numpy evidence remains in confirmed_candidates and the pickle.
+        if isinstance(best.get("block_fidelities"), np.ndarray):
+            best["block_fidelities"] = best["block_fidelities"].tolist()
+        best["gate_length_ns"] = 4000.0 * float(best["sigma"])
+        self.data["best_found"] = best
+        tuned = {key: best[key] for key in TUNED_KEYS}
+        self.data["tuned"] = tuned
+        is_final = str(best.get("label", "")).startswith("final exact")
+        stable = bool(is_final
+                      and self._final_replay_completed
+                      and not self._interrupted
+                      and int(best.get("confirmation_blocks", 0))
+                      >= int(self.params["final"]["blocks"])
+                      and float(best.get("block_spread", np.inf))
+                      <= float(self.params["final"]["max_block_spread"]))
+        self.data["final_stable"] = stable
+        evidence = {
+            key: self._key_has_evidence(key, tuned[key]) for key in TUNED_KEYS
+        }
+        changed = [
+            key for key in TUNED_KEYS
+            if not self._tuned_values_match(
+                key, tuned[key], self._input_tuned_value(key))
+        ]
+        missing_evidence = [key for key in changed if not evidence[key]]
+        eligible = {}
+        if stable and changed and not missing_evidence:
+            # Config application is atomic at the full physical-tuple level.  Applying
+            # only the independently proven keys can create a readout/control hybrid
+            # that was never replayed.  Once every changed dimension has complete,
+            # exact-value evidence, writing the changed keys reconstructs ``best``
+            # exactly while naturally leaving already-equal input values untouched.
+            eligible = {key: tuned[key] for key in changed}
+        elif stable and missing_evidence:
+            self._log(
+                "eligibility", "WARN",
+                "best pulse is retained, but no config keys are write-eligible: "
+                "an atomic replayed tuple cannot be reconstructed because %s %s "
+                "not backed by a completed exact-value search"
+                % (", ".join(missing_evidence),
+                   "is" if len(missing_evidence) == 1 else "are"))
+        self.data["eligibility"] = {
+            "stable_final_replay": bool(stable),
+            "changed_keys": list(changed),
+            "exact_value_evidence": evidence,
+            "missing_evidence": list(missing_evidence),
+            "atomic_tuple_safe": bool(stable and not missing_evidence),
+            "write_needed": bool(changed),
+        }
+        self.data["eligible_tuned"] = eligible
+        self.data["success"] = True
+        warned = [row for row in self._stages if row.get("status") == "warning"]
+        report_warnings = [row.get("message") for row in self._report
+                           if row.get("level") == "WARN"]
+        self.data["warnings"] = ([row.get("error") for row in warned]
+                                 + report_warnings)
+        if self._interrupted:
+            self.data["outcome"] = "interrupted_with_candidate"
+        elif is_final:
+            self.data["outcome"] = ("completed_with_warnings"
+                                    if warned or report_warnings
+                                    else "completed")
+        else:
+            self.data["outcome"] = "partial_with_candidate"
+        self.data["failure"] = None
+        self._log("result", "OK",
+                  "best measured step-5 F=%.4f +/- %.4f%s"
+                  % (best["fidelity"], best["fidelity_se"],
+                     " (searched keys are write-eligible after stable final replay)"
+                     if eligible
+                     else " (reported, not write-eligible)"))
+
+    # ---------------------------------------------------------------- persistence
+    def _checkpoint(self, data=None):
+        """Atomically replace the lossless pickle checkpoint on the same volume."""
+        payload = self.data if data is None else data
+        temporary = self.pname + ".tmp"
+        with open(temporary, "wb") as stream:
+            pickle.dump(payload, stream, protocol=pickle.HIGHEST_PROTOCOL)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.pname)
+
+    @staticmethod
+    def _jsonable_summary(data):
+        keys = (
+            "revision", "fidelity_definition", "initial", "working", "best_found",
+            "tuned", "eligible_tuned", "eligibility", "outcome", "success", "failure",
+            "candidate_count", "interrupted", "final_stable", "time", "stages",
+            "report", "confirmation_failures", "final_confirmation_complete",
+            "unconfirmed_contenders",
+        )
+        return {key: data.get(key) for key in keys if key in data}
+
+    def save_data(self, data=None):
+        """Save compact numeric maps to HDF5; the complete nested archive is in pickle."""
+        if data is None:
+            data = self.data
+        print("Saving %s" % self.fname)
+        with self.datafile() as h5:
+            h5.attrs["summary"] = json.dumps(self._jsonable_summary(data), cls=NpEncoder)
+            h5.attrs["params"] = json.dumps(self.params, cls=NpEncoder)
+            h5.attrs["input_config"] = json.dumps(self.input_cfg, cls=NpEncoder)
+            for stage, mapping in (data.get("maps", {}) or {}).items():
+                if not isinstance(mapping, dict):
+                    continue
+                prefix = "maps/%s" % str(stage).replace("/", "_")
+                axes = mapping.get("axes", {})
+                if isinstance(axes, dict):
+                    for key, value in axes.items():
+                        try:
+                            arr = np.asarray(value)
+                            if np.issubdtype(arr.dtype, np.number):
+                                h5.add("%s/axis_%s" % (prefix, key), arr)
+                        except Exception:
+                            pass
+                for key, value in mapping.items():
+                    if key == "axes" or isinstance(value, (dict, str, bytes)):
+                        continue
+                    try:
+                        arr = np.asarray(value)
+                        if np.issubdtype(arr.dtype, np.complexfloating):
+                            h5.add("%s/%s_real" % (prefix, key), arr.real)
+                            h5.add("%s/%s_imag" % (prefix, key), arr.imag)
+                        elif np.issubdtype(arr.dtype, np.number) or arr.dtype == bool:
+                            h5.add("%s/%s" % (prefix, key), arr)
+                    except Exception:
+                        pass
+            # Compact archive columns make the direct measurements inspectable without
+            # loading Python pickle objects.
+            if self._archive:
+                columns = {
+                    "fidelity": [row.get("fidelity", np.nan) for row in self._archive],
+                    "fidelity_se": [row.get("fidelity_se", np.nan) for row in self._archive],
+                    "read_frequency_mhz": [row["read_pulse_freq"] for row in self._archive],
+                    "read_gain_dac": [row["read_pulse_gain"] for row in self._archive],
+                    "read_length_us": [row["read_length"] for row in self._archive],
+                    "qubit_frequency_mhz": [row["qubit_pi_freq"] for row in self._archive],
+                    "qubit_gain_dac": [row["qubit_pi_gain"] for row in self._archive],
+                    "sigma_us": [row["sigma"] for row in self._archive],
+                }
+                for key, value in columns.items():
+                    h5.add("candidate_archive/%s" % key, np.asarray(value))
+        try:
+            self._checkpoint(data)
+        except Exception as exc:
+            self._log("save", "WARN", "pickle save failed: %s" % exc)
+
+    def save_plot(self, plotDisp=False):
+        """Write one compact summary: direct fidelity history and the key search maps."""
+        fig, axes = plt.subplots(2, 3, figsize=(15, 8.5), constrained_layout=True)
+        axes = axes.ravel()
+        if self._archive:
+            fids = np.asarray([row.get("fidelity", np.nan) for row in self._archive])
+            axes[0].plot(np.arange(fids.size), fids, ".", ms=3, alpha=0.65)
+            if self.data.get("best_found"):
+                axes[0].axhline(self.data["best_found"]["fidelity"], color="tab:red",
+                                lw=1.2, label="selected final")
+                axes[0].legend(fontsize=8)
+            axes[0].set_ylim(0.45, 1.01)
+            axes[0].set_xlabel("direct step-5 measurement")
+            axes[0].set_ylabel("balanced assignment fidelity")
+            axes[0].set_title("All directly measured candidates")
+        else:
+            axes[0].text(0.5, 0.5, "no direct SS data", ha="center", va="center")
+
+        preferred = [
+            ("iq_rabi", "row_r2"),
+            ("parity_chevron", "parity_score"),
+            ("readout_grid", "fidelity"),
+            ("qubit_grid", "fidelity"),
+            ("pulse_duration", "fidelity"),
+        ]
+        for axis, (stage, field) in zip(axes[1:], preferred):
+            mapping = self._maps.get(stage, {})
+            value = mapping.get(field)
+            if value is None:
+                axis.text(0.5, 0.5, "%s not available" % stage,
+                          ha="center", va="center")
+                axis.set_axis_off()
+                continue
+            arr = np.asarray(value, dtype=float)
+            while arr.ndim > 2:
+                arr = np.nanmax(arr, axis=0)
+            if arr.ndim == 1:
+                axis.plot(arr, "o-")
+            else:
+                image = axis.imshow(arr, origin="lower", aspect="auto",
+                                    interpolation="nearest")
+                fig.colorbar(image, ax=axis, shrink=0.8)
+            axis.set_title("%s: %s" % (stage.replace("_", " "), field))
+        best = self.data.get("best_found")
+        if best:
+            title = ("Basic auto tune %s | F=%.4f +/- %.4f | read %.6f/%d/%.1fus | "
+                     "pi %.6f @ %d, %.1fns"
+                     % (self.path, best["fidelity"], best["fidelity_se"],
+                        best["read_pulse_freq"], best["read_pulse_gain"],
+                        best["read_length"], best["qubit_pi_freq"],
+                        best["qubit_pi_gain"], 4000.0 * best["sigma"]))
+        else:
+            title = "Basic auto tune %s | no completed direct SS candidate" % self.path
+        fig.suptitle(title)
+        fig.savefig(self.iname, dpi=160)
+        if plotDisp:
+            plt.show(block=False)
+            plt.pause(0.1)
+        else:
+            plt.close(fig)

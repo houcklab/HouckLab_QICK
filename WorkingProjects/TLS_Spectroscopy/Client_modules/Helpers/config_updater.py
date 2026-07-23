@@ -1,5 +1,6 @@
 import ast
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -45,6 +46,13 @@ def read_baseconfig(path=None):
     return out
 
 
+def baseconfig_source_hash(path=None):
+    """SHA-256 identity of the complete live config source, not just tuned literals."""
+    path = path or config_path()
+    with open(path, "rb") as stream:
+        return hashlib.sha256(stream.read()).hexdigest()
+
+
 def _fmt(v):
     if isinstance(v, (bool, np.bool_)):
         return repr(bool(v))
@@ -55,17 +63,61 @@ def _fmt(v):
     return s if "." in s else s + ".0"
 
 
-def update_baseconfig(updates, path=None, backup=True):
+def _same_literal_value(current, expected):
+    if isinstance(current, bool) or isinstance(expected, bool):
+        return type(current) is type(expected) and current == expected
+    try:
+        return abs(float(current) - float(expected)) < 1e-12
+    except (TypeError, ValueError, OverflowError):
+        return current == expected
+
+
+def update_baseconfig(updates, path=None, backup=True, expected=None,
+                      expected_source_hash=None):
     """Update literal values inside BaseConfig.  updates: {key: new_value}.
     Returns {key: (old_string, new_string)}.  Raises (and writes NOTHING) if any key is
-    missing, ambiguous, or if the post-edit file does not verify."""
+    missing, ambiguous, or if the post-edit file does not verify.
+
+    When ``expected`` is supplied, this is a literal compare-and-swap update.  When
+    ``expected_source_hash`` is supplied, *the entire source file* must still match the
+    snapshot captured before a long calibration run, including non-tuned physical-path
+    fields and expressions.  The source is checked again immediately before replacement
+    so a concurrent edit is never silently overwritten.
+    """
     path = path or config_path()
-    with open(path, encoding="utf-8") as f:
-        src = f.read()
+    # Hash and compare raw bytes so a Windows CRLF checkout is not normalized to LF
+    # between the startup snapshot and this compare-and-swap check.
+    with open(path, "rb") as f:
+        raw_src = f.read()
+    src = raw_src.decode("utf-8")
+    if expected_source_hash is not None:
+        live_hash = hashlib.sha256(raw_src).hexdigest()
+        if live_hash != str(expected_source_hash):
+            raise RuntimeError(
+                "compare-and-swap failed: the complete BaseConfig source changed "
+                "during calibration; refusing to write values onto an unmeasured "
+                "physical configuration")
     tree = ast.parse(src)
     node = _baseconfig_node(tree)
     lo, hi = node.lineno, node.end_lineno
     lines = src.splitlines(keepends=True)
+
+    current_vals = {}
+    for key_node, value_node in zip(node.value.keys, node.value.values):
+        if isinstance(key_node, ast.Constant) and isinstance(key_node.value, str):
+            try:
+                current_vals[key_node.value] = ast.literal_eval(value_node)
+            except (ValueError, TypeError):
+                pass
+    for key, wanted in (expected or {}).items():
+        if key not in current_vals:
+            raise RuntimeError(
+                "compare-and-swap failed: %r is not a literal in live BaseConfig" % key)
+        if not _same_literal_value(current_vals[key], wanted):
+            raise RuntimeError(
+                "compare-and-swap failed: BaseConfig[%r] changed during calibration "
+                "(%r at start, %r now); refusing to write a hybrid tuple"
+                % (key, wanted, current_vals[key]))
 
     changed = {}
     for key, val in updates.items():
@@ -101,12 +153,22 @@ def update_baseconfig(updates, path=None, backup=True):
             raise RuntimeError("value for %r changed by more than 1e-3 in formatting "
                                "(%r -> %r) -- refusing" % (key, val, _fmt(val)))
 
+    tmp = path + ".tmp_write"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(new_src)
+    with open(path, "rb") as f:
+        live_src = f.read().decode("utf-8")
+    if live_src != src:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise RuntimeError(
+            "BaseConfig file changed while the update was being prepared; refusing "
+            "to overwrite the concurrent edit")
     if backup:
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         shutil.copy2(path, path + ".bak_" + stamp)
-    tmp = path + ".tmp_write"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(new_src)
     os.replace(tmp, path)
     return changed
 
