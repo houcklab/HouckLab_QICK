@@ -55,6 +55,10 @@ P_QUBIT_SPEC = {
     "shots": 1000,
     "spec_amp": 7000,
     "spec_len_us": 1.0,
+    # QUA QubitSpec comments out the qubit reset -- it is a quasi-CW sweep, not a
+    # relax-between-shots pulsed one.  A few us clears the readout photons; the old
+    # 100 us default made every shot ~4x slower than the OPX for no parity reason.
+    "relax_delay_us": 5.0,
     "freq_min_mhz": 2300.0,
     "freq_max_mhz": 2700.0,
     "freq_step_mhz": 1.0,
