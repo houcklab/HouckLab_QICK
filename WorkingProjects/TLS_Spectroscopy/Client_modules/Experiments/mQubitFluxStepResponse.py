@@ -484,11 +484,10 @@ class QubitFluxStepResponse(ExperimentClass):
         """
         Convert measured qubit frequency back to the local flux-voltage branch.
 
-        This is intentionally local: it inverts the fitted spectrum on the branch
-        around the baseline and target voltages used in the step-response experiment
-        (plus a bounded pad so a normal past-target overshoot still inverts rather than
-        clamping).  Staying local avoids jumping to another SQUID branch when the
-        spectrum is not globally one-to-one.
+        This is intentionally local: it only inverts the fitted spectrum between
+        the baseline and target voltages used in the step-response experiment.
+        That avoids jumping to another SQUID branch when the spectrum is not
+        globally one-to-one.
         """
         frequency_ghz = np.asarray(frequency_ghz, dtype=float)
         if self.flux_fit_params is None:
@@ -503,12 +502,7 @@ class QubitFluxStepResponse(ExperimentClass):
             ok = np.isfinite(v) & np.isfinite(f)
             return v[ok], f[ok]
 
-        branch_voltage, branch_frequency = _sample_branch(0.25)
-        _bf_diff = np.diff(branch_frequency)
-        if branch_frequency.size < 3 or not (
-            np.all(_bf_diff >= -1e-9) or np.all(_bf_diff <= 1e-9)
-        ):
-            branch_voltage, branch_frequency = _sample_branch(0.0)
+        branch_voltage, branch_frequency = _sample_branch(0.0)
         if branch_voltage.size < 3:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 

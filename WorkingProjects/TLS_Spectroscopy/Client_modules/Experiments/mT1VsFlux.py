@@ -401,7 +401,10 @@ class FFT1Program(AveragerProgram):
                 max_iters=int(cfg.get("reset_max_iters", 3)))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 0.5)))
+                     # clear cavity photons ~10/kappa before the pi (matches QUA, which
+                     # idles the resonator ~5xT1 here so it is always fully depleted).
+                     # DEVICE-DEPENDENT: q4 kappa/2pi=0.363 MHz -> 10/kappa ~= 4.4 us.
+                     wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 4.4)))
         if cfg.get("do_pi", True):
             self.pulse(ch=cfg["qubit_ch"])
             self.sync_all(self.us2cycles(0.01))

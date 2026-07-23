@@ -66,6 +66,8 @@ class TransmissionVsFFGain(ExperimentClass):
 
     def _freq_vec(self):
         cfg = self.cfg
+        if "trans_freq_vec" in cfg:
+            return np.asarray(cfg["trans_freq_vec"], dtype=float)
         return np.linspace(cfg["trans_freq_start"], cfg["trans_freq_stop"],
                            int(cfg["TransNumPoints"]))
 

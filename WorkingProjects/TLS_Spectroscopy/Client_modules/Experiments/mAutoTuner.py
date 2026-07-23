@@ -24,7 +24,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 )
 
 
-AUTOTUNER_REVISION = "canonical-single-shot-v2"
+AUTOTUNER_REVISION = "canonical-single-shot-v3"
 
 
 
@@ -1591,7 +1591,16 @@ DEFAULTS = {
              "confirm_min_lever": 0.5, "confirm_min_points": 4,
              "confirm_max_shift_frac": 1.0, "confirm_shift_sigma": 3.0,
              "max_prior_shift_mhz": None, "allow_target_reacquisition": False},
-    "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500, "relax_delay_us": None},
+    "rough_pi": {"gain_max": 30000, "points": 61, "shots": 500,
+                 # The averaged hardware sweep is only a fast estimator.  If its
+                 # sinusoid fit fails, directly map the production step-5 objective
+                 # instead of terminating a tune that already has usable SS contrast.
+                 "direct_points": 17, "direct_coarse_shots": 250,
+                 "direct_confirm_shots": 600, "direct_confirm_blocks": 2,
+                 "direct_shortlist": 3, "direct_branch_margin": 0.025,
+                 "direct_min_contrast": 0.03,
+                 "direct_max_block_spread": 0.05,
+                 "relax_delay_us": None},
     "chi": {"span_mhz": 4.0, "points": 81, "shots": 500, "relax_delay_us": None},
     "readout_power": {"ratios": (0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4, 3.4),
                       "shots": 1500, "coarse_shots": 400,
@@ -2572,12 +2581,260 @@ class AutoTuner(ExperimentClass):
             self.w["drive_freq"] = self.w["qubit_freq"]
         return {"f": f_q}, {"f": max(0.05, 0.1 * fit["fwhm"])}
 
+    def _rough_pi_direct_point(self, cfg, gain, shots, strict, evidence):
+        """Measure one gain with the exact production single-shot state pair.
+
+        The broad ``RabiProgram`` is useful when its averaged-IQ trace is clean, but it
+        is not the pulse used by TLS step 5 and therefore cannot be the sole gate into
+        the rest of the optimizer.  These points use the same compiled state-pair
+        program and the same assignment objective as the manual calibration.
+        """
+        gain = int(gain)
+        drive_freq = float(self.w["drive_freq"])
+        ss = self._balanced_single_shot(
+            cfg, drive_freq, gain, int(shots), strict=bool(strict))
+        row = {
+            "freq": drive_freq, "gain": gain,
+            "fid": float(ss["fidelity"]),
+            "fid_se": float(ss.get("fidelity_se", np.inf)),
+            "visibility": float(ss.get("visibility", np.nan)),
+            "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
+            "step5_ge_fidelity": float(ss.get("step5_ge_fidelity", np.nan)),
+            "reverse_eg_fidelity": float(ss.get("reverse_eg_fidelity", np.nan)),
+            "sep": float(ss["sep_sigma"]),
+            "outlier": float(ss["outlier_frac"]),
+            "verified": bool(ss.get("ok", True)), "ss": ss,
+        }
+        entry = self._record_empirical_candidate(
+            "rough_pi", row, cfg["read_pulse_freq"], cfg["read_pulse_gain"],
+            drive_freq, gain, int(shots), bool(strict), evidence=str(evidence),
+            measured_cfg=cfg)
+        if entry is not None:
+            row["archive_index"] = int(entry["index"])
+        return row
+
+    def _rough_pi_direct_fallback(self, cfg, reason):
+        """Find a provisional first-lobe pi seed from the canonical SS objective.
+
+        This is deliberately non-parametric.  A direct population map need not look
+        sinusoidal after thresholding, and fitting it to a Rabi model merely recreates
+        the failed hard gate.  We locate all local maxima statistically compatible with
+        the best one and choose the *lowest-gain* maximum, which is the branch-safe
+        choice when pi, 3pi, ... give comparable one-pulse fidelity.  Independent
+        blocks then remeasure that short list.  The result remains provisional: the
+        later 2-D map, signed frequency/amplitude hierarchy, and held-out audits still
+        decide whether it is certifiable.
+        """
+        P = self.P["rough_pi"]
+        gain_max = int(np.clip(int(P["gain_max"]), 30, 32000))
+        current = int(np.clip(int(self.w["pi_gain"]), 1, gain_max))
+        npts = max(int(P.get("direct_points", 17)), 9)
+        broad = np.round(np.linspace(0, gain_max, npts)).astype(int)
+        local = np.round(current * np.asarray(
+            [0.50, 0.65, 0.80, 0.90, 1.00, 1.10, 1.20, 1.35, 1.50])).astype(int)
+        gains = np.unique(np.clip(np.r_[broad, local, current], 0, gain_max))
+
+        coarse, direct_errors = [], []
+        for idx in np.random.permutation(gains.size):
+            gain = int(gains[int(idx)])
+            try:
+                coarse.append(self._rough_pi_direct_point(
+                    cfg, gain, int(P.get("direct_coarse_shots", 250)),
+                    strict=False, evidence="direct_first_lobe_coarse"))
+            except Exception as err:
+                direct_errors.append({
+                    "stage": "coarse", "gain": gain,
+                    "error": "%s: %s" % (type(err).__name__, err),
+                })
+        ordered = sorted(coarse, key=lambda r: int(r["gain"]))
+        finite = [r for r in ordered
+                  if np.isfinite(r.get("fid", np.nan))
+                  and np.isfinite(r.get("fid_se", np.nan))]
+        if not finite:
+            # This is not made fatal.  Keeping the input seed lets the rest of the graph
+            # gather useful evidence and ensures the best already measured control is
+            # still returned if the hardware path remains unavailable.
+            self.node_data.setdefault("rough_pi", {}).update({
+                "direct_coarse": coarse, "direct_confirmed": [],
+                "direct_reason": str(reason), "direct_status": "no_finite_points",
+                "direct_errors": direct_errors,
+            })
+            self._say(
+                "rough_pi", "WARN",
+                "%s; the canonical fallback produced no finite point. Keeping input "
+                "gain %d as a provisional seed so downstream direct searches can "
+                "continue; writes remain evidence-gated." % (reason, current))
+            return current, max(0.25 * current, 100.0), None
+
+        z = 1.96
+        null = min(finite, key=lambda r: int(r["gain"]))
+        positive = [r for r in finite if int(r["gain"]) > 0]
+        if not positive:
+            self.node_data.setdefault("rough_pi", {}).update({
+                "direct_coarse": coarse, "direct_confirmed": [],
+                "direct_reason": str(reason), "direct_status": "no_positive_points",
+                "direct_errors": direct_errors,
+            })
+            return current, max(0.25 * current, 100.0), None
+
+        by_gain = sorted(positive, key=lambda r: int(r["gain"]))
+        score = np.asarray([
+            fidelity_lower_bound(r["fid"], r["fid_se"], z) for r in by_gain
+        ], dtype=float)
+        peak_indices = []
+        for j in range(len(by_gain)):
+            left = score[j - 1] if j > 0 else -np.inf
+            right = score[j + 1] if j + 1 < len(by_gain) else -np.inf
+            if score[j] >= left and score[j] >= right:
+                peak_indices.append(j)
+        peaks = [by_gain[j] for j in peak_indices]
+        best = max(by_gain, key=lambda r: fidelity_lower_bound(
+            r["fid"], r["fid_se"], z))
+        frontier = fidelity_lower_bound(best["fid"], best["fid_se"], z)
+        null_ucb = float(null["fid"] + z * null["fid_se"])
+        response_floor = null_ucb + float(P.get("direct_min_contrast", 0.03))
+        margin = float(P.get("direct_branch_margin", 0.025))
+        credible_peaks = [
+            r for r in peaks
+            if float(r["fid"]) >= response_floor
+            and float(r["fid"] + z * r["fid_se"]) >= frontier - margin
+        ]
+        response_seen = bool(credible_peaks or float(best["fid"]) >= response_floor)
+        seed = (min(credible_peaks, key=lambda r: int(r["gain"]))
+                if credible_peaks else best)
+
+        # Confirm the branch-safe peak, the strongest other local peaks, and the input
+        # incumbent.  Candidate order is randomized inside each complete block by the
+        # shared confirmation machinery, exposing rather than hiding common-mode drift.
+        ranked_peaks = sorted(
+            peaks, key=lambda r: fidelity_lower_bound(
+                r["fid"], r["fid_se"], z), reverse=True)
+        shortlist = [(float(self.w["drive_freq"]), int(seed["gain"]))]
+        for row in ranked_peaks:
+            key = (float(self.w["drive_freq"]), int(row["gain"]))
+            if key not in shortlist:
+                shortlist.append(key)
+            if len(shortlist) >= int(P.get("direct_shortlist", 3)):
+                break
+        incumbent_key = (float(self.w["drive_freq"]), current)
+        if incumbent_key not in shortlist:
+            shortlist.append(incumbent_key)
+
+        def measure(_freq, gain):
+            try:
+                return self._rough_pi_direct_point(
+                    cfg, int(gain), int(P.get("direct_confirm_shots", 600)),
+                    strict=True, evidence="direct_first_lobe_confirmation")
+            except Exception as err:
+                direct_errors.append({
+                    "stage": "confirmation", "gain": int(gain),
+                    "error": "%s: %s" % (type(err).__name__, err),
+                })
+                return {
+                    "freq": float(self.w["drive_freq"]), "gain": int(gain),
+                    "fid": np.nan, "fid_se": np.inf, "visibility": np.nan,
+                    "step5_fidelity": np.nan, "step5_ge_fidelity": np.nan,
+                    "reverse_eg_fidelity": np.nan, "sep": np.nan,
+                    "outlier": np.inf, "verified": False,
+                }
+
+        confirmed = self._confirm_candidate_blocks(
+            shortlist, measure, int(P.get("direct_confirm_blocks", 2)),
+            max_disagreement=float(P.get("direct_max_block_spread", 0.05)))
+        usable = [r for r in confirmed
+                  if bool(r.get("verified", False))
+                  and np.isfinite(r.get("fid", np.nan))
+                  and np.isfinite(r.get("fid_se", np.nan))
+                  and int(r.get("gain", 0)) > 0]
+        chosen = seed
+        status = "coarse_provisional"
+        if usable:
+            confirmed_best = max(usable, key=lambda r: fidelity_lower_bound(
+                r["fid"], r["fid_se"], z))
+            confirmed_frontier = fidelity_lower_bound(
+                confirmed_best["fid"], confirmed_best["fid_se"], z)
+            seed_confirmed = next(
+                (r for r in usable if int(r["gain"]) == int(seed["gain"])), None)
+            # Confirmation may strengthen or weaken confidence in the first-lobe
+            # sentinel, but it must never promote a later odd-pi branch merely because
+            # that branch won a noisy remeasurement.  If the first lobe does not
+            # reproduce, keep its coarse estimate explicitly provisional; subsequent
+            # local maps can refine or reject it without silently returning to 3pi.
+            if (seed_confirmed is not None
+                    and float(seed_confirmed["fid"]
+                              + z * seed_confirmed["fid_se"])
+                        >= confirmed_frontier - margin):
+                chosen = seed_confirmed
+                status = "independently_confirmed"
+            elif seed_confirmed is not None:
+                status = "first_lobe_confirmation_disagreed"
+            else:
+                status = "first_lobe_confirmation_unstable"
+
+        pi0 = int(chosen["gain"])
+        other = np.asarray([abs(int(r["gain"]) - pi0) for r in by_gain
+                            if int(r["gain"]) != pi0], dtype=float)
+        spacing = float(np.min(other)) if other.size else 0.10 * pi0
+        anchor_err = max(spacing, 0.10 * pi0, 20.0)
+        self.node_data.setdefault("rough_pi", {}).update({
+            "direct_coarse": coarse, "direct_confirmed": confirmed,
+            "direct_reason": str(reason), "direct_status": status,
+            "direct_errors": direct_errors,
+            "direct_null": dict(null), "direct_seed": dict(seed),
+            "direct_chosen": dict(chosen), "direct_response_seen": response_seen,
+            "direct_readout": {
+                "freq": float(cfg["read_pulse_freq"]),
+                "gain": int(cfg["read_pulse_gain"]),
+                "length_us": float(cfg["read_length"]),
+            },
+        })
+        self._say(
+            "rough_pi", "WARN",
+            "%s; canonical step-5 first-lobe fallback selected %d DAC "
+            "(F=%.3f +/- %.3f, %s, null F=%.3f). This is a provisional anchor, "
+            "not a reason to abort: the joint one-pulse map and signed/held-out "
+            "coherent audits still have to pass."
+            % (reason, pi0, float(chosen["fid"]), float(chosen["fid_se"]),
+               status.replace("_", " "), float(null["fid"])))
+        if not response_seen:
+            self._say(
+                "rough_pi", "WARN",
+                "the direct coarse map did not resolve a peak above its no-pulse "
+                "control; continuing with the best empirical seed, while automatic "
+                "writes remain blocked unless later independent stages recover")
+        return pi0, anchor_err, chosen
+
     def _cal_rough_pi(self):
         P = self.P["rough_pi"]
         cfg = self._cfg_for("rough_pi")
         cfg["shots"] = cfg["reps"] = int(P["shots"])
         cfg["drive_freq"] = float(self.w["drive_freq"])
         npts = int(P["points"])
+
+        # Resonator spectroscopy estimates a cavity pole; it does not prove that the
+        # pole itself is a useful discrimination frequency.  Until the joint readout
+        # search has passed, acquire the rough control scan through the exact readout
+        # tuple that the protected baseline already demonstrated.  This avoids the
+        # observed failure where moving 7249.100 -> 7248.877 destroyed the Rabi trace
+        # before readout optimization even began.
+        protected = getattr(self, "protected_control", None)
+        if (isinstance(protected, dict)
+                and protected.get("aggregate", {}).get("measurement_valid", False)
+                and not self.w.get("readout_verified", False)):
+            control = protected["tuple"]
+            cfg.update({
+                "read_pulse_freq": float(control["read_pulse_freq"]),
+                "read_pulse_gain": int(control["read_pulse_gain"]),
+                "read_length": float(control["read_length"]),
+                "res_phase": float(control["res_phase"]),
+            })
+            cfg["read_pulse_length"] = readout_drive_length_us(cfg)
+            self._say(
+                "rough_pi", "OK",
+                "using the protected readout %.4f MHz/%d DAC/%.1f us; the newly "
+                "measured resonator pole is not assumed to be a discrimination optimum"
+                % (cfg["read_pulse_freq"], cfg["read_pulse_gain"],
+                   cfg["read_length"]))
 
         def swept(gain_max):
             """Opposed hardware sweeps cancel first-order time drift pointwise."""
@@ -2616,20 +2873,45 @@ class AutoTuner(ExperimentClass):
                   + (zr.imag - zr.imag.mean()) * u[1])
             return gf, sig, dr, fit_rabi(gf, sig), fit_rabi(gf, sf), fit_rabi(gf, sr)
 
-        gains, sig, drift, fit, fit_fwd, fit_rev = swept(int(P["gain_max"]))
-        if fit["ok"] and np.isfinite(fit["period"]) and fit["period"] < 0.25 * gains.max():
-            new_max = int(np.clip(2.5 * fit["period"], 200, 32000))
-            self._say("rough_pi", "OK", "period %.0f DAC is small next to the %d sweep -- "
-                      "re-sweeping 0-%d so it is properly sampled"
-                      % (fit["period"], int(gains.max()), new_max))
-            gains, sig, drift, fit, fit_fwd, fit_rev = swept(new_max)
+        sweep_error = None
+        try:
+            gains, sig, drift, fit, fit_fwd, fit_rev = swept(int(P["gain_max"]))
+            if (fit["ok"] and np.isfinite(fit["period"])
+                    and fit["period"] < 0.25 * gains.max()):
+                new_max = int(np.clip(2.5 * fit["period"], 200, 32000))
+                self._say("rough_pi", "OK", "period %.0f DAC is small next to the %d "
+                          "sweep -- re-sweeping 0-%d so it is properly sampled"
+                          % (fit["period"], int(gains.max()), new_max))
+                gains, sig, drift, fit, fit_fwd, fit_rev = swept(new_max)
+        except Exception as err:
+            sweep_error = "%s: %s" % (type(err).__name__, err)
+            gains = np.asarray([], dtype=float)
+            sig = drift = np.asarray([], dtype=float)
+            fit = {"ok": False, "r2": 0.0, "yfit": np.asarray([], dtype=float)}
+            fit_fwd = fit_rev = fit
         self.node_data["rough_pi"] = {"gains": gains, "sig": sig, "fit": fit["yfit"],
-                                      "forward_reverse_halfdiff": drift}
+                                      "forward_reverse_halfdiff": drift,
+                                      "averaged_sweep_error": sweep_error}
         if not fit["ok"]:
-            raise TunerError("rough_pi: no clean Rabi (r2 %.2f). Check drive freq/power "
-                             "or readout." % fit["r2"])
+            detail = ("averaged Rabi sweep failed (%s)" % sweep_error
+                      if sweep_error else
+                      "averaged Rabi fit had r2 %.2f" % fit.get("r2", 0.0))
+            pi0, anchor_err, _ = self._rough_pi_direct_fallback(cfg, detail)
+            self.w["pi_gain"] = pi0
+            self.w["pi_gain_anchor_err"] = float(anchor_err)
+            self.w["rough_pi_source"] = "canonical_direct_first_lobe"
+            self.w["updated"].add("qubit_pi_gain")
+            return {"g": pi0}, {"g": max(3.0 * anchor_err, 0.01 * pi0)}
         pi0 = int(round(min(fit["pi_gain"], 32000)))
-        pi0 = self._harmonic_check(pi0, cfg, int(P["shots"]))
+        try:
+            pi0 = self._harmonic_check(pi0, cfg, int(P["shots"]))
+        except TunerError as err:
+            pi0, anchor_err, _ = self._rough_pi_direct_fallback(cfg, str(err))
+            self.w["pi_gain"] = pi0
+            self.w["pi_gain_anchor_err"] = float(anchor_err)
+            self.w["rough_pi_source"] = "canonical_direct_first_lobe"
+            self.w["updated"].add("qubit_pi_gain")
+            return {"g": pi0}, {"g": max(3.0 * anchor_err, 0.01 * pi0)}
         pass_spread = 0.0
         if fit_fwd["ok"] and fit_rev["ok"]:
             pass_spread = 0.5 * abs(fit_fwd["pi_gain"] - fit_rev["pi_gain"])
@@ -2638,6 +2920,7 @@ class AutoTuner(ExperimentClass):
                          else 0.0, pass_spread, anchor_floor, 2.0)
         self.w["pi_gain"] = pi0
         self.w["pi_gain_anchor_err"] = float(anchor_err)
+        self.w["rough_pi_source"] = "averaged_rabi_plus_harmonic_check"
         self.w["updated"].add("qubit_pi_gain")
         self._say("rough_pi", "OK", "pi gain %d +/- %.0f DAC (opposed sweeps, period "
                   "%.0f, r2 %.2f)" % (pi0, anchor_err, fit["period"], fit["r2"]))

@@ -117,7 +117,12 @@ P4_LONG_TIME = {
     "run": False,
     "advanced_fit": False,
     "shots": 100,
-    "relax_delay_us": 100.0,
+    # Between-shot passive relaxation. QUA does a full reset here (q6 meta_dict
+    # reset_time = 1000 us, >> T1); the transferable structure is a full ~5xT1
+    # relax, not the raw q6 number. For q4 (T1 ~140 us, poorly determined),
+    # 5xT1 = 700 us (~0.7% residual excited pop). The old 100 us < T1 left
+    # residual excited population that biased the long-time dip frequency.
+    "relax_delay_us": 700.0,
     "spec_amp": 7000,
     "spec_len_us": 0.5,
     "freq_min": 2250.0,
@@ -286,6 +291,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     cfg["trans_freq_start"] = p["freq_min"]
     cfg["trans_freq_stop"] = p["freq_max"]
     cfg["TransNumPoints"] = len(f_vec)
+    cfg["trans_freq_vec"] = f_vec
     cfg["ff_gain_vec"] = dc_vec
     cfg["ff_settle_us"] = 20.0
     exp = TransmissionVsFFGain(
@@ -695,7 +701,10 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             p["reset_oper"] = str(rec["oper"])
             p["reset_ground_below"] = bool(rec["ground_below"])
     freq_step_mhz = p.get("freq_step_mhz", None)
-    if freq_step_mhz is not None and FLUX_FIT_PARAMS is not None:
+    if freq_step_mhz is not None:
+        if FLUX_FIT_PARAMS is None:
+            raise RuntimeError("Step 6 freq_step_mhz needs FLUX_FIT_PARAMS: run step 2 "
+                               "and paste the printed values at the top of this file.")
         dc_vec = _build_freq_uniform_dc_vec(p)
     else:
         dc_vec = _dc_vec(p)
@@ -734,7 +743,10 @@ def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correctio
     gc.collect()
     p = P6_FULL_T1
     freq_step_mhz = p.get("freq_step_mhz", None)
-    if freq_step_mhz is not None and FLUX_FIT_PARAMS is not None:
+    if freq_step_mhz is not None:
+        if FLUX_FIT_PARAMS is None:
+            raise RuntimeError("Step 6 freq_step_mhz needs FLUX_FIT_PARAMS: run step 2 "
+                               "and paste the printed values at the top of this file.")
         dc_vec = _build_freq_uniform_dc_vec(p)
     else:
         dc_vec = _dc_vec(p)

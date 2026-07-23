@@ -769,6 +769,82 @@ BaseConfig = {
     "qubit_length": 0.5, "sigma": 0.125, "ff_park_gain": 0,
 }
 
+print("\n== rough pi: broken averaged sweep falls back to canonical first lobe ==")
+_fallback_np_state = np.random.get_state()
+_fallback_dev = VirtualQubit(np.random.default_rng(505))
+_fallback_dev.PI_GAIN = 8000.0
+install_simulator(_fallback_dev)
+
+
+class _FlatRabi:
+    """A compiled/averaged gain sweep with no usable amplitude response."""
+    def __init__(self, soccfg, cfg):
+        self.cfg = cfg
+
+    def acquire(self, soc, load_pulses=True, progress=False):
+        gains = (self.cfg["start"]
+                 + self.cfg["step"] * np.arange(self.cfg["expts"]))
+        flat = np.ones(gains.size)
+        return gains, [[flat]], [[0.25 * flat]]
+
+
+T.RabiProgram = _FlatRabi
+
+
+class _RoughFallbackTuner(T.AutoTuner):
+    def _balanced_single_shot(self, cfg, drive_freq, pi_gain, shots, strict=True):
+        # A projective single-shot readout of a partially rotated state is a g/e
+        # mixture.  The general virtual device above models ensemble-averaged alpha and
+        # is intentionally not used for this branch-selection regression.
+        p_e = np.sin(np.pi * float(pi_gain) / (2.0 * _fallback_dev.PI_GAIN)) ** 2
+        fid = 0.5 + 0.40 * p_e
+        return {"fidelity": fid, "fidelity_se": 0.004,
+                "visibility": 2.0 * fid - 1.0,
+                "step5_fidelity": fid, "step5_ge_fidelity": fid,
+                "reverse_eg_fidelity": fid,
+                "sep_sigma": 3.0 * p_e, "outlier_frac": 0.01, "ok": True}
+
+
+_fallback_cfg = dict(BaseConfig)
+_fallback_cfg.update(qubit_freq=_fallback_dev.F_Q,
+                     qubit_pi_freq=_fallback_dev.F_Q,
+                     qubit_pi_gain=24000)
+_fallback_tuner = _RoughFallbackTuner(
+    soc=None, soccfg=None, path="rough_fallback", outerFolder=tempfile.gettempdir(),
+    suffix="RoughFallback", cfg=_fallback_cfg,
+    params={"rough_pi": {"direct_points": 17, "direct_coarse_shots": 160,
+                         "direct_confirm_shots": 250,
+                         "direct_confirm_blocks": 2}})
+_fallback_tuner.w = {
+    "read_pulse_freq": float(_fallback_cfg["read_pulse_freq"]),
+    "read_pulse_gain": int(_fallback_cfg["read_pulse_gain"]),
+    "read_length": float(_fallback_cfg["read_length"]),
+    "res_phase": float(_fallback_cfg["res_phase"]),
+    "relax_delay": float(_fallback_cfg["relax_delay"]),
+    "qubit_freq": float(_fallback_cfg["qubit_freq"]),
+    "drive_freq": float(_fallback_cfg["qubit_pi_freq"]),
+    "pi_gain": int(_fallback_cfg["qubit_pi_gain"]),
+    "sigma_us": float(_fallback_cfg["sigma"]), "drag_beta": 0.0,
+    "readout_verified": False, "updated": set(),
+}
+_fallback_tuner.protected_control = {
+    "tuple": _fallback_tuner._working_control_tuple(),
+    "aggregate": {"measurement_valid": True},
+}
+_fallback_tuner._cal_rough_pi()
+check("flat Rabi does not abort and invokes the canonical direct fallback",
+      _fallback_tuner.w.get("rough_pi_source") == "canonical_direct_first_lobe"
+      and _fallback_tuner.node_data["rough_pi"].get("direct_coarse"))
+check("direct fallback chooses pi's first lobe instead of the equally bright 3pi seed",
+      abs(_fallback_tuner.w["pi_gain"] - _fallback_dev.PI_GAIN)
+          / _fallback_dev.PI_GAIN < 0.20,
+      "%d vs first pi %.0f (input was 24000=3pi)"
+      % (_fallback_tuner.w["pi_gain"], _fallback_dev.PI_GAIN))
+np.random.set_state(_fallback_np_state)
+
+# Restore the normal virtual hardware programs for the complete graph below.
+install_simulator(dev)
+
 _fingerprint_base = T.pulse_fingerprint(BaseConfig)
 _fingerprint_variant_cfg = dict(BaseConfig)
 _fingerprint_variant_cfg.update(
@@ -1423,7 +1499,7 @@ check("baseline-only validation measures the exact input four times and starts n
       and _control_out["tuned"] == {})
 check("saved output is stamped with the executable tuner revision",
       _control_out["autotuner_revision"] == T.AUTOTUNER_REVISION
-      and T.AUTOTUNER_REVISION == "canonical-single-shot-v2")
+      and T.AUTOTUNER_REVISION == "canonical-single-shot-v3")
 
 
 class _LowStartSearchTuner(_ControlOnlyTuner):
