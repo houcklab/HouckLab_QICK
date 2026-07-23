@@ -228,7 +228,14 @@ class ActiveResetProbe(ExperimentClass):
                          "purity": pur, "ge": ge})
             print(f"    res_phase={ph:6.1f} deg: lower={sl:>9d} upper={su:>9d}  "
                   f"purity(lower)={pur:.2f}")
-        best = max(rows, key=lambda r: r["sep_lower"])
+        # Pick the phase that CONCENTRATES the |e>-|g> separation on the lower (I) quadrature
+        # -- highest purity -- not merely the largest lower separation.  On a marginal
+        # readout the raw reads do not conserve |e>-|g| across phases (noise/drift), so a
+        # phase can have a big lower separation AND an even bigger upper one (split, not
+        # aligned).  Purity is what makes the single-half feedback discrimination robust.
+        max_sl = max((r["sep_lower"] for r in rows), default=1) or 1
+        eligible = [r for r in rows if r["sep_lower"] >= 0.3 * max_sl] or rows
+        best = max(eligible, key=lambda r: r["purity"])
         gl, el = best["ge"]["g"]["lower"], best["ge"]["e"]["lower"]
         thr = int(round(0.5 * (gl + el)))
         ground_below = gl < el
