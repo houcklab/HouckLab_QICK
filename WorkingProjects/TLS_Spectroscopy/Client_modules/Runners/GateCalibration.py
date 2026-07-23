@@ -54,9 +54,8 @@ P_QUBIT_SPEC = {
     "run": True,
     "shots": 1000,
     "spec_amp": 7000,
-    # A strongly-driven qubit line is power-broadened to many MHz; a longer saturation tone
-    # gives a bigger, cleaner feature (the QM two-tone spec uses 20 us).  10 us is a good
-    # balance of contrast and run time; raise toward 20 if the feature is weak.
+    # A strongly-driven qubit line is power-broadened over many MHz; a longer saturation tone
+    # gives a bigger feature (the QM two-tone spec uses 20-30 us).  Raise toward 20 if weak.
     "spec_len_us": 10.0,
     # Quasi-CW sweep (no qubit reset, like QUA); a few us clears the readout photons.  The old
     # 100 us default made every shot ~4x slower than the OPX for no parity reason.
@@ -65,16 +64,23 @@ P_QUBIT_SPEC = {
     "freq_min_mhz": 2490.0,
     "freq_max_mhz": 2580.0,
     "freq_step_mhz": 0.5,
-    # Detector: a WIDE baseline (spec_baseline_frac of the span) removes only the slow
-    # resonator background -- a narrow one would erase a power-broadened line.  A matched
-    # filter (smooth the complex residual over ~spec_smooth_mhz) then finds the line whether
-    # it is broad or sharp.  The strongest line is always reported; spec_passes independent
-    # sweeps + spec_min_snr set the confidence tag (reproduced + above SNR = high).
-    "spec_baseline_frac": 0.5,
-    "spec_smooth_mhz": 5.0,
+    # Read at the resonator dip for the strongest dispersive contrast (what the QM two-tone
+    # spec and the flux-spec do).  None -> use the step-1 transmission dip if it was run this
+    # session, else fall back to BaseConfig['read_pulse_freq'].  Set a number to force it.
+    "spec_read_freq_mhz": None,
+    # Detector (see locate_line): the qubit is a BROAD bump, the spurious features are 1-2
+    # point spikes.  A GLOBAL degree-spec_detrend_deg polynomial removes only the slow
+    # resonator background (it cannot bend to erase a localized bump), then smoothing over
+    # ~spec_smooth_mhz keeps the broad qubit and averages the spikes away.  The strongest line
+    # is always reported; spec_passes + spec_min_snr set the confidence tag.
+    "spec_smooth_mhz": 6.0,
+    "spec_detrend_deg": 2,
     "spec_min_snr": 3.0,
     "spec_passes": 2,
 }
+
+# Set by run_transmission (step 1) so the spec/Rabis can read at the measured resonator dip.
+_RESONATOR_DIP_MHZ = None
 
 P_SS_CAL = {
     "run": True,
@@ -167,6 +173,10 @@ def run_transmission(outer_folder, soc, soccfg):
     exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                        suffix="GateCal_Transmission", cfg=cfg, f_vec=f_vec)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
+    global _RESONATOR_DIP_MHZ
+    _RESONATOR_DIP_MHZ = float(exp.data.get("resonator_dip_freq_mhz", BaseConfig["read_pulse_freq"]))
+    print(f"[transmission] spec/Rabis will read at the dip {_RESONATOR_DIP_MHZ:.3f} MHz "
+          f"unless overridden.")
     plt.close("all"); gc.collect()
     return exp
 
@@ -220,13 +230,20 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_pulse_style": "const",
         "spec_min_snr": float(p.get("spec_min_snr", 3.0)),
         "spec_passes": int(p.get("spec_passes", 2)),
-        "spec_baseline_frac": float(p.get("spec_baseline_frac", 0.5)),
-        "spec_smooth_mhz": float(p.get("spec_smooth_mhz", 5.0)),
+        "spec_smooth_mhz": float(p.get("spec_smooth_mhz", 6.0)),
+        "spec_detrend_deg": int(p.get("spec_detrend_deg", 2)),
     })
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
+    # Read at the resonator dip for contrast: explicit override, else the step-1 dip, else base.
+    read_freq = p.get("spec_read_freq_mhz")
+    if read_freq is None:
+        read_freq = _RESONATOR_DIP_MHZ if _RESONATOR_DIP_MHZ is not None else BaseConfig["read_pulse_freq"]
+    cfg["read_pulse_freq"] = float(read_freq)
     print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
           f"(step {p['freq_step_mhz']:g}) @ gain {p['spec_amp']}, {p.get('spec_passes', 2)} "
-          f"pass(es), SNR>={p.get('spec_min_snr', 4.0):g} at ff_gain={FF_HOLD_GAIN}")
+          f"pass(es), reading at {cfg['read_pulse_freq']:.3f} MHz"
+          + ("" if _RESONATOR_DIP_MHZ is not None or p.get('spec_read_freq_mhz') is not None
+             else " (run step 1 first to read at the measured dip)"))
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                     suffix="GateCal_Qubit_Spec", cfg=cfg,
                     f_min=float(p["freq_min_mhz"]), f_max=float(p["freq_max_mhz"]),
