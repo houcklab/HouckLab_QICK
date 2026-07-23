@@ -25,21 +25,21 @@ BaseConfig = {
     "res_phase": 0,
 
     "read_pulse_style": "const",
-    "read_length": 20.0,
+    "read_length": 30.0,
     # Generator tone extends beyond the delayed ADC window by this guard.  The same
     # canonical pulse helper is used by AutoTuner and all production consumers.
     "readout_guard_us": 1.0,
-    "read_pulse_gain": 4300,
-    "read_pulse_freq": 7248.95,
+    "read_pulse_gain": 5000,
+    "read_pulse_freq": 7249.1,
 
     "qubit_pulse_style": "arb",
-    "qubit_freq": 2512.0,
-    "qubit_pi_freq": 2512.0,
-    "qubit_pi_gain": 11500,
-    "qubit_pi2_gain": 5750,
+    "qubit_freq": 2534.7,
+    "qubit_pi_freq": 2534.7,
+    "qubit_pi_gain": 5790,
+    "qubit_pi2_gain": 2895,
     "qubit_gain": 7000,
     "qubit_length": 0.5,
-    "sigma": 0.125,
+    "sigma": 0.25,
     # Must be None for an arb Gaussian.  A populated plateau field is interpreted as a
     # flat-top selector by some QM-Team programs regardless of qubit_pulse_style.
     "flat_top_length": None,
