@@ -953,7 +953,8 @@ print("\n== runner history and saved artifacts preserve write-safety evidence ==
 _runner_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Runners",
                                             "AutoTune.py"))
 with open(_runner_path, encoding="utf-8") as _rf:
-    _runner_tree = ast.parse(_rf.read(), filename=_runner_path)
+    _runner_src = _rf.read()
+    _runner_tree = ast.parse(_runner_src, filename=_runner_path)
 _runner_assignments = {
     target.id: node.value
     for node in _runner_tree.body if isinstance(node, ast.Assign)
@@ -970,10 +971,14 @@ _runner_main_guard = next(
     n for n in _runner_tree.body
     if isinstance(n, ast.If)
     and any(isinstance(x, ast.Name) and x.id == "__name__" for x in ast.walk(n.test)))
-check("a failed hardware run now returns a nonzero process exit status",
+check("the runner propagates an explicit process status",
       any(isinstance(n, ast.Raise) and isinstance(n.exc, ast.Call)
           and isinstance(n.exc.func, ast.Name) and n.exc.func.id == "SystemExit"
           for n in ast.walk(_runner_main_guard)))
+check("a completed best-effort search is not mislabeled as a process crash",
+      "best empirical candidate returned" in _runner_src
+      and "return 0" in _runner_src
+      and "no usable candidate was measured" in _runner_src)
 _history_node = next(n for n in _runner_tree.body
                      if isinstance(n, ast.FunctionDef) and n.name == "_history_entry")
 _select_node = next(n for n in _runner_tree.body
@@ -1116,6 +1121,50 @@ class _StubTuner(T.AutoTuner):
                  res_phase=float(self.w["res_phase"]),
                  relax_delay=float(self.w["relax_delay"]))
         return c
+
+
+print("\n== best-found archive survives a later certification failure ==")
+
+
+class _BestEffortAcquireTuner(T.AutoTuner):
+    def maintain(self):
+        measured_cfg = self._cfg_for("pi_fidelity")
+        for fid, gain in ((0.60, 10000), (0.89, 11500), (0.91, 11500)):
+            row = {"fid": fid, "fid_se": 0.006, "sep": 3.0,
+                   "outlier": 0.01, "verified": True}
+            self._record_empirical_candidate(
+                "pi_fidelity", row, self.w["read_pulse_freq"],
+                self.w["read_pulse_gain"], 2534.7, gain, 400, False,
+                evidence="synthetic_hardware_map", measured_cfg=measured_cfg)
+        raise T.TunerError("synthetic post-map certification failure")
+
+    def _plot(self, success):
+        return plt.figure()
+
+    def pickle_data(self, *args, **kwargs):
+        return None
+
+
+_best_effort = _BestEffortAcquireTuner(
+    soc=None, soccfg=None, path="best_effort", outerFolder=tmp,
+    suffix="BestEffort", cfg=dict(BaseConfig))
+_best_effort_out = _best_effort.acquire(plotDisp=False)["data"]
+_best_effort_point = _best_effort_out["best_found"]
+check("a 90% empirical pi remains the reported winner after a later audit fails",
+      abs(_best_effort_point["fidelity"] - 0.90) < 1e-12
+      and _best_effort_point["qubit_pi_gain"] == 11500
+      and abs(_best_effort_point["qubit_pi_freq"] - 2534.7) < 1e-12,
+      "best=%s" % _best_effort_point)
+check("best-found and write certification are independent states",
+      _best_effort_out["outcome"] == "best_effort"
+      and _best_effort_out["completed_with_candidate"]
+      and not _best_effort_out["success"]
+      and not _best_effort_out["certified_to_write"]
+      and _best_effort_out["eligible_tuned"] == {})
+check("repeat disagreement is retained in the best-found uncertainty",
+      _best_effort_point["measurement_count"] == 2
+      and abs(_best_effort_point["block_spread"] - 0.02) < 1e-12
+      and _best_effort_point["fidelity_se"] > 0.006)
 
 
 class _PiOnlyTuner(_StubTuner):
@@ -1353,7 +1402,82 @@ check("any selected ADC-window change invalidates the frequency x gain map",
       _lt3_new["L"] == 8.0 and _lt3_tol["L"] == 0.0,
       "new=%s tol=%s" % (_lt3_new, _lt3_tol))
 
+
+class _UnstableLenTuner(_LenTuner):
+    def _confirm_candidate_blocks(self, candidates, measure, nblocks,
+                                  max_disagreement=0.06):
+        return [{"freq": float(length), "gain": 0, "fid": 0.80,
+                 "fid_se": 0.04, "sep": 3.0, "outlier": 0.01,
+                 "block_spread": 0.14, "verified": False, "blocks": []}
+                for length, _zero in candidates]
+
+
+_unstable_len = _UnstableLenTuner(best_len=8.0, params={"readout_len": {
+    "lengths_us": (4.0, 8.0, 12.0), "shortlist": 3}})
+_unstable_len.w.update(read_length=4.0, t1_us=100.0, t1_lo_us=100.0)
+_unstable_len._cal_readout_len()
+check("an unstable length audit retains the empirical winner without certifying it",
+      _unstable_len.w["read_length"] == 8.0
+      and _unstable_len.w["readout_len_verified"] is False
+      and _unstable_len.node_data["readout_len"]["status"]
+      == "best_empirical_not_certified")
+
 print("\n== readout_power: verified fidelity wins; tails are diagnostic, not a cliff ==")
+
+_cm_tuner = _StubTuner(11500.0, 11500.0)
+_cm_candidates = [(0.0, 4300), (0.5, 9000)]
+_cm_base = (0.55, 0.70, 0.60, 0.68)
+_cm_calls = [0]
+
+
+def _common_mode_measure(freq, gain):
+    block = _cm_calls[0] // len(_cm_candidates)
+    _cm_calls[0] += 1
+    fid = _cm_base[block] + (0.15 if gain == 9000 else 0.0)
+    return {"freq": freq, "gain": gain, "fid": fid, "fid_se": 0.005,
+            "sep": 3.0, "outlier": 0.01, "verified": True}
+
+
+_cm_rows = _cm_tuner._confirm_candidate_blocks(
+    _cm_candidates, _common_mode_measure, 4, max_disagreement=0.06)
+check("common-mode fidelity drift cannot reject an otherwise stable paired ranking",
+      all(r["verified"] and r["common_mode_rescued"] for r in _cm_rows),
+      T.AutoTuner._confirmation_diagnostics(_cm_rows))
+
+_single_calls = [0]
+
+
+def _unstable_single_measure(freq, gain):
+    fid = _cm_base[_single_calls[0]]
+    _single_calls[0] += 1
+    return {"freq": freq, "gain": gain, "fid": fid, "fid_se": 0.005,
+            "sep": 3.0, "outlier": 0.01, "verified": True}
+
+
+_single_rows = _cm_tuner._confirm_candidate_blocks(
+    [_cm_candidates[0]], _unstable_single_measure, 4, max_disagreement=0.06)
+check("a drifting single final candidate cannot self-normalize into verification",
+      len(_single_rows) == 1 and not _single_rows[0]["verified"]
+      and "relative_block_spread" not in _single_rows[0],
+      T.AutoTuner._confirmation_diagnostics(_single_rows))
+
+_id_calls = [0]
+_id_delta = (0.15, -0.02, 0.25, 0.0)
+
+
+def _independent_drift_measure(freq, gain):
+    block = _id_calls[0] // len(_cm_candidates)
+    _id_calls[0] += 1
+    fid = _cm_base[block] + (_id_delta[block] if gain == 9000 else 0.0)
+    return {"freq": freq, "gain": gain, "fid": fid, "fid_se": 0.005,
+            "sep": 3.0, "outlier": 0.01, "verified": True}
+
+
+_id_rows = _cm_tuner._confirm_candidate_blocks(
+    _cm_candidates, _independent_drift_measure, 4, max_disagreement=0.06)
+check("candidate-specific instability still fails the paired reproducibility gate",
+      not any(r["verified"] for r in _id_rows),
+      T.AutoTuner._confirmation_diagnostics(_id_rows))
 
 _tail_rows = [
     {"freq": 0.0, "gain": 4300, "fid": 0.60, "fid_se": 0.006,
@@ -1418,6 +1542,28 @@ check("gain_max is a hard hardware-request ceiling, including local refinement",
       "largest requested gain=%d" % max(pt.requested_readout_gains))
 
 
+class _UnstableReadoutTuner(_CoupledReadoutTuner):
+    def _confirm_candidate_blocks(self, candidates, measure, nblocks,
+                                  max_disagreement=0.06):
+        return [{"freq": float(f), "gain": int(g), "fid": 0.72,
+                 "fid_se": 0.04, "sep": 2.8, "outlier": 0.01,
+                 "block_spread": 0.14, "relative_block_spread": 0.10,
+                 "verified": False, "blocks": []}
+                for f, g in candidates]
+
+
+_unstable_readout = _UnstableReadoutTuner(
+    11500.0, 11500.0, params=_joint_params)
+_unstable_readout.w.update(read_pulse_freq=_CoupledReadoutTuner.F0,
+                           read_pulse_gain=4300, kappa_mhz=0.1)
+_unstable_readout._cal_readout_power()
+check("an unstable readout decision keeps the ~90% map point but blocks certification",
+      _unstable_readout.node_data["readout_power"]["selected"]["fid"] > 0.89
+      and _unstable_readout.w["readout_power_verified"] is False
+      and _unstable_readout.node_data["readout_power"]["status"]
+      == "best_empirical_not_certified")
+
+
 class _MissedPiTuner(_StubTuner):
     F_OPT, G_OPT = 2534.70, 11500
 
@@ -1432,11 +1578,54 @@ class _MissedPiTuner(_StubTuner):
                 "verified": True}
 
 
+class _UnstablePiMapTuner(_MissedPiTuner):
+    def _confirm_candidate_blocks(self, candidates, measure, nblocks,
+                                  max_disagreement=0.06):
+        return [{"freq": float(f), "gain": int(g), "fid": 0.72,
+                 "fid_se": 0.04, "sep": 2.8, "outlier": 0.01,
+                 "block_spread": 0.14, "relative_block_spread": 0.10,
+                 "verified": False, "blocks": []}
+                for f, g in candidates]
+
+
 _pi_map_params = {"pi_fidelity": {
     "gain_span_frac": 0.30, "gain_points": 9,
     "freq_span_mhz": 1.2, "freq_points": 9,
     "refine_points": 5, "shortlist": 5, "confirm_blocks": 2,
     "coarse_shots": 20, "shots": 40}}
+check("the production pi map meets or exceeds the QM +/-50% 11x11 coverage baseline",
+      T.DEFAULTS["pi_fidelity"]["gain_span_frac"] >= 0.50
+      and T.DEFAULTS["pi_fidelity"]["gain_points"] >= 11
+      and T.DEFAULTS["pi_fidelity"]["freq_points"] >= 11)
+_unstable_map = _UnstablePiMapTuner(10000.0, 10000.0, params=_pi_map_params)
+_unstable_map.w.update(pi_gain=10000, drive_freq=2534.40,
+                       pi_converged=False, fine_freq_converged=False,
+                       pi_verified=False, freq_verified=False,
+                       pi_fidelity_verified=False)
+_unstable_new, _unstable_tol = _unstable_map._cal_pi_fidelity()
+check("an unstable first pi map defers to signed coherent refinement instead of aborting",
+      _unstable_new == {"f": _MissedPiTuner.F_OPT,
+                        "g": float(_MissedPiTuner.G_OPT)}
+      and _unstable_map.w["pi_fidelity_retry_required"]
+      and _unstable_map.node_data["pi_fidelity"]["status"].startswith("provisional")
+      and _unstable_map.node_data["pi_fidelity"]["provisional_seed"]["fid"] > 0.89)
+_unstable_map.w.update(pi_converged=True, fine_freq_converged=True,
+                       pi_verified=True, freq_verified=True)
+_unstable_map.stale["pi_fidelity"] = False
+check("the provisional map is automatically scheduled after coherent refinement",
+      _unstable_map._invalidate_pi_fidelity_if_unbound()
+      and _unstable_map.stale["pi_fidelity"])
+_unstable_final, _unstable_final_tol = _unstable_map._cal_pi_fidelity()
+check("persistent post-refinement instability blocks writes without aborting results",
+      _unstable_final == {"f": _MissedPiTuner.F_OPT,
+                          "g": float(_MissedPiTuner.G_OPT)}
+      and _unstable_map.w["pi_fidelity_audit_failed"]
+      and not _unstable_map.w["pi_fidelity_verified"]
+      and not _unstable_map.w["pi_fidelity_retry_required"]
+      and "failed_after_coherent_refinement"
+      in _unstable_map.node_data["pi_fidelity"]["status"]
+      and any("abs-spread" in line for line in _unstable_map.report_lines))
+
 _pimap = _MissedPiTuner(10000.0, 10000.0, params=_pi_map_params)
 _pimap.w.update(pi_gain=10000, drive_freq=2534.40,
                 pi_converged=True, fine_freq_converged=True,

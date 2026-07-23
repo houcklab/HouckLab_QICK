@@ -55,6 +55,12 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
     return {
         "time": data["time"], "qubit": QUBIT, "success": bool(data["success"]),
         "failure": data.get("failure"), "write_error": write_error,
+        "best_found": data.get("best_found"),
+        "best_observed": data.get("best_observed"),
+        "candidate_count": data.get("candidate_count", 0),
+        "completed_with_candidate": data.get("completed_with_candidate", False),
+        "outcome": data.get("outcome"),
+        "certified_to_write": data.get("certified_to_write", False),
         "applied": bool(applied),
         "measured": dict(data.get("tuned", {})),
         "eligible": dict(eligible), "attempted": dict(selected),
@@ -89,6 +95,8 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
         "qubit_pi2_gain_unchanged": BaseConfig.get("qubit_pi2_gain"),
         "freq_verified": data["working"].get("freq_verified"),
         "readout_verified": data["working"].get("readout_verified"),
+        "readout_power_verified": data["working"].get("readout_power_verified"),
+        "readout_len_verified": data["working"].get("readout_len_verified"),
         "ss_verify_sigma": data["working"].get("ss_verify_sigma"),
         "report": data.get("report", []),
     }
@@ -114,7 +122,22 @@ def main():
     qubit_ok, readout_ok = data.get("qubit_ok", False), data.get("readout_ok", False)
     if not (qubit_ok or readout_ok):
         config_updater.append_history(_history_entry(data, eligible, {}, False))
-        print("\n[auto-tune] nothing converged -- BaseConfig untouched.\n"
+        best = data.get("best_found")
+        if best:
+            print("\n[auto-tune] best empirical candidate returned; it is NOT certified "
+                  "and BaseConfig is untouched:\n"
+                  "            read %.4f MHz / %d DAC / %.1f us | pi %.4f MHz @ %d "
+                  "DAC | F=%.3f +/- %.3f\n"
+                  "            Summary plot: %s"
+                  % (best["read_pulse_freq"], best["read_pulse_gain"],
+                     best["read_length"], best["qubit_pi_freq"],
+                     best["qubit_pi_gain"], best["fidelity"],
+                     best["fidelity_se"], exp.iname))
+            # Exit zero means the requested experiment completed and returned a usable
+            # artifact.  Certification/write status is carried explicitly in the data;
+            # it is not overloaded onto the process exit code.
+            return 0
+        print("\n[auto-tune] no usable candidate was measured -- BaseConfig untouched.\n"
               "            Summary plot: %s" % exp.iname)
         return 1
     if not qubit_ok:
