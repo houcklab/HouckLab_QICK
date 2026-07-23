@@ -54,14 +54,22 @@ P_QUBIT_SPEC = {
     "run": True,
     "shots": 1000,
     "spec_amp": 7000,
-    "spec_len_us": 1.0,
-    # QUA QubitSpec comments out the qubit reset -- it is a quasi-CW sweep, not a
-    # relax-between-shots pulsed one.  A few us clears the readout photons; the old
+    # A longer saturation tone narrows the line and lifts it out of the ripple; 2 us matches
+    # what reliably finds the qubit in the basic tuner.
+    "spec_len_us": 2.0,
+    # Quasi-CW sweep (no qubit reset, like QUA); a few us clears the readout photons.  The old
     # 100 us default made every shot ~4x slower than the OPX for no parity reason.
     "relax_delay_us": 5.0,
-    "freq_min_mhz": 2300.0,
-    "freq_max_mhz": 2700.0,
-    "freq_step_mhz": 1.0,
+    # Default window around the known line at a fine step; widen if you are searching blind.
+    "freq_min_mhz": 2490.0,
+    "freq_max_mhz": 2580.0,
+    "freq_step_mhz": 0.5,
+    # The spec analysis subtracts the resonator baseline and thresholds residual SNR instead
+    # of eyeballing raw |S21|; a candidate must reproduce across spec_passes independent sweeps
+    # (kills the random dip-comb) and clear spec_min_snr to be reported as the qubit line.
+    # More passes reject a heavier comb (2 fast, 3 is a safe default, 4-5 if it is severe).
+    "spec_min_snr": 4.0,
+    "spec_passes": 3,
 }
 
 P_SS_CAL = {
@@ -206,10 +214,13 @@ def run_qubit_spec(outer_folder, soc, soccfg):
         "qubit_gain": int(p["spec_amp"]),
         "qubit_length": float(p["spec_len_us"]),
         "qubit_pulse_style": "const",
+        "spec_min_snr": float(p.get("spec_min_snr", 4.0)),
+        "spec_passes": int(p.get("spec_passes", 2)),
     })
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
-          f"(step {p['freq_step_mhz']:g}) @ gain {p['spec_amp']} at ff_gain={FF_HOLD_GAIN}")
+          f"(step {p['freq_step_mhz']:g}) @ gain {p['spec_amp']}, {p.get('spec_passes', 2)} "
+          f"pass(es), SNR>={p.get('spec_min_snr', 4.0):g} at ff_gain={FF_HOLD_GAIN}")
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                     suffix="GateCal_Qubit_Spec", cfg=cfg,
                     f_min=float(p["freq_min_mhz"]), f_max=float(p["freq_max_mhz"]),
