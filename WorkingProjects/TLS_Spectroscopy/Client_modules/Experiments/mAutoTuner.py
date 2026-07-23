@@ -24,7 +24,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 )
 
 
-AUTOTUNER_REVISION = "canonical-single-shot-v3"
+AUTOTUNER_REVISION = "anytime-search-v4"
 
 
 
@@ -1567,7 +1567,11 @@ def _pop_with_local_refs(exp, cfg, seq, drive_freq, pi_gain, shots):
 
 
 DEFAULTS = {
-    "max_rounds": 4,
+    # The graph contains deliberate feedback edges (readout -> T1 -> readout and
+    # coherent refinement -> direct pi map).  Four rounds is just enough for an ideal
+    # simulation and leaves no recovery round for real-device drift or provisional T1.
+    # Runtime, not an artificially short round count, is the primary search budget.
+    "max_rounds": 6,
     # A direct replay of the exact input tuple is the optimizer's incumbent.  A low
     # starting fidelity is a reason to search, never a prerequisite failure.
     # ``baseline_only`` is an explicitly requested measurement-only diagnostic; the
@@ -1620,6 +1624,12 @@ DEFAULTS = {
                       "relax_delay_us": None},
     "t1": {"points": 12, "shots": 600, "t_max_us": None, "relax_delay_us": None,
            "max_frac_err": 0.35, "max_upper_ci_window_ratio": 2.0,
+           # T1 is a timing/certification input, not permission to search.  Marginal
+           # fits automatically add statistics/window before falling back to explicitly
+           # provisional conservative bounds that keep the optimizer running.
+           "max_adaptive_attempts": 2, "shot_multiplier": 1.5,
+           "max_shots": 1200, "window_multiplier": 1.6,
+           "max_tmax_us": 800.0,
            # Deliberately loose: average unexplained residuals above five reported
            # standard errors indicate drift/model failure, not a trustworthy T1.
            "max_reduced_chi2": 25.0},
@@ -1780,8 +1790,8 @@ GRAPH = [
     ("fine_pi_amp",   ["fine_pi_freq", "single_shot"], "_cal_fine_pi_amp"),
 ]
 
-RECOVERABLE = ("spec", "t1", "chi", "readout_power", "readout_len", "single_shot",
-               "fine_pi_freq", "fine_pi_amp")
+RECOVERABLE = ("resonator", "spec", "t1", "chi", "readout_power", "readout_len", "single_shot",
+               "pi_fidelity", "fine_pi_freq", "fine_pi_amp")
 
 
 class AutoTuner(ExperimentClass):
@@ -1891,7 +1901,12 @@ class AutoTuner(ExperimentClass):
         finite_measurement = bool(
             np.isfinite(fid_se) and fid_se >= 0.0 and np.isfinite(outlier))
         quality_verified = bool(row.get("verified", True))
-        search_eligible = bool(finite_measurement and outlier <= 0.25)
+        # A finite but block-unstable point remains useful forensic evidence, but it
+        # must not outrank a reproduced candidate.  If *nothing* reproduces, the
+        # summarizer can still return the best finite point with an explicit unverified
+        # label instead of pretending the run measured nothing.
+        search_eligible = bool(
+            finite_measurement and quality_verified and outlier <= 0.25)
         entry = {
             "index": len(self.candidate_archive),
             "node": str(node), "evidence": str(evidence),
@@ -1899,6 +1914,8 @@ class AutoTuner(ExperimentClass):
             "read_pulse_gain": int(read_gain),
             "read_length": float(cfg["read_length"]),
             "res_phase": float(cfg.get("res_phase", 0.0)),
+            "relax_delay": float(cfg.get(
+                "relax_delay", self.w.get("relax_delay", self.cfg["relax_delay"]))),
             "qubit_pi_freq": float(drive_freq),
             "qubit_pi_gain": int(pi_gain),
             "qubit_sigma_us": float(cfg.get("sigma", self.cfg.get("sigma", 0.0))),
@@ -1922,6 +1939,24 @@ class AutoTuner(ExperimentClass):
         self.candidate_archive.append(entry)
         return entry
 
+    def _propagate_archive_reproducibility(self, rows, verified, context):
+        """Bind block-level reproducibility back onto its archived acquisitions."""
+        archive = getattr(self, "candidate_archive", [])
+        for row in rows:
+            idx = row.get("archive_index")
+            if idx is None or not (0 <= int(idx) < len(archive)):
+                continue
+            entry = archive[int(idx)]
+            entry["quality_verified"] = bool(
+                entry.get("quality_verified", False) and verified)
+            entry["valid"] = bool(
+                entry.get("finite_measurement", False)
+                and entry["quality_verified"]
+                and float(entry.get("outlier_fraction", np.inf)) <= 0.25)
+            entry.setdefault("reproducibility_checks", []).append({
+                "context": str(context), "verified": bool(verified),
+            })
+
     def _summarize_candidate_archive(self):
         """Rank measured tuples with multiplicity, drift, and winner's curse exposed."""
         observed_pool = [e for e in getattr(self, "candidate_archive", [])
@@ -1940,6 +1975,7 @@ class AutoTuner(ExperimentClass):
             return (round(float(e["read_pulse_freq"]), 6), int(e["read_pulse_gain"]),
                     round(float(e["read_length"]), 9),
                     round(float(e["res_phase"]), 3),
+                    round(float(e.get("relax_delay", self.cfg["relax_delay"])), 6),
                     round(float(e["qubit_pi_freq"]), 6), int(e["qubit_pi_gain"]),
                     round(float(e.get("qubit_sigma_us", self.cfg.get("sigma", 0.0))), 9),
                     str(e["pulse_fingerprint"].get("qubit_envelope")),
@@ -2060,6 +2096,8 @@ class AutoTuner(ExperimentClass):
             raise TunerError(
                 "protected_control: the exact input tuple produced no finite direct "
                 "ground/excited measurement; optimization is unsafe")
+        self._propagate_archive_reproducibility(
+            rows, bool(agg.get("verified", False)), "protected_control_baseline")
         z = float(P.get("confidence_sigma", 1.96))
         agg["lcb"] = fidelity_lower_bound(agg["fid"], agg["fid_se"], z)
         agg["ucb"] = float(agg["fid"] + z * agg["fid_se"])
@@ -2140,6 +2178,17 @@ class AutoTuner(ExperimentClass):
             return False
         return (time.monotonic() - self._run_started_monotonic) >= 60.0 * float(limit)
 
+    def _require_runtime_budget(self, stage):
+        """Stop a long node between acquisitions while preserving measured points."""
+        if not self._runtime_budget_exhausted():
+            return
+        reason = ("runtime budget reached during %s after %.1f minutes"
+                  % (stage, float(self.P["safety"].get(
+                      "max_runtime_minutes", 0.0))))
+        self.w["search_budget_exhausted"] = True
+        self.w["search_stop_reason"] = reason
+        raise TunerError(reason)
+
     def _restore_protected_control(self, reason):
         protected = getattr(self, "protected_control", None)
         if not isinstance(protected, dict):
@@ -2161,8 +2210,11 @@ class AutoTuner(ExperimentClass):
             "pi_verified": False, "freq_verified": False,
             "pi_fidelity_verified": False, "readout_verified": False,
             "readout_power_verified": False, "readout_len_verified": False,
+            "single_shot_reproduced": False,
+            "t1_verified": False, "t1_provisional": False,
             "duration_verified": False, "leakage_verified": False,
             "fixed_point": False, "qubit_fixed_point": False,
+            "graph_search_complete": False,
             "qubit_ok": False, "readout_ok": False,
             "protected_control_restored": True,
             "safety_stop_reason": str(reason),
@@ -2178,6 +2230,10 @@ class AutoTuner(ExperimentClass):
                 "visibility", 2.0 * agg["fid"] - 1.0))
             self.w["ss_step5_ge_fidelity"] = float(agg.get(
                 "step5_ge_fidelity", np.nan))
+        for key in ("t1_us", "t1_lo_us", "t1_hi_us", "t1_readout_cap_us",
+                    "t1_failure", "t1_retry_control_signature"):
+            self.w.pop(key, None)
+        self.w["uncertified_nodes"] = {}
         self.w.pop("pi_fidelity_binding", None)
         updated = set()
         mapping = {
@@ -2196,6 +2252,10 @@ class AutoTuner(ExperimentClass):
                 updated.add(key)
         self.w["updated"] = updated
         self.stale = {name: True for name, _, _ in GRAPH}
+        # A restore performed inside a graph node invalidates prerequisites that may
+        # already have run in this round.  ``maintain`` consumes this flag and starts a
+        # fresh topological pass rather than continuing downstream on a mixed state.
+        self._graph_restart_required = True
         self.node_data.setdefault("safety", {})["stop_reason"] = str(reason)
 
     def _guard_working_control(self, checkpoint, final=False):
@@ -2222,6 +2282,7 @@ class AutoTuner(ExperimentClass):
             order = ("incumbent", "challenger") if np.random.randint(2) == 0 \
                 else ("challenger", "incumbent")
             for label in order:
+                self._require_runtime_budget("%s protected-control guard" % checkpoint)
                 control = incumbent if label == "incumbent" else challenger
                 rows[label].append(self._measure_control_tuple(
                     control, shots, "%s_%s_block_%d" %
@@ -2230,6 +2291,12 @@ class AutoTuner(ExperimentClass):
             rows["incumbent"], P.get("max_block_spread", 0.03))
         cand = self._aggregate_ss_blocks(
             rows["challenger"], P.get("max_block_spread", 0.03))
+        self._propagate_archive_reproducibility(
+            rows["incumbent"], bool(inc is not None and inc.get("verified", False)),
+            "%s_incumbent_guard" % checkpoint)
+        self._propagate_archive_reproducibility(
+            rows["challenger"], bool(cand is not None and cand.get("verified", False)),
+            "%s_challenger_guard" % checkpoint)
         z = float(P.get("confidence_sigma", 1.96))
         for row in (inc, cand):
             if row is not None:
@@ -2818,9 +2885,13 @@ class AutoTuner(ExperimentClass):
         # observed failure where moving 7249.100 -> 7248.877 destroyed the Rabi trace
         # before readout optimization even began.
         protected = getattr(self, "protected_control", None)
+        working_readout_ready = bool(
+            self.w.get("readout_power_verified", False)
+            and self.w.get("readout_len_verified", False)
+            and self.w.get("single_shot_reproduced", False))
         if (isinstance(protected, dict)
                 and protected.get("aggregate", {}).get("measurement_valid", False)
-                and not self.w.get("readout_verified", False)):
+                and not working_readout_ready):
             control = protected["tuple"]
             cfg.update({
                 "read_pulse_freq": float(control["read_pulse_freq"]),
@@ -2833,6 +2904,13 @@ class AutoTuner(ExperimentClass):
                 "rough_pi", "OK",
                 "using the protected readout %.4f MHz/%d DAC/%.1f us; the newly "
                 "measured resonator pole is not assumed to be a discrimination optimum"
+                % (cfg["read_pulse_freq"], cfg["read_pulse_gain"],
+                   cfg["read_length"]))
+        elif working_readout_ready:
+            self._say(
+                "rough_pi", "OK",
+                "using the newly verified working readout %.4f MHz/%d DAC/%.1f us "
+                "for the repeated Rabi calibration"
                 % (cfg["read_pulse_freq"], cfg["read_pulse_gain"],
                    cfg["read_length"]))
 
@@ -2905,13 +2983,73 @@ class AutoTuner(ExperimentClass):
         pi0 = int(round(min(fit["pi_gain"], 32000)))
         try:
             pi0 = self._harmonic_check(pi0, cfg, int(P["shots"]))
-        except TunerError as err:
-            pi0, anchor_err, _ = self._rough_pi_direct_fallback(cfg, str(err))
+        except Exception as err:
+            detail = "%s: %s" % (type(err).__name__, err)
+            pi0, anchor_err, _ = self._rough_pi_direct_fallback(cfg, detail)
             self.w["pi_gain"] = pi0
             self.w["pi_gain_anchor_err"] = float(anchor_err)
             self.w["rough_pi_source"] = "canonical_direct_first_lobe"
             self.w["updated"].add("qubit_pi_gain")
             return {"g": pi0}, {"g": max(3.0 * anchor_err, 0.01 * pi0)}
+        # A clean averaged oscillation is coherent evidence, but it is not yet an
+        # empirical candidate in the objective the user actually cares about.  Measure
+        # and archive the fitted pi immediately through the canonical step-5 program so
+        # a later optional/certification stage can never make the newly found pulse
+        # disappear from BEST FOUND.
+        self.node_data["rough_pi"]["coherent_candidate"] = {
+            "qubit_pi_freq": float(self.w["drive_freq"]),
+            "qubit_pi_gain": int(pi0),
+            "sigma_us": float(self.w["sigma_us"]),
+            "rabi_r2": float(fit.get("r2", np.nan)),
+            "source": "averaged_rabi_plus_harmonic_check",
+        }
+        anchor_errors, direct_anchor = [], None
+        for attempt in range(2):
+            try:
+                candidate_anchor = self._rough_pi_direct_point(
+                    cfg, pi0, int(P.get("direct_confirm_shots", 600)), strict=True,
+                    evidence="averaged_rabi_canonical_anchor")
+                idx = candidate_anchor.get("archive_index")
+                archive = getattr(self, "candidate_archive", [])
+                archived = (archive[int(idx)] if idx is not None
+                            and 0 <= int(idx) < len(archive) else None)
+                anchor_ok = bool(
+                    archived is not None
+                    and archived.get("valid", False)
+                    and archived.get("quality_verified", False)
+                    and np.isfinite(candidate_anchor.get("fid", np.nan))
+                    and np.isfinite(candidate_anchor.get("fid_se", np.nan)))
+                if anchor_ok:
+                    direct_anchor = candidate_anchor
+                    break
+                anchor_errors.append(
+                    "canonical point was nonfinite or failed its measurement-quality "
+                    "gate")
+            except Exception as err:
+                anchor_errors.append("%s: %s" % (type(err).__name__, err))
+            if self._runtime_budget_exhausted():
+                break
+            if attempt == 0:
+                self._say(
+                    "rough_pi", "WARN",
+                    "the first canonical archive measurement at the coherent pi "
+                    "failed (%s); retrying once before continuing"
+                    % anchor_errors[-1])
+        if direct_anchor is not None:
+            self.node_data["rough_pi"]["canonical_anchor"] = direct_anchor
+            self._say(
+                "rough_pi", "OK",
+                "canonical step-5 anchor at %d DAC gives F=%.3f +/- %.3f and is "
+                "now preserved as an empirical candidate"
+                % (pi0, direct_anchor["fid"], direct_anchor["fid_se"]))
+        else:
+            self.node_data["rough_pi"]["canonical_anchor_error"] = "; ".join(
+                anchor_errors)
+            self._say(
+                "rough_pi", "WARN",
+                "the averaged Rabi anchor was retained, but its immediate canonical "
+                "single-shot archive measurement failed twice (%s); downstream direct "
+                "maps will retry it" % "; ".join(anchor_errors))
         pass_spread = 0.0
         if fit_fwd["ok"] and fit_rev["ok"]:
             pass_spread = 0.5 * abs(fit_fwd["pi_gain"] - fit_rev["pi_gain"])
@@ -3090,6 +3228,7 @@ class AutoTuner(ExperimentClass):
         outs = np.full((2, n), np.nan)
         for p_i, order in enumerate((list(range(n)), list(reversed(range(n))))):
             for j in order:
+                self._require_runtime_budget("%s coarse readout sweep" % node)
                 cfg = self._cfg_for(node)
                 apply_fn(cfg, candidates[j])
                 # The coarse ladder already uses forward/reverse candidate order and
@@ -3130,6 +3269,7 @@ class AutoTuner(ExperimentClass):
     def _single_shot_point(self, node, read_freq, read_gain, drive_freq, pi_gain, shots,
                            strict=True):
         """One directly measured setting through the canonical step-5 state pair."""
+        self._require_runtime_budget("%s direct single-shot point" % node)
         cfg = self._cfg_for(node)
         cfg["read_pulse_freq"] = float(read_freq)
         cfg["read_pulse_gain"] = int(read_gain)
@@ -3152,6 +3292,7 @@ class AutoTuner(ExperimentClass):
 
     def _single_shot_length_point(self, length_us, shots):
         """Direct fidelity point for one ADC integration/generator duration pair."""
+        self._require_runtime_budget("readout-length point")
         cfg = self._cfg_for("readout_len")
         cfg["read_length"] = float(length_us)
         cfg["read_pulse_length"] = readout_drive_length_us(cfg)
@@ -3228,6 +3369,7 @@ class AutoTuner(ExperimentClass):
         blocks = {key: [] for key in candidates}
         for _ in range(max(int(nblocks), 2)):
             for idx in np.random.permutation(len(candidates)):
+                self._require_runtime_budget("held-out candidate confirmation")
                 f, g = candidates[int(idx)]
                 blocks[(f, g)].append(measure(float(f), int(g)))
         confirmed, by_key = [], {}
@@ -3282,6 +3424,11 @@ class AutoTuner(ExperimentClass):
                     agg["verified"] = bool(
                         agg["measurement_valid"]
                         and (agg["absolute_stable"] or relative_stable))
+        for key, vals in blocks.items():
+            agg = by_key.get(key)
+            self._propagate_archive_reproducibility(
+                vals, bool(agg is not None and agg.get("verified", False)),
+                "candidate_confirmation")
         return confirmed
 
     @staticmethod
@@ -3514,10 +3661,17 @@ class AutoTuner(ExperimentClass):
             max_outlier=float(P["outlier_max"]))
         if screen_best is None:
             if empirical is None:
-                raise TunerError(
-                    "readout_power: no finite empirical or independently reproduced "
-                    "frequency/gain candidate. %s"
-                    % self._confirmation_diagnostics(screen_confirmed))
+                detail = ("no finite empirical or independently reproduced readout "
+                          "candidate; keeping incumbent %.4f MHz/%d DAC. %s"
+                          % (f_inc, g_inc,
+                             self._confirmation_diagnostics(screen_confirmed)))
+                self.w["readout_power_verified"] = False
+                self.w.setdefault("uncertified_nodes", {})["readout_power"] = detail
+                self.node_data["readout_power"]["status"] = "no_finite_candidate"
+                self._say("readout_power", "WARN", detail +
+                          " Search continues; only readout certification is blocked.")
+                return {"f": f_inc, "g": float(g_inc)}, {
+                    "f": max(abs(df), 0.05), "g": max(abs(dg), 100.0)}
             self.w["readout_power_verified"] = False
             self.node_data["readout_power"].update({
                 "selected": dict(empirical), "challenger": dict(empirical),
@@ -3529,8 +3683,12 @@ class AutoTuner(ExperimentClass):
                          empirical["fid_se"],
                          self._confirmation_diagnostics(screen_confirmed)))
             self._register_unstable_decision("readout_power", detail)
-            self._restore_protected_control(detail)
-            raise TunerError("readout_power: " + detail)
+            self.w.setdefault("uncertified_nodes", {})["readout_power"] = detail
+            self._say("readout_power", "WARN", detail +
+                      " Keeping the incumbent and continuing the search; writes are "
+                      "blocked unless a later fresh pass verifies it.")
+            return {"f": f_inc, "g": float(g_inc)}, {
+                "f": max(abs(df), 0.05), "g": max(abs(dg), 100.0)}
 
         # The screen is independent of the coarse map but still selects among several
         # candidates.  If it nominates a challenger, make the actual write decision on
@@ -3566,8 +3724,12 @@ class AutoTuner(ExperimentClass):
                          chosen["fid_se"],
                          self._confirmation_diagnostics(decision_confirmed)))
             self._register_unstable_decision("readout_power", detail)
-            self._restore_protected_control(detail)
-            raise TunerError("readout_power: " + detail)
+            self.w.setdefault("uncertified_nodes", {})["readout_power"] = detail
+            self._say("readout_power", "WARN", detail +
+                      " Keeping the incumbent and continuing the search; writes are "
+                      "blocked unless a later fresh pass verifies it.")
+            return {"f": f_inc, "g": float(g_inc)}, {
+                "f": max(abs(df), 0.05), "g": max(abs(dg), 100.0)}
         chosen = (best if decision_incumbent is None
                   or best["improvement_significant"] else decision_incumbent)
         moved = (abs(float(chosen["freq"]) - f_inc) > 1e-9
@@ -3589,6 +3751,7 @@ class AutoTuner(ExperimentClass):
         self.w["read_pulse_freq"] = round(float(chosen["freq"]), 4)
         self.w["read_pulse_gain"] = int(chosen["gain"])
         self.w["readout_power_verified"] = True
+        self.w.setdefault("uncertified_nodes", {}).pop("readout_power", None)
         self.w["updated"].add("read_pulse_freq")
         self.w["updated"].add("read_pulse_gain")
         if best["outlier"] > 0.08:
@@ -3607,87 +3770,304 @@ class AutoTuner(ExperimentClass):
               "g": max(abs(dg) / max(nr - 1, 1), 5.0)})
 
     def _cal_t1(self):
-        """T1 -- required, not optional: it bounds the useful readout length, sets
-        relax_delay, caps the pi-train length, and is the dominant contribution to the
-        |e>-prep readout error that would otherwise be misread as pi infidelity."""
+        """Measure T1 adaptively without making it permission to optimize a pi pulse.
+
+        A verified lifetime is required for automatic writes because it owns reset,
+        readout-window, and pi-train safety bounds.  It is *not* required to continue
+        searching.  Marginal fits add shots/window automatically; if they remain
+        unidentifiable, conservative explicitly provisional timing keeps the graph
+        moving while ``t1_verified=False`` blocks certification.
+        """
         P = self.P["t1"]
         cfg = self._cfg_for("t1")
+        protected = getattr(self, "protected_control", None)
+        working_readout_ready = bool(
+            self.w.get("readout_power_verified", False)
+            and self.w.get("readout_len_verified", False)
+            and self.w.get("single_shot_reproduced", False))
+        if (isinstance(protected, dict)
+                and protected.get("aggregate", {}).get("measurement_valid", False)
+                and not working_readout_ready):
+            control = protected["tuple"]
+            cfg.update({
+                "read_pulse_freq": float(control["read_pulse_freq"]),
+                "read_pulse_gain": int(control["read_pulse_gain"]),
+                "read_length": float(control["read_length"]),
+                "res_phase": float(control["res_phase"]),
+            })
+            cfg["read_pulse_length"] = readout_drive_length_us(cfg)
+            self._say(
+                "t1", "OK",
+                "using the protected empirical readout %.4f MHz/%d DAC/%.1f us "
+                "until the joint readout search establishes a replacement"
+                % (cfg["read_pulse_freq"], cfg["read_pulse_gain"],
+                   cfg["read_length"]))
+        elif working_readout_ready:
+            self._say(
+                "t1", "OK",
+                "using the newly verified working readout %.4f MHz/%d DAC/%.1f us "
+                "for this adaptive retry"
+                % (cfg["read_pulse_freq"], cfg["read_pulse_gain"],
+                   cfg["read_length"]))
         if int(getattr(self, "_t1_relax_retry_depth", 0)) > 0:
             # A node-specific override that caused the unsafe first pass must not defeat
             # the retry selected from that pass.
             cfg["relax_delay"] = float(self.w["relax_delay"])
         acquisition_relax = float(cfg["relax_delay"])
-        shots = int(P["shots"])
+        base_shots = int(P["shots"])
         tmax = P["t_max_us"]
         if tmax is None:
             tmax = 60.0
             for probe in (10.0, 30.0, 90.0, 250.0):
-                pop, sep, _ = _pop_with_local_refs(
-                    self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0), ("delay", probe)],
-                    self.w["drive_freq"], self.w["pi_gain"], max(shots // 3, 150))
+                try:
+                    pop, _, _ = _pop_with_local_refs(
+                        self, cfg,
+                        [("pulse", int(self.w["pi_gain"]), 0.0), ("delay", probe)],
+                        self.w["drive_freq"], self.w["pi_gain"],
+                        max(base_shots // 3, 150))
+                except Exception:
+                    pop = np.nan
                 if np.isfinite(pop) and pop < 0.4:
                     tmax = float(min(3.0 * probe, 400.0))
                     break
                 tmax = float(min(3.0 * probe, 400.0))
-        ts = np.linspace(0.05, float(tmax), int(P["points"]))
-        order = np.random.permutation(ts.size)
-        pops = np.full(ts.size, np.nan)
-        errs = np.full(ts.size, np.nan)
-        for idx in order:
-            t = float(ts[idx])
-            pop, sep, sem = _pop_with_local_refs(
-                self, cfg, [("pulse", int(self.w["pi_gain"]), 0.0), ("delay", t)],
-                self.w["drive_freq"], self.w["pi_gain"], shots)
-            pops[idx], errs[idx] = pop, sem
-        fit = fit_exp_decay(ts, pops, errs)
-        window = float(np.ptp(ts))
-        self.node_data["t1"] = {"t": ts, "pop": pops, "fit": fit["yfit"],
-                                "window_us": window}
-        if not fit["ok"] or not np.isfinite(fit["tau"]):
-            # A guessed lifetime is not calibration evidence.  The old 30-us fallback
-            # could make the graph look converged while silently choosing unsafe
-            # readout-length and pi-train bounds.  Keep any earlier measured value only
-            # for diagnostics; the graph's recovery path marks the state mixed-vintage
-            # and the write gate requires this bit to be true.
-            self.w["t1_verified"] = False
-            raise TunerError(
-                "t1: exponential fit did not produce a finite lifetime; refusing to "
-                "substitute a guessed T1 because it controls the readout-length, "
-                "relax-delay, and pi-train safety bounds")
-        tau = float(fit["tau"])
-        tau_err = float(fit["tau_err"]) if np.isfinite(fit.get("tau_err", np.nan)) else np.inf
-        reduced_chi2 = float(fit.get("reduced_chi2", 1.0))
-        frac_err = tau_err / max(tau, 1e-9)
-        upper_ci = tau + 2.0 * tau_err
-        max_upper = float(P.get("max_upper_ci_window_ratio", 2.0)) * window
-        self.node_data["t1"].update({"tau_us": tau, "tau_err_us": tau_err,
-                                     "upper_95_us": upper_ci,
-                                     "maximum_identifiable_upper_us": max_upper,
-                                     "reduced_chi2": reduced_chi2})
-        # A smooth near-linear drift can fit an exponential with an impressive residual
-        # and an amplitude far larger than the *observed* decay, while placing T1 orders
-        # of magnitude outside the acquisition window.  That is extrapolation, not a
-        # lifetime measurement.  Likewise an infinite/large confidence interval cannot
-        # safely set readout or reset bounds.
-        identifiable = bool(
-            np.isfinite(tau_err)
-            and frac_err <= float(P["max_frac_err"])
-            and np.isfinite(upper_ci)
-            and upper_ci <= max_upper
-            and np.isfinite(reduced_chi2)
-            and reduced_chi2 <= float(P.get("max_reduced_chi2", 25.0)))
-        if not identifiable:
-            self.w["t1_verified"] = False
-            raise TunerError(
-                "t1: lifetime is not identifiable in the measured window "
-                "(fit %.1f +/- %.1f us, fractional error %.0f%%, 95%% upper %.1f us; "
-                "reduced chi-square %.1f; requirements are <=%.0f%% error, upper "
-                "<=%.1f us, and reduced chi-square <=%.1f). Refusing to "
-                "extrapolate a safety bound; increase t_max_us/shots or improve the "
-                "prepared-state contrast"
-                % (tau, tau_err, 100.0 * frac_err,
-                   upper_ci, reduced_chi2, 100.0 * float(P["max_frac_err"]),
-                   max_upper, float(P.get("max_reduced_chi2", 25.0))))
+        tmax = float(tmax)
+        max_tmax = max(float(P.get("max_tmax_us", 800.0)), tmax)
+        max_shots = max(int(P.get("max_shots", 2400)), base_shots)
+        max_attempts = max(int(P.get("max_adaptive_attempts", 3)), 1)
+        shot_multiplier = max(float(P.get("shot_multiplier", 2.0)), 1.0)
+        window_multiplier = max(float(P.get("window_multiplier", 1.6)), 1.0)
+        shots = base_shots
+        attempts = []
+        chosen = None
+
+        for attempt_index in range(max_attempts):
+            if self._runtime_budget_exhausted():
+                self._say("t1", "WARN",
+                          "runtime budget reached between adaptive T1 attempts; using "
+                          "the evidence already acquired provisionally")
+                break
+            if attempt_index > 0 and attempts and np.isfinite(attempts[-1]["tau_us"]):
+                # The retry answers whether the fitted decay scale reproduces; it does
+                # not pay for another dense copy of the same grid.  Include the early
+                # amplitude, knee, tail, and acquisition boundary in randomized order.
+                tau_seed = float(attempts[-1]["tau_us"])
+                ts = np.unique(np.clip(np.asarray([
+                    0.05, 0.20 * tau_seed, 0.50 * tau_seed, tau_seed,
+                    1.50 * tau_seed, 2.0 * tau_seed, 3.0 * tau_seed, tmax,
+                ]), 0.05, tmax))
+            else:
+                ts = np.linspace(0.05, tmax, int(P["points"]))
+            order = np.random.permutation(ts.size)
+            pops = np.full(ts.size, np.nan)
+            errs = np.full(ts.size, np.nan)
+            point_errors = []
+            for idx in order:
+                if self._runtime_budget_exhausted():
+                    point_errors.append({
+                        "delay_us": float(ts[idx]),
+                        "error": "runtime budget reached before this point",
+                    })
+                    break
+                delay = float(ts[idx])
+                try:
+                    pop, _, sem = _pop_with_local_refs(
+                        self, cfg,
+                        [("pulse", int(self.w["pi_gain"]), 0.0),
+                         ("delay", delay)],
+                        self.w["drive_freq"], self.w["pi_gain"], shots)
+                    pops[idx], errs[idx] = pop, sem
+                except Exception as err:
+                    point_errors.append({
+                        "delay_us": delay,
+                        "error": "%s: %s" % (type(err).__name__, err),
+                    })
+            fit = fit_exp_decay(ts, pops, errs)
+            window = float(np.ptp(ts))
+            tau = (float(fit.get("tau", np.nan))
+                   if np.isfinite(fit.get("tau", np.nan)) else np.nan)
+            tau_err = (float(fit.get("tau_err", np.inf))
+                       if np.isfinite(fit.get("tau_err", np.nan)) else np.inf)
+            reduced_chi2 = float(fit.get("reduced_chi2", np.inf))
+            frac_err = tau_err / max(tau, 1e-9) if np.isfinite(tau) else np.inf
+            upper_ci = tau + 2.0 * tau_err if np.isfinite(tau_err) else np.inf
+            max_upper = float(P.get("max_upper_ci_window_ratio", 2.0)) * window
+            identifiable = bool(
+                fit.get("ok", False) and np.isfinite(tau) and tau > 0.0
+                and np.isfinite(tau_err)
+                and frac_err <= float(P["max_frac_err"])
+                and np.isfinite(upper_ci) and upper_ci <= max_upper
+                and np.isfinite(reduced_chi2)
+                and reduced_chi2 <= float(P.get("max_reduced_chi2", 25.0)))
+            record = {
+                "attempt": attempt_index + 1, "shots": int(shots),
+                "tmax_us": float(tmax), "t": ts, "pop": pops,
+                "fit": np.asarray(fit.get("yfit", np.full_like(ts, np.nan))),
+                "fit_result": fit, "window_us": window,
+                "tau_us": tau, "tau_err_us": tau_err,
+                "fractional_error": frac_err, "upper_95_us": upper_ci,
+                "maximum_identifiable_upper_us": max_upper,
+                "reduced_chi2": reduced_chi2,
+                "identifiable": identifiable, "point_errors": point_errors,
+            }
+            attempts.append(record)
+            prior_usable = [r for r in attempts[:-1]
+                            if r["fit_result"].get("ok", False)
+                            and np.isfinite(r["tau_us"])
+                            and np.isfinite(r["tau_err_us"])]
+            consistent = all(
+                abs(tau - float(old["tau_us"]))
+                <= (1.96 * np.hypot(tau_err, float(old["tau_err_us"]))
+                    + 0.05 * min(tau, float(old["tau_us"])))
+                for old in prior_usable) if identifiable else False
+            record["cross_attempt_consistent"] = bool(
+                identifiable and (not prior_usable or consistent))
+            if record["cross_attempt_consistent"]:
+                chosen = record
+                break
+            if attempt_index + 1 >= max_attempts:
+                break
+
+            new_shots = min(
+                max_shots, max(shots + 1, int(np.ceil(shots * shot_multiplier))))
+            new_tmax = tmax
+            if (np.isfinite(tau)
+                    and (upper_ci > max_upper or tau > 0.45 * window)):
+                new_tmax = min(
+                    max_tmax, max(tmax * window_multiplier, 3.0 * tau))
+            if new_shots == shots and abs(new_tmax - tmax) <= 1e-9:
+                break
+            why = []
+            if not fit.get("ok", False):
+                why.append("no physical decay fit")
+            if frac_err > float(P["max_frac_err"]):
+                why.append("%.0f%% fractional error" % (100.0 * frac_err))
+            if upper_ci > max_upper:
+                why.append("confidence interval exceeds the measured window")
+            if reduced_chi2 > float(P.get("max_reduced_chi2", 25.0)):
+                why.append("structured residuals")
+            self._say(
+                "t1", "WARN",
+                "attempt %d is not certifiable (%s); automatically retrying with "
+                "%d shots%s"
+                % (attempt_index + 1, ", ".join(why) if why else "weak evidence",
+                   new_shots,
+                   " and a %.0f-us window" % new_tmax
+                   if new_tmax > tmax + 1e-9 else ""))
+            shots, tmax = new_shots, new_tmax
+
+        if chosen is None:
+            fitted = [r for r in attempts
+                      if r["fit_result"].get("ok", False)
+                      and np.isfinite(r["tau_us"]) and r["tau_us"] > 0.0]
+            # A smooth drift can return a formally physical multi-millisecond tau from
+            # a tens-of-microseconds record.  Keep that fit in ``attempts`` for
+            # diagnosis, but never let an explicitly rejected extrapolation inflate
+            # relax_delay and turn an anytime search into hours of idle shots.
+            usable = [r for r in fitted
+                      if np.isfinite(r["tau_err_us"])
+                      and np.isfinite(r["upper_95_us"])
+                      and r["tau_us"] <= r["maximum_identifiable_upper_us"]
+                      and r["upper_95_us"] <= r["maximum_identifiable_upper_us"]]
+            # The runtime budget can expire after the preliminary probes but before
+            # the first full delay grid.  Preserve that as an explicit no-evidence
+            # provisional result instead of indexing an empty attempt list.
+            if attempts:
+                best = (min(usable, key=lambda r: (
+                            r["fractional_error"],
+                            r["upper_95_us"] / max(r["window_us"], 1e-9),
+                            r["reduced_chi2"])) if usable else attempts[-1])
+            else:
+                empty_t = np.asarray([], dtype=float)
+                best = {
+                    "t": empty_t, "pop": empty_t, "fit": empty_t,
+                    "window_us": 0.0,
+                }
+            self.node_data["t1"] = {
+                "t": best["t"], "pop": best["pop"], "fit": best["fit"],
+                "window_us": best["window_us"], "attempts": attempts,
+                "status": "provisional_unidentifiable",
+            }
+            if usable:
+                tau = float(best["tau_us"])
+                tau_err = float(best["tau_err_us"])
+                lower_bounds = [
+                    (max(float(r["tau_us"]) - 2.0 * float(r["tau_err_us"]),
+                         0.10 * float(r["tau_us"]), 2.0)
+                     if np.isfinite(r["tau_err_us"])
+                     else max(0.25 * float(r["tau_us"]), 2.0))
+                    for r in usable]
+                upper_bounds = [
+                    (max(float(r["tau_us"]) + 2.0 * float(r["tau_err_us"]),
+                         float(r["tau_us"]))
+                     if np.isfinite(r["tau_err_us"])
+                     else 4.0 * float(r["tau_us"]))
+                    for r in usable]
+                # Envelope every credible attempt.  Picking only the numerically
+                # narrowest fit would turn between-block drift into false precision.
+                t1_lo, t1_hi = min(lower_bounds), max(upper_bounds)
+                reason = (
+                    "best adaptive fit %.1f +/- %.1f us remained uncertifiable "
+                    "after %d attempt%s"
+                    % (tau, tau_err, len(attempts),
+                       "" if len(attempts) == 1 else "s"))
+            else:
+                # This is an execution prior, never measurement evidence.  It retains
+                # the incumbent readout window so the direct readout optimizer can
+                # improve the contrast that T1 itself was missing.
+                tau = max(2.0 * float(self.w.get("read_length", 20.0)), 30.0)
+                tau_err = np.inf
+                t1_lo, t1_hi = max(0.5 * tau, 2.0), 4.0 * tau
+                reason = (
+                    "%s survived %d adaptive attempt%s"
+                    % ("no lifetime fit inside the acquired timing window"
+                       if fitted else "no physical decay fit",
+                       len(attempts), "" if len(attempts) == 1 else "s"))
+            current_length = float(self.w.get("read_length", 20.0))
+            readout_cap = max(
+                0.5 * t1_lo, min(current_length, max(0.5 * tau, 2.0)), 2.0)
+            old_relax = float(self.w["relax_delay"])
+            required_relax = float(max(5.0 * t1_hi, 20.0))
+            # An unverified estimate may lengthen reset conservatively, never shorten
+            # an operator-supplied delay.
+            self.w["relax_delay"] = max(old_relax, required_relax)
+            if self.w["relax_delay"] > old_relax + 1e-9:
+                self.w["updated"].add("relax_delay")
+                self.stale["rough_pi"] = True
+            self.w.update({
+                "t1_us": tau, "t1_lo_us": float(t1_lo),
+                "t1_hi_us": float(t1_hi),
+                "t1_readout_cap_us": float(readout_cap),
+                "t1_verified": False, "t1_provisional": True,
+                "t1_failure": reason,
+            })
+            self.w.setdefault("uncertified_nodes", {})["t1"] = reason
+            if current_length > readout_cap + 1e-9:
+                self.stale["readout_len"] = True
+            self._say(
+                "t1", "WARN",
+                "%s. Continuing the pulse/readout search with conservative provisional "
+                "bounds [%.1f, %.1f] us and readout cap %.1f us; only automatic "
+                "certification is blocked."
+                % (reason, t1_lo, t1_hi, readout_cap))
+            return {"t1": tau, "cap": readout_cap}, {
+                "t1": max(3.0 * tau_err, 0.50 * tau)
+                      if np.isfinite(tau_err) else tau,
+                "cap": max(0.25 * readout_cap, 0.5),
+            }
+
+        fit = chosen["fit_result"]
+        tau = float(chosen["tau_us"])
+        tau_err = float(chosen["tau_err_us"])
+        self.node_data["t1"] = {
+            "t": chosen["t"], "pop": chosen["pop"], "fit": chosen["fit"],
+            "window_us": chosen["window_us"], "attempts": attempts,
+            "status": "verified", "tau_us": tau, "tau_err_us": tau_err,
+            "upper_95_us": chosen["upper_95_us"],
+            "maximum_identifiable_upper_us":
+                chosen["maximum_identifiable_upper_us"],
+            "reduced_chi2": chosen["reduced_chi2"],
+        }
         if np.isfinite(tau_err):
             t1_lo = max(tau - 2.0 * tau_err, 0.25 * tau, 2.0)
             t1_hi = min(tau + 2.0 * tau_err, 4.0 * tau)
@@ -3709,10 +4089,22 @@ class AutoTuner(ExperimentClass):
             # pathological device fails closed instead of recursing forever.
             depth = int(getattr(self, "_t1_relax_retry_depth", 0))
             if depth >= 2:
-                self.w["t1_verified"] = False
-                raise TunerError(
-                    "t1: the required relax_delay kept increasing across two fresh "
-                    "measurements; refusing mixed/reset-correlated lifetime evidence")
+                reason = ("the required relax_delay kept increasing across two fresh "
+                          "measurements")
+                self.w.update(t1_verified=False, t1_provisional=True,
+                              t1_failure=reason)
+                self.w.setdefault("uncertified_nodes", {})["t1"] = reason
+                self.w["relax_delay"] = max(float(self.w["relax_delay"]),
+                                             1.10 * required_relax)
+                self.w["updated"].add("relax_delay")
+                self._say(
+                    "t1", "WARN",
+                    "%s; keeping the conservative bounds and continuing optimization, "
+                    "but automatic certification is blocked" % reason)
+                return {"t1": tau, "cap": readout_cap}, {
+                    "t1": max(3.0 * tau_err, 0.01 * tau),
+                    "cap": max(0.02 * readout_cap, 0.10),
+                }
             retry_relax = float(max(1.10 * required_relax, required_relax + 1.0))
             self.w["relax_delay"] = retry_relax
             self.w["updated"].add("relax_delay")
@@ -3738,6 +4130,9 @@ class AutoTuner(ExperimentClass):
         if abs(new_relax - float(self.cfg.get("relax_delay", old_relax))) > 1e-9:
             self.w["updated"].add("relax_delay")
         self.w["t1_verified"] = True
+        self.w["t1_provisional"] = False
+        self.w.pop("t1_failure", None)
+        self.w.setdefault("uncertified_nodes", {}).pop("t1", None)
         if abs(new_relax - old_relax) > max(0.05 * old_relax, 1.0):
             direction = "less idle time" if new_relax < old_relax else "longer safe reset"
             self._say("t1", "OK", "relax_delay %.0f -> %.0f us (5 x the UPPER T1 bound "
@@ -3749,7 +4144,9 @@ class AutoTuner(ExperimentClass):
                       "the current %.1f-us readout exceeds the new T1-safe cap %.1f us; "
                       "readout_len is stale and must be re-optimized"
                       % (self.w["read_length"], readout_cap))
-        self._say("t1", "OK", "T1 = %.1f +/- %.1f us" % (tau, fit["tau_err"]))
+        self._say("t1", "OK", "T1 = %.1f +/- %.1f us (%d adaptive attempt%s)"
+                  % (tau, fit["tau_err"], len(attempts),
+                     "" if len(attempts) == 1 else "s"))
         # The cap is a dependency-domain boundary, not a noisy optimization coordinate.
         # Even when tau itself moves within uncertainty, a material cap change must
         # rerun readout_len.  Its explicit final invariant is the last line of defense.
@@ -3758,14 +4155,26 @@ class AutoTuner(ExperimentClass):
              "cap": max(0.02 * readout_cap, 0.10)}
 
     def _cal_readout_len(self):
-        """Integration length: SNR grows as sqrt(T) but the |e> state decays as T/T1, so
-        there is a genuine optimum.  Candidates are capped at T1/2 -- beyond that the
-        measurement is mostly watching the qubit decay."""
+        """Directly optimize integration length within a verified T1 timing domain.
+
+        When T1 is only provisional its guessed lower bound is not allowed to erase the
+        incumbent or configured length grid.  Direct fidelity can still rank those
+        lengths; the missing lifetime blocks certification separately.
+        """
         P = self.P["readout_len"]
         old_length = float(self.w["read_length"])
         t1 = float(self.w.get("t1_lo_us", self.w.get("t1_us", 30.0)))
-        cap = max(0.5 * t1, 2.0)
-        cands = [L for L in P["lengths_us"] if L <= cap]
+        if self.w.get("t1_verified", False):
+            cap = max(0.5 * t1, 2.0)
+            cands = [float(L) for L in P["lengths_us"] if float(L) <= cap]
+        else:
+            cap = max([old_length] + [float(L) for L in P["lengths_us"]])
+            cands = sorted(set([old_length] + [float(L) for L in P["lengths_us"]]))
+            self._say(
+                "readout_len", "WARN",
+                "T1 is provisional, so it does not truncate the empirical length "
+                "search; testing the configured grid plus the %.1f-us incumbent. "
+                "Automatic timing certification remains blocked." % old_length)
         if not cands:
             cands = [min(P["lengths_us"])]
         def _apply(cfg, L):
@@ -3801,7 +4210,17 @@ class AutoTuner(ExperimentClass):
             _measure([nxt])
         ok_rows = [r for r in rows if np.isfinite(r["fid"])]
         if not ok_rows:
-            raise TunerError("readout_len: no usable length.")
+            detail = ("no usable length measurement; keeping the %.1f-us incumbent"
+                      % old_length)
+            self.w["readout_len_verified"] = False
+            self.w.setdefault("uncertified_nodes", {})["readout_len"] = detail
+            self.node_data["readout_len"] = {
+                "coarse": rows, "screen_confirmed": [], "confirmed": [],
+                "selected": None, "status": "no_finite_candidate",
+            }
+            self._say("readout_len", "WARN", detail +
+                      ". Search continues; only readout certification is blocked.")
+            return {"L": old_length}, {"L": max(0.25 * old_length, 1.0)}
         coarse_best = max(ok_rows, key=lambda r: r["fid"])
         ranked = sorted(ok_rows, key=lambda r: r["fid"], reverse=True)
         candidates = [(float(r["len"]), 0)
@@ -3845,8 +4264,11 @@ class AutoTuner(ExperimentClass):
                       % (best["len"], best["fid"],
                          self._confirmation_diagnostics(screen_confirmed)))
             self._register_unstable_decision("readout_len", detail)
-            self._restore_protected_control(detail)
-            raise TunerError("readout_len: " + detail)
+            self.w.setdefault("uncertified_nodes", {})["readout_len"] = detail
+            self._say("readout_len", "WARN", detail +
+                      " Keeping the incumbent and continuing; writes remain blocked "
+                      "unless a later pass verifies it.")
+            return {"L": old_length}, {"L": max(0.25 * old_length, 1.0)}
         decision_candidates = [(float(screen_best["freq"]), 0)]
         if incumbent is not None and (old_length, 0) not in decision_candidates:
             decision_candidates.append((old_length, 0))
@@ -3876,8 +4298,11 @@ class AutoTuner(ExperimentClass):
                       % (best["len"], best["fid"], best["fid_se"],
                          self._confirmation_diagnostics(decision_confirmed)))
             self._register_unstable_decision("readout_len", detail)
-            self._restore_protected_control(detail)
-            raise TunerError("readout_len: " + detail)
+            self.w.setdefault("uncertified_nodes", {})["readout_len"] = detail
+            self._say("readout_len", "WARN", detail +
+                      " Keeping the incumbent and continuing; writes remain blocked "
+                      "unless a later pass verifies it.")
+            return {"L": old_length}, {"L": max(0.25 * old_length, 1.0)}
         selected = (decision_best if decision_incumbent is None
                     or decision_best["improvement_significant"] else decision_incumbent)
         best = {"len": float(selected["freq"]), "fid": float(selected["fid"]),
@@ -3901,6 +4326,7 @@ class AutoTuner(ExperimentClass):
                       % (best["len"], lo, hi))
         self.w["read_length"] = float(best["len"])
         self.w["readout_len_verified"] = True
+        self.w.setdefault("uncertified_nodes", {}).pop("readout_len", None)
         self.w["updated"].add("read_length")
         self._say("readout_len", "OK", "confirmed length %.1f us (F=%.3f +/- %.3f, "
                                        "%.2f robust sigma; coarse winner %.1f us; "
@@ -3915,6 +4341,32 @@ class AutoTuner(ExperimentClass):
         # not a 40%-heuristic movement test.
         return {"L": best["len"]}, \
             {"L": 0.0 if abs(float(best["len"]) - old_length) > 1e-12 else 0.05}
+
+    def _schedule_provisional_t1_retry(self):
+        """Re-measure provisional T1 once for each materially new control tuple."""
+        if not self.w.get("t1_provisional", False):
+            return False
+        retry_signature = (
+            round(float(self.w["read_pulse_freq"]), 6),
+            int(self.w["read_pulse_gain"]),
+            round(float(self.w["read_length"]), 9),
+            round(float(self.w.get("res_phase", 0.0)), 3),
+            round(float(self.w["relax_delay"]), 6),
+            round(float(self.w["drive_freq"]), 6),
+            int(self.w["pi_gain"]),
+            round(float(self.w.get("sigma_us", self.cfg["sigma"])), 9),
+            round(float(self.w.get("drag_beta", 0.0)), 8),
+        )
+        if self.w.get("t1_retry_control_signature") == retry_signature:
+            return False
+        self.w["t1_retry_control_signature"] = retry_signature
+        self.stale["t1"] = True
+        self._say(
+            "graph", "WARN",
+            "the first T1 was provisional and a new direct control/readout tuple is "
+            "now available -- T1 is stale and will be retried through this improved "
+            "measurement before certification")
+        return True
 
     def _cal_single_shot(self):
         P = self.P["single_shot"]
@@ -3956,11 +4408,17 @@ class AutoTuner(ExperimentClass):
                      ss["sep_sigma"],
                      ss["outlier_frac"], np.rad2deg(ss["theta"])))
         if not ss.get("ok", False):
+            detail = ("direct single-shot fidelity did not reproduce across blocks "
+                      "(F=%.3f +/- %.3f)" %
+                      (ss["fidelity"], ss.get("fidelity_se", np.inf)))
+            self.w.setdefault("uncertified_nodes", {})["single_shot"] = detail
             self._say(
                 "single_shot", "WARN",
                 "the absolute fidelity moved across repeated blocks, so this setting is "
                 "NOT certified; retaining its measured F=%.3f as best-effort evidence "
                 "and continuing the pi search" % ss["fidelity"])
+        else:
+            self.w.setdefault("uncertified_nodes", {}).pop("single_shot", None)
         from math import erfc
         q_ideal = 0.5 * erfc(ss["sep_sigma"] / (2 * np.sqrt(2)))
         asym = ss["p_g_given_e"] - ss["p_e_given_g"]
@@ -3973,6 +4431,7 @@ class AutoTuner(ExperimentClass):
                                       0.5 * decay if np.isfinite(decay) else float('nan'),
                                       self.w["read_length"]))
         theta_deg = float(np.rad2deg(ss["theta"]))
+        phase_moved = False
         if abs(((theta_deg + 180.0) % 360.0) - 180.0) > 2.0:
             cur = float(self.w.get("res_phase", 0.0))
             applied = False
@@ -3987,6 +4446,7 @@ class AutoTuner(ExperimentClass):
                 if new_ang < 0.5 * abs(((theta_deg + 180.0) % 360.0) - 180.0):
                     self.w["res_phase"] = trial
                     self.w["updated"].add("res_phase")
+                    phase_moved = True
                     self._say("single_shot", "OK",
                               "res_phase %.1f -> %.1f deg (sign %+d verified: IQ angle "
                               "%.1f -> %.1f deg)" % (cur, trial, int(sgn), theta_deg, new_ang))
@@ -4010,9 +4470,15 @@ class AutoTuner(ExperimentClass):
                          if at_limit else
                          "BELOW the limit, so there is headroom in the discrimination "
                          "itself (rotation angle, threshold, integration weights)"))
+        self._schedule_provisional_t1_retry()
+        if phase_moved:
+            # A phase correction changes the emitted/read-out physical tuple and must
+            # invalidate its consumers explicitly.  Ordinary fidelity fluctuation does
+            # not: F is an objective/evidence statistic, not a calibration coordinate.
+            self._mark_dependents_stale("single_shot")
         accepted = self._guard_working_control("single_shot")
         return {"F": float(self.w.get("ss_fidelity", ss["fidelity"]))}, \
-            {"F": 0.0 if not accepted else 0.01}
+            {"F": np.inf}
 
     def _cal_pi_fidelity(self):
         """Independent local drive-frequency x gain challenge to the coherent pi.
@@ -4181,11 +4647,9 @@ class AutoTuner(ExperimentClass):
                     % (("map point %.4f/%d (F=%.3f)" %
                         (seed["freq"], seed["gain"], seed["fid"]))
                        if seed is not None else "map", f0, g0, diag))
-                stop = self._register_unstable_decision("pi_fidelity", detail)
+                self._register_unstable_decision("pi_fidelity", detail)
+                self.w.setdefault("uncertified_nodes", {})["pi_fidelity"] = detail
                 self._say("pi_fidelity", "WARN", detail)
-                if stop:
-                    self._restore_protected_control(detail)
-                    raise TunerError("pi_fidelity: " + detail)
                 return {"f": f0, "g": float(g0)}, {"f": 0.02, "g": 20.0}
             self.w["pi_fidelity_verified"] = False
             self.w["pi_fidelity_retry_required"] = False
@@ -4194,11 +4658,9 @@ class AutoTuner(ExperimentClass):
             detail = ("the post-refinement local audit remained unstable; every map "
                       "point is archived, the incumbent is unchanged, and writes are "
                       "blocked. Diagnostics: %s" % diag)
-            stop = self._register_unstable_decision("pi_fidelity", detail)
+            self._register_unstable_decision("pi_fidelity", detail)
+            self.w.setdefault("uncertified_nodes", {})["pi_fidelity"] = detail
             self._say("pi_fidelity", "WARN", detail)
-            if stop:
-                self._restore_protected_control(detail)
-                raise TunerError("pi_fidelity: " + detail)
             return {"f": float(self.w["drive_freq"]),
                     "g": float(self.w["pi_gain"])}, {"f": 0.02, "g": 20.0}
 
@@ -4241,11 +4703,9 @@ class AutoTuner(ExperimentClass):
                     % (("screened point %.4f/%d (F=%.3f)" %
                         (seed["freq"], seed["gain"], seed["fid"]))
                        if seed is not None else "map", f0, g0, diag))
-                stop = self._register_unstable_decision("pi_fidelity", detail)
+                self._register_unstable_decision("pi_fidelity", detail)
+                self.w.setdefault("uncertified_nodes", {})["pi_fidelity"] = detail
                 self._say("pi_fidelity", "WARN", detail)
-                if stop:
-                    self._restore_protected_control(detail)
-                    raise TunerError("pi_fidelity: " + detail)
                 return {"f": f0, "g": float(g0)}, {"f": 0.02, "g": 20.0}
             self.w["pi_fidelity_verified"] = False
             self.w["pi_fidelity_retry_required"] = False
@@ -4254,11 +4714,9 @@ class AutoTuner(ExperimentClass):
             detail = ("the post-refinement fresh decision remained unstable; every "
                       "point is archived, the incumbent is unchanged, and writes are "
                       "blocked. Diagnostics: %s" % diag)
-            stop = self._register_unstable_decision("pi_fidelity", detail)
+            self._register_unstable_decision("pi_fidelity", detail)
+            self.w.setdefault("uncertified_nodes", {})["pi_fidelity"] = detail
             self._say("pi_fidelity", "WARN", detail)
-            if stop:
-                self._restore_protected_control(detail)
-                raise TunerError("pi_fidelity: " + detail)
             return {"f": float(self.w["drive_freq"]),
                     "g": float(self.w["pi_gain"])}, {"f": 0.02, "g": 20.0}
         improve = bool(best["improvement_significant"])
@@ -4288,6 +4746,7 @@ class AutoTuner(ExperimentClass):
             chosen = best
         else:
             self.w["pi_fidelity_verified"] = True
+            self.w.setdefault("uncertified_nodes", {}).pop("pi_fidelity", None)
             self.w["pi_fidelity_retry_required"] = False
             self.w["pi_fidelity_binding"] = {
                 "drive_freq": f0, "pi_gain": g0,
@@ -5117,6 +5576,7 @@ class AutoTuner(ExperimentClass):
     def _duration_ss_point(self, cfg, sigma_us, drive_freq, pi_gain, shots,
                            strict, evidence):
         """One pulse-duration point using the exact candidate waveform and readout."""
+        self._require_runtime_budget("pulse-duration direct point")
         c = dict(cfg)
         c["sigma"] = float(sigma_us)
         ss = self._balanced_single_shot(
@@ -5257,10 +5717,11 @@ class AutoTuner(ExperimentClass):
                     cfg, seed["sigma_us"], seed["freq"], seed["gain"],
                     int(P["confirm_shots"]), True,
                     "duration_confirm_block_%d" % (block + 1)))
-        confirmed = []
+        confirmed, duration_aggregates = [], []
         for seed, vals in zip(seeds, blocks):
             agg = self._aggregate_ss_blocks(
                 vals, max_disagreement=float(P["max_block_spread"]))
+            duration_aggregates.append(agg)
             if agg is not None:
                 agg["sigma_us"] = float(seed["sigma_us"])
                 agg["gate_ns"] = 4000.0 * float(seed["sigma_us"])
@@ -5282,6 +5743,10 @@ class AutoTuner(ExperimentClass):
                     agg["verified"] = bool(
                         agg["measurement_valid"]
                         and (agg["absolute_stable"] or agg["relative_stable"]))
+        for vals, agg in zip(blocks, duration_aggregates):
+            self._propagate_archive_reproducibility(
+                vals, bool(agg is not None and agg.get("verified", False)),
+                "pulse_duration_confirmation")
         z = simultaneous_confidence_sigma(
             max(len(confirmed), 1), P.get("familywise_alpha", 0.05),
             P.get("confidence_sigma", 1.96))
@@ -5299,20 +5764,38 @@ class AutoTuner(ExperimentClass):
             raise TunerError(
                 "pulse_duration: held-out duration comparisons did not reproduce")
         old_sigma = incumbent_sigma
-        moved = abs(float(chosen["sigma_us"]) - old_sigma) > 1e-10
+        old_freq, old_gain = float(self.w["drive_freq"]), int(self.w["pi_gain"])
+        sigma_moved = abs(float(chosen["sigma_us"]) - old_sigma) > 1e-10
+        freq_moved = abs(float(chosen["freq"]) - old_freq) > 1e-9
+        gain_moved = int(chosen["gain"]) != old_gain
+        moved = bool(sigma_moved or freq_moved or gain_moved)
         self.w["duration_optimized"] = True
         self.w["duration_verified"] = bool(chosen.get("verified", False))
         if moved:
             self.w.update(sigma_us=float(chosen["sigma_us"]),
                           drive_freq=float(chosen["freq"]),
                           pi_gain=int(chosen["gain"]))
-            self.w["updated"].update(("sigma", "qubit_pi_freq", "qubit_pi_gain"))
-            self._say("pulse_duration", "OK",
-                      "adopting %.1f ns (sigma %.6f us) from %.1f ns: held-out "
-                      "F %.3f +/- %.3f; the full calibration graph and leakage/DRAG "
-                      "audit will now rerun on this waveform"
-                      % (chosen["gate_ns"], chosen["sigma_us"], 4000.0 * old_sigma,
-                         chosen["fid"], chosen["fid_se"]))
+            if sigma_moved:
+                self.w["updated"].add("sigma")
+            if freq_moved:
+                self.w["updated"].add("qubit_pi_freq")
+            if gain_moved:
+                self.w["updated"].add("qubit_pi_gain")
+            if sigma_moved:
+                self._say("pulse_duration", "OK",
+                          "adopting %.1f ns (sigma %.6f us) from %.1f ns: held-out "
+                          "F %.3f +/- %.3f; the full calibration graph and leakage/DRAG "
+                          "audit will now rerun on this waveform"
+                          % (chosen["gate_ns"], chosen["sigma_us"],
+                             4000.0 * old_sigma, chosen["fid"], chosen["fid_se"]))
+            else:
+                self._say(
+                    "pulse_duration", "OK",
+                    "the incumbent %.1f-ns duration remains best, but its fresh joint "
+                    "map relocated the pulse %.4f MHz/%d -> %.4f MHz/%d; adopting the "
+                    "measured coordinates and re-closing the full calibration graph"
+                    % (chosen["gate_ns"], old_freq, old_gain,
+                       chosen["freq"], chosen["gain"]))
         else:
             self._say("pulse_duration", "OK",
                       "keeping %.1f ns: no other duration offered a statistically "
@@ -5415,6 +5898,7 @@ class AutoTuner(ExperimentClass):
             for pidx, order in enumerate((range(grid.size),
                                           range(grid.size - 1, -1, -1))):
                 for j in order:
+                    self._require_runtime_budget("e-f spectroscopy")
                     seq = [ge, self._ef_pulse(P["ef_spec_gain"], grid[j]), ge]
                     I, Q, _, _ = _run_seq(
                         self, cfg, seq, self.w["drive_freq"],
@@ -5471,6 +5955,7 @@ class AutoTuner(ExperimentClass):
             0, int(P["ef_gain_max"]), max(int(P["ef_gain_points"]), 21))).astype(int))
         pops, sems = np.full(gains.size, np.nan), np.full(gains.size, np.inf)
         for raw in np.random.permutation(gains.size):
+            self._require_runtime_budget("e-f Rabi calibration")
             j = int(raw)
             seq = [ge, self._ef_pulse(gains[j], ef_freq), ge]
             pops[j], _, sems[j] = _pop_with_local_refs(
@@ -5488,6 +5973,7 @@ class AutoTuner(ExperimentClass):
         # observed shelving contrast, so an arbitrary f-state IQ projection is allowed.
         harmonic = []
         for ratio in (0.0, 1.0, 2.0):
+            self._require_runtime_budget("e-f harmonic audit")
             seq = [ge, self._ef_pulse(int(round(ratio * ef_gain)), ef_freq), ge]
             pop, _, sem = _pop_with_local_refs(
                 self, cfg, seq, self.w["drive_freq"], self.w["pi_gain"],
@@ -5548,6 +6034,7 @@ class AutoTuner(ExperimentClass):
         got = {key: [[], []] for key in seqs}
         labels = list(seqs) * 4
         for raw in np.random.permutation(len(labels)):
+            self._require_runtime_budget("leakage response calibration")
             key = labels[int(raw)]
             i, q = _shots(self, cfg, seqs[key], self.w["drive_freq"], each)
             got[key][0].append(np.asarray(i, dtype=float))
@@ -5592,6 +6079,7 @@ class AutoTuner(ExperimentClass):
         if int(np.random.randint(2)):
             first = ["shelved" if x == "identity" else "identity" for x in first]
         for label in first:
+            self._require_runtime_budget("leakage population witness")
             i, q = _shots(self, cfg, seqs[label], self.w["drive_freq"], each)
             got[label][0].append(np.asarray(i, dtype=float))
             got[label][1].append(np.asarray(q, dtype=float))
@@ -5610,6 +6098,7 @@ class AutoTuner(ExperimentClass):
     def _measure_leakage_beta(self, beta, ef_freq, ef_gain, alpha, shots, ref_shots,
                               strict_fidelity=False):
         """Measure coherent leakage witnesses and one-pulse fidelity for one DRAG beta."""
+        self._require_runtime_budget("DRAG/leakage point")
         P = self.P["leakage"]
         cfg = self._cfg_for("leakage")
         cfg["qubit_drag_beta"] = float(beta)
@@ -5836,25 +6325,24 @@ class AutoTuner(ExperimentClass):
         return passed
 
     def _score(self):
-        """Best-so-far score: safe pi state, then fidelity; bounded diagnostics last.
+        """Rank empirical incumbents by direct fidelity, never by certification state.
 
-        The previous nominally "weak" ``0.01*sep`` term was not weak when the simulator
-        produced 100--300 sigma: it could make a 60% state outrank a 90% state.  Scaling
-        fidelity by 1000 and capping diagnostics makes that ordering impossible.
+        Certification is a separate boolean write gate.  Giving it a million-point
+        bonus made a lower-fidelity certified state overwrite a better measured but
+        provisional state—the exact opposite of an anytime optimizer.  Diagnostics are
+        bounded tie-breakers only.
         """
         sep = float(self.w.get("ss_sep_sigma", 0.0))
         fid = float(self.w.get("ss_fidelity", 0.0))
         fid_se = float(self.w.get("ss_fidelity_se", np.inf))
-        fid_lcb = -1.0 if not np.isfinite(fid_se) else fid - 1.96 * fid_se
+        if not np.isfinite(sep):
+            sep = 0.0
+        fid_lcb = (-1.0 if not (np.isfinite(fid) and np.isfinite(fid_se))
+                   else fid - 1.96 * fid_se)
         pig = float(self.w.get("pi_gain", 1))
         pie = float(self.w.get("pi_gain_err", np.inf))
         prec = 0.0 if not np.isfinite(pie) else max(0.0, 1.0 - (pie / max(pig, 1)) / 0.02)
-        pi_safe = bool(self.w.get("pi_converged", False)
-                       and self.w.get("fine_freq_converged", False)
-                       and t1_timing_domain_valid(self.w)
-                       and self.w.get("pi_fidelity_verified", False)
-                       and self._pi_fidelity_binding_valid())
-        return ((1.0e6 if pi_safe else -1.0e6) + 1000.0 * fid_lcb
+        return (1000.0 * fid_lcb
                 + 1e-3 * np.clip(sep, 0.0, 10.0) + 1e-4 * prec)
 
     def _pi_fidelity_binding_valid(self):
@@ -5923,13 +6411,17 @@ class AutoTuner(ExperimentClass):
 
     def _snapshot(self):
         return {"w": copy.deepcopy(self.w), "node_data": copy.deepcopy(self.node_data),
-                "stale": copy.deepcopy(self.stale), "drifted": list(self.drifted)}
+                "stale": copy.deepcopy(self.stale), "drifted": list(self.drifted),
+                "protected_control": copy.deepcopy(
+                    getattr(self, "protected_control", None))}
 
     def _restore_snapshot(self, snap):
         self.w = copy.deepcopy(snap["w"])
         self.node_data = copy.deepcopy(snap["node_data"])
         self.stale = copy.deepcopy(snap["stale"])
         self.drifted = list(snap["drifted"])
+        if "protected_control" in snap:
+            self.protected_control = copy.deepcopy(snap["protected_control"])
 
     def maintain(self):
         """Sweep the graph until nothing is stale.  Recalibrating a node whose value MOVED
@@ -5953,13 +6445,19 @@ class AutoTuner(ExperimentClass):
             "fine_pi_amp":   {"g": float(self.w["pi_gain"])},
         }
         best_score, best_state = -np.inf, None
+        budget_exhausted = False
+        self._graph_restart_required = False
         for rnd in range(1, int(self.P["max_rounds"]) + 1):
             if self._runtime_budget_exhausted():
                 reason = ("runtime circuit breaker reached %.1f minutes before graph "
                           "convergence" % float(
                               self.P["safety"].get("max_runtime_minutes", 0.0)))
-                self._restore_protected_control(reason)
-                raise TunerError(reason)
+                self.w["search_budget_exhausted"] = True
+                self.w["search_stop_reason"] = reason
+                self._say("graph", "WARN", reason +
+                          " -- preserving the best empirical state measured so far")
+                budget_exhausted = True
+                break
             self._invalidate_pi_fidelity_if_unbound()
             todo = [n for n, _, _ in GRAPH if self.stale[n]]
             if not todo:
@@ -5970,6 +6468,7 @@ class AutoTuner(ExperimentClass):
                 break
             print("-" * 78)
             self._say("graph", "OK", "round %d: recalibrating %s" % (rnd, ", ".join(todo)))
+            restart_round = False
             for name, deps, meth in GRAPH:
                 if not self.stale[name]:
                     continue
@@ -5977,35 +6476,53 @@ class AutoTuner(ExperimentClass):
                     reason = ("runtime circuit breaker reached %.1f minutes before %s"
                               % (float(self.P["safety"].get(
                                   "max_runtime_minutes", 0.0)), name))
-                    self._restore_protected_control(reason)
-                    raise TunerError(reason)
+                    self.w["search_budget_exhausted"] = True
+                    self.w["search_stop_reason"] = reason
+                    self._say("graph", "WARN", reason +
+                              " -- preserving the best empirical state measured so far")
+                    budget_exhausted = True
+                    break
+                # A recoverable node is atomic with respect to the working calibration
+                # state.  Direct measurements stay in candidate_archive, but a method
+                # that mutates coordinates and then rejects its evidence cannot leak a
+                # half-installed tuple into downstream nodes.
+                pre_node = self._snapshot()
                 try:
                     new, tol = getattr(self, meth)()
                 except TunerError as exc:
-                    if rnd == 1 or name not in RECOVERABLE or name not in values:
+                    if name not in RECOVERABLE or name not in values:
                         raise
-                    failures = int(self.w.get("remeasurement_failures", 0)) + 1
-                    self.w["remeasurement_failures"] = failures
-                    limit = max(int(self.P["safety"].get(
-                        "max_remeasurement_failures", 1)), 1)
-                    if failures >= limit:
-                        reason = (
-                            "%s failed on re-measurement (%s); the evidence is now "
-                            "mixed-vintage, so the circuit breaker restored the "
-                            "protected control instead of repeating the full graph"
-                            % (name, str(exc).split(".")[0].strip()))
-                        self._restore_protected_control(reason)
-                        raise TunerError(reason)
+                    failed_payload = copy.deepcopy(self.node_data.get(name))
+                    self._restore_snapshot(pre_node)
+                    self._graph_restart_required = False
+                    failures = self.w.setdefault("node_measurement_failures", {})
+                    failures[name] = int(failures.get(name, 0)) + 1
+                    detail = str(exc)
                     self.stale[name] = False
+                    self.w.setdefault("uncertified_nodes", {})[name] = detail
+                    if failed_payload is not None:
+                        self.node_data.setdefault(name, {})[
+                            "last_recoverable_attempt"] = failed_payload
                     self._say("graph", "WARN",
-                              "%s failed on re-measurement (%s) -- KEEPING the round-1 "
-                              "value %s and carrying on; the device has moved since it was "
-                              "measured, so treat the committed config as provisional"
-                              % (name, str(exc).split(".")[0].strip(),
-                                 ", ".join("%s=%.4g" % kv for kv in values[name].items())))
-                    self.drifted.append(name)
+                              "%s evidence was not certifiable (%s) -- keeping %s and "
+                              "continuing downstream optimization. This node blocks "
+                              "automatic writes, not the search."
+                              % (name, detail,
+                                 ", ".join("%s=%.4g" % kv
+                                           for kv in values[name].items())))
                     continue
+                if self._graph_restart_required:
+                    self._graph_restart_required = False
+                    restart_round = True
+                    self._say(
+                        "graph", "WARN",
+                        "%s restored the protected tuple; restarting from the first "
+                        "stale prerequisite on the next graph round" % name)
+                    break
                 self.stale[name] = False
+                if name not in ("t1", "readout_power", "readout_len", "single_shot",
+                                "pi_fidelity"):
+                    self.w.setdefault("uncertified_nodes", {}).pop(name, None)
                 if name == "readout_power":
                     self.w["pi_at_readout"] = float(self.w["pi_gain"])
                 old = values.get(name)
@@ -6021,6 +6538,10 @@ class AutoTuner(ExperimentClass):
                                   % (name, ", ".join("%s %.4g->%.4g" % (k, old[k], new[k])
                                                      for k in moved)))
                         self._mark_dependents_stale(name)
+            if budget_exhausted:
+                break
+            if restart_round:
+                continue
             # In particular, catch a fine-pulse move that was under that node's broad
             # statistical tolerance but outside the tighter measured fidelity-map cell.
             self._invalidate_pi_fidelity_if_unbound()
@@ -6042,18 +6563,21 @@ class AutoTuner(ExperimentClass):
         if best_state is not None and (any(self.stale.values()) or self._score() < best_score):
             self._restore_snapshot(best_state)
             self._say("graph", "OK", "restored best-so-far state (score %.3f)" % best_score)
-        fixed = not any(self.stale.values())
+        search_complete = not any(self.stale.values())
+        uncertified = set(self.w.get("uncertified_nodes", {}))
+        fixed = bool(search_complete and not uncertified)
         self.w["fixed_point"] = bool(fixed)
+        self.w["graph_search_complete"] = bool(search_complete)
         qubit_nodes = ("spec", "rough_pi", "single_shot", "pi_fidelity",
                        "fine_pi_freq", "fine_pi_amp")
-        self.w["qubit_fixed_point"] = not any(self.stale[n] for n in qubit_nodes)
-        if not fixed:
-            reason = ("max_rounds exhausted with stale nodes %s -- restored the "
-                      "protected control instead of spending more time on an "
-                      "uncertifiable mixed state"
+        self.w["qubit_fixed_point"] = bool(
+            not any(self.stale[n] for n in qubit_nodes)
+            and not (uncertified & set(qubit_nodes)))
+        if not search_complete:
+            reason = ("search ended with stale nodes %s; preserving the best empirical "
+                      "state instead of restoring the starting tuple"
                       % ", ".join(n for n, _, _ in GRAPH if self.stale[n]))
             self._say("graph", "WARN", reason)
-            self._restore_protected_control(reason)
             return best_score
         self._verify_final()
         return best_score
@@ -6323,20 +6847,37 @@ class AutoTuner(ExperimentClass):
             self._capture_protected_control()
             self.maintain()
             if self.w["duration_active"]:
-                try:
-                    duration_moved = self._cal_pulse_duration()
-                except TunerError as duration_err:
+                if self._runtime_budget_exhausted():
                     duration_moved = False
-                    self.w["duration_failure"] = str(duration_err)
+                    self.w["duration_failure"] = (
+                        "runtime budget was reached before pulse-duration search")
+                    self.w["search_budget_exhausted"] = True
+                    self.w.setdefault("search_stop_reason",
+                                      self.w["duration_failure"])
                     self.w["duration_optimized"] = False
                     self.w["duration_verified"] = False
-                    self.node_data.setdefault("pulse_duration", {})["failure"] = str(
-                        duration_err)
+                    self.node_data.setdefault("pulse_duration", {})["failure"] = (
+                        self.w["duration_failure"])
                     self._say(
                         "pulse_duration", "WARN",
-                        "%s. The fixed-duration best candidate is retained, but duration "
-                        "was not optimized and automatic qubit writes are blocked."
-                        % duration_err)
+                        "%s; the best fixed-duration candidate is retained and "
+                        "automatic qubit writes are blocked."
+                        % self.w["duration_failure"])
+                else:
+                    try:
+                        duration_moved = self._cal_pulse_duration()
+                    except TunerError as duration_err:
+                        duration_moved = False
+                        self.w["duration_failure"] = str(duration_err)
+                        self.w["duration_optimized"] = False
+                        self.w["duration_verified"] = False
+                        self.node_data.setdefault("pulse_duration", {})["failure"] = str(
+                            duration_err)
+                        self._say(
+                            "pulse_duration", "WARN",
+                            "%s. The fixed-duration best candidate is retained, but "
+                            "duration was not optimized and automatic qubit writes are "
+                            "blocked." % duration_err)
                 if duration_moved:
                     self._invalidate_waveform_dependents()
                     self.maintain()
@@ -6347,7 +6888,22 @@ class AutoTuner(ExperimentClass):
                     if self.w.get("duration_active", False)
                     and self.w.get("duration_verified", False) else 0)
                 used_fallbacks = 0
-                while True:
+                if self._runtime_budget_exhausted():
+                    self.w["leakage_failure"] = (
+                        "runtime budget was reached before leakage/DRAG search")
+                    self.w["search_budget_exhausted"] = True
+                    self.w.setdefault("search_stop_reason",
+                                      self.w["leakage_failure"])
+                    self.w["leakage_optimized"] = False
+                    self.w["leakage_verified"] = False
+                    self.node_data.setdefault("leakage", {})["failure"] = (
+                        self.w["leakage_failure"])
+                    self._say(
+                        "leakage", "WARN",
+                        "%s; the best computational-subspace pulse is retained and "
+                        "automatic qubit writes are blocked."
+                        % self.w["leakage_failure"])
+                while not self._runtime_budget_exhausted():
                     self.w.pop("leakage_max_ucb", None)
                     passed = self._run_leakage_stage()
                     chosen_leak = self.node_data.get("leakage", {}).get("chosen", {})
@@ -6361,6 +6917,8 @@ class AutoTuner(ExperimentClass):
                         "snapshot": self._snapshot(),
                     })
                     if passed or used_fallbacks >= max_fallbacks:
+                        break
+                    if self._runtime_budget_exhausted():
                         break
                     fallbacks = self._duration_leakage_fallbacks()
                     if not fallbacks:
@@ -6530,18 +7088,43 @@ class AutoTuner(ExperimentClass):
             self.w["fixed_point"] = False
         except TunerError as err:
             failure = str(err)
-            if hasattr(self, "protected_control") and not self.w.get(
-                    "protected_control_restored", False):
+            if hasattr(self, "protected_control"):
                 self._restore_protected_control(failure)
+            self.w.update(qubit_ok=False, readout_ok=False, verified=False,
+                          fixed_point=False)
+            success = False
             if self.w.get("target_reacquisition_used", False):
                 self.w["target_reacquisition_status"] = "coherent_validation_failed"
                 self.node_data.setdefault("spec", {})["target_reacquisition_status"] = (
                     self.w["target_reacquisition_status"])
             self._say("verdict", "FAIL", failure)
+        except Exception as err:
+            # Pyro/driver and numerical failures must not bypass artifact creation or
+            # erase candidates that were measured before the failure.  Certification
+            # remains false, and the protected tuple is restored only as the live
+            # working state; the append-only candidate archive is deliberately kept.
+            failure = "unexpected %s: %s" % (type(err).__name__, err)
+            if hasattr(self, "protected_control"):
+                self._restore_protected_control(failure)
+            self.w.update(qubit_ok=False, readout_ok=False, verified=False,
+                          fixed_point=False)
+            success = False
+            if self.w.get("target_reacquisition_used", False):
+                self.w["target_reacquisition_status"] = "coherent_validation_failed"
+                self.node_data.setdefault("spec", {})[
+                    "target_reacquisition_status"] = self.w[
+                        "target_reacquisition_status"]
+            self._say(
+                "verdict", "FAIL",
+                "%s -- partial data and the best measured candidate will still be "
+                "saved" % failure)
         except KeyboardInterrupt:
             failure = "interrupted by user"
             if hasattr(self, "protected_control"):
                 self._restore_protected_control(failure)
+            self.w.update(qubit_ok=False, readout_ok=False, verified=False,
+                          fixed_point=False)
+            success = False
             self._say("verdict", "WARN", "interrupted -- partial data is still saved")
 
         if (failure is None and self.w.get("leakage_active", False)
@@ -6572,6 +7155,8 @@ class AutoTuner(ExperimentClass):
                 and abs(((float(best_found["res_phase"])
                           - float(self.w.get("res_phase", 0.0)) + 180.0) % 360.0)
                         - 180.0) <= 1e-6
+                and abs(float(best_found.get("relax_delay", np.nan))
+                        - float(self.w["relax_delay"])) <= 1e-6
                 and abs(float(best_found["qubit_pi_freq"])
                         - float(self.w["drive_freq"])) <= 1e-6
                 and int(best_found["qubit_pi_gain"]) == int(self.w["pi_gain"])
@@ -6592,11 +7177,17 @@ class AutoTuner(ExperimentClass):
                            else "best_found_not_certified"),
                 "evidence_quality": (
                     "repeated_stable"
-                    if int(best_found.get("measurement_count", 0)) >= 2
+                    if best_found.get("quality_verified", False)
+                    and int(best_found.get("measurement_count", 0)) >= 2
                     and float(best_found.get("block_spread", np.inf)) <= 0.06
                     else "repeated_with_drift"
+                    if best_found.get("quality_verified", False)
+                    and int(best_found.get("measurement_count", 0)) >= 2
+                    else "single_verified_measurement"
+                    if best_found.get("quality_verified", False)
+                    else "repeated_unverified_measurement"
                     if int(best_found.get("measurement_count", 0)) >= 2
-                    else "single_map_measurement"),
+                    else "single_unverified_measurement"),
             })
         self.w["best_found"] = copy.deepcopy(best_found)
         self.w["best_observed"] = copy.deepcopy(best_observed)
@@ -6748,7 +7339,18 @@ class AutoTuner(ExperimentClass):
         except Exception as perr:
             print("[auto-tune] summary plot failed (%s); data still saved." % perr)
             plt.close("all")
-        self.pickle_data()
+        try:
+            self.pickle_data()
+        except Exception as serr:
+            # The runner still has the fully assembled in-memory result and will try
+            # its independent HDF5 save in ``finally``.  A local disk/serialization
+            # error must not turn a completed hardware search into an apparent search
+            # crash or hide BEST FOUND from the caller.
+            self.data["pickle_error"] = "%s: %s" % (
+                type(serr).__name__, serr)
+            print("[auto-tune] lossless pickle save failed (%s); returning the "
+                  "complete in-memory result so the runner can still save HDF5."
+                  % serr)
         return {'config': cfg, 'data': self.data}
 
     @staticmethod

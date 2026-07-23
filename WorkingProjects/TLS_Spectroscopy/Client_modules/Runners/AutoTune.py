@@ -89,7 +89,7 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
     return {
         "time": data["time"], "qubit": QUBIT, "success": bool(data["success"]),
         "autotuner_revision": data.get(
-            "autotuner_revision", "canonical-single-shot-v3"),
+            "autotuner_revision", "anytime-search-v4"),
         "fidelity_definition": data.get(
             "fidelity_definition", "balanced_assignment"),
         "control_validation_only": data.get("control_validation_only", False),

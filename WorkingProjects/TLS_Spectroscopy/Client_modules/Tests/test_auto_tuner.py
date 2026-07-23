@@ -840,6 +840,85 @@ check("direct fallback chooses pi's first lobe instead of the equally bright 3pi
           / _fallback_dev.PI_GAIN < 0.20,
       "%d vs first pi %.0f (input was 24000=3pi)"
       % (_fallback_tuner.w["pi_gain"], _fallback_dev.PI_GAIN))
+
+# The hardware failure that motivated v4 followed the *clean* averaged-Rabi path and
+# then stopped at T1.  Prove that this path, not only the fallback above, archives the
+# newly found pulse in the exact canonical single-shot objective before T1 can matter.
+install_simulator(_fallback_dev)
+_clean_cfg = dict(_fallback_cfg)
+_clean_cfg["qubit_pi_gain"] = 6000
+_clean_tuner = _RoughFallbackTuner(
+    soc=None, soccfg=None, path="rough_clean_archive",
+    outerFolder=tempfile.gettempdir(), suffix="RoughClean", cfg=_clean_cfg)
+_clean_tuner.w = {
+    "read_pulse_freq": float(_clean_cfg["read_pulse_freq"]),
+    "read_pulse_gain": int(_clean_cfg["read_pulse_gain"]),
+    "read_length": float(_clean_cfg["read_length"]),
+    "res_phase": float(_clean_cfg["res_phase"]),
+    "relax_delay": float(_clean_cfg["relax_delay"]),
+    "qubit_freq": float(_clean_cfg["qubit_freq"]),
+    "drive_freq": float(_clean_cfg["qubit_pi_freq"]),
+    "pi_gain": int(_clean_cfg["qubit_pi_gain"]),
+    "sigma_us": float(_clean_cfg["sigma"]), "drag_beta": 0.0,
+    "readout_verified": False, "readout_power_verified": False,
+    "readout_len_verified": False, "single_shot_reproduced": False,
+    "updated": set(),
+}
+_clean_tuner.protected_control = {
+    "tuple": _clean_tuner._working_control_tuple(),
+    "aggregate": {"measurement_valid": True},
+}
+_clean_tuner._cal_rough_pi()
+_clean_best_before_t1, _ = _clean_tuner._summarize_candidate_archive()
+_clean_tuner.w.update(t1_verified=False, t1_provisional=True,
+                      t1_failure="synthetic marginal next node")
+_clean_best_after_t1, _ = _clean_tuner._summarize_candidate_archive()
+check("a clean Rabi archives its canonical pi before a later T1 failure can erase it",
+      _clean_best_before_t1 is not None
+      and _clean_best_before_t1["evidence"] == "averaged_rabi_canonical_anchor"
+      and _clean_best_after_t1["archive_indices"]
+          == _clean_best_before_t1["archive_indices"]
+      and _clean_best_after_t1["qubit_pi_gain"] == _clean_tuner.w["pi_gain"]
+      and abs(_clean_best_after_t1["qubit_pi_freq"]
+              - _fallback_dev.F_Q) < 1e-9,
+      "best=%s" % _clean_best_after_t1)
+
+
+class _TransientAnchorTuner(_RoughFallbackTuner):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.anchor_attempts = 0
+
+    def _rough_pi_direct_point(self, cfg, gain, shots, strict, evidence):
+        if evidence == "averaged_rabi_canonical_anchor":
+            self.anchor_attempts += 1
+            if self.anchor_attempts == 1:
+                # A driver can return an unusable acquisition without raising.  That
+                # must not be mistaken for a successfully archived candidate.
+                return {"freq": self.w["drive_freq"], "gain": int(gain),
+                        "fid": np.nan, "fid_se": np.inf, "sep": np.nan,
+                        "outlier": np.inf, "verified": False}
+        return super()._rough_pi_direct_point(
+            cfg, gain, shots, strict, evidence)
+
+
+_transient_anchor = _TransientAnchorTuner(
+    soc=None, soccfg=None, path="rough_transient_anchor",
+    outerFolder=tempfile.gettempdir(), suffix="RoughTransient", cfg=_clean_cfg)
+_transient_anchor.w = dict(_clean_tuner.w)
+_transient_anchor.w.update(
+    pi_gain=int(_clean_cfg["qubit_pi_gain"]),
+    drive_freq=float(_clean_cfg["qubit_pi_freq"]), updated=set())
+_transient_anchor.protected_control = {
+    "tuple": _transient_anchor._working_control_tuple(),
+    "aggregate": {"measurement_valid": True},
+}
+_transient_anchor._cal_rough_pi()
+_transient_best, _ = _transient_anchor._summarize_candidate_archive()
+check("a non-raising bad canonical anchor is retried and the clean Rabi is preserved",
+      _transient_anchor.anchor_attempts == 2
+      and _transient_best is not None
+      and _transient_best["qubit_pi_gain"] == _transient_anchor.w["pi_gain"])
 np.random.set_state(_fallback_np_state)
 
 # Restore the normal virtual hardware programs for the complete graph below.
@@ -1455,6 +1534,125 @@ _duration_best, _ = _best_effort._summarize_candidate_archive()
 check("candidate aggregation never averages two physically different durations",
       _duration_best["measurement_count"] == 1
       and abs(_duration_best["qubit_sigma_us"] - 0.10) < 1e-12)
+_best_effort.candidate_archive = []
+for _relax, _fid in ((200.0, 0.89), (500.0, 0.90)):
+    _rcfg = _best_effort._cfg_for("pi_fidelity")
+    _rcfg["relax_delay"] = _relax
+    _best_effort._record_empirical_candidate(
+        "reset_identity", {"fid": _fid, "fid_se": 0.004, "sep": 3.0,
+                           "outlier": 0.01, "verified": True},
+        7248.95, 4300, 2534.7, 11500, 500, False,
+        evidence="reset_identity", measured_cfg=_rcfg)
+_relax_best, _ = _best_effort._summarize_candidate_archive()
+check("candidate aggregation never pools different reset delays",
+      _relax_best["measurement_count"] == 1
+      and abs(_relax_best["relax_delay"] - 500.0) < 1e-12)
+_best_effort.candidate_archive = []
+for _gain, _fid, _verified in ((11000, 0.88, True), (12500, 0.97, False)):
+    _quality_cfg = _best_effort._cfg_for("pi_fidelity")
+    _best_effort._record_empirical_candidate(
+        "quality_ranking", {"fid": _fid, "fid_se": 0.004, "sep": 3.0,
+                            "outlier": 0.01, "verified": _verified},
+        7248.95, 4300, 2534.7, _gain, 500, False,
+        evidence="verified_priority", measured_cfg=_quality_cfg)
+_quality_best, _quality_observed = _best_effort._summarize_candidate_archive()
+check("an unstable 97% point cannot outrank a reproduced 88% candidate",
+      _quality_best["qubit_pi_gain"] == 11000
+      and _quality_best["quality_verified"]
+      and _quality_observed["qubit_pi_gain"] == 12500)
+
+
+class _UnexpectedFailureAcquireTuner(_BestEffortAcquireTuner):
+    def maintain(self):
+        measured_cfg = self._cfg_for("pi_fidelity")
+        for fid in (0.92, 0.93):
+            self._record_empirical_candidate(
+                "unexpected_failure_regression",
+                {"fid": fid, "fid_se": 0.005, "sep": 3.5,
+                 "outlier": 0.01, "verified": True},
+                self.w["read_pulse_freq"], self.w["read_pulse_gain"],
+                2531.8466, 5746, 500, False,
+                evidence="clean_rabi_then_driver_error", measured_cfg=measured_cfg)
+        # Reproduce the dangerous stale-state case: a prior recovery marked the
+        # protected tuple restored, then later gates happened to become true before a
+        # driver exception.  The exception handler must revoke them unconditionally.
+        self.w.update(protected_control_restored=True, qubit_ok=True,
+                      readout_ok=True, verified=True, fixed_point=True)
+        raise RuntimeError("synthetic Pyro transport failure after clean Rabi")
+
+
+_unexpected_failure = _UnexpectedFailureAcquireTuner(
+    soc=None, soccfg=None, path="unexpected_failure", outerFolder=tmp,
+    suffix="UnexpectedFailure", cfg=dict(BaseConfig))
+_unexpected_out = _unexpected_failure.acquire(plotDisp=False)["data"]
+check("an unexpected hardware error still returns and saves the measured Rabi candidate",
+      _unexpected_out["outcome"] == "best_effort"
+      and _unexpected_out["best_found"]["qubit_pi_gain"] == 5746
+      and abs(_unexpected_out["best_found"]["qubit_pi_freq"] - 2531.8466) < 1e-12
+      and "unexpected RuntimeError" in _unexpected_out["failure"]
+      and not _unexpected_out["certified_to_write"]
+      and not _unexpected_failure.w["qubit_ok"]
+      and not _unexpected_failure.w["readout_ok"])
+
+
+class _SerializationFailureTuner(_UnexpectedFailureAcquireTuner):
+    def pickle_data(self, *args, **kwargs):
+        raise OSError("synthetic full disk")
+
+
+_serialization_failure = _SerializationFailureTuner(
+    soc=None, soccfg=None, path="serialization_failure", outerFolder=tmp,
+    suffix="SerializationFailure", cfg=dict(BaseConfig))
+_serialization_out = _serialization_failure.acquire(plotDisp=False)["data"]
+check("a pickle/filesystem failure cannot hide the completed best-found result",
+      _serialization_out["best_found"]["qubit_pi_gain"] == 5746
+      and "synthetic full disk" in _serialization_out["pickle_error"])
+
+
+class _BudgetAfterGraphTuner(_BestEffortAcquireTuner):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.duration_started = False
+        self.leakage_started = False
+
+    def maintain(self):
+        measured_cfg = self._cfg_for("pi_fidelity")
+        self._record_empirical_candidate(
+            "budget_regression",
+            {"fid": 0.91, "fid_se": 0.005, "sep": 3.2,
+             "outlier": 0.01, "verified": True},
+            self.w["read_pulse_freq"], self.w["read_pulse_gain"],
+            2531.8466, 5746, 500, False,
+            evidence="graph_budget_boundary", measured_cfg=measured_cfg)
+        self.w["search_budget_exhausted"] = True
+
+    def _runtime_budget_exhausted(self):
+        return bool(self.w.get("search_budget_exhausted", False))
+
+    def _cal_pulse_duration(self):
+        self.duration_started = True
+        raise AssertionError("duration stage must not start after runtime exhaustion")
+
+    def _run_leakage_stage(self):
+        self.leakage_started = True
+        raise AssertionError("leakage stage must not start after runtime exhaustion")
+
+    def _guard_working_control(self, checkpoint, final=False):
+        return True
+
+
+_budget_after_graph = _BudgetAfterGraphTuner(
+    soc=None, soccfg=None, path="budget_after_graph", outerFolder=tmp,
+    suffix="BudgetAfterGraph", cfg=dict(BaseConfig),
+    params={"pulse_duration": {"enabled": True},
+            "leakage": {"enabled": True}})
+_budget_after_out = _budget_after_graph.acquire(plotDisp=False)["data"]
+check("runtime exhaustion skips optional long searches and keeps the graph candidate",
+      not _budget_after_graph.duration_started
+      and not _budget_after_graph.leakage_started
+      and _budget_after_out["best_found"]["qubit_pi_gain"] == 5746
+      and "runtime budget" in _budget_after_graph.w["duration_failure"]
+      and "runtime budget" in _budget_after_graph.w["leakage_failure"])
 
 
 class _PiOnlyTuner(_StubTuner):
@@ -1499,7 +1697,7 @@ check("baseline-only validation measures the exact input four times and starts n
       and _control_out["tuned"] == {})
 check("saved output is stamped with the executable tuner revision",
       _control_out["autotuner_revision"] == T.AUTOTUNER_REVISION
-      and T.AUTOTUNER_REVISION == "canonical-single-shot-v3")
+      and T.AUTOTUNER_REVISION == "anytime-search-v4")
 
 
 class _LowStartSearchTuner(_ControlOnlyTuner):
@@ -1819,6 +2017,7 @@ print("\n== readout_len must EXTEND past the ladder, not just warn ==")
 class _LenTuner(_StubTuner):
     def __init__(self, best_len, **kw):
         _StubTuner.__init__(self, 11500.0, 11500.0, **kw)
+        self.w["t1_verified"] = True
         self._best = float(best_len)
         self.tested = []
 
@@ -1842,6 +2041,15 @@ check("the ladder extended beyond its top when F was still rising",
       max(lt.tested) > 45.0, "tested up to %.1f us" % max(lt.tested))
 check("the chosen length is no longer the ladder end",
       lt.w["read_length"] > 45.0, "chose %.1f us" % lt.w["read_length"])
+
+lt_provisional = _LenTuner(best_len=30.0, params={"readout_len": {
+    "lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0, 45.0)}})
+lt_provisional.w.update(read_length=30.0, t1_us=20.0, t1_lo_us=2.0,
+                        t1_verified=False, t1_provisional=True)
+lt_provisional._cal_readout_len()
+check("a provisional T1 cannot remove the 30-us incumbent from direct search",
+      30.0 in lt_provisional.tested and 45.0 in lt_provisional.tested,
+      "tested=%s" % sorted(set(lt_provisional.tested)))
 
 lt2 = _LenTuner(best_len=1000.0, params={"readout_len": {
     "lengths_us": (1.0, 2.0, 4.0, 8.0, 14.0, 20.0, 30.0, 45.0)}})
@@ -1879,8 +2087,8 @@ try:
     _unstable_len_blocked = False
 except T.TunerError:
     _unstable_len_blocked = True
-check("an unstable length audit archives the winner but cannot replace the incumbent",
-      _unstable_len_blocked and _unstable_len.w["read_length"] == 4.0
+check("an unstable length audit keeps the incumbent and continues uncertified",
+      not _unstable_len_blocked and _unstable_len.w["read_length"] == 4.0
       and _unstable_len.w["readout_len_verified"] is False
       and _unstable_len.node_data["readout_len"]["status"]
       == "unstable_challenger_rejected")
@@ -1923,6 +2131,28 @@ check("a drifting single final candidate cannot self-normalize into verification
       len(_single_rows) == 1 and not _single_rows[0]["verified"]
       and "relative_block_spread" not in _single_rows[0],
       T.AutoTuner._confirmation_diagnostics(_single_rows))
+
+_cm_tuner.candidate_archive = []
+_archive_drift_values = iter((0.55, 0.70, 0.60, 0.68))
+
+
+def _archive_drift_measure(freq, gain):
+    row = {"freq": freq, "gain": gain, "fid": next(_archive_drift_values),
+           "fid_se": 0.005, "sep": 3.0, "outlier": 0.01,
+           "verified": True}
+    entry = _cm_tuner._record_empirical_candidate(
+        "archive_drift", row, 7248.95, 4300, 2534.4, 11500, 500, False,
+        evidence="block_later_rejected", measured_cfg=_cm_tuner._cfg_for("pi_fidelity"))
+    row["archive_index"] = entry["index"]
+    return row
+
+
+_archive_drift_rows = _cm_tuner._confirm_candidate_blocks(
+    [_cm_candidates[0]], _archive_drift_measure, 4, max_disagreement=0.06)
+check("a failed aggregate reproducibility audit downgrades every archived block",
+      not _archive_drift_rows[0]["verified"]
+      and all(not e["quality_verified"] and not e["valid"]
+              for e in _cm_tuner.candidate_archive))
 
 _id_calls = [0]
 _id_delta = (0.15, -0.02, 0.25, 0.0)
@@ -2024,8 +2254,8 @@ try:
     _unstable_readout_blocked = False
 except T.TunerError:
     _unstable_readout_blocked = True
-check("an unstable readout map is retained as evidence but cannot replace the incumbent",
-      _unstable_readout_blocked
+check("an unstable readout map keeps the incumbent and continues uncertified",
+      not _unstable_readout_blocked
       and _unstable_readout.node_data["readout_power"]["selected"]["fid"] > 0.89
       and _unstable_readout.w["read_pulse_gain"] == 4300
       and _unstable_readout.w["readout_power_verified"] is False
@@ -2090,8 +2320,8 @@ try:
     _persistent_instability_stopped = False
 except T.TunerError:
     _persistent_instability_stopped = True
-check("persistent post-refinement instability trips the graph circuit breaker",
-      _persistent_instability_stopped
+check("persistent post-refinement instability blocks writes without stopping search",
+      not _persistent_instability_stopped
       and _unstable_map.w["drive_freq"] == 2534.40
       and _unstable_map.w["pi_gain"] == 10000
       and _unstable_map.w["pi_fidelity_audit_failed"]
@@ -2176,10 +2406,12 @@ T.AutoTuner._cal_fine_pi_amp = _orig_fine
 check("a round-2 spec failure returns the measured best candidate rather than losing it",
       out3["data"].get("best_found") is not None
       and out3["data"]["outcome"] == "best_effort")
-check("the repeated-node circuit breaker is reported, not silent",
-      any("mixed-vintage" in l and "circuit breaker" in l for l in t3.report_lines))
-check("mixed-vintage evidence restores the protected control and blocks writes",
-      out3["data"]["working"].get("protected_control_restored", False)
+check("a repeated-node evidence failure is reported while search continues",
+      any("evidence was not certifiable" in l and "continuing" in l
+          for l in t3.report_lines))
+check("mixed-vintage evidence preserves best effort and still blocks writes",
+      not out3["data"]["working"].get("protected_control_restored", False)
+      and out3["data"].get("best_found") is not None
       and out3["data"]["eligible_tuned"] == {})
 
 print("\n== T1 must be identifiable and must own its downstream timing domain ==")
@@ -2188,24 +2420,43 @@ print("\n== T1 must be identifiable and must own its downstream timing domain ==
 class _T1Tuner(_StubTuner):
     def __init__(self, tau, tau_err, **kw):
         _StubTuner.__init__(self, 11500.0, 11500.0, **kw)
-        self._tau, self._err = float(tau), float(tau_err)
+        self._taus = (tuple(float(v) for v in tau)
+                      if isinstance(tau, (tuple, list)) else (float(tau),))
+        self._errs = (tuple(float(v) for v in tau_err)
+                      if isinstance(tau_err, (tuple, list)) else (float(tau_err),))
 
     def _cfg_for(self, node):
         return _StubTuner._cfg_for(self, node)
 
 
 def _run_t1(tau, tau_err, relax0=3000.0, params=None, read_length=20.0,
-            reduced_chi2=1.0):
+            reduced_chi2=1.0, working_readout_ready=False):
     t = _T1Tuner(tau, tau_err, params=params)
     t.w.update(relax_delay=relax0, read_length=float(read_length))
+    if working_readout_ready:
+        t.w.update(readout_power_verified=True, readout_len_verified=True,
+                   single_shot_reproduced=True)
+        t.protected_control = {
+            "tuple": {"read_pulse_freq": 7000.0, "read_pulse_gain": 1000,
+                      "read_length": 5.0, "res_phase": 90.0},
+            "aggregate": {"measurement_valid": True},
+        }
     t.stale["readout_len"] = False
     t.stale["rough_pi"] = False
     saved_pop, saved_fit = T._pop_with_local_refs, T.fit_exp_decay
-    T._pop_with_local_refs = lambda *a, **k: (0.5, 1.0, 0.01)
+    t.t1_readout_configs = []
+    def _fake_t1_pop(_exp, cfg, *args, **kwargs):
+        t.t1_readout_configs.append(
+            (float(cfg["read_pulse_freq"]), int(cfg["read_pulse_gain"]),
+             float(cfg["read_length"]), float(cfg["res_phase"])))
+        return 0.5, 1.0, 0.01
+    T._pop_with_local_refs = _fake_t1_pop
     t.t1_fit_calls = 0
     def _fake_t1_fit(ts, ps, *args, **kwargs):
         t.t1_fit_calls += 1
-        return {"ok": True, "tau": t._tau, "tau_err": t._err,
+        tau = t._taus[min(t.t1_fit_calls - 1, len(t._taus) - 1)]
+        err = t._errs[min(t.t1_fit_calls - 1, len(t._errs) - 1)]
+        return {"ok": True, "tau": tau, "tau_err": err,
                 "reduced_chi2": float(reduced_chi2),
                 "yfit": np.zeros_like(ts)}
     T.fit_exp_decay = _fake_t1_fit
@@ -2226,25 +2477,53 @@ def _run_failed_t1():
     T.fit_exp_decay = lambda ts, ps, *a, **k: {"ok": False, "tau": np.nan,
                                                "tau_err": np.inf,
                                                "yfit": np.full_like(ts, np.nan)}
-    failed = False
+    failed, result = False, None
     try:
-        t._cal_t1()
+        result = t._cal_t1()
     except T.TunerError:
         failed = True
     finally:
         T._pop_with_local_refs, T.fit_exp_decay = saved_pop, saved_fit
-    return t, failed
+    return t, failed, result
 
 
-_t1_failed, _t1_raised = _run_failed_t1()
-check("a failed T1 fit cannot masquerade as a measured 30-us lifetime",
-      _t1_raised and not _t1_failed.w.get("t1_verified", False)
-      and _t1_failed.w.get("t1_us") == 1e6)
+_t1_failed, _t1_raised, _t1_fallback_result = _run_failed_t1()
+check("a failed T1 fit cannot masquerade as verified or terminate optimization",
+      not _t1_raised and not _t1_failed.w.get("t1_verified", False)
+      and _t1_failed.w.get("t1_provisional", False)
+      and _t1_fallback_result is not None
+      and "cap" in _t1_fallback_result[0])
 
 
 t1_bad_err = _run_t1(140.6, 80.3)
-check("a 57%-uncertain fit is rejected instead of becoming a safety bound",
-      t1_bad_err.t1_failed and not t1_bad_err.w.get("t1_verified", False))
+check("a 57%-uncertain fit remains provisional without aborting the search",
+      not t1_bad_err.t1_failed and not t1_bad_err.w.get("t1_verified", False)
+      and t1_bad_err.w.get("t1_provisional", False)
+      and t1_bad_err.t1_result is not None)
+
+t1_marginal_retry = _run_t1(122.8, (46.2, 24.0))
+check("a hardware-like 38% T1 fit automatically adds statistics and recovers",
+      not t1_marginal_retry.t1_failed and t1_marginal_retry.t1_fit_calls >= 2
+      and t1_marginal_retry.w.get("t1_verified", False),
+      "fits=%d verified=%s" % (t1_marginal_retry.t1_fit_calls,
+                                t1_marginal_retry.w.get("t1_verified", False)))
+
+t1_improved_readout = _run_t1(
+    122.8, (46.2, 24.0), working_readout_ready=True)
+check("an adaptive T1 retry uses the newly verified working readout, not the old control",
+      t1_improved_readout.t1_readout_configs
+      and all(c == (7248.9, 4300, 20.0, 0.0)
+              for c in t1_improved_readout.t1_readout_configs),
+      "configs=%s" % t1_improved_readout.t1_readout_configs[:3])
+
+t1_disagree = _run_t1((100.0, 300.0), (40.0, 20.0))
+check("precise but disagreeing adaptive T1 attempts remain provisional",
+      not t1_disagree.t1_failed and not t1_disagree.w.get("t1_verified", False)
+      and t1_disagree.w.get("t1_provisional", False)
+      and t1_disagree.w["t1_lo_us"] <= 20.0
+      and t1_disagree.w["t1_hi_us"] >= 340.0,
+      "bounds=[%.1f, %.1f]" % (t1_disagree.w["t1_lo_us"],
+                                t1_disagree.w["t1_hi_us"]))
 
 t1t = _run_t1(140.6, 40.0)
 check("an identifiable finite-error T1 retains conservative lower/upper bounds",
@@ -2274,7 +2553,27 @@ check("an unsafe initial reset forces a complete T1 retry and re-stales rough Ra
 
 t1n = _run_t1(140.6, float("inf"))
 check("a T1 with NO usable error bar is not treated as precise",
-      t1n.t1_failed and not t1n.w.get("t1_verified", False))
+      not t1n.t1_failed and not t1n.w.get("t1_verified", False)
+      and t1n.w.get("t1_provisional", False))
+
+t1_provisional_reset = _run_t1(140.6, 80.3, relax0=50.0)
+check("provisional T1 may lengthen reset and re-stales the rough pi",
+      not t1_provisional_reset.t1_failed
+      and t1_provisional_reset.w["relax_delay"] >=
+          5.0 * t1_provisional_reset.w["t1_hi_us"]
+      and t1_provisional_reset.stale["rough_pi"])
+
+_t1_signature = _T1Tuner(100.0, 50.0)
+_t1_signature.w.update(t1_provisional=True, sigma_us=0.25, drag_beta=0.0)
+_t1_signature.stale["t1"] = False
+_signature_first = _t1_signature._schedule_provisional_t1_retry()
+_t1_signature.stale["t1"] = False
+_signature_same = _t1_signature._schedule_provisional_t1_retry()
+_t1_signature.w["relax_delay"] += 1.0
+_signature_changed = _t1_signature._schedule_provisional_t1_retry()
+check("provisional T1 retries once per exact control tuple and then quiesces",
+      _signature_first and not _signature_same and _signature_changed
+      and _t1_signature.stale["t1"])
 
 _linear_t = np.linspace(0.05, 60.0, 12)
 _linear_y = 1.0 - 0.02 * (_linear_t - _linear_t[0]) / np.ptp(_linear_t)
@@ -2285,8 +2584,10 @@ _linear_guard = (_run_t1(
 check("a tiny linear drift cannot be extrapolated into a multi-ms verified T1",
       (not _linear_fit["ok"]
        or (_linear_fit["tau"] > 10.0 * np.ptp(_linear_t)
-           and _linear_guard.t1_failed
-           and not _linear_guard.w.get("t1_verified", False))),
+           and not _linear_guard.t1_failed
+           and _linear_guard.w.get("t1_provisional", False)
+           and not _linear_guard.w.get("t1_verified", False)
+           and _linear_guard.w["relax_delay"] <= 3000.0 + 1e-9)),
       "fit %.0f +/- %.0f us over %.0f us" %
       (_linear_fit["tau"], _linear_fit["tau_err"], np.ptp(_linear_t)))
 
@@ -2311,7 +2612,8 @@ _systematic_guard = _run_t1(
     20.0, 0.5, reduced_chi2=_systematic_fit["reduced_chi2"],
     params={"t1": {"t_max_us": 60.0}})
 check("a high-chi-square decay cannot certify reset/readout timing",
-      _systematic_guard.t1_failed
+      not _systematic_guard.t1_failed
+      and _systematic_guard.w.get("t1_provisional", False)
       and not _systematic_guard.w.get("t1_verified", False),
       "reduced chi2=%.1f" % _systematic_fit["reduced_chi2"])
 
@@ -2327,6 +2629,168 @@ check("the final timing invariant rejects a stale 45-us window after T1 shrinks"
       not T.t1_timing_domain_valid({
           "t1_verified": True, "t1_lo_us": 79.0, "t1_hi_us": 81.0,
           "read_length": 45.0, "relax_delay": 405.0}))
+
+
+class _AnytimeGraphTuner(_StubTuner):
+    """A persistent provisional T1 must not prevent any downstream search node."""
+    def __init__(self):
+        super().__init__(11500.0, 11500.0, params={"max_rounds": 2})
+        self.calls = []
+        self.retried_t1_after_readout = False
+        self.w.update(qubit_freq=2534.4, ss_fidelity=np.nan,
+                      ss_fidelity_se=np.inf, ss_sep_sigma=np.nan,
+                      pi_gain_err=np.inf, uncertified_nodes={})
+
+    def _same(self, name, key, value):
+        self.calls.append(name)
+        return {key: float(value)}, {key: 1e9}
+
+    def _cal_resonator(self):
+        return self._same("resonator", "f0", self.w["read_pulse_freq"])
+
+    def _cal_spec(self):
+        return self._same("spec", "f", self.w["qubit_freq"])
+
+    def _cal_rough_pi(self):
+        return self._same("rough_pi", "g", self.w["pi_gain"])
+
+    def _cal_t1(self):
+        self.calls.append("t1")
+        self.w.update(t1_us=100.0, t1_lo_us=30.0, t1_hi_us=210.0,
+                      t1_readout_cap_us=30.0, t1_verified=False,
+                      t1_provisional=True)
+        self.w.setdefault("uncertified_nodes", {})["t1"] = "synthetic marginal fit"
+        return {"t1": 100.0, "cap": 30.0}, {"t1": 1e9, "cap": 1e9}
+
+    def _cal_chi(self):
+        return self._same("chi", "f", self.w["read_pulse_freq"])
+
+    def _cal_readout_power(self):
+        self.calls.append("readout_power")
+        return ({"f": self.w["read_pulse_freq"], "g": self.w["read_pulse_gain"]},
+                {"f": 1e9, "g": 1e9})
+
+    def _cal_readout_len(self):
+        return self._same("readout_len", "L", self.w["read_length"])
+
+    def _cal_single_shot(self):
+        self.calls.append("single_shot")
+        self.w.update(ss_fidelity=0.80, ss_fidelity_se=0.01, ss_sep_sigma=3.0)
+        if (self.w.get("t1_provisional", False)
+                and not self.retried_t1_after_readout):
+            self.stale["t1"] = True
+            self.retried_t1_after_readout = True
+        return {"F": 0.80}, {"F": 1e9}
+
+    def _cal_pi_fidelity(self):
+        self.calls.append("pi_fidelity")
+        return ({"f": self.w["drive_freq"], "g": self.w["pi_gain"]},
+                {"f": 1e9, "g": 1e9})
+
+    def _cal_fine_pi_freq(self):
+        return self._same("fine_pi_freq", "f", self.w["drive_freq"])
+
+    def _cal_fine_pi_amp(self):
+        return self._same("fine_pi_amp", "g", self.w["pi_gain"])
+
+    def _invalidate_pi_fidelity_if_unbound(self):
+        return False
+
+    def _verify_final(self):
+        self.calls.append("verify_final")
+
+
+_anytime_graph = _AnytimeGraphTuner()
+_anytime_graph.maintain()
+_downstream_after_t1 = {
+    "chi", "readout_power", "readout_len", "single_shot", "pi_fidelity",
+    "fine_pi_freq", "fine_pi_amp", "verify_final",
+}
+check("persistent provisional T1 still executes every downstream optimizer",
+      _downstream_after_t1.issubset(set(_anytime_graph.calls))
+      and _anytime_graph.calls.count("t1") == 2
+      and _anytime_graph.w["graph_search_complete"]
+      and not _anytime_graph.w["fixed_point"],
+      "calls=%s" % _anytime_graph.calls)
+
+
+class _ThrownRecoverableTuner(_AnytimeGraphTuner):
+    def __init__(self):
+        super().__init__()
+        self.retried_t1_after_readout = True
+
+    def _cal_t1(self):
+        self.calls.append("t1_throws")
+        # A failed method is allowed to have collected/archived measurements, but none
+        # of these partial coordinate mutations may escape into downstream nodes.
+        self.w["pi_gain"] = 123
+        self.w["read_pulse_freq"] = -999.0
+        raise T.TunerError("synthetic first-round marginal evidence")
+
+
+_thrown_recoverable = _ThrownRecoverableTuner()
+_thrown_original_gain = _thrown_recoverable.w["pi_gain"]
+_thrown_original_read = _thrown_recoverable.w["read_pulse_freq"]
+_thrown_recoverable.maintain()
+check("a first-round recoverable exception rolls back partial mutation and continues",
+      _thrown_recoverable.w["pi_gain"] == _thrown_original_gain
+      and _thrown_recoverable.w["read_pulse_freq"] == _thrown_original_read
+      and "chi" in _thrown_recoverable.calls
+      and "fine_pi_amp" in _thrown_recoverable.calls
+      and "t1" in _thrown_recoverable.w.get("uncertified_nodes", {}),
+      "calls=%s" % _thrown_recoverable.calls)
+
+
+class _RestoreRestartTuner(_AnytimeGraphTuner):
+    def __init__(self):
+        super().__init__()
+        self.retried_t1_after_readout = True
+        self.w.update(qubit_freq=2534.4, sigma_us=float(BaseConfig["sigma"]),
+                      drag_beta=0.0)
+        self.protected_control = {
+            "tuple": self._working_control_tuple(), "aggregate": {},
+            "source": "synthetic", "promotion_count": 0,
+        }
+        self.did_restore = False
+
+    def _cal_readout_power(self):
+        if not self.did_restore:
+            self.did_restore = True
+            self.calls.append("readout_power_restore")
+            self._restore_protected_control("synthetic mid-round regression")
+            return ({"f": self.w["read_pulse_freq"],
+                     "g": self.w["read_pulse_gain"]},
+                    {"f": 1e9, "g": 1e9})
+        return super()._cal_readout_power()
+
+
+_restart_graph = _RestoreRestartTuner()
+_restart_graph.maintain()
+_restore_at = _restart_graph.calls.index("readout_power_restore")
+check("a protected-control restore restarts at prerequisites before downstream nodes",
+      _restart_graph.calls[_restore_at + 1] == "resonator"
+      and "readout_len" not in _restart_graph.calls[:_restore_at + 1],
+      "calls=%s" % _restart_graph.calls)
+
+
+class _RuntimeAnytimeTuner(_AnytimeGraphTuner):
+    def _runtime_budget_exhausted(self):
+        return "rough_pi_budget_point" in self.calls
+
+    def _cal_rough_pi(self):
+        self.calls.append("rough_pi_budget_point")
+        self.w["pi_gain"] = 7777
+        return {"g": 7777.0}, {"g": 0.0}
+
+
+_runtime_anytime = _RuntimeAnytimeTuner()
+_runtime_anytime.maintain()
+check("runtime exhaustion returns the measured working state instead of restoring input",
+      _runtime_anytime.w["pi_gain"] == 7777
+      and _runtime_anytime.w.get("search_budget_exhausted", False)
+      and not _runtime_anytime.w["graph_search_complete"]
+      and "verify_final" not in _runtime_anytime.calls,
+      "calls=%s" % _runtime_anytime.calls)
 
 print("\n== an ASYMMETRIC resonator dip must not bias f0 ==")
 _rng = np.random.default_rng(7)
