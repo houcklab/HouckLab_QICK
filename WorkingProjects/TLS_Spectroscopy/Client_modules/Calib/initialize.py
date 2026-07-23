@@ -22,7 +22,7 @@ BaseConfig = {
     "reps": 1000,
     "relax_delay": 3000,
     "adc_trig_offset": 0.5,
-    "res_phase": 120.0,
+    "res_phase": 135.0,
 
     "read_pulse_style": "const",
     "read_length": 30.0,
