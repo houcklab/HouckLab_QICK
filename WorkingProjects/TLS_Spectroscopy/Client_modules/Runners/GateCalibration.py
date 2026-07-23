@@ -8,9 +8,10 @@ import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import Transmission
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import (
     TransmissionVsFFGain, FFTransProgram)
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import RabiChevronIQ
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
@@ -135,19 +136,14 @@ def run_transmission(outer_folder, soc, soccfg):
     f0 = float(BaseConfig["read_pulse_freq"])
     start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else f0 - 2.0
     stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
-    cfg = _base_cfg(p, extra={
-        "trans_freq_start": float(start),
-        "trans_freq_stop": float(stop),
-        "TransNumPoints": int(p["freq_points"]),
-        "ff_gain_vec": [int(FF_HOLD_GAIN)], "ff_settle_us": 20.0,
-    })
+    f_vec = np.linspace(float(start), float(stop), int(p["freq_points"]))
+    cfg = _base_cfg(p)
     cfg["relax_delay"] = 50
     print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
-    exp = TransmissionVsFFGain(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-                               suffix="GateCal_Transmission", cfg=cfg, save_resonator_lookup=False)
-    exp.acquire(plotDisp=LIVE_PLOTS)
+    exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                       suffix="GateCal_Transmission", cfg=cfg, f_vec=f_vec)
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
-    print("[transmission] read the dip -> set BaseConfig['read_pulse_freq'].")
     return exp
 
 
@@ -194,25 +190,20 @@ def run_qubit_spec(outer_folder, soc, soccfg):
     """QUA Qubit_Spec analog: 1D qubit-drive-freq sweep at the cal flux -> qubit dip.
     Reuses the step-2 FF spec at a single flux (advanced fit off)."""
     p = P_QUBIT_SPEC
-    n = max(int(round((p["freq_max_mhz"] - p["freq_min_mhz"]) / p["freq_step_mhz"])) + 1, 5)
     cfg = _base_cfg(p, extra={
-        "qubit_freq_start": p["freq_min_mhz"], "qubit_freq_stop": p["freq_max_mhz"],
-        "qubit_freq_step": p["freq_step_mhz"], "qubit_freq_expts": n,
-        "qubit_gain": int(p["spec_amp"]), "qubit_length": float(p["spec_len_us"]),
-        "qubit_pulse_style": "const", "interleave_rounds": 1,
+        "qubit_gain": int(p["spec_amp"]),
+        "qubit_length": float(p["spec_len_us"]),
+        "qubit_pulse_style": "const",
     })
     cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
     print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
-          f"({n} pts) @ gain {p['spec_amp']} at ff_gain={FF_HOLD_GAIN}")
-    exp = QubitLongTimeSpecVsFlux(
-        soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-        suffix="GateCal_Qubit_Spec", cfg=cfg, step_tag="GC", dc_vec=[int(FF_HOLD_GAIN)],
-        long_time_ns=2000.0, average_window_ns=0.0,
-        readout_after_park=bool(READOUT_AFTER_PARK), park_voltage=int(FF_HOLD_GAIN),
-        fit_trace=False, advanced_fit=False, live_plot=LIVE_PLOTS, resonator_lookup_csv=None)
-    exp.acquire(plotDisp=LIVE_PLOTS)
+          f"(step {p['freq_step_mhz']:g}) @ gain {p['spec_amp']} at ff_gain={FF_HOLD_GAIN}")
+    exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                    suffix="GateCal_Qubit_Spec", cfg=cfg,
+                    f_min=float(p["freq_min_mhz"]), f_max=float(p["freq_max_mhz"]),
+                    f_step=float(p["freq_step_mhz"]))
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
-    print("[qubit spec] read the qubit dip -> set BaseConfig['qubit_pi_freq'] (and qubit_freq).")
     return exp
 
 
