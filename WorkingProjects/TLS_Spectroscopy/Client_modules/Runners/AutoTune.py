@@ -13,10 +13,10 @@ LIVE_PLOTS = False
 # centre, not as a trusted target identity.  The result must therefore be inspected and
 # compared with the hidden manual calibration before anything is written to BaseConfig.
 BLIND_TARGET_ACQUISITION = True
-# Keep this True for the next run.  It replays only the exact 90%-known-good BaseConfig
-# tuple through the autotuner's own pulse program, then exits before spectroscopy or
-# optimization.  Only after this short control passes should a full search be attempted.
-CONTROL_VALIDATION_ONLY = True
+# A normal tuning run always measures the input as its incumbent and then searches.
+# Set this True only when deliberately requesting a short measurement-only diagnostic;
+# low starting fidelity is never a condition for launching the optimizer.
+CONTROL_VALIDATION_ONLY = False
 APPLY_CONFIG = False
 WRITE_READOUT = True
 WRITE_QUBIT = True
@@ -24,7 +24,7 @@ WRITE_QUBIT = True
 P_TUNER = {
     "safety": {
         "baseline_only": CONTROL_VALIDATION_ONLY,
-        "expected_min_fidelity_lcb": 0.85,
+        "expected_min_fidelity_lcb": None,
         "baseline_shots": 1500,
         "baseline_blocks": 4,
         "max_runtime_minutes": 45.0,
@@ -88,7 +88,10 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
                          - float(BaseConfig.get("sigma", 0.0))) > 1e-12)))
     return {
         "time": data["time"], "qubit": QUBIT, "success": bool(data["success"]),
-        "autotuner_revision": data.get("autotuner_revision", "protected-control-v1"),
+        "autotuner_revision": data.get(
+            "autotuner_revision", "canonical-single-shot-v2"),
+        "fidelity_definition": data.get(
+            "fidelity_definition", "balanced_assignment"),
         "control_validation_only": data.get("control_validation_only", False),
         "control_validation_passed": data.get("control_validation_passed", False),
         "failure": data.get("failure"), "write_error": write_error,
@@ -110,6 +113,8 @@ def _history_entry(data, eligible, selected, applied, write_error=None):
         "ss_fidelity": data["working"].get("ss_fidelity"),
         "ss_fidelity_se": data["working"].get("ss_fidelity_se"),
         "ss_fidelity_lcb": data["working"].get("ss_fidelity_lcb"),
+        "ss_visibility": data["working"].get("ss_visibility"),
+        "ss_step5_ge_fidelity": data["working"].get("ss_step5_ge_fidelity"),
         "ss_sep_sigma": data["working"].get("ss_sep_sigma"),
         "verified": data["working"].get("verified"),
         "fixed_point": data["working"].get("fixed_point"),

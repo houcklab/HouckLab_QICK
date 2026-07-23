@@ -25,15 +25,24 @@ def discriminate_shots(i, q, calib_params):
 
 class SingleShotProgram(RAveragerProgram):
     """Two experiments: gain 0 (ground) then gain=qubit_gain (excited), reps=shots.
-    The excited prep plays the pi pulse ``repeats`` times (QUA parity knob)."""
+    The excited prep plays the pi pulse ``repeats`` times (QUA parity knob).
+
+    ``single_shot_state_order='eg'`` is available to calibration code for an exact
+    reverse-order companion acquisition.  The default remains ``'ge'``, so existing
+    TLS spectroscopy step-5 runs are bit-for-bit unchanged.
+    """
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
 
     def initialize(self):
         cfg = self.cfg
-        cfg["start"] = 0
-        cfg["step"] = cfg["qubit_gain"]
+        state_order = str(cfg.get("single_shot_state_order", "ge")).lower()
+        if state_order not in ("ge", "eg"):
+            raise ValueError("single_shot_state_order must be 'ge' or 'eg'")
+        cfg["start"] = 0 if state_order == "ge" else int(cfg["qubit_gain"])
+        cfg["step"] = (int(cfg["qubit_gain"])
+                       if state_order == "ge" else -int(cfg["qubit_gain"]))
         cfg["reps"] = cfg["shots"]
         cfg["expts"] = 2
 
@@ -95,6 +104,9 @@ class SingleShotProgram(RAveragerProgram):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
         shots_i = self.di_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
         shots_q = self.dq_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        if str(self.cfg.get("single_shot_state_order", "ge")).lower() == "eg":
+            shots_i = shots_i[::-1]
+            shots_q = shots_q[::-1]
         return shots_i, shots_q
 
 

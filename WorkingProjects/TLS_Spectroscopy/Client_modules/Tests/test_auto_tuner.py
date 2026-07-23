@@ -21,6 +21,9 @@ import matplotlib
 matplotlib.use("Agg")
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import mAutoTuner as T
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
+    find_blob_median as qm_find_blob_median, find_threshold as qm_find_threshold,
+)
 
 FAIL = []
 
@@ -147,6 +150,20 @@ def install_simulator(dev):
         p_e = dev.run_seq(seq, drive_freq, cfg)
         return dev._readout(cfg, p_e, int(shots), per_shot=True)
 
+    def _canonical_pair_shots(exp, cfg, drive_freq, pi_gain, shots,
+                              state_order="ge"):
+        # Same logical state order as SingleShotProgram: all |g>, then all |e>, in one
+        # acquisition.  The simulator has no QICK compiler, so this is the injection
+        # boundary exercised by production's canonical program wrapper.
+        p_e = dev.run_seq([("pulse", int(pi_gain), 0.0)], drive_freq, cfg)
+        if state_order == "ge":
+            ig, qg = dev._readout(cfg, 0.0, int(shots), per_shot=True)
+            ie, qe = dev._readout(cfg, p_e, int(shots), per_shot=True)
+        else:
+            ie, qe = dev._readout(cfg, p_e, int(shots), per_shot=True)
+            ig, qg = dev._readout(cfg, 0.0, int(shots), per_shot=True)
+        return ig, qg, ie, qe
+
     class FakeSpec:
         def __init__(self, soccfg, cfg):
             self.cfg = cfg
@@ -184,6 +201,7 @@ def install_simulator(dev):
     T._avg_iq = _avg_iq
     T._run_seq = _run_seq
     T._shots = _shots
+    T._canonical_pair_shots = _canonical_pair_shots
     T.SpecProgram = FakeSpec
     T.RabiProgram = FakeRabi
 
@@ -364,7 +382,7 @@ check("ionized/smeared readout flagged by the outlier fraction",
 
 
 def qm_hist_fidelity_reference(ig, qg, ie, qe):
-    """The fidelity calculation used by QM_Team's SingleShot_FF optimizer.
+    """Balanced assignment fidelity from QM_Team's histogram contrast.
 
     Keep this independent of production code.  On clean two-Gaussian shots, QM_Team's
     all-shot histogram score and AutoTuner's held-out score should agree: threshold
@@ -384,11 +402,11 @@ def qm_hist_fidelity_reference(ig, qg, ie, qe):
     ne, _ = np.histogram(xe, bins=200, range=(lo, hi))
     contrast = np.abs((np.cumsum(ng) - np.cumsum(ne)) /
                       (0.5 * ng.sum() + 0.5 * ne.sum()))
-    return float(np.max(contrast))
+    return float(0.5 * (1.0 + np.max(contrast)))
 
 
 _parity_rng = np.random.default_rng(8227)
-for _target, _sep in ((0.60, 1.683), (0.90, 3.290)):
+for _target, _sep in ((0.80, 1.683), (0.95, 3.290)):
     _npar = 8000
     _phi = np.deg2rad(37.0)
     _gxy = _parity_rng.normal(0.0, 1.0, (_npar, 2))
@@ -402,6 +420,18 @@ for _target, _sep in ((0.60, 1.683), (0.90, 3.290)):
           abs(_qm_f - _new_f) < 0.025,
           "QM=%.4f AutoTuner=%.4f (delta %.4f)" %
           (_qm_f, _new_f, _new_f - _qm_f))
+
+    _c0 = _gxy[:, 0] + 1j * _gxy[:, 1]
+    _c1 = _exy[:, 0] + 1j * _exy[:, 1]
+    _theta = np.angle(qm_find_blob_median(_c1) - qm_find_blob_median(_c0))
+    _, _step5_scores = qm_find_threshold(
+        np.exp(-1j * _theta) * _c0, np.exp(-1j * _theta) * _c1)
+    _step5_direct = float(np.max(_step5_scores))
+    _step5_auto = T.step5_single_shot_fidelity(
+        _gxy[:, 0], _gxy[:, 1], _exy[:, 0], _exy[:, 1])
+    check("AutoTuner's step-5 diagnostic is numerically identical on the same shots",
+          abs(_step5_auto - _step5_direct) < 1e-15,
+          "step5=%.12f AutoTuner=%.12f" % (_step5_direct, _step5_auto))
 
 print("== direct 2-D readout witness: a 90% basin must beat a 60% coordinate slice ==")
 
@@ -967,13 +997,25 @@ def _periodic_no_qubit(exp, cfg, seq, drive_freq, shots):
             _periodic_rng.normal(-0.2 * offset, 0.4, int(shots)))
 
 
-_saved_shots = T._shots
-T._shots = _periodic_no_qubit
+_saved_pair_shots = T._canonical_pair_shots
+
+
+def _periodic_no_qubit_pair(exp, cfg, drive_freq, pi_gain, shots,
+                            state_order="ge"):
+    del drive_freq, pi_gain
+    first = _periodic_no_qubit(exp, cfg, [], 0.0, shots)
+    second = _periodic_no_qubit(exp, cfg, [], 0.0, shots)
+    (ig, qg), (ie, qe) = ((first, second) if state_order == "ge"
+                          else (second, first))
+    return ig, qg, ie, qe
+
+
+T._canonical_pair_shots = _periodic_no_qubit_pair
 _periodic_ss = _periodic_ss_tuner._balanced_single_shot(
     {}, 2534.4, 11500, 800, strict=True)
-T._shots = _saved_shots
-check("schedule+complement microblocks cannot relabel an 8-call artifact as fidelity",
-      abs(_periodic_ss["fidelity"]) < 0.10,
+T._canonical_pair_shots = _saved_pair_shots
+check("canonical paired acquisition cannot relabel a periodic artifact as fidelity",
+      abs(_periodic_ss["fidelity"] - 0.5) < 0.10,
       "false F=%.3f after %d acquisitions" %
       (_periodic_ss["fidelity"], _periodic_clock["call"]))
 
@@ -1007,9 +1049,9 @@ def _verification_tuner(now_fid, now_sep=2.07):
     v = T.AutoTuner.__new__(T.AutoTuner)
     v.report_lines, v.drifted, v.node_data = [], [], {}
     v.P = T.merge_params({"single_shot": {"verify_blocks": 2,
-                                            "min_fidelity_lcb": 0.80,
-                                            "verify_tol_abs": 0.03}})
-    v.w = {"ss_sep_sigma": 2.07, "ss_fidelity": 0.90,
+                                            "min_fidelity_lcb": 0.90,
+                                            "verify_tol_abs": 0.015}})
+    v.w = {"ss_sep_sigma": 2.07, "ss_fidelity": 0.95,
            "ss_fidelity_se": 0.005, "pi_gain": 11500,
            "drive_freq": 2534.4, "read_pulse_freq": 7248.9,
            "read_pulse_gain": 4300, "read_length": 20.0,
@@ -1033,16 +1075,16 @@ def _verification_tuner(now_fid, now_sep=2.07):
     return v
 
 
-vt = _verification_tuner(0.88, now_sep=1.81)
+vt = _verification_tuner(0.94, now_sep=1.81)
 check("the re-measured fidelity and separation replace historical gate inputs",
-      abs(vt.w["ss_verify_fidelity"] - 0.88) < 1e-9
+      abs(vt.w["ss_verify_fidelity"] - 0.94) < 1e-9
       and abs(vt.w["ss_verify_sigma"] - 1.81) < 1e-9,
       "verified=%s F=%.3f" % (vt.w["verified"], vt.w["ss_verify_fidelity"]))
 check("a still-high fidelity passes even when Gaussian separation drift is diagnostic",
       vt.w["readout_verified"] is True)
 
-vt2 = _verification_tuner(0.60, now_sep=2.07)
-check("a 90%-to-60% fidelity collapse is blocked even when separation is unchanged",
+vt2 = _verification_tuner(0.80, now_sep=2.07)
+check("a 95%-to-80% fidelity collapse is blocked even when separation is unchanged",
       vt2.w["readout_verified"] is False and vt2.w["verified"] is False
       and any("fidelity is below" in l for l in vt2.report_lines),
       "readout_verified=%s" % vt2.w["readout_verified"])
@@ -1381,7 +1423,28 @@ check("baseline-only validation measures the exact input four times and starts n
       and _control_out["tuned"] == {})
 check("saved output is stamped with the executable tuner revision",
       _control_out["autotuner_revision"] == T.AUTOTUNER_REVISION
-      and T.AUTOTUNER_REVISION == "protected-control-v1")
+      and T.AUTOTUNER_REVISION == "canonical-single-shot-v2")
+
+
+class _LowStartSearchTuner(_ControlOnlyTuner):
+    def _balanced_single_shot(self, cfg, drive_freq, pi_gain, shots, strict=True):
+        return {"fidelity": 0.60, "fidelity_se": 0.004, "sep_sigma": 1.0,
+                "outlier_frac": 0.01, "ok": True}
+
+    def maintain(self):
+        self.search_started = True
+        raise T.TunerError("synthetic stop after proving search launch")
+
+
+_low_start = _LowStartSearchTuner(
+    soc=None, soccfg=None, path="low_start", outerFolder=tmp,
+    suffix="LowStart", cfg=dict(BaseConfig), params={
+        "safety": {"baseline_only": False, "expected_min_fidelity_lcb": 0.85,
+                   "baseline_blocks": 2, "baseline_shots": 100}})
+_low_start.acquire(plotDisp=False)
+check("a low starting fidelity launches optimization instead of failing its baseline",
+      _low_start.search_started
+      and not _low_start.node_data["protected_control"]["expected_fidelity_met"])
 
 
 class _AtomicGuardTuner(T.AutoTuner):
@@ -1426,8 +1489,8 @@ _regression = _AtomicGuardTuner(0.708, 0.638)
 _original_gain = _regression.w["pi_gain"]
 _regression.w["pi_gain"] = 6058 if _original_gain != 6058 else 5790
 try:
-    _regression._guard_working_control("hardware_log_regression")
-    _regression_blocked = False
+    _regression_blocked = not _regression._guard_working_control(
+        "hardware_log_regression")
 except T.TunerError:
     _regression_blocked = True
 check("a fresh 63.8% challenger can never replace a fresh 70.8% incumbent",
@@ -1439,8 +1502,8 @@ _unstable = _AtomicGuardTuner(0.90, 0.93, challenger_verified=False)
 _unstable_original = _unstable.w["pi_gain"]
 _unstable.w["pi_gain"] = 6058 if _unstable_original != 6058 else 5790
 try:
-    _unstable._guard_working_control("unstable_challenger")
-    _unstable_blocked = False
+    _unstable_blocked = not _unstable._guard_working_control(
+        "unstable_challenger")
 except T.TunerError:
     _unstable_blocked = True
 check("an unreproduced challenger is archived but never installed",

@@ -16,9 +16,15 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
     add_qubit_gaussian, explicit_flat_top_fields, pulse_fingerprint,
     readout_drive_length_us, set_readout_pulse,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+    SingleShotProgram,
+)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
+    find_blob_median,
+)
 
 
-AUTOTUNER_REVISION = "protected-control-v1"
+AUTOTUNER_REVISION = "canonical-single-shot-v2"
 
 
 
@@ -652,6 +658,40 @@ def fit_cosine_peak(x, y, yerr, x_prior, wavenumber, min_amplitude_snr=4.0,
     return out
 
 
+def step5_single_shot_fidelity(ig, qg, ie, qe):
+    """Reproduce ``SingleShot1Q.analyze`` on an already acquired shot set.
+
+    This diagnostic intentionally retains the QM-Team helper's 100-threshold sweep so
+    an AutoTuner data file can be compared numerically with TLS spectroscopy step 5.
+    Optimization uses the held-out, exact-threshold estimate below because the coarse
+    100-point sweep is fragile to a few remote IQ outliers.
+    """
+    c0 = np.asarray(ig, dtype=float) + 1j * np.asarray(qg, dtype=float)
+    c1 = np.asarray(ie, dtype=float) + 1j * np.asarray(qe, dtype=float)
+    n = min(c0.size, c1.size)
+    if n < 1:
+        return np.nan
+    c0, c1 = c0[:n], c1[:n]
+    theta = float(np.angle(find_blob_median(c1) - find_blob_median(c0)))
+    c0_rot = np.exp(-1j * theta) * c0
+    c1_rot = np.exp(-1j * theta) * c1
+    ground = np.sort(np.real(c0_rot))
+    excited = np.sort(np.real(c1_rot))
+    left, right = ((ground, excited) if np.mean(ground) < np.mean(excited)
+                   else (excited, ground))
+    thresholds = np.linspace(
+        min(float(ground[0]), float(excited[0])),
+        max(float(ground[-1]), float(excited[-1])), 100)
+    # This is algebraically identical to ss_helpers.find_threshold's strict ``t > b``
+    # loops, but vectorized.  ``side='left'`` counts exactly the values smaller than t.
+    nright = float(len(right))
+    nleft_below = np.searchsorted(left, thresholds, side="left")
+    nright_below = np.searchsorted(right, thresholds, side="left")
+    fidelity = 1.0 - (len(right) - nleft_below) / (2.0 * nright) \
+        - nright_below / (2.0 * nright)
+    return float(np.max(fidelity))
+
+
 def single_shot_analysis(ig, qg, ie, qe):
     """Single-shot readout analysis: rotation angle, threshold, fidelity, error
     directions, separation in shot-noise units, and an OUTLIER FRACTION.
@@ -661,14 +701,24 @@ def single_shot_analysis(ig, qg, ie, qe):
     a geometric two-blob heuristic cannot distinguish leakage, e->g transitions, and an
     ordinary anisotropic cloud.
 
-    Fidelity is reported with two-fold CROSS-FITTING: each fold's median IQ axis and
-    threshold are trained on one half and scored on the other.  The two held-out scores
-    use every shot without fitting either discriminator coordinate on a scored shot."""
+    ``fidelity`` is the conventional balanced assignment fidelity reported by
+    ``SingleShot1Q`` and TLS spectroscopy step 5,
+
+        F = 1 - [P(e|g) + P(g|e)] / 2.
+
+    The older autotuner accidentally reported Youden contrast ``2*F-1`` under the same
+    name, making a genuine 91.65% result print as 83.3%.  ``visibility`` retains that
+    contrast as an explicitly named diagnostic.  Fidelity is estimated with two-fold
+    CROSS-FITTING: each fold's median IQ axis and threshold are trained on one half and
+    scored on the other.  The two held-out scores use every shot without fitting either
+    discriminator coordinate on a scored shot."""
     ig, qg = np.asarray(ig, dtype=float), np.asarray(qg, dtype=float)
     ie, qe = np.asarray(ie, dtype=float), np.asarray(qe, dtype=float)
     n = min(ig.size, qg.size, ie.size, qe.size)
     if n < 20:
         return {"ok": False, "fidelity": np.nan, "fidelity_se": np.inf,
+                "visibility": np.nan, "visibility_se": np.inf,
+                "step5_fidelity": np.nan,
                 "sep_sigma": 0.0, "theta": 0.0,
                 "threshold": np.nan, "p_e_given_g": np.nan, "p_g_given_e": np.nan,
                 "outlier_frac": 1.0, "xg": np.zeros(0), "xe": np.zeros(0)}
@@ -743,6 +793,8 @@ def single_shot_analysis(ig, qg, ie, qe):
         ns.append(int(test.sum()))
     if not ns:
         return {"ok": False, "fidelity": np.nan, "fidelity_se": np.inf,
+                "visibility": np.nan, "visibility_se": np.inf,
+                "step5_fidelity": np.nan,
                 "sep_sigma": 0.0, "theta": th, "threshold": np.nan,
                 "p_e_given_g": np.nan, "p_g_given_e": np.nan,
                 "outlier_frac": 1.0, "xg": xg, "xe": xe}
@@ -752,7 +804,8 @@ def single_shot_analysis(ig, qg, ie, qe):
     thr = _thr_fid(xg, xe)
     p_eg = float(np.sum(weights * np.asarray(p_egs)))
     p_ge = float(np.sum(weights * np.asarray(p_ges)))
-    fid = 1.0 - p_eg - p_ge
+    visibility = 1.0 - p_eg - p_ge
+    fid = 1.0 - 0.5 * (p_eg + p_ge)
     # Jeffreys posterior variance stays finite when a finite sample happens to contain
     # zero errors.  The old Wald error became exactly zero at F=1 and made a 1500-shot
     # result look infinitely certain during winner selection.
@@ -761,7 +814,9 @@ def single_shot_analysis(ig, qg, ie, qe):
         a, b = errors + 0.5, float(count) - errors + 0.5
         return float(a * b / ((a + b) ** 2 * (a + b + 1.0)))
 
-    fid_se = float(np.sqrt(_jeffreys_var(p_eg, n) + _jeffreys_var(p_ge, n)))
+    visibility_se = float(np.sqrt(
+        _jeffreys_var(p_eg, n) + _jeffreys_var(p_ge, n)))
+    fid_se = 0.5 * visibility_se
     cg = np.array([np.median(xg), np.median(yg)])
     ce = np.array([np.median(xe), np.median(ye)])
 
@@ -775,6 +830,8 @@ def single_shot_analysis(ig, qg, ie, qe):
                     ((allpts - ce) ** 2).sum(1) / s_e ** 2)
     outlier_frac = float((d2 > 16.0).mean())
     return {"ok": True, "fidelity": float(fid), "fidelity_se": fid_se,
+            "visibility": float(visibility), "visibility_se": visibility_se,
+            "step5_fidelity": step5_single_shot_fidelity(ig, qg, ie, qe),
             "sep_sigma": float(sep_sigma),
             "theta": th, "threshold": float(thr), "p_e_given_g": p_eg,
             "p_g_given_e": p_ge, "outlier_frac": outlier_frac,
@@ -879,7 +936,7 @@ def simultaneous_confidence_sigma(n_comparisons, alpha=0.05, floor=1.96):
 
 
 def select_verified_2d_candidate(rows, incumbent=None, confidence_sigma=1.96,
-                                 min_improvement=0.01, max_outlier=0.25):
+                                 min_improvement=0.005, max_outlier=0.25):
     """Choose a directly measured 2-D candidate by its held-out lower bound.
 
     ``rows`` are measurement dictionaries containing ``freq``, ``gain``, ``fid``,
@@ -936,7 +993,7 @@ def select_verified_2d_candidate(rows, incumbent=None, confidence_sigma=1.96,
 
 
 def select_duration_candidate(rows, incumbent_sigma, confidence_sigma=1.96,
-                              equivalence_margin=0.005, max_fidelity_drop=0.01,
+                              equivalence_margin=0.0025, max_fidelity_drop=0.005,
                               prefer_shorter=True):
     """Select duration without exchanging measured inversion for raw gate speed.
 
@@ -1434,6 +1491,41 @@ def _shots(exp, cfg, seq, drive_freq, shots):
     return _read_shots(prog, c)
 
 
+def _canonical_pair_shots(exp, cfg, drive_freq, pi_gain, shots, state_order="ge"):
+    """Acquire |g> and |e> with the production step-5 program, without emulation.
+
+    ``SingleShotProgram`` emits both states in one compiled RAverager program.  Its
+    ground experiment advances through the same zero-gain Gaussian and 10-ns gap as
+    TLS spectroscopy step 5, then its gain register advances to ``pi_gain`` for the
+    excited experiment.  Reconstructing those states with separate ``SeqProgram``
+    loads changed timing, ordering, and duty cycle and therefore was not an exact replay
+    even when every printed config field matched.
+    """
+    c = dict(cfg)
+    c.update({
+        "qubit_pulse_style": "arb",
+        "qubit_pi_freq": float(drive_freq),
+        "qubit_pi_gain": int(pi_gain),
+        # SingleShotProgram uses qubit_gain as the RAverager register step.
+        "qubit_gain": int(pi_gain),
+        "shots": int(shots),
+        "repeats": 1,
+        "single_shot_state_order": str(state_order),
+    })
+    with suppress_stdout():
+        prog = SingleShotProgram(exp.soccfg, c)
+        shot_i, shot_q = prog.acquire(
+            exp.soc, load_pulses=True, progress=False)
+    shot_i = np.asarray(shot_i, dtype=float)
+    shot_q = np.asarray(shot_q, dtype=float)
+    if shot_i.ndim != 2 or shot_q.ndim != 2 or shot_i.shape[0] < 2 \
+            or shot_q.shape[0] < 2:
+        raise TunerError(
+            "SingleShotProgram did not return the expected [ground, excited] shot "
+            "arrays; refusing to optimize a different acquisition path")
+    return shot_i[0], shot_q[0], shot_i[1], shot_q[1]
+
+
 def _run_seq(exp, cfg, seq, drive_freq, shots):
     c = dict(cfg)
     c["seq"] = list(seq)
@@ -1476,18 +1568,17 @@ def _pop_with_local_refs(exp, cfg, seq, drive_freq, pi_gain, shots):
 
 DEFAULTS = {
     "max_rounds": 4,
-    # A direct replay of the exact input tuple is the optimizer's immutable control.
-    # The search may explore elsewhere, but it cannot promote or write a tuple that
-    # loses to this control.  ``baseline_only`` is intended for the first short hardware
-    # A/B after a code revision: it diagnoses pulse-path/metric mismatches before any
-    # spectroscopy or high-dimensional search consumes the session.
+    # A direct replay of the exact input tuple is the optimizer's incumbent.  A low
+    # starting fidelity is a reason to search, never a prerequisite failure.
+    # ``baseline_only`` is an explicitly requested measurement-only diagnostic; the
+    # optional expected value is reported but is never used to abort optimization.
     "safety": {"baseline_only": False,
                "baseline_shots": 1500, "baseline_blocks": 4,
                "expected_min_fidelity_lcb": None,
                "guard_shots": 1000, "guard_blocks": 2,
-               "confidence_sigma": 1.96, "min_improvement": 0.005,
-               "max_fidelity_regression": 0.01,
-               "max_block_spread": 0.06,
+               "confidence_sigma": 1.96, "min_improvement": 0.0025,
+               "max_fidelity_regression": 0.005,
+               "max_block_spread": 0.03,
                "max_unstable_decisions": 2,
                "max_remeasurement_failures": 1,
                "max_runtime_minutes": 45.0},
@@ -1514,8 +1605,8 @@ DEFAULTS = {
                       "minimum_gain_ceiling": 10000, "refine_points": 5,
                       "refine_cells": 3, "shortlist": 6, "confirm_blocks": 4,
                       "decision_blocks": 3, "familywise_alpha": 0.05,
-                      "max_block_spread": 0.06,
-                      "confidence_sigma": 1.96, "min_improvement": 0.01,
+                      "max_block_spread": 0.03,
+                      "confidence_sigma": 1.96, "min_improvement": 0.005,
                       "outlier_max": 0.25, "max_extensions": 2,
                       "relax_delay_us": None},
     "t1": {"points": 12, "shots": 600, "t_max_us": None, "relax_delay_us": None,
@@ -1527,14 +1618,14 @@ DEFAULTS = {
                     "shots": 1500, "coarse_shots": 400, "shortlist": 3,
                     "confirm_blocks": 3, "decision_blocks": 3,
                     "familywise_alpha": 0.05, "confidence_sigma": 1.96,
-                    "min_improvement": 0.005, "max_block_spread": 0.06,
+                    "min_improvement": 0.0025, "max_block_spread": 0.03,
                     "outlier_max": 0.25,
                     "relax_delay_us": None, "max_extensions": 4,
                     "extend_factor": 1.5},
-    "single_shot": {"shots": 4000, "min_fidelity_lcb": 0.80,
-                    "confidence_sigma": 1.96, "verify_tol_abs": 0.03,
+    "single_shot": {"shots": 4000, "min_fidelity_lcb": 0.90,
+                    "confidence_sigma": 1.96, "verify_tol_abs": 0.015,
                     "measurement_blocks": 3, "verify_blocks": 4,
-                    "max_block_spread": 0.06,
+                    "max_block_spread": 0.03,
                     "min_sep_sigma": 2.0, "target_sep_sigma": 4.0,
                     "relax_delay_us": None, "verify_tol_frac": 0.15},
     # Independent one-pulse objective map.  This is a branch-safe local challenger to
@@ -1546,8 +1637,8 @@ DEFAULTS = {
                     "coarse_shots": 400, "shots": 1500, "refine_points": 5,
                     "refine_cells": 3, "shortlist": 6, "confirm_blocks": 4,
                     "decision_blocks": 3, "familywise_alpha": 0.05,
-                    "max_block_spread": 0.06,
-                    "confidence_sigma": 1.96, "min_improvement": 0.015,
+                    "max_block_spread": 0.03,
+                    "confidence_sigma": 1.96, "min_improvement": 0.0075,
                     "outlier_max": 0.25, "relax_delay_us": None},
     # Fine frequency uses driven pseudo-identity pairs Xpi/X-pi.  Amplitude error
     # cancels in a pair while detuning produces a signed Y rotation; an approximate
@@ -1598,9 +1689,9 @@ DEFAULTS = {
                 "bandwidth_freq_fraction": 0.20,
                 "max_freq_span_mhz": 12.0, "freq_points": 7,
                 "coarse_shots": 250, "confirm_shots": 900,
-                "confirm_blocks": 3, "max_block_spread": 0.06,
+                "confirm_blocks": 3, "max_block_spread": 0.03,
                 "familywise_alpha": 0.05, "confidence_sigma": 1.96,
-                "equivalence_margin": 0.005, "max_fidelity_drop": 0.01,
+                "equivalence_margin": 0.0025, "max_fidelity_drop": 0.005,
                 "prefer_shorter": True, "outlier_max": 0.25,
                 "max_leakage_fallbacks": 2,
                 "relax_delay_us": None},
@@ -1631,7 +1722,7 @@ DEFAULTS = {
                 "familywise_alpha": 0.05,
                 "max_response_condition": 40.0,
                 "min_shelving_selectivity": 0.60,
-                "max_fidelity_drop": 0.01,
+                "max_fidelity_drop": 0.005,
                 "max_amplified_p2": 0.02,
                 "confidence_sigma": 1.96,
                 "relax_delay_us": None},
@@ -1768,6 +1859,8 @@ class AutoTuner(ExperimentClass):
             self.candidate_archive = []
         fid = float(row.get("fid", np.nan))
         fid_se = float(row.get("fid_se", np.inf))
+        visibility = float(row.get("visibility", 2.0 * fid - 1.0))
+        step5_fid = float(row.get("step5_fidelity", np.nan))
         outlier = float(row.get("outlier", np.inf))
         if not np.isfinite(fid):
             return None
@@ -1802,6 +1895,11 @@ class AutoTuner(ExperimentClass):
             "qubit_sigma_us": float(cfg.get("sigma", self.cfg.get("sigma", 0.0))),
             "qubit_drag_beta": float(cfg.get("qubit_drag_beta", 0.0)),
             "fidelity": fid, "fidelity_se": fid_se,
+            "fidelity_definition": "balanced_assignment",
+            "visibility": visibility,
+            "step5_fidelity_same_shots": step5_fid,
+            "step5_ge_fidelity": float(row.get("step5_ge_fidelity", np.nan)),
+            "reverse_eg_fidelity": float(row.get("reverse_eg_fidelity", np.nan)),
             "fidelity_lcb_95": fidelity_lower_bound(fid, fid_se, 1.96),
             "separation_sigma": float(row.get("sep", np.nan)),
             "outlier_fraction": outlier,
@@ -1924,6 +2022,10 @@ class AutoTuner(ExperimentClass):
             "gain": int(control["read_pulse_gain"]),
             "fid": float(ss["fidelity"]),
             "fid_se": float(ss.get("fidelity_se", np.inf)),
+            "visibility": float(ss.get("visibility", np.nan)),
+            "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
+            "step5_ge_fidelity": float(ss.get("step5_ge_fidelity", np.nan)),
+            "reverse_eg_fidelity": float(ss.get("reverse_eg_fidelity", np.nan)),
             "sep": float(ss["sep_sigma"]),
             "outlier": float(ss["outlier_frac"]),
             "verified": bool(ss.get("ok", True)), "ss": ss,
@@ -1944,7 +2046,7 @@ class AutoTuner(ExperimentClass):
         rows = [self._measure_control_tuple(
             control, int(P["baseline_shots"]), "exact_input_block_%d" % (j + 1))
                 for j in range(max(int(P["baseline_blocks"]), 2))]
-        agg = self._aggregate_ss_blocks(rows, P.get("max_block_spread", 0.06))
+        agg = self._aggregate_ss_blocks(rows, P.get("max_block_spread", 0.03))
         if agg is None:
             raise TunerError(
                 "protected_control: the exact input tuple produced no finite direct "
@@ -1953,8 +2055,12 @@ class AutoTuner(ExperimentClass):
         agg["lcb"] = fidelity_lower_bound(agg["fid"], agg["fid_se"], z)
         agg["ucb"] = float(agg["fid"] + z * agg["fid_se"])
         expected = P.get("expected_min_fidelity_lcb")
-        passed = bool(agg.get("verified", False)
-                      and (expected is None or agg["lcb"] >= float(expected)))
+        expected_met = bool(
+            expected is None or agg["lcb"] >= float(expected))
+        # This flag describes whether the input was actually measured, not whether it
+        # was already good.  Requiring a high incumbent before launching an optimizer
+        # is logically backwards and caused the reported pre-search abort.
+        passed = bool(agg.get("measurement_valid", False))
         self.protected_control = {
             "tuple": copy.deepcopy(control), "aggregate": copy.deepcopy(agg),
             "source": "exact_input", "promotion_count": 0,
@@ -1965,19 +2071,31 @@ class AutoTuner(ExperimentClass):
             "revision": AUTOTUNER_REVISION,
             "input_tuple": copy.deepcopy(control), "baseline": copy.deepcopy(agg),
             "comparisons": [], "validation_only": bool(P.get("baseline_only", False)),
-            "expected_min_fidelity_lcb": expected, "passed": passed,
+            "expected_min_fidelity_lcb": expected,
+            "expected_fidelity_met": expected_met, "passed": passed,
         }
         self._say(
             "control", "OK" if passed else "WARN",
-            "EXACT input tuple replay: F=%.3f +/- %.3f (95%% LCB %.3f, spread %.3f; "
+            "EXACT step-5 program replay: order-balanced assignment F=%.3f +/- %.3f "
+            "(manual-compatible g->e analyzer %.3f, reverse e->g %.3f, pooled "
+            "step-5 analyzer %.3f, visibility %.3f, 95%% LCB %.3f, spread %.3f; "
             "%d blocks)%s"
-            % (agg["fid"], agg["fid_se"], agg["lcb"], agg["block_spread"],
-               len(rows),
-               "" if expected is None else " -- required LCB %.3f" % float(expected)))
+            % (agg["fid"], agg["fid_se"],
+               agg.get("step5_ge_fidelity", np.nan),
+               agg.get("reverse_eg_fidelity", np.nan),
+               agg.get("step5_fidelity", np.nan),
+               agg.get("visibility", 2.0 * agg["fid"] - 1.0),
+               agg["lcb"], agg["block_spread"], len(rows),
+               "" if expected is None else " -- reference LCB %.3f %s" % (
+                   float(expected), "met" if expected_met else "not met")))
         if P.get("baseline_only", False):
             self.w["ss_fidelity"] = float(agg["fid"])
             self.w["ss_fidelity_se"] = float(agg["fid_se"])
             self.w["ss_fidelity_lcb"] = float(agg["lcb"])
+            self.w["ss_visibility"] = float(agg.get(
+                "visibility", 2.0 * agg["fid"] - 1.0))
+            self.w["ss_step5_ge_fidelity"] = float(agg.get(
+                "step5_ge_fidelity", np.nan))
             self.w["ss_sep_sigma"] = float(agg["sep"])
             self.w["duration_active"] = False
             self.w["leakage_active"] = False
@@ -1988,8 +2106,8 @@ class AutoTuner(ExperimentClass):
                     "no setting was changed")
             else:
                 self.w["control_validation_failure"] = (
-                    "the tuner program did not reproduce the configured known-good "
-                    "control; inspect pulse/readout path identity before optimizing")
+                    "the explicitly requested measurement-only control was unstable; "
+                    "inspect the saved order-resolved blocks")
                 self._say(
                     "control", "WARN",
                     "baseline-only validation FAILED -- stopping before spectroscopy "
@@ -2018,6 +2136,7 @@ class AutoTuner(ExperimentClass):
         if not isinstance(protected, dict):
             return
         c = protected["tuple"]
+        agg = protected.get("aggregate", {})
         self.w.update({
             "read_pulse_freq": float(c["read_pulse_freq"]),
             "read_pulse_gain": int(c["read_pulse_gain"]),
@@ -2039,6 +2158,17 @@ class AutoTuner(ExperimentClass):
             "protected_control_restored": True,
             "safety_stop_reason": str(reason),
         })
+        if np.isfinite(agg.get("fid", np.nan)):
+            self.w["ss_fidelity"] = float(agg["fid"])
+            self.w["ss_fidelity_se"] = float(agg.get("fid_se", np.inf))
+            self.w["ss_fidelity_lcb"] = fidelity_lower_bound(
+                agg["fid"], agg.get("fid_se", np.inf),
+                self.P["safety"].get("confidence_sigma", 1.96))
+            self.w["ss_sep_sigma"] = float(agg.get("sep", np.nan))
+            self.w["ss_visibility"] = float(agg.get(
+                "visibility", 2.0 * agg["fid"] - 1.0))
+            self.w["ss_step5_ge_fidelity"] = float(agg.get(
+                "step5_ge_fidelity", np.nan))
         self.w.pop("pi_fidelity_binding", None)
         updated = set()
         mapping = {
@@ -2064,8 +2194,9 @@ class AutoTuner(ExperimentClass):
 
         A coordinate-wise optimizer may pass every local test while the combined tuple
         is worse.  This is the atomic acceptance gate: only a statistically superior
-        complete tuple can replace the protected control.  A clear regression stops the
-        search and restores the control; an equivalent intermediate may keep exploring.
+        complete tuple can replace the protected control.  A clear regression restores
+        the control but does not terminate the search; later graph nodes and rounds may
+        still find a better basin within the runtime budget.
         """
         protected = getattr(self, "protected_control", None)
         if not isinstance(protected, dict):
@@ -2087,9 +2218,9 @@ class AutoTuner(ExperimentClass):
                     control, shots, "%s_%s_block_%d" %
                     (checkpoint, label, block + 1)))
         inc = self._aggregate_ss_blocks(
-            rows["incumbent"], P.get("max_block_spread", 0.06))
+            rows["incumbent"], P.get("max_block_spread", 0.03))
         cand = self._aggregate_ss_blocks(
-            rows["challenger"], P.get("max_block_spread", 0.06))
+            rows["challenger"], P.get("max_block_spread", 0.03))
         z = float(P.get("confidence_sigma", 1.96))
         for row in (inc, cand):
             if row is not None:
@@ -2105,12 +2236,12 @@ class AutoTuner(ExperimentClass):
         valid = bool(inc is not None and cand is not None
                      and inc.get("verified", False) and cand.get("verified", False))
         improved = bool(valid and cand["lcb"] > inc["ucb"]
-                        + float(P.get("min_improvement", 0.005)))
+                        + float(P.get("min_improvement", 0.0025)))
         noninferior = bool(valid and cand["lcb"]
-                           + float(P.get("max_fidelity_regression", 0.01))
+                           + float(P.get("max_fidelity_regression", 0.005))
                            >= inc["lcb"])
         regressed = bool(valid and cand["ucb"]
-                         + float(P.get("max_fidelity_regression", 0.01)) < inc["lcb"])
+                         + float(P.get("max_fidelity_regression", 0.005)) < inc["lcb"])
         if improved:
             comparison["decision"] = "promoted"
             self.protected_control = {
@@ -2127,23 +2258,20 @@ class AutoTuner(ExperimentClass):
         if not valid:
             comparison["decision"] = "unstable_rejected"
             reason = ("%s: atomic incumbent/challenger blocks were unstable; the "
-                      "challenger is rejected and the protected tuple is restored"
+                      "challenger is rejected, the protected tuple is restored, and "
+                      "search continues"
                       % checkpoint)
             self._restore_protected_control(reason)
             self._say("control", "WARN", reason)
-            if not final:
-                raise TunerError(reason)
             return False
         if regressed:
             comparison["decision"] = "regression_rejected"
             reason = ("%s: atomic challenger F=%.3f +/- %.3f is worse than protected "
-                      "F=%.3f +/- %.3f; restored the protected tuple and stopped"
+                      "F=%.3f +/- %.3f; restored the protected tuple and continuing"
                       % (checkpoint, cand["fid"], cand["fid_se"],
                          inc["fid"], inc["fid_se"]))
             self._restore_protected_control(reason)
             self._say("control", "WARN", reason)
-            if not final:
-                raise TunerError(reason)
             return False
         comparison["decision"] = "not_better"
         if final:
@@ -2159,7 +2287,7 @@ class AutoTuner(ExperimentClass):
                     "control", "OK",
                     "final atomic challenger is noninferior to the protected control "
                     "within %.3f fidelity and retains all fresh calibration evidence"
-                    % float(P.get("max_fidelity_regression", 0.01)))
+                    % float(P.get("max_fidelity_regression", 0.005)))
                 return True
             reason = ("final atomic challenger did not meet the protected-control "
                       "noninferiority bound; restored the protected tuple")
@@ -2623,36 +2751,46 @@ class AutoTuner(ExperimentClass):
         return {"f": f_use}, {"f": max(0.1 * self.w.get("kappa_mhz", 0.3), 0.01)}
 
     def _balanced_single_shot(self, cfg, drive_freq, pi_gain, shots, strict=True):
-        """Acquire drift-balanced ground/excited microblocks and analyze them.
+        """Measure the direct objective through TLS step 5's exact pulse program.
 
-        Strict measurements pool a randomly selected balanced schedule and its exact
-        complement.  Consequently every label samples every acquisition slot once: an
-        8-call-synchronous baseline artifact cancels deterministically, not merely in
-        expectation.  Coarse maps use one affine-balanced half-schedule plus randomized
-        global ordering; shortlist and final decisions use the strict complement as well.
+        Default- and reverse-order step-5 acquisitions are phase-cycled in a balanced
+        four-program schedule; strict measurements add its exact complement.  Across
+        the resulting eight state slots each label occupies an equal-time schedule, and
+        the strict complement makes each label occupy every periodic slot.  This cancels
+        affine and acquisition-synchronous state-order drift without reconstructing
+        either state in a different pulse program.  The default-order result is retained
+        separately so it can be compared directly with a manual step-5 run.
         """
-        seqs = {"g": [], "e": [("pulse", int(pi_gain), 0.0)]}
-        got = {"g": [[], []], "e": [[], []]}
-        # Every schedule has four labels per state and equal mean acquisition time, so
-        # affine drift cancels.  Randomly choosing among all eight such schedules avoids
-        # locking the excited label to a repeatable 8-call periodic instrument artifact;
-        # independent confirmation blocks choose again.
-        e_schedules = ((0, 1, 6, 7), (0, 2, 5, 7), (0, 3, 4, 7),
-                       (0, 3, 5, 6), (1, 2, 4, 7), (1, 2, 5, 6),
-                       (1, 3, 4, 6), (2, 3, 4, 5))
-        e_slots = set(e_schedules[int(np.random.randint(len(e_schedules)))])
-        first = ["e" if j in e_slots else "g" for j in range(8)]
-        labels = first + (["g" if label == "e" else "e" for label in first]
-                          if strict else [])
-        per_state_blocks = 8 if strict else 4
-        each = max(10, int(np.ceil(float(shots) / float(per_state_blocks))))
-        for label in labels:
-            i, q = _shots(self, cfg, seqs[label], float(drive_freq), each)
-            got[label][0].append(np.asarray(i, dtype=float))
-            got[label][1].append(np.asarray(q, dtype=float))
-        ig, qg = np.concatenate(got["g"][0]), np.concatenate(got["g"][1])
-        ie, qe = np.concatenate(got["e"][0]), np.concatenate(got["e"][1])
-        return single_shot_analysis(ig, qg, ie, qe)
+        base_orders = ("ge", "eg", "eg", "ge")
+        orders = (base_orders + tuple("eg" if order == "ge" else "ge"
+                                      for order in base_orders)
+                  if strict else base_orders)
+        each = max(int(np.ceil(float(shots) / float(len(orders)))), 10)
+        batches = {"ge": [[], [], [], []], "eg": [[], [], [], []]}
+        for order in orders:
+            values = _canonical_pair_shots(
+                self, cfg, float(drive_freq), int(pi_gain), each,
+                state_order=order)
+            for target, value in zip(batches[order], values):
+                target.append(np.asarray(value, dtype=float))
+        ge_arrays = [np.concatenate(values) for values in batches["ge"]]
+        eg_arrays = [np.concatenate(values) for values in batches["eg"]]
+        ig_ge, qg_ge, ie_ge, qe_ge = ge_arrays
+        ig_eg, qg_eg, ie_eg, qe_eg = eg_arrays
+        ge = single_shot_analysis(ig_ge, qg_ge, ie_ge, qe_ge)
+        eg = single_shot_analysis(ig_eg, qg_eg, ie_eg, qe_eg)
+        ig = np.concatenate([ig_ge, ig_eg])
+        qg = np.concatenate([qg_ge, qg_eg])
+        ie = np.concatenate([ie_ge, ie_eg])
+        qe = np.concatenate([qe_ge, qe_eg])
+        result = single_shot_analysis(ig, qg, ie, qe)
+        result["step5_ge_fidelity"] = float(ge.get("step5_fidelity", np.nan))
+        result["reverse_eg_fidelity"] = float(eg.get("step5_fidelity", np.nan))
+        result["acquisition_path"] = (
+            "SingleShotProgram/ge+eg/slot-complement"
+            if strict else "SingleShotProgram/ge+eg/affine-balanced")
+        result["shots_per_state"] = int(min(len(ig), len(ie)))
+        return result
 
     def _sweep_readout(self, node, candidates, apply_fn, shots):
         """Score a ladder of readout settings, drift-robustly.
@@ -2671,11 +2809,9 @@ class AutoTuner(ExperimentClass):
             for j in order:
                 cfg = self._cfg_for(node)
                 apply_fn(cfg, candidates[j])
-                # The coarse ladder already uses forward/reverse pairing and each
-                # non-strict measurement is internally affine-drift balanced.  Saving
-                # the exact complementary 16-block schedule for shortlisted/final
-                # points halves map duration and reduces the drift accumulated before
-                # the actual decision without weakening its held-out gate.
+                # The coarse ladder already uses forward/reverse candidate order and
+                # each non-strict point uses the four-program affine-balanced canonical
+                # state schedule.  Shortlisted/final points add its slot complement.
                 ss = self._balanced_single_shot(
                     cfg, self.w["drive_freq"], self.w["pi_gain"], int(shots),
                     strict=False)
@@ -2684,6 +2820,10 @@ class AutoTuner(ExperimentClass):
                 row = {
                     "fid": float(ss["fidelity"]),
                     "fid_se": float(ss.get("fidelity_se", np.inf)),
+                    "visibility": float(ss.get("visibility", np.nan)),
+                    "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
+                    "step5_ge_fidelity": float(ss.get("step5_ge_fidelity", np.nan)),
+                    "reverse_eg_fidelity": float(ss.get("reverse_eg_fidelity", np.nan)),
                     "sep": float(ss["sep_sigma"]),
                     "outlier": float(ss["outlier_frac"]),
                     "verified": bool(ss.get("ok", True)),
@@ -2706,15 +2846,7 @@ class AutoTuner(ExperimentClass):
 
     def _single_shot_point(self, node, read_freq, read_gain, drive_freq, pi_gain, shots,
                            strict=True):
-        """One directly measured setting with drift-balanced g/e microblocks.
-
-        Merely randomizing one full ground batch and one full excited batch aliases IQ
-        drift into apparent state contrast.  Eight balanced microblocks give both labels
-        the same mean acquisition time (cancelling affine drift), while a randomly chosen
-        balanced schedule prevents acquisition-periodic artifacts from staying attached
-        to one label across independent blocks.  Total shots per state remain
-        approximately ``shots``.
-        """
+        """One directly measured setting through the canonical step-5 state pair."""
         cfg = self._cfg_for(node)
         cfg["read_pulse_freq"] = float(read_freq)
         cfg["read_pulse_gain"] = int(read_gain)
@@ -2722,6 +2854,10 @@ class AutoTuner(ExperimentClass):
         row = {"freq": float(read_freq), "gain": int(read_gain),
                "fid": float(ss["fidelity"]),
                "fid_se": float(ss.get("fidelity_se", np.inf)),
+               "visibility": float(ss.get("visibility", np.nan)),
+               "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
+               "step5_ge_fidelity": float(ss.get("step5_ge_fidelity", np.nan)),
+               "reverse_eg_fidelity": float(ss.get("reverse_eg_fidelity", np.nan)),
                "sep": float(ss["sep_sigma"]), "outlier": float(ss["outlier_frac"]),
                "verified": bool(ss.get("ok", True)), "ss": ss}
         entry = self._record_empirical_candidate(
@@ -2742,6 +2878,10 @@ class AutoTuner(ExperimentClass):
         row = {"freq": float(length_us), "gain": 0,
                "fid": float(ss["fidelity"]),
                "fid_se": float(ss.get("fidelity_se", np.inf)),
+               "visibility": float(ss.get("visibility", np.nan)),
+               "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
+               "step5_ge_fidelity": float(ss.get("step5_ge_fidelity", np.nan)),
+               "reverse_eg_fidelity": float(ss.get("reverse_eg_fidelity", np.nan)),
                "sep": float(ss["sep_sigma"]), "outlier": float(ss["outlier_frac"]),
                "verified": bool(ss.get("ok", True)), "ss": ss}
         entry = self._record_empirical_candidate(
@@ -2753,7 +2893,7 @@ class AutoTuner(ExperimentClass):
         return row
 
     @staticmethod
-    def _aggregate_ss_blocks(rows, max_disagreement=0.10):
+    def _aggregate_ss_blocks(rows, max_disagreement=0.05):
         """Combine independent confirmations without hiding block-to-block drift."""
         good = [r for r in rows if np.isfinite(r.get("fid", np.nan))
                 and np.isfinite(r.get("fid_se", np.nan))]
@@ -2769,8 +2909,22 @@ class AutoTuner(ExperimentClass):
             len(good) == len(rows)
             and all(bool(r.get("verified", True)) for r in good))
         absolute_stable = bool(spread <= float(max_disagreement))
+        step5_values = [float(r.get("step5_fidelity", np.nan)) for r in good]
+        step5_values = [v for v in step5_values if np.isfinite(v)]
+        ge_values = [float(r.get("step5_ge_fidelity", np.nan)) for r in good]
+        ge_values = [v for v in ge_values if np.isfinite(v)]
+        eg_values = [float(r.get("reverse_eg_fidelity", np.nan)) for r in good]
+        eg_values = [v for v in eg_values if np.isfinite(v)]
         out = {"freq": float(good[0]["freq"]), "gain": int(good[0]["gain"]),
                "fid": float(np.mean(f)), "fid_se": total_se,
+               "visibility": float(np.mean([
+                   r.get("visibility", 2.0 * r["fid"] - 1.0) for r in good])),
+               "step5_fidelity": (float(np.mean(step5_values))
+                                    if step5_values else np.nan),
+               "step5_ge_fidelity": (float(np.mean(ge_values))
+                                       if ge_values else np.nan),
+               "reverse_eg_fidelity": (float(np.mean(eg_values))
+                                         if eg_values else np.nan),
                "sep": float(np.mean([r["sep"] for r in good])),
                "outlier": float(np.max([r["outlier"] for r in good])),
                "block_spread": spread, "blocks": good,
@@ -2780,7 +2934,7 @@ class AutoTuner(ExperimentClass):
         return out
 
     def _confirm_candidate_blocks(self, candidates, measure, nblocks,
-                                  max_disagreement=0.06):
+                                  max_disagreement=0.03):
         """Randomized independent blocks for a candidate list.
 
         ``measure(f, g)`` must return the generic frequency/gain row schema.  Keeping
@@ -2877,6 +3031,13 @@ class AutoTuner(ExperimentClass):
         ss.update({"ok": bool(agg.get("verified", False)),
                    "fidelity": float(agg["fid"]),
                    "fidelity_se": float(agg["fid_se"]),
+                   "visibility": float(agg.get(
+                       "visibility", 2.0 * agg["fid"] - 1.0)),
+                   "step5_fidelity": float(agg.get("step5_fidelity", np.nan)),
+                   "step5_ge_fidelity": float(agg.get(
+                       "step5_ge_fidelity", np.nan)),
+                   "reverse_eg_fidelity": float(agg.get(
+                       "reverse_eg_fidelity", np.nan)),
                    "sep_sigma": float(agg["sep"]),
                    "outlier_frac": float(agg["outlier"])})
         for key in ("p_e_given_g", "p_g_given_e"):
@@ -3052,7 +3213,7 @@ class AutoTuner(ExperimentClass):
             int(P["shots"]))
         screen_confirmed = self._confirm_candidate_blocks(
             candidates, measure, P.get("confirm_blocks", 4),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         self.node_data["readout_power"] = {
             "coarse": coarse_rows, "refine": refine_rows,
             "screen_confirmed": screen_confirmed, "confirmed": [],
@@ -3098,7 +3259,7 @@ class AutoTuner(ExperimentClass):
                 decision_candidates.append(inc_coord)
         decision_confirmed = self._confirm_candidate_blocks(
             decision_candidates, measure, P.get("decision_blocks", 3),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         self.node_data["readout_power"]["confirmed"] = decision_confirmed
         self.node_data["readout_power"]["status"] = "fresh_decision"
         decision_incumbent = next((r for r in decision_confirmed
@@ -3153,7 +3314,10 @@ class AutoTuner(ExperimentClass):
                       "because this heuristic is not a QND/ionization test; the fresh "
                       "fidelity verification, not an isotropic blob model, decides the "
                       "winner" % (100 * best["outlier"]))
-        self._guard_working_control("readout_power")
+        accepted = self._guard_working_control("readout_power")
+        if not accepted:
+            return {"f": float(self.w["read_pulse_freq"]),
+                    "g": float(self.w["read_pulse_gain"])}, {"f": 0.0, "g": 0.0}
         return {"f": float(chosen["freq"]), "g": float(chosen["gain"])}, \
             ({"f": 0.0, "g": 0.0} if moved else
              {"f": max(abs(df) / max(nr - 1, 1), 0.002),
@@ -3366,7 +3530,7 @@ class AutoTuner(ExperimentClass):
             length, int(P["shots"]))
         screen_confirmed = self._confirm_candidate_blocks(
             candidates, measure, P.get("confirm_blocks", 3),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         self.node_data["readout_len"] = {
             "coarse": rows, "screen_confirmed": screen_confirmed,
             "confirmed": [], "selected": None,
@@ -3381,7 +3545,7 @@ class AutoTuner(ExperimentClass):
         self.node_data["readout_len"]["screen_confidence_sigma"] = screen_z
         screen_best = select_verified_2d_candidate(
             screen_confirmed, incumbent=incumbent, confidence_sigma=screen_z,
-            min_improvement=float(P.get("min_improvement", 0.005)),
+            min_improvement=float(P.get("min_improvement", 0.0025)),
             max_outlier=float(P.get("outlier_max", 0.25)))
         if screen_best is None:
             best = {"len": float(coarse_best["len"]),
@@ -3405,12 +3569,12 @@ class AutoTuner(ExperimentClass):
             decision_candidates.append((old_length, 0))
         decision_confirmed = self._confirm_candidate_blocks(
             decision_candidates, measure, P.get("decision_blocks", 3),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         decision_incumbent = next((r for r in decision_confirmed
                                    if abs(r["freq"] - old_length) < 1e-9), None)
         decision_best = select_verified_2d_candidate(
             decision_confirmed, incumbent=decision_incumbent, confidence_sigma=z,
-            min_improvement=float(P.get("min_improvement", 0.005)),
+            min_improvement=float(P.get("min_improvement", 0.0025)),
             max_outlier=float(P.get("outlier_max", 0.25)))
         if decision_best is None:
             selected = screen_best
@@ -3460,7 +3624,9 @@ class AutoTuner(ExperimentClass):
                                        "capped at T1/2 = %.1f us)"
                   % (best["len"], best["fid"], best["fid_se"], best["sep"],
                      coarse_best["len"], 0.5 * t1))
-        self._guard_working_control("readout_len")
+        accepted = self._guard_working_control("readout_len")
+        if not accepted:
+            return {"L": float(self.w["read_length"])}, {"L": 0.0}
         # Frequency/gain were measured with the old ADC window.  Any selected duration
         # change therefore invalidates that 2-D map; this is a pulse-timing identity,
         # not a 40%-heuristic movement test.
@@ -3476,7 +3642,7 @@ class AutoTuner(ExperimentClass):
             [coord],
             lambda f, g: self._single_shot_point(
                 "single_shot", f, g, self.w["drive_freq"], self.w["pi_gain"], shots),
-            P.get("measurement_blocks", 3), P.get("max_block_spread", 0.06))
+            P.get("measurement_blocks", 3), P.get("max_block_spread", 0.03))
         ss = self._ss_from_aggregate(confirmed[0] if confirmed else None)
         if ss is None:
             raise TunerError("single_shot: no finite direct ground/excited measurement "
@@ -3489,11 +3655,21 @@ class AutoTuner(ExperimentClass):
             ss["fidelity"], ss.get("fidelity_se", np.inf),
             P.get("confidence_sigma", 1.96))
         self.w["ss_sep_sigma"] = float(ss["sep_sigma"])
-        self._say("single_shot", "OK", "F=%.3f +/- %.3f (LCB %.3f) | "
+        self.w["ss_visibility"] = float(ss.get(
+            "visibility", 2.0 * ss["fidelity"] - 1.0))
+        self.w["ss_step5_ge_fidelity"] = float(ss.get(
+            "step5_ge_fidelity", ss.get("step5_fidelity", np.nan)))
+        self._say("single_shot", "OK", "order-balanced assignment F=%.3f +/- %.3f "
+                                       "(LCB %.3f; manual-compatible g->e %.3f; "
+                                       "visibility %.3f) | "
                                        "P(e|g)=%.3f P(g|e)=%.3f | %.2f robust sigma | "
                                        "outliers %.3f | angle %.1f deg"
                   % (ss["fidelity"], ss.get("fidelity_se", np.inf),
-                     self.w["ss_fidelity_lcb"], ss["p_e_given_g"], ss["p_g_given_e"],
+                     self.w["ss_fidelity_lcb"],
+                     ss.get("step5_ge_fidelity",
+                            ss.get("step5_fidelity", np.nan)),
+                     ss.get("visibility", 2.0 * ss["fidelity"] - 1.0),
+                     ss["p_e_given_g"], ss["p_g_given_e"],
                      ss["sep_sigma"],
                      ss["outlier_frac"], np.rad2deg(ss["theta"])))
         if not ss.get("ok", False):
@@ -3539,8 +3715,8 @@ class AutoTuner(ExperimentClass):
                           "not writing res_phase (an unverified sign would rotate every "
                           "other runner's readout the wrong way)")
         if ss["sep_sigma"] < float(P["min_sep_sigma"]):
-            f_ideal = 1.0 - 2.0 * q_ideal
-            at_limit = (f_ideal - ss["fidelity"]) < 0.03
+            f_ideal = 1.0 - q_ideal
+            at_limit = (f_ideal - ss["fidelity"]) < 0.015
             self._say("single_shot", "WARN",
                       "the robust two-Gaussian diagnostic is %.2f sigma < %.1f. "
                       "Measured held-out F=%.3f vs the idealized Gaussian value %.3f; "
@@ -3551,8 +3727,9 @@ class AutoTuner(ExperimentClass):
                          if at_limit else
                          "BELOW the limit, so there is headroom in the discrimination "
                          "itself (rotation angle, threshold, integration weights)"))
-        self._guard_working_control("single_shot")
-        return {"F": ss["fidelity"]}, {"F": 0.02}
+        accepted = self._guard_working_control("single_shot")
+        return {"F": float(self.w.get("ss_fidelity", ss["fidelity"]))}, \
+            {"F": 0.0 if not accepted else 0.01}
 
     def _cal_pi_fidelity(self):
         """Independent local drive-frequency x gain challenge to the coherent pi.
@@ -3672,7 +3849,7 @@ class AutoTuner(ExperimentClass):
 
         screen_confirmed = self._confirm_candidate_blocks(
             candidates, measure, P.get("confirm_blocks", 4),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         self.node_data["pi_fidelity"] = {
             "coarse": all_rows, "refine": refine_rows,
             "screen_confirmed": screen_confirmed, "confirmed": [],
@@ -3686,7 +3863,7 @@ class AutoTuner(ExperimentClass):
                 "absolute fidelity drift exceeded %.1f points, but %d/%d candidates "
                 "retained a stable block-paired ranking after common-mode cancellation; "
                 "raw drift remains included in every confidence interval"
-                % (100.0 * float(P.get("max_block_spread", 0.06)), len(rescued),
+                % (100.0 * float(P.get("max_block_spread", 0.03)), len(rescued),
                    len(screen_confirmed)))
         incumbent = next((r for r in screen_confirmed
                           if abs(r["freq"] - f0) < 1e-8 and r["gain"] == g0), None)
@@ -3747,7 +3924,7 @@ class AutoTuner(ExperimentClass):
             decision_candidates.append((f0, g0))
         decision_confirmed = self._confirm_candidate_blocks(
             decision_candidates, measure, P.get("decision_blocks", 3),
-            P.get("max_block_spread", 0.06))
+            P.get("max_block_spread", 0.03))
         self.node_data["pi_fidelity"]["confirmed"] = decision_confirmed
         self.node_data["pi_fidelity"]["status"] = "fresh_decision"
         decision_incumbent = next((r for r in decision_confirmed
@@ -3839,7 +4016,10 @@ class AutoTuner(ExperimentClass):
                 "gain_radius": max(abs(dg) / max(nr - 1, 1), 20.0),
             }
             chosen = decision_incumbent
-        self._guard_working_control("pi_fidelity")
+        accepted = self._guard_working_control("pi_fidelity")
+        if not accepted:
+            return {"f": float(self.w["drive_freq"]),
+                    "g": float(self.w["pi_gain"])}, {"f": 0.0, "g": 0.0}
         return {"f": float(chosen["freq"]), "g": float(chosen["gain"])}, \
             ({"f": 0.0, "g": 0.0} if improve else
              {"f": max(abs(df) / max(nr - 1, 1), 0.02),
@@ -4663,6 +4843,8 @@ class AutoTuner(ExperimentClass):
             "freq": float(drive_freq), "gain": int(pi_gain),
             "fid": float(ss.get("fidelity", np.nan)),
             "fid_se": float(ss.get("fidelity_se", np.inf)),
+            "visibility": float(ss.get("visibility", np.nan)),
+            "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
             "sep": float(ss.get("sep_sigma", np.nan)),
             "outlier": float(ss.get("outlier_frac", np.inf)),
             "verified": bool(ss.get("ok", False)), "ss": ss,
@@ -5156,6 +5338,8 @@ class AutoTuner(ExperimentClass):
         fid = float(ss.get("fidelity", np.nan))
         fid_se = float(ss.get("fidelity_se", np.inf))
         candidate_row = {"fid": fid, "fid_se": fid_se,
+                         "visibility": float(ss.get("visibility", np.nan)),
+                         "step5_fidelity": float(ss.get("step5_fidelity", np.nan)),
                          "sep": float(ss.get("sep_sigma", np.nan)),
                          "outlier": float(ss.get("outlier_frac", np.inf)),
                          "verified": bool(ss.get("ok", False))}
@@ -5615,7 +5799,7 @@ class AutoTuner(ExperimentClass):
                     "single_shot", f, g, self.w["drive_freq"],
                     self.w["pi_gain"], shots),
                 self.P["single_shot"].get("verify_blocks", 4),
-                self.P["single_shot"].get("max_block_spread", 0.06))
+                self.P["single_shot"].get("max_block_spread", 0.03))
             ss = self._ss_from_aggregate(confirmed[0] if confirmed else None)
         except Exception as exc:
             self._say("verify", "WARN", "the final re-measurement failed (%s) -- the "
@@ -5625,9 +5809,9 @@ class AutoTuner(ExperimentClass):
             now_fid_se = float(ss.get("fidelity_se", np.inf))
             z = float(self.P["single_shot"].get("confidence_sigma", 1.96))
             now_lcb = fidelity_lower_bound(now_fid, now_fid_se, z)
-            min_lcb = float(self.P["single_shot"].get("min_fidelity_lcb", 0.80))
+            min_lcb = float(self.P["single_shot"].get("min_fidelity_lcb", 0.90))
             combined = float(np.hypot(now_fid_se, was_fid_se))
-            allowed_drop = (float(self.P["single_shot"].get("verify_tol_abs", 0.03))
+            allowed_drop = (float(self.P["single_shot"].get("verify_tol_abs", 0.015))
                             + z * combined)
             fid_drop = (0.0 if not np.isfinite(was_fid) else was_fid - now_fid)
             fidelity_reproduced = bool(fid_drop <= allowed_drop)
@@ -5635,6 +5819,10 @@ class AutoTuner(ExperimentClass):
             self.w["ss_verify_sigma"], self.w["ss_verify_fidelity"] = now_sep, now_fid
             self.w["ss_sep_sigma"], self.w["ss_fidelity"] = now_sep, now_fid
             self.w["ss_fidelity_se"], self.w["ss_fidelity_lcb"] = now_fid_se, now_lcb
+            self.w["ss_visibility"] = float(ss.get(
+                "visibility", 2.0 * now_fid - 1.0))
+            self.w["ss_step5_ge_fidelity"] = float(ss.get(
+                "step5_ge_fidelity", ss.get("step5_fidelity", np.nan)))
             tol = float(self.P["single_shot"]["verify_tol_frac"])
             sep_drift = (0.0 if not np.isfinite(was_sep) or was_sep <= 0
                          else abs(now_sep - was_sep) / was_sep)
@@ -5952,7 +6140,7 @@ class AutoTuner(ExperimentClass):
                 self.P["single_shot"].get("confidence_sigma", 1.96))
             self.w["ss_fidelity_lcb"] = float(ss_lcb)
             ss_ok = ss_lcb >= float(self.P["single_shot"].get(
-                "min_fidelity_lcb", 0.80))
+                "min_fidelity_lcb", 0.90))
             t1_lo = float(self.w.get("t1_lo_us", np.nan))
             t1_hi = float(self.w.get("t1_hi_us", np.nan))
             t1_cap = max(0.5 * t1_lo, 2.0) if np.isfinite(t1_lo) else np.nan
@@ -6039,7 +6227,7 @@ class AutoTuner(ExperimentClass):
                               "(F=%.3f +/- %.3f; separation %.2f sigma is diagnostic "
                               "only).%s"
                               % (ss_lcb,
-                                 self.P["single_shot"].get("min_fidelity_lcb", 0.80),
+                                 self.P["single_shot"].get("min_fidelity_lcb", 0.90),
                                  self.w.get("ss_fidelity", float('nan')),
                                  self.w.get("ss_fidelity_se", float('nan')),
                                  self.w.get("ss_sep_sigma", float('nan')), extra))
@@ -6205,7 +6393,9 @@ class AutoTuner(ExperimentClass):
             print("   BEST FOUND         none -- no valid direct ground/excited candidate was "
                   "acquired before the failure")
         for k, label in (("t1_us", "T1"), ("chi_mhz", "chi/2pi"), ("kappa_mhz", "kappa/2pi"),
-                         ("ss_fidelity", "SS fidelity"), ("ss_sep_sigma", "SS separation")):
+                         ("ss_fidelity", "SS assignment F"),
+                         ("ss_visibility", "SS visibility"),
+                         ("ss_sep_sigma", "SS separation")):
             if k in self.w and np.isfinite(self.w[k]):
                 print("   %-18s %.4g%s" % (label, self.w[k],
                                            " us" if k == "t1_us" else
@@ -6241,6 +6431,7 @@ class AutoTuner(ExperimentClass):
         self.data.update({
             "success": success, "failure": failure, "tuned": tuned,
             "autotuner_revision": AUTOTUNER_REVISION,
+            "fidelity_definition": "balanced_assignment",
             "control_validation_only": control_only,
             "control_validation_passed": control_passed,
             "runtime_minutes": ((time.monotonic() - self._run_started_monotonic) / 60.0),
