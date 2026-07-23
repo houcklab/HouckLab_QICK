@@ -52,9 +52,11 @@ class RabiLinecutSS(ExperimentClass):
         pi_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
         cfg["rabi_drive_freq"] = pi_freq
 
+        reset_note = ("feedback reset" if str(cfg.get("reset_mode", "passive")).strip().lower()
+                      == "feedback" else f"passive relax {cfg['relax_delay']} us")
         print(f"[Rabi Linecut SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
               f"{a_points} gains around {center:.0f} DAC (+/-{a_span/2:.0f}), {cfg['shots']} shots/pt, "
-              f"drive {pi_freq:.3f} MHz, passive relax {cfg['relax_delay']} us")
+              f"drive {pi_freq:.3f} MHz, {reset_note}")
         pop = sweep_gain_populations(self, cfg, gains, self.calib_params)
 
         fit, pi_gain = None, None

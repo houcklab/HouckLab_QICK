@@ -68,28 +68,33 @@ P_SS_CAL = {
     "run": True,
     "shots": 1000,
     "number_pi_pulses": 1,
-    "ground_threshold": 0.6,
-    "relax_delay_us": 2000.0,
+    # QUA SingleShot1Q override (0.7): the ground-confidence bound that sets the
+    # herald/post-selection threshold consumed downstream.  Was 0.6.
+    "ground_threshold": 0.7,
+    # SS cal is PASSIVE (see run_ss_cal): the |g>/|e> reference blobs must be pure thermal
+    # states, so ~1 ms of relaxation like QUA -- not a feedback reset, whose residual
+    # excitation would contaminate the very reference the discriminator is built from.
+    "relax_delay_us": 1000.0,
 }
 
 P_RABI_CHEVRON_IQ = {
     "run": True,
     "shots": 100,
     "num_pi": 1,
-    "pulse_type": "X180",
+    "pulse_type": "X90",
     "a_min": 500,
     "a_max": 30000,
     "a_points": 41,
     "freq_span_mhz": 20.0,
     "freq_points": 21,
-    "relax_delay_us": 500.0,
+    "relax_delay_us": 1000.0,
 }
 
 P_RABI_CHEVRON_SS = {
     "run": False,
     "shots": 200,
     "num_pi": 5,
-    "pulse_type": "X180",
+    "pulse_type": "X90",
     "a_min": 10000,
     "a_max": 15000,
     "a_points": 21,
@@ -102,7 +107,10 @@ P_RABI_LINECUT_SS = {
     "run": False,
     "shots": 1000,
     "num_pi": 1,
-    "pulse_type": "X180",
+    # QUA global PULSE_TYPE='X90': the committing Rabi calibrates the pi/2 amplitude
+    # (qubit_pi2_gain), from which pi = 2*pi/2.  Set 'X180' to calibrate pi (qubit_pi_gain)
+    # directly instead -- see the note printed when this step runs.
+    "pulse_type": "X90",
     "a_span": 6000,
     "a_points": 51,
     "relax_delay_us": 2000.0,
@@ -213,7 +221,12 @@ def run_qubit_spec(outer_folder, soc, soccfg):
 
 def run_ss_cal(outer_folder, soc, soccfg):
     p = P_SS_CAL
-    cfg = _base_cfg(p)
+    # PASSIVE reset (reset-mode decision, not a QUA copy): the SS cal DEFINES the |g>/|e>
+    # discrimination, so its references must be pure thermal states.  A feedback reset here
+    # would prepare |g> with the readout's own ~14% residual misidentification and
+    # un-cleared photons, biasing the threshold/theta/scale_factor the whole SS pipeline
+    # inherits.  The single-shot Rabis keep active reset; the cal that defines it does not.
+    cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     # SingleShot1Q intentionally sweeps/prepares with ``qubit_gain``.  For a readout
     # calibration its |e> reference must replay the committed X180, not the unrelated
     # spectroscopy gain left in BaseConfig.  TLSSpectroscopy uses the same mapping.
