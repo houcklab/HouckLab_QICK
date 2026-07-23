@@ -124,17 +124,26 @@ class TransmissionVsFFGain(ExperimentClass):
             if live is None:
                 return
             plt.figure(live.fig.number)
-            plt.subplot(211); plt.cla()
-            plt.suptitle(f"Resonator spectroscopy - {self.path}  "
-                         f"(shot-interleaved, {rounds} rounds)")
-            plt.title(r"Amplitude (dBm)")
-            plt.pcolor(dc_vec, f_vec, R)
-            plt.ylabel("Readout freq [MHz]")
-            plt.subplot(212); plt.cla()
-            plt.title("Phase (rad)")
-            plt.pcolor(dc_vec, f_vec, signal.detrend(np.unwrap(phase_raw, axis=-1), axis=-1))
-            plt.xlabel("Flux bias [ff_gain DAC]")
-            plt.ylabel("Readout freq [MHz]")
+            if n_dc <= 1:
+                # single-flux (gate-cal Transmission): 1 panel, |S21| vs frequency, no flux axis
+                plt.clf()
+                plt.suptitle(f"Resonator transmission - {self.path}  "
+                             f"(shot-interleaved, {rounds} rounds)")
+                plt.plot(f_vec, R[:, 0])
+                plt.xlabel("Readout freq [MHz]")
+                plt.ylabel("Amplitude (dBm)")
+            else:
+                plt.subplot(211); plt.cla()
+                plt.suptitle(f"Resonator spectroscopy - {self.path}  "
+                             f"(shot-interleaved, {rounds} rounds)")
+                plt.title(r"Amplitude (dBm)")
+                plt.pcolor(dc_vec, f_vec, R)
+                plt.ylabel("Readout freq [MHz]")
+                plt.subplot(212); plt.cla()
+                plt.title("Phase (rad)")
+                plt.pcolor(dc_vec, f_vec, signal.detrend(np.unwrap(phase_raw, axis=-1), axis=-1))
+                plt.xlabel("Flux bias [ff_gain DAC]")
+                plt.ylabel("Readout freq [MHz]")
             live.refresh(pause=0.5)
             plt.tight_layout()
             if not live.is_open:
