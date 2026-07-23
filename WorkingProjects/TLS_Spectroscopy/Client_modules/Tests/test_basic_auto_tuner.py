@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import ast
 import copy
+import io
 import os
 import sys
 import tempfile
 import types
+from contextlib import redirect_stdout
 
 import numpy as np
 from scipy.special import ndtri
@@ -145,6 +147,9 @@ FAST_PARAMS = {
         "shortlist": 3, "confirm_shots": 131, "confirm_blocks": 2,
     },
     "coordinate_descent_repeat": False,
+    # Most unit tests target one subsystem in isolation.  End-to-end operational
+    # screening tests enable the production-default screen explicitly.
+    "leakage": {"enabled": False, "operational_enabled": False},
     "final": {
         "top_candidates": 3, "shots": 173, "blocks": 3,
         "confidence_sigma": 1.96, "max_block_spread": 0.08,
@@ -302,6 +307,23 @@ class VirtualBasicAutoTuner(T.BasicAutoTuner):
         return 0.03 + 0.75 * np.sin(
             np.pi * (freqs - self.QUBIT_FREQ) / 1.4) ** 2
 
+    def _acquire_repeated_populations(self, candidate, pulse_counts, shots,
+                                      calibration):
+        del calibration
+        counts = np.asarray(pulse_counts, dtype=int)
+        beta_error = min(
+            0.20, 0.008 + 8.0 * (float(candidate.get(
+                "qubit_drag_beta", 0.0)) - 0.04) ** 2)
+        normalized = np.where(counts % 2 == 1,
+                              1.0 - beta_error, beta_error)
+        # Mirror the approximately symmetric assignment errors produced by the
+        # deterministic virtual step-5 clouds near their calibrated basin.
+        fidelity = self._physical_fidelity(candidate)
+        ground_error = 1.0 - fidelity
+        contrast = max(2.0 * fidelity - 1.0, 1e-6)
+        self.virtual_shots += int(shots) * counts.size
+        return ground_error + contrast * normalized
+
 
 def test_step5_metric_matches_shared_helpers():
     rng = np.random.default_rng(44)
@@ -451,6 +473,185 @@ def test_independent_long_reference_exposes_candidate_one_pulse_leakage():
     assert safe_row["leakage_safe"] is True
 
 
+def test_opposed_ef_scans_match_a_reproduced_feature_after_rank_swaps():
+    """Different strongest peaks must not hide a shared physical e-f line."""
+    frequencies = np.arange(11, dtype=float)
+    combined_snr = np.zeros(11)
+    combined_snr[2], combined_snr[8] = 9.5, 8.0
+    combined = {"snr_trace": combined_snr}
+    left_snr = np.zeros(11)
+    left_snr[2], left_snr[8] = 9.0, 6.0
+    right_snr = np.zeros(11)
+    right_snr[8], right_snr[2] = 10.0, 8.0
+    individual = [
+        {"candidates_mhz": [2.0, 8.0], "candidate_indices": [2, 8],
+         "snr_trace": left_snr},
+        {"candidates_mhz": [8.0, 2.0], "candidate_indices": [8, 2],
+         "snr_trace": right_snr},
+    ]
+    matched = T.BasicAutoTuner._reproduced_spectral_seed(
+        frequencies, combined, individual, max_error_mhz=1.0,
+        min_combined_snr=4.0)
+    assert matched["frequency_mhz"] == 2.0
+    assert matched["pass_centres_mhz"] == (2.0, 2.0)
+
+
+def test_long_reference_gain_recovers_from_a_rabi_fit_alias():
+    """A bad global fit may be rescued only by a direct 0/pi/2pi audit."""
+    class ReferenceAuditTuner(VirtualBasicAutoTuner):
+        TRUE_PI_GAIN = 5000.0
+
+        def _sequence_mean(self, candidate, sequence, shots, seq_gap_us=None):
+            del candidate, seq_gap_us
+            area = sum(float(operation[1]) for operation in sequence
+                       if operation[0] == "pulse_at")
+            excited = np.sin(np.pi * area / (2.0 * self.TRUE_PI_GAIN)) ** 2
+            return {
+                "i": float(excited), "q": 0.0,
+                "se_i": 0.001, "se_q": 0.001, "shots": int(shots),
+            }
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "reference_gain_max": 30000, "reference_gain_points": 13,
+        "reference_rabi_shots": 101, "reference_min_rabi_r2": 0.55,
+        "reference_min_contrast": 0.20,
+        "reference_max_return_fraction": 0.35,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = ReferenceAuditTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        original_fit = T.fit_anchored_rabi
+        T.fit_anchored_rabi = lambda gains, signal: {
+            "ok": True, "pi_gain": 10000.0, "pi_gain_err": 50.0,
+            "period": 20000.0, "r2": 0.99, "contrast": 1.0,
+            "decay_gain": 50000.0,
+            "yfit": np.zeros_like(np.asarray(signal, dtype=float)),
+        }
+        try:
+            calibrated = tuner._calibrate_reference_ge(tuner.working)
+        finally:
+            T.fit_anchored_rabi = original_fit
+    assert calibrated["ge_reference_gain"] == 5000
+    assert calibrated["harmonic_rescue_used"] is True
+    assert calibrated["harmonic_return_error"] < 0.01
+
+
+def test_basic_default_uses_operational_screen_not_direct_ef_calibration():
+    cfg = _base_config()
+    # An anharmonicity prior used to activate the full qutrit calibration implicitly.
+    # It must no longer make the basic workflow strict unless requested explicitly.
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params={"leakage": {"operational_enabled": True}},
+        )
+        strict = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params={"leakage": {
+                "enabled": "auto", "operational_enabled": True}},
+        )
+    assert tuner._leakage_active is False
+    assert tuner._operational_leakage_active is True
+    assert tuner.data["leakage"]["direct_p2_measured"] is False
+    assert "operational" in tuner.data["leakage"]["measurement"]
+    assert strict._leakage_active is True
+    assert "qutrit" in strict.data["leakage"]["measurement"]
+
+
+def test_operational_screen_detects_bad_repeated_returns_without_calling_it_p2():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": False, "operational_enabled": True,
+        "operational_depths": [1, 2, 3, 4, 6, 8],
+        "operational_min_binary_contrast": 0.45,
+        "operational_max_even_return_error": 0.15,
+        "operational_max_odd_inversion_error": 0.15,
+        "max_third_blob_excess": 0.05,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        optimum = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=tuner.PI_GAIN_AT_SIGMA, sigma=tuner.SIGMA,
+            qubit_drag_beta=0.04)
+        safe = tuner._measure_operational_leakage_candidate(
+            optimum, 2000, 2000, "safe operational regression")
+        unsafe = tuner._measure_operational_leakage_candidate(
+            T._with_candidate(optimum, qubit_drag_beta=0.20),
+            2000, 2000, "unsafe operational regression")
+    assert safe["operational_safe"] is True
+    assert safe["max_even_return_error_ucb"] < 0.15
+    assert unsafe["operational_safe"] is False
+    assert unsafe["max_even_return_error_ucb"] > 0.15
+    assert "single_p2_ucb" not in safe
+
+
+def test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian():
+    common = {
+        "fidelity_se": 0.004, "max_even_return_error_ucb": 0.04,
+        "max_odd_inversion_error_ucb": 0.04,
+        "third_blob_excess_ucb": 0.01,
+    }
+    short = dict(common, fidelity=0.950, fidelity_lcb_95=0.942,
+                 sigma=0.05, qubit_pi_gain=28000)
+    longer = dict(common, fidelity=0.944, fidelity_lcb_95=0.936,
+                  sigma=0.25, qubit_pi_gain=5800)
+    too_slow = dict(common, fidelity=0.900, fidelity_lcb_95=0.892,
+                    sigma=0.50, qubit_pi_gain=2900)
+    selected = T.BasicAutoTuner._prefer_longer_noninferior(
+        [short, longer, too_slow], margin=0.003)
+    assert selected is longer
+
+
+def test_operational_shortlist_cannot_be_filled_by_one_duration():
+    base = T._candidate_from_cfg(_base_config())
+    rows = []
+    for index, beta in enumerate(np.linspace(-0.08, 0.08, 7)):
+        row = T._with_candidate(
+            base, sigma=0.05, qubit_pi_gain=28000,
+            qubit_drag_beta=float(beta))
+        row.update(fidelity=0.96 - 0.001 * index,
+                   fidelity_lcb_95=0.95 - 0.001 * index)
+        rows.append(row)
+    for sigma, gain, fidelity in ((0.25, 5800, 0.94), (0.50, 2900, 0.93)):
+        row = T._with_candidate(
+            base, sigma=sigma, qubit_pi_gain=gain, qubit_drag_beta=0.02)
+        row.update(fidelity=fidelity, fidelity_lcb_95=fidelity - 0.01)
+        rows.append(row)
+    shortlist = T.BasicAutoTuner._duration_covered_shortlist(rows, limit=3)
+    assert {float(row["sigma"]) for row in shortlist} == {0.05, 0.25, 0.50}
+
+
+def test_readout_tie_prefers_lower_power_duration_exposure():
+    high = {
+        "fidelity": 0.950, "fidelity_se": 0.004,
+        "fidelity_lcb_95": 0.942,
+        "read_pulse_gain": 7000, "read_length": 30.0,
+    }
+    lower = {
+        "fidelity": 0.944, "fidelity_se": 0.004,
+        "fidelity_lcb_95": 0.936,
+        "read_pulse_gain": 5000, "read_length": 14.0,
+    }
+    too_weak = {
+        "fidelity": 0.900, "fidelity_se": 0.004,
+        "fidelity_lcb_95": 0.892,
+        "read_pulse_gain": 2500, "read_length": 8.0,
+    }
+    selected = T.BasicAutoTuner._prefer_lower_readout_exposure(
+        [high, lower, too_weak], margin=0.003)
+    assert selected is lower
+
+
 def test_single_shot_feedback_buffers_return_only_the_final_readout():
     """Three reset reads per shot must never leak into the step-5 histograms."""
     program = object.__new__(T.SingleShotProgram)
@@ -567,6 +768,24 @@ def test_active_reset_primitive_always_clears_measurement_photons():
     assert np.isclose(default_program.syncs[-1], 25.0)
 
 
+def test_concise_console_hides_diagnostics_but_keeps_the_saved_report():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            tuner._log("internal_detail", "WARN", "full diagnostic text")
+        assert output.getvalue() == ""
+        assert tuner.data["report"][-1]["message"] == "full diagnostic text"
+
+        tuner.params["console"]["verbosity"] = "detailed"
+        with redirect_stdout(output):
+            tuner._log("internal_detail", "WARN", "visible while debugging")
+        assert "visible while debugging" in output.getvalue()
+
+
 def test_static_fast_flux_is_replayed_but_never_tuned():
     """Any signed park value is fixed context and survives every candidate config."""
     cfg = _base_config()
@@ -647,10 +866,12 @@ def test_dynamic_flux_excursion_is_not_mistaken_for_static_park():
 def test_bad_start_recovers_and_preserves_best_effort_contract():
     cfg = _base_config()
     untouched = copy.deepcopy(cfg)
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
             soc=None, soccfg=None, path="q4", outerFolder=folder,
-            cfg=cfg, params=FAST_PARAMS, fail_parity=True,
+            cfg=cfg, params=params, fail_parity=True,
         )
         result = tuner.acquire(plotDisp=False)
 
@@ -721,9 +942,11 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     # is rewritten.  Only explicitly supported calibration keys may be eligible.
     assert cfg == untouched
     assert result["config"] == untouched
-    # DRAG remains exactly equal to the input because this virtual device does not
-    # activate the optional e-f leakage stage; unchanged keys need no source rewrite.
-    assert set(data["eligible_tuned"]) == set(T.TUNED_KEYS) - {"qubit_drag_beta"}
+    # The default operational screen calibrates DRAG without requiring e-f shelving.
+    assert set(data["eligible_tuned"]) == set(T.TUNED_KEYS)
+    assert abs(best["qubit_drag_beta"] - 0.04) < 0.04
+    assert data["leakage"]["operational_verified"] is True
+    assert data["leakage"]["direct_p2_measured"] is False
     for forbidden in ("res_phase", "qubit_pi2_gain"):
         assert forbidden not in data["eligible_tuned"]
     assert untouched["res_phase"] == 37.0
@@ -972,6 +1195,41 @@ def test_leakage_constraint_prefers_safe_waveform_over_higher_binary_fidelity():
     assert chosen["selection_confirmation_complete"] is True
     assert tuner.working["sigma"] == 0.25
     assert tuner.data["leakage"]["selection_safe"] is True
+
+
+def test_failed_leakage_calibration_retains_the_validated_unconstrained_result():
+    """A failed P(f) audit blocks writes without replacing the measured best pulse."""
+    class FailedLeakageTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.final_safe_called = False
+            super().__init__(*args, **kwargs)
+
+        def _stage_leakage(self):
+            raise RuntimeError("synthetic e-f calibration failure")
+
+        def _stage_final_constrained(self):
+            self.final_safe_called = True
+            raise AssertionError(
+                "a leakage-constrained replay must not run without a leakage audit")
+
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": True, "operational_enabled": False}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FailedLeakageTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        with redirect_stdout(io.StringIO()):
+            result = tuner.acquire()["data"]
+    assert tuner.final_safe_called is False
+    assert result["best_found"]["fidelity"] > 0.90
+    assert result["best_found"]["label"].startswith("final exact")
+    assert result["eligibility"]["final_replay_kind"] == "unconstrained"
+    assert result["leakage_verified"] is False
+    assert result["final_stable"] is False
+    assert result["eligible_tuned"] == {}
 
 
 def test_direct_leakage_verification_is_a_hard_write_gate():
@@ -1532,12 +1790,20 @@ def main():
         test_third_blob_guard_catches_binary_invisible_excited_cloud,
         test_shelving_inversion_recovers_direct_f_population,
         test_independent_long_reference_exposes_candidate_one_pulse_leakage,
+        test_opposed_ef_scans_match_a_reproduced_feature_after_rank_swaps,
+        test_long_reference_gain_recovers_from_a_rabi_fit_alias,
+        test_basic_default_uses_operational_screen_not_direct_ef_calibration,
+        test_operational_screen_detects_bad_repeated_returns_without_calling_it_p2,
+        test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian,
+        test_operational_shortlist_cannot_be_filled_by_one_duration,
+        test_readout_tie_prefers_lower_power_duration_exposure,
         test_single_shot_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_buffers_return_only_the_final_readout,
         test_feedback_threshold_is_bound_to_one_exact_readout_tuple,
         test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
         test_reset_raw_threshold_maximizes_held_shot_assignment,
         test_active_reset_primitive_always_clears_measurement_photons,
+        test_concise_console_hides_diagnostics_but_keeps_the_saved_report,
         test_static_fast_flux_is_replayed_but_never_tuned,
         test_static_fast_flux_helper_forces_zero_and_nonzero_park,
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,
@@ -1547,6 +1813,7 @@ def main():
         test_partial_direct_grid_with_failed_confirmation_has_no_key_evidence,
         test_stable_full_tuple_replay_authorizes_atomic_update,
         test_leakage_constraint_prefers_safe_waveform_over_higher_binary_fidelity,
+        test_failed_leakage_calibration_retains_the_validated_unconstrained_result,
         test_direct_leakage_verification_is_a_hard_write_gate,
         test_verified_leakage_tuple_can_atomically_write_drag_beta,
         test_leakage_certificate_cannot_authorize_a_different_final_tuple,

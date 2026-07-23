@@ -126,14 +126,24 @@ def _print_best(result):
         print("   step-5 F  n/a")
     leakage = result.get("leakage", {})
     if isinstance(leakage, dict) and leakage.get("active", False):
-        single = _number(leakage, ("worst_single_p2_ucb",))
-        amplified = _number(leakage, ("worst_amplified_p2_ucb",))
         third = _number(leakage, ("worst_third_blob_excess_ucb",))
-        print("   leakage   %s | P(f) UCB one/amplified %s/%s | "
-              "third-cloud excess UCB %s"
-              % ("VERIFIED" if leakage.get("verified", False) else "NOT VERIFIED",
-                 _fmt_float(single, 4), _fmt_float(amplified, 4),
-                 _fmt_float(third, 4)))
+        if leakage.get("strict_direct_active", False):
+            single = _number(leakage, ("worst_single_p2_ucb",))
+            amplified = _number(leakage, ("worst_amplified_p2_ucb",))
+            print("   leakage   %s | P(f) UCB one/amplified %s/%s | "
+                  "third-cloud excess UCB %s"
+                  % ("VERIFIED" if leakage.get("verified", False)
+                     else "NOT VERIFIED",
+                     _fmt_float(single, 4), _fmt_float(amplified, 4),
+                     _fmt_float(third, 4)))
+        else:
+            even = _number(leakage, ("worst_even_return_error_ucb",))
+            odd = _number(leakage, ("worst_odd_inversion_error_ucb",))
+            print("   leakage   operational screen %s | return/inversion UCB %s/%s | "
+                  "third-cloud excess UCB %s (not a direct P(f) measurement)"
+                  % ("PASSED" if leakage.get("verified", False) else "FAILED",
+                     _fmt_float(even, 4), _fmt_float(odd, 4),
+                     _fmt_float(third, 4)))
     reset = result.get("reset", {})
     if isinstance(reset, dict):
         mode = str(reset.get("mode", "passive"))
@@ -187,12 +197,20 @@ def _history_entry(result, eligible, applied, error=None):
         "best_found": result.get("best_found"),
         "leakage": {
             "active": bool(leakage.get("active", False)),
+            "strict_direct_active": bool(
+                leakage.get("strict_direct_active", False)),
+            "operational_active": bool(
+                leakage.get("operational_active", False)),
             "verified": bool(leakage.get("verified", False)),
             "selection_safe": bool(leakage.get("selection_safe", False)),
             "worst_single_p2_ucb": leakage.get("worst_single_p2_ucb"),
             "worst_amplified_p2_ucb": leakage.get("worst_amplified_p2_ucb"),
             "worst_third_blob_excess_ucb": leakage.get(
                 "worst_third_blob_excess_ucb"),
+            "worst_even_return_error_ucb": leakage.get(
+                "worst_even_return_error_ucb"),
+            "worst_odd_inversion_error_ucb": leakage.get(
+                "worst_odd_inversion_error_ucb"),
             "failure": leakage.get("failure"),
         },
         "reset": {
