@@ -95,9 +95,8 @@ class SingleShotProgram(RAveragerProgram):
 
     def collect_shots(self):
         length = self.us2cycles(self.cfg['read_length'], ro_ch=self.cfg["ro_chs"][0])
-        raw = np.array(self.get_raw())
-        shots_i = raw[0, :, :, 0, 0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
-        shots_q = raw[0, :, :, 0, 1].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_i = self.di_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
+        shots_q = self.dq_buf[0].reshape((self.cfg["expts"], self.cfg["reps"])) / length
         return shots_i, shots_q
 
 
