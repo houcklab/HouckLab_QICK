@@ -81,7 +81,7 @@ P_RABI_CHEVRON_IQ = {
     "run": True,
     "shots": 100,
     "num_pi": 1,
-    "pulse_type": "X90",
+    "pulse_type": "X180",
     "a_min": 500,
     "a_max": 30000,
     "a_points": 41,
@@ -94,7 +94,7 @@ P_RABI_CHEVRON_SS = {
     "run": False,
     "shots": 200,
     "num_pi": 5,
-    "pulse_type": "X90",
+    "pulse_type": "X180",
     "a_min": 10000,
     "a_max": 15000,
     "a_points": 21,
@@ -107,10 +107,10 @@ P_RABI_LINECUT_SS = {
     "run": False,
     "shots": 1000,
     "num_pi": 1,
-    # QUA global PULSE_TYPE='X90': the committing Rabi calibrates the pi/2 amplitude
-    # (qubit_pi2_gain), from which pi = 2*pi/2.  Set 'X180' to calibrate pi (qubit_pi_gain)
-    # directly instead -- see the note printed when this step runs.
-    "pulse_type": "X90",
+    # Calibrate the pi amplitude (qubit_pi_gain) directly via a num_pi X180 error-amp
+    # train.  QUA's default is 'X90' (calibrates pi/2 = qubit_pi2_gain, pi = 2*pi/2); set
+    # 'X90' here to match QUA if you want the pi/2-primitive workflow instead.
+    "pulse_type": "X180",
     "a_span": 6000,
     "a_points": 51,
     "relax_delay_us": 2000.0,
