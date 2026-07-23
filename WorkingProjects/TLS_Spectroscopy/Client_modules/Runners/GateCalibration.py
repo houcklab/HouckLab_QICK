@@ -54,7 +54,7 @@ P_QUBIT_SPEC = {
     "run": True,
     "shots": 1000,
     "spec_amp": 7000,
-    "spec_len_us": 2.0,
+    "spec_len_us": 1.0,
     "freq_min_mhz": 2300.0,
     "freq_max_mhz": 2700.0,
     "freq_step_mhz": 1.0,

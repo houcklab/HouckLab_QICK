@@ -88,22 +88,20 @@ class QubitSpec(ExperimentClass):
         f = self.f_vec[:len(I)]
         mag_dbm = 20.0 * np.log10(np.hypot(I, Q) + 1e-12)
         phase = np.arctan2(Q, I)
-        feature = float(f[int(np.argmin(mag_dbm))])
         self.data = {
             'meta_dict': dict(cfg), 'f_vec': f, 'IQ_magnitude_dBm': mag_dbm,
-            'IQ_phase': phase, 'feature_mhz': feature,
+            'IQ_phase': phase,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
-        print(f"[qubit spec] |S21| dip at {feature:.3f} MHz "
-              f"-> set BaseConfig['qubit_freq'] / ['qubit_pi_freq'] (read the plot to confirm).")
+        print(f"[qubit spec] swept {f[0]:.0f}-{f[-1]:.0f} MHz at gain {cfg.get('qubit_gain')} "
+              f"-- read the qubit feature off the plot (QUA QubitSpec does not auto-pick a "
+              f"line; a strong wide sweep also excites TLS/modes).")
         if self.plot:
             fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(7, 6))
             ax[0].plot(f, mag_dbm, ".-")
-            ax[0].axvline(feature, color="red", linestyle="--", label=f"{feature:.2f} MHz")
             ax[0].set_ylabel("Transmission (dB)")
             ax[0].set_title(f"{self.element} Qubit Spec, gain {cfg.get('qubit_gain')}, "
                             f"len {cfg.get('qubit_length')} us")
-            ax[0].legend(loc="best", fontsize=8)
             ax[1].plot(f, phase, ".-")
             ax[1].set_xlabel("Qubit frequency (MHz)")
             ax[1].set_ylabel("Phase (rad)")
