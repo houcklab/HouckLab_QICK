@@ -76,6 +76,10 @@ BASIC_DEFAULTS = {
         "enabled": True, "probe_shots": 2000, "max_iters": 3,
         "min_activation_fidelity": 0.75,
         "min_raw_assignment_fidelity": 0.80,
+        # Clear residual measurement photons before every calibrated control pulse.
+        # Kept explicit in the saved reset record even though the shared primitive
+        # also fails safe to this value for non-tuner callers.
+        "thermalization_us": 25.0,
         "post_measure_delay_us": 0.05,
     },
     "baseline": {"shots": 800, "blocks": 2},
@@ -1067,6 +1071,8 @@ class BasicAutoTuner(ExperimentClass):
             "reset_oper": str(rec.get("oper", "lower")),
             "reset_ground_below": bool(rec.get("ground_below", True)),
             "reset_max_iters": int(settings.get("max_iters", 3)),
+            "reset_thermalization_us": float(
+                settings.get("thermalization_us", 25.0)),
             "active_reset_post_measure_delay_us": float(
                 settings.get("post_measure_delay_us", 0.05)),
             # Freeze the validated correction pulse while candidate pulse parameters
@@ -1089,6 +1095,7 @@ class BasicAutoTuner(ExperimentClass):
             "validation": rec.get("validation"),
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
+            "thermalization_us": float(settings.get("thermalization_us", 25.0)),
         }
         self.data["reset"]["events"].append(event)
         self.data["reset"].update({
@@ -1100,6 +1107,7 @@ class BasicAutoTuner(ExperimentClass):
             "validation": rec.get("validation"),
             "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
             "raw_assignment_errors": rec.get("raw_assignment_errors"),
+            "thermalization_us": float(settings.get("thermalization_us", 25.0)),
         })
         self._log(
             "reset", "OK",

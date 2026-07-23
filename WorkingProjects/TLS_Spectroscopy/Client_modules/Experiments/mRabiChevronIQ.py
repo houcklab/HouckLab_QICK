@@ -83,9 +83,6 @@ def rabi_flux_body(prog):
     feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
     if feedback:
         _rabi_feedback_reset(prog)
-        # Thermalization / photon-clearing after the reset so residual cavity photons from
-        # the last reset readout do not AC-Stark the drive (QUA waits ~10/kappa here).
-        prog.sync_all(prog.us2cycles(float(cfg.get("reset_thermalization_us", 25.0))))
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
         # Force even a zero park value so a previous program's latched FF output

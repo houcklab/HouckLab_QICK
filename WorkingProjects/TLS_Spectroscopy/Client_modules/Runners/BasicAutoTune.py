@@ -138,8 +138,10 @@ def _print_best(result):
     if isinstance(reset, dict):
         mode = str(reset.get("mode", "passive"))
         if mode == "feedback":
-            print("   reset      feedback (%s, threshold %s, end-to-end validated)"
-                  % (reset.get("oper", "?"), reset.get("threshold_raw", "?")))
+            print("   reset      feedback (%s, threshold %s, %.1f us cavity clear, "
+                  "end-to-end validated)"
+                  % (reset.get("oper", "?"), reset.get("threshold_raw", "?"),
+                     _number(reset, ("thermalization_us",), 25.0)))
         else:
             print("   reset      passive fallback (%s us)" % _fmt_float(
                 _number(reset, ("fallback_relax_delay_us",)), 1))
@@ -199,6 +201,7 @@ def _history_entry(result, eligible, applied, error=None):
             "threshold_raw": reset.get("threshold_raw"),
             "oper": reset.get("oper"),
             "ground_below": reset.get("ground_below"),
+            "thermalization_us": reset.get("thermalization_us"),
             "validation": reset.get("validation"),
         },
         "eligible": dict(eligible),

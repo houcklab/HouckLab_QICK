@@ -29,7 +29,7 @@ _UID = [0]
 def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=None,
                        ground_below=True, oper="lower", max_iters=3,
                        adc_trig_offset_us=None, settle_us=0.05, meas_syncdelay_us=0.2,
-                       page=None, reg_val=None, reg_thr=None):
+                       thermalization_us=None, page=None, reg_val=None, reg_thr=None):
     """Emit a QUA-style feedback reset into ``prog`` (a QICK tProc-v1 program).
 
     Fixed-count bounded loop, ``max_iters`` passes: measure -> read one accumulator
@@ -53,6 +53,12 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
         "lower" (assumed I); the probe confirms.
     max_iters : int
         Max feedback passes (each: measure + conditional X180).
+    thermalization_us : float, optional
+        Photon-clearing wait after the final feedback measurement.  ``None`` reads
+        ``cfg['reset_thermalization_us']`` and defaults to 25 us.  This belongs in
+        the reset primitive rather than individual experiments: without it, a drive
+        can see residual measurement photons and a reset implementation can appear
+        to change the calibrated qubit frequency or pulse fidelity.
     page, reg_val, reg_thr : int, optional
         tProc register page + two scratch registers.  Defaults use page of qubit_ch and
         high register numbers unlikely to collide with the sweep registers.
@@ -74,6 +80,11 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     reg_thr = 21 if reg_thr is None else reg_thr
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
+    clear_us = (cfg.get("reset_thermalization_us", 25.0)
+                if thermalization_us is None else thermalization_us)
+    clear_us = float(clear_us)
+    if clear_us < 0:
+        raise ValueError("reset_thermalization_us must be non-negative")
 
     _UID[0] += 1
     ground_op = "<" if ground_below else ">"
@@ -88,6 +99,8 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
         prog.pulse(ch=qubit_ch)
         prog.label(skip)
         prog.sync_all(prog.us2cycles(settle_us))
+    if clear_us > 0:
+        prog.sync_all(prog.us2cycles(clear_us))
 
 
 def active_reset_readouts(cfg):

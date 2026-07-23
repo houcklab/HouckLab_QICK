@@ -43,6 +43,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
     find_threshold,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import (  # noqa: E402
+    active_reset,
     config_updater,
     ff_pulse,
 )
@@ -529,6 +530,41 @@ def test_reset_raw_threshold_maximizes_held_shot_assignment():
     assert np.isclose(discrimination["fidelity"], 0.8)
     threshold = discrimination["threshold_raw"]
     assert -2 < threshold <= 2
+
+
+def test_active_reset_primitive_always_clears_measurement_photons():
+    class FakeProgram:
+        cfg = {
+            "res_ch": 0, "qubit_ch": 1, "adc_trig_offset": 0.5,
+            "reset_thermalization_us": 17.5,
+        }
+        soccfg = {"readouts": [{"tproc_ch": 2}]}
+
+        def __init__(self):
+            self.syncs = []
+            self.measurements = 0
+
+        def ch_page(self, _channel): return 0
+        def us2cycles(self, value): return float(value)
+        def regwi(self, *_args, **_kwargs): pass
+        def measure(self, *_args, **_kwargs): self.measurements += 1
+        def read(self, *_args, **_kwargs): pass
+        def condj(self, *_args, **_kwargs): pass
+        def pulse(self, *_args, **_kwargs): pass
+        def label(self, *_args, **_kwargs): pass
+        def sync_all(self, delay): self.syncs.append(float(delay))
+
+    program = FakeProgram()
+    active_reset.active_reset_block(
+        program, threshold_raw=123, max_iters=3)
+    assert program.measurements == 3
+    assert np.isclose(program.syncs[-1], 17.5)
+    default_program = FakeProgram()
+    default_program.cfg = dict(FakeProgram.cfg)
+    default_program.cfg.pop("reset_thermalization_us")
+    active_reset.active_reset_block(
+        default_program, threshold_raw=123, max_iters=1)
+    assert np.isclose(default_program.syncs[-1], 25.0)
 
 
 def test_static_fast_flux_is_replayed_but_never_tuned():
@@ -1501,6 +1537,7 @@ def main():
         test_feedback_threshold_is_bound_to_one_exact_readout_tuple,
         test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
         test_reset_raw_threshold_maximizes_held_shot_assignment,
+        test_active_reset_primitive_always_clears_measurement_photons,
         test_static_fast_flux_is_replayed_but_never_tuned,
         test_static_fast_flux_helper_forces_zero_and_nonzero_park,
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,

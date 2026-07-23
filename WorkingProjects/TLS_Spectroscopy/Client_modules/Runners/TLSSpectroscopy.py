@@ -145,6 +145,7 @@ P5_SS_CAL = {
     "reset_mode": "feedback",
     "reset_probe_shots": 2000,
     "reset_max_iters": 3,
+    "reset_thermalization_us": 25.0,
 }
 
 
@@ -628,6 +629,8 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
                 "reset_oper": str(rec.get("oper", "lower")),
                 "reset_ground_below": bool(rec.get("ground_below", True)),
                 "reset_max_iters": int(P5_SS_CAL.get("reset_max_iters", 3)),
+                "reset_thermalization_us": float(
+                    P5_SS_CAL.get("reset_thermalization_us", 25.0)),
                 "active_reset_post_measure_delay_us": 0.05,
             })
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
