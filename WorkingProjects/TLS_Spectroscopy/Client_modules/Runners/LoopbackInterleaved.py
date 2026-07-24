@@ -21,7 +21,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.save_paths import d
 RO_CH = 0
 ON_FREQ_MHZ = None
 OFF_OFFSET_MHZ = 100.0
-N_PAIRS = 1200
+RUN_MINUTES = 120
 DWELL_S = 0.5
 REPS = 500
 RELAX_US = 20.0
@@ -81,19 +81,25 @@ def main():
     on_cfg = dict(base); on_cfg["read_pulse_freq"] = on_f
     off_cfg = dict(base); off_cfg["read_pulse_freq"] = off_f
     on_prog, off_prog = _ReadProg(soccfg, on_cfg), _ReadProg(soccfg, off_cfg)
-    span_min = N_PAIRS * (2 * DWELL_S + 2 * REPS * (base["read_length"] + RELAX_US) * 1e-6) / 60.0
     print(f"Interleaved on/off-resonance telegraph run | on {on_f:.3f} MHz, off {off_f:.3f} MHz | "
-          f"{N_PAIRS} pairs (~{span_min:.1f} min). Ctrl-C to stop early and still analyze.")
+          f"up to {RUN_MINUTES:.0f} min, saving as it goes. Ctrl-C to stop early and still analyze.")
 
+    dname = data_path("Loopback_interleaved")
+    npz = dname + ".npz"
     t, on, off = [], [], []
     t0 = time.time()
+    k = 0
     try:
-        for k in range(N_PAIRS):
+        while (time.time() - t0) < RUN_MINUTES * 60.0:
             on.append(_one(on_prog, soc, k == 0))
             off.append(_one(off_prog, soc, k == 0))
             t.append(time.time() - t0)
-            sys.stdout.write(f"\r  {100 * (k + 1) / N_PAIRS:5.1f}%  ({k + 1}/{N_PAIRS})  {t[-1]:.0f}s     ")
+            k += 1
+            sys.stdout.write(f"\r  {(time.time() - t0) / 60:.1f}/{RUN_MINUTES:.0f} min  ({k} pairs)     ")
             sys.stdout.flush()
+            if k % 200 == 0:
+                np.savez(npz, t=np.asarray(t), on=np.asarray(on), off=np.asarray(off),
+                         on_freq=on_f, off_freq=off_f)
             if DWELL_S:
                 time.sleep(DWELL_S)
     except KeyboardInterrupt:
@@ -101,9 +107,10 @@ def main():
     sys.stdout.write("\n")
 
     t = np.asarray(t); on = np.asarray(on); off = np.asarray(off)
-    dname = data_path("Loopback_interleaved")
-    npz = dname + ".npz"
     np.savez(npz, t=t, on=on, off=off, on_freq=on_f, off_freq=off_f)
+    if on.size < 20:
+        print("collected only", on.size, "pairs -- run longer.")
+        return
 
     ion, son, sig_on, bon = jumps(on)
     iof, sof, sig_of, bof = jumps(off)
