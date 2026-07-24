@@ -1,4 +1,5 @@
 import datetime
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import suppress_stdout
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 
 class TransReadProgram(AveragerProgram):
@@ -48,6 +50,7 @@ class Transmission(ExperimentClass):
         cfg["reps"] = int(cfg.get("shots", cfg.get("reps", 1000)))
         n = len(self.f_vec)
         mag = np.empty(n, dtype=float)
+        start_time = time.time()
         for j, f in enumerate(self.f_vec):
             c = dict(cfg)
             c["read_pulse_freq"] = float(f)
@@ -55,8 +58,8 @@ class Transmission(ExperimentClass):
                 I, Q = TransReadProgram(self.soccfg, c).acquire(self.soc, load_pulses=True,
                                                                 progress=False)
             mag[j] = np.hypot(float(np.asarray(I).ravel()[0]), float(np.asarray(Q).ravel()[0]))
-            if progress and (j % max(1, n // 10) == 0 or j == n - 1):
-                print(f"  [transmission] {j + 1}/{n} freqs", flush=True)
+            if progress:
+                progress_counter(j, n, start_time=start_time, label="transmission")
         mag_dbm = 20.0 * np.log10(mag + 1e-12)
         dip = float(self.f_vec[int(np.argmin(mag_dbm))])
         self.data = {

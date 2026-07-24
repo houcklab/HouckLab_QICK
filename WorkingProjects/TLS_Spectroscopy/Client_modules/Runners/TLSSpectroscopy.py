@@ -296,7 +296,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         save_resonator_lookup=SAVE_RESONATOR_LOOKUP,
         resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
     )
-    data = exp.acquire(plotDisp=LIVE_PLOTS)
+    data = exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     lookup_csv = data['data'].get('resonator_lookup_csv')
     print("[1] Done. To make steps 2-4 track the readout freq with flux (QUA-style), paste the printed")
     print("    'dispersive fit parameters' 7-tuple into RESONATOR_FIT_PARAMS at the top of this file")
@@ -327,7 +327,7 @@ def run_step2_qubit_spec_full_range(outer_folder, soc, soccfg, resonator_lookup_
         live_plot=bool(p.get("live_plot", True)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
     )
-    data = exp.acquire()
+    data = exp.acquire(progress=True)
     print(f"[2] Done. raw_sweep CSV (fit offline): {data['data'].get('raw_sweep_csv')}")
     return data['data'].get('flux_fit_params')
 
@@ -465,7 +465,7 @@ def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compen
         baseline_rearm_time_ns=float(p.get("baseline_rearm_us", 500.0)) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
     )
-    exp.acquire()
+    exp.acquire(progress=True)
     exp.save_data()
     exp.save_config()
     if fit_rise_decay_bump_dc_correction and not exp.data.get("rise_decay_bump_dc_compensation_json"):
@@ -593,7 +593,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         live_plot=bool(p.get("live_plot", False)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
     )
-    data = exp.acquire()
+    data = exp.acquire(progress=True)
     print(f"[4] Done. raw_sweep CSV (fit offline): {data['data'].get('raw_sweep_csv')}")
 
 
@@ -624,7 +624,7 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
             })
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="SS_Cal", cfg=cfg, save=True, plot=True, min_F=0.0)
-    ss.acquire(plotDisp=LIVE_PLOTS)
+    ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
     min_F = float(P5_SS_CAL.get("min_F", 0.6))
     if ss.max_F < min_F:
         raise RuntimeError(f"SS cal fidelity {ss.max_F:.3f} < {min_F}; aborting before the T1 step.")
@@ -645,7 +645,7 @@ def _run_one_stop_t1(factory, wall_clock_s):
             print(f"  [6] wall-clock run {run_index + 1} "
                   f"(elapsed {repeat_metadata['wall_clock_elapsed_minutes_from_first_run']:.1f} min)")
         exp = factory(repeat_metadata)
-        exp.acquire()
+        exp.acquire(progress=True)
         if base_path is None:
             base_path = _csv_base_from_pickle(exp.pname)
         spec = get_wall_clock_repeat_spec(exp)

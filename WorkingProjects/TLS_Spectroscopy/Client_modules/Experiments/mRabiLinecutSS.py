@@ -52,7 +52,7 @@ class RabiLinecutSS(ExperimentClass):
         print(f"[Rabi Linecut SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
               f"{a_points} gains around {center:.0f} DAC (+/-{a_span/2:.0f}), {cfg['shots']} shots/pt, "
               f"drive {pi_freq:.3f} MHz, {reset_note}")
-        pop = sweep_gain_populations(self, cfg, gains, self.calib_params)
+        pop = sweep_gain_populations(self, cfg, gains, self.calib_params, progress=progress)
 
         fit, pi_gain = None, None
         try:

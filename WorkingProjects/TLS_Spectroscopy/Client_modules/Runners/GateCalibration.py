@@ -178,7 +178,7 @@ def run_ss_cal(outer_folder, soc, soccfg):
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="SS_Cal", cfg=cfg, repeats=int(p["number_pi_pulses"]),
                       confidence_threshold=float(p["ground_threshold"]))
-    ss.acquire(plotDisp=LIVE_PLOTS)
+    ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
     print(f"[SS] fidelity F = {ss.max_F:.4f}; calib_params = {ss.calib_params}")
     return ss.calib_params
 
@@ -194,7 +194,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
                         num_pi_pulses=p["num_pi"], pulse_type=p["pulse_type"],
                         live_plot=LIVE_PLOTS)
-    exp.acquire(plotDisp=LIVE_PLOTS)
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
     return exp
 
@@ -209,7 +209,7 @@ def run_rabi_chevron_ss(outer_folder, soc, soccfg, calib_params):
                         suffix="Rabi_Chevron_SS", cfg=cfg, calib_params=calib_params,
                         num_pi_pulses=p["num_pi"], pulse_type=p["pulse_type"],
                         live_plot=LIVE_PLOTS)
-    exp.acquire(plotDisp=LIVE_PLOTS)
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
     plt.close("all"); gc.collect()
     return exp
 
@@ -225,7 +225,7 @@ def run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params):
                                 suffix=f"Rabi_Linecut_SS_npi{npi}", cfg=cfg,
                                 calib_params=calib_params, num_pi_pulses=int(npi),
                                 pulse_type=p["pulse_type"], live_plot=False)
-            exp.acquire()
+            exp.acquire(progress=True)
             stacked.append(exp.data["ss_data"]); last = exp
         fig = plt.figure(figsize=(7, 4.5))
         plt.pcolor(last.data["gain_vec"], np.asarray(num_pi, dtype=float),
@@ -243,7 +243,7 @@ def run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params):
                             suffix="Rabi_Linecut_SS", cfg=cfg, calib_params=calib_params,
                             num_pi_pulses=int(num_pi), pulse_type=p["pulse_type"],
                             live_plot=LIVE_PLOTS)
-        exp.acquire(plotDisp=LIVE_PLOTS)
+        exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
         plt.close("all"); gc.collect()
         print(f"[Linecut] paste pi gain {exp.data['pi_gain']:.0f} into "
               f"BaseConfig['qubit_pi_gain'] (or qubit_pi2_gain for X90).")

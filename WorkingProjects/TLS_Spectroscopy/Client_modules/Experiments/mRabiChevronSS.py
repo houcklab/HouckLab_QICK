@@ -1,4 +1,5 @@
 import datetime
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,6 +7,7 @@ from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import (
     n_drive_pulses, flux_hold_declare, flux_hold_build, rabi_flux_body)
@@ -76,8 +78,9 @@ class RabiSSProgram(RAveragerProgram):
         return shots_i, shots_q
 
 
-def sweep_gain_populations(experiment, cfg, gains, calib_params):
-    shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(experiment.soc, load_pulses=True)
+def sweep_gain_populations(experiment, cfg, gains, calib_params, progress=False):
+    shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(experiment.soc, load_pulses=True,
+                                                                     progress=progress)
     pops = np.empty(len(gains), dtype=float)
     for j in range(len(gains)):
         pops[j] = discriminate_shots(shots_i[j], shots_q[j], calib_params).mean()
@@ -121,9 +124,12 @@ class RabiChevronSS(ExperimentClass):
         print(f"[Rabi Chevron SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
               f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; {reset_note}")
 
+        start_time = time.time()
         for i, df in enumerate(df_vec):
             cfg["rabi_drive_freq"] = pi_freq + df
             pop[i, :] = sweep_gain_populations(self, cfg, gains, self.calib_params)
+            if progress:
+                progress_counter(i, n_f, start_time=start_time, label="Rabi chevron SS")
 
         idx = np.unravel_index(np.nanargmax(pop), pop.shape)
         best_df, best_gain = float(df_vec[idx[0]]), float(gains[idx[1]])

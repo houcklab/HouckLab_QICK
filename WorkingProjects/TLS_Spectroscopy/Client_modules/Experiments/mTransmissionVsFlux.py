@@ -8,6 +8,7 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 
 class TransmissionProgram(AveragerProgram):
@@ -94,9 +95,8 @@ class TransmissionVsFlux(ExperimentClass):
             Z_mag[i, :] = 20 * np.log10(mag + 1e-12)
             Z_phase[i, :] = np.unwrap(np.angle(sig))
             dip_freq[i] = fpts[int(np.argmin(mag))]
-            if i == 0:
-                print(f"[1] ~{(time.time()-start)*len(volts)/60:.1f} min for "
-                      f"{len(volts)} flux x {len(fpts)} freq points")
+            if progress:
+                progress_counter(i, len(volts), start_time=start, label="transmission vs flux")
 
         data = {'config': cfg,
                 'data': {'fpts': fpts, 'volts': volts,

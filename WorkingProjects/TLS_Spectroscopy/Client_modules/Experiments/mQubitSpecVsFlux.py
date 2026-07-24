@@ -8,6 +8,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import E
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 
 class QubitSpecProgram(RAveragerProgram):
@@ -129,6 +130,8 @@ class QubitSpecVsFlux(ExperimentClass):
             mag = np.abs(sig)
             Z_mag[i, :] = mag
             Z_phase[i, :] = np.unwrap(np.angle(sig))
+            if progress:
+                progress_counter(i, len(volts), start_time=start, label="qubit spec vs flux")
             sp, _ = ff.fit_spec_dip(fpts, mag, kind='auto')
             if sp is not None:
                 qubit_dip[i] = sp['f0']

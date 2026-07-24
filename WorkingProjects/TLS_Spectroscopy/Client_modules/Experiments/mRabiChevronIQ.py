@@ -1,4 +1,5 @@
 import datetime
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ from qick import RAveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, set_readout_pulse,
 )
@@ -177,12 +179,15 @@ class RabiChevronIQ(ExperimentClass):
               f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; drive @ "
               f"{pi_freq:.3f} MHz +/- {cfg['freq_span']/2:.2f} MHz, gain {gains[0]:.0f}..{gains[-1]:.0f} DAC")
 
+        start_time = time.time()
         for i, df in enumerate(df_vec):
             cfg["rabi_drive_freq"] = pi_freq + df
             prog = RabiChevronIQProgram(self.soccfg, cfg)
             _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             I[i, :] = np.asarray(avgi[0][0])
             Q[i, :] = np.asarray(avgq[0][0])
+            if progress:
+                progress_counter(i, n_f, start_time=start_time, label="Rabi chevron IQ")
 
         idx = np.unravel_index(np.argmax(I ** 2 + Q ** 2), I.shape)
         best_df, best_gain = float(df_vec[idx[0]]), float(gains[idx[1]])
