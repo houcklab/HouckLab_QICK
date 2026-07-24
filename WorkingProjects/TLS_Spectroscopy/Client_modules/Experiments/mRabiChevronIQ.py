@@ -175,50 +175,66 @@ class RabiChevronIQ(ExperimentClass):
         n_f, n_a = len(df_vec), len(gains)
         I = np.full((n_f, n_a), np.nan)
         Q = np.full((n_f, n_a), np.nan)
+        shuffle = bool(cfg.get("shuffle_detuning", True))
+        order = (np.random.default_rng(int(cfg.get("shuffle_seed", 12345))).permutation(n_f)
+                 if shuffle else np.arange(n_f))
         print(f"[Rabi Chevron IQ] {self.pulse_type} x{self.num_pi} pulses: "
               f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; drive @ "
-              f"{pi_freq:.3f} MHz +/- {cfg['freq_span']/2:.2f} MHz, gain {gains[0]:.0f}..{gains[-1]:.0f} DAC")
+              f"{pi_freq:.3f} MHz +/- {cfg['freq_span']/2:.2f} MHz, gain {gains[0]:.0f}..{gains[-1]:.0f} DAC"
+              + ("; randomized detuning order" if shuffle else ""))
 
         start_time = time.time()
-        for i, df in enumerate(df_vec):
-            cfg["rabi_drive_freq"] = pi_freq + df
+        for step, i in enumerate(order):
+            cfg["rabi_drive_freq"] = pi_freq + float(df_vec[i])
             prog = RabiChevronIQProgram(self.soccfg, cfg)
             _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
             I[i, :] = np.asarray(avgi[0][0])
             Q[i, :] = np.asarray(avgq[0][0])
             if progress:
-                progress_counter(i, n_f, start_time=start_time, label="Rabi chevron IQ")
+                progress_counter(step, n_f, start_time=start_time, label="Rabi chevron IQ")
 
-        idx = np.unravel_index(np.argmax(I ** 2 + Q ** 2), I.shape)
+        subtract = bool(cfg.get("subtract_row_baseline", True))
+        nlow = max(1, min(int(cfg.get("baseline_ngains", 4)), max(1, n_a // 4)))
+        if subtract:
+            Icorr = I - I[:, :nlow].mean(axis=1, keepdims=True)
+            Qcorr = Q - Q[:, :nlow].mean(axis=1, keepdims=True)
+        else:
+            Icorr, Qcorr = I, Q
+
+        idx = np.unravel_index(np.nanargmax(Icorr ** 2 + Qcorr ** 2), Icorr.shape)
         best_df, best_gain = float(df_vec[idx[0]]), float(gains[idx[1]])
         self.data = {
             'config': dict(cfg), 'element': self.element, 'pulse_type': self.pulse_type,
             'number_pulses': self.num_pi, 'shots': cfg["shots"],
             'gain_vec': gains, 'detuning_vec_mhz': df_vec, 'drive_center_mhz': pi_freq,
-            'I': I, 'Q': Q,
+            'I': I, 'Q': Q, 'I_corr': Icorr, 'Q_corr': Qcorr,
+            'row_baseline_subtracted': subtract, 'baseline_ngains': nlow,
+            'measurement_order': np.asarray(order),
             'best_gain': best_gain, 'best_detuning_mhz': best_df,
             'best_drive_freq_mhz': pi_freq + best_df,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         print(f"[Rabi Chevron IQ] max |IQ| at gain = {best_gain:.0f} DAC, "
-              f"detuning = {best_df:+.3f} MHz (drive {pi_freq + best_df:.3f} MHz)")
+              f"detuning = {best_df:+.3f} MHz (drive {pi_freq + best_df:.3f} MHz)"
+              + ("; per-row baseline subtracted" if subtract else ""))
         if self.save:
-            self._plot(gains, df_vec, I, Q, plotDisp=plotDisp)
+            self._plot(gains, df_vec, I, Q, Icorr, Qcorr, subtract, plotDisp=plotDisp)
             self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    def _plot(self, gains, df_vec, I, Q, plotDisp=False):
-        fig = plt.figure(figsize=(11, 4.5))
+    def _plot(self, gains, df_vec, I, Q, Icorr, Qcorr, subtract, plotDisp=False):
+        panels = [("I (raw)", I), ("Q (raw)", Q)]
+        if subtract:
+            panels += [("I (row-baseline subtracted)", Icorr), ("Q (row-baseline subtracted)", Qcorr)]
+        rows = 2 if subtract else 1
+        fig = plt.figure(figsize=(11, 4.5 * rows))
         plt.suptitle(f"{self.element} {self.pulse_type} Rabi chevron, {self.num_pi} pulses, "
                      f"drive {self.data['drive_center_mhz']:.3f} MHz, sigma={self.cfg['sigma']} us")
-        plt.subplot(121)
-        plt.pcolormesh(gains, df_vec, I, shading='nearest')
-        plt.xlabel("Qubit pulse gain [DAC]"); plt.ylabel("Qubit detuning [MHz]")
-        plt.minorticks_on(); plt.colorbar(); plt.title("I")
-        plt.subplot(122)
-        plt.pcolormesh(gains, df_vec, Q, shading='nearest')
-        plt.xlabel("Qubit pulse gain [DAC]"); plt.ylabel("Qubit detuning [MHz]")
-        plt.minorticks_on(); plt.colorbar(); plt.title("Q")
+        for k, (title, M) in enumerate(panels):
+            plt.subplot(rows, 2, k + 1)
+            plt.pcolormesh(gains, df_vec, M, shading='nearest')
+            plt.xlabel("Qubit pulse gain [DAC]"); plt.ylabel("Qubit detuning [MHz]")
+            plt.minorticks_on(); plt.colorbar(); plt.title(title)
         plt.tight_layout()
         plt.savefig(self.iname, bbox_inches="tight")
         if plotDisp:
@@ -231,5 +247,6 @@ class RabiChevronIQ(ExperimentClass):
             data = {'data': self.data}
         print(f'Saving {self.fname}')
         super().save_data(data={'I': self.data['I'], 'Q': self.data['Q'],
+                                'I_corr': self.data['I_corr'], 'Q_corr': self.data['Q_corr'],
                                 'gain_vec': self.data['gain_vec'],
                                 'detuning_vec_mhz': self.data['detuning_vec_mhz']})
