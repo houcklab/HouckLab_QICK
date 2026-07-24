@@ -188,7 +188,7 @@ FAST_PARAMS = {
         "reserve_final_minutes": 0.0,
     },
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production joint-search-v1 tightens the default to 0.5 percentage point.
+    # Production joint-search-v2 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -3439,6 +3439,166 @@ def test_relative_100mhz_prior_recovers_without_device_frequency_constants():
     assert np.any(np.all(np.isclose(attempted, [7060.0, 7260.0]), axis=1))
 
 
+def test_stronger_wrong_resonator_backtracks_to_the_qubit_coupled_branch():
+    """A deep 7108-MHz distractor must not hide the 7249-MHz q4 resonator."""
+    class DistractorResonatorTuner(VirtualBasicAutoTuner):
+        DISTRACTOR_FREQ = 7108.4
+
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            self.virtual_shots += int(shots) * frequencies.size
+            distractor = 1.0 - 0.72 / (
+                1.0 + 1j * (frequencies - self.DISTRACTOR_FREQ) / 0.30)
+            target = 1.0 - 0.30 / (
+                1.0 + 1j * (frequencies - self.READ_FREQ) / 0.35)
+            return distractor * target
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            if abs(float(candidate["read_pulse_freq"]) - self.READ_FREQ) <= 2.0:
+                return super()._acquire_spectroscopy(
+                    freqs_mhz, candidate, shots, gain, pulse_length_us)
+            del gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            self.virtual_shots += int(shots) * frequencies.size
+            offset = frequencies - np.mean(frequencies)
+            # The wrong resonator branch has no reproducible qubit response.
+            return ((0.2 + 5e-5 * offset)
+                    + 1j * (0.1 - 3e-5 * offset))
+
+    cfg = _base_config()
+    cfg["read_pulse_freq"] = 7200.0
+    params = _relative_100mhz_search_params()
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = DistractorResonatorTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        tuner._stage_resonator()
+        candidates = [
+            float(row["read_pulse_freq"])
+            for row in tuner._resonator_candidates]
+        # The intentionally deeper wrong notch ranks first, proving this is not a
+        # nearest/strongest-notch shortcut disguised as branch search.
+        assert abs(candidates[0] - tuner.DISTRACTOR_FREQ) <= 0.08
+        assert any(abs(value - tuner.READ_FREQ) <= 0.08 for value in candidates)
+        assert tuner.data["maps"]["resonator"]["selection_confirmed"] is False
+
+        spectroscopy = tuner._stage_spectroscopy()
+        tuner._stage_iq_rabi()
+        tuner._stage_readout_grid(
+            "readout_grid", local=False, record_evidence=False)
+
+    assert abs(tuner._resonator_seed - tuner.READ_FREQ) <= 0.08
+    assert abs(tuner._discovery_readout["read_pulse_freq"]
+               - tuner.READ_FREQ) <= 0.08
+    assert any(abs(value - tuner.QUBIT_FREQ) <= 0.25
+               for value in spectroscopy)
+    branch_map = tuner.data["maps"]["spectroscopy"]
+    assert np.allclose(
+        branch_map["resonator_branch_frequencies_mhz"],
+        [tuner.DISTRACTOR_FREQ, tuner.READ_FREQ], atol=0.08)
+    assert np.array_equal(
+        branch_map["resonator_branch_valid"], [False, True])
+    assert branch_map["branch_backtracking_complete"] is True
+    assert tuner.data["maps"]["resonator"]["selection_confirmed"] is True
+    assert abs(tuner.working["read_pulse_freq"] - tuner.READ_FREQ) <= 0.6
+    assert abs(tuner.working["read_pulse_freq"] - 7154.0) > 50.0
+
+
+def test_multiple_resonators_without_a_qubit_branch_fail_closed():
+    class NoQubitBranchTuner(VirtualBasicAutoTuner):
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            first = 1.0 - 0.70 / (
+                1.0 + 1j * (frequencies - 7108.4) / 0.30)
+            second = 1.0 - 0.32 / (
+                1.0 + 1j * (frequencies - self.READ_FREQ) / 0.35)
+            return first * second
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            offset = frequencies - np.mean(frequencies)
+            return ((0.2 + 5e-5 * offset)
+                    + 1j * (0.1 - 3e-5 * offset))
+
+    cfg = _base_config()
+    cfg["read_pulse_freq"] = 7200.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = NoQubitBranchTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=_relative_100mhz_search_params(),
+        )
+        tuner._stage_resonator()
+        assert len(tuner._resonator_candidates) == 2
+        try:
+            tuner._stage_spectroscopy()
+        except RuntimeError as exc:
+            assert "none of 2 confirmed resonator branches" in str(exc)
+        else:
+            raise AssertionError("featureless resonator branches were accepted")
+
+    assert tuner._spec_candidates_mhz == []
+    assert tuner._discovery_status["spectroscopy"] is False
+    assert tuner.data["maps"]["spectroscopy"]["search_complete"] is False
+    assert tuner.data["maps"]["spectroscopy"]["selection_confirmed"] is False
+    assert tuner.data["maps"]["resonator"]["selection_confirmed"] is False
+
+
+def test_two_spectral_branches_are_resolved_by_coherent_rabi():
+    class RabiResolvingTuner(VirtualBasicAutoTuner):
+        DISTRACTOR_FREQ = 7108.4
+
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            first = 1.0 - 0.72 / (
+                1.0 + 1j * (frequencies - self.DISTRACTOR_FREQ) / 0.30)
+            second = 1.0 - 0.30 / (
+                1.0 + 1j * (frequencies - self.READ_FREQ) / 0.35)
+            return first * second
+
+        def _acquire_iq_chevron(self, freqs_mhz, gains, candidate, shots):
+            if abs(float(candidate["read_pulse_freq"]) - self.READ_FREQ) <= 2.0:
+                return super()._acquire_iq_chevron(
+                    freqs_mhz, gains, candidate, shots)
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            amplitudes = np.asarray(gains, dtype=float)
+            return (np.full((frequencies.size, amplitudes.size), 12.0),
+                    np.full((frequencies.size, amplitudes.size), -7.0))
+
+    cfg = _base_config()
+    cfg["read_pulse_freq"] = 7200.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = RabiResolvingTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=_relative_100mhz_search_params(),
+        )
+        tuner._stage_resonator()
+        tuner._stage_spectroscopy()
+        assert len(tuner._spectroscopy_branch_attempts) == 2
+        assert tuner.data["maps"]["resonator"]["selection_confirmed"] is False
+        tuner._stage_iq_rabi()
+
+    assert abs(tuner._resonator_seed - tuner.READ_FREQ) <= 0.08
+    assert tuner.data["maps"]["resonator"]["selection_confirmed"] is True
+    assert tuner.data["maps"]["resonator"]["selected_by"].startswith(
+        "coherent Rabi")
+    rabi_map = tuner.data["maps"]["iq_rabi"]
+    assert np.allclose(
+        rabi_map["resonator_branch_frequencies_mhz"],
+        [tuner.DISTRACTOR_FREQ, tuner.READ_FREQ], atol=0.08)
+    assert np.array_equal(
+        rabi_map["resonator_branch_coherent"], [False, True])
+    assert not np.isfinite(rabi_map["resonator_branch_step5_lcb"][0])
+    assert rabi_map["resonator_branch_step5_lcb"][1] > 0.50
+    assert rabi_map["branch_selection_confirmed"] is True
+
+
 def test_relative_100mhz_prior_rejects_the_old_out_of_contract_seeds():
     """The formerly supplied 7000/2400.7 seeds are explicitly outside +/-100."""
     cfg = _base_config()
@@ -5289,6 +5449,22 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         forged_joint, forged_joint["eligible_tuned"], _base_config())
     assert any("joint-search coverage" in error for error in forged_joint_errors)
 
+    forged_branch = copy.deepcopy(base_result)
+    forged_branch["maps"]["resonator"].update({
+        "candidate_frequencies_mhz": [7108.4, 7249.1],
+        "selected_frequency_mhz": 7249.1,
+        "branch_backtracking_complete": True,
+    })
+    forged_branch["maps"]["spectroscopy"].update({
+        "resonator_branch_valid": [True, True],
+        "selected_resonator_branch_mhz": 7249.1,
+        "branch_backtracking_complete": True,
+    })
+    forged_branch_errors = runner._write_contract_errors(
+        forged_branch, forged_branch["eligible_tuned"], _base_config())
+    assert any("coherent Rabi/direct-SS" in error
+               for error in forged_branch_errors)
+
     # A real timing certificate is substantially stronger than the ordinary
     # ``not_run`` fallback above: it contains finite-block Student-t multiplicity,
     # complete two-fold cross-fit blocks for every feasible arm, and an exact tuple
@@ -5299,7 +5475,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "joint-search-v1"
+    assert T.BASIC_AUTOTUNER_REVISION == "joint-search-v2"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -5967,6 +6143,9 @@ def main():
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,
         test_global_discovery_recovers_exact_far_frequency_seeds,
         test_relative_100mhz_prior_recovers_without_device_frequency_constants,
+        test_stronger_wrong_resonator_backtracks_to_the_qubit_coupled_branch,
+        test_multiple_resonators_without_a_qubit_branch_fail_closed,
+        test_two_spectral_branches_are_resolved_by_coherent_rabi,
         test_relative_100mhz_prior_rejects_the_old_out_of_contract_seeds,
         test_relative_prior_padding_fits_exact_edges_but_cannot_expand_policy,
         test_monotonic_transmission_cannot_be_reported_as_a_resonator,

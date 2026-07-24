@@ -75,12 +75,12 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "joint-search-v1"
+BASIC_AUTOTUNER_REVISION = "joint-search-v2"
 
 
 BASIC_DEFAULTS = {
     "random_seed": 271828,
-    # Optional explicit pickle from an interrupted joint-search-v1 run.  Only complete
+    # Optional explicit pickle from an interrupted joint-search-v2 run.  Only complete
     # coarse cells with the same physical input contract are reused; medium/final
     # candidates are freshly replayed in the current drift epoch.
     "resume_checkpoint": None,
@@ -136,6 +136,11 @@ BASIC_DEFAULTS = {
         "confirmation_shots": 120,
         "edge_guard_points": 2, "min_relative_contrast": 0.002,
         "min_feature_width_mhz": 0.04, "max_feature_width_mhz": 2.0,
+        # A broad readout scan may contain several real resonators or package modes.
+        # Preserve and independently confirm several notches; qubit spectroscopy then
+        # selects the physically useful resonator/qubit branch.
+        "max_candidates": 8,
+        "min_candidate_separation_mhz": 1.0,
         "max_confirmation_width_ratio": 2.5,
         "max_confirmation_shift_mhz": 0.25,
         # Averaged discovery must not inherit a deliberately bad/zero input readout.
@@ -174,6 +179,14 @@ BASIC_DEFAULTS = {
         "coarse_capture_mhz": 2.0,
         "confirmation_neighbor_mask_mhz": 1.5,
         "confirmation_neighbor_radius_mhz": 8.0,
+        # Every independently confirmed notch may be evaluated through the expensive
+        # opposed spectroscopy confirmation.  The cap matches resonator.max_candidates
+        # and exists only to bound pathological package-mode forests.
+        "max_resonator_branches": 8,
+        # Once two branches both show spectroscopy/Rabi, compare their complete rough
+        # physical tuples with the actual step-5 single-shot objective before choosing
+        # which readout neighborhood receives the expensive joint optimization.
+        "branch_ss_shots": 250, "branch_ss_blocks": 2,
         # A physical single-line fit is preferred, but spectroscopy is a basin
         # generator rather than the final control verdict.  Two fresh opposed scans
         # with a strong, correlated complex response may provisionally seed Rabi when
@@ -1350,6 +1363,10 @@ class BasicAutoTuner(ExperimentClass):
         self._key_evidence = {key: [] for key in TUNED_KEYS}
         self._resonator_seed = float(self.initial["read_pulse_freq"])
         self._discovery_readout = dict(self.initial)
+        self._resonator_candidates = []
+        self._resonator_branch_records = []
+        self._spec_candidate_rows = []
+        self._spectroscopy_branch_attempts = []
         # An input frequency is a value to replay, not evidence that a transition
         # exists there.  Spectroscopy populates this list only with measured,
         # independently reproduced features (unless spectroscopy is explicitly off).
@@ -1925,11 +1942,23 @@ class BasicAutoTuner(ExperimentClass):
             print("  Starting fidelity: %s" % (
                 "%.3f" % fidelity if np.isfinite(fidelity) else "measured"))
         elif name == "resonator" and result is not None:
-            print("  Resonator found near %.6f MHz." % float(result))
+            candidates = np.asarray(self._maps.get("resonator", {}).get(
+                "candidate_frequencies_mhz", [result]), dtype=float)
+            if candidates.size > 1:
+                print("  Resonator candidates found near %s MHz."
+                      % ", ".join("%.6f" % value for value in candidates))
+            else:
+                print("  Resonator found near %.6f MHz." % float(result))
         elif name == "spectroscopy" and result:
             values = ", ".join("%.4f" % float(value) for value in result)
-            print("  Qubit candidate%s found near %s MHz."
-                  % ("s" if len(result) != 1 else "", values))
+            if len(self._resonator_candidates) > 1:
+                print("  Resonator/qubit branch selected: %.6f MHz readout; "
+                      "qubit candidate%s near %s MHz."
+                      % (self._resonator_seed,
+                         "s" if len(result) != 1 else "", values))
+            else:
+                print("  Qubit candidate%s found near %s MHz."
+                      % ("s" if len(result) != 1 else "", values))
         elif name == "iq_rabi":
             print("  Rough pi pulse: %.6f MHz at %d DAC."
                   % (self.working["qubit_pi_freq"],
@@ -4572,6 +4601,113 @@ class BasicAutoTuner(ExperimentClass):
             "smoothed_feature": smoothed_feature,
         }
 
+    @classmethod
+    def _resonator_features(cls, freqs, response, polarity="dip",
+                            edge_guard_points=2, min_snr=3.0,
+                            min_relative_contrast=0.002,
+                            min_feature_width_mhz=0.04,
+                            max_feature_width_mhz=2.0,
+                            max_candidates=8,
+                            min_candidate_separation_mhz=1.0):
+        """Return several validated notches from one detrended transmission trace.
+
+        ``_resonator_feature`` intentionally returns the strongest feature for legacy
+        callers.  Discovery cannot use that as an identity decision: another resonator
+        or package mode may be deeper than the resonator coupled to the target qubit.
+        This method reuses the same robust background fit, finds separated local
+        maxima in its signed residual, and evaluates every candidate against a common
+        noise floor before any downstream branch is discarded.
+        """
+        strongest = cls._resonator_feature(
+            freqs, response, polarity=polarity,
+            edge_guard_points=edge_guard_points, min_snr=min_snr,
+            min_relative_contrast=min_relative_contrast,
+            min_feature_width_mhz=min_feature_width_mhz,
+            max_feature_width_mhz=max_feature_width_mhz)
+        freqs = np.asarray(freqs, dtype=float)
+        profile = np.asarray(strongest["smoothed_feature"], dtype=float)
+        magnitude = np.asarray(strongest["magnitude"], dtype=float)
+        guard = int(np.clip(
+            int(edge_guard_points), 1, max((freqs.size - 3) // 2, 1)))
+        step = abs(float(np.median(np.diff(freqs))))
+        separation_points = max(int(round(
+            float(min_candidate_separation_mhz) / max(step, 1e-15))), 1)
+        interior = np.arange(guard, freqs.size - guard, dtype=int)
+        finite_interior = interior[np.isfinite(profile[interior])]
+        if finite_interior.size < 3:
+            return []
+        local, _properties = find_peaks(
+            profile[finite_interior], distance=separation_points)
+        indices = finite_interior[np.asarray(local, dtype=int)]
+        indices = np.unique(np.append(indices, int(strongest["index"]))).astype(int)
+        indices = indices[np.argsort(profile[indices])[::-1]]
+        # Estimate the common background after masking the strongest separated peaks.
+        # This prevents a deep distractor from being counted as noise against a weaker
+        # but still reproducible target resonator.
+        mask_indices = indices[:max(3 * int(max_candidates), int(max_candidates), 1)]
+        exclusion_points = max(
+            separation_points // 2,
+            int(math.ceil(float(max_feature_width_mhz) / max(step, 1e-15))),
+            2)
+        background_mask = np.ones(freqs.size, dtype=bool)
+        background_mask[:guard] = False
+        background_mask[freqs.size - guard:] = False
+        for index in mask_indices:
+            lo = max(int(index) - exclusion_points, 0)
+            hi = min(int(index) + exclusion_points + 1, freqs.size)
+            background_mask[lo:hi] = False
+        background = profile[background_mask & np.isfinite(profile)]
+        if background.size < max(7, freqs.size // 10):
+            cutoff = float(np.nanpercentile(profile[finite_interior], 70.0))
+            background = profile[
+                finite_interior[profile[finite_interior] <= cutoff]]
+        floor = float(np.nanmedian(background))
+        numerical_floor = np.finfo(float).eps * max(
+            float(np.nanmedian(np.abs(magnitude[np.isfinite(magnitude)]))), 1.0)
+        noise = max(_robust_scale(background - floor), numerical_floor)
+        reference_magnitude = max(
+            float(np.nanmedian(np.abs(magnitude[np.isfinite(magnitude)]))), 1e-15)
+        candidates = []
+        for index in indices:
+            index = int(index)
+            height = float(profile[index] - floor)
+            snr = float(height / noise)
+            relative = float(height / reference_magnitude)
+            half_height = floor + 0.5 * height
+            left = index
+            while left > 0 and profile[left] > half_height:
+                left -= 1
+            right = index
+            while right < freqs.size - 1 and profile[right] > half_height:
+                right += 1
+            two_sided = bool(left > 0 and right < freqs.size - 1
+                             and left < index < right)
+            width = (float(freqs[right] - freqs[left])
+                     if two_sided else np.inf)
+            at_boundary = bool(
+                index <= guard or index >= freqs.size - 1 - guard)
+            valid = bool(
+                not at_boundary and np.isfinite(snr) and snr >= float(min_snr)
+                and np.isfinite(relative)
+                and relative >= float(min_relative_contrast)
+                and two_sided
+                and float(min_feature_width_mhz) <= width
+                <= float(max_feature_width_mhz))
+            if not valid:
+                continue
+            row = dict(strongest)
+            row.update({
+                "frequency_mhz": cls._parabolic_vertex(freqs, profile, index),
+                "index": index, "valid": True, "failure": "",
+                "at_boundary": at_boundary, "contrast_snr": snr,
+                "relative_contrast": relative, "feature_height": height,
+                "feature_width_mhz": width,
+            })
+            candidates.append(row)
+            if len(candidates) >= max(int(max_candidates), 1):
+                break
+        return candidates
+
     @staticmethod
     def _significant_spectral_rows(freqs, features, min_snr,
                                    edge_guard_points=2):
@@ -5553,30 +5689,19 @@ class BasicAutoTuner(ExperimentClass):
         return best
 
     def _stage_resonator(self):
+        """Confirm every credible notch before spectroscopy chooses a branch."""
         p = self.params["resonator"]
         if not p.get("enabled", True):
             self._log("resonator", "SKIP", "disabled")
             return None
-
         plan = self._frequency_discovery_plan(
             self.initial["read_pulse_freq"], p, adaptive=True)
-        search_axes = plan["axes"]
-        acceptance_bounds = plan["acceptance_bounds"]
+        # Discovery must inspect the complete authorized envelope.  Stopping after a
+        # valid feature in an inner shell is exactly how a stronger unrelated notch
+        # hid the target resonator in the previous implementation.
+        coarse_axis = np.asarray(plan["axes"][-1], dtype=float)
+        accept_min, accept_max = map(float, plan["acceptance_bounds"][-1])
         bounded = bool(plan["configured_envelope"])
-
-        def run(axis, readout, shots):
-            response = self._acquire_transmission(axis, readout, int(shots))
-            feature = self._resonator_feature(
-                axis, response, polarity=p.get("polarity", "dip"),
-                edge_guard_points=p.get("edge_guard_points", 2),
-                min_snr=p.get("min_contrast_snr", 3.0),
-                min_relative_contrast=p.get("min_relative_contrast", 0.002),
-                min_feature_width_mhz=p.get(
-                    "min_feature_width_mhz", 0.04),
-                max_feature_width_mhz=p.get(
-                    "max_feature_width_mhz", 2.0))
-            return np.asarray(response, complex), feature
-
         safe = _with_candidate(
             self.working,
             read_pulse_gain=int(np.clip(round(p.get(
@@ -5584,24 +5709,39 @@ class BasicAutoTuner(ExperimentClass):
             read_length=max(float(p.get(
                 "discovery_length_us", self.working["read_length"])), 0.1),
         )
-        # The known-safe bootstrap is tried first.  A distinct input readout is only a
-        # fallback if that trace has no validated feature, avoiding two full scans in
-        # the ordinary case while still tolerating an unsuitable discovery power.
+        # A deliberately bad input gain is only a fallback.  Once the known-safe
+        # discovery pulse reveals confirmed candidates, repeating a 200-MHz scan at
+        # the bad input power adds time without improving branch identity.
         trial_candidates = _unique_candidates([safe, self.working])
-        trials = []
-        selected = None
         confirmation_points = max(int(p.get("confirmation_points", 81)), 9)
         confirmation_span = float(p.get("confirmation_span_mhz", 4.0))
         shift_limit = float(p.get("max_confirmation_shift_mhz", 0.25))
         width_ratio_limit = float(p.get(
             "max_confirmation_width_ratio", 2.5))
-        for trial in trial_candidates:
-            for search_index, (coarse_axis, acceptance) in enumerate(zip(
-                    search_axes, acceptance_bounds)):
-                accept_min, accept_max = map(float, acceptance)
-                row = {
+        trials, confirmed = [], []
+        for trial_index, trial in enumerate(trial_candidates):
+            try:
+                response = self._acquire_transmission(
+                    coarse_axis, trial, int(p["shots"]))
+                features = self._resonator_features(
+                    coarse_axis, response,
+                    polarity=p.get("polarity", "dip"),
+                    edge_guard_points=p.get("edge_guard_points", 2),
+                    min_snr=p.get("min_contrast_snr", 3.0),
+                    min_relative_contrast=p.get(
+                        "min_relative_contrast", 0.002),
+                    min_feature_width_mhz=p.get(
+                        "min_feature_width_mhz", 0.04),
+                    max_feature_width_mhz=p.get(
+                        "max_feature_width_mhz", 2.0),
+                    max_candidates=p.get("max_candidates", 8),
+                    min_candidate_separation_mhz=p.get(
+                        "min_candidate_separation_mhz", 1.0))
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                trials.append({
                     "candidate": dict(trial), "axis": coarse_axis,
-                    "search_index": int(search_index),
                     "acceptance_bounds_mhz": (accept_min, accept_max),
                     "response": None, "feature": None,
                     "confirmation_axis": None,
@@ -5609,31 +5749,41 @@ class BasicAutoTuner(ExperimentClass):
                     "confirmation_feature": None,
                     "confirmation_shift_mhz": np.inf,
                     "confirmation_width_ratio": np.inf,
+                    "confirmation_valid": False,
+                    "error": "%s: %s" % (type(exc).__name__, exc),
+                    "trial_index": int(trial_index),
+                })
+                continue
+            if not features:
+                trials.append({
+                    "candidate": dict(trial), "axis": coarse_axis,
+                    "acceptance_bounds_mhz": (accept_min, accept_max),
+                    "response": np.asarray(response, complex), "feature": None,
+                    "confirmation_axis": None,
+                    "confirmation_response": None,
+                    "confirmation_feature": None,
+                    "confirmation_shift_mhz": np.inf,
+                    "confirmation_width_ratio": np.inf,
+                    "confirmation_valid": False,
+                    "error": "no valid interior notch", "trial_index": int(trial_index),
+                })
+            for coarse_feature in features:
+                coarse_seed = float(coarse_feature["frequency_mhz"])
+                row = {
+                    "candidate": dict(trial), "axis": coarse_axis,
+                    "acceptance_bounds_mhz": (accept_min, accept_max),
+                    "response": np.asarray(response, complex),
+                    "feature": coarse_feature,
+                    "confirmation_axis": None,
+                    "confirmation_response": None,
+                    "confirmation_feature": None,
+                    "confirmation_shift_mhz": np.inf,
+                    "confirmation_width_ratio": np.inf,
                     "confirmation_valid": False, "error": None,
+                    "trial_index": int(trial_index),
                 }
-                try:
-                    response, feature = run(coarse_axis, trial, p["shots"])
-                    row.update({"response": response, "feature": feature})
-                except KeyboardInterrupt:
-                    raise
-                except Exception as exc:
-                    row["error"] = "%s: %s" % (type(exc).__name__, exc)
-                    self._log(
-                        "resonator", "WARN",
-                        "bootstrap readout %d DAC/%.1f us failed (%s: %s)"
-                        % (trial["read_pulse_gain"], trial["read_length"],
-                           type(exc).__name__, exc))
-                    trials.append(row)
-                    continue
-                if not row["feature"]["valid"]:
-                    row["error"] = row["feature"]["failure"]
-                    trials.append(row)
-                    continue
-                coarse_seed = float(row["feature"]["frequency_mhz"])
                 if not accept_min <= coarse_seed <= accept_max:
-                    row["error"] = (
-                        "feature %.6f MHz lies only in fit padding outside the "
-                        "current search radius" % coarse_seed)
+                    row["error"] = "candidate lies only in scan padding"
                     trials.append(row)
                     continue
                 try:
@@ -5641,169 +5791,208 @@ class BasicAutoTuner(ExperimentClass):
                         coarse_seed, confirmation_span, confirmation_points,
                         lower=float(coarse_axis[0]) if bounded else None,
                         upper=float(coarse_axis[-1]) if bounded else None)
-                    confirmation_response, confirmation_feature = run(
+                    confirmation_response = self._acquire_transmission(
                         confirmation_axis, trial,
-                        p.get("confirmation_shots", p["shots"]))
+                        int(p.get("confirmation_shots", p["shots"])))
+                    local_features = self._resonator_features(
+                        confirmation_axis, confirmation_response,
+                        polarity=p.get("polarity", "dip"),
+                        edge_guard_points=p.get("edge_guard_points", 2),
+                        min_snr=p.get("min_contrast_snr", 3.0),
+                        min_relative_contrast=p.get(
+                            "min_relative_contrast", 0.002),
+                        min_feature_width_mhz=p.get(
+                            "min_feature_width_mhz", 0.04),
+                        max_feature_width_mhz=p.get(
+                            "max_feature_width_mhz", 2.0),
+                        max_candidates=3,
+                        min_candidate_separation_mhz=p.get(
+                            "min_candidate_separation_mhz", 1.0))
+                    if not local_features:
+                        raise RuntimeError("local confirmation found no valid notch")
+                    confirmation_feature = min(
+                        local_features,
+                        key=lambda item: abs(
+                            float(item["frequency_mhz"]) - coarse_seed))
                     confirmed_seed = float(
                         confirmation_feature["frequency_mhz"])
                     shift = abs(confirmed_seed - coarse_seed)
-                    coarse_width = float(row["feature"]["feature_width_mhz"])
+                    coarse_width = float(coarse_feature["feature_width_mhz"])
                     confirmation_width = float(
                         confirmation_feature["feature_width_mhz"])
-                    width_ratio = (
-                        max(coarse_width, confirmation_width)
-                        / max(min(coarse_width, confirmation_width), 1e-15))
-                    confirmation_valid = bool(
-                        confirmation_feature["valid"]
-                        and accept_min <= confirmed_seed <= accept_max
+                    width_ratio = max(coarse_width, confirmation_width) / max(
+                        min(coarse_width, confirmation_width), 1e-15)
+                    valid = bool(
+                        accept_min <= confirmed_seed <= accept_max
                         and shift <= shift_limit
                         and width_ratio <= width_ratio_limit + 1e-9)
                     row.update({
                         "confirmation_axis": confirmation_axis,
-                        "confirmation_response": confirmation_response,
+                        "confirmation_response": np.asarray(
+                            confirmation_response, complex),
                         "confirmation_feature": confirmation_feature,
                         "confirmation_shift_mhz": float(shift),
                         "confirmation_width_ratio": float(width_ratio),
-                        "confirmation_valid": confirmation_valid,
+                        "confirmation_valid": valid,
                     })
-                    if not confirmation_valid:
-                        reasons = [confirmation_feature["failure"]]
-                        if not accept_min <= confirmed_seed <= accept_max:
-                            reasons.append(
-                                "confirmed centre is outside the current search radius")
-                        if shift > shift_limit:
-                            reasons.append(
-                                "coarse/fine centres differ by %.3f MHz (limit %.3f)"
-                                % (shift, shift_limit))
-                        if width_ratio > width_ratio_limit:
-                            reasons.append(
-                                "coarse/fine widths differ by %.2fx (limit %.2fx)"
-                                % (width_ratio, width_ratio_limit))
-                        row["error"] = "; ".join(
-                            reason for reason in reasons if reason)
+                    if not valid:
+                        row["error"] = (
+                            "coarse/local notch identity changed "
+                            "(shift %.3f MHz, width ratio %.2fx)"
+                            % (shift, width_ratio))
+                    else:
+                        confirmed.append(row)
                 except KeyboardInterrupt:
                     raise
                 except Exception as exc:
                     row["error"] = "%s: %s" % (type(exc).__name__, exc)
                 trials.append(row)
-                if row["confirmation_valid"]:
-                    selected = row
-                    break
-            if selected is not None:
+            if confirmed:
                 break
 
-        completed = [row for row in trials if row["feature"] is not None]
-        representative = (max(
-            completed,
-            key=lambda row: (
-                bool(row["confirmation_valid"]),
-                bool(row["feature"]["valid"]),
-                float(row["feature"]["contrast_snr"]),
-                float(row["feature"]["relative_contrast"])))
-            if completed else None)
-        mapped = selected if selected is not None else representative
-        coarse_axis = (mapped["axis"] if mapped is not None else search_axes[-1])
-        mapped_feature = mapped["feature"] if mapped is not None else None
-        mapped_confirmation = (
-            mapped["confirmation_feature"] if mapped is not None else None)
-        mapped_confirmation_axis = (
-            mapped["confirmation_axis"] if mapped is not None else None)
+        # Deduplicate the same notch proposed in neighboring coarse bins or powers.
+        confirmed.sort(key=lambda row: (
+            float(row["confirmation_feature"]["contrast_snr"]),
+            float(row["confirmation_feature"]["relative_contrast"])),
+            reverse=True)
+        retained = []
+        merge_tolerance = max(
+            float(p.get("max_confirmation_shift_mhz", 0.25)) * 2.0,
+            0.5 * float(p.get("min_candidate_separation_mhz", 1.0)))
+        for row in confirmed:
+            frequency = float(row["confirmation_feature"]["frequency_mhz"])
+            if any(abs(frequency - float(old["confirmation_feature"][
+                    "frequency_mhz"])) <= merge_tolerance for old in retained):
+                continue
+            retained.append(row)
+            if len(retained) >= max(int(p.get("max_candidates", 8)), 1):
+                break
+        if not retained:
+            failures = [row.get("error") for row in trials if row.get("error")]
+            reason = "; ".join(failures) or "all resonator acquisitions failed"
+            self._maps["resonator"] = {
+                "axes": {"read_frequency_mhz": coarse_axis,
+                         "confirmation_frequency_mhz": np.empty((0,), float)},
+                "search_complete": False, "selection_confirmed": False,
+                "used_global_scan": bool(bounded), "used_wide_scan": True,
+                "search_mode": plan["mode"],
+                "allowed_min_mhz": float(plan["allowed_min_mhz"]),
+                "allowed_max_mhz": float(plan["allowed_max_mhz"]),
+                "candidate_frequencies_mhz": np.empty((0,), float),
+                "trial_valid": np.asarray([
+                    row["confirmation_valid"] for row in trials], dtype=bool),
+                "trial_confirmation_valid": np.asarray([
+                    row["confirmation_valid"] for row in trials], dtype=bool),
+                "trial_gain_dac": np.asarray([
+                    row["candidate"]["read_pulse_gain"] for row in trials],
+                    dtype=int),
+                "trial_length_us": np.asarray([
+                    row["candidate"]["read_length"] for row in trials],
+                    dtype=float),
+                "search_attempt_scan_bounds_mhz": np.asarray([
+                    [float(coarse_axis[0]), float(coarse_axis[-1])]
+                    for _row in trials], dtype=float).reshape((-1, 2)),
+                "search_attempt_acceptance_bounds_mhz": np.asarray([
+                    [accept_min, accept_max] for _row in trials],
+                    dtype=float).reshape((-1, 2)),
+                "failure": reason,
+            }
+            raise RuntimeError(
+                "no independently reproduced resonator feature in %.3f..%.3f MHz (%s)"
+                % (plan["allowed_min_mhz"], plan["allowed_max_mhz"], reason))
+
+        # This is only a provisional branch for backward-compatible plotting.  Every
+        # retained branch is passed to spectroscopy below, which is the first identity
+        # decision allowed to set selection_confirmed when several notches exist.
+        provisional = min(
+            retained,
+            key=lambda row: abs(float(row["confirmation_feature"][
+                "frequency_mhz"]) - float(self.initial["read_pulse_freq"])))
+        feature = provisional["feature"]
+        confirmation = provisional["confirmation_feature"]
+        seed = float(confirmation["frequency_mhz"])
+        self._resonator_candidates = [
+            _with_candidate(
+                row["candidate"], read_pulse_freq=float(
+                    row["confirmation_feature"]["frequency_mhz"]))
+            for row in retained]
+        self._resonator_branch_records = retained
+        self._resonator_seed = seed
+        self._discovery_readout = _with_candidate(
+            provisional["candidate"], read_pulse_freq=seed)
+        self._discovery_status["resonator"] = True
         self._maps["resonator"] = {
             "axes": {
                 "read_frequency_mhz": coarse_axis,
-                "confirmation_frequency_mhz": (
-                    mapped_confirmation_axis
-                    if mapped_confirmation_axis is not None else
-                    np.empty((0,), dtype=float)),
+                "confirmation_frequency_mhz": np.asarray([
+                    row["confirmation_axis"] for row in retained], dtype=float),
             },
-            "magnitude": (
-                mapped_feature["magnitude"] if mapped_feature is not None
-                else np.full(coarse_axis.size, np.nan)),
-            "smoothed_magnitude": (
-                mapped_feature["smoothed_magnitude"] if mapped_feature is not None
-                else np.full(coarse_axis.size, np.nan)),
-            "baseline_magnitude": (
-                mapped_feature["baseline_magnitude"] if mapped_feature is not None
-                else np.full(coarse_axis.size, np.nan)),
-            "feature": (
-                mapped_feature["smoothed_feature"] if mapped_feature is not None
-                else np.full(coarse_axis.size, np.nan)),
-            "complex_response": (
-                mapped["response"] if mapped is not None
-                else np.full(coarse_axis.size, np.nan + 1j * np.nan)),
-            "contrast_snr": (
-                float(mapped_feature["contrast_snr"])
-                if mapped_feature is not None else np.nan),
-            "relative_contrast": (
-                float(mapped_feature["relative_contrast"])
-                if mapped_feature is not None else np.nan),
-            "feature_width_mhz": (
-                float(mapped_feature["feature_width_mhz"])
-                if mapped_feature is not None else np.nan),
-            "candidate_at_boundary": bool(
-                mapped_feature and mapped_feature["at_boundary"]),
-            "confirmation_magnitude": (
-                mapped_confirmation["magnitude"]
-                if mapped_confirmation is not None else np.empty((0,), float)),
-            "confirmation_feature": (
-                mapped_confirmation["smoothed_feature"]
-                if mapped_confirmation is not None else np.empty((0,), float)),
-            "confirmation_complex_response": (
-                mapped["confirmation_response"]
-                if (mapped is not None
-                    and mapped["confirmation_response"] is not None)
-                else np.empty((0,), complex)),
-            "confirmation_contrast_snr": (
-                float(mapped_confirmation["contrast_snr"])
-                if mapped_confirmation is not None else np.nan),
-            "confirmation_relative_contrast": (
-                float(mapped_confirmation["relative_contrast"])
-                if mapped_confirmation is not None else np.nan),
-            "confirmation_width_mhz": (
-                float(mapped_confirmation["feature_width_mhz"])
-                if mapped_confirmation is not None else np.nan),
-            "confirmation_at_boundary": bool(
-                mapped_confirmation and mapped_confirmation["at_boundary"]),
-            "confirmation_shift_mhz": (
-                float(mapped["confirmation_shift_mhz"])
-                if mapped is not None else np.inf),
-            "confirmation_width_ratio": (
-                float(mapped["confirmation_width_ratio"])
-                if mapped is not None else np.inf),
-            "search_complete": bool(selected is not None),
-            "selection_confirmed": bool(selected is not None),
-            "used_global_scan": bool(bounded),
-            "used_wide_scan": True,
+            "magnitude": feature["magnitude"],
+            "smoothed_magnitude": feature["smoothed_magnitude"],
+            "baseline_magnitude": feature["baseline_magnitude"],
+            "feature": feature["smoothed_feature"],
+            "complex_response": provisional["response"],
+            "contrast_snr": float(feature["contrast_snr"]),
+            "relative_contrast": float(feature["relative_contrast"]),
+            "feature_width_mhz": float(feature["feature_width_mhz"]),
+            "candidate_at_boundary": bool(feature["at_boundary"]),
+            "confirmation_magnitude": confirmation["magnitude"],
+            "confirmation_feature": confirmation["smoothed_feature"],
+            "confirmation_complex_response": provisional[
+                "confirmation_response"],
+            "confirmation_contrast_snr": float(
+                confirmation["contrast_snr"]),
+            "confirmation_relative_contrast": float(
+                confirmation["relative_contrast"]),
+            "confirmation_width_mhz": float(
+                confirmation["feature_width_mhz"]),
+            "confirmation_at_boundary": bool(confirmation["at_boundary"]),
+            "confirmation_shift_mhz": float(
+                provisional["confirmation_shift_mhz"]),
+            "confirmation_width_ratio": float(
+                provisional["confirmation_width_ratio"]),
+            "candidate_frequencies_mhz": np.asarray([
+                row["confirmation_feature"]["frequency_mhz"]
+                for row in retained], dtype=float),
+            "candidate_contrast_snr": np.asarray([
+                row["confirmation_feature"]["contrast_snr"]
+                for row in retained], dtype=float),
+            "candidate_relative_contrast": np.asarray([
+                row["confirmation_feature"]["relative_contrast"]
+                for row in retained], dtype=float),
+            "selected_frequency_mhz": seed,
+            "provisional_selection": bool(len(retained) > 1),
+            "search_complete": True,
+            "selection_confirmed": bool(len(retained) == 1),
+            "used_global_scan": bool(bounded), "used_wide_scan": True,
             "search_mode": plan["mode"],
             "allowed_min_mhz": float(plan["allowed_min_mhz"]),
             "allowed_max_mhz": float(plan["allowed_max_mhz"]),
             "search_attempt_scan_bounds_mhz": np.asarray([
-                [float(row["axis"][0]), float(row["axis"][-1])]
-                for row in trials], dtype=float).reshape((-1, 2)),
+                [float(coarse_axis[0]), float(coarse_axis[-1])]
+                for _row in trials], dtype=float).reshape((-1, 2)),
             "search_attempt_acceptance_bounds_mhz": np.asarray([
-                row["acceptance_bounds_mhz"] for row in trials],
+                [accept_min, accept_max] for _row in trials],
                 dtype=float).reshape((-1, 2)),
-            "bootstrap_gain_dac": (
-                int(mapped["candidate"]["read_pulse_gain"])
-                if mapped is not None else -1),
-            "bootstrap_length_us": (
-                float(mapped["candidate"]["read_length"])
-                if mapped is not None else np.nan),
+            "bootstrap_gain_dac": int(provisional["candidate"][
+                "read_pulse_gain"]),
+            "bootstrap_length_us": float(provisional["candidate"][
+                "read_length"]),
             "trial_gain_dac": np.asarray([
                 row["candidate"]["read_pulse_gain"] for row in trials], dtype=int),
             "trial_length_us": np.asarray([
                 row["candidate"]["read_length"] for row in trials], dtype=float),
             "trial_contrast_snr": np.asarray([
-                (row["feature"]["contrast_snr"]
-                 if row["feature"] is not None else np.nan)
+                row["feature"]["contrast_snr"]
+                if row.get("feature") is not None else np.nan
                 for row in trials], dtype=float),
             "trial_relative_contrast": np.asarray([
-                (row["feature"]["relative_contrast"]
-                 if row["feature"] is not None else np.nan)
+                row["feature"]["relative_contrast"]
+                if row.get("feature") is not None else np.nan
                 for row in trials], dtype=float),
             "trial_feature_width_mhz": np.asarray([
-                (row["feature"]["feature_width_mhz"]
-                 if row["feature"] is not None else np.nan)
+                row["feature"]["feature_width_mhz"]
+                if row.get("feature") is not None else np.nan
                 for row in trials], dtype=float),
             "trial_confirmation_valid": np.asarray([
                 row["confirmation_valid"] for row in trials], dtype=bool),
@@ -5814,28 +6003,180 @@ class BasicAutoTuner(ExperimentClass):
             "trial_confirmation_width_ratio": np.asarray([
                 row["confirmation_width_ratio"] for row in trials], dtype=float),
         }
-        if selected is None:
-            failures = [row["error"] for row in trials if row.get("error")]
-            reason = "; ".join(failures) or "all resonator acquisitions failed"
-            self._maps["resonator"]["failure"] = reason
-            raise RuntimeError(
-                "no independently reproduced resonator feature in %.3f..%.3f MHz (%s)"
-                % (plan["allowed_min_mhz"], plan["allowed_max_mhz"], reason))
-
-        discovery = selected["candidate"]
-        seed = float(selected["confirmation_feature"]["frequency_mhz"])
-        self._resonator_seed = seed
-        self._discovery_readout = _with_candidate(
-            discovery, read_pulse_freq=float(seed))
-        self._discovery_status["resonator"] = True
-        self._log("resonator", "OK",
-                  "reproduced response %.6f MHz using %d DAC/%.1f us "
-                  "(direct SS still decides)"
-                  % (seed, discovery["read_pulse_gain"],
-                     discovery["read_length"]))
+        self._log(
+            "resonator", "OK",
+            "confirmed resonator candidates %s; spectroscopy will select the branch"
+            % ", ".join("%.6f" % float(candidate["read_pulse_freq"])
+                        for candidate in self._resonator_candidates))
         return seed
 
     def _stage_spectroscopy(self):
+        """Evaluate confirmed resonator branches and backtrack failed ones."""
+        p = self.params["spectroscopy"]
+        branches = _unique_candidates(
+            self._resonator_candidates or [self._discovery_readout])
+        if not p.get("enabled", True) or len(branches) <= 1:
+            result = self._stage_spectroscopy_single(
+                branches[0] if branches else self._discovery_readout,
+                map_name="spectroscopy")
+            if result and branches:
+                selected = dict(branches[0])
+                self._discovery_readout = selected
+                self._resonator_seed = float(selected["read_pulse_freq"])
+                self._maps.get("resonator", {})["selection_confirmed"] = True
+                self._maps.get("resonator", {})[
+                    "selected_frequency_mhz"] = self._resonator_seed
+                self._spec_candidate_rows = [
+                    {"frequency": float(value), "readout": dict(selected)}
+                    for value in result]
+            return result
+
+        maximum = max(int(p.get("max_resonator_branches", len(branches))), 1)
+        # The resonator stage has already capped and independently confirmed this list.
+        # Never discard a confirmed branch merely because its notch is shallower; the
+        # cap exists only to make a deliberately pathological many-mode scan explicit.
+        branches = branches[:maximum]
+        attempts = []
+        original_readout = dict(self._discovery_readout)
+        for index, branch in enumerate(branches):
+            map_name = "spectroscopy_resonator_branch_%d" % index
+            try:
+                values = self._stage_spectroscopy_single(
+                    branch, map_name=map_name)
+                branch_map = copy.deepcopy(self._maps[map_name])
+                scores = np.asarray(
+                    branch_map.get("candidate_scores", []), dtype=float)
+                physical = np.asarray(
+                    branch_map.get("candidate_physical_fit_valid", []),
+                    dtype=bool)
+                finite_scores = scores[np.isfinite(scores)]
+                rank = (
+                    bool(np.any(physical)),
+                    float(np.max(finite_scores)) if finite_scores.size else -np.inf,
+                    int(len(values)),
+                )
+                attempts.append({
+                    "index": int(index), "readout": dict(branch),
+                    "status": "confirmed", "candidates": list(values),
+                    "rank": rank, "map_name": map_name, "map": branch_map,
+                })
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                attempts.append({
+                    "index": int(index), "readout": dict(branch),
+                    "status": "rejected", "candidates": [],
+                    "rank": (False, -np.inf, 0), "map_name": map_name,
+                    "map": copy.deepcopy(self._maps.get(map_name, {})),
+                    "error": "%s: %s" % (type(exc).__name__, exc),
+                })
+        viable = [row for row in attempts if row["status"] == "confirmed"]
+        self._spectroscopy_branch_attempts = copy.deepcopy(viable)
+        if not viable:
+            self._discovery_readout = original_readout
+            self._spec_candidates_mhz = []
+            self._discovery_status["spectroscopy"] = False
+            self._maps["spectroscopy"] = {
+                "search_complete": False, "selection_confirmed": False,
+                "resonator_branch_frequencies_mhz": np.asarray([
+                    row["readout"]["read_pulse_freq"] for row in attempts],
+                    dtype=float),
+                "resonator_branch_valid": np.zeros(len(attempts), dtype=bool),
+                "resonator_branch_errors": [
+                    row.get("error", "") for row in attempts],
+                "failure": "no confirmed resonator branch produced a reproducible "
+                           "qubit spectrum",
+            }
+            self._maps.get("resonator", {})["selection_confirmed"] = False
+            raise RuntimeError(
+                "none of %d confirmed resonator branches produced a reproducible "
+                "qubit transition" % len(attempts))
+        chosen = max(viable, key=lambda row: row["rank"])
+        selected_readout = dict(chosen["readout"])
+        self._discovery_readout = selected_readout
+        self._resonator_seed = float(selected_readout["read_pulse_freq"])
+        self._spec_candidates_mhz = [
+            float(value) for value in chosen["candidates"]]
+        self._spec_candidate_rows = [
+            {"frequency": float(value), "readout": dict(selected_readout)}
+            for value in self._spec_candidates_mhz]
+        self._discovery_status["spectroscopy"] = True
+        selected_map = copy.deepcopy(chosen["map"])
+        selected_map.update({
+            "resonator_branch_frequencies_mhz": np.asarray([
+                row["readout"]["read_pulse_freq"] for row in attempts],
+                dtype=float),
+            "resonator_branch_valid": np.asarray([
+                row["status"] == "confirmed" for row in attempts], dtype=bool),
+            "resonator_branch_best_scores": np.asarray([
+                row["rank"][1] for row in attempts], dtype=float),
+            "resonator_branch_errors": [
+                row.get("error", "") for row in attempts],
+            "selected_resonator_branch_mhz": self._resonator_seed,
+            "branch_backtracking_complete": True,
+            "search_complete": True, "selection_confirmed": True,
+        })
+        self._maps["spectroscopy"] = selected_map
+        resonator_map = self._maps.get("resonator", {})
+        selected_record = next((
+            row for row in self._resonator_branch_records
+            if np.isclose(float(row["confirmation_feature"]["frequency_mhz"]),
+                          self._resonator_seed, rtol=0.0, atol=1e-6)
+        ), None)
+        if selected_record is not None:
+            coarse_feature = selected_record["feature"]
+            confirmed_feature = selected_record["confirmation_feature"]
+            resonator_map.update({
+                "magnitude": coarse_feature["magnitude"],
+                "smoothed_magnitude": coarse_feature["smoothed_magnitude"],
+                "baseline_magnitude": coarse_feature["baseline_magnitude"],
+                "feature": coarse_feature["smoothed_feature"],
+                "complex_response": selected_record["response"],
+                "contrast_snr": float(coarse_feature["contrast_snr"]),
+                "relative_contrast": float(
+                    coarse_feature["relative_contrast"]),
+                "feature_width_mhz": float(
+                    coarse_feature["feature_width_mhz"]),
+                "confirmation_magnitude": confirmed_feature["magnitude"],
+                "confirmation_feature": confirmed_feature["smoothed_feature"],
+                "confirmation_complex_response": selected_record[
+                    "confirmation_response"],
+                "confirmation_contrast_snr": float(
+                    confirmed_feature["contrast_snr"]),
+                "confirmation_relative_contrast": float(
+                    confirmed_feature["relative_contrast"]),
+                "confirmation_width_mhz": float(
+                    confirmed_feature["feature_width_mhz"]),
+                "confirmation_shift_mhz": float(
+                    selected_record["confirmation_shift_mhz"]),
+                "confirmation_width_ratio": float(
+                    selected_record["confirmation_width_ratio"]),
+                "bootstrap_gain_dac": int(selected_record["candidate"][
+                    "read_pulse_gain"]),
+                "bootstrap_length_us": float(selected_record["candidate"][
+                    "read_length"]),
+            })
+        branch_resolved = len(viable) == 1
+        resonator_map.update({
+            "selection_confirmed": bool(branch_resolved),
+            "selected_frequency_mhz": self._resonator_seed,
+            "selected_by": (
+                "unique reproduced qubit spectroscopy branch"
+                if branch_resolved else
+                "provisional best spectroscopy branch; coherent Rabi pending"),
+            "branch_backtracking_complete": True,
+        })
+        self._log(
+            "spectroscopy", "OK",
+            "selected resonator %.6f MHz after testing %d confirmed branches; "
+            "retained qubit seeds %s"
+            % (self._resonator_seed, len(attempts),
+               ", ".join("%.4f" % value
+                         for value in self._spec_candidates_mhz)))
+        return self._spec_candidates_mhz
+
+    def _stage_spectroscopy_single(self, seed_candidate=None,
+                                   map_name="spectroscopy"):
         p = self.params["spectroscopy"]
         if not p.get("enabled", True):
             self._spec_candidates_mhz = [float(self.initial["qubit_pi_freq"])]
@@ -5844,7 +6185,8 @@ class BasicAutoTuner(ExperimentClass):
         self._spec_candidates_mhz = []
         # Temporarily read near the resonator response seed to maximize spectroscopy
         # contrast.  This does not adopt the seed as the optimized SS readout.
-        seed_candidate = dict(self._discovery_readout)
+        seed_candidate = dict(
+            self._discovery_readout if seed_candidate is None else seed_candidate)
         plan = self._frequency_discovery_plan(
             self.initial["qubit_pi_freq"], p, adaptive=False)
         coarse_freqs = plan["axes"][-1]
@@ -6163,7 +6505,7 @@ class BasicAutoTuner(ExperimentClass):
             if len(retained_rows) >= max(int(p["max_candidates"]), 1):
                 break
 
-        self._maps["spectroscopy"] = {
+        self._maps[map_name] = {
             "axes": {
                 "qubit_frequency_mhz": coarse_freqs,
                 "staggered_qubit_frequency_mhz": staggered_freqs,
@@ -6221,13 +6563,13 @@ class BasicAutoTuner(ExperimentClass):
             "validation_errors": validation_errors,
         }
         if not coarse_rows:
-            self._maps["spectroscopy"]["failure"] = (
+            self._maps[map_name]["failure"] = (
                 "no significant interior coarse feature")
             raise RuntimeError(
                 "no %.1f-sigma qubit feature in %.3f..%.3f MHz"
                 % (p["min_feature_snr"], allowed_min, allowed_max))
         if not retained_rows:
-            self._maps["spectroscopy"]["failure"] = (
+            self._maps[map_name]["failure"] = (
                 "no coarse feature survived opposed fitted confirmations")
             raise RuntimeError(
                 "none of %d coarse qubit features reproduced independently"
@@ -6242,6 +6584,186 @@ class BasicAutoTuner(ExperimentClass):
         return self._spec_candidates_mhz
 
     def _stage_iq_rabi(self):
+        """Use coherent Rabi to resolve branches that both passed spectroscopy."""
+        branches = list(self._spectroscopy_branch_attempts)
+        if len(branches) <= 1:
+            return self._stage_iq_rabi_single()
+        attempts = []
+        original = {
+            "working": dict(self.working),
+            "readout": dict(self._discovery_readout),
+            "resonator_seed": float(self._resonator_seed),
+            "spec": list(self._spec_candidates_mhz),
+            "rabi_candidates": copy.deepcopy(self._rabi_candidates),
+        }
+        for index, branch in enumerate(branches):
+            self._maps.pop("iq_rabi", None)
+            self._maps.pop("rough_amplitude_rabi", None)
+            self._discovery_readout = dict(branch["readout"])
+            self._resonator_seed = float(
+                self._discovery_readout["read_pulse_freq"])
+            self._spec_candidates_mhz = [
+                float(value) for value in branch["candidates"]]
+            self._rabi_candidates = []
+            try:
+                result = self._stage_iq_rabi_single()
+                iq_map = copy.deepcopy(self._maps.get("iq_rabi", {}))
+                amplitude_map = copy.deepcopy(
+                    self._maps.get("rough_amplitude_rabi", {}))
+                scores = np.asarray(iq_map.get("row_scores", []), dtype=float)
+                r2 = np.asarray(iq_map.get("row_r2", []), dtype=float)
+                finite_scores = scores[np.isfinite(scores)]
+                finite_r2 = r2[np.isfinite(r2)]
+                coherent = bool(iq_map.get("coherent_witness", False))
+                branch_ss = None
+                if coherent:
+                    try:
+                        branch_ss = self._confirm_candidates(
+                            [self.working],
+                            int(self.params["spectroscopy"].get(
+                                "branch_ss_shots", 250)),
+                            int(self.params["spectroscopy"].get(
+                                "branch_ss_blocks", 2)),
+                            "resonator branch %d rough step-5 replay" % index,
+                            add_to_history=True)[0]
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as exc:
+                        self._log(
+                            "iq_rabi", "WARN",
+                            "rough direct-SS branch %d comparison failed (%s: %s)"
+                            % (index, type(exc).__name__, exc))
+                branch_lcb = (fidelity_evidence(branch_ss)[2]
+                              if branch_ss is not None else -np.inf)
+                attempts.append({
+                    "index": int(index), "readout": dict(branch["readout"]),
+                    "spec_candidates": list(branch["candidates"]),
+                    "status": "coherent" if coherent else "provisional",
+                    "rank": (
+                        coherent,
+                        float(branch_lcb),
+                        float(np.max(finite_scores))
+                        if finite_scores.size else -np.inf,
+                        float(np.max(finite_r2)) if finite_r2.size else -np.inf,
+                    ),
+                    "working": dict(self.working),
+                    "rabi_candidates": copy.deepcopy(self._rabi_candidates),
+                    "result": copy.deepcopy(result),
+                    "branch_single_shot": copy.deepcopy(branch_ss),
+                    "spectroscopy_map": copy.deepcopy(branch["map"]),
+                    "iq_map": iq_map, "amplitude_map": amplitude_map,
+                })
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                attempts.append({
+                    "index": int(index), "readout": dict(branch["readout"]),
+                    "spec_candidates": list(branch["candidates"]),
+                    "status": "rejected",
+                    "rank": (False, -np.inf, -np.inf, -np.inf),
+                    "error": "%s: %s" % (type(exc).__name__, exc),
+                })
+            finally:
+                if "iq_rabi" in self._maps:
+                    self._maps["iq_rabi_resonator_branch_%d" % index] = (
+                        copy.deepcopy(self._maps["iq_rabi"]))
+                if "rough_amplitude_rabi" in self._maps:
+                    self._maps[
+                        "rough_amplitude_rabi_resonator_branch_%d" % index] = (
+                            copy.deepcopy(self._maps["rough_amplitude_rabi"]))
+        coherent = [row for row in attempts if row["status"] == "coherent"]
+        if not coherent:
+            self.working = original["working"]
+            self._discovery_readout = original["readout"]
+            self._resonator_seed = original["resonator_seed"]
+            self._spec_candidates_mhz = original["spec"]
+            self._rabi_candidates = original["rabi_candidates"]
+            self._maps.get("resonator", {})["selection_confirmed"] = False
+            raise RuntimeError(
+                "multiple resonator branches passed spectroscopy but none produced "
+                "a coherent Rabi witness")
+        chosen = max(coherent, key=lambda row: row["rank"])
+        self.working = dict(chosen["working"])
+        self._discovery_readout = dict(chosen["readout"])
+        self._resonator_seed = float(
+            self._discovery_readout["read_pulse_freq"])
+        self._spec_candidates_mhz = list(chosen["spec_candidates"])
+        self._rabi_candidates = copy.deepcopy(chosen["rabi_candidates"])
+        self._maps["iq_rabi"] = copy.deepcopy(chosen["iq_map"])
+        self._maps["rough_amplitude_rabi"] = copy.deepcopy(
+            chosen["amplitude_map"])
+        spectroscopy_audit = {
+            key: copy.deepcopy(value)
+            for key, value in self._maps.get("spectroscopy", {}).items()
+            if key.startswith("resonator_branch_")
+            or key in ("branch_backtracking_complete",)
+        }
+        self._maps["spectroscopy"] = copy.deepcopy(
+            chosen["spectroscopy_map"])
+        self._maps["spectroscopy"].update(spectroscopy_audit)
+        self._maps["spectroscopy"].update({
+            "selected_resonator_branch_mhz": self._resonator_seed,
+            "search_complete": True, "selection_confirmed": True,
+        })
+        self._maps["iq_rabi"].update({
+            "resonator_branch_frequencies_mhz": np.asarray([
+                row["readout"]["read_pulse_freq"] for row in attempts],
+                dtype=float),
+            "resonator_branch_coherent": np.asarray([
+                row["status"] == "coherent" for row in attempts], dtype=bool),
+            "resonator_branch_scores": np.asarray([
+                row["rank"][2] for row in attempts], dtype=float),
+            "resonator_branch_step5_lcb": np.asarray([
+                row["rank"][1] for row in attempts], dtype=float),
+            "selected_resonator_branch_mhz": self._resonator_seed,
+            "branch_selection_confirmed": True,
+        })
+        self._maps.get("resonator", {}).update({
+            "selection_confirmed": True,
+            "selected_frequency_mhz": self._resonator_seed,
+            "selected_by": "coherent Rabi after opposed spectroscopy",
+        })
+        selected_record = next((
+            row for row in self._resonator_branch_records
+            if np.isclose(float(row["confirmation_feature"]["frequency_mhz"]),
+                          self._resonator_seed, rtol=0.0, atol=1e-6)
+        ), None)
+        if selected_record is not None:
+            coarse_feature = selected_record["feature"]
+            confirmed_feature = selected_record["confirmation_feature"]
+            self._maps["resonator"].update({
+                "magnitude": coarse_feature["magnitude"],
+                "smoothed_magnitude": coarse_feature["smoothed_magnitude"],
+                "baseline_magnitude": coarse_feature["baseline_magnitude"],
+                "feature": coarse_feature["smoothed_feature"],
+                "complex_response": selected_record["response"],
+                "contrast_snr": float(coarse_feature["contrast_snr"]),
+                "relative_contrast": float(
+                    coarse_feature["relative_contrast"]),
+                "feature_width_mhz": float(
+                    coarse_feature["feature_width_mhz"]),
+                "confirmation_magnitude": confirmed_feature["magnitude"],
+                "confirmation_feature": confirmed_feature["smoothed_feature"],
+                "confirmation_complex_response": selected_record[
+                    "confirmation_response"],
+                "confirmation_contrast_snr": float(
+                    confirmed_feature["contrast_snr"]),
+                "confirmation_relative_contrast": float(
+                    confirmed_feature["relative_contrast"]),
+                "confirmation_width_mhz": float(
+                    confirmed_feature["feature_width_mhz"]),
+                "confirmation_shift_mhz": float(
+                    selected_record["confirmation_shift_mhz"]),
+                "confirmation_width_ratio": float(
+                    selected_record["confirmation_width_ratio"]),
+            })
+        self._log(
+            "iq_rabi", "OK",
+            "coherent Rabi selected resonator %.6f MHz after %d spectroscopy branches"
+            % (self._resonator_seed, len(attempts)))
+        return self.working
+
+    def _stage_iq_rabi_single(self):
         p = self.params["iq_rabi"]
         if not p.get("enabled", True):
             self._log("iq_rabi", "SKIP", "disabled")

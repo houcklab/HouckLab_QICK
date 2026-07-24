@@ -106,6 +106,16 @@ def _as_tuple(value):
     return tuple(value) if isinstance(value, (list, tuple)) else ()
 
 
+def _as_sequence(value):
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        converted = tolist()
+        return converted if isinstance(converted, list) else [converted]
+    return []
+
+
 def _candidate_key(candidate):
     try:
         return (
@@ -269,6 +279,48 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
                 errors.append(
                     "%s discovery map does not match the configured prior"
                     % stage_name)
+    resonator_map = maps.get("resonator") if isinstance(maps, dict) else None
+    spectroscopy_map = (
+        maps.get("spectroscopy") if isinstance(maps, dict) else None)
+    resonator_candidates = (_as_sequence(
+        resonator_map.get("candidate_frequencies_mhz"))
+        if isinstance(resonator_map, dict) else [])
+    if len(resonator_candidates) > 1:
+        if (not bool(resonator_map.get("branch_backtracking_complete", False))
+                or not isinstance(spectroscopy_map, dict)
+                or not bool(spectroscopy_map.get(
+                    "branch_backtracking_complete", False))):
+            errors.append(
+                "multiple resonator candidates lack completed branch backtracking")
+        selected_resonator = _number(
+            resonator_map, ("selected_frequency_mhz",))
+        selected_spectroscopy = _number(
+            spectroscopy_map if isinstance(spectroscopy_map, dict) else {},
+            ("selected_resonator_branch_mhz",))
+        if (not _finite(selected_resonator)
+                or not _finite(selected_spectroscopy)
+                or not math.isclose(
+                    selected_resonator, selected_spectroscopy,
+                    rel_tol=0.0, abs_tol=1e-6)):
+            errors.append(
+                "the resonator and spectroscopy branch selections disagree")
+        viable = _as_sequence(spectroscopy_map.get(
+            "resonator_branch_valid")) if isinstance(
+                spectroscopy_map, dict) else []
+        if sum(bool(value) for value in viable) > 1:
+            iq_map = maps.get("iq_rabi") if isinstance(maps, dict) else None
+            iq_selected = _number(
+                iq_map if isinstance(iq_map, dict) else {},
+                ("selected_resonator_branch_mhz",))
+            if (not isinstance(iq_map, dict)
+                    or not bool(iq_map.get("branch_selection_confirmed", False))
+                    or not _finite(iq_selected)
+                    or not math.isclose(
+                        iq_selected, selected_resonator,
+                        rel_tol=0.0, abs_tol=1e-6)):
+                errors.append(
+                    "multiple spectral branches lack coherent Rabi/direct-SS "
+                    "selection")
     joint_policy = params.get("joint_search", {})
     if isinstance(joint_policy, dict) and joint_policy.get("enabled", True):
         joint = result.get("joint_search")
