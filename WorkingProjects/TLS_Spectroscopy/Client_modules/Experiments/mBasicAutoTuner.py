@@ -58,7 +58,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 )
 
 
-BASIC_AUTOTUNER_REVISION = "manual-workflow-v8"
+BASIC_AUTOTUNER_REVISION = "manual-workflow-v11"
 
 
 BASIC_DEFAULTS = {
@@ -92,22 +92,75 @@ BASIC_DEFAULTS = {
     "resonator": {
         "enabled": True, "span_mhz": 4.0, "points": 61, "shots": 120,
         "polarity": "dip", "wide_span_mhz": 12.0, "wide_points": 101,
-        "min_contrast_snr": 3.0, "always_wide": True,
+        "min_contrast_snr": 5.0, "always_wide": True,
+        # Prefer a device-independent prior around initialize.py.  Absolute bounds
+        # remain an explicit override for characterized-device studies.  The outer
+        # scan is padded only to fit a line exactly at the +/-radius limit; candidates
+        # in that padding are never accepted.
+        "search_min_mhz": None, "search_max_mhz": None,
+        "search_radius_mhz": 100.0,
+        "search_expansion_radii_mhz": [5.0, 25.0, 100.0],
+        "search_edge_padding_mhz": 2.0,
+        "search_step_mhz": 0.20,
+        # Four MHz leaves enough off-resonant baseline around the measured
+        # ~0.34-MHz-wide q4 notch.  A 1.2-MHz confirmation let the quadratic
+        # background absorb a real modest-depth notch and reject it as low SNR.
+        "confirmation_span_mhz": 4.0, "confirmation_points": 81,
+        "confirmation_shots": 120,
+        "edge_guard_points": 2, "min_relative_contrast": 0.002,
+        "min_feature_width_mhz": 0.04, "max_feature_width_mhz": 2.0,
+        "max_confirmation_width_ratio": 2.5,
+        "max_confirmation_shift_mhz": 0.25,
         # Averaged discovery must not inherit a deliberately bad/zero input readout.
-        # The input gain is also tried; whichever gives the clearest local response is
-        # used only as a bootstrap and never written without direct SS optimization.
+        # The input gain is also tried if the safe gain does not survive an independent
+        # confirmation scan.  This bootstrap is never written without direct SS
+        # optimization and a final exact-tuple replay.
         "discovery_gain": 5000, "discovery_length_us": 10.0,
     },
     "spectroscopy": {
         "enabled": True, "local_span_mhz": 20.0, "local_points": 81,
         "wide_span_mhz": 80.0, "wide_points": 121, "gain": 7000,
-        "pulse_length_us": 2.0, "shots": 80, "max_candidates": 3,
+        "pulse_length_us": 2.0, "shots": 80, "max_candidates": 8,
         "min_feature_snr": 3.0, "always_wide": True,
+        # Search the complete configurable prior around initialize.py.  Unlike the
+        # resonator search this is intentionally not stopped at the first feature: a
+        # nearby TLS must not hide a farther qubit inside the authorized window.
+        # Absolute bounds remain available as an explicit override.
+        "search_min_mhz": None, "search_max_mhz": None,
+        "search_radius_mhz": 100.0,
+        "search_edge_padding_mhz": 10.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 8,
+        # Overlapping broad lines need not make two local maxima: the weaker qubit
+        # can be only a shoulder on a stronger TLS.  Add a capped set of separated,
+        # high-residual shoulder proposals before the ordinary opposed confirmations.
+        "coarse_shoulder_fraction": 0.18,
+        "coarse_shoulder_separation_steps": 1.25,
+        "coarse_min_shoulder_candidates": 2,
+        # The high-power hardware line can be several MHz wide.  A narrow 6-MHz
+        # confirmation lets the smooth-baseline model absorb that line and reject a
+        # real transition, so retain the proven 20-MHz local spectroscopy window.
+        "confirmation_span_mhz": 20.0, "confirmation_points": 81,
+        "confirmation_shots": 60, "max_repeat_error_mhz": 0.60,
+        "confirmation_min_feature_snr": 4.0,
+        "confirmation_min_fit_r2": 0.25,
+        "confirmation_max_linewidth_mhz": 8.0,
+        "coarse_capture_mhz": 2.0,
+        "confirmation_neighbor_mask_mhz": 1.5,
+        "confirmation_neighbor_radius_mhz": 8.0,
+        # A physical single-line fit is preferred, but spectroscopy is a basin
+        # generator rather than the final control verdict.  Two fresh opposed scans
+        # with a strong, correlated complex response may provisionally seed Rabi when
+        # overlapping lines make every one-line linewidth fit hit its bound.
+        "confirmation_allow_provisional_seed": True,
+        "confirmation_provisional_min_snr": 4.0,
+        "confirmation_provisional_min_complex_correlation": 0.50,
+        "edge_guard_points": 2,
     },
     "iq_rabi": {
         "enabled": True, "local_span_mhz": 4.0,
         "freq_points_per_candidate": 5, "gain_min": 0, "gain_max": 30000,
         "gain_points": 31, "shots": 60, "min_r2": 0.55,
+        "witness_min_snr": 5.0, "witness_min_relative_contrast": 0.10,
         "fine_gain_points": 41, "shortlist": 4,
     },
     "rough_single_shot": {
@@ -260,9 +313,27 @@ BASIC_DEFAULTS = {
         "shortlist": 3, "confirm_shots": 700, "confirm_blocks": 2,
     },
     "coordinate_descent_repeat": True,
+    "control_verify": {
+        # The final single-shot histogram is not, by itself, proof of a coherent
+        # X180: a saturated transition can also produce two well-separated clouds.
+        # Audit the exact selected frequency/gain/sigma/DRAG tuple with alternating
+        # odd/even repeated pulses before it can be written.
+        "enabled": True, "pulse_counts": [1, 2, 3, 4, 5, 6],
+        "shots": 320, "calibration_shots": 500, "blocks": 2,
+        "minimum_binary_contrast": 0.30,
+        "max_even_return_error_ucb": 0.25,
+        "max_odd_inversion_error_ucb": 0.25,
+        "familywise_alpha": 0.05, "confidence_sigma": 1.96,
+    },
     "final": {
         "top_candidates": 3, "shots": 1200, "blocks": 3,
         "confidence_sigma": 1.96, "max_block_spread": 0.08,
+        # A statistically stable coin-flip classifier is still not a calibration.
+        # This gates writes only; the best measured tuple is always retained/reported.
+        "minimum_write_fidelity_lcb": 0.60,
+        # A saturation line plus a stable histogram does not prove coherent X180
+        # control.  Write authorization requires a repeated-pulse/Rabi witness bound
+        # to the exact selected frequency, gain, duration, and DRAG tuple.
         # Exact tuples whose confirmation batch was incomplete are audited regardless
         # of raw-score rank, so later coarse outliers cannot erase a real Rabi basin.
         "max_unconfirmed_contenders": 16,
@@ -305,6 +376,7 @@ _CONCISE_STAGE_START = {
     "leakage_verify": "Verifying leakage independently...",
     "final_safe": "Running the final screened validation...",
     "final_feedback": "Running the final active-reset validation...",
+    "final_control_verify": "Verifying coherent action of the selected pi pulse...",
 }
 
 
@@ -490,6 +562,16 @@ def _candidate_key(candidate):
         round(float(candidate["read_pulse_freq"]), 9),
         int(round(candidate["read_pulse_gain"])),
         round(float(candidate["read_length"]), 9),
+        round(float(candidate["qubit_pi_freq"]), 9),
+        int(round(candidate["qubit_pi_gain"])),
+        round(float(candidate["sigma"]), 9),
+        round(float(candidate.get("qubit_drag_beta", 0.0)), 9),
+    )
+
+
+def _control_key(candidate):
+    """Hardware-relevant identity of one physical X180 waveform."""
+    return (
         round(float(candidate["qubit_pi_freq"]), 9),
         int(round(candidate["qubit_pi_gain"])),
         round(float(candidate["sigma"]), 9),
@@ -788,7 +870,12 @@ class BasicSpecProgram(RAveragerProgram):
         self.r_freq = self.sreg(cfg["qubit_ch"], "freq")
         _declare_common(self, include_qubit=True)
         self.f_start = self.freq2reg(cfg["start"], gen_ch=cfg["qubit_ch"])
-        self.f_step = self.freq2reg(cfg["step"], gen_ch=cfg["qubit_ch"])
+        # Encode the magnitude and select +/- explicitly.  Passing a negative MHz
+        # value through freq2reg may produce a wrapped unsigned word too large for a
+        # tProc immediate; subtraction keeps reversed confirmation sweeps portable.
+        self.f_step = self.freq2reg(
+            abs(float(cfg["step"])), gen_ch=cfg["qubit_ch"])
+        self.f_step_operation = "+" if float(cfg["step"]) >= 0 else "-"
         self.set_pulse_registers(
             ch=cfg["qubit_ch"], style="const", freq=self.f_start, phase=0,
             gain=int(cfg["spec_gain"]),
@@ -806,7 +893,9 @@ class BasicSpecProgram(RAveragerProgram):
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
 
     def update(self):
-        self.mathi(self.q_rp, self.r_freq, self.r_freq, "+", self.f_step)
+        self.mathi(
+            self.q_rp, self.r_freq, self.r_freq,
+            self.f_step_operation, self.f_step)
 
 
 class BasicRabiProgram(RAveragerProgram):
@@ -859,6 +948,16 @@ class BasicSequenceProgram(AveragerProgram):
         cfg["reps"] = int(cfg.get("shots", cfg.get("reps", 200)))
         _declare_common(self, include_qubit=True)
         add_qubit_gaussian(self)
+        if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+            # The reset pulse is deliberately frozen to the independently validated
+            # control tuple while the candidate waveform is varied.  Declare both
+            # waveforms: referencing an undeclared ``qubit_reset`` happens to escape
+            # the virtual backend but fails during a real QICK program upload.
+            add_qubit_gaussian(
+                self, name="qubit_reset",
+                sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
+                drag_beta=float(cfg.get(
+                    "reset_pi_drag_beta", cfg.get("qubit_drag_beta", 0.0))))
         if any(op[0] == "pulse_at" and len(op) > 4
                and str(op[4]) == "gaussian"
                for op in cfg.get("sequence_ops", [])):
@@ -1012,7 +1111,17 @@ class BasicAutoTuner(ExperimentClass):
         self._key_evidence = {key: [] for key in TUNED_KEYS}
         self._resonator_seed = float(self.initial["read_pulse_freq"])
         self._discovery_readout = dict(self.initial)
-        self._spec_candidates_mhz = [float(self.initial["qubit_pi_freq"])]
+        # An input frequency is a value to replay, not evidence that a transition
+        # exists there.  Spectroscopy populates this list only with measured,
+        # independently reproduced features (unless spectroscopy is explicitly off).
+        self._spec_candidates_mhz = []
+        self._discovery_guard_active = False
+        self._discovery_status = {
+            "resonator": False,
+            "spectroscopy": False,
+        }
+        self._control_witnesses = []
+        self._final_control_verified_key = None
         self._rabi_candidates = []
         self._interrupted = False
         self._final_replay_completed = False
@@ -1047,6 +1156,8 @@ class BasicAutoTuner(ExperimentClass):
             "maps": self._maps,
             "stages": self._stages,
             "report": self._report,
+            "discovery": self._discovery_status,
+            "control_witnesses": self._control_witnesses,
             "confirmation_failures": [],
             "key_evidence": self._key_evidence,
             "eligible_tuned": {},
@@ -1277,8 +1388,10 @@ class BasicAutoTuner(ExperimentClass):
                     "ff_park_gain %d exceeds fast-flux generator range +/- %d"
                     % (park_gain, ff_max))
         # A dynamic park->hold excursion is a different experiment timing path.  The
-        # basic tuner supports any *static* park value, but it must not silently mix
-        # static stages with a pulsed-flux control stage.
+        # The basic tuner faithfully replays a *static* park value, but it must not
+        # silently mix static stages with a pulsed-flux control stage.  Frequency
+        # discovery coverage is a separate, explicitly configured relative prior or
+        # absolute device envelope.
         if int(cfg.get("ff_hold_gain", 0) or 0) != 0:
             raise ValueError(
                 "basic tuner calibrates the static ff_park_gain operating point; "
@@ -1415,6 +1528,8 @@ class BasicAutoTuner(ExperimentClass):
         elif name in ("final", "final_safe", "final_feedback"):
             text = self._candidate_console_text(result)
             print("  Validation complete%s." % ((": " + text) if text else ""))
+        elif name == "final_control_verify":
+            print("  Selected pi pulse passed the repeated-pulse check.")
         else:
             print("  Done.")
 
@@ -1949,6 +2064,37 @@ class BasicAutoTuner(ExperimentClass):
                 "complete": bool(complete),
             })
 
+    def _record_control_witness(self, stage, frequency_mhz, kind,
+                                candidate=None, **metrics):
+        """Archive coherent evidence, optionally bound to one exact waveform."""
+        try:
+            frequency = float(frequency_mhz)
+        except (TypeError, ValueError, OverflowError):
+            return
+        if not np.isfinite(frequency):
+            return
+        row = {
+            "stage": str(stage), "kind": str(kind),
+            "frequency_mhz": frequency,
+        }
+        if candidate is not None:
+            try:
+                control = {
+                    "qubit_pi_freq": float(candidate["qubit_pi_freq"]),
+                    "qubit_pi_gain": int(round(candidate["qubit_pi_gain"])),
+                    "sigma": float(candidate["sigma"]),
+                    "qubit_drag_beta": float(candidate.get(
+                        "qubit_drag_beta", 0.0)),
+                }
+                row["control_tuple"] = control
+                row["control_key"] = _control_key(control)
+            except (KeyError, TypeError, ValueError, OverflowError):
+                # Incomplete diagnostic witnesses remain useful in the saved report,
+                # but cannot authorize a write because they have no control key.
+                pass
+        row.update(metrics)
+        self._control_witnesses.append(row)
+
     def _key_has_evidence(self, key, value):
         for row in reversed(self._key_evidence.get(key, [])):
             measured = row.get("value")
@@ -2000,6 +2146,112 @@ class BasicAutoTuner(ExperimentClass):
             if np.isfinite(value):
                 axis[int(np.argmin(np.abs(axis - float(value))))] = float(value)
         return np.sort(np.unique(axis))
+
+    @staticmethod
+    def _bounded_axis(start, stop, nominal_step):
+        """Return one uniform, inclusive axis for an authorized absolute band."""
+        start, stop, nominal_step = map(float, (start, stop, nominal_step))
+        if not np.all(np.isfinite([start, stop, nominal_step])):
+            raise ValueError("frequency-search bounds must be finite")
+        if stop <= start or nominal_step <= 0:
+            raise ValueError("frequency-search bounds/step are invalid")
+        intervals = max(int(round((stop - start) / nominal_step)), 1)
+        return np.linspace(start, stop, intervals + 1, dtype=float)
+
+    def _frequency_discovery_plan(self, center, settings, adaptive=False):
+        """Build absolute or seed-relative search axes and acceptance bounds.
+
+        Relative scans include a small outer padding so a transition exactly at the
+        authorized +/-radius limit is an interior, fittable feature.  The acceptance
+        bounds remain unpadded, so the padding cannot silently enlarge the prior.
+        """
+        center = float(center)
+        search_min = settings.get("search_min_mhz")
+        search_max = settings.get("search_max_mhz")
+        absolute = search_min is not None or search_max is not None
+        if absolute:
+            if search_min is None or search_max is None:
+                raise ValueError(
+                    "search_min_mhz and search_max_mhz must be set together")
+            allowed_min, allowed_max = float(search_min), float(search_max)
+            axes = [self._bounded_axis(
+                allowed_min, allowed_max, settings["search_step_mhz"])]
+            return {
+                "axes": axes,
+                "acceptance_bounds": [(allowed_min, allowed_max)],
+                "allowed_min_mhz": allowed_min,
+                "allowed_max_mhz": allowed_max,
+                "mode": "absolute",
+                "configured_envelope": True,
+            }
+
+        radius = settings.get("search_radius_mhz")
+        if radius is None:
+            axis = self._float_axis(
+                center, settings["wide_span_mhz"], settings["wide_points"])
+            return {
+                "axes": [axis],
+                "acceptance_bounds": [(float(axis[0]), float(axis[-1]))],
+                "allowed_min_mhz": float(axis[0]),
+                "allowed_max_mhz": float(axis[-1]),
+                "mode": "legacy_local",
+                "configured_envelope": False,
+            }
+
+        radius = float(radius)
+        padding = float(settings.get("search_edge_padding_mhz", 0.0))
+        if (not np.all(np.isfinite([center, radius, padding]))
+                or radius <= 0 or padding < 0):
+            raise ValueError("relative frequency-search radius/padding is invalid")
+        radii = [radius]
+        if adaptive:
+            requested = settings.get("search_expansion_radii_mhz", [radius])
+            if not isinstance(requested, (list, tuple, np.ndarray)):
+                raise ValueError("search_expansion_radii_mhz must be a sequence")
+            radii = sorted(set(
+                float(value) for value in requested
+                if np.isfinite(float(value)) and 0 < float(value) <= radius))
+            if not radii or not math.isclose(
+                    radii[-1], radius, rel_tol=0.0, abs_tol=1e-12):
+                radii.append(radius)
+        axes, acceptance = [], []
+        for current_radius in radii:
+            scan_radius = current_radius + padding
+            axes.append(self._bounded_axis(
+                center - scan_radius, center + scan_radius,
+                settings["search_step_mhz"]))
+            acceptance.append((
+                center - current_radius, center + current_radius))
+        return {
+            "axes": axes,
+            "acceptance_bounds": acceptance,
+            "allowed_min_mhz": center - radius,
+            "allowed_max_mhz": center + radius,
+            "mode": "relative_prior",
+            "configured_envelope": True,
+            "center_mhz": center,
+            "radius_mhz": radius,
+            "padding_mhz": padding,
+        }
+
+    @staticmethod
+    def _contained_centered_axis(center, span, points, lower=None, upper=None):
+        """Build a centered axis, shifted inward to remain inside optional bounds."""
+        center, span = float(center), float(span)
+        points = max(int(points), 3)
+        if points % 2 == 0:
+            points += 1
+        if not np.all(np.isfinite([center, span])) or span <= 0:
+            raise ValueError("confirmation center/span are invalid")
+        if lower is not None or upper is not None:
+            if lower is None or upper is None:
+                raise ValueError("both confirmation bounds are required")
+            lower, upper = float(lower), float(upper)
+            if upper <= lower or span > upper - lower + 1e-12:
+                raise ValueError("confirmation span exceeds the authorized band")
+            center = float(np.clip(
+                center, lower + span / 2.0, upper - span / 2.0))
+        return np.linspace(center - span / 2.0, center + span / 2.0, points)
 
     @staticmethod
     def _gain_axis(start, stop, points, include=()):
@@ -2166,6 +2418,292 @@ class BasicAutoTuner(ExperimentClass):
             pass
         return float(x[index])
 
+    @classmethod
+    def _resonator_feature(cls, freqs, response, polarity="dip",
+                           edge_guard_points=2, min_snr=3.0,
+                           min_relative_contrast=0.002,
+                           min_feature_width_mhz=0.04,
+                           max_feature_width_mhz=2.0):
+        """Find a detrended, interior resonator feature without accepting a slope.
+
+        A raw magnitude argmin is not a resonator detector: on a scan that misses the
+        device, cable slope or the remote tail of a notch necessarily puts the argmin
+        at an edge.  This routine iteratively fits the smooth background, scores only
+        the residual feature, and keeps boundary/contrast checks explicit so callers
+        can archive a rejected scan without calling it a found resonator.
+        """
+        freqs = np.asarray(freqs, dtype=float)
+        response = np.asarray(response, dtype=complex)
+        if freqs.ndim != 1 or response.shape != freqs.shape or freqs.size < 9:
+            raise ValueError("invalid resonator trace")
+        magnitude = np.abs(response)
+        finite = np.isfinite(freqs) & np.isfinite(magnitude)
+        if np.count_nonzero(finite) < max(9, int(math.ceil(0.9 * freqs.size))):
+            raise ValueError("resonator trace has insufficient finite coverage")
+        span = float(freqs[-1] - freqs[0])
+        if not np.isfinite(span) or span <= 0:
+            raise ValueError("resonator frequency axis is invalid")
+        x = 2.0 * (freqs - freqs[0]) / span - 1.0
+        mask = finite.copy()
+        baseline = np.full(freqs.size, np.nan, dtype=float)
+        sign = -1.0 if str(polarity).strip().lower() == "peak" else 1.0
+        # For a dip, signed = baseline - magnitude; for a peak the sign reverses.
+        for _ in range(5):
+            degree = min(2, int(np.count_nonzero(mask)) - 1)
+            if degree < 1:
+                break
+            coefficients = np.polyfit(x[mask], magnitude[mask], degree)
+            baseline = np.polyval(coefficients, x)
+            signed = sign * (baseline - magnitude)
+            centre = float(np.nanmedian(signed[mask]))
+            scale = max(
+                _robust_scale(signed[mask]),
+                np.finfo(float).eps * max(
+                    float(np.nanmedian(np.abs(magnitude[mask]))), 1.0),
+            )
+            # Remove a positive feature from the next background fit while retaining
+            # ordinary negative residuals and slow baseline structure.
+            next_mask = finite & (signed <= centre + 2.5 * scale)
+            if (np.count_nonzero(next_mask) < max(7, freqs.size // 2)
+                    or np.array_equal(next_mask, mask)):
+                break
+            mask = next_mask
+        if not np.all(np.isfinite(baseline[finite])):
+            raise ValueError("resonator background fit failed")
+        feature = sign * (baseline - magnitude)
+        smoothed_feature = cls._smooth_trace(feature)
+        smoothed_magnitude = cls._smooth_trace(magnitude)
+        guard = int(np.clip(
+            int(edge_guard_points), 1, max((freqs.size - 3) // 2, 1)))
+        searchable = np.arange(guard, freqs.size - guard, dtype=int)
+        searchable = searchable[np.isfinite(smoothed_feature[searchable])]
+        if searchable.size < 3:
+            raise ValueError("resonator trace has no searchable interior")
+        index = int(searchable[int(np.nanargmax(smoothed_feature[searchable]))])
+        exclusion = max(2, freqs.size // 30)
+        background_indices = searchable[np.abs(searchable - index) > exclusion]
+        if background_indices.size < 3:
+            background_indices = searchable[searchable != index]
+        floor = float(np.nanmedian(smoothed_feature[background_indices]))
+        numerical_floor = np.finfo(float).eps * max(
+            float(np.nanmedian(np.abs(magnitude[background_indices]))), 1.0)
+        noise = max(
+            _robust_scale(smoothed_feature[background_indices] - floor),
+            numerical_floor,
+        )
+        height = float(smoothed_feature[index] - floor)
+        snr = float(height / noise)
+        relative = float(height / max(
+            float(np.nanmedian(np.abs(magnitude[background_indices]))), 1e-15))
+        profile = smoothed_feature - floor
+        half_height = 0.5 * height
+        left = index
+        while left > 0 and profile[left] > half_height:
+            left -= 1
+        right = index
+        while right < freqs.size - 1 and profile[right] > half_height:
+            right += 1
+        two_sided = bool(left > 0 and right < freqs.size - 1
+                         and left < index < right)
+        feature_width = (float(freqs[right] - freqs[left])
+                         if two_sided else np.inf)
+        at_boundary = bool(
+            index <= guard or index >= freqs.size - 1 - guard)
+        seed = cls._parabolic_vertex(freqs, smoothed_feature, index)
+        valid = bool(
+            np.all(finite)
+            and not at_boundary
+            and np.isfinite(snr) and snr >= float(min_snr)
+            and np.isfinite(relative)
+            and relative >= float(min_relative_contrast)
+            and two_sided
+            and feature_width >= float(min_feature_width_mhz)
+            and feature_width <= float(max_feature_width_mhz))
+        reasons = []
+        if not np.all(finite):
+            reasons.append("incomplete trace")
+        if at_boundary:
+            reasons.append("feature is at the search boundary")
+        if not np.isfinite(snr) or snr < float(min_snr):
+            reasons.append("contrast SNR %.2f is below %.2f" % (snr, min_snr))
+        if (not np.isfinite(relative)
+                or relative < float(min_relative_contrast)):
+            reasons.append("relative contrast %.4g is below %.4g"
+                           % (relative, min_relative_contrast))
+        if not two_sided:
+            reasons.append("feature has no two-sided half-height crossings")
+        elif (feature_width < float(min_feature_width_mhz)
+              or feature_width > float(max_feature_width_mhz)):
+            reasons.append("feature width %.4f MHz is outside %.4f..%.4f MHz"
+                           % (feature_width, min_feature_width_mhz,
+                              max_feature_width_mhz))
+        return {
+            "frequency_mhz": float(seed), "index": index,
+            "valid": valid, "failure": "; ".join(reasons),
+            "at_boundary": at_boundary, "contrast_snr": snr,
+            "relative_contrast": relative, "feature_height": height,
+            "feature_width_mhz": feature_width,
+            "magnitude": magnitude, "smoothed_magnitude": smoothed_magnitude,
+            "baseline_magnitude": baseline, "feature": feature,
+            "smoothed_feature": smoothed_feature,
+        }
+
+    @staticmethod
+    def _significant_spectral_rows(freqs, features, min_snr,
+                                   edge_guard_points=2):
+        """Return only measured, significant, non-boundary spectral peaks."""
+        freqs = np.asarray(freqs, dtype=float)
+        guard = int(np.clip(
+            int(edge_guard_points), 1, max((freqs.size - 3) // 2, 1)))
+        rows = []
+        for position, index in enumerate(features.get("candidate_indices", [])):
+            index = int(index)
+            if index <= guard or index >= freqs.size - 1 - guard:
+                continue
+            try:
+                snr = float(features["snr_trace"][index])
+            except (IndexError, KeyError, TypeError, ValueError):
+                continue
+            if not np.isfinite(snr) or snr < float(min_snr):
+                continue
+            rows.append({
+                "frequency": float(freqs[index]), "index": index,
+                "score": snr, "rank": int(position),
+            })
+        return rows
+
+    @staticmethod
+    def _spectral_shoulder_rows(freqs, features, existing_rows, min_snr,
+                                maximum_rows, relative_floor=0.18,
+                                separation_steps=1.25,
+                                edge_guard_points=2):
+        """Add separated high-residual bins that need not be local maxima.
+
+        Two power-broadened transitions a few MHz apart can merge into one maximum,
+        so ``find_peaks`` alone systematically drops the weaker line.  These are only
+        *proposals*: every added shoulder still has to survive two opposed, fresh,
+        high-resolution scans and the physical complex-line fit.  The global cap keeps
+        the confirmation workload identical to the configured candidate budget.
+        """
+        freqs = np.asarray(freqs, dtype=float)
+        snr_trace = np.asarray(features.get("snr_trace", []), dtype=float)
+        if freqs.ndim != 1 or snr_trace.shape != freqs.shape or freqs.size < 5:
+            return []
+        guard = int(np.clip(
+            int(edge_guard_points), 1, max((freqs.size - 3) // 2, 1)))
+        interior = np.arange(guard + 1, freqs.size - 1 - guard, dtype=int)
+        finite = interior[np.isfinite(snr_trace[interior])]
+        if not finite.size:
+            return []
+        strongest = float(np.max(snr_trace[finite]))
+        threshold = max(float(min_snr), float(relative_floor) * strongest)
+        step = abs(float(np.median(np.diff(freqs))))
+        separation = max(float(separation_steps) * step, step)
+        selected = [dict(row) for row in existing_rows]
+        additions = []
+        for index in finite[np.argsort(snr_trace[finite])[::-1]]:
+            score = float(snr_trace[index])
+            if score < threshold:
+                break
+            if len(additions) >= max(int(maximum_rows), 1):
+                break
+            frequency = float(freqs[index])
+            if any(abs(frequency - float(row["frequency"])) <= separation
+                   for row in selected):
+                continue
+            row = {
+                "frequency": frequency, "index": int(index),
+                "score": score, "rank": len(selected),
+                "proposal_kind": "shoulder",
+            }
+            selected.append(row)
+            additions.append(row)
+        return additions
+
+    @staticmethod
+    def _retain_spectral_proposal_mix(rows, maximum_rows,
+                                      minimum_shoulders=2):
+        """Cap discovery work without letting ordinary peaks crowd every shoulder."""
+        ranked = sorted(rows, key=lambda row: float(row["score"]), reverse=True)
+        limit = max(int(maximum_rows), 1)
+        shoulder_limit = int(np.clip(int(minimum_shoulders), 0, limit))
+        chosen = [row for row in ranked
+                  if row.get("proposal_kind") == "shoulder"][:shoulder_limit]
+        for row in ranked:
+            if len(chosen) >= limit:
+                break
+            if row not in chosen:
+                chosen.append(row)
+        return sorted(chosen, key=lambda row: float(row["score"]), reverse=True)
+
+    @staticmethod
+    def _opposed_provisional_spectral_seed(freqs, passes, pass_features,
+                                           center_hint_mhz, capture_mhz,
+                                           min_snr=4.0,
+                                           min_complex_correlation=0.5):
+        """Nonparametric, two-pass basin evidence for an overlapped line.
+
+        This deliberately returns the independently discovered coarse hint rather
+        than pretending a shoulder has a trustworthy one-line center.  The following
+        Rabi map supplies the coherent frequency estimate; final exact repeated-pulse
+        validation remains mandatory for any write.
+        """
+        freqs = np.asarray(freqs, dtype=float)
+        traces = np.asarray(passes, dtype=complex)
+        if (freqs.ndim != 1 or traces.shape != (2, freqs.size)
+                or len(pass_features) != 2):
+            return {"valid": False, "failure": "opposed traces are incomplete"}
+        capture = float(capture_mhz)
+        basin = np.flatnonzero(
+            np.abs(freqs - float(center_hint_mhz)) <= capture)
+        if basin.size < 5:
+            return {"valid": False, "failure": "provisional basin is too small"}
+        step = abs(float(np.median(np.diff(freqs))))
+        offset = freqs - float(center_hint_mhz)
+        half_span = float(np.max(np.abs(offset)))
+        flank = np.flatnonzero(
+            np.abs(offset) >= max(capture + 2.0 * step, 0.65 * half_span))
+        if flank.size < 8:
+            return {"valid": False,
+                    "failure": "provisional scan has too little far-off baseline"}
+        design = np.column_stack((np.ones(flank.size), offset[flank]))
+        pass_snr = []
+        residuals = []
+        for trace, features in zip(traces, pass_features):
+            del features
+            coefficients_real = np.linalg.lstsq(
+                design, trace.real[flank], rcond=None)[0]
+            coefficients_imag = np.linalg.lstsq(
+                design, trace.imag[flank], rcond=None)[0]
+            full_design = np.column_stack((np.ones(freqs.size), offset))
+            baseline = ((full_design @ coefficients_real)
+                        + 1j * (full_design @ coefficients_imag))
+            residual = np.asarray(trace - baseline, complex)
+            noise = max(_robust_scale(np.concatenate((
+                residual.real[flank], residual.imag[flank]))), 1e-15)
+            pass_snr.append(float(np.max(np.abs(residual[basin])) / noise))
+            residuals.append(np.asarray(residual[basin], complex))
+        norm = float(np.linalg.norm(residuals[0]) * np.linalg.norm(residuals[1]))
+        correlation = (float(abs(np.vdot(residuals[0], residuals[1])) / norm)
+                       if norm > 1e-15 else 0.0)
+        valid = bool(
+            np.all(np.isfinite(pass_snr))
+            and min(pass_snr) >= float(min_snr)
+            and np.isfinite(correlation)
+            and correlation >= float(min_complex_correlation))
+        failures = []
+        if not np.all(np.isfinite(pass_snr)) or min(pass_snr) < float(min_snr):
+            failures.append("opposed point SNR is below threshold")
+        if (not np.isfinite(correlation)
+                or correlation < float(min_complex_correlation)):
+            failures.append("opposed complex response is not correlated")
+        return {
+            "valid": valid, "failure": "; ".join(failures),
+            "frequency_mhz": float(center_hint_mhz),
+            "pass_snr": tuple(pass_snr),
+            "complex_correlation": correlation,
+        }
+
     @staticmethod
     def _spectral_features(freqs, response, max_candidates=3):
         freqs = np.asarray(freqs, float)
@@ -2207,6 +2745,194 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     @staticmethod
+    def _fit_complex_spectral_line(freqs, response, center_hint_mhz,
+                                   capture_mhz, min_snr=4.0, min_r2=0.25,
+                                   max_linewidth_mhz=8.0,
+                                   excluded_centers_mhz=(),
+                                   exclusion_half_width_mhz=1.5):
+        """Fit physical spectroscopy line hypotheses on a complex background.
+
+        Peak-bin matching is unstable for the several-MHz-wide, power-broadened line
+        observed on this device.  A joint I/Q fit uses the whole local profile and
+        provides a center uncertainty, linewidth, and background-model improvement.
+        Saturation spectroscopy can appear either as a symmetric excited-population
+        Lorentzian along one IQ direction or as a dispersive complex pole, depending
+        on the pulse/readout regime.  Both equal-parameter hypotheses are fitted; the
+        lower-residual one is retained instead of baking one virtual-device line shape
+        into the hardware acceptance test.
+        The fit is a confirmation/centering primitive only; coherent Rabi and direct
+        single-shot measurements still decide whether the line is controllable.
+        """
+        freqs = np.asarray(freqs, dtype=float)
+        response = np.asarray(response, dtype=complex)
+        acquired_finite = np.isfinite(freqs) & np.isfinite(response.real) \
+            & np.isfinite(response.imag)
+        if (freqs.ndim != 1 or response.shape != freqs.shape
+                or np.count_nonzero(acquired_finite)
+                < max(15, int(0.9 * freqs.size))):
+            return {"valid": False, "failure": "incomplete complex line trace"}
+        finite = acquired_finite.copy()
+        exclusion_half_width = max(float(exclusion_half_width_mhz), 0.0)
+        if exclusion_half_width > 0:
+            for excluded_center in excluded_centers_mhz:
+                try:
+                    excluded_center = float(excluded_center)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if not np.isfinite(excluded_center):
+                    continue
+                target_distance = np.abs(freqs - float(center_hint_mhz))
+                neighbor_distance = np.abs(freqs - excluded_center)
+                # Assign each measured point to its nearest independently detected
+                # coarse line (a one-dimensional Voronoi mask).  Merely deleting the
+                # neighbor's central bins leaves its broad tails to drag a one-line
+                # fit several MHz; the nearest-basin mask retains the target-facing
+                # half profile and lets the neighbor tail enter only as smooth
+                # background.  Remove the neighbor core as an additional guard.
+                finite &= target_distance <= neighbor_distance
+                finite &= ~(
+                    (neighbor_distance <= exclusion_half_width)
+                    & (target_distance > 0.5 * exclusion_half_width))
+        if np.count_nonzero(finite) < 15:
+            return {"valid": False,
+                    "failure": "too few points remain after neighbor masking"}
+        x = freqs[finite] - float(center_hint_mhz)
+        z = response[finite]
+        if x.size < 2 or not np.all(np.diff(x) > 0):
+            return {"valid": False, "failure": "line-fit axis is not increasing"}
+        capture = float(capture_mhz)
+        step = abs(float(np.median(np.diff(x))))
+        if not np.isfinite(capture) or capture <= step:
+            return {"valid": False, "failure": "line-fit capture range is invalid"}
+        design = np.column_stack((np.ones(x.size), x))
+        baseline_real = np.linalg.lstsq(design, z.real, rcond=None)[0]
+        baseline_imag = np.linalg.lstsq(design, z.imag, rcond=None)[0]
+        baseline = (design @ baseline_real) + 1j * (design @ baseline_imag)
+        residual = z - baseline
+        capture_indices = np.flatnonzero(np.abs(x) <= capture)
+        if capture_indices.size < 3:
+            return {"valid": False, "failure": "line-fit capture has too few points"}
+        strongest = int(capture_indices[
+            int(np.nanargmax(np.abs(residual[capture_indices])))])
+
+        def packed_model(kind):
+            def model(axis, c0r, c0i, c1r, c1i, ar, ai,
+                      center_offset, linewidth):
+                normalized = 2.0 * (axis - center_offset) / linewidth
+                if kind == "population_lorentzian":
+                    profile = 1.0 / (1.0 + normalized * normalized)
+                elif kind == "complex_pole":
+                    profile = 1.0 / (1.0 + 1j * normalized)
+                else:  # pragma: no cover - closed internal model set
+                    raise ValueError("unknown spectroscopy line model")
+                line = (ar + 1j * ai) * profile
+                value = ((c0r + 1j * c0i)
+                         + (c1r + 1j * c1i) * axis + line)
+                return np.concatenate((value.real, value.imag))
+            return model
+
+        target = np.concatenate((z.real, z.imag))
+        linewidth_min = max(0.5 * step, 0.02)
+        linewidth_max = min(
+            float(freqs[finite][-1] - freqs[finite][0]),
+            float(max_linewidth_mhz))
+        if linewidth_max <= linewidth_min:
+            return {"valid": False, "failure": "line-fit linewidth bounds are invalid"}
+        lower = np.asarray(
+            [-np.inf] * 6 + [-capture, linewidth_min], dtype=float)
+        upper = np.asarray(
+            [np.inf] * 6 + [capture, linewidth_max], dtype=float)
+        center_guesses = [float(x[strongest]), 0.0]
+        linewidth_guesses = [
+            max(2.0 * step, 0.2), 0.5, 1.0, 2.0, 4.0,
+            min(0.8 * linewidth_max, 6.0),
+        ]
+        best = None
+        for model_kind in ("population_lorentzian", "complex_pole"):
+            model = packed_model(model_kind)
+            for center_guess in center_guesses:
+                center_guess = float(np.clip(
+                    center_guess, -0.98 * capture, 0.98 * capture))
+                for linewidth_guess in linewidth_guesses:
+                    linewidth_guess = float(np.clip(
+                        linewidth_guess, 1.01 * linewidth_min,
+                        0.99 * linewidth_max))
+                    normalized = (2.0 * (x[strongest] - center_guess)
+                                  / linewidth_guess)
+                    profile = (
+                        1.0 / (1.0 + normalized * normalized)
+                        if model_kind == "population_lorentzian"
+                        else 1.0 / (1.0 + 1j * normalized))
+                    amplitude = residual[strongest] / profile
+                    guess = np.asarray([
+                        baseline_real[0], baseline_imag[0],
+                        baseline_real[1], baseline_imag[1],
+                        amplitude.real, amplitude.imag,
+                        center_guess, linewidth_guess,
+                    ], dtype=float)
+                    try:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore", OptimizeWarning)
+                            fitted, covariance = curve_fit(
+                                model, x, target, p0=guess,
+                                bounds=(lower, upper), maxfev=20000)
+                        fit_target = model(x, *fitted)
+                        rss = float(np.sum((target - fit_target) ** 2))
+                        if np.isfinite(rss) and (best is None or rss < best[0]):
+                            best = (rss, fitted, covariance, fit_target,
+                                    model_kind)
+                    except (RuntimeError, ValueError, FloatingPointError,
+                            np.linalg.LinAlgError):
+                        continue
+        if best is None:
+            return {"valid": False, "failure": "complex line fit did not converge"}
+        rss, fitted, covariance, fit_target, model_kind = best
+        baseline_target = np.concatenate((baseline.real, baseline.imag))
+        baseline_rss = float(np.sum((target - baseline_target) ** 2))
+        r2 = float(1.0 - rss / max(baseline_rss, 1e-30))
+        dof = max(2 * x.size - fitted.size, 1)
+        noise = math.sqrt(max(rss, 0.0) / dof)
+        amplitude = float(math.hypot(fitted[4], fitted[5]))
+        snr = float(amplitude / max(noise, 1e-15))
+        center = float(center_hint_mhz + fitted[6])
+        linewidth = float(fitted[7])
+        try:
+            center_se = float(math.sqrt(max(float(covariance[6, 6]), 0.0)))
+        except (IndexError, TypeError, ValueError):
+            center_se = np.inf
+        bound_margin = max(step, 0.05 * capture)
+        interior = bool(abs(float(fitted[6])) <= capture - bound_margin)
+        linewidth_interior = bool(
+            linewidth > 1.02 * linewidth_min
+            and linewidth < 0.98 * linewidth_max)
+        valid = bool(
+            interior and linewidth_interior
+            and np.isfinite(center_se)
+            and np.isfinite(snr) and snr >= float(min_snr)
+            and np.isfinite(r2) and r2 >= float(min_r2))
+        failures = []
+        if not interior:
+            failures.append("fit center reached the capture boundary")
+        if not linewidth_interior:
+            failures.append("fit linewidth reached a bound")
+        if not np.isfinite(center_se):
+            failures.append("fit center uncertainty is nonfinite")
+        if not np.isfinite(snr) or snr < float(min_snr):
+            failures.append("line SNR %.2f is below %.2f" % (snr, min_snr))
+        if not np.isfinite(r2) or r2 < float(min_r2):
+            failures.append("line fit r2 %.3f is below %.3f" % (r2, min_r2))
+        fitted_complex = (
+            fit_target[:x.size] + 1j * fit_target[x.size:])
+        return {
+            "valid": valid, "failure": "; ".join(failures),
+            "frequency_mhz": center, "frequency_se_mhz": center_se,
+            "linewidth_mhz": linewidth, "snr": snr, "r2": r2,
+            "amplitude": amplitude, "model": model_kind,
+            "fit_response": fitted_complex,
+            "residual_response": z - fitted_complex,
+        }
+
+    @staticmethod
     def _reproduced_spectral_seed(freqs, combined, individual, max_error_mhz,
                                   min_combined_snr):
         """Associate one significant spectral feature across two opposed passes.
@@ -2222,7 +2948,7 @@ class BasicAutoTuner(ExperimentClass):
             raise RuntimeError("opposed spectroscopy passes are incomplete")
         maximum_error = float(max_error_mhz)
         minimum_combined = float(min_combined_snr)
-        minimum_individual = max(1.5, 0.5 * minimum_combined)
+        minimum_individual = max(1.5, minimum_combined)
         matches = []
         for left_position, left_frequency in enumerate(
                 individual[0].get("candidates_mhz", [])):
@@ -2340,6 +3066,12 @@ class BasicAutoTuner(ExperimentClass):
         index = low_index
         frequency = self._parabolic_vertex(freqs, populations, index)
         seed = _with_candidate(incumbent, qubit_pi_freq=float(frequency))
+        self._record_control_witness(
+            stage, frequency, "inverse_pair_pseudoidentity",
+            candidate=seed,
+            contrast_sigma=float(contrast_sigma),
+            pairs=int(params["pairs"]),
+        )
         return {
             "stage": stage, "frequencies": freqs,
             "populations": populations, "index": index, "seed": seed,
@@ -2440,6 +3172,13 @@ class BasicAutoTuner(ExperimentClass):
         seed = _with_candidate(
             incumbent, qubit_pi_freq=float(freqs[index[0]]),
             qubit_pi_gain=int(gains[index[1]]))
+        self._record_control_witness(
+            stage, seed["qubit_pi_freq"], "odd_even_repeated_pulses",
+            candidate=seed,
+            contrast_sigma=float(contrast_sigma),
+            depth_median=float(depth_median),
+            consistent_depth_fraction=float(depth_consistent_fraction),
+        )
         return {
             "stage": stage, "frequencies": freqs, "gains": gains,
             "score": score, "populations": populations,
@@ -2463,22 +3202,25 @@ class BasicAutoTuner(ExperimentClass):
         if not p.get("enabled", True):
             self._log("resonator", "SKIP", "disabled")
             return None
-        def run(span, points, readout):
-            axis = self._float_axis(
-                self.initial["read_pulse_freq"], span, points,
-                include=[self.initial["read_pulse_freq"]])
-            response = self._acquire_transmission(axis, readout, p["shots"])
-            amplitude = np.abs(response)
-            smooth = self._smooth_trace(amplitude)
-            if str(p.get("polarity", "dip")).lower() == "peak":
-                idx = int(np.nanargmax(smooth))
-                fit = -smooth
-            else:
-                idx = int(np.nanargmin(smooth))
-                fit = smooth
-            noise = max(_robust_scale(amplitude - smooth), 1e-15)
-            snr = float(np.ptp(smooth) / noise)
-            return axis, response, amplitude, smooth, idx, fit, snr
+
+        plan = self._frequency_discovery_plan(
+            self.initial["read_pulse_freq"], p, adaptive=True)
+        search_axes = plan["axes"]
+        acceptance_bounds = plan["acceptance_bounds"]
+        bounded = bool(plan["configured_envelope"])
+
+        def run(axis, readout, shots):
+            response = self._acquire_transmission(axis, readout, int(shots))
+            feature = self._resonator_feature(
+                axis, response, polarity=p.get("polarity", "dip"),
+                edge_guard_points=p.get("edge_guard_points", 2),
+                min_snr=p.get("min_contrast_snr", 3.0),
+                min_relative_contrast=p.get("min_relative_contrast", 0.002),
+                min_feature_width_mhz=p.get(
+                    "min_feature_width_mhz", 0.04),
+                max_feature_width_mhz=p.get(
+                    "max_feature_width_mhz", 2.0))
+            return np.asarray(response, complex), feature
 
         safe = _with_candidate(
             self.working,
@@ -2487,171 +3229,660 @@ class BasicAutoTuner(ExperimentClass):
             read_length=max(float(p.get(
                 "discovery_length_us", self.working["read_length"])), 0.1),
         )
-        # Safe bootstrap wins exact ties; normalized contrast SNR can be identical at
-        # two gains even though the near-zero input trace has unusably small absolute IQ.
+        # The known-safe bootstrap is tried first.  A distinct input readout is only a
+        # fallback if that trace has no validated feature, avoiding two full scans in
+        # the ordinary case while still tolerating an unsuitable discovery power.
         trial_candidates = _unique_candidates([safe, self.working])
         trials = []
+        selected = None
+        confirmation_points = max(int(p.get("confirmation_points", 81)), 9)
+        confirmation_span = float(p.get("confirmation_span_mhz", 4.0))
+        shift_limit = float(p.get("max_confirmation_shift_mhz", 0.25))
+        width_ratio_limit = float(p.get(
+            "max_confirmation_width_ratio", 2.5))
         for trial in trial_candidates:
-            try:
-                result = run(p["span_mhz"], p["points"], trial)
-                trials.append((float(result[-1]), trial, result))
-            except KeyboardInterrupt:
-                raise
-            except Exception as exc:
-                self._log(
-                    "resonator", "WARN",
-                    "bootstrap readout %d DAC/%.1f us failed (%s: %s)"
-                    % (trial["read_pulse_gain"], trial["read_length"],
-                       type(exc).__name__, exc))
-        if not trials:
-            raise RuntimeError("all resonator bootstrap settings failed")
-        _, discovery, local_result = max(trials, key=lambda row: row[0])
-        freqs, z, mag, smoothed, index, fit_values, snr = local_result
-        local_seed = self._parabolic_vertex(freqs, fit_values, index)
-        used_wide = bool(p.get("always_wide", True)
-                         or index <= 1 or index >= freqs.size - 2
-                         or snr < float(p.get("min_contrast_snr", 3.0)))
-        if used_wide:
-            self._log("resonator",
-                      "OK" if p.get("always_wide", True) else "WARN",
-                      "checking the full %.1f MHz span with bootstrap readout %d DAC/%.1f us"
-                      % (p["wide_span_mhz"], discovery["read_pulse_gain"],
-                         discovery["read_length"]))
-            wide_result = run(
-                p["wide_span_mhz"], p["wide_points"], discovery)
-            wide_freqs, wide_z, wide_mag, wide_smoothed, wide_index, \
-                wide_fit_values, wide_snr = wide_result
-            wide_seed = self._parabolic_vertex(
-                wide_freqs, wide_fit_values, wide_index)
-            # Prefer the finer local estimate only when the wide scan independently
-            # places the same response inside that local basin.
-            local_step = abs(float(np.median(np.diff(freqs))))
-            if abs(local_seed - wide_seed) <= max(2.0 * local_step, 0.15):
-                seed = local_seed
-            else:
-                seed = wide_seed
-                freqs, z, mag, smoothed, index, fit_values, snr = wide_result
-        else:
-            seed = local_seed
+            for search_index, (coarse_axis, acceptance) in enumerate(zip(
+                    search_axes, acceptance_bounds)):
+                accept_min, accept_max = map(float, acceptance)
+                row = {
+                    "candidate": dict(trial), "axis": coarse_axis,
+                    "search_index": int(search_index),
+                    "acceptance_bounds_mhz": (accept_min, accept_max),
+                    "response": None, "feature": None,
+                    "confirmation_axis": None,
+                    "confirmation_response": None,
+                    "confirmation_feature": None,
+                    "confirmation_shift_mhz": np.inf,
+                    "confirmation_width_ratio": np.inf,
+                    "confirmation_valid": False, "error": None,
+                }
+                try:
+                    response, feature = run(coarse_axis, trial, p["shots"])
+                    row.update({"response": response, "feature": feature})
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    row["error"] = "%s: %s" % (type(exc).__name__, exc)
+                    self._log(
+                        "resonator", "WARN",
+                        "bootstrap readout %d DAC/%.1f us failed (%s: %s)"
+                        % (trial["read_pulse_gain"], trial["read_length"],
+                           type(exc).__name__, exc))
+                    trials.append(row)
+                    continue
+                if not row["feature"]["valid"]:
+                    row["error"] = row["feature"]["failure"]
+                    trials.append(row)
+                    continue
+                coarse_seed = float(row["feature"]["frequency_mhz"])
+                if not accept_min <= coarse_seed <= accept_max:
+                    row["error"] = (
+                        "feature %.6f MHz lies only in fit padding outside the "
+                        "current search radius" % coarse_seed)
+                    trials.append(row)
+                    continue
+                try:
+                    confirmation_axis = self._contained_centered_axis(
+                        coarse_seed, confirmation_span, confirmation_points,
+                        lower=float(coarse_axis[0]) if bounded else None,
+                        upper=float(coarse_axis[-1]) if bounded else None)
+                    confirmation_response, confirmation_feature = run(
+                        confirmation_axis, trial,
+                        p.get("confirmation_shots", p["shots"]))
+                    confirmed_seed = float(
+                        confirmation_feature["frequency_mhz"])
+                    shift = abs(confirmed_seed - coarse_seed)
+                    coarse_width = float(row["feature"]["feature_width_mhz"])
+                    confirmation_width = float(
+                        confirmation_feature["feature_width_mhz"])
+                    width_ratio = (
+                        max(coarse_width, confirmation_width)
+                        / max(min(coarse_width, confirmation_width), 1e-15))
+                    confirmation_valid = bool(
+                        confirmation_feature["valid"]
+                        and accept_min <= confirmed_seed <= accept_max
+                        and shift <= shift_limit
+                        and width_ratio <= width_ratio_limit + 1e-9)
+                    row.update({
+                        "confirmation_axis": confirmation_axis,
+                        "confirmation_response": confirmation_response,
+                        "confirmation_feature": confirmation_feature,
+                        "confirmation_shift_mhz": float(shift),
+                        "confirmation_width_ratio": float(width_ratio),
+                        "confirmation_valid": confirmation_valid,
+                    })
+                    if not confirmation_valid:
+                        reasons = [confirmation_feature["failure"]]
+                        if not accept_min <= confirmed_seed <= accept_max:
+                            reasons.append(
+                                "confirmed centre is outside the current search radius")
+                        if shift > shift_limit:
+                            reasons.append(
+                                "coarse/fine centres differ by %.3f MHz (limit %.3f)"
+                                % (shift, shift_limit))
+                        if width_ratio > width_ratio_limit:
+                            reasons.append(
+                                "coarse/fine widths differ by %.2fx (limit %.2fx)"
+                                % (width_ratio, width_ratio_limit))
+                        row["error"] = "; ".join(
+                            reason for reason in reasons if reason)
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    row["error"] = "%s: %s" % (type(exc).__name__, exc)
+                trials.append(row)
+                if row["confirmation_valid"]:
+                    selected = row
+                    break
+            if selected is not None:
+                break
+
+        completed = [row for row in trials if row["feature"] is not None]
+        representative = (max(
+            completed,
+            key=lambda row: (
+                bool(row["confirmation_valid"]),
+                bool(row["feature"]["valid"]),
+                float(row["feature"]["contrast_snr"]),
+                float(row["feature"]["relative_contrast"])))
+            if completed else None)
+        mapped = selected if selected is not None else representative
+        coarse_axis = (mapped["axis"] if mapped is not None else search_axes[-1])
+        mapped_feature = mapped["feature"] if mapped is not None else None
+        mapped_confirmation = (
+            mapped["confirmation_feature"] if mapped is not None else None)
+        mapped_confirmation_axis = (
+            mapped["confirmation_axis"] if mapped is not None else None)
+        self._maps["resonator"] = {
+            "axes": {
+                "read_frequency_mhz": coarse_axis,
+                "confirmation_frequency_mhz": (
+                    mapped_confirmation_axis
+                    if mapped_confirmation_axis is not None else
+                    np.empty((0,), dtype=float)),
+            },
+            "magnitude": (
+                mapped_feature["magnitude"] if mapped_feature is not None
+                else np.full(coarse_axis.size, np.nan)),
+            "smoothed_magnitude": (
+                mapped_feature["smoothed_magnitude"] if mapped_feature is not None
+                else np.full(coarse_axis.size, np.nan)),
+            "baseline_magnitude": (
+                mapped_feature["baseline_magnitude"] if mapped_feature is not None
+                else np.full(coarse_axis.size, np.nan)),
+            "feature": (
+                mapped_feature["smoothed_feature"] if mapped_feature is not None
+                else np.full(coarse_axis.size, np.nan)),
+            "complex_response": (
+                mapped["response"] if mapped is not None
+                else np.full(coarse_axis.size, np.nan + 1j * np.nan)),
+            "contrast_snr": (
+                float(mapped_feature["contrast_snr"])
+                if mapped_feature is not None else np.nan),
+            "relative_contrast": (
+                float(mapped_feature["relative_contrast"])
+                if mapped_feature is not None else np.nan),
+            "feature_width_mhz": (
+                float(mapped_feature["feature_width_mhz"])
+                if mapped_feature is not None else np.nan),
+            "candidate_at_boundary": bool(
+                mapped_feature and mapped_feature["at_boundary"]),
+            "confirmation_magnitude": (
+                mapped_confirmation["magnitude"]
+                if mapped_confirmation is not None else np.empty((0,), float)),
+            "confirmation_feature": (
+                mapped_confirmation["smoothed_feature"]
+                if mapped_confirmation is not None else np.empty((0,), float)),
+            "confirmation_complex_response": (
+                mapped["confirmation_response"]
+                if (mapped is not None
+                    and mapped["confirmation_response"] is not None)
+                else np.empty((0,), complex)),
+            "confirmation_contrast_snr": (
+                float(mapped_confirmation["contrast_snr"])
+                if mapped_confirmation is not None else np.nan),
+            "confirmation_relative_contrast": (
+                float(mapped_confirmation["relative_contrast"])
+                if mapped_confirmation is not None else np.nan),
+            "confirmation_width_mhz": (
+                float(mapped_confirmation["feature_width_mhz"])
+                if mapped_confirmation is not None else np.nan),
+            "confirmation_at_boundary": bool(
+                mapped_confirmation and mapped_confirmation["at_boundary"]),
+            "confirmation_shift_mhz": (
+                float(mapped["confirmation_shift_mhz"])
+                if mapped is not None else np.inf),
+            "confirmation_width_ratio": (
+                float(mapped["confirmation_width_ratio"])
+                if mapped is not None else np.inf),
+            "search_complete": bool(selected is not None),
+            "selection_confirmed": bool(selected is not None),
+            "used_global_scan": bool(bounded),
+            "used_wide_scan": True,
+            "search_mode": plan["mode"],
+            "allowed_min_mhz": float(plan["allowed_min_mhz"]),
+            "allowed_max_mhz": float(plan["allowed_max_mhz"]),
+            "search_attempt_scan_bounds_mhz": np.asarray([
+                [float(row["axis"][0]), float(row["axis"][-1])]
+                for row in trials], dtype=float).reshape((-1, 2)),
+            "search_attempt_acceptance_bounds_mhz": np.asarray([
+                row["acceptance_bounds_mhz"] for row in trials],
+                dtype=float).reshape((-1, 2)),
+            "bootstrap_gain_dac": (
+                int(mapped["candidate"]["read_pulse_gain"])
+                if mapped is not None else -1),
+            "bootstrap_length_us": (
+                float(mapped["candidate"]["read_length"])
+                if mapped is not None else np.nan),
+            "trial_gain_dac": np.asarray([
+                row["candidate"]["read_pulse_gain"] for row in trials], dtype=int),
+            "trial_length_us": np.asarray([
+                row["candidate"]["read_length"] for row in trials], dtype=float),
+            "trial_contrast_snr": np.asarray([
+                (row["feature"]["contrast_snr"]
+                 if row["feature"] is not None else np.nan)
+                for row in trials], dtype=float),
+            "trial_relative_contrast": np.asarray([
+                (row["feature"]["relative_contrast"]
+                 if row["feature"] is not None else np.nan)
+                for row in trials], dtype=float),
+            "trial_feature_width_mhz": np.asarray([
+                (row["feature"]["feature_width_mhz"]
+                 if row["feature"] is not None else np.nan)
+                for row in trials], dtype=float),
+            "trial_confirmation_valid": np.asarray([
+                row["confirmation_valid"] for row in trials], dtype=bool),
+            "trial_valid": np.asarray([
+                row["confirmation_valid"] for row in trials], dtype=bool),
+            "trial_confirmation_shift_mhz": np.asarray([
+                row["confirmation_shift_mhz"] for row in trials], dtype=float),
+            "trial_confirmation_width_ratio": np.asarray([
+                row["confirmation_width_ratio"] for row in trials], dtype=float),
+        }
+        if selected is None:
+            failures = [row["error"] for row in trials if row.get("error")]
+            reason = "; ".join(failures) or "all resonator acquisitions failed"
+            self._maps["resonator"]["failure"] = reason
+            raise RuntimeError(
+                "no independently reproduced resonator feature in %.3f..%.3f MHz (%s)"
+                % (plan["allowed_min_mhz"], plan["allowed_max_mhz"], reason))
+
+        discovery = selected["candidate"]
+        seed = float(selected["confirmation_feature"]["frequency_mhz"])
         self._resonator_seed = seed
         self._discovery_readout = _with_candidate(
             discovery, read_pulse_freq=float(seed))
-        self._maps["resonator"] = {
-            "axes": {"read_frequency_mhz": freqs},
-            "magnitude": mag, "smoothed_magnitude": smoothed,
-            "complex_response": z, "contrast_snr": snr,
-            "used_wide_scan": bool(used_wide),
-            "bootstrap_gain_dac": int(discovery["read_pulse_gain"]),
-            "bootstrap_length_us": float(discovery["read_length"]),
-            "trial_gain_dac": np.asarray(
-                [row[1]["read_pulse_gain"] for row in trials], dtype=int),
-            "trial_length_us": np.asarray(
-                [row[1]["read_length"] for row in trials], dtype=float),
-            "trial_contrast_snr": np.asarray(
-                [row[0] for row in trials], dtype=float),
-        }
-        if used_wide:
-            self._maps["resonator"].update({
-                "wide_frequency_mhz": wide_freqs,
-                "wide_magnitude": wide_mag,
-                "wide_smoothed_magnitude": wide_smoothed,
-                "wide_complex_response": wide_z,
-                "wide_contrast_snr": float(wide_snr),
-            })
+        self._discovery_status["resonator"] = True
         self._log("resonator", "OK",
-                  "response seed %.6f MHz using %d DAC/%.1f us (direct SS still decides)"
-                  % (seed, discovery["read_pulse_gain"], discovery["read_length"]))
+                  "reproduced response %.6f MHz using %d DAC/%.1f us "
+                  "(direct SS still decides)"
+                  % (seed, discovery["read_pulse_gain"],
+                     discovery["read_length"]))
         return seed
 
     def _stage_spectroscopy(self):
         p = self.params["spectroscopy"]
         if not p.get("enabled", True):
+            self._spec_candidates_mhz = [float(self.initial["qubit_pi_freq"])]
             self._log("spectroscopy", "SKIP", "disabled")
             return None
-        prior = float(self.initial["qubit_pi_freq"])
+        self._spec_candidates_mhz = []
         # Temporarily read near the resonator response seed to maximize spectroscopy
         # contrast.  This does not adopt the seed as the optimized SS readout.
         seed_candidate = dict(self._discovery_readout)
+        plan = self._frequency_discovery_plan(
+            self.initial["qubit_pi_freq"], p, adaptive=False)
+        coarse_freqs = plan["axes"][-1]
+        search_min = float(coarse_freqs[0])
+        search_max = float(coarse_freqs[-1])
+        allowed_min = float(plan["allowed_min_mhz"])
+        allowed_max = float(plan["allowed_max_mhz"])
+        bounded = bool(plan["configured_envelope"])
+        retained_coarse_count = max(
+            int(p.get("coarse_candidates", 8)), int(p["max_candidates"]), 1)
+        # Scan padding may contain real but unauthorized lines.  Inspect extra peaks
+        # before filtering so those padding-only lines cannot consume every retained
+        # in-prior candidate slot.
+        scan_candidate_count = max(
+            3 * retained_coarse_count, retained_coarse_count + 4)
 
-        def run(span, points):
-            freqs = self._float_axis(prior, span, points, include=[prior])
-            z = self._acquire_spectroscopy(
-                freqs, seed_candidate, p["shots"], p["gain"],
+        def coarse_scan(axis, source):
+            response = self._acquire_spectroscopy(
+                axis, seed_candidate, p["shots"], p["gain"],
                 p["pulse_length_us"])
             features = self._spectral_features(
-                freqs, z, max_candidates=p["max_candidates"])
-            return freqs, z, features
+                axis, response, max_candidates=scan_candidate_count)
+            rows = self._significant_spectral_rows(
+                axis, features, p["min_feature_snr"],
+                p.get("edge_guard_points", 2))
+            for row in rows:
+                row["proposal_kind"] = "peak"
+            rows.extend(self._spectral_shoulder_rows(
+                axis, features, rows, p["min_feature_snr"],
+                scan_candidate_count,
+                relative_floor=p.get("coarse_shoulder_fraction", 0.18),
+                separation_steps=p.get(
+                    "coarse_shoulder_separation_steps", 1.25),
+                edge_guard_points=p.get("edge_guard_points", 2)))
+            rows = [row for row in rows
+                    if allowed_min <= float(row["frequency"]) <= allowed_max]
+            rows = self._retain_spectral_proposal_mix(
+                rows, retained_coarse_count,
+                p.get("coarse_min_shoulder_candidates", 2))
+            for row in rows:
+                row["source"] = source
+            return np.asarray(response, complex), features, rows
 
-        local_freqs, local_z, local_features = run(
-            p["local_span_mhz"], p["local_points"])
-        used_wide = bool(p.get("always_wide", True)
-                         or local_features["best_snr"]
-                         < float(p["min_feature_snr"]))
-        if used_wide:
-            reason = ("the starting frequency is deliberately treated as untrusted"
-                      if p.get("always_wide", True)
-                      else "local feature SNR is %.2f" % local_features["best_snr"])
-            self._log(
-                "spectroscopy", "OK",
-                "%s; also scanning the full %.1f MHz span so a nearby TLS cannot "
-                "hide the intended transition" % (reason, p["wide_span_mhz"]))
-            wide_freqs, wide_z, wide_features = run(
-                p["wide_span_mhz"], p["wide_points"])
+        coarse_z, coarse_features, primary_rows = coarse_scan(
+            coarse_freqs, "primary")
+        # One isolated flux row has no neighboring-row continuity.  A second grid
+        # offset by half a coarse step prevents a sub-MHz transition midway between
+        # the 2-MHz primary samples from disappearing entirely.
+        if bounded and coarse_freqs.size >= 2:
+            staggered_freqs = 0.5 * (coarse_freqs[:-1] + coarse_freqs[1:])
+            staggered_z, staggered_features, staggered_rows = coarse_scan(
+                staggered_freqs, "half_step")
         else:
-            wide_freqs = wide_z = wide_features = None
+            staggered_freqs = np.empty((0,), dtype=float)
+            staggered_z = np.empty((0,), dtype=complex)
+            staggered_features = {
+                "residual": np.empty((0,), dtype=float),
+                "snr_trace": np.empty((0,), dtype=float),
+            }
+            staggered_rows = []
+        merged_rows = sorted(
+            primary_rows + staggered_rows,
+            key=lambda row: row["score"], reverse=True)
+        coarse_step = abs(float(np.median(np.diff(coarse_freqs))))
+        deduplicated_rows = []
+        for row in merged_rows:
+            if any(abs(row["frequency"] - old["frequency"])
+                   <= 0.6 * coarse_step for old in deduplicated_rows):
+                continue
+            deduplicated_rows.append(row)
+        coarse_rows = self._retain_spectral_proposal_mix(
+            deduplicated_rows, retained_coarse_count,
+            p.get("coarse_min_shoulder_candidates", 2))
 
-        candidate_rows = []
-        for source, source_freqs, source_features in (
-                ("local", local_freqs, local_features),
-                ("wide", wide_freqs, wide_features)):
-            if source_features is None:
-                continue
-            for index in source_features["candidate_indices"]:
-                candidate_rows.append({
-                    "frequency": float(source_freqs[index]),
-                    "score": float(source_features["snr_trace"][index]),
-                    "source": source,
+        confirmation_points = max(int(p.get("confirmation_points", 41)), 9)
+        if confirmation_points % 2 == 0:
+            confirmation_points += 1
+        confirmation_span = float(p.get("confirmation_span_mhz", 6.0))
+        confirmation_shots = int(p.get("confirmation_shots", p["shots"]))
+        repeat_error = float(p.get("max_repeat_error_mhz", 0.60))
+        confirmation_min_snr = float(p.get(
+            "confirmation_min_feature_snr", 4.0))
+        confirmation_min_r2 = float(p.get(
+            "confirmation_min_fit_r2", 0.25))
+        confirmation_max_linewidth = float(p.get(
+            "confirmation_max_linewidth_mhz", 8.0))
+        coarse_capture = float(p.get(
+            "coarse_capture_mhz",
+            1.5 * abs(float(np.median(np.diff(coarse_freqs))))))
+        neighbor_mask = float(p.get(
+            "confirmation_neighbor_mask_mhz", 1.5))
+        neighbor_radius = float(p.get(
+            "confirmation_neighbor_radius_mhz", 8.0))
+        confirmation_axes = []
+        confirmation_response = []
+        confirmation_snr = []
+        confirmation_valid = []
+        confirmation_fit_centers = []
+        confirmation_fit_center_se = []
+        confirmation_fit_linewidth = []
+        confirmation_fit_snr = []
+        confirmation_fit_r2 = []
+        validation_errors = []
+        reproduced = []
+        for coarse in coarse_rows:
+            neighbor_centers = [
+                float(other["frequency"]) for other in coarse_rows
+                # A shoulder is a hypothesis about a hidden second line.  It may use
+                # a reproduced peak as an exclusion anchor when fitted, but must not
+                # carve points out of that peak's own fit before it is validated.
+                if other.get("proposal_kind", "peak") == "peak"
+                if abs(float(other["frequency"]) - float(coarse["frequency"]))
+                > 0.6 * coarse_step
+                and abs(float(other["frequency"])
+                        - float(coarse["frequency"])) <= neighbor_radius
+            ]
+            axis = self._contained_centered_axis(
+                coarse["frequency"], confirmation_span, confirmation_points,
+                lower=search_min if bounded else None,
+                upper=search_max if bounded else None)
+            confirmation_axes.append(axis)
+            try:
+                passes = np.empty((2, axis.size), dtype=complex)
+                pass_features = []
+                passes[0] = self._acquire_spectroscopy(
+                    axis, seed_candidate, confirmation_shots, p["gain"],
+                    p["pulse_length_us"])
+                # Acquire the second scan from high to low, then realign it.  A
+                # sweep-time drift now moves in the opposite frequency direction and
+                # cannot masquerade as a stationary line in both passes.
+                reverse_response = self._acquire_spectroscopy(
+                    axis[::-1], seed_candidate, confirmation_shots, p["gain"],
+                    p["pulse_length_us"])
+                passes[1] = np.asarray(reverse_response, complex)[::-1]
+                for pass_index in range(2):
+                    pass_features.append(self._spectral_features(
+                        axis, passes[pass_index],
+                        max_candidates=retained_coarse_count))
+                combined_z = np.mean(passes, axis=0)
+                combined = self._spectral_features(
+                    axis, combined_z, max_candidates=retained_coarse_count)
+                def fit_trace(trace):
+                    fitted = self._fit_complex_spectral_line(
+                        axis, trace, coarse["frequency"], coarse_capture,
+                        min_snr=confirmation_min_snr,
+                        min_r2=confirmation_min_r2,
+                        max_linewidth_mhz=confirmation_max_linewidth,
+                        excluded_centers_mhz=neighbor_centers,
+                        exclusion_half_width_mhz=neighbor_mask)
+                    # Raw coarse proposals are not yet established neighboring lines.
+                    # If their Voronoi masks break a real target fit, retry without
+                    # those unverified exclusions before falling back to a provisional
+                    # opposed-response seed.
+                    if not fitted.get("valid", False) and neighbor_centers:
+                        unmasked = self._fit_complex_spectral_line(
+                            axis, trace, coarse["frequency"], coarse_capture,
+                            min_snr=confirmation_min_snr,
+                            min_r2=confirmation_min_r2,
+                            max_linewidth_mhz=confirmation_max_linewidth)
+                        if unmasked.get("valid", False):
+                            unmasked["neighbor_mask_retry"] = True
+                            return unmasked
+                    return fitted
+
+                fits = [fit_trace(trace)
+                        for trace in (passes[0], passes[1], combined_z)]
+                fits_valid = all(fit.get("valid", False) for fit in fits)
+                fit_failure = "; ".join(
+                    fit.get("failure", "invalid complex line fit")
+                    for fit in fits if not fit.get("valid", False))
+                provisional = None
+                if not fits_valid and p.get(
+                        "confirmation_allow_provisional_seed", True):
+                    provisional = self._opposed_provisional_spectral_seed(
+                        axis, passes, pass_features, coarse["frequency"],
+                        coarse_capture,
+                        min_snr=p.get(
+                            "confirmation_provisional_min_snr", 4.0),
+                        min_complex_correlation=p.get(
+                            "confirmation_provisional_min_complex_correlation",
+                            0.50))
+                if not fits_valid and not (
+                        provisional and provisional.get("valid", False)):
+                    provisional_failure = (
+                        provisional.get("failure", "provisional seed disabled")
+                        if provisional is not None else "provisional seed disabled")
+                    raise RuntimeError(
+                        "%s; provisional opposed response failed: %s"
+                        % (fit_failure, provisional_failure))
+                if fits_valid:
+                    separation = abs(
+                        float(fits[0]["frequency_mhz"])
+                        - float(fits[1]["frequency_mhz"]))
+                    uncertainty_limit = 3.0 * math.hypot(
+                        float(fits[0]["frequency_se_mhz"]),
+                        float(fits[1]["frequency_se_mhz"]))
+                    allowed_separation = max(repeat_error, uncertainty_limit)
+                    if separation > allowed_separation:
+                        raise RuntimeError(
+                            "opposed fitted centres differ by %.3f MHz (limit %.3f)"
+                            % (separation, allowed_separation))
+                    pass_variances = np.maximum(np.square([
+                        float(fits[0]["frequency_se_mhz"]),
+                        float(fits[1]["frequency_se_mhz"]),
+                    ]), 1e-12)
+                    pass_weights = 1.0 / pass_variances
+                    refined = float(np.average([
+                        float(fits[0]["frequency_mhz"]),
+                        float(fits[1]["frequency_mhz"]),
+                    ], weights=pass_weights))
+                    refined_se = float(math.sqrt(1.0 / np.sum(pass_weights)))
+                    combined_separation = abs(
+                        float(fits[2]["frequency_mhz"]) - refined)
+                    combined_limit = max(
+                        repeat_error,
+                        3.0 * math.hypot(
+                            refined_se, float(fits[2]["frequency_se_mhz"])))
+                    if combined_separation > combined_limit:
+                        raise RuntimeError(
+                            "combined fitted centre differs from the opposed-pass "
+                            "estimate by %.3f MHz (limit %.3f)"
+                            % (combined_separation, combined_limit))
+                    if abs(refined - float(coarse["frequency"])) > coarse_capture:
+                        raise RuntimeError(
+                            "confirmed center escaped its coarse capture basin")
+                    row = {
+                        "frequency": refined,
+                        "score": float(min(fits[0]["snr"], fits[1]["snr"])),
+                        "combined_snr": float(fits[2]["snr"]),
+                        "pass_snr": (float(fits[0]["snr"]),
+                                     float(fits[1]["snr"])),
+                        "pass_centres_mhz": (
+                            float(fits[0]["frequency_mhz"]),
+                            float(fits[1]["frequency_mhz"])),
+                        "separation_mhz": float(separation),
+                        "combined_separation_mhz": float(combined_separation),
+                        "physical_fit_valid": True,
+                    }
+                else:
+                    refined = float(provisional["frequency_mhz"])
+                    combined_index = int(np.argmin(np.abs(axis - refined)))
+                    row = {
+                        "frequency": refined,
+                        "score": float(min(provisional["pass_snr"])),
+                        "combined_snr": float(
+                            combined["snr_trace"][combined_index]),
+                        "pass_snr": tuple(provisional["pass_snr"]),
+                        "pass_centres_mhz": (refined, refined),
+                        "separation_mhz": 0.0,
+                        "combined_separation_mhz": np.nan,
+                        "physical_fit_valid": False,
+                        "provisional_complex_correlation": float(
+                            provisional["complex_correlation"]),
+                    }
+                if not allowed_min <= refined <= allowed_max:
+                    raise RuntimeError(
+                        "confirmed center lies only in fit padding outside the "
+                        "authorized +/-radius prior")
+                row.update({
+                    "coarse_frequency": float(coarse["frequency"]),
+                    "coarse_score": float(coarse["score"]),
+                    "proposal_kind": coarse.get("proposal_kind", "peak"),
+                    "source": coarse.get("source"),
                 })
-        candidate_rows.sort(key=lambda row: row["score"], reverse=True)
-        steps = [abs(float(np.median(np.diff(local_freqs))))]
-        if wide_freqs is not None:
-            steps.append(abs(float(np.median(np.diff(wide_freqs)))))
-        # Merge duplicate representations of one line from the fine and wide scans,
-        # while keeping genuinely separate nearby basins for coherent-Rabi arbitration.
-        tolerance = 0.6 * max(steps)
-        unique = [prior]
+                reproduced.append(row)
+                confirmation_response.append(passes)
+                confirmation_snr.append(np.vstack([
+                    pass_features[0]["snr_trace"],
+                    pass_features[1]["snr_trace"],
+                    combined["snr_trace"],
+                ]))
+                confirmation_valid.append(True)
+                if fits_valid:
+                    confirmation_fit_centers.append([
+                        fit["frequency_mhz"] for fit in fits])
+                    confirmation_fit_center_se.append([
+                        fit["frequency_se_mhz"] for fit in fits])
+                    confirmation_fit_linewidth.append([
+                        fit["linewidth_mhz"] for fit in fits])
+                    confirmation_fit_snr.append([fit["snr"] for fit in fits])
+                    confirmation_fit_r2.append([fit["r2"] for fit in fits])
+                    validation_errors.append("")
+                else:
+                    confirmation_fit_centers.append([np.nan] * 3)
+                    confirmation_fit_center_se.append([np.nan] * 3)
+                    confirmation_fit_linewidth.append([np.nan] * 3)
+                    confirmation_fit_snr.append([np.nan] * 3)
+                    confirmation_fit_r2.append([np.nan] * 3)
+                    validation_errors.append(
+                        "physical fit rejected (%s); retained only as an opposed "
+                        "response seed for coherent Rabi" % fit_failure)
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                confirmation_response.append(np.full(
+                    (2, axis.size), np.nan + 1j * np.nan))
+                confirmation_snr.append(np.full((3, axis.size), np.nan))
+                confirmation_valid.append(False)
+                confirmation_fit_centers.append([np.nan] * 3)
+                confirmation_fit_center_se.append([np.nan] * 3)
+                confirmation_fit_linewidth.append([np.nan] * 3)
+                confirmation_fit_snr.append([np.nan] * 3)
+                confirmation_fit_r2.append([np.nan] * 3)
+                validation_errors.append("%s: %s" % (type(exc).__name__, exc))
+
+        reproduced.sort(key=lambda row: (
+            row["score"], row["combined_snr"], row["coarse_score"]),
+                        reverse=True)
         retained_rows = []
-        for row in candidate_rows:
-            if any(abs(row["frequency"] - old) <= tolerance for old in unique):
+        tolerance = max(repeat_error, 0.6 * coarse_step)
+        for row in reproduced:
+            if any(abs(row["frequency"] - old["frequency"]) <= tolerance
+                   for old in retained_rows):
                 continue
-            unique.append(row["frequency"])
             retained_rows.append(row)
-            if len(unique) >= 1 + int(p["max_candidates"]):
+            if len(retained_rows) >= max(int(p["max_candidates"]), 1):
                 break
-        self._spec_candidates_mhz = [float(value) for value in unique]
-        freqs = wide_freqs if wide_freqs is not None else local_freqs
-        z = wide_z if wide_z is not None else local_z
-        features = wide_features if wide_features is not None else local_features
+
         self._maps["spectroscopy"] = {
-            "axes": {"qubit_frequency_mhz": freqs},
-            "complex_response": z, "feature_residual": features["residual"],
-            "feature_snr": features["snr_trace"],
-            "used_wide_scan": bool(used_wide),
-            "candidate_frequencies_mhz": np.asarray(self._spec_candidates_mhz),
-            "candidate_scores": np.asarray(
-                [row["score"] for row in retained_rows], dtype=float),
-            "local_frequency_mhz": local_freqs,
-            "local_complex_response": local_z,
-            "local_feature_snr": local_features["snr_trace"],
+            "axes": {
+                "qubit_frequency_mhz": coarse_freqs,
+                "staggered_qubit_frequency_mhz": staggered_freqs,
+                "confirmation_frequency_mhz": (
+                    np.asarray(confirmation_axes, dtype=float)
+                    if confirmation_axes else
+                    np.empty((0, confirmation_points), dtype=float)),
+            },
+            "complex_response": coarse_z,
+            "feature_residual": coarse_features["residual"],
+            "feature_snr": coarse_features["snr_trace"],
+            "staggered_complex_response": staggered_z,
+            "staggered_feature_residual": staggered_features["residual"],
+            "staggered_feature_snr": staggered_features["snr_trace"],
+            "used_global_scan": bool(bounded), "used_wide_scan": True,
+            "search_mode": plan["mode"],
+            "allowed_min_mhz": allowed_min,
+            "allowed_max_mhz": allowed_max,
+            "scan_min_mhz": float(coarse_freqs[0]),
+            "scan_max_mhz": float(coarse_freqs[-1]),
+            "coarse_candidate_frequencies_mhz": np.asarray([
+                row["frequency"] for row in coarse_rows], dtype=float),
+            "coarse_candidate_scores": np.asarray([
+                row["score"] for row in coarse_rows], dtype=float),
+            "coarse_candidate_kinds": [
+                row.get("proposal_kind", "peak") for row in coarse_rows],
+            "confirmation_complex_response": (
+                np.asarray(confirmation_response, dtype=complex)
+                if confirmation_response else
+                np.empty((0, 2, confirmation_points), dtype=complex)),
+            "confirmation_feature_snr": (
+                np.asarray(confirmation_snr, dtype=float)
+                if confirmation_snr else
+                np.empty((0, 3, confirmation_points), dtype=float)),
+            "confirmation_valid": np.asarray(confirmation_valid, dtype=bool),
+            "confirmation_fit_centers_mhz": np.asarray(
+                confirmation_fit_centers, dtype=float).reshape((-1, 3)),
+            "confirmation_fit_center_se_mhz": np.asarray(
+                confirmation_fit_center_se, dtype=float).reshape((-1, 3)),
+            "confirmation_fit_linewidth_mhz": np.asarray(
+                confirmation_fit_linewidth, dtype=float).reshape((-1, 3)),
+            "confirmation_fit_snr": np.asarray(
+                confirmation_fit_snr, dtype=float).reshape((-1, 3)),
+            "confirmation_fit_r2": np.asarray(
+                confirmation_fit_r2, dtype=float).reshape((-1, 3)),
+            "candidate_frequencies_mhz": np.asarray([
+                row["frequency"] for row in retained_rows], dtype=float),
+            "candidate_scores": np.asarray([
+                row["score"] for row in retained_rows], dtype=float),
+            "candidate_physical_fit_valid": np.asarray([
+                row.get("physical_fit_valid", False)
+                for row in retained_rows], dtype=bool),
+            "search_complete": bool(retained_rows),
+            "selection_confirmed": bool(retained_rows),
+            "validation_errors": validation_errors,
         }
-        if wide_freqs is not None:
-            self._maps["spectroscopy"].update({
-                "wide_frequency_mhz": wide_freqs,
-                "wide_complex_response": wide_z,
-                "wide_feature_snr": wide_features["snr_trace"],
-            })
+        if not coarse_rows:
+            self._maps["spectroscopy"]["failure"] = (
+                "no significant interior coarse feature")
+            raise RuntimeError(
+                "no %.1f-sigma qubit feature in %.3f..%.3f MHz"
+                % (p["min_feature_snr"], allowed_min, allowed_max))
+        if not retained_rows:
+            self._maps["spectroscopy"]["failure"] = (
+                "no coarse feature survived opposed fitted confirmations")
+            raise RuntimeError(
+                "none of %d coarse qubit features reproduced independently"
+                % len(coarse_rows))
+        self._spec_candidates_mhz = [
+            float(row["frequency"]) for row in retained_rows]
+        self._discovery_status["spectroscopy"] = True
         self._log("spectroscopy", "OK",
-                  "retained spectral seeds %s; coherent Rabi/direct SS choose among them"
+                  "retained reproduced spectral seeds %s; coherent Rabi/direct SS "
+                  "choose among them"
                   % ", ".join("%.4f" % f for f in self._spec_candidates_mhz))
         return self._spec_candidates_mhz
 
@@ -2660,6 +3891,9 @@ class BasicAutoTuner(ExperimentClass):
         if not p.get("enabled", True):
             self._log("iq_rabi", "SKIP", "disabled")
             return None
+        if not self._spec_candidates_mhz:
+            raise RuntimeError(
+                "no validated spectroscopy candidates are available for Rabi")
         # Resonator spectroscopy already established a better readout-frequency seed.
         # Use it for the cheap averaged-IQ maps and carry it into the rough direct-SS
         # candidates; otherwise a bad input readout can erase the Rabi we need in order
@@ -2679,6 +3913,16 @@ class BasicAutoTuner(ExperimentClass):
         analysis = analyze_iq_chevron(
             freqs, gains, i_map, q_map, min_r2=p["min_r2"])
         best = analysis["best"]
+        coherent_rows = [
+            row for row in analysis["rows"]
+            if bool(row["fit"].get("ok", False))
+            and float(row["fit"].get("r2", -np.inf)) >= float(p["min_r2"])
+            and np.isfinite(float(row["fit"].get("pi_gain", np.nan)))
+            and float(row.get("snr", -np.inf))
+            >= float(p.get("witness_min_snr", 5.0))
+            and float(row.get("relative_contrast", 0.0))
+            >= float(p.get("witness_min_relative_contrast", 0.10))
+        ]
         rough_freq = float(best["frequency"])
         rough_gain = float(best["fit"].get("pi_gain", np.nan))
         if not np.isfinite(rough_gain):
@@ -2695,7 +3939,25 @@ class BasicAutoTuner(ExperimentClass):
                                   for row in analysis["rows"]]),
             "row_pi_gain": np.asarray([row["fit"].get("pi_gain", np.nan)
                                        for row in analysis["rows"]]),
+            "coherent_witness": bool(coherent_rows),
+            "coherent_witness_frequencies_mhz": np.asarray([
+                row["frequency"] for row in coherent_rows], dtype=float),
         }
+        for row in coherent_rows:
+            witness_candidate = _with_candidate(
+                rabi_base,
+                qubit_pi_freq=float(row["frequency"]),
+                qubit_pi_gain=int(np.clip(round(
+                    row["fit"].get("pi_gain", np.nan)), 1, 32767)))
+            self._record_control_witness(
+                "iq_rabi", row["frequency"], "averaged_iq_rabi",
+                candidate=witness_candidate,
+                r2=float(row["fit"].get("r2", np.nan)),
+                snr=float(row.get("snr", np.nan)),
+                relative_contrast=float(row.get(
+                    "relative_contrast", np.nan)),
+                pi_gain=float(row["fit"].get("pi_gain", np.nan)),
+            )
 
         ranked_rows = sorted(analysis["rows"], key=lambda row: row["score"],
                              reverse=True)
@@ -3625,6 +4887,146 @@ class BasicAutoTuner(ExperimentClass):
             populations[index] = float(np.mean(
                 discriminate_with_metrics(shot_i, shot_q, calibration)))
         return populations
+
+    def _stage_final_control_verify(self, final):
+        """Certify coherent odd/even action of the exact selected X180 tuple.
+
+        The step-5 objective establishes readout assignment and state-preparation
+        separation, but an incoherently saturated drive can pass that test.  This
+        final audit repeats the *unchanged* frequency/gain/sigma/DRAG waveform at
+        several depths.  Only an exact-tuple witness emitted here (or an earlier
+        exact-tuple parity witness) may authorize an automatic configuration write.
+        """
+        p = self.params["control_verify"]
+        self._final_control_verified_key = None
+        if not p.get("enabled", True):
+            raise RuntimeError(
+                "exact selected-pulse coherent verification is disabled")
+        if not isinstance(final, dict):
+            raise RuntimeError("there is no final candidate to verify coherently")
+        candidate = {key: final[key] for key in self.initial}
+        counts = np.asarray(sorted(set(
+            int(value) for value in p.get("pulse_counts", [])
+            if int(value) > 0)), dtype=int)
+        if (counts.size < 4 or not np.any(counts % 2 == 0)
+                or not np.any(counts % 2 == 1)):
+            raise ValueError(
+                "final control verification requires at least four positive odd/even "
+                "pulse depths")
+        shots = max(int(p["shots"]), 1)
+        reference_shots = max(int(p["calibration_shots"]), 1)
+        blocks = max(int(p["blocks"]), 1)
+        familywise_z = _simultaneous_z(
+            int(counts.size * blocks), p.get("familywise_alpha", 0.05),
+            p.get("confidence_sigma", 1.96))
+        block_rows = []
+        for block in range(blocks):
+            before = self._measure_candidate(
+                candidate, reference_shots,
+                "final control discriminator %d" % (block + 1),
+                archive=False)
+            calibration = {key: before[key] for key in
+                           ("read_theta", "scale_factor", "threshold")}
+            populations = np.asarray(self._acquire_repeated_populations(
+                candidate, counts, shots, calibration), dtype=float)
+            after = self._measure_candidate(
+                candidate, reference_shots,
+                "final control discriminator post %d" % (block + 1),
+                archive=False, reference_discriminator=calibration)
+            drift = self._calibration_drift(before, after)
+            drift_stable = self._calibration_is_stable(drift)
+            p_e_ground = float(before["p_e_given_g"])
+            p_e_excited = float(1.0 - before["p_g_given_e"])
+            contrast = float(p_e_excited - p_e_ground)
+            contrast_valid = bool(
+                np.isfinite(contrast)
+                and contrast >= float(p["minimum_binary_contrast"]))
+            if contrast_valid and populations.shape == counts.shape:
+                normalized = (populations - p_e_ground) / contrast
+                sequence_variance = np.asarray([
+                    _binomial_variance_jeffreys(
+                        int(np.clip(round(value * shots), 0, shots)), shots)
+                    for value in populations
+                ], dtype=float)
+                ground_variance = _binomial_variance_jeffreys(
+                    int(np.clip(round(p_e_ground * reference_shots),
+                                0, reference_shots)), reference_shots)
+                excited_variance = _binomial_variance_jeffreys(
+                    int(np.clip(round(p_e_excited * reference_shots),
+                                0, reference_shots)), reference_shots)
+                gradient_ground = (normalized - 1.0) / contrast
+                gradient_excited = -normalized / contrast
+                normalized_se = np.sqrt(np.maximum(
+                    sequence_variance / contrast ** 2
+                    + gradient_ground ** 2 * ground_variance
+                    + gradient_excited ** 2 * excited_variance,
+                    0.0))
+            else:
+                normalized = np.full(counts.shape, np.nan, dtype=float)
+                normalized_se = np.full(counts.shape, np.inf, dtype=float)
+            targets = (counts % 2).astype(float)
+            errors = np.abs(normalized - targets)
+            error_ucb = errors + familywise_z * normalized_se
+            even = counts % 2 == 0
+            odd = ~even
+            worst_even = (float(np.max(error_ucb[even]))
+                          if np.all(np.isfinite(error_ucb[even])) else np.inf)
+            worst_odd = (float(np.max(error_ucb[odd]))
+                         if np.all(np.isfinite(error_ucb[odd])) else np.inf)
+            valid = bool(
+                drift_stable and contrast_valid
+                and populations.shape == counts.shape
+                and np.all(np.isfinite(populations))
+                and np.all(np.isfinite(error_ucb)))
+            passed = bool(
+                valid
+                and worst_even <= float(p["max_even_return_error_ucb"])
+                and worst_odd <= float(p["max_odd_inversion_error_ucb"]))
+            block_rows.append({
+                "block": int(block), "populations": populations,
+                "normalized_populations": normalized,
+                "normalized_population_se": normalized_se,
+                "target_populations": targets,
+                "error_ucb": error_ucb,
+                "worst_even_return_error_ucb": worst_even,
+                "worst_odd_inversion_error_ucb": worst_odd,
+                "binary_contrast": contrast,
+                "calibration_drift": drift,
+                "calibration_stable": bool(drift_stable),
+                "valid": bool(valid), "passed": bool(passed),
+            })
+        verified = bool(len(block_rows) == blocks
+                        and all(row["passed"] for row in block_rows))
+        worst_even = float(max(
+            row["worst_even_return_error_ucb"] for row in block_rows))
+        worst_odd = float(max(
+            row["worst_odd_inversion_error_ucb"] for row in block_rows))
+        self._maps["final_control_verify"] = {
+            "pulse_counts": counts,
+            "candidate": dict(candidate),
+            "control_key": _control_key(candidate),
+            "blocks": block_rows,
+            "familywise_z": float(familywise_z),
+            "verified": bool(verified),
+            "search_complete": bool(verified),
+            "selection_confirmed": bool(verified),
+        }
+        if not verified:
+            raise RuntimeError(
+                "the exact selected pulse failed odd/even coherence "
+                "(return/inversion UCB %.3f/%.3f; limits %.3f/%.3f)"
+                % (worst_even, worst_odd,
+                   float(p["max_even_return_error_ucb"]),
+                   float(p["max_odd_inversion_error_ucb"])))
+        self._record_control_witness(
+            "final_control_verify", candidate["qubit_pi_freq"],
+            "exact_odd_even_repeated_pulses", candidate=candidate,
+            blocks=int(blocks), pulse_counts=counts.tolist(),
+            worst_even_return_error_ucb=worst_even,
+            worst_odd_inversion_error_ucb=worst_odd,
+            familywise_z=float(familywise_z), exact_tuple=True)
+        self._final_control_verified_key = _control_key(candidate)
+        return self._maps["final_control_verify"]
 
     def _measure_operational_leakage_candidate(self, candidate, shots,
                                                reference_shots, label):
@@ -5125,15 +6527,34 @@ class BasicAutoTuner(ExperimentClass):
         total = 0
         total += 2 * int(p["baseline"]["shots"]) * int(p["baseline"]["blocks"])
         if p["resonator"].get("enabled", True):
-            total += int(p["resonator"]["shots"]) * (
-                2 * int(p["resonator"]["points"])
-                + int(p["resonator"]["wide_points"]))
+            resonator = p["resonator"]
+            coarse_points = sum(
+                axis.size for axis in self._frequency_discovery_plan(
+                    self.initial["read_pulse_freq"], resonator,
+                    adaptive=True)["axes"])
+            # The safe bootstrap and a distinct input readout can both be required
+            # when the first gain fails its fresh confirmation.
+            total += 2 * int(resonator["shots"]) * int(coarse_points)
+            total += (2 * int(resonator.get(
+                "confirmation_shots", resonator["shots"]))
+                      * int(resonator.get("confirmation_points", 81)))
         if p["spectroscopy"].get("enabled", True):
-            total += int(p["spectroscopy"]["shots"]) * (
-                int(p["spectroscopy"]["local_points"])
-                + int(p["spectroscopy"]["wide_points"]))
+            spectroscopy = p["spectroscopy"]
+            coarse_points = self._frequency_discovery_plan(
+                self.initial["qubit_pi_freq"], spectroscopy,
+                adaptive=False)["axes"][-1].size
+            # Primary grid plus the half-step-staggered grid.
+            coarse_points = 2 * int(coarse_points) - 1
+            total += int(spectroscopy["shots"]) * int(coarse_points)
+            candidate_count = max(
+                int(spectroscopy.get("coarse_candidates", 8)),
+                int(spectroscopy.get("max_candidates", 8)), 1)
+            total += (2 * candidate_count
+                      * int(spectroscopy.get("confirmation_points", 41))
+                      * int(spectroscopy.get(
+                          "confirmation_shots", spectroscopy["shots"])))
         if p["iq_rabi"].get("enabled", True):
-            basins = 1 + int(p["spectroscopy"].get("max_candidates", 2))
+            basins = max(int(p["spectroscopy"].get("max_candidates", 3)), 1)
             total += int(p["iq_rabi"]["shots"]) * (
                 basins * int(p["iq_rabi"]["freq_points_per_candidate"])
                 * int(p["iq_rabi"]["gain_points"])
@@ -5311,11 +6732,22 @@ class BasicAutoTuner(ExperimentClass):
                   * int(final["shots"]) * int(final["blocks"]))
         if self._leakage_active or self._operational_leakage_active:
             total += 2 * int(final["shots"]) * int(final["blocks"])
+        control_verify = p["control_verify"]
+        if control_verify.get("enabled", True):
+            total += int(control_verify["blocks"]) * (
+                4 * int(control_verify["calibration_shots"])
+                + len(control_verify["pulse_counts"])
+                * int(control_verify["shots"]))
         return int(total)
 
     # --------------------------------------------------------------- orchestration
     def acquire(self, progress=False, debug=False, plotDisp=False):
         del progress, debug
+        # Direct unit users may call individual analysis/finalization helpers, but a
+        # production acquire must never authorize writes after critical discovery
+        # failed and later local grids merely optimized shot noise.
+        self._discovery_guard_active = True
+        self._final_control_verified_key = None
         self._preflight()
         if self._detailed_console():
             print("=" * 78)
@@ -5538,6 +6970,10 @@ class BasicAutoTuner(ExperimentClass):
                 else:
                     final = restore_ordinary_final(
                         "the final active-reset replay was incomplete or unstable")
+            if final is not None:
+                self._run_stage(
+                    "final_control_verify",
+                    lambda: self._stage_final_control_verify(final))
         except KeyboardInterrupt:
             self._interrupted = True
             final = None
@@ -5607,9 +7043,82 @@ class BasicAutoTuner(ExperimentClass):
             >= int(self.params["final"]["blocks"])
             and float(best.get("block_spread", np.inf))
             <= float(self.params["final"]["max_block_spread"]))
-        stable = bool(fidelity_replay_stable and leakage_tuple_match)
+        required_discovery = []
+        if self._discovery_guard_active:
+            if self.params["resonator"].get("enabled", True):
+                required_discovery.append("resonator")
+            if self.params["spectroscopy"].get("enabled", True):
+                required_discovery.append("spectroscopy")
+        missing_discovery = [
+            name for name in required_discovery
+            if not bool(self._discovery_status.get(name, False))]
+        discovery_verified = not missing_discovery
+        minimum_write_lcb = float(self.params["final"].get(
+            "minimum_write_fidelity_lcb", 0.60))
+        measured_lcb = float(best.get("fidelity_lcb_95", -np.inf))
+        fidelity_write_qualified = bool(
+            not self._discovery_guard_active
+            or (np.isfinite(measured_lcb)
+                and measured_lcb >= minimum_write_lcb))
+        selected_control_key = _control_key(best)
+        matching_control_witnesses = [
+            row for row in self._control_witnesses
+            if tuple(row.get("control_key", ())) == selected_control_key
+        ]
+        control_required = bool(self._discovery_guard_active)
+        control_verified = bool(
+            not control_required
+            or self._final_control_verified_key == selected_control_key)
+        self._discovery_status.update({
+            "guard_active": bool(self._discovery_guard_active),
+            "required_for_write": list(required_discovery),
+            "missing_for_write": list(missing_discovery),
+            "verified_for_write": bool(discovery_verified),
+        })
+        stable = bool(
+            fidelity_replay_stable and leakage_tuple_match
+            and discovery_verified and fidelity_write_qualified
+            and control_verified)
         self.data["fidelity_replay_stable"] = fidelity_replay_stable
         self.data["final_stable"] = stable
+        self.data["write_fidelity_gate"] = {
+            "minimum_lcb": minimum_write_lcb,
+            "measured_lcb": measured_lcb,
+            "passed": bool(fidelity_write_qualified),
+        }
+        self.data["control_validation"] = {
+            "required_for_write": bool(control_required),
+            "verified_for_write": bool(control_verified),
+            "selected_control_tuple": {
+                "qubit_pi_freq": float(best["qubit_pi_freq"]),
+                "qubit_pi_gain": int(round(best["qubit_pi_gain"])),
+                "sigma": float(best["sigma"]),
+                "qubit_drag_beta": float(best.get("qubit_drag_beta", 0.0)),
+            },
+            "selected_control_key": selected_control_key,
+            "fresh_exact_audit_key": self._final_control_verified_key,
+            "matching_witnesses": copy.deepcopy(matching_control_witnesses),
+            "all_witnesses": copy.deepcopy(self._control_witnesses),
+        }
+        if fidelity_replay_stable and not discovery_verified:
+            self._log(
+                "eligibility", "WARN",
+                "stable final replay is reportable but critical discovery failed: %s; "
+                "automatic writes are blocked"
+                % ", ".join(missing_discovery))
+        if fidelity_replay_stable and not fidelity_write_qualified:
+            self._log(
+                "eligibility", "WARN",
+                "stable final replay has fidelity LCB %.3f below the %.3f write "
+                "floor; coin-flip discrimination cannot become a calibration"
+                % (measured_lcb, minimum_write_lcb))
+        if fidelity_replay_stable and not control_verified:
+            self._log(
+                "eligibility", "WARN",
+                "stable final replay has no coherent Rabi/repeated-pulse witness "
+                "for its exact frequency/gain/sigma/DRAG tuple; a saturation "
+                "response is not proof of an X180 pulse, so automatic writes are "
+                "blocked")
         evidence = {
             key: self._key_has_evidence(key, tuned[key]) for key in TUNED_KEYS
         }
@@ -5621,9 +7130,9 @@ class BasicAutoTuner(ExperimentClass):
         missing_evidence = [key for key in changed if not evidence[key]]
         eligible = {}
         if stable and changed:
-            # The final measurement is itself the strongest relevant write evidence:
-            # every changed coordinate below was jointly exercised as one exact
-            # physical tuple for all required blocks.  Requiring a second, per-axis
+            # The stable final replay plus its exact-waveform coherence audit is the
+            # strongest relevant write evidence: every changed coordinate below was
+            # jointly exercised as one physical tuple.  Requiring a second, per-axis
             # provenance record can incorrectly reject a real winner that entered the
             # final pool through basin recovery or a cross-coordinate comparison.  We
             # therefore write the changed members of this jointly replayed tuple as an
@@ -5643,11 +7152,20 @@ class BasicAutoTuner(ExperimentClass):
             "missing_evidence": list(missing_evidence),
             "search_provenance_complete": bool(not missing_evidence),
             "eligibility_basis": (
-                "stable_exact_full_tuple_replay" if stable else None),
+                "stable_exact_full_tuple_replay_and_control_audit"
+                if stable and control_required
+                else ("stable_exact_full_tuple_replay" if stable else None)),
             "atomic_tuple_safe": bool(stable),
             "leakage_required": bool(leakage_required),
             "leakage_verified": bool(leakage_verified),
             "leakage_tuple_match": bool(leakage_tuple_match),
+            "discovery_verified": bool(discovery_verified),
+            "missing_discovery": list(missing_discovery),
+            "minimum_write_fidelity_lcb": minimum_write_lcb,
+            "write_fidelity_lcb": measured_lcb,
+            "write_fidelity_qualified": bool(fidelity_write_qualified),
+            "control_required": bool(control_required),
+            "control_verified": bool(control_verified),
             "final_replay_kind": self._final_replay_kind,
             "write_needed": bool(changed),
         }
@@ -5670,7 +7188,8 @@ class BasicAutoTuner(ExperimentClass):
         self._log("result", "OK",
                   "best measured step-5 F=%.4f +/- %.4f%s"
                   % (best["fidelity"], best["fidelity_se"],
-                     " (full measured tuple is write-eligible after stable final replay)"
+                     " (full measured tuple is write-eligible after stable final "
+                     "replay and exact control audit)"
                      if eligible
                      else " (reported, not write-eligible)"))
 
@@ -5694,6 +7213,8 @@ class BasicAutoTuner(ExperimentClass):
             "tuned", "eligible_tuned", "eligibility", "outcome", "success", "failure",
             "candidate_count", "interrupted", "final_stable", "time", "stages",
             "fidelity_replay_stable",
+            "discovery", "write_fidelity_gate", "control_validation",
+            "control_witnesses",
             "report", "confirmation_failures", "final_confirmation_complete",
             "unconfirmed_contenders", "leakage_required_for_write",
             "leakage_verified", "reset",

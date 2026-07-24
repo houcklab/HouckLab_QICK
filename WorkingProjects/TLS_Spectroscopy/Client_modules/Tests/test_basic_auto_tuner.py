@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import copy
 import io
+import importlib.util
 import os
 import sys
 import tempfile
@@ -90,12 +91,22 @@ def _base_config():
 FAST_PARAMS = {
     "random_seed": 1234,
     "baseline": {"shots": 79, "blocks": 2},
-    "resonator": {"span_mhz": 5.0, "points": 17, "shots": 31},
+    "resonator": {
+        "span_mhz": 5.0, "points": 17, "shots": 31,
+        "search_min_mhz": 7245.0, "search_max_mhz": 7252.0,
+        "search_step_mhz": 0.10,
+        "confirmation_span_mhz": 4.0, "confirmation_points": 81,
+        "confirmation_shots": 31,
+    },
     "spectroscopy": {
         "local_span_mhz": 24.0, "local_points": 25,
         "wide_span_mhz": 40.0, "wide_points": 41,
         "gain": 7000, "pulse_length_us": 2.0, "shots": 31,
         "max_candidates": 2, "min_feature_snr": 2.0,
+        "search_min_mhz": 2520.0, "search_max_mhz": 2545.0,
+        "search_step_mhz": 1.0, "coarse_candidates": 4,
+        "confirmation_span_mhz": 4.0, "confirmation_points": 31,
+        "confirmation_shots": 31, "max_repeat_error_mhz": 0.35,
     },
     "iq_rabi": {
         "local_span_mhz": 2.0, "freq_points_per_candidate": 5,
@@ -155,6 +166,27 @@ FAST_PARAMS = {
         "confidence_sigma": 1.96, "max_block_spread": 0.08,
     },
 }
+
+
+def _relative_100mhz_search_params():
+    """Fast-test form of the production seed-relative discovery policy."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["resonator"].update({
+        "search_min_mhz": None, "search_max_mhz": None,
+        "search_radius_mhz": 100.0,
+        "search_expansion_radii_mhz": [5.0, 25.0, 100.0],
+        "search_edge_padding_mhz": 2.0,
+        "search_step_mhz": 0.20,
+    })
+    params["spectroscopy"].update({
+        "search_min_mhz": None, "search_max_mhz": None,
+        "search_radius_mhz": 100.0,
+        "search_edge_padding_mhz": 10.0,
+        "search_step_mhz": 2.0,
+        "coarse_candidates": 8, "max_candidates": 8,
+        "confirmation_span_mhz": 20.0, "confirmation_points": 81,
+    })
+    return params
 
 
 class VirtualBasicAutoTuner(T.BasicAutoTuner):
@@ -711,6 +743,34 @@ def test_sequence_feedback_buffers_return_only_the_final_readout():
     assert shot_q.tolist() == [53.0, 57.0]
 
 
+def test_sequence_feedback_declares_its_frozen_reset_waveform():
+    """The real QICK upload must not reference an undeclared reset waveform."""
+    program = object.__new__(T.BasicSequenceProgram)
+    program.cfg = {
+        "shots": 10, "reps": 10, "reset_mode": "feedback",
+        "sigma": 0.10, "qubit_drag_beta": 0.02,
+        "reset_pi_sigma": 0.25, "reset_pi_drag_beta": 0.04,
+        "sequence_ops": [],
+    }
+    program.synci = lambda *_args, **_kwargs: None
+    calls = []
+    original_declare = T._declare_common
+    original_add = T.add_qubit_gaussian
+    T._declare_common = lambda *_args, **_kwargs: None
+    T.add_qubit_gaussian = lambda _program, name="qubit", **kwargs: (
+        calls.append((name, kwargs)) or 1)
+    try:
+        program.initialize()
+    finally:
+        T._declare_common = original_declare
+        T.add_qubit_gaussian = original_add
+
+    assert calls[0] == ("qubit", {})
+    assert calls[1] == ("qubit_reset", {
+        "sigma_us": 0.25, "drag_beta": 0.04,
+    })
+
+
 def test_feedback_threshold_is_bound_to_one_exact_readout_tuple():
     cfg = _base_config()
     with tempfile.TemporaryDirectory() as folder:
@@ -814,7 +874,7 @@ def test_concise_console_hides_diagnostics_but_keeps_the_saved_report():
 
 
 def test_static_fast_flux_is_replayed_but_never_tuned():
-    """Any signed park value is fixed context and survives every candidate config."""
+    """A signed park value is fixed context and survives every candidate config."""
     cfg = _base_config()
     cfg["ff_park_gain"] = -7341
     untouched = copy.deepcopy(cfg)
@@ -890,10 +950,955 @@ def test_dynamic_flux_excursion_is_not_mistaken_for_static_park():
             raise AssertionError("dynamic ff_hold_gain was silently treated as park")
 
 
+def test_global_discovery_recovers_exact_far_frequency_seeds():
+    """Discovery must use its device envelope, not a window around BaseConfig."""
+    cfg = _base_config()
+    cfg.update({
+        "read_pulse_freq": 7000.0,
+        "qubit_freq": 2400.7,
+        "qubit_pi_freq": 2400.7,
+    })
+    params = copy.deepcopy(FAST_PARAMS)
+    params["resonator"].update({
+        "search_min_mhz": 7244.0, "search_max_mhz": 7253.0,
+        "search_step_mhz": 0.05,
+    })
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        resonator = tuner._stage_resonator()
+        spectroscopy = tuner._stage_spectroscopy()
+        tuner._stage_iq_rabi()
+
+    assert abs(resonator - tuner.READ_FREQ) <= 0.08
+    assert all(2240.0 <= value <= 2580.0 for value in spectroscopy)
+    assert any(abs(value - tuner.QUBIT_FREQ) <= 0.25
+               for value in spectroscopy)
+    assert all(abs(value - 2400.7) > 100.0 for value in spectroscopy)
+    assert any(abs(candidate["qubit_pi_freq"] - tuner.QUBIT_FREQ) <= 0.8
+               for candidate in tuner._rabi_candidates)
+    assert tuner.data["maps"]["resonator"]["selection_confirmed"] is True
+    assert tuner.data["maps"]["spectroscopy"]["selection_confirmed"] is True
+
+
+def test_relative_100mhz_prior_recovers_without_device_frequency_constants():
+    """Production discovery is centered on initialize.py, not hardcoded to q4."""
+    cfg = _base_config()
+    cfg.update({
+        # Both physical features are far beyond the old local/wide scans but remain
+        # inside the explicitly accepted +/-100-MHz initialization contract.
+        "read_pulse_freq": 7160.0,
+        "qubit_freq": 2450.0,
+        "qubit_pi_freq": 2450.0,
+    })
+    params = _relative_100mhz_search_params()
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        resonator = tuner._stage_resonator()
+        spectroscopy = tuner._stage_spectroscopy()
+        tuner._stage_iq_rabi()
+
+    assert abs(resonator - tuner.READ_FREQ) <= 0.08
+    assert any(abs(value - tuner.QUBIT_FREQ) <= 0.25
+               for value in spectroscopy)
+    assert any(abs(candidate["qubit_pi_freq"] - tuner.QUBIT_FREQ) <= 0.8
+               for candidate in tuner._rabi_candidates)
+    resonator_map = tuner.data["maps"]["resonator"]
+    spectroscopy_map = tuner.data["maps"]["spectroscopy"]
+    assert resonator_map["search_mode"] == "relative_prior"
+    assert spectroscopy_map["search_mode"] == "relative_prior"
+    assert resonator_map["allowed_min_mhz"] == 7060.0
+    assert resonator_map["allowed_max_mhz"] == 7260.0
+    assert spectroscopy_map["allowed_min_mhz"] == 2350.0
+    assert spectroscopy_map["allowed_max_mhz"] == 2550.0
+    assert all(2350.0 <= value <= 2550.0 for value in spectroscopy)
+    # The resonator needed the outer adaptive expansion rather than a hidden q4 band.
+    attempted = resonator_map["search_attempt_acceptance_bounds_mhz"]
+    assert np.any(np.all(np.isclose(attempted, [7060.0, 7260.0]), axis=1))
+
+
+def test_relative_100mhz_prior_rejects_the_old_out_of_contract_seeds():
+    """The formerly supplied 7000/2400.7 seeds are explicitly outside +/-100."""
+    cfg = _base_config()
+    cfg.update({
+        "read_pulse_freq": 7000.0,
+        "qubit_freq": 2400.7,
+        "qubit_pi_freq": 2400.7,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=_relative_100mhz_search_params(),
+        )
+        for stage in (tuner._stage_resonator, tuner._stage_spectroscopy):
+            try:
+                stage()
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError(
+                    "an out-of-contract physical feature was accepted")
+
+    assert tuner.data["maps"]["resonator"]["allowed_min_mhz"] == 6900.0
+    assert tuner.data["maps"]["resonator"]["allowed_max_mhz"] == 7100.0
+    assert tuner.data["maps"]["spectroscopy"]["allowed_min_mhz"] == 2300.7
+    assert tuner.data["maps"]["spectroscopy"]["allowed_max_mhz"] == 2500.7
+    assert tuner._discovery_status["resonator"] is False
+    assert tuner._discovery_status["spectroscopy"] is False
+
+
+def test_relative_prior_padding_fits_exact_edges_but_cannot_expand_policy():
+    """A line at +/-100 is fittable; a line at +101 remains unauthorized."""
+    class ExactEdgeTuner(VirtualBasicAutoTuner):
+        READ_FREQ = _base_config()["read_pulse_freq"] + 100.0
+        QUBIT_FREQ = _base_config()["qubit_pi_freq"] + 100.0
+
+    class PaddingOnlyTuner(VirtualBasicAutoTuner):
+        READ_FREQ = _base_config()["read_pulse_freq"] + 101.0
+        QUBIT_FREQ = _base_config()["qubit_pi_freq"] + 101.0
+
+    params = _relative_100mhz_search_params()
+    with tempfile.TemporaryDirectory() as folder:
+        edge = ExactEdgeTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        assert abs(edge._stage_resonator() - edge.READ_FREQ) <= 0.08
+        lines = edge._stage_spectroscopy()
+        assert any(abs(value - edge.QUBIT_FREQ) <= 0.25 for value in lines)
+
+        padding = PaddingOnlyTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        for stage in (padding._stage_resonator, padding._stage_spectroscopy):
+            try:
+                stage()
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("fit padding silently enlarged the prior")
+
+
+def test_monotonic_transmission_cannot_be_reported_as_a_resonator():
+    class MonotonicTransmissionTuner(VirtualBasicAutoTuner):
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            offset = frequencies - np.mean(frequencies)
+            return (1.0 + 1e-3 * offset) + 1j * (0.2 + 2e-4 * offset)
+
+    cfg = _base_config()
+    cfg["read_pulse_freq"] = 7000.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = MonotonicTransmissionTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        try:
+            tuner._stage_resonator()
+        except RuntimeError as exc:
+            assert "no independently reproduced resonator feature" in str(exc)
+        else:
+            raise AssertionError("a monotonic transmission slope was called a resonator")
+
+    assert tuner._resonator_seed == 7000.0
+    assert tuner._discovery_readout["read_pulse_freq"] == 7000.0
+    measured = tuner.data["maps"]["resonator"]
+    assert measured["search_complete"] is False
+    assert measured["selection_confirmed"] is False
+    assert not np.any(measured["trial_valid"])
+
+
+def test_hardware_width_modest_depth_resonator_survives_confirmation():
+    class HardwareLikeResonatorTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.transmission_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            self.transmission_calls += 1
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            rng = np.random.default_rng(600 + self.transmission_calls)
+            # HWHM 0.17 MHz corresponds to the ~0.34-MHz linewidth in the hardware
+            # log.  Three-percent depth is intentionally far less forgiving than the
+            # old virtual notch's 82-percent depth.
+            detuning = (frequencies - self.READ_FREQ) / 0.17
+            noise = 5e-4 * (
+                rng.standard_normal(frequencies.size)
+                + 1j * rng.standard_normal(frequencies.size))
+            return 1.0 - 0.03 / (1.0 + 1j * detuning) + noise
+
+    params = _relative_100mhz_search_params()
+    cfg = _base_config()
+    cfg["read_pulse_freq"] = 7160.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = HardwareLikeResonatorTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        resonator = tuner._stage_resonator()
+
+    mapping = tuner.data["maps"]["resonator"]
+    assert abs(resonator - tuner.READ_FREQ) <= 0.08
+    assert mapping["selection_confirmed"] is True
+    assert mapping["search_mode"] == "relative_prior"
+    assert mapping["confirmation_contrast_snr"] >= 5.0
+    assert 0.25 <= mapping["confirmation_width_mhz"] <= 0.55
+
+
+def test_featureless_spectroscopy_does_not_promote_noise_or_the_input_prior():
+    class FeaturelessSpectroscopyTuner(VirtualBasicAutoTuner):
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            offset = frequencies - np.mean(frequencies)
+            return (0.2 + 8e-4 * offset) + 1j * (0.1 - 3e-4 * offset)
+
+    cfg = _base_config()
+    cfg["qubit_freq"] = 2400.7
+    cfg["qubit_pi_freq"] = 2400.7
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FeaturelessSpectroscopyTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+        )
+        try:
+            tuner._stage_spectroscopy()
+        except RuntimeError as exc:
+            assert "qubit feature" in str(exc)
+        else:
+            raise AssertionError("featureless spectroscopy produced a qubit candidate")
+
+    assert tuner._spec_candidates_mhz == []
+    measured = tuner.data["maps"]["spectroscopy"]
+    assert measured["search_complete"] is False
+    assert measured["candidate_frequencies_mhz"].size == 0
+    assert 2400.7 not in measured["candidate_frequencies_mhz"]
+
+
+def test_shoulder_proposals_do_not_turn_noise_into_a_transition():
+    class NoiseOnlySpectroscopyTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, noise_seed, **kwargs):
+            self.noise_seed = int(noise_seed)
+            self.spectroscopy_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            rng = np.random.default_rng(
+                8000 + 100 * self.noise_seed + self.spectroscopy_calls)
+            self.spectroscopy_calls += 1
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+            return baseline + 0.003 * (
+                rng.standard_normal(frequencies.size)
+                + 1j * rng.standard_normal(frequencies.size))
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 8,
+        "max_candidates": 8, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81,
+    })
+    for seed in range(6):
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = NoiseOnlySpectroscopyTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=params, noise_seed=seed,
+            )
+            try:
+                tuner._stage_spectroscopy()
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError(
+                    "noise-only shoulder proposals produced a transition")
+        mapping = tuner.data["maps"]["spectroscopy"]
+        assert mapping["candidate_frequencies_mhz"].size == 0
+        assert len(mapping["confirmation_valid"]) <= 8
+
+
+def test_production_grid_recovers_a_broad_noisy_line_with_opposed_sweeps():
+    """Exercise the shipped 2-MHz band, not an easier unit-test-only grid."""
+    class BroadNoisyLineTuner(VirtualBasicAutoTuner):
+        QUBIT_FREQ = 2534.6
+
+        def __init__(self, *args, **kwargs):
+            self.spectroscopy_axes = []
+            self.spectroscopy_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            self.spectroscopy_axes.append(frequencies.copy())
+            self.spectroscopy_calls += 1
+            rng = np.random.default_rng(90210 + self.spectroscopy_calls)
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+            # The 3.7-MHz FWHM mirrors the power-broadened line reported by the
+            # hardware run.  It is deliberately wider than the previous 6-MHz
+            # confirmation window could analyze without fitting it into the baseline.
+            normalized = 2.0 * (frequencies - self.QUBIT_FREQ) / 3.7
+            line = (0.18 + 0.06j) / (1.0 + normalized * normalized)
+            noise = 0.003 * (
+                rng.standard_normal(frequencies.size)
+                + 1j * rng.standard_normal(frequencies.size))
+            return baseline + line + noise
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 3,
+        "max_candidates": 3, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81, "confirmation_shots": 31,
+        "min_feature_snr": 3.0,
+        "confirmation_min_feature_snr": 4.0,
+        "coarse_capture_mhz": 2.0,
+    })
+    cfg = _base_config()
+    cfg.update({"qubit_freq": 2400.7, "qubit_pi_freq": 2400.7})
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = BroadNoisyLineTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        candidates = tuner._stage_spectroscopy()
+
+    mapping = tuner.data["maps"]["spectroscopy"]
+    assert mapping["axes"]["qubit_frequency_mhz"].size == 171
+    assert mapping["axes"]["staggered_qubit_frequency_mhz"].size == 170
+    assert np.isclose(mapping["axes"]["qubit_frequency_mhz"][0], 2240.0)
+    assert np.isclose(mapping["axes"]["qubit_frequency_mhz"][-1], 2580.0)
+    assert any(abs(value - tuner.QUBIT_FREQ) <= 0.20 for value in candidates)
+    assert np.any(mapping["confirmation_valid"])
+    valid_models = {
+        str(T.BasicAutoTuner._fit_complex_spectral_line(
+            mapping["axes"]["confirmation_frequency_mhz"][index],
+            mapping["confirmation_complex_response"][index, 0],
+            mapping["coarse_candidate_frequencies_mhz"][index], 3.0,
+        ).get("model"))
+        for index in np.flatnonzero(mapping["confirmation_valid"])
+    }
+    assert "population_lorentzian" in valid_models
+    assert any(axis.size == 81 and axis[0] > axis[-1]
+               for axis in tuner.spectroscopy_axes)
+
+
+def test_spectral_fit_accepts_population_and_complex_pole_lines_under_noise():
+    frequencies = np.linspace(2524.6, 2544.6, 81)
+    center = 2534.6
+    normalized = 2.0 * (frequencies - center) / 3.7
+    baseline = ((0.20 + 0.04j)
+                + (2e-4 - 1e-4j) * (frequencies - np.mean(frequencies)))
+    profiles = {
+        "population_lorentzian": 1.0 / (1.0 + normalized * normalized),
+        "complex_pole": 1.0 / (1.0 + 1j * normalized),
+    }
+    for expected_model, profile in profiles.items():
+        for seed in range(8):
+            rng = np.random.default_rng(seed)
+            response = (baseline + (0.08 + 0.02j) * profile
+                        + 0.006 * (
+                            rng.standard_normal(frequencies.size)
+                            + 1j * rng.standard_normal(frequencies.size)))
+            fitted = T.BasicAutoTuner._fit_complex_spectral_line(
+                frequencies, response, 2534.0, 3.0,
+                min_snr=4.0, min_r2=0.25, max_linewidth_mhz=8.0,
+            )
+            assert fitted["valid"] is True
+            assert fitted["model"] == expected_model
+            assert abs(fitted["frequency_mhz"] - center) <= 0.20
+
+
+def test_target_line_fit_survives_a_stronger_nearby_tls():
+    frequencies = np.linspace(2520.0, 2540.0, 81)
+    target = 2530.0
+
+    def population_line(center, amplitude):
+        normalized = 2.0 * (frequencies - center) / 3.7
+        return amplitude / (1.0 + normalized * normalized)
+
+    baseline = ((0.20 + 0.04j)
+                + (2e-4 - 1e-4j) * (frequencies - np.mean(frequencies)))
+    for neighbor in (2526.0, 2534.0):
+        for seed in range(6):
+            rng = np.random.default_rng(seed)
+            response = (
+                baseline
+                + population_line(target, 0.08 + 0.02j)
+                + population_line(neighbor, 0.16 - 0.03j)
+                + 0.003 * (
+                    rng.standard_normal(frequencies.size)
+                    + 1j * rng.standard_normal(frequencies.size)))
+            fitted = T.BasicAutoTuner._fit_complex_spectral_line(
+                frequencies, response, target, 2.0,
+                min_snr=4.0, min_r2=0.25,
+                excluded_centers_mhz=[neighbor],
+                exclusion_half_width_mhz=1.5,
+            )
+            assert fitted["valid"] is True
+            # Spectroscopy need only seed the coherent Rabi experiment; it must stay
+            # in the target basin rather than sliding to the 2x stronger neighbor.
+            assert abs(fitted["frequency_mhz"] - target) <= 1.25
+
+
+def test_full_spectroscopy_and_rabi_preserve_a_weaker_coherent_neighbor():
+    """A weaker qubit shoulder must survive a stronger nearby spectral line."""
+    class StrongerNeighborTuner(VirtualBasicAutoTuner):
+        QUBIT_FREQ = 2530.0
+
+        def __init__(self, *args, noise_scale=0.003,
+                     weak_amplitude=0.08 + 0.02j, noise_seed=1000, **kwargs):
+            self.spectroscopy_calls = 0
+            self.noise_scale = float(noise_scale)
+            self.weak_amplitude = complex(weak_amplitude)
+            self.noise_seed = int(noise_seed)
+            super().__init__(*args, **kwargs)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, gain, pulse_length_us
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            self.virtual_shots += int(shots) * frequencies.size
+            rng = np.random.default_rng(
+                self.noise_seed + self.spectroscopy_calls)
+            self.spectroscopy_calls += 1
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+
+            def line(center, amplitude):
+                normalized = 2.0 * (frequencies - center) / 3.7
+                return amplitude / (1.0 + normalized * normalized)
+
+            return (
+                baseline
+                + line(2530.0, self.weak_amplitude)
+                + line(2534.0, 0.16 - 0.03j)
+                + self.noise_scale * (
+                    rng.standard_normal(frequencies.size)
+                    + 1j * rng.standard_normal(frequencies.size)))
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 8,
+        "max_candidates": 8, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81, "coarse_capture_mhz": 2.0,
+    })
+    regimes = (
+        {"noise_scale": 0.003, "weak_amplitude": 0.08 + 0.02j,
+         "noise_seed": 1000},
+        # This noisier overlapping-line case made every one-line fit hit its
+        # linewidth bound before provisional opposed-response seeding was added.
+        {"noise_scale": 0.010, "weak_amplitude": 0.10 + 0.015j,
+         "noise_seed": 10000},
+    )
+    for regime in regimes:
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = StrongerNeighborTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=params, **regime,
+            )
+            seeds = tuner._stage_spectroscopy()
+            tuner._stage_iq_rabi()
+
+        assert min(abs(value - 2530.0) for value in seeds) <= 1.25
+        assert min(abs(value - 2534.0) for value in seeds) <= 0.90
+        witnesses = tuner.data["maps"]["iq_rabi"][
+            "coherent_witness_frequencies_mhz"]
+        assert np.any(np.abs(witnesses - 2530.0) <= 0.60)
+        # Shoulder recovery spends the pre-existing global confirmation budget; it
+        # does not silently turn an eight-candidate scan into unbounded work.
+        assert len(tuner.data["maps"]["spectroscopy"][
+            "confirmation_valid"]) <= 8
+
+
+def test_padded_discovery_recovers_both_characterized_band_edges():
+    """The advertised physical bands must not silently lose their edge values."""
+    class EdgeSpectroscopyTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, line_center, **kwargs):
+            self.line_center = float(line_center)
+            self.spectroscopy_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            self.spectroscopy_calls += 1
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            rng = np.random.default_rng(700 + self.spectroscopy_calls)
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+            normalized = 2.0 * (frequencies - self.line_center) / 3.7
+            noise = 0.001 * (
+                rng.standard_normal(frequencies.size)
+                + 1j * rng.standard_normal(frequencies.size))
+            return baseline + (0.18 + 0.06j) / (
+                1.0 + normalized * normalized) + noise
+
+    class EdgeResonatorTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, line_center, **kwargs):
+            self.line_center = float(line_center)
+            super().__init__(*args, **kwargs)
+
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            detuning = (frequencies - self.line_center) / 0.22
+            return 1.0 - 0.82 / (1.0 + 1j * detuning)
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["resonator"].update({
+        "search_min_mhz": 7244.0, "search_max_mhz": 7253.0,
+        "search_step_mhz": 0.05,
+    })
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 2,
+        "max_candidates": 2, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81,
+        "confirmation_min_feature_snr": 4.0,
+        "coarse_capture_mhz": 2.0,
+    })
+    for expected in (7245.0, 7252.0):
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = EdgeResonatorTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=params, line_center=expected,
+            )
+            measured = tuner._stage_resonator()
+        assert abs(measured - expected) <= 0.08
+    for expected in (2250.0, 2570.0):
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = EdgeSpectroscopyTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=params, line_center=expected,
+            )
+            measured = tuner._stage_spectroscopy()
+        assert any(abs(value - expected) <= 0.20 for value in measured)
+
+
+def test_transient_spectral_line_cannot_pass_opposed_confirmation():
+    class TransientLineTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.spectroscopy_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            self.spectroscopy_calls += 1
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+            # Primary, staggered, and first confirmation see the line.  It vanishes
+            # from the independently acquired reverse pass.
+            if self.spectroscopy_calls <= 3:
+                return (baseline + (0.18 + 0.06j) /
+                        (1.0 + 2j * (frequencies - 2534.6) / 3.7))
+            return baseline
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 1,
+        "max_candidates": 1, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81,
+        "confirmation_min_feature_snr": 4.0,
+        "coarse_capture_mhz": 2.0,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = TransientLineTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        try:
+            tuner._stage_spectroscopy()
+        except RuntimeError as exc:
+            assert "reproduced independently" in str(exc)
+        else:
+            raise AssertionError("a one-pass transient became a qubit candidate")
+
+    assert tuner._spec_candidates_mhz == []
+    mapping = tuner.data["maps"]["spectroscopy"]
+    assert mapping["confirmation_valid"].tolist() == [False]
+    assert mapping["search_complete"] is False
+
+
+def test_combined_trace_cannot_replace_the_agreed_opposed_pass_line():
+    class CancellationTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.spectroscopy_calls = 0
+            super().__init__(*args, **kwargs)
+
+        @staticmethod
+        def _line(frequencies, center, amplitude, linewidth):
+            normalized = 2.0 * (frequencies - center) / linewidth
+            return amplitude / (1.0 + normalized * normalized)
+
+        def _acquire_spectroscopy(self, freqs_mhz, candidate, shots, gain,
+                                  pulse_length_us):
+            del candidate, shots, gain, pulse_length_us
+            self.spectroscopy_calls += 1
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            baseline = ((0.20 + 0.04j)
+                        + (2e-4 - 1e-4j)
+                        * (frequencies - np.mean(frequencies)))
+            target = self._line(
+                frequencies, 2534.6, 0.18 + 0.04j, 2.0)
+            if self.spectroscopy_calls <= 2:
+                return baseline + target
+            # Both independent passes fit the 2534.6-MHz target; its IQ direction
+            # flips between them, so raw complex averaging cancels it and leaves a
+            # different 2535.6-MHz feature.  That combined-only center is diagnostic,
+            # never a valid replacement for the agreed opposed-pass estimate.
+            sign = 1.0 if self.spectroscopy_calls == 3 else -1.0
+            other = self._line(
+                frequencies, 2535.6, 0.06 - 0.01j, 1.0)
+            return baseline + sign * target + other
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"].update({
+        "search_min_mhz": 2240.0, "search_max_mhz": 2580.0,
+        "search_step_mhz": 2.0, "coarse_candidates": 1,
+        "max_candidates": 1, "confirmation_span_mhz": 20.0,
+        "confirmation_points": 81, "coarse_capture_mhz": 2.0,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = CancellationTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        try:
+            tuner._stage_spectroscopy()
+        except RuntimeError as exc:
+            assert "reproduced independently" in str(exc)
+        else:
+            raise AssertionError("a combined-only line replaced the opposed-pass line")
+
+    mapping = tuner.data["maps"]["spectroscopy"]
+    assert mapping["confirmation_valid"].tolist() == [False]
+    assert "combined fitted centre differs" in mapping["validation_errors"][0]
+    assert tuner._spec_candidates_mhz == []
+
+
+def test_resonator_confirmation_failure_falls_back_to_the_input_gain():
+    class GainFallbackTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.calls_by_gain = {}
+            super().__init__(*args, **kwargs)
+
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            gain = int(candidate["read_pulse_gain"])
+            self.calls_by_gain[gain] = self.calls_by_gain.get(gain, 0) + 1
+            # The safe 5000-DAC bootstrap has a convincing first trace but its fresh
+            # confirmation is only cable slope.  The input 1500-DAC setting is real on
+            # both acquisitions and must be tried instead of aborting discovery.
+            if gain == 5000 and self.calls_by_gain[gain] >= 2:
+                frequencies = np.asarray(freqs_mhz, dtype=float)
+                offset = frequencies - np.mean(frequencies)
+                return ((1.0 + 1e-3 * offset)
+                        + 1j * (0.2 + 2e-4 * offset))
+            return super()._acquire_transmission(
+                freqs_mhz, candidate, shots)
+
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = GainFallbackTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        resonator = tuner._stage_resonator()
+
+    mapping = tuner.data["maps"]["resonator"]
+    assert abs(resonator - tuner.READ_FREQ) <= 0.08
+    assert mapping["trial_gain_dac"].tolist() == [5000, 1500]
+    assert mapping["trial_confirmation_valid"].tolist() == [False, True]
+    assert mapping["bootstrap_gain_dac"] == 1500
+
+
+def test_failed_critical_discovery_and_coinflip_replay_can_never_write():
+    """A stable-looking local/noise result is reportable, never configurable."""
+    class NoResonatorTuner(VirtualBasicAutoTuner):
+        def _acquire_transmission(self, freqs_mhz, candidate, shots):
+            del candidate, shots
+            frequencies = np.asarray(freqs_mhz, dtype=float)
+            offset = frequencies - np.mean(frequencies)
+            return ((1.0 + 1e-3 * offset)
+                    + 1j * (0.2 + 2e-4 * offset))
+
+        def _stage_rough_single_shot(self):
+            return None
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["spectroscopy"]["enabled"] = False
+    params["iq_rabi"]["enabled"] = False
+    params["reset"] = {"enabled": False}
+    for name in ("parity_chevron", "fine_frequency", "amplified_error",
+                 "readout", "readout_length", "qubit", "pulse_duration"):
+        params[name]["enabled"] = False
+    params["coordinate_descent_repeat"] = False
+    params["leakage"] = {"enabled": False, "operational_enabled": False}
+    cfg = _base_config()
+    cfg.update({
+        "read_pulse_freq": 7000.0,
+        "qubit_freq": 2400.7,
+        "qubit_pi_freq": 2400.7,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = NoResonatorTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        with redirect_stdout(io.StringIO()):
+            result = tuner.acquire()["data"]
+
+    assert result["fidelity_replay_stable"] is True
+    assert result["best_found"]["fidelity"] < 0.55
+    assert result["discovery"]["missing_for_write"] == ["resonator"]
+    assert result["write_fidelity_gate"]["passed"] is False
+    assert result["final_stable"] is False
+    assert result["eligible_tuned"] == {}
+
+
+def test_missing_spectroscopy_alone_blocks_a_high_fidelity_write():
+    """Keep the discovery gate orthogonal to the low-fidelity write floor."""
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+            sigma=tuner.SIGMA,
+        )
+        final = tuner._confirm_candidates(
+            [candidate], shots=173, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact discovery-gate isolation",
+            add_to_history=False,
+        )[0]
+        tuner.working = dict(candidate)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._discovery_guard_active = True
+        tuner._discovery_status.update({
+            "resonator": True,
+            "spectroscopy": False,
+        })
+        tuner._record_control_witness(
+            "synthetic_rabi", candidate["qubit_pi_freq"],
+            "averaged_iq_rabi", candidate=candidate, r2=0.99, snr=20.0,
+        )
+        tuner._final_control_verified_key = T._control_key(candidate)
+        tuner._finalize(final)
+
+    assert final["fidelity_lcb_95"] > 0.90
+    assert tuner.data["write_fidelity_gate"]["passed"] is True
+    assert tuner.data["control_validation"]["verified_for_write"] is True
+    assert tuner.data["discovery"]["missing_for_write"] == ["spectroscopy"]
+    assert tuner.data["final_stable"] is False
+    assert tuner.data["eligible_tuned"] == {}
+
+
+def test_high_fidelity_without_coherent_control_witness_cannot_write():
+    """A stable saturation response is not automatically an X180 calibration."""
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+            sigma=tuner.SIGMA,
+        )
+        final = tuner._confirm_candidates(
+            [candidate], shots=173, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact coherent-control-gate isolation",
+            add_to_history=False,
+        )[0]
+        tuner.working = dict(candidate)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._discovery_guard_active = True
+        tuner._discovery_status.update({
+            "resonator": True,
+            "spectroscopy": True,
+        })
+        tuner._finalize(final)
+
+    assert final["fidelity_lcb_95"] > 0.90
+    assert tuner.data["discovery"]["verified_for_write"] is True
+    assert tuner.data["write_fidelity_gate"]["passed"] is True
+    assert tuner.data["control_validation"]["verified_for_write"] is False
+    assert tuner.data["final_stable"] is False
+    assert tuner.data["eligible_tuned"] == {}
+
+
+def test_control_witness_must_match_the_complete_selected_waveform():
+    """Nearby-line or wrong-gain evidence cannot authorize another pulse tuple."""
+    mismatches = (
+        {"qubit_pi_freq": 2532.0},       # another TLS inside the old +/-3 MHz gate
+        {"qubit_pi_gain": 20000},
+        {"sigma": 0.10},
+        {"qubit_drag_beta": 0.20},
+    )
+    for changes in mismatches:
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=FAST_PARAMS,
+            )
+            candidate = T._with_candidate(
+                tuner.working,
+                read_pulse_freq=tuner.READ_FREQ,
+                read_pulse_gain=tuner.READ_GAIN,
+                read_length=tuner.READ_LENGTH,
+                qubit_pi_freq=tuner.QUBIT_FREQ,
+                qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+                sigma=tuner.SIGMA,
+                qubit_drag_beta=0.04,
+            )
+            final = tuner._confirm_candidates(
+                [candidate], shots=173, blocks=FAST_PARAMS["final"]["blocks"],
+                label="final exact tuple-witness isolation",
+                add_to_history=False,
+            )[0]
+            witness_candidate = T._with_candidate(candidate, **changes)
+            tuner._record_control_witness(
+                "wrong_tuple", witness_candidate["qubit_pi_freq"],
+                "averaged_iq_rabi", candidate=witness_candidate,
+                r2=0.99, snr=20.0,
+            )
+            tuner.working = dict(candidate)
+            tuner._final_replay_completed = True
+            tuner._final_replay_kind = "unconstrained"
+            tuner._discovery_guard_active = True
+            tuner._discovery_status.update({
+                "resonator": True, "spectroscopy": True,
+            })
+            tuner._final_control_verified_key = T._control_key(witness_candidate)
+            tuner._finalize(final)
+
+        assert final["fidelity_lcb_95"] > 0.90
+        assert tuner.data["control_validation"]["verified_for_write"] is False
+        assert tuner.data["final_stable"] is False
+        assert tuner.data["eligible_tuned"] == {}
+
+    # The identical waveform, in contrast, is accepted by the isolated gate.
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+            sigma=tuner.SIGMA,
+        )
+        final = tuner._confirm_candidates(
+            [candidate], shots=173, blocks=FAST_PARAMS["final"]["blocks"],
+            label="final exact tuple-witness positive control",
+            add_to_history=False,
+        )[0]
+        tuner._record_control_witness(
+            "matching_tuple", candidate["qubit_pi_freq"],
+            "averaged_iq_rabi", candidate=candidate, r2=0.99, snr=20.0,
+        )
+        tuner.working = dict(candidate)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._discovery_guard_active = True
+        tuner._discovery_status.update({
+            "resonator": True, "spectroscopy": True,
+        })
+        tuner._final_control_verified_key = T._control_key(candidate)
+        tuner._finalize(final)
+
+    assert tuner.data["control_validation"]["verified_for_write"] is True
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligible_tuned"]
+
+
+def test_final_exact_repeated_pulse_audit_rejects_saturation():
+    """Two separated blobs from saturation cannot masquerade as coherent X180."""
+    class SaturatedControlTuner(VirtualBasicAutoTuner):
+        def _acquire_repeated_populations(self, candidate, pulse_counts, shots,
+                                          calibration):
+            del candidate, shots, calibration
+            return np.full(len(pulse_counts), 0.5, dtype=float)
+
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = SaturatedControlTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        candidate = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+            sigma=tuner.SIGMA,
+        )
+        try:
+            tuner._stage_final_control_verify(candidate)
+        except RuntimeError as exc:
+            assert "failed odd/even coherence" in str(exc)
+        else:
+            raise AssertionError("an incoherently saturated pulse passed coherence")
+
+    assert tuner._final_control_verified_key is None
+    assert tuner.data["maps"]["final_control_verify"]["verified"] is False
+    assert not any(row.get("exact_tuple", False)
+                   for row in tuner.data["control_witnesses"])
+
+
 def test_bad_start_recovers_and_preserves_best_effort_contract():
     cfg = _base_config()
+    # Neither physical feature is inside the old local/wide scans, but both satisfy
+    # the production tuner's explicit +/-100-MHz initialization contract.
+    cfg["read_pulse_freq"] = 7160.0
+    cfg["qubit_freq"] = 2450.0
+    cfg["qubit_pi_freq"] = 2450.0
     untouched = copy.deepcopy(cfg)
-    params = copy.deepcopy(FAST_PARAMS)
+    params = _relative_100mhz_search_params()
     params["leakage"] = {"enabled": False, "operational_enabled": True}
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
@@ -907,6 +1912,11 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     assert data["outcome"] == "completed_with_warnings"
     assert data["success"] is True
     assert data["final_stable"] is True
+    assert data["control_validation"]["verified_for_write"] is True
+    assert (tuple(data["control_validation"]["fresh_exact_audit_key"])
+            == tuple(data["control_validation"]["selected_control_key"]))
+    assert any(row["name"] == "final_control_verify" and row["status"] == "ok"
+               for row in data["stages"])
 
     # The exact input replay is intentionally near random, but every later stage still ran.
     baseline = [row for row in data["confirmed_candidates"]
@@ -1569,6 +2579,261 @@ def test_runner_enables_only_the_guarded_initialize_update_by_default():
     assert "expected_source_hash=startup_source_hash" in source
     assert 'eligible = result.get("eligible_tuned", {})' in source
 
+    discovery_updates = {}
+    for node in ast.walk(tree):
+        if (not isinstance(node, ast.Call)
+                or not isinstance(node.func, ast.Attribute)
+                or node.func.attr != "update"
+                or not isinstance(node.func.value, ast.Subscript)
+                or not isinstance(node.func.value.value, ast.Name)
+                or node.func.value.value.id != "P_BASIC"
+                or len(node.args) != 1):
+            continue
+        key = ast.literal_eval(node.func.value.slice)
+        discovery_updates[key] = ast.literal_eval(node.args[0])
+    assert discovery_updates == {}
+    assert T.BASIC_DEFAULTS["resonator"]["search_radius_mhz"] == 100.0
+    assert T.BASIC_DEFAULTS["spectroscopy"]["search_radius_mhz"] == 100.0
+    assert T.BASIC_DEFAULTS["resonator"]["search_min_mhz"] is None
+    assert T.BASIC_DEFAULTS["spectroscopy"]["search_min_mhz"] is None
+    for hardcoded_frequency in ("7244.0", "7253.0", "2240.0", "2580.0"):
+        assert hardcoded_frequency not in source
+
+
+def test_runner_main_never_writes_a_guard_rejected_result():
+    """Execute the destructive boundary; source-string checks are insufficient."""
+    runner_path = os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "Runners", "BasicAutoTune.py"))
+    initialize_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize")
+    proxy_name = (
+        "WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy")
+    saved_modules = {name: sys.modules.get(name)
+                     for name in (initialize_name, proxy_name)}
+    fake_initialize = types.ModuleType(initialize_name)
+    fake_initialize.BaseConfig = _base_config()
+    fake_initialize.outerFolder = tempfile.gettempdir()
+    fake_proxy = types.ModuleType(proxy_name)
+    fake_proxy.makeProxy = lambda: (object(), object())
+    sys.modules[initialize_name] = fake_initialize
+    sys.modules[proxy_name] = fake_proxy
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_basic_auto_tune_runner_runtime_test", runner_path)
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+    finally:
+        for name, previous in saved_modules.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+
+    class RecordingUpdater:
+        def __init__(self):
+            self.update_calls = []
+            self.history = []
+            self.allow_update = False
+
+        @staticmethod
+        def baseconfig_source_hash():
+            return "unchanged-source"
+
+        def update_baseconfig(self, *args, **kwargs):
+            self.update_calls.append((args, kwargs))
+            if not self.allow_update:
+                raise AssertionError(
+                    "guard-rejected result reached update_baseconfig")
+            values = dict(args[0])
+            startup = _base_config()
+            return {key: (startup.get(key), value)
+                    for key, value in values.items()}
+
+        def append_history(self, row):
+            self.history.append(row)
+
+        @staticmethod
+        def prune_backups(keep=10):
+            del keep
+
+        @staticmethod
+        def config_path():
+            return "unused"
+
+    updater = RecordingUpdater()
+    runner.config_updater = updater
+    runner.makeProxy = lambda: (object(), object())
+    runner.APPLY_CONFIG = True
+
+    best = T._with_candidate(
+        T._candidate_from_cfg(_base_config()),
+        qubit_pi_gain=5790,
+    )
+    best.update({
+        "fidelity": 0.95, "fidelity_se": 0.005,
+        "fidelity_lcb_95": 0.9402,
+        "confirmation_blocks": 3,
+        "block_fidelities": [0.95, 0.95, 0.95],
+        "block_spread": 0.0,
+        "label": "final exact leakage-screened step-5 replay",
+    })
+    current = {"result": None}
+
+    class FakeExperiment:
+        def __init__(self, *args, **kwargs):
+            del args, kwargs
+            self.data = copy.deepcopy(current["result"])
+            self.iname = None
+
+        def acquire(self, **kwargs):
+            del kwargs
+            return {"data": copy.deepcopy(self.data)}
+
+        def save_data(self):
+            return None
+
+        def save_plot(self):
+            return None
+
+    runner.BasicAutoTuner = FakeExperiment
+    control_key = T._control_key(best)
+    candidate_key = T._candidate_key(best)
+    base_result = {
+        "best_found": best,
+        "tuned": {key: best[key] for key in T.TUNED_KEYS},
+        "eligible_tuned": {"qubit_pi_gain": 5790},
+        "outcome": "completed_with_warnings",
+        "interrupted": False,
+        "final_stable": True,
+        "fidelity_replay_stable": True,
+        "leakage": {
+            "active": True, "strict_direct_active": False,
+            "operational_active": True, "required_for_write": True,
+            "selection_safe": True, "verified": True,
+            "final_replay_complete": True,
+            "verified_candidate_key": list(candidate_key),
+        },
+        "maps": {
+            "resonator": {
+                "search_complete": True, "selection_confirmed": True,
+                "used_global_scan": True,
+                "allowed_min_mhz": 7147.0,
+                "allowed_max_mhz": 7347.0,
+            },
+            "spectroscopy": {
+                "search_complete": True, "selection_confirmed": True,
+                "used_global_scan": True,
+                "allowed_min_mhz": 2424.5,
+                "allowed_max_mhz": 2624.5,
+            },
+        },
+        "discovery": {
+            "missing_for_write": [], "verified_for_write": True},
+        "write_fidelity_gate": {
+            "passed": True, "measured_lcb": 0.9402,
+            "minimum_lcb": 0.60,
+        },
+        "control_validation": {
+            "required_for_write": True, "verified_for_write": True,
+            "selected_control_key": control_key,
+            "fresh_exact_audit_key": control_key,
+            "matching_witnesses": [{
+                "stage": "final_control_verify",
+                "kind": "exact_odd_even_repeated_pulses",
+                "exact_tuple": True,
+                "control_key": control_key,
+                "blocks": 2,
+                "pulse_counts": [1, 2, 3, 4, 5, 6],
+                "worst_even_return_error_ucb": 0.10,
+                "worst_odd_inversion_error_ucb": 0.11,
+            }],
+        },
+        "eligibility": {
+            "atomic_tuple_safe": True, "discovery_verified": True,
+            "write_fidelity_qualified": True, "control_verified": True,
+            "changed_keys": ["qubit_pi_gain"], "write_needed": True,
+            "leakage_required": True, "leakage_verified": True,
+            "leakage_tuple_match": True,
+            "final_replay_kind": "leakage_constrained",
+        },
+    }
+    assert runner._write_contract_errors(
+        base_result, base_result["eligible_tuned"], _base_config()) == []
+    current["result"] = copy.deepcopy(base_result)
+    updater.allow_update = True
+    with redirect_stdout(io.StringIO()):
+        assert runner.main() == 0
+    updater.allow_update = False
+    assert len(updater.update_calls) == 1
+    assert updater.update_calls[0][0][0] == {"qubit_pi_gain": 5790}
+    assert updater.history[-1]["applied"] is True
+
+    rejected = []
+    discovery = copy.deepcopy(base_result)
+    discovery["discovery"] = {
+        "missing_for_write": ["spectroscopy"], "verified_for_write": False}
+    discovery["eligibility"]["discovery_verified"] = False
+    rejected.append(discovery)
+    forged_discovery = copy.deepcopy(base_result)
+    forged_discovery["maps"]["spectroscopy"]["selection_confirmed"] = False
+    rejected.append(forged_discovery)
+    fidelity = copy.deepcopy(base_result)
+    fidelity["write_fidelity_gate"] = {
+        "passed": False, "measured_lcb": 0.52, "minimum_lcb": 0.60}
+    fidelity["eligibility"]["write_fidelity_qualified"] = False
+    rejected.append(fidelity)
+    forged_fidelity = copy.deepcopy(base_result)
+    forged_fidelity["best_found"]["fidelity_lcb_95"] = 0.52
+    forged_fidelity["write_fidelity_gate"].update({
+        "passed": True, "measured_lcb": 0.52,
+    })
+    rejected.append(forged_fidelity)
+    control = copy.deepcopy(base_result)
+    control["control_validation"]["verified_for_write"] = False
+    control["eligibility"]["control_verified"] = False
+    rejected.append(control)
+    forged_control = copy.deepcopy(base_result)
+    forged_control["control_validation"]["matching_witnesses"] = []
+    rejected.append(forged_control)
+    unknown = copy.deepcopy(base_result)
+    unknown["eligible_tuned"]["not_a_calibration_key"] = 123
+    rejected.append(unknown)
+    mismatched = copy.deepcopy(base_result)
+    mismatched["eligible_tuned"]["qubit_pi_gain"] = 20000
+    rejected.append(mismatched)
+    split_frequency_alias = copy.deepcopy(base_result)
+    split_frequency_alias["best_found"]["qubit_freq"] += 1.0
+    split_frequency_alias["tuned"]["qubit_freq"] += 1.0
+    rejected.append(split_frequency_alias)
+    omitted = copy.deepcopy(base_result)
+    omitted["best_found"]["read_pulse_freq"] += 0.25
+    omitted["tuned"]["read_pulse_freq"] += 0.25
+    rejected.append(omitted)
+    leakage_bypass = copy.deepcopy(base_result)
+    leakage_bypass["leakage"].update({
+        "active": False, "operational_active": False,
+        "required_for_write": False, "verified": False,
+        "selection_safe": False, "final_replay_complete": False,
+        "verified_candidate_key": None,
+    })
+    leakage_bypass["eligibility"].update({
+        "leakage_required": False, "leakage_verified": False,
+        "final_replay_kind": "unconstrained",
+    })
+    rejected.append(leakage_bypass)
+    stale_leakage = copy.deepcopy(base_result)
+    stale_leakage["leakage"]["verified_candidate_key"] = [0] * 7
+    rejected.append(stale_leakage)
+
+    with redirect_stdout(io.StringIO()):
+        for result in rejected:
+            current["result"] = result
+            assert runner.main() == 0
+
+    assert len(updater.update_calls) == 1
+    assert len(updater.history) == len(rejected) + 1
+    assert all(row["applied"] is False for row in updater.history[1:])
+
 
 def test_config_update_compare_and_swap_refuses_stale_input():
     with tempfile.TemporaryDirectory() as folder:
@@ -1901,6 +3166,7 @@ def main():
         test_readout_tie_prefers_lower_power_duration_exposure,
         test_single_shot_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_buffers_return_only_the_final_readout,
+        test_sequence_feedback_declares_its_frozen_reset_waveform,
         test_feedback_threshold_is_bound_to_one_exact_readout_tuple,
         test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
         test_reset_raw_threshold_maximizes_held_shot_assignment,
@@ -1909,6 +3175,27 @@ def main():
         test_static_fast_flux_is_replayed_but_never_tuned,
         test_static_fast_flux_helper_forces_zero_and_nonzero_park,
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,
+        test_global_discovery_recovers_exact_far_frequency_seeds,
+        test_relative_100mhz_prior_recovers_without_device_frequency_constants,
+        test_relative_100mhz_prior_rejects_the_old_out_of_contract_seeds,
+        test_relative_prior_padding_fits_exact_edges_but_cannot_expand_policy,
+        test_monotonic_transmission_cannot_be_reported_as_a_resonator,
+        test_hardware_width_modest_depth_resonator_survives_confirmation,
+        test_featureless_spectroscopy_does_not_promote_noise_or_the_input_prior,
+        test_shoulder_proposals_do_not_turn_noise_into_a_transition,
+        test_production_grid_recovers_a_broad_noisy_line_with_opposed_sweeps,
+        test_spectral_fit_accepts_population_and_complex_pole_lines_under_noise,
+        test_target_line_fit_survives_a_stronger_nearby_tls,
+        test_full_spectroscopy_and_rabi_preserve_a_weaker_coherent_neighbor,
+        test_padded_discovery_recovers_both_characterized_band_edges,
+        test_transient_spectral_line_cannot_pass_opposed_confirmation,
+        test_combined_trace_cannot_replace_the_agreed_opposed_pass_line,
+        test_resonator_confirmation_failure_falls_back_to_the_input_gain,
+        test_failed_critical_discovery_and_coinflip_replay_can_never_write,
+        test_missing_spectroscopy_alone_blocks_a_high_fidelity_write,
+        test_high_fidelity_without_coherent_control_witness_cannot_write,
+        test_control_witness_must_match_the_complete_selected_waveform,
+        test_final_exact_repeated_pulse_audit_rejects_saturation,
         test_bad_start_recovers_and_preserves_best_effort_contract,
         test_interrupt_retains_a_completed_unconfirmed_measurement,
         test_failed_search_cannot_make_replayed_input_write_eligible,
@@ -1925,6 +3212,7 @@ def main():
         test_partial_wrapper_grid_can_report_but_not_authorize,
         test_interrupt_after_final_replay_never_emits_eligibility,
         test_runner_enables_only_the_guarded_initialize_update_by_default,
+        test_runner_main_never_writes_a_guard_rejected_result,
         test_config_update_compare_and_swap_refuses_stale_input,
         test_config_source_hash_refuses_untuned_physical_change,
         test_config_source_hash_is_stable_for_windows_crlf,
