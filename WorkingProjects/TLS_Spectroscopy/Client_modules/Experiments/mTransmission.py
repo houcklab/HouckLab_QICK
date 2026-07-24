@@ -10,9 +10,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 
 class TransReadProgram(AveragerProgram):
-    """One resonator readout at cfg['read_pulse_freq'] with NO qubit drive -- QUA
-    m_transmission leaves the X180 line commented out, so it is a pure transmission
-    measurement."""
 
     def initialize(self):
         cfg = self.cfg
@@ -35,9 +32,6 @@ class TransReadProgram(AveragerProgram):
 
 
 class Transmission(ExperimentClass):
-    """QICK port of QUA m_transmission.Transmission: a 1D readout-frequency sweep with no
-    qubit drive.  Plots |S21| (dB) vs readout frequency on ONE panel and reports the
-    resonator dip (argmin) -- exactly the QUA experiment."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Transmission', cfg=None, meta_dict=None, f_vec=None,

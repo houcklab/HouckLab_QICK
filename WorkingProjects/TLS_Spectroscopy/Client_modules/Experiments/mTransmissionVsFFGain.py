@@ -16,7 +16,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 
 
 class FFTransProgram(AveragerProgram):
-    """One (ff_gain, readout-freq) transmission point, readout at the held flux."""
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -53,8 +52,6 @@ class FFTransProgram(AveragerProgram):
 
 
 class TransmissionVsFFGain(ExperimentClass):
-    """2D resonator transmission vs (readout frequency, fast-flux gain) --
-    the QUA TransmissionVsFlux analog.  All analysis happens in acquire()."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Resonator_Spec_vs_Flux', cfg=None, meta_dict=None,
@@ -125,7 +122,6 @@ class TransmissionVsFFGain(ExperimentClass):
                 return
             plt.figure(live.fig.number)
             if n_dc <= 1:
-                # single-flux (gate-cal Transmission): 1 panel, |S21| vs frequency, no flux axis
                 plt.clf()
                 plt.suptitle(f"Resonator transmission - {self.path}  "
                              f"(shot-interleaved, {rounds} rounds)")
@@ -170,10 +166,6 @@ class TransmissionVsFFGain(ExperimentClass):
             minima, self.resonator_lookup_smooth_points)
 
         if len(dc_vec) <= 1:
-            # QUA `Transmission` analog (gate calibration): a single-flux resonator
-            # frequency sweep.  With one flux point there is no flux arc, so there is no
-            # cosine/dispersive-vs-flux fit and no flux pcolor -- report the dip and plot
-            # |S21| vs frequency on ONE panel, exactly like m_transmission.Transmission.
             dip_mhz = float(minima[0])
             self.data['resonator_dip_freq_mhz'] = dip_mhz
             print(f"Resonator dip at {dip_mhz:.4f} MHz (ff_gain={float(dc_vec[0]):+.0f} DAC) "

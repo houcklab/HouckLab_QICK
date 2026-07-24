@@ -22,12 +22,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
 
 
 def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
-    """VERBATIM QUA m_qubit_step_response._build_resonator_curve, absolute-Hz units.
-
-    Priority: (1) resonator_lookup_csv (step-1 *_resonator_lookup.csv, columns
-    dc_offset_V / resonator_dip_if_Hz) interpolated; (2) meta resonator_fit_parameters
-    (7-param dispersive or legacy 4-param cosine); (3) flat r_IF (= park readout freq).
-    """
     dc_vec = np.asarray(dc_vec, dtype=float)
     if resonator_lookup_csv is not None:
         table = np.genfromtxt(resonator_lookup_csv, delimiter=",", skip_header=1)
@@ -63,14 +57,6 @@ def _build_resonator_curve(meta_dict, dc_vec, resonator_lookup_csv=None):
 
 
 class FFStepResponseSpecProgram(RAveragerProgram):
-    """One spec slice (hardware qubit-freq sweep) at hold delay cfg['ff_hold'] after a flux step.
-
-    QUA make_prog analog: re-arm baseline at park (cfg['baseline_rearm_us']) -> ramp+hold
-    at the target for ff_hold (predistorted staircase if cfg['flux_tail_compensation']) ->
-    qubit spec pulse while held -> readout.  cfg['readout_after_park'] (default True,
-    used by step 4) reads out back at park; step 3 sets it False to read out AT the held
-    target flux like the QUA program (restore_target_at_end=False), then returns to park.
-    """
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -131,11 +117,9 @@ class FFStepResponseSpecProgram(RAveragerProgram):
 
 
 class QubitFluxStepResponse(ExperimentClass):
-    """QUA QubitFluxStepResponse, method for method (see module docstring)."""
 
     @staticmethod
     def find_latest_full_range_trace_csv(outer_folder, qubit):
-        """Find the newest full-range trace CSV saved for this qubit."""
         from pathlib import Path
         qubit_dir = Path(outer_folder) / qubit
         pattern = f"{qubit}_*_Qubit_Spec_vs_Flux_Full_Range_trace.csv"
@@ -155,7 +139,6 @@ class QubitFluxStepResponse(ExperimentClass):
         baseline_dc_offset=None,
         require_success=True,
     ):
-        """Find the newest production rise-decay-bump DC compensation JSON saved for this qubit."""
         return fpd.find_latest_compensation_json(
             outer_folder, qubit, dc_offset=dc_offset,
             baseline_dc_offset=baseline_dc_offset, require_success=require_success)
@@ -382,7 +365,6 @@ class QubitFluxStepResponse(ExperimentClass):
 
     @staticmethod
     def _load_trace_csv(csv_path):
-        """Load a trace CSV and return a cubic interpolation function (V -> GHz)."""
         from scipy.interpolate import interp1d
         data = np.genfromtxt(csv_path, delimiter=',', skip_header=1)
         dc_v = data[:, 0]
@@ -444,7 +426,6 @@ class QubitFluxStepResponse(ExperimentClass):
         return parsed
 
     def _evaluate_flux_model_frequency(self, dc_offset_volts):
-        """Evaluate the fitted qubit frequency in GHz, including optional linear tilt."""
         dc_offset_array = np.asarray(dc_offset_volts, dtype=float)
         base_frequency_ghz = np.asarray(
             fx.flux_tunable_transmon_frequency(
@@ -481,14 +462,6 @@ class QubitFluxStepResponse(ExperimentClass):
         return baseline_frequency_ghz, target_frequency_ghz, frequency_margin_ghz
 
     def _frequency_to_local_flux_branch(self, frequency_ghz):
-        """
-        Convert measured qubit frequency back to the local flux-voltage branch.
-
-        This is intentionally local: it only inverts the fitted spectrum between
-        the baseline and target voltages used in the step-response experiment.
-        That avoids jumping to another SQUID branch when the spectrum is not
-        globally one-to-one.
-        """
         frequency_ghz = np.asarray(frequency_ghz, dtype=float)
         if self.flux_fit_params is None:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
@@ -814,12 +787,6 @@ class QubitFluxStepResponse(ExperimentClass):
         plt.tight_layout()
 
     def acquire(self, progress=False, plotDisp=None, figNum=1):
-        """QUA analyze(): live-updated acquisition -> raw CSV -> trace -> fit -> figures.
-
-        QICK translation of the QUA shots-live loop: the acquisition unit is one delay
-        column (hardware-swept qubit frequency, reps-averaged on the board), so the
-        progress bar and live map update once per delay point.
-        """
         cfg = self.cfg
         if plotDisp is None:
             plotDisp = self.live_plot_enabled
@@ -911,7 +878,6 @@ class QubitFluxStepResponse(ExperimentClass):
         return {'config': cfg, 'data': self.data}
 
     def _save_step_response_panel(self, time_us, measured_step_response, ideal_step_response):
-        """Save the third panel as a standalone PNG."""
         panel_path = os.path.splitext(self.iname)[0] + "_step_response.png"
         fig = self._make_save_figure(figsize=(8, 4.5))
         ax = fig.add_subplot(111)
@@ -941,7 +907,6 @@ class QubitFluxStepResponse(ExperimentClass):
         print(f"Saved standalone step response figure: {panel_path}")
 
     def _write_raw_sweep_csv(self):
-        """Save the full step-response spectroscopy map as long-form CSV."""
         raw_csv_path = os.path.splitext(self.iname)[0] + "_raw_sweep.csv"
         magnitude = np.asarray(self.data["IQ_mag"], dtype=float)
         phase = np.asarray(self.data["IQ_phase"], dtype=float)
@@ -1002,7 +967,6 @@ class QubitFluxStepResponse(ExperimentClass):
         print(f"Saved raw sweep CSV: {raw_csv_path}")
 
     def _save_frequency_drift_outputs(self, time_us, extracted_frequency_ghz, measured_step_response, ideal_step_response):
-        """Save a target-free zoomed frequency drift plot and its numeric CSV."""
         extracted_frequency_ghz = np.asarray(extracted_frequency_ghz, dtype=float)
         measured_step_response = np.asarray(measured_step_response, dtype=float)
         ideal_step_response = np.asarray(ideal_step_response, dtype=float)

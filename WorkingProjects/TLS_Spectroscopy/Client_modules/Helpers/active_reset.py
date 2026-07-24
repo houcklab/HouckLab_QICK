@@ -1,18 +1,9 @@
 def to_signed32(v):
-    """Interpret a 32-bit word as a SIGNED int.  The tProc readout accumulator is signed, but
-    soc.tproc.single_read / read_dmem hand the word back UNSIGNED, so a small negative like
-    -1402 comes out as 4294965894 (== -1402 + 2**32).  The tProc's own condj comparison is
-    signed, so the threshold must be compared in signed units -- always pass raw reads through
-    this before thresholding or reporting them."""
     v = int(v) & 0xFFFFFFFF
     return v - (1 << 32) if v >= (1 << 31) else v
 
 
 def feedback_channel(soccfg, ro_ch=0):
-    """tProc input channel the readout buffer drives, from soccfg.  >= 0 => the firmware
-    routes this readout into the tProc (feedback / active reset possible).  -1 => it does
-    not (active reset impossible on this firmware; use passive relax).  This is the single
-    authoritative capability check."""
     try:
         return int(soccfg['readouts'][ro_ch]['tproc_ch'])
     except (KeyError, IndexError, TypeError, ValueError):
@@ -30,39 +21,6 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
                        ground_below=True, oper="lower", max_iters=3,
                        adc_trig_offset_us=None, settle_us=0.05, meas_syncdelay_us=0.2,
                        thermalization_us=None, page=None, reg_val=None, reg_thr=None):
-    """Emit a QUA-style feedback reset into ``prog`` (a QICK tProc-v1 program).
-
-    Fixed-count bounded loop, ``max_iters`` passes: measure -> read one accumulator
-    half -> play X180 only when classified excited.  Every pass is still measured so
-    QICK returns a deterministic number of buffers per repetition; later ground results
-    simply skip their correction pulses.  This implements the QUA conditional-reset
-    intent without an unbounded loop or variable buffer shape.
-
-    Requires ``feedback_channel(prog.soccfg, ro_ch) >= 0`` (verify with the probe).
-
-    Parameters
-    ----------
-    threshold_raw : int
-        Discrimination threshold in RAW accumulator units (NOT the host calib_params
-        threshold).  Calibrate with mActiveResetProbe.  Required.
-    ground_below : bool
-        True if the ground-state raw read value is BELOW threshold (excited above).  The
-        probe tells you the sign; flip if the blobs are inverted.
-    oper : {"lower", "upper"}
-        Which 32-bit half of the tProc input is the discrimination quadrature.  Default
-        "lower" (assumed I); the probe confirms.
-    max_iters : int
-        Max feedback passes (each: measure + conditional X180).
-    thermalization_us : float, optional
-        Photon-clearing wait after the final feedback measurement.  ``None`` reads
-        ``cfg['reset_thermalization_us']`` and defaults to 25 us.  This belongs in
-        the reset primitive rather than individual experiments: without it, a drive
-        can see residual measurement photons and a reset implementation can appear
-        to change the calibrated qubit frequency or pulse fidelity.
-    page, reg_val, reg_thr : int, optional
-        tProc register page + two scratch registers.  Defaults use page of qubit_ch and
-        high register numbers unlikely to collide with the sweep registers.
-    """
     if threshold_raw is None:
         raise ValueError("active_reset_block needs threshold_raw (raw accumulator units); "
                          "calibrate it with Experiments/mActiveResetProbe.py.")
@@ -104,8 +62,6 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
 
 
 def active_reset_readouts(cfg):
-    """Number of readout triggers an active reset ADDS per shot (0 if not feedback mode).
-    Add this to an AveragerProgram's readouts_per_experiment when reset_mode=='feedback'."""
     if str(cfg.get("reset_mode", "passive")).strip().lower() != "feedback":
         return 0
     return int(cfg.get("reset_max_iters", 3))
@@ -113,19 +69,6 @@ def active_reset_readouts(cfg):
 
 def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000,
                        validate=True, min_raw_fidelity=0.80, min_raw_shots=200):
-    """Measure and, by default, end-to-end validate fresh active-reset parameters.
-
-    The raw |g>/|e> accumulator reads on this readout drift between sessions -- enough to
-    move the threshold severalfold and even swap which side |g> sits on -- so a threshold
-    saved in the config goes stale, and a stale sign makes the feedback play X180 when the
-    qubit is ALREADY in |g>, pumping it the wrong way.  Re-measuring live at the start of a
-    run (intra-run drift is small) keeps it correct.
-
-    Returns the recommended dict or ``None`` if the firmware has no feedback path, the
-    raw separation is split across both accumulator halves, or the conditional reset
-    does not reduce a prepared excited reference below the validation bound.  A caller
-    must fall back to passive relaxation rather than trust a merely plausible threshold.
-    """
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)

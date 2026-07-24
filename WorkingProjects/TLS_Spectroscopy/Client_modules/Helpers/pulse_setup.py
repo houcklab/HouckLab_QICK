@@ -1,16 +1,8 @@
-"""Canonical QICK pulse primitives shared by calibration and production experiments.
-
-Keeping these conversions in one place is a calibration invariant: a pi gain measured
-with a Gaussian built on the qubit generator clock is not the same physical pulse when
-another program accidentally builds it on the tProc clock; likewise, ADC integration
-must see the same readout generator duration and phase that the tuner certified.
-"""
 
 import numpy as np
 
 
 def readout_drive_length_us(cfg):
-    """Generator duration covering the delayed ADC window plus an optional guard."""
     integration = float(cfg["read_length"])
     offset = max(float(cfg.get("adc_trig_offset", 0.0)), 0.0)
     guard = max(float(cfg.get("readout_guard_us", 1.0)), 0.0)
@@ -20,25 +12,11 @@ def readout_drive_length_us(cfg):
 
 
 def explicit_flat_top_fields(cfg):
-    """Return every explicitly populated flat-top alias used in this repository.
-
-    The QM-Team programs use ``flattop_length`` while the TLS programs use
-    ``flat_top_length``.  Some QM programs select a flat-top solely from the field being
-    non-None, even when ``qubit_pulse_style`` still says ``arb``.  Keeping the aliases
-    visible prevents that contradictory config from silently denoting two waveforms.
-    """
     return {key: cfg[key] for key in ("flat_top_length", "flattop_length")
             if key in cfg and cfg[key] is not None}
 
 
 def pulse_fingerprint(cfg):
-    """Serializable identity of the physical qubit/readout path being calibrated.
-
-    Frequency and gain are included as well as waveform/timing fields so saved manual
-    and automatic runs can be compared directly.  It intentionally records switch and
-    fast-flux state even though the current Gaussian tuner accepts only the inactive
-    cases; absence of a feature is part of the pulse identity.
-    """
     plateaus = explicit_flat_top_fields(cfg)
     q_style = str(cfg.get("qubit_pulse_style", "arb")).lower()
     if plateaus and q_style == "arb":
@@ -54,12 +32,8 @@ def pulse_fingerprint(cfg):
     guard_us = float(cfg.get("readout_guard_us", 1.0))
     minimum_generator_us = integration_us + max(offset_us, 0.0) + max(guard_us, 0.0)
     if "read_pulse_length" in cfg:
-        # TLS canonical semantics: an explicit request may extend but never truncate
-        # the delayed ADC window.
         generator_us = max(float(cfg["read_pulse_length"]), minimum_generator_us)
     elif "length" in cfg:
-        # QM programs emit this value literally; retaining it is essential because a
-        # too-short or deliberately longer tone must remain visible in an A/B diff.
         generator_us = float(cfg["length"])
     else:
         generator_us = minimum_generator_us
@@ -86,8 +60,6 @@ def pulse_fingerprint(cfg):
         "qubit_style": q_style,
         "qubit_envelope": envelope,
         "sigma_us": float(cfg.get("sigma", 0.0)),
-        # Dimensionless peak derivative-quadrature / peak in-phase ratio.  The sign is
-        # the physical QICK I/Q convention and is therefore part of pulse identity.
         "qubit_drag_beta": drag_beta,
         "flat_top_fields_us": {key: float(value) for key, value in plateaus.items()},
         "qubit_freq_mhz": float(cfg.get(
@@ -118,13 +90,6 @@ def pulse_fingerprint(cfg):
 
 
 def _generator_envelope_limits(prog, ch):
-    """Return (samples/fabric-clock, maximum envelope code) for a QICK generator.
-
-    The laboratory board currently runs QICK 0.2.133, where arbitrary envelopes are
-    loaded as sample arrays, while newer clients expose the same fields through a
-    slightly different mapping object.  Conservative fallbacks match the full-speed
-    axis_signal_gen_v4/v5/v6 used by this project.
-    """
     gencfg = {}
     try:
         gencfg = prog.soccfg["gens"][int(ch)]
@@ -141,20 +106,11 @@ def _generator_envelope_limits(prog, ch):
 
 
 def drag_envelope_arrays(prog, sigma_us, beta):
-    """Build a Gaussian plus normalized derivative quadrature for QICK waveform RAM.
-
-    ``beta`` is the signed ratio between the *peak* Q envelope and the peak I envelope.
-    This convention is hardware- and duration-independent, unlike a raw numerical
-    derivative coefficient.  At beta=0 callers deliberately use QICK's built-in
-    ``add_gauss`` so legacy Gaussian pulses remain bit-for-bit unchanged.
-    """
     qch = int(prog.cfg["qubit_ch"])
     sigma_cycles = max(int(prog.us2cycles(float(sigma_us), gen_ch=qch)), 1)
     samples_per_clock, maxv = _generator_envelope_limits(prog, qch)
     sigma_samples = float(sigma_cycles * samples_per_clock)
     length = int(4 * sigma_cycles * samples_per_clock)
-    # Half-sample centring makes both quadratures exactly symmetric/antisymmetric even
-    # for the even waveform lengths required by QICK.
     u = (np.arange(length, dtype=float) + 0.5 - 0.5 * length) / sigma_samples
     gauss = np.exp(-0.5 * u ** 2)
     gauss /= max(float(np.max(gauss)), 1e-15)
@@ -166,13 +122,6 @@ def drag_envelope_arrays(prog, sigma_us, beta):
 
 
 def add_qubit_gaussian(prog, name="qubit", sigma_us=None, drag_beta=None):
-    """Add the canonical 4-sigma Gaussian/DRAG pulse on the qubit generator clock.
-
-    The historical function name is retained because all production consumers import
-    it.  Once ``qubit_drag_beta`` is calibrated, those same consumers automatically
-    replay the identical two-quadrature waveform instead of silently reverting to a
-    plain Gaussian.
-    """
     cfg = prog.cfg
     qch = cfg["qubit_ch"]
     sigma = float(cfg["sigma"] if sigma_us is None else sigma_us)
@@ -185,14 +134,11 @@ def add_qubit_gaussian(prog, name="qubit", sigma_us=None, drag_beta=None):
         prog.add_gauss(ch=qch, name=name, sigma=sigma_cycles, length=4 * sigma_cycles)
     else:
         sigma_cycles, idata, qdata = drag_envelope_arrays(prog, sigma, beta)
-        # QICK 0.2.133's v1 API infers the arbitrary style from idata/qdata.  This call
-        # shape is already used by the RFSoC waveform programs in this repository.
         prog.add_pulse(ch=qch, name=name, idata=idata, qdata=qdata)
     return sigma_cycles
 
 
 def set_readout_pulse(prog, read_freq=None):
-    """Configure the canonical constant readout tone and return its frequency register."""
     cfg = prog.cfg
     rch, ro = cfg["res_ch"], cfg["ro_chs"][0]
     style = str(cfg.get("read_pulse_style", "const")).lower()

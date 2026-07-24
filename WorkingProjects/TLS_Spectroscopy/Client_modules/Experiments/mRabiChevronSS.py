@@ -15,11 +15,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 
 class RabiSSProgram(RAveragerProgram):
-    """Hardware gain sweep at a fixed drive frequency (cfg['rabi_drive_freq']); body plays
-    cfg['n_pulses'] gaussian pulses at the swept gain, then a single-shot readout with a
-    validated feedback reset when requested, otherwise passive relax_delay.  Reset
-    readouts are discarded; collect_shots() returns only the final per-gain shots with
-    shape (amp_expts, shots)."""
 
     def initialize(self):
         cfg = self.cfg
@@ -82,8 +77,6 @@ class RabiSSProgram(RAveragerProgram):
 
 
 def sweep_gain_populations(experiment, cfg, gains, calib_params):
-    """Run one RabiSSProgram (gain sweep at cfg['rabi_drive_freq']) and return the excited
-    population per gain (single shots discriminated with the SS-cal params)."""
     shots_i, shots_q = RabiSSProgram(experiment.soccfg, cfg).acquire(experiment.soc, load_pulses=True)
     pops = np.empty(len(gains), dtype=float)
     for j in range(len(gains)):
@@ -92,9 +85,6 @@ def sweep_gain_populations(experiment, cfg, gains, calib_params):
 
 
 class RabiChevronSS(ExperimentClass):
-    """2D amp x detuning Rabi chevron, single-shot + N-pi error amplification.  cfg knobs:
-    amp_start/amp_stop/amp_expts (DAC), freq_span/freq_points (MHz), num_pi, pulse_type,
-    shots.  Requires calib_params from the step-5 single-shot calibration."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Rabi_Chevron_SS', cfg=None, meta_dict=None, calib_params=None,

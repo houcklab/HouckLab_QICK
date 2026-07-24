@@ -1,21 +1,3 @@
-"""
-Step-3 trace-extraction engine -- VERBATIM adaptation of the QUA
-m_qubit_step_response.py methods (L600-940) to standalone functions.
-
-Pipeline (identical math, knobs, and method strings):
-  expected-window mask -> _make_trace_feature_score (wide SavGol baseline
-  residual, P98-P50 scaled, polarity-signed) -> _dynamic_program_trace_ridge
-  (jump-limited Viterbi, smoothness penalty on (jump/max_jump)^2) ->
-  _refine_trace_lorentzian (lorentzian_with_slope, two-pass 1x/3x window) ->
-  _smooth_trace_frequency (SavGol 17/2 over time) ; fallback:
-  extract_trace_independent_slices (SavGol->argmin->quadratic->local dip fit).
-
-QICK adaptation notes: `self.<knob>` became keyword args with the QUA class
-defaults; the frequency axis is absolute GHz (q_LO = 0, so IF Hz = f*1e9); the
-lmfit fit_magnitude_extremum is replaced by fit_functions.fit_resonator_dip
-(same S21 log-magnitude Lorentzian family) behind the identical containment
-check and method strings.
-"""
 
 import numpy as np
 from scipy import signal, optimize
@@ -323,7 +305,6 @@ def extract_trace_from_map(iq_magnitude_dbm, frequency_axis_ghz, time_ns,
                            baseline_frequency_ghz, target_frequency_ghz,
                            frequency_margin_ghz, trace_tracking_mode="ridge",
                            **trace_knobs):
-    """QUA _extract_trace_from_map: expected window + ridge (fallback slices)."""
     expected_min_ghz = min(baseline_frequency_ghz, target_frequency_ghz) - frequency_margin_ghz
     expected_max_ghz = max(baseline_frequency_ghz, target_frequency_ghz) + frequency_margin_ghz
     frequency_axis_ghz = np.asarray(frequency_axis_ghz, dtype=float)

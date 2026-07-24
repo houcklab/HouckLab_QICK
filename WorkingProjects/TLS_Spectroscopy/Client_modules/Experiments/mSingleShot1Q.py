@@ -15,8 +15,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 
 
 def discriminate_shots(i, q, calib_params):
-    """QUA job_to_shots_1q convention: IQ = factor * Re(e^{-i theta} (I+iQ));
-    state = 1 where IQ > threshold."""
     theta = calib_params["read_theta"]
     factor = calib_params["scale_factor"]
     thresh = calib_params["threshold"]
@@ -25,14 +23,6 @@ def discriminate_shots(i, q, calib_params):
 
 
 class SingleShotProgram(RAveragerProgram):
-    """Two experiments: gain 0 (ground) then gain=qubit_gain (excited), reps=shots.
-    The excited prep plays the pi pulse ``repeats`` times (QUA parity knob).
-
-    ``single_shot_state_order='eg'`` is available to calibration code for an exact
-    reverse-order companion acquisition.  Passive mode retains the legacy pulse path;
-    feedback mode prepends a freshly calibrated fixed-count reset and discards those
-    reset readouts from the returned ground/excited shot arrays.
-    """
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -55,9 +45,6 @@ class SingleShotProgram(RAveragerProgram):
         self.declare_gen(ch=cfg["res_ch"], nqz=cfg["nqz"],
                          mixer_freq=cfg.get("mixer_freq", 0), ro_ch=cfg["ro_chs"][0])
         self.declare_gen(ch=cfg["qubit_ch"], nqz=cfg["qubit_nqz"])
-        # The configured FF park value is the operating point, not a calibration
-        # parameter.  Replaying it here keeps manual TLS step 5 and BasicAutoTuner on
-        # the exact same pulse/flux path at both zero and nonzero park bias.
         ff_pulse.declare_static_park(self)
         for ro_ch in cfg["ro_chs"]:
             self.declare_readout(ch=ro_ch, freq=cfg["read_pulse_freq"],
@@ -104,10 +91,6 @@ class SingleShotProgram(RAveragerProgram):
             self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
         if feedback:
-            # The experiment register is swept between gain=0 and gain=X180.  Save it,
-            # install the calibrated X180 while the feedback loop runs, then restore
-            # the exact state-preparation gain.  Without this save/restore, the ground
-            # arm would try to reset with a zero-amplitude pulse.
             page = self.ch_page(cfg["qubit_ch"])
             self.mathi(page, 27, self.r_gain, "+", 0)
             self.mathi(page, 28, self.r_gain2, "+", 0)
@@ -127,8 +110,6 @@ class SingleShotProgram(RAveragerProgram):
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)),
                 page=page, reg_val=25, reg_thr=26)
-            # Restore every pulse-register field to the candidate waveform; restoring
-            # only gain would leave the reset frequency/waveform selected.
             self.set_pulse_registers(
                 ch=cfg["qubit_ch"], style="arb", freq=self.freq2reg(
                     float(cfg.get("qubit_pi_freq", cfg["qubit_freq"])),
@@ -173,7 +154,6 @@ class SingleShotProgram(RAveragerProgram):
 
 
 class SingleShot1Q(ExperimentClass):
-    """Single-shot readout calibration; analyze() is the QUA algorithm verbatim."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='SS_Cal', cfg=None, meta_dict=None, plot=True, save=True,
@@ -210,8 +190,6 @@ class SingleShot1Q(ExperimentClass):
         return {'config': cfg, 'data': self.data}
 
     def analyze(self, plotDisp=False):
-        """VERBATIM QUA SingleShot1Q.analyze (blob medians, find_threshold sweep,
-        thresh_0, sign-flip, confusion, both PNGs, '###' print block)."""
         cfg = self.cfg
         c_0 = self.I_0 + 1j * self.Q_0
         c_1 = self.I_1 + 1j * self.Q_1

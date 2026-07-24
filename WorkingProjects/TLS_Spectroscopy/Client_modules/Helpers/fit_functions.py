@@ -3,40 +3,27 @@ from scipy.optimize import curve_fit
 
 
 def exp_decay(t, P0, P1, T1):
-    """T1 relaxation: population(t) = P0 + (P1 - P0) * exp(-t / T1)."""
     return P0 + (P1 - P0) * np.exp(-t / T1)
 
 
 def exponential_1(x, a, b, c):
-    """a*exp(-x/b) + c  (b == T1)."""
     return a * np.exp(-x / b) + c
 
 
 def decaying_cosine(x, a, freq, phase_deg, offset, T2):
-    """Ramsey / decaying Rabi: a*exp(-x/T2)*cos(2*pi*freq*x + phase) + offset."""
     return a * np.exp(-x / T2) * np.cos(2 * np.pi * freq * x + phase_deg * np.pi / 180.0) + offset
 
 
 def lorentzian(x, f0, fwhm, amp, offset):
-    """Symmetric Lorentzian peak (amp>0) / dip (amp<0)."""
     return offset + amp / (1.0 + (2.0 * (x - f0) / fwhm) ** 2)
 
 
 def asymmetric_lorentzian_peak(x, ofs, height, phi, fr, fwhm):
-    """Resonator S21 log-magnitude (dB), asymmetric (Fano) Lorentzian.
-
-    20*log10|1 + height*exp(i*phi)/(1 + 2i*(x-fr)/fwhm)| + ofs
-    """
     z = 1.0 + height * np.exp(1j * phi) / (1.0 + 2j * (x - fr) / fwhm)
     return 20.0 * np.log10(np.abs(z)) + ofs
 
 
 def fit_T1(t_us, y, require_monotone=False):
-    """Fit an exponential T1 decay.  Returns (params, perr).
-
-    params: {'P0','P1','T1'} in the units of ``t_us`` for T1.
-    Returns (None, None) if the fit fails or there are < 4 finite points.
-    """
     t = np.asarray(t_us, dtype=float)
     y = np.asarray(y, dtype=float)
     good = np.isfinite(t) & np.isfinite(y)
@@ -61,11 +48,6 @@ def fit_T1(t_us, y, require_monotone=False):
 
 
 def fit_spec_dip(freq, amp, kind='auto'):
-    """Locate a qubit-spectroscopy feature (dip or peak) with a Lorentzian.
-
-    Returns (params, perr) with params {'f0','fwhm','amp','offset'}; f0 in the
-    units of ``freq``.  Falls back to argmin/argmax if the fit fails.
-    """
     f = np.asarray(freq, dtype=float)
     a = np.asarray(amp, dtype=float)
     good = np.isfinite(f) & np.isfinite(a)
@@ -96,8 +78,6 @@ def fit_spec_dip(freq, amp, kind='auto'):
 
 
 def fit_resonator_dip(freq, mag_db):
-    """Fit resonator |S21| in dB with the asymmetric Lorentzian; returns fr (same
-    units as ``freq``) in params['fr'].  Falls back to argmin."""
     f = np.asarray(freq, dtype=float)
     m = np.asarray(mag_db, dtype=float)
     good = np.isfinite(f) & np.isfinite(m)
@@ -120,8 +100,6 @@ def fit_resonator_dip(freq, mag_db):
 
 
 def fit_ramsey(t_us, y, detuning_seed=1.0):
-    """Fit a decaying cosine (Ramsey).  params: {'A','freq','phase','offset','T2'}.
-    ``freq`` in cycles per unit of ``t_us``; T2 in the same units as ``t_us``."""
     t = np.asarray(t_us, dtype=float)
     y = np.asarray(y, dtype=float)
     good = np.isfinite(t) & np.isfinite(y)
@@ -142,15 +120,10 @@ def fit_ramsey(t_us, y, detuning_seed=1.0):
 
 
 def cosine_vs_flux(x, amplitude, frequency, phi, offset):
-    """Resonator-dip-vs-flux periodicity: amplitude*cos(2*pi*frequency*x+phi)+offset."""
     return amplitude * np.cos(2 * np.pi * frequency * x + phi) + offset
 
 
 def smooth_resonator_dip_trace(minima, smooth_points=None):
-    """VERBATIM port of QUA m_transmission_vs_flux._smooth_resonator_dip_trace:
-    edge-padded median filter (kernel max(3, k//5), odd) then Savitzky-Golay
-    (window k, polyorder 2).  smooth_points: None = auto k~n/20 (floor 5, odd),
-    <=1 = raw, int = explicit window (floor 5 applies).  Returns (smoothed, k)."""
     from scipy import signal
     minima = np.asarray(minima, dtype=float)
     n = minima.size
@@ -173,10 +146,6 @@ def smooth_resonator_dip_trace(minima, smooth_points=None):
 
 
 def cosine_fit_qua(dc_vec, minima):
-    """QUA step-1 cosine fit, exact seeds and call: full-fft frequency guess
-    (signed, DC bin excluded), FULL-span amplitude, maxfev=10000, NO bounds,
-    NO try/except (a failure propagates, aborting analyze as in QUA).
-    Returns (fit_params 4-list [amplitude, frequency, phi, offset], initial_guess)."""
     dc_vec = np.asarray(dc_vec, dtype=float)
     minima = np.asarray(minima, dtype=float)
     fs = np.fft.fftfreq(len(dc_vec), d=dc_vec[1] - dc_vec[0])
@@ -194,13 +163,6 @@ def cosine_fit_qua(dc_vec, minima):
 
 def resonator_dispersive_func(x, f_bare_mhz, g_mhz, EJmax_ghz, Ec_ghz,
                               period, offset, d):
-    """Dressed-resonator avoided crossing (QUA resonator_dispersive_func):
-
-    f_dressed = 0.5*(f_bare + f_q) + 0.5*sign(delta)*sqrt(delta^2 + 4*g^2),
-    delta = f_bare - f_q, with f_q the asymmetric-SQUID transmon arc.
-    Freqs in MHz; the flux axis ``x`` (and period/offset) in whatever linear
-    flux unit the data uses (ff_gain DAC units here, volts in QUA).
-    """
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.flux_fit import (
         flux_tunable_transmon_frequency,
     )
@@ -211,7 +173,6 @@ def resonator_dispersive_func(x, f_bare_mhz, g_mhz, EJmax_ghz, Ec_ghz,
 
 def resonator_dispersive_func_hz(x, f_bare_hz, g_hz, EJmax_ghz, Ec_ghz,
                                  period, offset, d):
-    """QUA resonator_dispersive_func, Hz domain (absolute frequencies)."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.flux_fit import (
         flux_tunable_transmon_frequency,
     )
@@ -222,16 +183,6 @@ def resonator_dispersive_func_hz(x, f_bare_hz, g_hz, EJmax_ghz, Ec_ghz,
 
 def fit_resonator_dispersive(dc_vec, dip_if_hz, r_lo_hz, q_lo_hz,
                              anharmonicity_hz, period_seed_v):
-    """VERBATIM port of QUA _fit_resonator_dispersive (m_transmission_vs_flux.py):
-    exact seeds, resonator-above/below branch, g seed from the dispersive-pull
-    span, d seed 0.5, exact bounds, maxfev 20000.  NO internal try/except -- the
-    caller wraps it (QUA behavior; the period seed is evaluated in the caller's
-    try, so a zero cosine frequency raises there).
-
-    dip_if_hz is the (smoothed) dip trace RELATIVE to r_lo_hz (pass r_lo_hz=0
-    with absolute-Hz dips on QICK).  Returns (params7, rms_hz) with params7 =
-    [f_bare_Hz, g_Hz, EJmax_GHz, Ec_GHz, period, offset, d].
-    """
     dc_vec = np.asarray(dc_vec, dtype=float)
     dip_abs = np.asarray(dip_if_hz, dtype=float) + float(r_lo_hz)
     span = float(np.max(dip_abs) - np.min(dip_abs))
@@ -280,8 +231,6 @@ def fit_resonator_dispersive(dc_vec, dip_if_hz, r_lo_hz, q_lo_hz,
 
 
 def fit_cosine_vs_flux(dc, dip):
-    """Fit resonator dip frequency vs flux voltage with a cosine.  Returns
-    (params, perr) with {'amplitude','frequency','phi','offset'} (frequency in 1/V)."""
     x = np.asarray(dc, dtype=float)
     y = np.asarray(dip, dtype=float)
     good = np.isfinite(x) & np.isfinite(y)

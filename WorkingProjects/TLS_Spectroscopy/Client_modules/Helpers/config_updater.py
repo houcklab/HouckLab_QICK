@@ -10,7 +10,6 @@ import numpy as np
 
 
 def config_path():
-    """Absolute path of the live initialize.py (import is side-effect-free)."""
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib import initialize
     p = initialize.__file__
     if p.endswith((".pyc", ".pyo")):
@@ -30,8 +29,6 @@ def _baseconfig_node(tree):
 
 
 def read_baseconfig(path=None):
-    """The literal-valued entries of BaseConfig (keys whose values are expressions,
-    e.g. FF_CH, are skipped)."""
     path = path or config_path()
     with open(path, encoding="utf-8") as f:
         tree = ast.parse(f.read())
@@ -47,7 +44,6 @@ def read_baseconfig(path=None):
 
 
 def baseconfig_source_hash(path=None):
-    """SHA-256 identity of the complete live config source, not just tuned literals."""
     path = path or config_path()
     with open(path, "rb") as stream:
         return hashlib.sha256(stream.read()).hexdigest()
@@ -74,19 +70,7 @@ def _same_literal_value(current, expected):
 
 def update_baseconfig(updates, path=None, backup=True, expected=None,
                       expected_source_hash=None):
-    """Update literal values inside BaseConfig.  updates: {key: new_value}.
-    Returns {key: (old_string, new_string)}.  Raises (and writes NOTHING) if any key is
-    missing, ambiguous, or if the post-edit file does not verify.
-
-    When ``expected`` is supplied, this is a literal compare-and-swap update.  When
-    ``expected_source_hash`` is supplied, *the entire source file* must still match the
-    snapshot captured before a long calibration run, including non-tuned physical-path
-    fields and expressions.  The source is checked again immediately before replacement
-    so a concurrent edit is never silently overwritten.
-    """
     path = path or config_path()
-    # Hash and compare raw bytes so a Windows CRLF checkout is not normalized to LF
-    # between the startup snapshot and this compare-and-swap check.
     with open(path, "rb") as f:
         raw_src = f.read()
     src = raw_src.decode("utf-8")
@@ -179,9 +163,6 @@ def history_path(path=None):
 
 
 def append_history(record, path=None):
-    """Append one run to the calibration history, ATOMICALLY.  Writing in place would
-    destroy the entire history if the process died mid-write -- the same care
-    update_baseconfig already takes for initialize.py."""
     hp = history_path(path)
     records = []
     if os.path.exists(hp):
@@ -206,8 +187,6 @@ def append_history(record, path=None):
 
 
 def prune_backups(path=None, keep=10):
-    """Keep only the newest `keep` initialize.py backups; they otherwise accumulate
-    without bound inside the package directory."""
     path = path or config_path()
     d = os.path.dirname(path)
     base = os.path.basename(path) + ".bak_"
@@ -221,9 +200,6 @@ def prune_backups(path=None, keep=10):
 
 
 def last_ramsey_sign(qubit=None, path=None):
-    """The hardware-measured Ramsey sign convention from the most recent run that
-    recorded one (+1/-1), else None.  Filtered by QUBIT when given: a sign measured on
-    one qubit must not be silently inherited by another."""
     hp = history_path(path)
     if not os.path.exists(hp):
         return None

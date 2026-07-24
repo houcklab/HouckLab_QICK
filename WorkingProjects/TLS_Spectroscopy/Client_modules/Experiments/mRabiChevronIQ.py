@@ -20,7 +20,6 @@ def flux_hold_us(cfg, cover_readout):
 
 
 def flux_hold_declare(prog):
-    """Declare FF for either a dynamic hold or the configured static park point."""
     prog.do_flux_hold = bool(prog.cfg.get("ff_hold_gain", 0))
     prog.do_static_ff_park = bool(ff_pulse.static_park_configured(prog.cfg))
     if prog.do_flux_hold or prog.do_static_ff_park:
@@ -28,7 +27,6 @@ def flux_hold_declare(prog):
 
 
 def flux_hold_build(prog):
-    """Build the ramp-hold-ramp (after the pulse registers) if flux-holding."""
     if getattr(prog, "do_flux_hold", False):
         cfg = prog.cfg
         prog.ff_segs = ff_pulse.build_ramp_hold_ramp(
@@ -41,13 +39,6 @@ def flux_hold_build(prog):
 
 
 def _rabi_feedback_reset(prog):
-    """SS-Rabi TRUE tProc feedback reset at park, BEFORE the drive.  The qubit pulse register
-    holds the SWEPT gain, so save it to a scratch register, set the gain to qubit_pi_gain for
-    the reset pi, run the feedback loop, then restore the swept gain for the drive.  UNTESTED
-    on hardware -- gated on reset_mode=='feedback' so the passive path is never affected; run
-    mActiveResetProbe first to confirm the feedback path + get reset_threshold_raw.  The
-    scratch registers (25/26 for the block, 27 for the saved gain) may need adjusting if they
-    collide with the RAverager's sweep registers on this board."""
     cfg = prog.cfg
     page = prog.ch_page(cfg["qubit_ch"])
     r_gain = prog.sreg(cfg["qubit_ch"], "gain")
@@ -74,19 +65,12 @@ def _rabi_feedback_reset(prog):
 
 
 def rabi_flux_body(prog):
-    """Shared body: [optional feedback reset] -> (optional) ramp park->hold at ff_hold_gain
-    -> n_pulses gaussian drive -> readout (at park after ramp-down by default, or AT the held
-    flux) -> ramp down.  reset_mode: 'passive' (default) uses relax_delay (the tProc-v1
-    substitute for QUA active reset); 'feedback' runs the TRUE tProc active reset first and
-    then a reset_thermalization_us (default 25) photon-clearing wait before the drive."""
     cfg = prog.cfg
     feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
     if feedback:
         _rabi_feedback_reset(prog)
     hold = getattr(prog, "do_flux_hold", False)
     if hold:
-        # Force even a zero park value so a previous program's latched FF output
-        # cannot become the unrecorded starting point of this ramp.
         ff_pulse.assert_park(prog, prog.ff_segs, force=True)
         prog.sync_all(prog.us2cycles(max(float(cfg.get("baseline_rearm_us", 0.5)), 0.05)))
         ff_pulse.play_ramp_up_hold(prog, prog.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
@@ -111,8 +95,6 @@ def rabi_flux_body(prog):
 
 
 class RabiChevronIQProgram(RAveragerProgram):
-    """Hardware gain sweep at a FIXED drive frequency (cfg['rabi_drive_freq']); body
-    plays cfg['n_pulses'] gaussian pulses at the swept gain, then measures averaged IQ."""
 
     def initialize(self):
         cfg = self.cfg
@@ -159,14 +141,10 @@ class RabiChevronIQProgram(RAveragerProgram):
 
 
 def n_drive_pulses(pulse_type, num_pi):
-    """QUA pulse count: X180 -> num_pi pulses; X90 -> 2*num_pi (2 X90 == 1 X180)."""
     return int(num_pi) * (2 if str(pulse_type).upper() == "X90" else 1)
 
 
 class RabiChevronIQ(ExperimentClass):
-    """2D amp x detuning Rabi chevron (averaged IQ).  Reads sweep knobs from cfg:
-    amp_start/amp_stop/amp_expts (DAC gain), freq_span/freq_points (MHz detuning),
-    num_pi, pulse_type ('X180'|'X90'), shots.  Drive freq centered on qubit_pi_freq."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Rabi_Chevron_IQ', cfg=None, meta_dict=None, num_pi_pulses=1,

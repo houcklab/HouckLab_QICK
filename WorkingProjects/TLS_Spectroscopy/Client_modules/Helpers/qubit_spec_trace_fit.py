@@ -29,8 +29,6 @@ def detect_stripe_rows(magnitude_dbm):
     row_median = np.nanmedian(magnitude_dbm, axis=1)
     row_baseline = medfilt(row_median, kernel_size=STRIPE_BASELINE_MEDIAN_PTS)
     excess = row_median - row_baseline
-    # Adaptive stripe threshold: scale with the map's own noise level so faint
-    # stripes are caught on low-contrast data; capped by STRIPE_EXCESS_DB.
     excess_mad = np.nanmedian(np.abs(excess - np.nanmedian(excess))) + 1e-12
     stripe = excess > min(STRIPE_EXCESS_DB, max(0.4, 5.0 * excess_mad))
     if STRIPE_EXPAND_PTS > 1:
@@ -42,11 +40,7 @@ def detect_stripe_rows(magnitude_dbm):
 def compute_emission_map(magnitude_dbm, frequency_ghz, stripe_mask):
     row_median = np.nanmedian(magnitude_dbm, axis=1)
     mag_h = magnitude_dbm - row_median[:, None]
-    # Also remove the per-DC background (broad bright/dark washes vs voltage)
-    # so the ridge rewards only features bright relative to their own column.
     mag_h = mag_h - np.nanmedian(mag_h, axis=0)[None, :]
-    # Deflate noisy/washed-out columns (full-height readout glitches) so their
-    # residue cannot out-bid a faint narrow line on quiet columns.
     col_mad = np.nanmedian(np.abs(mag_h - np.nanmedian(mag_h, axis=0)[None, :]), axis=0)
     col_scale = np.clip(col_mad / (np.nanmedian(col_mad) + 1e-12), 1.0, None)
     mag_h = mag_h / col_scale[None, :]
@@ -60,9 +54,6 @@ def compute_emission_map(magnitude_dbm, frequency_ghz, stripe_mask):
 def dp_path_through_emission(emission, frequency_ghz, dc_axis=None):
     step_mhz = float(np.nanmedian(np.diff(frequency_ghz))) * 1e3
     n_freq, n_dc = emission.shape
-    # Slope-aware smoothness: penalty per (MHz per mV of flux)^2 and max jump
-    # scaled with the DC step, so steep lines on coarse sweeps are followable
-    # (equivalent to the old pixel-space penalty on 1 mV / 0.5 MHz sweeps).
     dv_mv = 1.0
     if dc_axis is not None and len(dc_axis) > 1:
         dv_mv = max(float(np.nanmedian(np.abs(np.diff(dc_axis)))) * 1e3, 1e-3)
@@ -165,13 +156,9 @@ def fit_transmon_iterative(dc_axis, freq_axis):
                 Vi, fi = Vi[~outliers], fi[~outliers]
             if Vi.size < 8:
                 break
-            # Anneal: shrink the rejection threshold so near-branch contamination
-            # (e.g. an avoided-crossing lower branch) is progressively dropped.
             threshold = max(threshold * TRANSMON_OUTLIER_SHRINK, TRANSMON_OUTLIER_FLOOR_GHZ)
         if popt is None:
             continue
-        # Final pass: re-include every original point consistent with the
-        # converged model (fixes edge bias when annealing starved the edges).
         rms_kept = float(np.sqrt(np.mean((fi - flux_tunable_transmon_frequency_with_tilt(Vi, *popt)) ** 2)))
         resid_all = np.abs(fobs - flux_tunable_transmon_frequency_with_tilt(V, *popt))
         keep = resid_all < max(3.0 * rms_kept, TRANSMON_OUTLIER_FLOOR_GHZ)
@@ -208,22 +195,11 @@ def extrema_within_range(popt, dc_lo, dc_hi):
 
 
 def extract_confident_trace(tdc, tf, tmag):
-    """v3 ridge extraction: returns (trace_ghz, confident_mask) on the tdc grid."""
     stripe, _, _ = detect_stripe_rows(tmag)
     emission, _ = compute_emission_map(tmag, tf, stripe)
     path_idx = dp_path_through_emission(emission, tf, tdc)
-    # Per-column peakiness (z-score vs the column's own median/MAD). Used (a)
-    # to let the per-column peak override the DP path when it is clearly the
-    # stronger feature (faint steep lines that smoothness penalties refuse),
-    # and (b) as the confidence gate, so featureless glow and out-of-band
-    # columns yield no confident points while faint narrow lines survive.
-    # Continuity is enforced downstream by the annealed transmon fit.
     cols = np.arange(tdc.size)
     argmax_idx = np.nanargmax(emission, axis=0)
-    # Background stats per column EXCLUDING +/-60 MHz around the column peak:
-    # a broad (flux-noise-widened) line must not inflate its own background
-    # MAD and suppress its z-score; featureless glow is unaffected because
-    # excluding a window from a uniform column changes nothing.
     f_off = np.abs(tf[:, None] - tf[argmax_idx][None, :])
     bg = np.where(f_off > 0.06, emission, np.nan)
     col_med = np.nanmedian(bg, axis=0)
@@ -248,12 +224,6 @@ def fit_qubit_spec_map(dc_v, freq_ghz, mag_dbm,
                        trim_low_dc_v=0.02, trim_high_dc_v=0.0,
                        fit_dc_min_v=None, fit_dc_max_v=None,
                        trace_freq_min_ghz=None, trace_freq_max_ghz=None):
-    """Run the full pipeline on a (n_freq x n_dc) magnitude map.
-
-    Windowing semantics match the notebook: optional absolute DC window first
-    (None -> full sweep), then the trims always cut from its edges; the low
-    trim drops the sweep-start artifact.
-    """
     dc_v = np.asarray(dc_v, dtype=float)
     freq_ghz = np.asarray(freq_ghz, dtype=float)
     mag_dbm = np.asarray(mag_dbm, dtype=float)
@@ -311,7 +281,6 @@ def print_fit_report(result, label="Advanced qubit-spec fit"):
 
 
 def save_fit_overlay_png(png_path, dc_v, freq_ghz, mag_dbm, result, title=None):
-    """Raw magnitude map with ONLY the transmon fit overlaid (notebook style)."""
     import matplotlib.pyplot as plt
     dc_v = np.asarray(dc_v, dtype=float)
     freq_ghz = np.asarray(freq_ghz, dtype=float)

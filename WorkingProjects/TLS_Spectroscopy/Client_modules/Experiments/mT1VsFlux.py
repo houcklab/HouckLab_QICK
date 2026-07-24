@@ -97,7 +97,6 @@ def _exp_decay_model(t, P0, P1, T1):
 
 
 def _fit_T1_map(ss, t_us, fit_clip=(0.0, 1.0), require_monotone=False):
-    """Per-flux-row exponential fit (QUA _fit_T1_map: seeds, bounds, maxfev)."""
     from scipy.optimize import curve_fit
     ss = np.asarray(ss, dtype=float)
     t_us = np.asarray(t_us, dtype=float)
@@ -153,7 +152,6 @@ def _write_csv_rows(csv_path, fieldnames, rows):
 
 
 def _save_flux_curve_csv(csv_path, dc_vec, columns, extra_columns=None):
-    """One row per DC: scan_index, dc_target_V, <extra (repeat) cols>, <columns>."""
     extra_columns = dict(extra_columns or {})
     fieldnames = ["scan_index", "dc_target_V"] + list(extra_columns.keys()) + list(columns.keys())
     rows = []
@@ -168,7 +166,6 @@ def _save_flux_curve_csv(csv_path, dc_vec, columns, extra_columns=None):
 
 def _save_flux_map_csv(csv_path, dc_vec, t_us, map2d, value_name="population_pe",
                        extra_columns=None):
-    """One row per (dc, t): scan_index, t_index, dc_target_V, t_wait_us, <extra>, value."""
     extra_columns = dict(extra_columns or {})
     fieldnames = (["scan_index", "t_index", "dc_target_V", "t_wait_us"]
                   + list(extra_columns.keys()) + [value_name])
@@ -339,11 +336,6 @@ def save_wall_clock_repeat_full_outputs(csv_base_path, file_tag, per_run_full_da
 
 
 class FFT1Program(AveragerProgram):
-    """One (flux target, wait) point with herald + final single-shot readouts.
-
-    cfg['do_ff']=False (the P0/P1 park references) skips the flux pulse entirely
-    so the reference readout happens at t~0 at park, exactly like QUA.
-    """
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -401,9 +393,6 @@ class FFT1Program(AveragerProgram):
                 max_iters=int(cfg.get("reset_max_iters", 3)))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
-                     # clear cavity photons ~10/kappa before the pi (matches QUA, which
-                     # idles the resonator ~5xT1 here so it is always fully depleted).
-                     # DEVICE-DEPENDENT: q4 kappa/2pi=0.363 MHz -> 10/kappa ~= 4.4 us.
                      wait=True, syncdelay=self.us2cycles(cfg.get("herald_delay", 4.4)))
         if cfg.get("do_pi", True):
             self.pulse(ch=cfg["qubit_ch"])
@@ -438,7 +427,6 @@ class FFT1Program(AveragerProgram):
 
 
 class _T1VsFluxBase(ExperimentClass):
-    """Shared ctor/knobs/data-dict scaffolding (QUA base behavior)."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='data', cfg=None, meta_dict=None, dc_vec=None, shots=2000,
@@ -487,10 +475,6 @@ class _T1VsFluxBase(ExperimentClass):
             self.data.update(self.repeat_metadata)
 
     def _run_point_counts(self, ff_gain, wait_us, do_pi=True, do_ff=True, reps=None):
-        """Run one (flux, wait) point; return (n_excited, n_kept) from the
-        SS-discriminated shots.  Counts (rather than a per-call mean) let shots be
-        POOLED across interleave rounds -- post-selection keeps a variable number of
-        shots per round, so only counts add correctly."""
         cfg = self.cfg
         cfg["ff_gain"] = float(ff_gain)
         cfg["ff_hold"] = float(wait_us)
@@ -518,12 +502,6 @@ class _T1VsFluxBase(ExperimentClass):
         return float(exc / kept)
 
     def _interleaved_populations(self, point_specs, start_time=None, live=None):
-        """QUA shots-outermost averaging for a list of (ff_gain, wait_us, do_pi, do_ff)
-        points.  Runs `rounds` passes (reps ~= shots/rounds each), POOLING excited/kept
-        counts across passes so slow drift averages uniformly into every point and the
-        returned P(e) is the exact pooled fraction over all shots.  rounds =
-        cfg['interleave_rounds'] (default min(shots,10); 'full'/0 -> shots = exact QUA).
-        Returns P(e) per point, in point_specs order."""
         shots = int(self.cfg.get("shots", self.shots))
         rounds = resolve_rounds(self.cfg, shots, default=self.cfg.get("t1_rounds"))
         n = len(point_specs)
@@ -557,7 +535,6 @@ class _T1VsFluxBase(ExperimentClass):
             return np.where(kept > 0, exc / kept, np.nan)
 
     def _park_T1_probe(self, probe_cfg, suffix_tag):
-        """Full T1 decay at park (the QUA m_T1 AUTO probe analog)."""
         p = dict(shots_T1=1000, t_min_us=1.0, t_max_us=300.0, t_points=71, num_pulses=1)
         for k, v in (probe_cfg or {}).items():
             if k.endswith("_ns"):
@@ -579,8 +556,6 @@ class _T1VsFluxBase(ExperimentClass):
 
 
 class T13PointVsFlux(_T1VsFluxBase):
-    """QUA T13PointVsFlux: P0/P1 park references at t~0, Ps after a hold Ts at
-    the target; closed-form T1 with the exact validity gates."""
 
     def __init__(self, *args, Ts_ns=None, min_ref_contrast=0.05,
                  max_plot_t1_multiple=20.0, auto_Ts_factor=0.5, T1_probe_cfg=None,
@@ -698,7 +673,6 @@ class T13PointVsFlux(_T1VsFluxBase):
 
 
 class T1FullCurveVsFlux(_T1VsFluxBase):
-    """QUA T1FullCurveVsFlux: full P(e)-vs-wait decay per flux, exponential fit."""
 
     def __init__(self, *args, auto_tmax_factor=3.0, T1_probe_cfg=None,
                  t_min_ns_default=1000.0, t_points_default=41, t_max_ns=None,
@@ -832,7 +806,6 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
 
 
 class T1FullCurveVsFluxFromFit(T1FullCurveVsFlux):
-    """QUA FromFit variant: per-DC t_max from the transmon fit + a quality factor."""
 
     def __init__(self, *args, notebook_fit_params=None, quality_factor=None, **kw):
         self._notebook_raw = notebook_fit_params

@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import Transmission
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import (
     TransmissionVsFFGain, FFTransProgram)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
@@ -34,8 +33,6 @@ RESET_MAX_ITERS = 3
 P_TRANSMISSION = {
     "run": True,
     "shots": 1000,
-    # QUA m_transmission defines an explicit start/stop readout-frequency window (MHz).
-    # None -> auto window of read_pulse_freq +/- 2 MHz.
     "freq_start_mhz": None,
     "freq_stop_mhz": None,
     "freq_points": 201,
@@ -50,48 +47,12 @@ P_TRANSMISSION_SWEEP = {
     "gain_max": 10000,
     "gain_points": 10,
 }
-P_QUBIT_SPEC = {
-    "run": True,
-    "shots": 1000,
-    "spec_amp": 7000,
-    # A strongly-driven qubit line is power-broadened over many MHz; a longer saturation tone
-    # gives a bigger feature (the QM two-tone spec uses 20-30 us).  Raise toward 20 if weak.
-    "spec_len_us": 10.0,
-    # Quasi-CW sweep (no qubit reset, like QUA); a few us clears the readout photons.  The old
-    # 100 us default made every shot ~4x slower than the OPX for no parity reason.
-    "relax_delay_us": 5.0,
-    # Default window around the known line; widen if you are searching blind.
-    "freq_min_mhz": 2490.0,
-    "freq_max_mhz": 2580.0,
-    "freq_step_mhz": 0.5,
-    # Read at the resonator dip for the strongest dispersive contrast (what the QM two-tone
-    # spec and the flux-spec do).  None -> use the step-1 transmission dip if it was run this
-    # session, else fall back to BaseConfig['read_pulse_freq'].  Set a number to force it.
-    "spec_read_freq_mhz": None,
-    # Detector (see locate_line): the qubit is a BROAD bump, the spurious features are 1-2
-    # point spikes.  A GLOBAL degree-spec_detrend_deg polynomial removes only the slow
-    # resonator background (it cannot bend to erase a localized bump), then smoothing over
-    # ~spec_smooth_mhz keeps the broad qubit and averages the spikes away.  The strongest line
-    # is always reported; spec_passes + spec_min_snr set the confidence tag.
-    "spec_smooth_mhz": 6.0,
-    "spec_detrend_deg": 2,
-    "spec_min_snr": 3.0,
-    "spec_passes": 2,
-}
-
-# Set by run_transmission (step 1) so the spec/Rabis can read at the measured resonator dip.
-_RESONATOR_DIP_MHZ = None
 
 P_SS_CAL = {
     "run": True,
     "shots": 1000,
     "number_pi_pulses": 1,
-    # QUA SingleShot1Q override (0.7): the ground-confidence bound that sets the
-    # herald/post-selection threshold consumed downstream.  Was 0.6.
     "ground_threshold": 0.7,
-    # SS cal is PASSIVE (see run_ss_cal): the |g>/|e> reference blobs must be pure thermal
-    # states, so ~1 ms of relaxation like QUA -- not a feedback reset, whose residual
-    # excitation would contaminate the very reference the discriminator is built from.
     "relax_delay_us": 1000.0,
 }
 
@@ -125,9 +86,6 @@ P_RABI_LINECUT_SS = {
     "run": False,
     "shots": 1000,
     "num_pi": 1,
-    # Calibrate the pi amplitude (qubit_pi_gain) directly via a num_pi X180 error-amp
-    # train.  QUA's default is 'X90' (calibrates pi/2 = qubit_pi2_gain, pi = 2*pi/2); set
-    # 'X90' here to match QUA if you want the pi/2-primitive workflow instead.
     "pulse_type": "X180",
     "a_span": 6000,
     "a_points": 51,
@@ -136,7 +94,6 @@ P_RABI_LINECUT_SS = {
 
 
 def _base_cfg(p, extra=None):
-    """BaseConfig + shots + passive relax + flux-hold point + optional sweep knobs."""
     cfg = dict(BaseConfig)
     cfg["shots"] = int(p["shots"])
     cfg["reps"] = int(p["shots"])
@@ -160,8 +117,6 @@ def _base_cfg(p, extra=None):
 
 
 def run_transmission(outer_folder, soc, soccfg):
-    """QUA Transmission analog: 1D readout-freq sweep at the cal flux -> resonator dip.
-    Reuses the step-1 FF transmission at a single ff_gain."""
     p = P_TRANSMISSION
     f0 = float(BaseConfig["read_pulse_freq"])
     start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else f0 - 2.0
@@ -173,17 +128,11 @@ def run_transmission(outer_folder, soc, soccfg):
     exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                        suffix="GateCal_Transmission", cfg=cfg, f_vec=f_vec)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
-    global _RESONATOR_DIP_MHZ
-    _RESONATOR_DIP_MHZ = float(exp.data.get("resonator_dip_freq_mhz", BaseConfig["read_pulse_freq"]))
-    print(f"[transmission] spec/Rabis will read at the dip {_RESONATOR_DIP_MHZ:.3f} MHz "
-          f"unless overridden.")
     plt.close("all"); gc.collect()
     return exp
 
 
 def run_transmission_sweep(outer_folder, soc, soccfg):
-    """QUA Transmission_Sweep analog: readout-gain x freq map at the cal flux (pick
-    read_pulse_gain).  Loops the step-1 FF transmission program over readout gain."""
     p = P_TRANSMISSION_SWEEP
     center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
               else float(BaseConfig["read_pulse_freq"]))
@@ -220,50 +169,9 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     print("[transmission sweep] pick the readout gain with the cleanest dip -> read_pulse_gain.")
 
 
-def run_qubit_spec(outer_folder, soc, soccfg):
-    """QUA Qubit_Spec analog: 1D qubit-drive-freq sweep at the cal flux -> qubit dip.
-    Reuses the step-2 FF spec at a single flux (advanced fit off)."""
-    p = P_QUBIT_SPEC
-    cfg = _base_cfg(p, extra={
-        "qubit_gain": int(p["spec_amp"]),
-        "qubit_length": float(p["spec_len_us"]),
-        "qubit_pulse_style": "const",
-        "spec_min_snr": float(p.get("spec_min_snr", 3.0)),
-        "spec_passes": int(p.get("spec_passes", 2)),
-        "spec_smooth_mhz": float(p.get("spec_smooth_mhz", 6.0)),
-        "spec_detrend_deg": int(p.get("spec_detrend_deg", 2)),
-    })
-    cfg["relax_delay"] = float(p.get("relax_delay_us", 100.0))
-    # Read at the resonator dip for contrast: explicit override, else the step-1 dip, else base.
-    read_freq = p.get("spec_read_freq_mhz")
-    if read_freq is None:
-        read_freq = _RESONATOR_DIP_MHZ if _RESONATOR_DIP_MHZ is not None else BaseConfig["read_pulse_freq"]
-    cfg["read_pulse_freq"] = float(read_freq)
-    print(f"[qubit spec] {p['freq_min_mhz']:.0f}-{p['freq_max_mhz']:.0f} MHz "
-          f"(step {p['freq_step_mhz']:g}) @ gain {p['spec_amp']}, {p.get('spec_passes', 2)} "
-          f"pass(es), reading at {cfg['read_pulse_freq']:.3f} MHz"
-          + ("" if _RESONATOR_DIP_MHZ is not None or p.get('spec_read_freq_mhz') is not None
-             else " (run step 1 first to read at the measured dip)"))
-    exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-                    suffix="GateCal_Qubit_Spec", cfg=cfg,
-                    f_min=float(p["freq_min_mhz"]), f_max=float(p["freq_max_mhz"]),
-                    f_step=float(p["freq_step_mhz"]))
-    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
-    plt.close("all"); gc.collect()
-    return exp
-
-
 def run_ss_cal(outer_folder, soc, soccfg):
     p = P_SS_CAL
-    # PASSIVE reset (reset-mode decision, not a QUA copy): the SS cal DEFINES the |g>/|e>
-    # discrimination, so its references must be pure thermal states.  A feedback reset here
-    # would prepare |g> with the readout's own ~14% residual misidentification and
-    # un-cleared photons, biasing the threshold/theta/scale_factor the whole SS pipeline
-    # inherits.  The single-shot Rabis keep active reset; the cal that defines it does not.
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
-    # SingleShot1Q intentionally sweeps/prepares with ``qubit_gain``.  For a readout
-    # calibration its |e> reference must replay the committed X180, not the unrelated
-    # spectroscopy gain left in BaseConfig.  TLSSpectroscopy uses the same mapping.
     cfg["qubit_gain"] = int(cfg["qubit_pi_gain"])
     print(f"[SS] single-shot readout calibration ({p['shots']} shots, "
           f"{p['number_pi_pulses']}x pi prep)")
@@ -365,7 +273,6 @@ def main():
         print(f"  NOTE: qubit_pi_freq={BaseConfig['qubit_pi_freq']} MHz must be the qubit freq AT ff_gain={FF_HOLD_GAIN}")
     for name, on in [("Transmission", P_TRANSMISSION["run"]),
                      ("Transmission_Sweep", P_TRANSMISSION_SWEEP["run"]),
-                     ("Qubit_Spec", P_QUBIT_SPEC["run"]),
                      ("SS_Cal", P_SS_CAL["run"]),
                      ("Rabi_Chevron_IQ", P_RABI_CHEVRON_IQ["run"]),
                      ("Rabi_Chevron_SS", P_RABI_CHEVRON_SS["run"]),
@@ -377,8 +284,6 @@ def main():
         run_transmission(outer_folder, soc, soccfg)
     if P_TRANSMISSION_SWEEP["run"]:
         run_transmission_sweep(outer_folder, soc, soccfg)
-    if P_QUBIT_SPEC["run"]:
-        run_qubit_spec(outer_folder, soc, soccfg)
 
     calib_params = None
     if P_SS_CAL["run"]:

@@ -5,36 +5,22 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_predist
 
 
 def declare_ff(prog):
-    """Declare the fast-flux generator (call once in initialize())."""
     prog.declare_gen(ch=prog.cfg["ff_ch"], nqz=prog.cfg.get("ff_nqz", 1))
 
 
 def static_park_configured(cfg):
-    """Whether a program has an explicit static fast-flux operating point.
-
-    The value of ``ff_park_gain`` is deliberately irrelevant here: zero is a real
-    operating point too.  Explicitly replaying zero prevents a nonzero ``stdysel``
-    value left latched by an earlier program from leaking into a calibration run.
-    """
     return (cfg.get("ff_ch", None) is not None
             and "ff_park_gain" in cfg
             and cfg.get("ff_park_gain", None) is not None)
 
 
 def declare_static_park(prog):
-    """Declare the FF generator when ``cfg`` specifies a static park point.
-
-    This helper never chooses or changes the operating point; it only makes the
-    value already present in the run configuration physically reproducible.
-    """
     prog.do_static_ff_park = bool(static_park_configured(prog.cfg))
     if prog.do_static_ff_park:
         declare_ff(prog)
 
 
 def _avg_segs(seg, dt_def_us, dt_play_us):
-    """Downsample a fine (dt_def) waveform to coarse (dt_play) staircase means.
-    (Mirrors escher FFRampHoldTest.create_avg_segs.)"""
     seg = np.asarray(seg, dtype=float)
     if seg.size == 0:
         return np.array([])
@@ -46,25 +32,6 @@ def _avg_segs(seg, dt_def_us, dt_play_us):
 def build_ramp_hold_ramp(prog, hold_us, ff_gain, dt_play_us=5.0, ramp_us=0.02,
                          dt_def_us=0.002, compensation=None, distortion_model=None,
                          maxv=None, park_gain=None):
-    """Build (and register) a predistorted park -> target hold -> park fast-flux pulse.
-
-    ``ff_gain`` is the absolute target DAC level of the hold; ``park_gain`` (default
-    cfg['ff_park_gain'], else 0) is the static baseline the sequence starts and ends
-    at.  Predistortion is applied to the STEP (target - park) relative to park, so a
-    nonzero park behaves exactly like the QUA baseline_dc_offset.
-
-    The HOLD is played as VARIABLE-WIDTH piecewise-constant segments -- exactly the QUA
-    ``_hold_flux_step`` set_dc_offset staircase: when a ``compensation`` dict is present
-    the segment edges are its ``segment_edges_ns`` (fine early: 500 ns/1 us, coarse
-    late), each played for its EXACT width so (a) the total hold == the requested
-    ``hold_us`` (on the tProc 4 ns grid, NOT floored to dt_play), and (b) the fast early
-    correction segments are RESOLVED rather than averaged into dt_play bins.  Without
-    compensation the hold is a single constant segment of exactly ``hold_us``.
-    ``dt_play_us`` is used only for the coarse binning of the (optional) escher IIR
-    ``distortion_model`` path.
-
-    Returns {hold_segs: [(level_int, dur_us), ...], ...}.  Registers the two arb ramps.
-    """
     cfg = prog.cfg
     if maxv is None:
         maxv = prog.soccfg['gens'][0]['maxv']
@@ -130,10 +97,6 @@ _MAX_CONST_LEN = 65000
 
 
 def play_ramp_up_hold(prog, segs, dt_play_us=None):
-    """Play ramp-up + the piecewise-constant hold (leaves flux held at target).
-    Each hold segment is played for its EXACT width (QUA set_dc_offset staircase),
-    split into <=16-bit const-pulse chunks so long holds (T1 waits, step-3 delays)
-    don't overflow the tProc pulse-length field."""
     cfg = prog.cfg
     prog.set_pulse_registers(ch=cfg["ff_ch"], freq=0, style='arb', phase=0, stdysel='last',
                              gain=prog.soccfg['gens'][0]['maxv'], waveform="ff_ramp", outsel="input")
@@ -150,7 +113,6 @@ def play_ramp_up_hold(prog, segs, dt_play_us=None):
 
 
 def play_ramp_down(prog, segs):
-    """Play the ramp-down back to park and hold there (stdysel='last')."""
     cfg = prog.cfg
     ff_rp = prog.ch_page(cfg["ff_ch"])
     ff_gain_reg = prog.sreg(cfg["ff_ch"], "gain")
@@ -161,14 +123,6 @@ def play_ramp_down(prog, segs):
 
 
 def assert_park(prog, segs, dt_us=0.1, force=False):
-    """Force the ff DAC to the park level (held via stdysel='last').
-
-    Call at the top of body() when ff_park_gain != 0 so the first rep after a
-    program load (when the DAC may sit at 0) starts from park like every other rep.
-    No-op when park == 0 unless ``force=True``.  Static-operating-point calibration
-    uses ``force=True`` so a requested zero reliably clears a previously latched
-    nonzero FF output.
-    """
     park = int(segs.get("park", 0))
     if park == 0 and not force:
         return
@@ -180,7 +134,6 @@ def assert_park(prog, segs, dt_us=0.1, force=False):
 
 
 def play_static_park(prog, settle_us=0.05):
-    """Replay and hold the configured FF park level without tuning or ramping it."""
     if not getattr(prog, "do_static_ff_park", False):
         return
     assert_park(
@@ -193,17 +146,11 @@ def play_static_park(prog, settle_us=0.05):
 
 
 def play_ramp_hold_ramp(prog, segs, dt_play_us=5.0):
-    """Play a full ramp -> predistorted hold -> ramp (built by build_ramp_hold_ramp)."""
     play_ramp_up_hold(prog, segs, dt_play_us=dt_play_us)
     play_ramp_down(prog, segs)
 
 
 def make_distortion_model(prog):
-    """Build an escher IIR distortion model from cfg (A_i, tau_i), or None.
-
-    cfg keys: predist_taps = [[A1,tau1],[A2,tau2],...] (tau in us).  1/2/4 tails.
-    ``x_val`` is the ff-DAC sample period (us) used by PulseFunctions' recursion.
-    """
     taps = prog.cfg.get("predist_taps", None)
     if not taps:
         return None
@@ -219,10 +166,6 @@ def make_distortion_model(prog):
 
 
 def load_compensation(cfg):
-    """Return the piecewise compensation dict from cfg, if present.
-
-    cfg['flux_tail_compensation'] may be the dict itself or a path to a JSON.
-    """
     comp = cfg.get("flux_tail_compensation", None)
     if comp is None:
         return None

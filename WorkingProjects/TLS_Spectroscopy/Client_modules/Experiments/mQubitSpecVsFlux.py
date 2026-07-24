@@ -11,10 +11,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as 
 
 
 class QubitSpecProgram(RAveragerProgram):
-    """Qubit spectroscopy slice with a hardware frequency sweep on qubit_ch.
-
-    Expects cfg['start'], cfg['step'], cfg['expts'] (MHz / MHz / count).
-    """
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -75,13 +71,6 @@ class QubitSpecProgram(RAveragerProgram):
 
 
 class QubitSpecVsFlux(ExperimentClass):
-    """2D qubit spectroscopy vs DC flux voltage, with transmon-arc fitting.
-
-    cfg keys: qubit_freq_start/qubit_freq_stop/qubit_freq_expts (MHz),
-              yokoVoltageStart/Stop/NumPoints (V), read_pulse_freq (MHz).
-    resonator_lookup_csv (path) or resonator_cosine_fit (dict) retunes the readout
-    per flux; if neither, the readout stays at cfg['read_pulse_freq'].
-    """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Qubit_Spec_vs_Flux', cfg=None, flux_source=None,

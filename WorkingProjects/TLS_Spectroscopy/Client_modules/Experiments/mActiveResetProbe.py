@@ -15,8 +15,6 @@ _REG_I, _REG_Q = 30, 31
 
 
 class ReadProbeProgram(AveragerProgram):
-    """Prep |g> or |e> (cfg['probe_gain']), read out, then pull both accumulator halves
-    into registers via the tProc `read` instruction and store them to data memory."""
 
     def initialize(self):
         cfg = self.cfg
@@ -57,9 +55,6 @@ class ReadProbeProgram(AveragerProgram):
 
 
 class ResetCheckProgram(AveragerProgram):
-    """Prep |e> -> optional active-reset loop (cfg['do_reset']) -> final measure.  acquire()
-    returns the FINAL measurement's rep-averaged (I, Q), so a residual-excited fraction can
-    be formed against the |g>/|e> references."""
 
     def initialize(self):
         cfg = self.cfg
@@ -106,9 +101,6 @@ class ResetCheckProgram(AveragerProgram):
 
 
 class ActiveResetProbe(ExperimentClass):
-    """Reports the feedback capability and, if present, the raw |g>/|e> read values so the
-    active-reset threshold can be calibrated.  Purely diagnostic -- changes no hardware
-    calibration and never runs a feedback loop."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Active_Reset_Probe', cfg=None, meta_dict=None, **kw):
@@ -117,8 +109,6 @@ class ActiveResetProbe(ExperimentClass):
         self.element = str(path)
 
     def _read_dmem(self, addr):
-        """Read one tProc data-memory word back through the Pyro proxy (best-effort), as a
-        SIGNED int (the accumulator is signed; single_read returns it unsigned)."""
         for getter in (lambda: self.soc.tproc.single_read(addr),
                        lambda: self.soc.tproc.read_dmem(addr, 1)[0],
                        lambda: self.soc.read_dmem(addr, 1)[0]):
@@ -130,43 +120,25 @@ class ActiveResetProbe(ExperimentClass):
                            "single_read/read_dmem API differs on this board -- tell me the error.")
 
     def _raw_shots(self, program):
-        """Return every buffered raw accumulator result from a probe program.
-
-        The data-memory words written by :class:`ReadProbeProgram` are useful as a
-        firmware sanity check, but after ``reps`` iterations they contain only the
-        *last* measurement.  A reset threshold must be estimated from the complete
-        |g>/|e> distributions instead of that one arbitrary shot.  QICK's ``di_buf``
-        and ``dq_buf`` contain those per-trigger accumulator values in the same
-        unnormalised units consumed by the tProc comparison.
-        """
         try:
             lower = np.asarray(program.di_buf[0]).ravel()
             upper = np.asarray(program.dq_buf[0]).ravel()
             good = np.isfinite(lower) & np.isfinite(upper)
             lower, upper = lower[good], upper[good]
             if lower.size >= 20:
-                # Normal QICK buffers are already signed.  Converting through
-                # to_signed32 also handles client versions returning uint32.
                 lower = np.asarray([ar.to_signed32(v) for v in lower], dtype=np.int64)
                 upper = np.asarray([ar.to_signed32(v) for v in upper], dtype=np.int64)
                 return lower, upper
         except Exception:
             pass
-        # Compatibility fallback for an old client which does not expose acquisition
-        # buffers.  One point is deliberately marked as such so the caller's minimum
-        # shot-quality check will refuse to activate feedback.
         return (np.asarray([self._read_dmem(_ADDR_I)], dtype=np.int64),
                 np.asarray([self._read_dmem(_ADDR_Q)], dtype=np.int64))
 
     @staticmethod
     def _fit_raw_discriminator(ground, excited):
-        """Exact balanced-accuracy threshold search in integer tProc units."""
         ground = np.asarray(ground, dtype=np.int64).ravel()
         excited = np.asarray(excited, dtype=np.int64).ravel()
         values = np.unique(np.concatenate((ground, excited)))
-        # ``ground_below`` classifies x < threshold as |g>; every distinct
-        # partition is represented by value+1.  ``ground_above`` classifies
-        # x > threshold as |g>; every partition is represented by value.
         candidates = np.unique(np.concatenate((values, values + 1)))
         best = None
         for ground_below in (True, False):
@@ -191,7 +163,6 @@ class ActiveResetProbe(ExperimentClass):
 
     @staticmethod
     def _score_raw_discriminator(ground, excited, discriminator):
-        """Evaluate a frozen raw discriminator without refitting it."""
         ground = np.asarray(ground, dtype=np.int64).ravel()
         excited = np.asarray(excited, dtype=np.int64).ravel()
         threshold = int(discriminator["threshold_raw"])
@@ -250,8 +221,6 @@ class ActiveResetProbe(ExperimentClass):
         oper = "lower" if sep_lower >= sep_upper else "upper"
         ground_raw = raw_shots["ground"][oper]
         excited_raw = raw_shots["excited"][oper]
-        # Alternating train/audit shots avoids optimistic threshold reporting while
-        # keeping slow drift represented in both halves.
         if min(ground_raw.size, excited_raw.size) >= 4:
             discrimination = self._fit_raw_discriminator(
                 ground_raw[::2], excited_raw[::2])
@@ -299,7 +268,6 @@ class ActiveResetProbe(ExperimentClass):
         return {'config': cfg, 'data': self.data}
 
     def _ge_raw(self, cfg):
-        """Raw |g>/|e> accumulator halves + host IQ at cfg's current res_phase."""
         out = {}
         for label, gain in (("g", 0),
                             ("e", int(cfg.get("qubit_pi_gain", cfg["qubit_gain"])))):
@@ -315,14 +283,6 @@ class ActiveResetProbe(ExperimentClass):
         return out
 
     def calibrate_res_phase(self, phases=None, sweep_shots=800, check_shots=3000):
-        """Find the readout phase that puts |g>/|e> on ONE raw quadrature, then confirm the
-        active-reset loop end-to-end at that phase.
-
-        The tProc feedback discriminates on a SINGLE accumulator half (I or Q), so if the
-        blobs sit at an angle in IQ the separation is split across both halves -- marginal,
-        and the sign flips as the phase drifts.  Rotating res_phase concentrates the whole
-        |e>-|g> separation on one half (here 'lower'/I), which is robust.  Prints the phase
-        to paste into BaseConfig, the aligned threshold, and the measured residual."""
         cfg = dict(self.cfg)
         ro_ch = cfg["ro_chs"][0]
         tproc_ch = ar.feedback_channel(self.soccfg, ro_ch)
@@ -351,11 +311,6 @@ class ActiveResetProbe(ExperimentClass):
                          "purity": pur, "ge": ge})
             print(f"    res_phase={ph:6.1f} deg: lower={sl:>9d} upper={su:>9d}  "
                   f"purity(lower)={pur:.2f}")
-        # Pick the phase that CONCENTRATES the |e>-|g> separation on the lower (I) quadrature
-        # -- highest purity -- not merely the largest lower separation.  On a marginal
-        # readout the raw reads do not conserve |e>-|g| across phases (noise/drift), so a
-        # phase can have a big lower separation AND an even bigger upper one (split, not
-        # aligned).  Purity is what makes the single-half feedback discrimination robust.
         max_sl = max((r["sep_lower"] for r in rows), default=1) or 1
         eligible = [r for r in rows if r["sep_lower"] >= 0.3 * max_sl] or rows
         best = max(eligible, key=lambda r: r["purity"])
@@ -387,9 +342,6 @@ class ActiveResetProbe(ExperimentClass):
         return {'config': cfg, 'data': self.data}
 
     def _residual_at(self, res_phase, threshold_raw, ground_below, shots):
-        """Prep |e>, run the reset loop at (res_phase, threshold), and report the residual
-        excited fraction (projection of the reset state onto |e>-|g>) against a no-reset
-        baseline that must read ~1.0."""
         cfg = dict(self.cfg)
         cfg["res_phase"] = float(res_phase)
         cfg["reps"] = cfg["shots"] = int(shots)
@@ -413,9 +365,6 @@ class ActiveResetProbe(ExperimentClass):
         rg = _resid(*ResetCheckProgram(self.soccfg, crg).acquire(self.soc, load_pulses=True))
         cre = dict(cfg); cre["prep_excited"] = True; cre["do_reset"] = True
         re = _resid(*ResetCheckProgram(self.soccfg, cre).acquire(self.soc, load_pulses=True))
-        # Reset must do both jobs: remove a deliberately prepared excitation and
-        # preserve a deliberately prepared ground state.  Checking only the first can
-        # accept a noisy discriminator which pumps |g> while occasionally resetting |e>.
         works = bool(abs(r0 - 1.0) <= 0.3 and abs(rg) <= 0.2 and abs(re) <= 0.2)
         print("-" * 72)
         print(f"  end-to-end check at res_phase={res_phase:.1f} deg:")

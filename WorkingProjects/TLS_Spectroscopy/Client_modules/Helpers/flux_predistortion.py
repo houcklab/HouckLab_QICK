@@ -1,13 +1,3 @@
-"""
-Flux-line predistortion library for the TLS_Spectroscopy port.
-
-The first section of this file is the VERBATIM QUA LabCode/Helpers/flux_predistortion.py
-(exponential/FIR/IIR machinery, default_dc_tail_segment_edges,
-calculate_piecewise_dc_correction, save/load_predistortion_json), followed by the
-rise_decay_bump model + its 600-seed BIC-selected fit lifted verbatim from
-m_qubit_step_response.py, and finally the QICK-specific extensions (JSON
-discovery/validation wrappers, gain rescale, fast-flux staircase baker).
-"""
 
 import json
 from datetime import datetime
@@ -18,17 +8,11 @@ from scipy import optimize, signal
 
 
 def expdecay(time_ns, amplitude, tau_ns):
-    """Normalized single-exponential step response: 1 + A exp(-t / tau)."""
     time_ns = np.asarray(time_ns, dtype=float)
     return 1.0 + amplitude * np.exp(-time_ns / tau_ns)
 
 
 def multi_expdecay(time_ns, *params):
-    """
-    Normalized multi-exponential step response.
-
-    Parameters are interleaved as ``A1, tau1, A2, tau2, ...`` with time in ns.
-    """
     if len(params) % 2:
         raise ValueError("multi_expdecay expects interleaved (amplitude, tau_ns) pairs.")
     time_ns = np.asarray(time_ns, dtype=float)
@@ -39,11 +23,6 @@ def multi_expdecay(time_ns, *params):
 
 
 def multi_expdecay_with_asymptote(time_ns, *params):
-    """
-    Multi-exponential step response with a fitted flat level.
-
-    Parameters are ``y_inf, A1, tau1, A2, tau2, ...`` with time in ns.
-    """
     if len(params) < 3 or (len(params) - 1) % 2:
         raise ValueError("multi_expdecay_with_asymptote expects y_inf plus interleaved (amplitude, tau_ns) pairs.")
     time_ns = np.asarray(time_ns, dtype=float)
@@ -54,7 +33,6 @@ def multi_expdecay_with_asymptote(time_ns, *params):
 
 
 def normalize_step_response(step_response, tail_fraction=0.25):
-    """Normalize a measured step response by the mean of its final tail."""
     response = np.asarray(step_response, dtype=float)
     finite = response[np.isfinite(response)]
     if finite.size == 0:
@@ -78,13 +56,6 @@ def fit_exponential_step_response(
     max_abs_amplitude=10.0,
     fit_asymptote=False,
 ):
-    """
-    Fit a normalized step response to one or more exponential components.
-
-    Returns a dictionary with component tuples ``[(A1, tau1_ns), ...]``. These
-    component amplitudes are in the same convention used by the QUA examples:
-    ``step(t) = 1 + sum(A_i exp(-t / tau_i))``.
-    """
     time_ns = np.asarray(time_ns, dtype=float)
     response = np.asarray(step_response, dtype=float)
     if time_ns.shape != response.shape:
@@ -262,11 +233,6 @@ def fit_exponential_step_response(
 
 
 def exponential_correction(amplitude, tau_ns, sample_period_s=1e-9):
-    """
-    Calculate the OPX feedforward/feedback taps for one exponential component.
-
-    This follows the formula used in the QUA cryoscope examples.
-    """
     tau_s = float(tau_ns) * 1e-9
     ts = float(sample_period_s)
     k1 = ts + 2.0 * tau_s * (float(amplitude) + 1.0)
@@ -279,11 +245,6 @@ def exponential_correction(amplitude, tau_ns, sample_period_s=1e-9):
 
 
 def filter_calc(exponential_components, sample_period_s=1e-9, max_feedforward_tap=2.0 - 2.0**-16):
-    """
-    Derive OPX FIR/IIR taps from exponential response components.
-
-    ``exponential_components`` should be ``[(A1, tau1_ns), (A2, tau2_ns), ...]``.
-    """
     components = [(float(a), float(t)) for a, t in exponential_components]
     if not components:
         return [], [], False
@@ -327,7 +288,6 @@ def calculate_predistortion_filter(
     max_feedforward_tap=1.999,
     **fit_kwargs,
 ):
-    """Fit a step response and calculate OPX filter taps in one call."""
     fit = fit_exponential_step_response(time_ns, step_response, n_exp=n_exp, **fit_kwargs)
     feedforward, feedback, clipped = filter_calc(
         fit["components"],
@@ -362,18 +322,6 @@ def calculate_fir_predistortion_filter(
     tail_fraction=0.25,
     max_feedforward_tap=1.999,
 ):
-    """
-    Calculate a regularized feedforward-only inverse from a measured step response.
-
-    This is a non-parametric alternative to fitting exponentials. It solves for FIR
-    taps ``f`` such that a linear combination of delayed measured step responses
-    approximates an ideal unit step:
-
-        sum_k f[k] * measured_step[n-k] ~= 1
-
-    The regularizer keeps the solution close to ``[1, 0, 0, ...]`` and a separate
-    DC-gain constraint keeps ``sum(f)`` close to one.
-    """
     time_ns = np.asarray(time_ns, dtype=float)
     response = np.asarray(step_response, dtype=float)
     if time_ns.shape != response.shape:
@@ -465,14 +413,6 @@ def calculate_iir_predistortion_filter(
     max_feedforward_tap=1.999,
     max_feedback_tap=0.98,
 ):
-    """
-    Calculate a regularized FIR+IIR inverse directly from a measured step response.
-
-    This does not fit exponentials. It finds OPX output-filter taps ``b`` and
-    ``a`` such that ``lfilter(b, [1] + a, measured_step)`` is close to a unit
-    step. Use one feedback tap unless you have a very good reason to allow more;
-    one bounded pole is much easier to keep stable.
-    """
     time_ns = np.asarray(time_ns, dtype=float)
     response = np.asarray(step_response, dtype=float)
     if time_ns.shape != response.shape:
@@ -645,23 +585,6 @@ def calculate_piecewise_dc_correction(
     desired_response="unity",
     correction_gain=1.0,
 ):
-    """
-    Calculate a slow, piecewise-constant DC precompensation waveform.
-
-    This is meant for experiments that use ``set_dc_offset`` for us-scale flux
-    holds, where the OPX output filter may not be in the path. The measured
-    ``step_response`` is the normalized plant response to a unit command step,
-    in the same absolute convention as the target experiment. For TLS/T1 maps
-    the most important target is often flatness: a constant frequency offset can
-    be retuned, while a drifting offset cannot. ``desired_response`` can be:
-    ``"unity"`` for exactly 1.0, ``"initial"`` for the mean of the first few
-    points, ``"median"``/``"mean"``, or a numeric target level.
-    The returned ``multipliers`` are applied to the requested step amplitude:
-
-        commanded_dc(t) = park + multiplier[k] * (target - park)
-
-    for the time segment starting at ``segment_edges_ns[k]``.
-    """
     time_ns = np.asarray(time_ns, dtype=float)
     response = np.asarray(step_response, dtype=float)
     if time_ns.shape != response.shape:
@@ -824,7 +747,6 @@ def calculate_piecewise_dc_correction(
 
 
 def apply_output_filter_to_config(config, flux_channel, feedforward, feedback):
-    """Insert OPX+ style output filters into a config dictionary in-place."""
     channel = int(flux_channel)
     analog_outputs = config["controllers"]["con1"]["analog_outputs"]
     if channel not in analog_outputs:
@@ -837,7 +759,6 @@ def apply_output_filter_to_config(config, flux_channel, feedforward, feedback):
 
 
 def predistortion_dict(feedforward, feedback, components=None, source=None):
-    """Return a serializable predistortion metadata dictionary."""
     return {
         "enabled": True,
         "feedforward": [float(x) for x in feedforward],
@@ -865,7 +786,6 @@ def _json_safe(value):
 
 
 def save_predistortion_json(path, fit_result, metadata=None):
-    """Save a predistortion fit/filter result to JSON."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -922,7 +842,6 @@ def save_predistortion_json(path, fit_result, metadata=None):
 
 
 def load_predistortion_json(path):
-    """Load a predistortion JSON file produced by ``save_predistortion_json``."""
     payload = json.loads(Path(path).read_text())
     payload["feedforward"] = [float(x) for x in payload.get("feedforward", [])]
     payload["feedback"] = [float(x) for x in payload.get("feedback", [])]
@@ -947,7 +866,6 @@ def load_predistortion_json(path):
 
 
 def simulate_filtered_step(exponential_components, feedforward, feedback, n_samples):
-    """Return ideal, unfiltered, and filtered normalized step responses."""
     n_samples = int(n_samples)
     time_ns = np.arange(n_samples, dtype=float)
     ideal = np.ones(n_samples, dtype=float)
@@ -1104,19 +1022,11 @@ def fit_rise_decay_bump_response_model(time_ns, response, fit_tail_fraction=0.25
     }
 
 
-# =========================================================================== #
-#  QICK-specific extensions (TLS_Spectroscopy port) -- everything ABOVE this
-#  line is the VERBATIM QUA LabCode/Helpers/flux_predistortion.py, and the two
-#  rise_decay_bump functions below it are lifted verbatim from
-#  m_qubit_step_response.py (de-methodized).  Below: the fast-flux waveform
-#  baker and the JSON discovery/validation wrappers the QICK runner uses.
-# =========================================================================== #
 import os as _os
 import glob as _glob
 
 
 def load_compensation_json(json_path):
-    """VERBATIM QubitFluxStepResponse.load_piecewise_dc_compensation_json."""
     payload = load_predistortion_json(json_path)
     allowed_methods = {
         "rise_decay_bump_set_dc_offset_correction",
@@ -1149,7 +1059,6 @@ def find_latest_compensation_json(
     baseline_dc_offset=None,
     require_success=True,
 ):
-    """VERBATIM QubitFluxStepResponse.find_latest_rise_decay_bump_dc_compensation_json."""
     qubit_dir = Path(outer_folder) / qubit
     pattern = f"{qubit}_*_rise_decay_bump_dc_compensation.json"
     if not qubit_dir.exists():
@@ -1190,7 +1099,6 @@ def find_latest_compensation_json(
 
 
 def scale_compensation_gain(flux_tail_compensation, gain, min_multiplier=None, max_multiplier=None):
-    """VERBATIM QUA Control _scale_flux_tail_compensation_gain."""
     import copy
     if flux_tail_compensation is None:
         raise ValueError("Cannot sweep gain without a loaded flux-tail compensation.")
@@ -1231,8 +1139,6 @@ def scale_compensation_gain(flux_tail_compensation, gain, min_multiplier=None, m
 
 
 def build_predistorted_ff_samples(compensation, hold_ns, dt_ns, target_amp, start_amp=0.0):
-    """Bake the piecewise multipliers into a sampled fast-flux staircase (the QICK
-    stand-in for the QUA real-time set_dc_offset staircase in _hold_flux_step)."""
     edges = np.asarray(compensation["segment_edges_ns"], dtype=float)
     mult = np.asarray(compensation["multipliers"], dtype=float)
     n = max(int(np.ceil(hold_ns / dt_ns)), 1)
@@ -1243,7 +1149,6 @@ def build_predistorted_ff_samples(compensation, hold_ns, dt_ns, target_amp, star
 
 
 def build_inclusive_sweep(vmin, vmax, step):
-    """np.arange including the upper endpoint when on-grid (QUA build_inclusive_sweep)."""
     step = float(step)
     if step <= 0:
         raise ValueError("step must be > 0")

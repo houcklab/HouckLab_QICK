@@ -41,8 +41,6 @@ def _quadratic_refine_x(x, y, idx):
 
 
 def _extract_dip_frequency_hz(f_hz, mag_dbm):
-    """QUA _extract_dip_frequency_hz verbatim: SavGol -> argmin -> quadratic
-    refine -> local Lorentzian with containment; returns (fr_hz, fwhm_hz, method)."""
     f_hz = np.asarray(f_hz, dtype=float)
     mag_dbm = np.asarray(mag_dbm, dtype=float)
     finite = np.isfinite(f_hz) & np.isfinite(mag_dbm)
@@ -79,7 +77,6 @@ def _extract_dip_frequency_hz(f_hz, mag_dbm):
 
 
 class QubitLongTimeSpecVsFlux(ExperimentClass):
-    """Long-time qubit spec vs fast-flux target (QUA QubitLongTimeFrequencyVsFlux)."""
 
     @staticmethod
     def find_latest_dc_compensation_json(outer_folder, qubit, baseline_dc_offset=None,

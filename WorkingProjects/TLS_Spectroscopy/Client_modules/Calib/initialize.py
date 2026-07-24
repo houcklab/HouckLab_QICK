@@ -26,8 +26,6 @@ BaseConfig = {
 
     "read_pulse_style": "const",
     "read_length": 30.0,
-    # Generator tone extends beyond the delayed ADC window by this guard.  The same
-    # canonical pulse helper is used by AutoTuner and all production consumers.
     "readout_guard_us": 1.0,
     "read_pulse_gain": 5000,
     "read_pulse_freq": 7249.1,
@@ -37,17 +35,11 @@ BaseConfig = {
     "qubit_pi_freq": 2534.7,
     "qubit_pi_gain": 5790,
     "qubit_pi2_gain": 2895,
-    # Peak derivative-Q / peak Gaussian-I ratio.  Zero is the legacy Gaussian; a
-    # nonzero value is replayed by the shared pulse helper in tuner and consumers.
     "qubit_drag_beta": 0.0,
-    # Seed only.  AutoTuner verifies the e-f line with shelving spectroscopy and Rabi
-    # before using it for direct leakage measurement.
     "qubit_anharmonicity_mhz": -200.0,
     "qubit_gain": 7000,
     "qubit_length": 0.5,
     "sigma": 0.25,
-    # Must be None for an arb Gaussian.  A populated plateau field is interpreted as a
-    # flat-top selector by some QM-Team programs regardless of qubit_pulse_style.
     "flat_top_length": None,
 
     "ff_park_gain": 0,

@@ -117,11 +117,6 @@ P4_LONG_TIME = {
     "run": False,
     "advanced_fit": False,
     "shots": 100,
-    # Between-shot passive relaxation. QUA does a full reset here (q6 meta_dict
-    # reset_time = 1000 us, >> T1); the transferable structure is a full ~5xT1
-    # relax, not the raw q6 number. For q4 (T1 ~140 us, poorly determined),
-    # 5xT1 = 700 us (~0.7% residual excited pop). The old 100 us < T1 left
-    # residual excited population that biased the long-time dip frequency.
     "relax_delay_us": 700.0,
     "spec_amp": 7000,
     "spec_len_us": 0.5,
@@ -196,7 +191,6 @@ def _set_yoko_if_requested():
 
 
 def _spec_cfg(p, extra=None):
-    """BaseConfig + a P-dict's spec knobs (QUA _spec_meta_dict analog)."""
     cfg = dict(BaseConfig)
     cfg["reps"] = int(p["shots"])
     cfg["interleave_rounds"] = p.get("interleave_rounds", INTERLEAVE_ROUNDS)
@@ -259,8 +253,6 @@ def _freq_vec_mhz(p):
 
 
 def _auto_freq_window(p, dc_baseline, dc_target):
-    """QUA auto_center_frequency_window: center the spec window on the expected
-    baseline->target frequency band from the flux fit, clipped to absolute limits."""
     if not (p.get("auto_center_frequency_window", True) and FLUX_FIT_PARAMS is not None):
         return p["auto_freq_absolute_min_mhz"], p["auto_freq_absolute_max_mhz"]
     f = fx.estimate_fit_frequency_ghz_array(
@@ -357,7 +349,6 @@ def _gain_suffix(gain):
 
 
 def _gain_sweep_row(gain, dc_offset, exp, flux_tail_compensation):
-    """VERBATIM QUA Control _gain_sweep_row (u.us -> 1e3 ns/us)."""
     frequency_ghz = np.asarray(exp.data.get("extracted_qubit_frequency_ghz", []), dtype=float)
     time_ns = np.asarray(exp.data.get("t_vec", []), dtype=float)
     finite = np.isfinite(frequency_ghz)
@@ -435,7 +426,6 @@ def _gain_sweep_row(gain, dc_offset, exp, flux_tail_compensation):
 
 
 def _write_gain_sweep_summary_csv(experiments, rows):
-    """VERBATIM QUA Control _write_gain_sweep_summary_csv."""
     import csv
     from pathlib import Path
     if not rows:
@@ -457,7 +447,6 @@ def _write_gain_sweep_summary_csv(experiments, rows):
 
 def _run_step3_experiment(p, soc, soccfg, outer_folder, suffix, flux_tail_compensation,
                           fit_rise_decay_bump_dc_correction, live_plot):
-    """One QubitFluxStepResponse run with the QUA wrapper's per-run beats."""
     run_kind = "calibration" if fit_rise_decay_bump_dc_correction else "validation"
     print(f"Running flux-step {run_kind} target dc_offset={TARGET_DC_OFFSET:+.6f} DAC")
     t_vec_ns = np.arange(p["t_min_us"], p["t_max_us"], p["t_step_us"]) * 1e3
@@ -644,8 +633,6 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
 
 
 def _run_one_stop_t1(factory, wall_clock_s):
-    """QUA TLSSpectroscopy._run_one_stop_t1 verbatim: repeat the flux sweep,
-    accumulating every run into the one-stop full CSV (rewritten after each run)."""
     series_start = datetime.now()
     per_run_full_data = []
     base_path = None
@@ -761,7 +748,6 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
 
 
 def run_step6_full_t1_vs_flux(outer_folder, soc, soccfg, calib_params, correction_json):
-    """QUA run_step6_full_t1_vs_flux (dict + main() call ship commented out)."""
     plt.close("all")
     gc.collect()
     p = P6_FULL_T1

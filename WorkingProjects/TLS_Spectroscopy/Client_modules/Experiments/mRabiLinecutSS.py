@@ -10,15 +10,10 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS 
 
 
 def cosine_sq(x, T, A, B):
-    """VERBATIM QUA fit function (m_Rabi_Linecut_SS.analyze)."""
     return A * np.cos((np.pi / T) * x) ** 2 + B
 
 
 class RabiLinecutSS(ExperimentClass):
-    """1D gain-sweep single-shot Rabi at fixed drive frequency + cosine^2 fit -> pi gain.
-    cfg knobs: a_span (DAC, full span centered on the current pi gain), a_points, num_pi,
-    pulse_type, shots.  Center gain = qubit_pi_gain (X180) or qubit_pi2_gain (X90).
-    Requires calib_params from the step-5 single-shot calibration."""
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Rabi_Linecut_SS', cfg=None, meta_dict=None, calib_params=None,

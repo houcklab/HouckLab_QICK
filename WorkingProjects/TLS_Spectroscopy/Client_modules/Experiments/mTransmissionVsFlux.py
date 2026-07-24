@@ -11,7 +11,6 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_function
 
 
 class TransmissionProgram(AveragerProgram):
-    """Single-frequency resonator transmission: const readout pulse + demod."""
 
     def __init__(self, soccfg, cfg):
         super().__init__(soccfg, cfg)
@@ -36,15 +35,6 @@ class TransmissionProgram(AveragerProgram):
 
 
 class TransmissionVsFlux(ExperimentClass):
-    """2D resonator transmission vs (readout frequency, DC flux voltage).
-
-    Parameters (cfg keys)
-    ---------------------
-    trans_freq_start / trans_freq_stop / TransNumPoints : readout-freq sweep (MHz)
-        (or read_pulse_freq + TransSpan + TransNumPoints)
-    yokoVoltageStart / yokoVoltageStop / yokoVoltageNumPoints : DC flux sweep (V)
-    save_resonator_lookup : bool -> write <iname>_resonator_lookup.csv
-    """
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
                  suffix='Resonator_Spec_vs_Flux', cfg=None, flux_source=None,
@@ -69,7 +59,6 @@ class TransmissionVsFlux(ExperimentClass):
                            int(cfg["yokoVoltageNumPoints"]))
 
     def _acquire_one_trace(self, fpts, progress=False):
-        """Sweep readout freq at the current flux; return (I, Q) arrays vs fpts."""
         I = np.zeros(len(fpts))
         Q = np.zeros(len(fpts))
         for j, f in enumerate(fpts):
