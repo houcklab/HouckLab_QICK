@@ -18,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import Bas
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.rfdc_cal import (
     freeze_readout_cal, freeze_all_adc_cal, cal_freeze_status)
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.save_paths import data_path
 
 RO_CH = 0
 N = 420
@@ -108,7 +109,8 @@ def main():
 
     freeze_readout_cal(soc, RO_CH, freeze=False)
 
-    npz = os.path.join(os.path.expanduser("~"), "Downloads", "cal_freeze_test.npz")
+    dname = data_path("CalFreezeTest")
+    npz = dname + ".npz"
     np.savez(npz, t1=t1, I1=I1, Q1=Q1, t2=t2, I2=I2, Q2=Q2)
 
     s1, s2 = steps(I1, Q1), steps(I2, Q2)
@@ -140,7 +142,7 @@ def main():
                 a.legend(fontsize=8)
             ax[1].set_xlabel("time [s]")
             plt.tight_layout()
-            png = os.path.join(os.path.expanduser("~"), "Downloads", "cal_freeze_test.png")
+            png = dname + ".png"
             plt.savefig(png, dpi=110)
             print("saved", png)
             plt.show()

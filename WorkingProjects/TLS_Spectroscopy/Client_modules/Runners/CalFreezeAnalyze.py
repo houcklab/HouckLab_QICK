@@ -1,15 +1,29 @@
 import glob
 import os
+import sys
 
 import numpy as np
 
+_d = os.path.dirname(os.path.abspath(__file__))
+while _d != os.path.dirname(_d):
+    if os.path.isdir(os.path.join(_d, "WorkingProjects")):
+        if _d not in sys.path:
+            sys.path.insert(0, _d)
+        break
+    _d = os.path.dirname(_d)
+
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import outerFolder
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.save_paths import data_path
+
 DL = os.path.join(os.path.expanduser("~"), "Downloads")
+DATA = os.path.join(str(outerFolder), "q4")
 
 
 def _find_npz():
-    prefer = os.path.join(DL, "cal_freeze_test.npz")
-    cands = ([prefer] if os.path.exists(prefer) else []) + sorted(glob.glob(os.path.join(DL, "cal_freeze*.npz")))
-    return cands[0] if cands else None
+    cands = (glob.glob(os.path.join(DATA, "q4_*", "*CalFreezeTest.npz"))
+             + glob.glob(os.path.join(DL, "cal_freeze*.npz")))
+    cands = [c for c in cands if os.path.exists(c)]
+    return max(cands, key=os.path.getmtime) if cands else None
 
 
 def rolling_median(x, w):
@@ -72,7 +86,7 @@ def main():
             axi.legend(fontsize=8)
         ax[1].set_xlabel("time [s]")
         plt.tight_layout()
-        out = os.path.join(DL, "cal_freeze_analysis.png")
+        out = data_path("CalFreezeAnalysis") + ".png"
         plt.savefig(out, dpi=110)
         print("\nsaved", out)
         plt.show()

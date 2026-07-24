@@ -16,6 +16,7 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.save_paths import data_path
 
 RO_CH = 0
 ON_FREQ_MHZ = None
@@ -100,7 +101,8 @@ def main():
     sys.stdout.write("\n")
 
     t = np.asarray(t); on = np.asarray(on); off = np.asarray(off)
-    npz = os.path.join(os.path.expanduser("~"), "Downloads", "loopback_interleaved.npz")
+    dname = data_path("Loopback_interleaved")
+    npz = dname + ".npz"
     np.savez(npz, t=t, on=on, off=off, on_freq=on_f, off_freq=off_f)
 
     ion, son, sig_on, bon = jumps(on)
@@ -135,7 +137,7 @@ def main():
             for j in iof:
                 ax[1].axvline(t[j], color="r", lw=0.6, alpha=0.5)
             plt.tight_layout()
-            png = os.path.join(os.path.expanduser("~"), "Downloads", "loopback_interleaved.png")
+            png = dname + ".png"
             plt.savefig(png, dpi=110); print("saved", png); plt.show()
         except Exception as e:
             print(f"[plot skipped: {type(e).__name__}: {e}]")

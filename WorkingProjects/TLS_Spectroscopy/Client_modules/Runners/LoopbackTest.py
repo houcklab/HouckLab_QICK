@@ -16,6 +16,7 @@ from qick import AveragerProgram
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import set_readout_pulse
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.save_paths import data_path
 
 RO_CH = 0
 LABEL = "on-resonance"
@@ -99,7 +100,8 @@ def main():
     t, I, Q = baseline_trace(soc, soccfg, cfg, N, DWELL_S)
     sI, sQ, span, njump, fast = analyze(I, Q)
 
-    npz = os.path.join(os.path.expanduser("~"), "Downloads", f"loopback_{LABEL.replace(' ', '_')}.npz")
+    dname = data_path("Loopback_" + LABEL.replace(' ', '_'))
+    npz = dname + ".npz"
     np.savez(npz, t=t, I=I, Q=Q)
 
     print("\n==== RESULT ({}) ====".format(LABEL))
@@ -129,7 +131,7 @@ def main():
             ax.set_ylabel("a.u.")
             ax.legend(fontsize=8)
             plt.tight_layout()
-            png = os.path.join(os.path.expanduser("~"), "Downloads", f"loopback_{LABEL.replace(' ', '_')}.png")
+            png = dname + ".png"
             plt.savefig(png, dpi=110)
             print("saved", png)
             plt.show()
