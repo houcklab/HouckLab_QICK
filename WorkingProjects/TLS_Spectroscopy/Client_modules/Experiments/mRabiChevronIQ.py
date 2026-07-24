@@ -161,6 +161,20 @@ def n_drive_pulses(pulse_type, num_pi):
     return int(num_pi) * (2 if str(pulse_type).upper() == "X90" else 1)
 
 
+def _rolling_median(x, w=5):
+    n = x.size
+    h = w // 2
+    return np.array([np.median(x[max(0, i - h):min(n, i + h + 1)]) for i in range(n)])
+
+
+def _glitched_rows(I, Q, nlow, k):
+    b = np.median(I[:, :nlow], axis=1) + 1j * np.median(Q[:, :nlow], axis=1)
+    trend = _rolling_median(b.real) + 1j * _rolling_median(b.imag)
+    resid = np.abs(b - trend)
+    mad = 1.4826 * np.median(np.abs(resid - np.median(resid))) + 1e-9
+    return np.where(resid > k * mad)[0]
+
+
 class RabiChevronIQ(ExperimentClass):
 
     def __init__(self, soc=None, soccfg=None, path='', outerFolder='', prefix='data',
@@ -208,11 +222,25 @@ class RabiChevronIQ(ExperimentClass):
             if progress:
                 progress_counter(step, n_f, start_time=start_time, label="Rabi chevron IQ")
 
-        subtract = bool(cfg.get("subtract_row_baseline", True))
         nlow = max(1, min(int(cfg.get("baseline_ngains", 4)), max(1, n_a // 4)))
+        if bool(cfg.get("remeasure_outliers", True)):
+            for _ in range(int(cfg.get("outlier_passes", 2))):
+                bad = _glitched_rows(I, Q, nlow, float(cfg.get("outlier_sigma", 6.0)))
+                if bad.size == 0:
+                    break
+                for i in bad:
+                    cfg["rabi_drive_freq"] = pi_freq + float(df_vec[int(i)])
+                    prog = RabiChevronIQProgram(self.soccfg, cfg)
+                    _x, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+                    I[int(i), :] = np.asarray(avgi[0][0])
+                    Q[int(i), :] = np.asarray(avgq[0][0])
+                print("[Rabi Chevron IQ] re-measured glitched row(s): "
+                      + ", ".join(f"{df_vec[int(i)]:+.1f}" for i in bad) + " MHz")
+
+        subtract = bool(cfg.get("subtract_row_baseline", True))
         if subtract:
-            Icorr = I - I[:, :nlow].mean(axis=1, keepdims=True)
-            Qcorr = Q - Q[:, :nlow].mean(axis=1, keepdims=True)
+            Icorr = I - np.median(I[:, :nlow], axis=1, keepdims=True)
+            Qcorr = Q - np.median(Q[:, :nlow], axis=1, keepdims=True)
         else:
             Icorr, Qcorr = I, Q
 
