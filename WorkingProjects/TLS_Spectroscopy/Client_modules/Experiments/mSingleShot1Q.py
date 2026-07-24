@@ -63,6 +63,15 @@ class SingleShotProgram(RAveragerProgram):
         if style == "arb":
             add_qubit_gaussian(self)
             if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+                reset_read_freq = float(cfg.get(
+                    "reset_read_pulse_freq", cfg["read_pulse_freq"]))
+                if not np.isclose(
+                        reset_read_freq, float(cfg["read_pulse_freq"]),
+                        rtol=0.0, atol=1e-9):
+                    raise ValueError(
+                        "feedback reset and scoring readout must share one ADC/DDC "
+                        "frequency inside SingleShotProgram; calibrate a reset "
+                        "profile for this candidate frequency")
                 add_qubit_gaussian(
                     self, name="qubit_reset",
                     sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
@@ -91,14 +100,25 @@ class SingleShotProgram(RAveragerProgram):
             self, settle_us=cfg.get("ff_park_settle_us", 0.05))
         feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
         if feedback:
+            # The raw reset threshold is calibrated with a fixed readout drive gain.
+            # Candidate scoring gain is a search coordinate and must not silently
+            # become its own reset pulse.  The ADC integration length/frequency remain
+            # those of this compiled candidate; a separate cached reset profile binds
+            # the threshold to that exact pair.
+            set_readout_pulse(
+                self, gain=int(cfg.get(
+                    "reset_read_pulse_gain", cfg["read_pulse_gain"])))
             page = self.ch_page(cfg["qubit_ch"])
+            reset_pi_freq = (
+                cfg["reset_pi_freq"] if "reset_pi_freq" in cfg else
+                cfg["qubit_pi_freq"] if "qubit_pi_freq" in cfg else
+                cfg["qubit_freq"])
             self.mathi(page, 27, self.r_gain, "+", 0)
             self.mathi(page, 28, self.r_gain2, "+", 0)
             self.set_pulse_registers(
                 ch=cfg["qubit_ch"], style="arb",
                 freq=self.freq2reg(
-                    float(cfg.get("reset_pi_freq", cfg.get(
-                        "qubit_pi_freq", cfg["qubit_freq"]))),
+                    float(reset_pi_freq),
                     gen_ch=cfg["qubit_ch"]),
                 phase=self.deg2reg(0, gen_ch=cfg["qubit_ch"]),
                 gain=int(cfg.get("reset_pi_gain", cfg["qubit_pi_gain"])),
@@ -118,6 +138,8 @@ class SingleShotProgram(RAveragerProgram):
                 gain=0, waveform="qubit")
             self.mathi(page, self.r_gain, 27, "+", 0)
             self.mathi(page, self.r_gain2, 28, "+", 0)
+            # Restore the scoring readout registers after feedback reset.
+            set_readout_pulse(self)
         if cfg["qubit_gain"] != 0:
             for _ in range(int(cfg.get("repeats", 1))):
                 self.pulse(ch=cfg["qubit_ch"])

@@ -14,24 +14,26 @@ of population outside the computational subspace.  A weak starting point never
 prevents the search, and an optional-stage failure never erases the best directly
 measured candidate.
 
-The tuner uses bounded coordinate descent rather than one enormous simultaneous
-search.  A full Cartesian search over readout frequency/gain/length and qubit
-frequency/gain/length would require millions of long-relax single-shot acquisitions.
-Cheap spectroscopy and Rabi maps locate the basin; small direct-SS grids then optimize
-the actual quantity of interest and independently remeasure their winners.  A final
-Pareto replay minimizes the physical X180-plus-readout chain only inside a predeclared
-held-out fidelity-loss bound; low-fidelity speedups are never part of the feasible set.
+After spectroscopy and coherent Rabi locate physical frequency basins, the tuner uses
+a structured joint search over readout duration/gain and Gaussian duration/pi gain.
+Every duration pair receives measurements; multi-fidelity elimination and a local
+Matérn trust-region surrogate refine several basins without allowing a noisy early
+winner to erase the rest.  Final selection is based only on fresh held-out replays.
+A Pareto replay minimizes X180-plus-readout latency only inside a predeclared fidelity
+noninferiority bound; low-fidelity speedups are never part of the feasible set.
 """
 
 from __future__ import annotations
 
 import copy
 import datetime
+import hashlib
 import io
 import json
 import math
 import os
 import pickle
+import time
 import warnings
 from contextlib import redirect_stdout
 from statistics import NormalDist
@@ -55,18 +57,33 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q i
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset, ff_pulse
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import (
     add_qubit_gaussian, explicit_flat_top_fields, readout_drive_length_us,
-    set_readout_pulse,
+    pulse_fingerprint, set_readout_pulse,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
     find_blob_median, find_threshold,
 )
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_optimizer import (
+    CandidateArchive,
+    PulseCandidate,
+    duration_stratified_shortlist,
+    fidelity_evidence,
+    latency_pareto_frontier,
+    propose_trust_region_candidates,
+    select_shortest_noninferior,
+    unique_candidate_rows,
+    validate_structured_coverage,
+)
 
 
-BASIC_AUTOTUNER_REVISION = "manual-workflow-v13"
+BASIC_AUTOTUNER_REVISION = "joint-search-v1"
 
 
 BASIC_DEFAULTS = {
     "random_seed": 271828,
+    # Optional explicit pickle from an interrupted joint-search-v1 run.  Only complete
+    # coarse cells with the same physical input contract are reused; medium/final
+    # candidates are freshly replayed in the current drift epoch.
+    "resume_checkpoint": None,
     "max_consecutive_point_failures": 5,
     # ``concise`` keeps the operator informed at human-scale stage boundaries while
     # retaining every technical message in data['report'].  Set to ``detailed`` only
@@ -91,6 +108,12 @@ BASIC_DEFAULTS = {
         # also fails safe to this value for non-tuner callers.
         "thermalization_us": 25.0,
         "post_measure_delay_us": 0.05,
+        # The reset drive gain/control are frozen.  A raw threshold is calibrated and
+        # cached for every ADC integration length/readout frequency used by the joint
+        # search, so changing the scoring gain no longer disables feedback reset.
+        "profile_shots": 650,
+        "profile_min_raw_fidelity": 0.72,
+        "profile_validate": True,
     },
     "baseline": {"shots": 800, "blocks": 2},
     "resonator": {
@@ -209,8 +232,10 @@ BASIC_DEFAULTS = {
         # independently tuned duration/power candidates and reject reproducible
         # third-cloud growth, then independently replay the winner.  It deliberately
         # does not search DRAG waveforms and does not rename an IQ-cloud anomaly P(f).
-        # Set ``enabled`` to True (or explicitly to ``auto``) only when strict
-        # identity+shelving qutrit response inversion is desired as an additional gate.
+        # Strict identity+shelving qutrit response inversion remains opt-in because an
+        # old anharmonicity prior is not enough to prove a usable present-day e-f
+        # calibration.  Set this to ``auto`` to activate it when that metadata exists;
+        # otherwise retain the explicitly labelled operational third-cloud screen.
         "enabled": False, "operational_enabled": True,
         "required_for_write": True,
         # Legacy repeated-return settings remain available for detailed diagnostics,
@@ -220,6 +245,9 @@ BASIC_DEFAULTS = {
         "operational_repeated_return_enabled": False,
         "operational_depths": [1, 2, 3, 4, 6, 8],
         "operational_shots": 220, "operational_reference_shots": 500,
+        # Retry a fresh before/after discriminator bracket when drift, rather than
+        # leakage, is the only reason an otherwise safe waveform was invalid.
+        "operational_drift_retries": 2,
         "operational_verify_shots": 650, "operational_verify_blocks": 3,
         "operational_max_even_return_error": 0.12,
         "operational_max_odd_inversion_error": 0.12,
@@ -305,6 +333,9 @@ BASIC_DEFAULTS = {
         "gain_min": 1000, "gain_max": 10000, "gain_points": 7,
         "shots": 160, "shortlist": 3, "confirm_shots": 700,
         "confirm_blocks": 2,
+        # Global top-K can fill every held-out slot with variants of the starting
+        # length.  Confirm two coarse frequency/gain cells at every tested length.
+        "confirm_per_length": 2,
     },
     "qubit": {
         "enabled": True, "freq_span_mhz": 3.0, "freq_points": 11,
@@ -321,6 +352,52 @@ BASIC_DEFAULTS = {
         "freq_span_mhz": 1.0, "freq_points": 3,
         "gain_fraction": 0.28, "gain_points": 5, "shots": 160,
         "shortlist": 3, "confirm_shots": 700, "confirm_blocks": 2,
+        "confirm_per_sigma": 2,
+    },
+    "joint_search": {
+        # This replaces greedy readout-length/qubit-gain/pulse-duration coordinate
+        # descent.  Every duration pair receives a broad joint readout/pi-gain sweep.
+        "enabled": True,
+        "read_lengths_us": [1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0,
+                            16.0, 20.0, 24.0, 30.0, 45.0],
+        "sigma_values_us": [0.05, 0.10, 0.15, 0.25, 0.35, 0.50],
+        "read_gain_min": 1000, "read_gain_max": 10000,
+        # Ten points give an input-independent 1000-DAC backbone (including 5000)
+        # across the normal 1k--10k operating range.  The current in-range gain is
+        # added separately, so it cannot displace any of these powers.
+        "read_gain_points": 10,
+        # The fast QICK sweep includes gain zero as the shared ground reference and
+        # uniformly spans past the rough Rabi pi estimate for this duration.
+        "qubit_gain_points_including_ground": 15,
+        "qubit_gain_max_scale": 1.85,
+        "qubit_gain_hard_max": 32767,
+        "coarse_shots": 56,
+        "medium_per_duration_pair": 1,
+        "medium_global_count": 24,
+        "medium_max_candidates": 110,
+        "medium_shots": 260, "medium_blocks": 2,
+        # A small Matérn trust-region surrogate refines gains/frequencies around
+        # several measured basins; it never selects an unmeasured candidate.
+        "trust_regions": 6, "trust_proposals": 36,
+        "trust_pool_size": 3000,
+        "trust_read_frequency_radius_mhz": 0.40,
+        "trust_qubit_frequency_radius_mhz": 0.70,
+        # Quantization keeps the surrogate from requesting dozens of nearly identical
+        # reset discriminator profiles.  All proposed points remain real measurements;
+        # this only chooses a reusable local hardware lattice for their frequencies.
+        "trust_read_frequency_points": 5,
+        "trust_qubit_frequency_points": 7,
+        "trust_read_gain_fraction": 0.30,
+        "trust_qubit_gain_fraction": 0.30,
+        "trust_shots": 420, "trust_blocks": 2,
+        "closure_iterations": 2,
+        "closure_frequency_radius_scale": 0.55,
+        "closure_gain_radius_scale": 0.60,
+        # The operator never discovers an hour-long fallback after launch.  This is a
+        # soft acquisition budget: completed measurements remain reportable and final
+        # confirmation receives a reserved tail budget.
+        "runtime_budget_minutes": 30.0,
+        "reserve_final_minutes": 5.0,
     },
     "latency": {
         # Latency is a secondary, epsilon-constrained objective.  First establish
@@ -329,7 +406,7 @@ BASIC_DEFAULTS = {
         # is at most one absolute percentage point.  A fidelity/time ratio is not
         # used because it rewards unusably short, low-fidelity measurements.
         "enabled": True,
-        "max_fidelity_loss": 0.010,
+        "max_fidelity_loss": 0.005,
         "minimum_mean_fidelity": 0.90,
         "minimum_lcb_fidelity": 0.88,
         "familywise_alpha": 0.05,
@@ -341,13 +418,13 @@ BASIC_DEFAULTS = {
         "max_point_attempts": 2,
         "screening_sigma": 3.0,
         "screening_slack": 0.020,
-        # Retained for saved-parameter compatibility.  The v13 timing stage no longer
+        # Retained for saved-parameter compatibility.  The timing stage no longer
         # truncates a statistically plausible joint timing set to this top-K value;
         # doing so can hide the actual short plateau.
         "shortlist": 8,
         "confirm_shots": 1500,
         # Eight randomized round-robin blocks support paired noninferiority estimates;
-        # three blocks are too fragile for a one-percentage-point decision.
+        # three blocks are too fragile for a sub-percentage-point decision.
         "confirm_blocks": 8,
         "max_confirmation_attempts": 2,
         # If a promising faster tuple is unresolved rather than demonstrably worse,
@@ -425,6 +502,10 @@ _CONCISE_STAGE_START = {
     "reset_after_bootstrap": "Setting up active reset...",
     "rough_ss": "Refining the pi pulse with single-shot measurements...",
     "parity_chevron": "Checking repeated-pulse errors...",
+    "joint_search": "Searching readout and pi-pulse power/length together...",
+    "multi_aae": "Reducing amplified amplitude error across the best pulses...",
+    "joint_closure_1": "Rechecking the coupled parameters after AAE...",
+    "joint_closure_2": "Finishing the coupled parameter refinement...",
     "readout_after_control": "Refining readout frequency and power...",
     "readout_length": "Optimizing readout length...",
     "qubit_grid": "Optimizing qubit frequency and amplitude...",
@@ -731,7 +812,7 @@ def step5_metrics(ig, qg, ie, qe):
     # threshold on the same shots so it remains directly comparable with the lab's
     # historical calibration output.  That resubstitution estimate is slightly
     # optimistic, however, and candidate-dependent optimism is unacceptable when a
-    # one-percentage-point latency decision is being certified.  Build an additional
+    # sub-percentage-point latency decision is being certified.  Build an additional
     # deterministic two-fold cross-fit estimate: each discriminator is trained on one
     # interleaved half and scored only on shots it did not see.  Timing selection uses
     # this held-out metric while the ordinary ``fidelity`` field remains step-5 exact.
@@ -1123,6 +1204,17 @@ class BasicSequenceProgram(AveragerProgram):
         qch = cfg["qubit_ch"]
         feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
         if feedback:
+            reset_read_freq = float(cfg.get(
+                "reset_read_pulse_freq", cfg["read_pulse_freq"]))
+            if not np.isclose(
+                    reset_read_freq, float(cfg["read_pulse_freq"]),
+                    rtol=0.0, atol=1e-9):
+                raise ValueError(
+                    "feedback reset profile does not match this sequence "
+                    "program's ADC/DDC frequency")
+            set_readout_pulse(
+                self, gain=int(cfg.get(
+                    "reset_read_pulse_gain", cfg["read_pulse_gain"])))
             # This program may later switch among candidate g-e and reference e-f
             # waveforms.  Install the candidate X180 explicitly for reset first; every
             # sequence operation below then installs its own complete pulse registers.
@@ -1140,6 +1232,7 @@ class BasicSequenceProgram(AveragerProgram):
                 ground_below=cfg.get("reset_ground_below", True),
                 max_iters=int(cfg.get("reset_max_iters", 3)),
                 reg_val=25, reg_thr=26)
+            set_readout_pulse(self)
         gap = self.us2cycles(float(cfg.get("seq_gap_us", 0.01)))
         if "sequence_ops" in cfg:
             operations = list(cfg["sequence_ops"])
@@ -1247,6 +1340,8 @@ class BasicAutoTuner(ExperimentClass):
         self.initial = _candidate_from_cfg(self.input_cfg)
         self.working = dict(self.initial)
         self._archive = []
+        self._joint_archive = CandidateArchive(self._archive)
+        self._joint_rows = []
         self._confirmed = []
         self._unconfirmed_contenders = []
         self._maps = {}
@@ -1281,10 +1376,17 @@ class BasicAutoTuner(ExperimentClass):
         self._confirmation_cohort_serial = 0
         self._reset_runtime = {"reset_mode": "passive"}
         self._reset_readout_key = None
+        self._reset_profiles = {}
+        self._reset_fixed_readout_gain = None
+        self._reset_fixed_control = None
+        self._feedback_profiles_suspended = False
         self._reset_unavailable = False
+        self._run_started_monotonic = None
         self.data = {
             "revision": BASIC_AUTOTUNER_REVISION,
             "autotuner_revision": BASIC_AUTOTUNER_REVISION,
+            "pulse_program": "TLS step-5 SingleShotProgram with fixed-reset profiles",
+            "initial_pulse_signature": self._pulse_signature(self.initial),
             "fidelity_definition": "TLS step-5 balanced assignment fidelity",
             "selection_objective": (
                 "minimize measured X180-plus-readout latency among candidates within "
@@ -1303,6 +1405,11 @@ class BasicAutoTuner(ExperimentClass):
             "confirmed_candidates": self._confirmed,
             "unconfirmed_contenders": self._unconfirmed_contenders,
             "maps": self._maps,
+            "joint_search": {
+                "enabled": bool(self.params["joint_search"].get("enabled", True)),
+                "status": "not_run", "coarse_rows": [],
+                "medium_rows": [], "trust_rows": [], "closure_rounds": [],
+            },
             "stages": self._stages,
             "report": self._report,
             "discovery": self._discovery_status,
@@ -1352,8 +1459,49 @@ class BasicAutoTuner(ExperimentClass):
             },
             "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+        self._load_resume_checkpoint()
 
     # ------------------------------------------------------------------ invariants
+    def _load_resume_checkpoint(self):
+        path = self.params.get("resume_checkpoint")
+        if path in (None, ""):
+            return
+        path = os.path.abspath(os.path.expanduser(str(path)))
+        with open(path, "rb") as stream:
+            previous = pickle.load(stream)
+        if not isinstance(previous, dict):
+            raise ValueError("resume checkpoint is not an autotuner result dictionary")
+        if previous.get("revision") != BASIC_AUTOTUNER_REVISION:
+            raise ValueError("resume checkpoint revision %r does not match %r"
+                             % (previous.get("revision"),
+                                BASIC_AUTOTUNER_REVISION))
+        old_initial = previous.get("initial")
+        if (not isinstance(old_initial, dict)
+                or _candidate_key(old_initial) != _candidate_key(self.initial)):
+            raise ValueError("resume checkpoint belongs to a different input tuple")
+        old_flux = previous.get("fast_flux_operating_point", {})
+        if (not isinstance(old_flux, dict)
+                or int(old_flux.get("ff_park_gain", 0) or 0)
+                != int(self.input_cfg.get("ff_park_gain", 0) or 0)
+                or old_flux.get("ff_ch") != self.input_cfg.get("ff_ch")):
+            raise ValueError("resume checkpoint belongs to a different fast-flux context")
+        archived = previous.get("candidate_archive", [])
+        confirmed = previous.get("confirmed_candidates", [])
+        self._archive.extend(copy.deepcopy(
+            archived if isinstance(archived, list) else []))
+        self._confirmed.extend(copy.deepcopy(
+            confirmed if isinstance(confirmed, list) else []))
+        old_joint = previous.get("joint_search", {})
+        if isinstance(old_joint, dict):
+            self.data["joint_search"]["resumed_coarse_rows"] = copy.deepcopy(
+                old_joint.get("coarse_rows", []))
+        self.data["resume"] = {
+            "checkpoint": path,
+            "archived_measurements": len(self._archive),
+            "confirmed_candidates": len(self._confirmed),
+            "policy": "reuse complete coarse cells; freshly replay later stages",
+        }
+
     @staticmethod
     def _reset_readout_signature(candidate):
         return (
@@ -1362,8 +1510,31 @@ class BasicAutoTuner(ExperimentClass):
             round(float(candidate["read_length"]), 9),
         )
 
+    @staticmethod
+    def _reset_profile_signature(candidate):
+        """ADC/DDC coordinates that bind one fixed-gain reset threshold."""
+        return (
+            round(float(candidate["read_pulse_freq"]), 9),
+            round(float(candidate["read_length"]), 9),
+        )
+
+    def _pulse_signature(self, candidate):
+        cfg = copy.deepcopy(self.input_cfg)
+        cfg.update({key: candidate[key] for key in (
+            "read_pulse_freq", "read_pulse_gain", "read_length",
+            "qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma")})
+        cfg["qubit_drag_beta"] = float(candidate.get("qubit_drag_beta", 0.0))
+        cfg["qubit_gain"] = int(round(candidate["qubit_pi_gain"]))
+        cfg["qubit_pulse_style"] = "arb"
+        cfg["use_switch"] = False
+        cfg["switch_triggered"] = False
+        encoded = json.dumps(
+            pulse_fingerprint(cfg), sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
     def _deactivate_feedback(self, reason=None):
         was_feedback = self._reset_runtime.get("reset_mode") == "feedback"
+        self._feedback_profiles_suspended = True
         self._reset_runtime = {"reset_mode": "passive"}
         self.data["reset"].update({"mode": "passive", "fresh": False})
         if reason is not None:
@@ -1391,14 +1562,17 @@ class BasicAutoTuner(ExperimentClass):
             self.data["reset"]["events"].append({
                 "mode": "passive", "reason": "feedback path unavailable"})
             return False
+        # A weak starting tuple must never gate either tuning or the attempt to make
+        # tuning faster.  The end-to-end reset probe below is the authority: if the
+        # rough pulse/readout cannot support reset it rejects the profile safely, but
+        # a low assignment-fidelity estimate by itself is not a reason to give up.
         fidelity = self._working_confirmation_fidelity()
         minimum = float(settings.get("min_activation_fidelity", 0.75))
         if not np.isfinite(fidelity) or fidelity < minimum:
             self._log(
                 "reset", "WARN",
-                "not probing feedback after %s: current held-out F %.3f is below %.3f; "
-                "retaining safe passive relaxation" % (reason, fidelity, minimum))
-            return False
+                "probing feedback after %s despite weak current F %.3f; the fresh "
+                "end-to-end reset validation will decide" % (reason, fidelity))
         probe_cfg = self._cfg_for(self.working, reset_mode="passive")
         try:
             def run_probe():
@@ -1425,8 +1599,18 @@ class BasicAutoTuner(ExperimentClass):
             self._deactivate_feedback(
                 "fresh feedback validation failed after %s" % reason)
             return False
+        self._reset_fixed_readout_gain = int(self.working["read_pulse_gain"])
+        self._reset_fixed_control = {
+            "qubit_pi_freq": float(self.working["qubit_pi_freq"]),
+            "qubit_pi_gain": int(self.working["qubit_pi_gain"]),
+            "sigma": float(self.working["sigma"]),
+            "qubit_drag_beta": float(
+                self.working.get("qubit_drag_beta", 0.0)),
+        }
+        profile_key = self._reset_profile_signature(self.working)
         self._reset_runtime = {
             "reset_mode": "feedback",
+            "reset_profile_key": profile_key,
             "reset_threshold_raw": int(rec["threshold_raw"]),
             "reset_oper": str(rec.get("oper", "lower")),
             "reset_ground_below": bool(rec.get("ground_below", True)),
@@ -1435,6 +1619,8 @@ class BasicAutoTuner(ExperimentClass):
                 settings.get("thermalization_us", 25.0)),
             "active_reset_post_measure_delay_us": float(
                 settings.get("post_measure_delay_us", 0.05)),
+            "reset_read_pulse_freq": float(self.working["read_pulse_freq"]),
+            "reset_read_pulse_gain": int(self._reset_fixed_readout_gain),
             # Freeze the validated correction pulse while candidate pulse parameters
             # are swept.  Otherwise a deliberately bad candidate would also become
             # its own reset pulse and be unfairly penalized by a different initial
@@ -1445,6 +1631,8 @@ class BasicAutoTuner(ExperimentClass):
             "reset_pi_drag_beta": float(
                 self.working.get("qubit_drag_beta", 0.0)),
         }
+        self._reset_profiles[profile_key] = copy.deepcopy(self._reset_runtime)
+        self._feedback_profiles_suspended = False
         self._reset_readout_key = self._reset_readout_signature(self.working)
         event = {
             "mode": "feedback", "reason": str(reason),
@@ -1475,6 +1663,100 @@ class BasicAutoTuner(ExperimentClass):
             "%d passes)" % (reason, int(rec["threshold_raw"]),
                              rec.get("oper", "lower"),
                              int(settings.get("max_iters", 3))))
+        return True
+
+    def _ensure_reset_profile(self, candidate, reason):
+        """Cache feedback discrimination for one frequency/integration pair.
+
+        The reset readout drive gain and correction X180 are frozen from the bootstrap
+        calibration.  Only the ADC/DDC frequency and integration length change, so a
+        profile is reusable across every scoring readout gain in that duration group.
+        """
+        settings = self.params["reset"]
+        key = self._reset_profile_signature(candidate)
+        if key in self._reset_profiles:
+            self._reset_runtime = copy.deepcopy(self._reset_profiles[key])
+            self._feedback_profiles_suspended = False
+            return True
+        if (not bool(settings.get("enabled", True)) or self._reset_unavailable
+                or self.soccfg is None or not active_reset.active_reset_supported(
+                    self.soccfg, self.input_cfg["ro_chs"][0])):
+            return False
+        if self._reset_fixed_readout_gain is None or self._reset_fixed_control is None:
+            # This normally happens only if the bootstrap feedback activation failed.
+            # A profile cannot safely be invented from an unvalidated candidate.
+            return False
+        probe_candidate = _with_candidate(
+            candidate,
+            read_pulse_gain=int(self._reset_fixed_readout_gain),
+            qubit_pi_freq=float(self._reset_fixed_control["qubit_pi_freq"]),
+            qubit_pi_gain=int(self._reset_fixed_control["qubit_pi_gain"]),
+            sigma=float(self._reset_fixed_control["sigma"]),
+            qubit_drag_beta=float(
+                self._reset_fixed_control.get("qubit_drag_beta", 0.0)),
+        )
+        probe_cfg = self._cfg_for(probe_candidate, reset_mode="passive")
+        try:
+            def run_probe():
+                return active_reset.probe_reset_params(
+                    self.soc, self.soccfg, probe_cfg, path=self.path,
+                    outer_folder=self.outerFolder,
+                    shots=int(settings.get("profile_shots", 650)),
+                    validate=bool(settings.get("profile_validate", True)),
+                    min_raw_fidelity=float(settings.get(
+                        "profile_min_raw_fidelity", 0.72)))
+
+            if self._detailed_console():
+                rec = run_probe()
+            else:
+                with redirect_stdout(io.StringIO()):
+                    rec = run_probe()
+        except Exception as exc:
+            rec = None
+            self._log("reset", "WARN", "reset profile %.6f MHz/%.1f us failed "
+                      "after %s (%s: %s)" % (
+                          key[0], key[1], reason, type(exc).__name__, exc))
+        if rec is None:
+            self.data["reset"].setdefault("failed_profiles", []).append({
+                "profile_key": list(key), "reason": str(reason)})
+            return False
+        runtime = {
+            "reset_mode": "feedback",
+            "reset_profile_key": key,
+            "reset_threshold_raw": int(rec["threshold_raw"]),
+            "reset_oper": str(rec.get("oper", "lower")),
+            "reset_ground_below": bool(rec.get("ground_below", True)),
+            "reset_max_iters": int(settings.get("max_iters", 3)),
+            "reset_thermalization_us": float(
+                settings.get("thermalization_us", 25.0)),
+            "active_reset_post_measure_delay_us": float(
+                settings.get("post_measure_delay_us", 0.05)),
+            "reset_read_pulse_freq": float(candidate["read_pulse_freq"]),
+            "reset_read_pulse_gain": int(self._reset_fixed_readout_gain),
+            "reset_pi_freq": float(self._reset_fixed_control["qubit_pi_freq"]),
+            "reset_pi_gain": int(self._reset_fixed_control["qubit_pi_gain"]),
+            "reset_pi_sigma": float(self._reset_fixed_control["sigma"]),
+            "reset_pi_drag_beta": float(
+                self._reset_fixed_control.get("qubit_drag_beta", 0.0)),
+        }
+        self._reset_profiles[key] = copy.deepcopy(runtime)
+        self._reset_runtime = copy.deepcopy(runtime)
+        self._feedback_profiles_suspended = False
+        event = {
+            "mode": "feedback_profile", "reason": str(reason),
+            "profile_key": list(key),
+            "fixed_readout_gain": int(self._reset_fixed_readout_gain),
+            "threshold_raw": int(rec["threshold_raw"]),
+            "raw_assignment_fidelity": rec.get("raw_assignment_fidelity"),
+            "validation": rec.get("validation"),
+        }
+        self.data["reset"]["events"].append(event)
+        self.data["reset"].update({
+            "mode": "feedback", "fresh": True,
+            "profile_count": len(self._reset_profiles),
+            "active_profile_key": list(key),
+            "fixed_readout_gain": int(self._reset_fixed_readout_gain),
+        })
         return True
 
     def _leakage_enabled(self):
@@ -1589,12 +1871,15 @@ class BasicAutoTuner(ExperimentClass):
         # disagree with a 91.65% manual step-5 run.
         cfg["qubit_gain"] = int(round(c["qubit_pi_gain"]))
         cfg["qubit_pulse_style"] = "arb"
-        reset = dict(self._reset_runtime)
-        # A raw feedback threshold belongs to one exact readout frequency/gain/length.
-        # Any mismatched candidate fails closed to passive even if a caller forgot to
-        # suspend feedback around a readout-coordinate map.
+        profile_key = self._reset_profile_signature(c)
+        reset = ({"reset_mode": "passive"}
+                 if self._feedback_profiles_suspended else
+                 dict(self._reset_profiles.get(profile_key, self._reset_runtime)))
+        # The reset *drive* gain/control are frozen, so candidate readout gain can vary
+        # without changing state preparation.  Frequency and ADC integration length
+        # still bind the raw threshold and therefore require an exact cached profile.
         if (reset.get("reset_mode") == "feedback"
-                and self._reset_readout_signature(c) != self._reset_readout_key):
+                and tuple(reset.get("reset_profile_key", ())) != profile_key):
             reset = {"reset_mode": "passive"}
         cfg.update(reset)
         # Per-shot buffers and requested shot counts must have one unambiguous meaning;
@@ -1680,6 +1965,26 @@ class BasicAutoTuner(ExperimentClass):
                      4000.0 * self.working["sigma"]))
         elif name in ("parity_chevron", "amplified_error"):
             print("  Repeated-pulse refinement complete.")
+        elif name == "joint_search":
+            coverage = self.data.get("joint_search", {}).get("coverage", {})
+            print("  Joint search selected read %.1f us / %d DAC and X180 %.1f ns / "
+                  "%d DAC%s."
+                  % (self.working["read_length"],
+                     int(round(self.working["read_pulse_gain"])),
+                     4000.0 * self.working["sigma"],
+                     int(round(self.working["qubit_pi_gain"])),
+                     " with complete duration coverage"
+                     if coverage.get("complete", False) else
+                     " from the completed measurements"))
+        elif name == "multi_aae":
+            print("  AAE-refined pi pulse: %.6f MHz / %d DAC / %.1f ns."
+                  % (self.working["qubit_pi_freq"],
+                     int(round(self.working["qubit_pi_gain"])),
+                     4000.0 * self.working["sigma"]))
+        elif name.startswith("joint_closure_"):
+            print("  Coupled refinement selected read %.1f us and X180 %.1f ns."
+                  % (self.working["read_length"],
+                     4000.0 * self.working["sigma"]))
         elif name == "latency":
             timing = self.data.get("latency_optimization", {})
             saved = float(timing.get("latency_saved_us", 0.0))
@@ -1862,6 +2167,91 @@ class BasicAutoTuner(ExperimentClass):
             raise RuntimeError("SingleShotProgram did not return [ground, excited] shots")
         return shot_i[0], shot_q[0], shot_i[1], shot_q[1]
 
+    def _acquire_joint_gain_sweep(self, base_candidate, gains, shots, label,
+                                  epoch=0):
+        """Measure a complete pi-gain line with one shared ground cloud."""
+        gains = np.asarray(gains, dtype=int)
+        if (gains.ndim != 1 or gains.size < 3 or gains[0] != 0
+                or np.any(np.diff(gains) <= 0)
+                or not np.all(np.diff(gains) == np.diff(gains)[0])):
+            raise ValueError("joint pi-gain sweep must be a uniform increasing axis "
+                             "beginning at zero")
+        if self.soccfg is None or self._fast_gain_sweep is not True:
+            rows = []
+            for index, gain in enumerate(gains[1:]):
+                candidate = _with_candidate(
+                    base_candidate, qubit_pi_gain=int(gain))
+                row = self._measure_candidate(
+                    candidate, int(shots), "%s gain %d" % (label, int(gain)),
+                    state_order="ge" if index % 2 == 0 else "eg",
+                    archive=False)
+                rows.append(self._joint_archive.append(
+                    row, stage="joint_coarse", fidelity_level="coarse",
+                    epoch=int(epoch)))
+            return rows
+
+        cfg = self._cfg_for(
+            base_candidate,
+            rabi_drive_freq=float(base_candidate["qubit_pi_freq"]),
+            n_pulses=1, amp_start=int(gains[0]),
+            amp_step=int(gains[1] - gains[0]), amp_expts=int(gains.size),
+            shots=int(shots), reps=int(shots), ff_hold_gain=0)
+        shot_i, shot_q = RabiSSProgram(self.soccfg, cfg).acquire(
+            self.soc, load_pulses=True, progress=False)
+        shot_i, shot_q = np.asarray(shot_i), np.asarray(shot_q)
+        if shot_i.shape[0] != gains.size or shot_q.shape[0] != gains.size:
+            raise RuntimeError("QICK joint gain sweep returned the wrong number of "
+                               "gain experiments")
+        rows = []
+        for index, gain in enumerate(gains[1:], start=1):
+            candidate = _with_candidate(
+                base_candidate, qubit_pi_gain=int(gain))
+            metrics = step5_metrics(
+                shot_i[0], shot_q[0], shot_i[index], shot_q[index])
+            row = dict(candidate)
+            row.update({key: value for key, value in metrics.items()
+                        if key != "confusion"})
+            row.update({
+                "confusion": np.asarray(metrics["confusion"]),
+                "label": "%s gain %d" % (label, int(gain)),
+                "state_order": "shared-ground-gain-sweep",
+                "measurement_index": len(self._archive),
+                "pulse_signature": self._pulse_signature(candidate),
+            })
+            rows.append(self._joint_archive.append(
+                row, stage="joint_coarse", fidelity_level="coarse",
+                epoch=int(epoch)))
+        return rows
+
+    def _runtime_minutes(self):
+        if self._run_started_monotonic is None:
+            return 0.0
+        return float((time.monotonic() - self._run_started_monotonic) / 60.0)
+
+    def _joint_budget_allows(self, reserve_final=True):
+        settings = self.params["joint_search"]
+        budget = float(settings.get("runtime_budget_minutes", 30.0))
+        reserve = (float(settings.get("reserve_final_minutes", 5.0))
+                   if reserve_final else 0.0)
+        return self._runtime_minutes() < max(budget - reserve, 0.0)
+
+    @staticmethod
+    def _joint_rank(row):
+        mean, se, lcb = fidelity_evidence(row)
+        return (lcb, mean, -se,
+                -PulseCandidate.from_mapping(row).chain_latency_us())
+
+    def _joint_anchor_probe(self, candidate, shots, label, previous=None):
+        row = self._measure_candidate(candidate, int(shots), label)
+        if previous is None:
+            return row, False
+        before = fidelity_evidence(previous)[0]
+        after = fidelity_evidence(row)[0]
+        limit = float(self.params["calibration_drift"].get(
+            "max_independent_fidelity_change", 0.08))
+        return row, bool(np.isfinite(before) and np.isfinite(after)
+                         and abs(after - before) > limit)
+
     def _acquire_sequence(self, candidate, sequence_ops, shots, seq_gap_us=None):
         """Acquire raw shots for an arbitrary g-e/e-f shelving sequence."""
         extra = {
@@ -1982,6 +2372,7 @@ class BasicAutoTuner(ExperimentClass):
         row["label"] = str(label)
         row["state_order"] = str(state_order)
         row["measurement_index"] = len(self._archive)
+        row["pulse_signature"] = self._pulse_signature(candidate)
         if archive:
             self._archive.append(row)
         return row
@@ -3858,10 +4249,13 @@ class BasicAutoTuner(ExperimentClass):
         return np.sort(np.unique(axis))
 
     def _direct_grid(self, stage, candidates, shape, axes, shots, shortlist,
-                     confirm_shots, confirm_blocks):
+                     confirm_shots, confirm_blocks, coverage_values=None,
+                     coverage_per_value=1, primary_fidelity_only=False):
         candidates = [dict(candidate) for candidate in candidates]
         if int(np.prod(shape)) != len(candidates):
             raise ValueError("candidate list does not match grid shape")
+        if coverage_values is not None and len(coverage_values) != len(candidates):
+            raise ValueError("coverage values do not match the direct grid")
         score = np.full(len(candidates), np.nan)
         score_se = np.full(len(candidates), np.nan)
         third_blob_ucb = np.full(len(candidates), np.nan)
@@ -3949,8 +4343,29 @@ class BasicAutoTuner(ExperimentClass):
             if safe.size:
                 guarded = safe
         ranked = guarded[np.argsort(score[guarded])[::-1]]
-        selected = [candidates[int(index)]
-                    for index in ranked[:max(int(shortlist), 1)]]
+        selected_indices = [int(index) for index in
+                            ranked[:max(int(shortlist), 1)]]
+        covered_groups = {}
+        if coverage_values is not None:
+            # Global top-K is not timing coverage: all K points can be noisy variants
+            # of one duration, while the input duration is guaranteed a separate
+            # incumbent slot.  That makes the answer depend on the starting length.
+            # Reserve held-out contenders independently at every physical duration.
+            for index in guarded:
+                try:
+                    group = round(float(coverage_values[int(index)]), 9)
+                except (TypeError, ValueError, OverflowError):
+                    group = str(coverage_values[int(index)])
+                covered_groups.setdefault(group, []).append(int(index))
+            per_value = max(int(coverage_per_value), 1)
+            for group in sorted(covered_groups, key=str):
+                group_ranked = sorted(
+                    covered_groups[group], key=lambda index: (
+                        float(score[index]), -float(score_se[index])),
+                    reverse=True)
+                selected_indices.extend(group_ranked[:per_value])
+        selected_indices = list(dict.fromkeys(selected_indices))
+        selected = [candidates[index] for index in selected_indices]
         # The current incumbent is freshly remeasured beside the grid winners.  Thus a
         # noisy maximum can never silently replace a genuinely better manual tuple.
         incumbent = dict(self.working)
@@ -3960,6 +4375,15 @@ class BasicAutoTuner(ExperimentClass):
         confirmation_complete = self._confirmation_batch_complete(confirmed)
         self._maps[stage]["selection_confirmation_complete"] = bool(
             confirmation_complete)
+        self._maps[stage]["coverage_confirmation"] = {
+            "enabled": bool(coverage_values is not None),
+            "groups": [value for value in sorted(covered_groups, key=str)],
+            "per_group": (max(int(coverage_per_value), 1)
+                          if coverage_values is not None else 0),
+            "selected_candidate_keys": [
+                list(_candidate_key(candidates[index]))
+                for index in selected_indices],
+        }
         if not confirmation_complete:
             self._maps[stage]["search_complete"] = False
         guarded_confirmed = list(confirmed)
@@ -3974,7 +4398,13 @@ class BasicAutoTuner(ExperimentClass):
         # When held-out evidence cannot distinguish the incumbent from the apparent
         # winner, keep the incumbent.  This prevents a flat bootstrap map from turning
         # a coherent Rabi/readout seed into an arbitrary noise-selected tuple.
-        if str(stage).startswith("readout"):
+        if primary_fidelity_only:
+            # Gate/readout latency is a secondary epsilon-constrained objective.  The
+            # primary calibration must first preserve the maximum held-out fidelity;
+            # otherwise the timing preference is spent twice and can hide a longer,
+            # materially better readout solely because the input happened to be short.
+            best = direct_best
+        elif str(stage).startswith("readout"):
             best = self._prefer_lower_readout_exposure(
                 guarded_confirmed, margin=0.003,
                 max_mean_loss=self.params["readout"].get(
@@ -4780,7 +5210,338 @@ class BasicAutoTuner(ExperimentClass):
             "data_complete": bool(np.all(finite)),
         }
 
+    def _quantize_joint_proposals(self, proposals, center,
+                                  read_radius, qubit_radius):
+        """Project surrogate proposals onto a small reusable frequency lattice."""
+        p = self.params["joint_search"]
+        read_axis = np.linspace(
+            float(center["read_pulse_freq"]) - float(read_radius),
+            float(center["read_pulse_freq"]) + float(read_radius),
+            max(int(p.get("trust_read_frequency_points", 5)), 1))
+        qubit_axis = np.linspace(
+            float(center["qubit_pi_freq"]) - float(qubit_radius),
+            float(center["qubit_pi_freq"]) + float(qubit_radius),
+            max(int(p.get("trust_qubit_frequency_points", 7)), 1))
+        projected = []
+        for raw in proposals:
+            candidate = _with_candidate(
+                raw,
+                read_pulse_freq=float(read_axis[int(np.argmin(
+                    np.abs(read_axis - float(raw["read_pulse_freq"]))))]),
+                qubit_pi_freq=float(qubit_axis[int(np.argmin(
+                    np.abs(qubit_axis - float(raw["qubit_pi_freq"]))))]),
+            )
+            projected.append(candidate)
+        return _unique_candidates(projected)
+
     # --------------------------------------------------------------------- stages
+    def _stage_joint_search(self):
+        """Structured four-dimensional search plus held-out local refinement."""
+        p = self.params["joint_search"]
+        if not p.get("enabled", True):
+            self.data["joint_search"]["status"] = "disabled"
+            return None
+        base = dict(self.working)
+        read_lengths = np.asarray(sorted(set(
+            float(value) for value in p["read_lengths_us"]
+            if np.isfinite(float(value)) and float(value) > 0.0)), dtype=float)
+        sigmas = np.asarray(sorted(set(
+            float(value) for value in p["sigma_values_us"]
+            if np.isfinite(float(value)) and float(value) > 0.0)), dtype=float)
+        if not read_lengths.size or not sigmas.size:
+            raise ValueError("joint search needs positive readout and pulse durations")
+        read_gains = self._gain_axis(
+            p["read_gain_min"], p["read_gain_max"], p["read_gain_points"])
+        # Preserve every member of the input-independent broad backbone.  A useful
+        # in-range starting gain is one additional measurement, never a replacement
+        # which can silently delete a better power from the grid.
+        base_read_gain = int(round(base["read_pulse_gain"]))
+        if (int(p["read_gain_min"]) <= base_read_gain
+                <= int(p["read_gain_max"])):
+            read_gains = np.sort(np.unique(np.append(
+                read_gains, base_read_gain))).astype(int)
+        gain_points = max(int(p["qubit_gain_points_including_ground"]), 5)
+        jobs = [(float(read_length), float(sigma), int(read_gain))
+                for read_length in read_lengths
+                for sigma in sigmas for read_gain in read_gains]
+        order = self.rng.permutation(len(jobs))
+        coarse_rows, failures = [], []
+        resumed_rows = list(self.data["joint_search"].get(
+            "resumed_coarse_rows", []))
+        resumed_cells = 0
+        epoch = 0
+        anchor, _ = self._joint_anchor_probe(
+            base, max(int(p["coarse_shots"]), 80),
+            "joint-search anchor epoch 0")
+        anchor_interval = max(len(read_gains) * len(sigmas), 1)
+        for serial, job_index in enumerate(order):
+            if not self._joint_budget_allows(reserve_final=True):
+                break
+            read_length, sigma, read_gain = jobs[int(job_index)]
+            candidate = _with_candidate(
+                base, read_length=read_length, read_pulse_gain=read_gain,
+                sigma=sigma)
+            self._ensure_reset_profile(
+                candidate, "joint search %.1f us" % read_length)
+            expected_pi = (float(base["qubit_pi_gain"])
+                           * float(base["sigma"]) / sigma)
+            maximum = int(np.clip(round(
+                float(p["qubit_gain_max_scale"]) * expected_pi),
+                gain_points - 1, int(p["qubit_gain_hard_max"])))
+            step = max(int(round(maximum / float(gain_points - 1))), 1)
+            gains = step * np.arange(gain_points, dtype=int)
+            gains = gains[gains <= int(p["qubit_gain_hard_max"])]
+            if gains.size < 3:
+                failures.append({"job": jobs[int(job_index)],
+                                 "error": "gain axis collapsed"})
+                continue
+            prior = [row for row in resumed_rows
+                     if np.isclose(float(row.get("read_length", np.nan)), read_length)
+                     and np.isclose(float(row.get("sigma", np.nan)), sigma)
+                     and int(round(float(row.get("read_pulse_gain", -1)))) == read_gain
+                     and np.isclose(float(row.get("read_pulse_freq", np.nan)),
+                                    float(candidate["read_pulse_freq"]), atol=1e-9)
+                     and np.isclose(float(row.get("qubit_pi_freq", np.nan)),
+                                    float(candidate["qubit_pi_freq"]), atol=1e-9)]
+            prior_gains = {int(round(float(row.get("qubit_pi_gain", -1))))
+                           for row in prior}
+            if set(int(value) for value in gains[1:]).issubset(prior_gains):
+                coarse_rows.extend([
+                    row for row in prior
+                    if int(round(float(row["qubit_pi_gain"]))) in set(gains[1:])])
+                resumed_cells += 1
+                continue
+            try:
+                coarse_rows.extend(self._acquire_joint_gain_sweep(
+                    candidate, gains, int(p["coarse_shots"]),
+                    "joint coarse L%.1f S%.3f R%d" % (
+                        read_length, sigma, read_gain), epoch=epoch))
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                failures.append({
+                    "job": jobs[int(job_index)],
+                    "error": "%s: %s" % (type(exc).__name__, exc),
+                })
+            if ((serial + 1) % anchor_interval == 0
+                    and self._joint_budget_allows(reserve_final=True)):
+                new_anchor, drifted = self._joint_anchor_probe(
+                    base, max(int(p["coarse_shots"]), 80),
+                    "joint-search anchor check", previous=anchor)
+                if drifted:
+                    epoch += 1
+                anchor = new_anchor
+        coverage = validate_structured_coverage(
+            coarse_rows, read_lengths, sigmas)
+        record = self.data["joint_search"]
+        record.update({
+            "status": "coarse_complete" if coverage["complete"] else "coarse_partial",
+            "coarse_rows": coarse_rows,
+            "coarse_row_count": len(coarse_rows),
+            "coarse_failures": failures,
+            "resumed_coarse_cells": int(resumed_cells),
+            "coverage": coverage,
+            "read_lengths_us": read_lengths,
+            "sigma_values_us": sigmas,
+            "read_gains_dac": read_gains,
+            "drift_epochs": int(epoch + 1),
+            "runtime_minutes_after_coarse": self._runtime_minutes(),
+        })
+        if not coarse_rows:
+            raise RuntimeError("joint search completed no coarse measurements")
+
+        medium_seeds = duration_stratified_shortlist(
+            coarse_rows,
+            per_stratum=int(p["medium_per_duration_pair"]),
+            global_count=int(p["medium_global_count"]),
+            maximum=int(p["medium_max_candidates"]),
+        )
+        medium_candidates = [
+            PulseCandidate.from_mapping(row).as_dict() for row in medium_seeds]
+        if self._joint_budget_allows(reserve_final=True):
+            medium_rows = self._confirm_candidates(
+                medium_candidates + [base], int(p["medium_shots"]),
+                int(p["medium_blocks"]), "joint medium held-out",
+                add_to_history=True)
+        else:
+            medium_rows = []
+        record["medium_rows"] = medium_rows
+        record["medium_candidate_count"] = len(medium_candidates)
+        candidate_pool = list(medium_rows) or list(coarse_rows)
+
+        read_radius = float(p["trust_read_frequency_radius_mhz"])
+        qubit_radius = float(p["trust_qubit_frequency_radius_mhz"])
+        limits = {
+            "read_pulse_freq": (
+                float(base["read_pulse_freq"]) - read_radius,
+                float(base["read_pulse_freq"]) + read_radius),
+            "read_pulse_gain": (
+                int(p["read_gain_min"]), int(p["read_gain_max"])),
+            "read_length": (float(read_lengths[0]), float(read_lengths[-1])),
+            "qubit_pi_freq": (
+                float(base["qubit_pi_freq"]) - qubit_radius,
+                float(base["qubit_pi_freq"]) + qubit_radius),
+            "qubit_pi_gain": (1, int(p["qubit_gain_hard_max"])),
+            "sigma": (float(sigmas[0]), float(sigmas[-1])),
+        }
+        proposals = propose_trust_region_candidates(
+            coarse_rows + list(medium_rows), rng=self.rng,
+            count=int(p["trust_proposals"]), proposal_limits=limits,
+            read_frequency_radius_mhz=read_radius,
+            qubit_frequency_radius_mhz=qubit_radius,
+            read_gain_fraction=float(p["trust_read_gain_fraction"]),
+            qubit_gain_fraction=float(p["trust_qubit_gain_fraction"]),
+            trust_regions=int(p["trust_regions"]),
+            pool_size=int(p["trust_pool_size"]),
+        )
+        proposals = self._quantize_joint_proposals(
+            proposals, base, read_radius, qubit_radius)
+        for candidate in proposals:
+            if self._joint_budget_allows(reserve_final=True):
+                self._ensure_reset_profile(candidate, "joint trust-region proposal")
+        if proposals and self._joint_budget_allows(reserve_final=True):
+            trust_rows = self._confirm_candidates(
+                proposals, int(p["trust_shots"]), int(p["trust_blocks"]),
+                "joint trust-region held-out", add_to_history=True)
+        else:
+            trust_rows = []
+        record.update({
+            "trust_proposals": proposals,
+            "trust_rows": trust_rows,
+            "runtime_minutes_after_search": self._runtime_minutes(),
+        })
+        candidate_pool.extend(trust_rows)
+        best = max(candidate_pool, key=self._joint_rank)
+        self._adopt(best, "joint_search")
+        record["selected"] = copy.deepcopy(best)
+        record["status"] = (
+            "complete" if coverage["complete"] and medium_rows else
+            "partial_with_candidate")
+        duration_best = np.full((read_lengths.size, sigmas.size), np.nan)
+        for row in coarse_rows:
+            li = int(np.argmin(np.abs(read_lengths - float(row["read_length"]))))
+            si = int(np.argmin(np.abs(sigmas - float(row["sigma"]))))
+            score = fidelity_evidence(row)[0]
+            if (not np.isfinite(duration_best[li, si])
+                    or score > duration_best[li, si]):
+                duration_best[li, si] = score
+        self._maps["joint_search"] = {
+            "axes": {"read_length_us": read_lengths, "sigma_us": sigmas},
+            "duration_best_fidelity": duration_best,
+            "search_complete": bool(coverage["complete"] and medium_rows),
+            "selection_confirmed": bool(medium_rows),
+            "coverage": coverage,
+            "coarse_candidate_count": len(coarse_rows),
+            "medium_candidate_count": len(medium_rows),
+            "trust_candidate_count": len(trust_rows),
+        }
+        self._record_key_evidence(
+            TUNED_KEYS, "joint_search",
+            bool(coverage["complete"] and medium_rows))
+        self._joint_rows = list(coarse_rows) + list(medium_rows) + list(trust_rows)
+        return best
+
+    def _stage_multi_candidate_aae(self):
+        """Run frequency/AAE closure from several measured control basins."""
+        p = self.params["joint_search"]
+        pool = sorted(self._confirmed, key=self._joint_rank, reverse=True)
+        seeds, seen_controls = [], set()
+        for row in pool:
+            key = _control_key(row)
+            if key in seen_controls:
+                continue
+            seen_controls.add(key)
+            seeds.append({name: row[name] for name in self.initial})
+            if len(seeds) >= max(int(p.get("trust_regions", 6)) // 2, 2):
+                break
+        if not seeds:
+            seeds = [dict(self.working)]
+        refined, original = [], dict(self.working)
+        for index, seed in enumerate(seeds):
+            if not self._joint_budget_allows(reserve_final=True):
+                break
+            self.working = dict(seed)
+            self._ensure_reset_profile(
+                self.working, "AAE control basin %d" % (index + 1))
+            try:
+                self._stage_fine_frequency(
+                    "joint_aae_frequency_%d" % (index + 1))
+                self._stage_amplified_error()
+                refined.append(dict(self.working))
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                self._log("multi_aae", "WARN", "control basin %d failed (%s: %s)"
+                          % (index + 1, type(exc).__name__, exc))
+        candidates = _unique_candidates(refined + seeds + [original])
+        if not candidates:
+            self.working = original
+            return None
+        confirmed = self._confirm_candidates(
+            candidates, int(self.params["amplified_error"]["confirm_shots"]),
+            int(self.params["amplified_error"]["confirm_blocks"]),
+            "multi-basin AAE exact replay", add_to_history=True)
+        best = max(confirmed, key=self._joint_rank)
+        self._adopt(best, "multi_aae")
+        self.data["joint_search"]["aae_candidates"] = confirmed
+        return best
+
+    def _stage_joint_closure(self, iteration):
+        """Reopen a small coupled neighborhood after AAE changes the control."""
+        p = self.params["joint_search"]
+        source = list(self._joint_rows) + list(self._confirmed)
+        if not source or not self._joint_budget_allows(reserve_final=True):
+            return None
+        scale = float(p.get("closure_frequency_radius_scale", 0.55))
+        gain_scale = float(p.get("closure_gain_radius_scale", 0.60))
+        base = dict(self.working)
+        read_radius = scale * float(p["trust_read_frequency_radius_mhz"])
+        qubit_radius = scale * float(p["trust_qubit_frequency_radius_mhz"])
+        limits = {
+            "read_pulse_freq": (base["read_pulse_freq"] - read_radius,
+                                base["read_pulse_freq"] + read_radius),
+            "read_pulse_gain": (int(p["read_gain_min"]),
+                                int(p["read_gain_max"])),
+            "read_length": (min(p["read_lengths_us"]),
+                            max(p["read_lengths_us"])),
+            "qubit_pi_freq": (base["qubit_pi_freq"] - qubit_radius,
+                              base["qubit_pi_freq"] + qubit_radius),
+            "qubit_pi_gain": (1, int(p["qubit_gain_hard_max"])),
+            "sigma": (min(p["sigma_values_us"]), max(p["sigma_values_us"])),
+        }
+        proposals = propose_trust_region_candidates(
+            source, rng=self.rng,
+            count=max(int(p["trust_proposals"]) // 2, 8),
+            proposal_limits=limits,
+            read_frequency_radius_mhz=read_radius,
+            qubit_frequency_radius_mhz=qubit_radius,
+            read_gain_fraction=gain_scale * float(p["trust_read_gain_fraction"]),
+            qubit_gain_fraction=gain_scale * float(p["trust_qubit_gain_fraction"]),
+            trust_regions=max(int(p["trust_regions"]) // 2, 2),
+            pool_size=max(int(p["trust_pool_size"]) // 2, 1000),
+        )
+        proposals = self._quantize_joint_proposals(
+            proposals, base, read_radius, qubit_radius)
+        for candidate in proposals:
+            self._ensure_reset_profile(
+                candidate, "joint closure %d" % int(iteration))
+        if not proposals:
+            return None
+        confirmed = self._confirm_candidates(
+            proposals + [base], int(p["trust_shots"]),
+            int(p["trust_blocks"]),
+            "joint closure %d held-out" % int(iteration),
+            add_to_history=True)
+        direct = max(confirmed, key=self._joint_rank)
+        best = self._noninferior_seed(confirmed, base, direct, margin=0.003)
+        self._adopt(best, "joint_closure_%d" % int(iteration))
+        self.data["joint_search"]["closure_rounds"].append({
+            "iteration": int(iteration), "proposals": proposals,
+            "confirmations": confirmed, "selected": copy.deepcopy(best),
+        })
+        self._joint_rows.extend(confirmed)
+        return best
+
     def _stage_baseline(self):
         p = self.params["baseline"]
         rows = self._confirm_candidates(
@@ -6133,7 +6894,10 @@ class BasicAutoTuner(ExperimentClass):
             {"read_length_us": np.asarray(values),
              "frequency_offset_mhz": frequency_offsets,
              "read_gain_dac": actual_gains}, p["shots"], p["shortlist"],
-            p["confirm_shots"], p["confirm_blocks"])
+            p["confirm_shots"], p["confirm_blocks"],
+            coverage_values=[row["read_length"] for row in candidates],
+            coverage_per_value=p.get("confirm_per_length", 2),
+            primary_fidelity_only=True)
         initial_coverage_complete = bool(
             self._maps["readout_length"].get("search_complete", False))
         self._maps["readout_length"]["actual_gain_dac"] = actual_gains
@@ -6185,7 +6949,11 @@ class BasicAutoTuner(ExperimentClass):
                     {"read_length_us": edge_lengths,
                      "frequency_offset_mhz": frequency_offsets,
                      "read_gain_dac": edge_gains}, p["shots"], p["shortlist"],
-                    p["confirm_shots"], p["confirm_blocks"])
+                    p["confirm_shots"], p["confirm_blocks"],
+                    coverage_values=[row["read_length"]
+                                     for row in edge_candidates],
+                    coverage_per_value=p.get("confirm_per_length", 2),
+                    primary_fidelity_only=True)
                 extension_coverage_complete = bool(
                     self._maps["readout_length_edge"].get(
                         "search_complete", False))
@@ -6343,7 +7111,10 @@ class BasicAutoTuner(ExperimentClass):
              "frequency_offset_mhz": frequency_offsets,
              "gain_scale": gain_scales},
             p["shots"], p["shortlist"], p["confirm_shots"],
-            p["confirm_blocks"])
+            p["confirm_blocks"],
+            coverage_values=[row["sigma"] for row in candidates],
+            coverage_per_value=p.get("confirm_per_sigma", 2),
+            primary_fidelity_only=True)
         initial_coverage_complete = bool(
             self._maps["pulse_duration"].get("search_complete", False))
         self._maps["pulse_duration"]["actual_gain_dac"] = actual_gains
@@ -6403,7 +7174,10 @@ class BasicAutoTuner(ExperimentClass):
                      "frequency_offset_mhz": frequency_offsets,
                      "gain_scale": gain_scales},
                     p["shots"], p["shortlist"], p["confirm_shots"],
-                    p["confirm_blocks"])
+                    p["confirm_blocks"],
+                    coverage_values=[row["sigma"] for row in edge_candidates],
+                    coverage_per_value=p.get("confirm_per_sigma", 2),
+                    primary_fidelity_only=True)
                 extension_coverage_complete = bool(
                     self._maps["pulse_duration_edge"].get(
                         "search_complete", False))
@@ -6904,11 +7678,23 @@ class BasicAutoTuner(ExperimentClass):
                     candidate = _with_candidate(
                         waveform, qubit_drag_beta=beta)
                     try:
-                        row = self._measure_operational_leakage_candidate(
-                            candidate, int(p["operational_shots"]),
-                            int(p["operational_reference_shots"]),
-                            "operational waveform %d beta %+.5f"
-                            % (waveform_index + 1, beta))
+                        drift_attempts = 1 + max(int(p.get(
+                            "operational_drift_retries", 2)), 0)
+                        row = None
+                        for drift_attempt in range(drift_attempts):
+                            row = self._measure_operational_leakage_candidate(
+                                candidate, int(p["operational_shots"]),
+                                int(p["operational_reference_shots"]),
+                                "operational waveform %d beta %+.5f bracket %d"
+                                % (waveform_index + 1, beta,
+                                   drift_attempt + 1))
+                            row["bracket_attempt"] = int(drift_attempt + 1)
+                            row["bracket_attempts_allowed"] = int(drift_attempts)
+                            rows.append(row)
+                            if (row.get("valid", False)
+                                    or row.get("failure")
+                                    != "the bracketing discriminator drifted"):
+                                break
                     except KeyboardInterrupt:
                         raise
                     except Exception as exc:
@@ -6928,7 +7714,6 @@ class BasicAutoTuner(ExperimentClass):
                             break
                         continue
                     consecutive_failures = 0
-                    rows.append(row)
                 if abort_waveform:
                     break
                 safe_now = [row for row in rows if row["operational_safe"]]
@@ -8551,10 +9336,15 @@ class BasicAutoTuner(ExperimentClass):
                       * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
         length = p["readout_length"]
         if length.get("enabled", True):
-            total += (2 * (len(length["values_us"]) + 1)
+            length_count = len(length["values_us"]) + 1
+            total += (2 * length_count
                       * int(length["freq_points"]) * int(length["gain_points"])
                       * int(length["shots"]))
-            total += (2 * (int(length["shortlist"]) + 1)
+            length_confirmations = (
+                int(length["shortlist"])
+                + length_count * max(int(length.get(
+                    "confirm_per_length", 2)), 1) + 1)
+            total += (2 * length_confirmations
                       * int(length["confirm_shots"]) * int(length["confirm_blocks"]))
             total += (2 * int(readout["local_freq_points"])
                       * int(readout["local_gain_points"]) * int(readout["shots"]))
@@ -8568,10 +9358,15 @@ class BasicAutoTuner(ExperimentClass):
                       * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
         duration = p["pulse_duration"]
         if duration.get("enabled", True):
-            total += (2 * (len(duration["sigma_values_us"]) + 1)
+            duration_count = len(duration["sigma_values_us"]) + 1
+            total += (2 * duration_count
                       * int(duration["freq_points"]) * int(duration["gain_points"])
                       * int(duration["shots"]))
-            total += (2 * (int(duration["shortlist"]) + 1)
+            duration_confirmations = (
+                int(duration["shortlist"])
+                + duration_count * max(int(duration.get(
+                    "confirm_per_sigma", 2)), 1) + 1)
+            total += (2 * duration_confirmations
                       * int(duration["confirm_shots"]) * int(duration["confirm_blocks"]))
         if p.get("coordinate_descent_repeat", True):
             total += (2 * int(readout["local_freq_points"])
@@ -8657,7 +9452,13 @@ class BasicAutoTuner(ExperimentClass):
                    * int(leak["operational_shots"])
                    if bool(leak.get(
                        "operational_repeated_return_enabled", False)) else 0))
-            total += waveform_count * beta_points * screen_point
+            # A discriminator-drift retry repeats the whole before/after bracket.
+            # Budget the configured worst case so this ETA does not hide the new
+            # robustness work behind an optimistic one-attempt estimate.
+            drift_attempts = 1 + max(int(leak.get(
+                "operational_drift_retries", 2)), 0)
+            total += (waveform_count * beta_points * screen_point
+                      * drift_attempts)
             total += (2 * int(leak["operational_selection_shortlist"])
                       * int(leak["operational_selection_shots"])
                       * int(leak["operational_selection_blocks"]))
@@ -8720,6 +9521,7 @@ class BasicAutoTuner(ExperimentClass):
     # --------------------------------------------------------------- orchestration
     def acquire(self, progress=False, debug=False, plotDisp=False):
         del progress, debug
+        self._run_started_monotonic = time.monotonic()
         # Direct unit users may call individual analysis/finalization helpers, but a
         # production acquire must never authorize writes after critical discovery
         # failed and later local grids merely optimized shot noise.
@@ -8764,48 +9566,38 @@ class BasicAutoTuner(ExperimentClass):
             self._run_stage("reset_after_bootstrap", lambda:
                             self._try_activate_feedback("bootstrap readout"))
             self._run_stage("rough_ss", self._stage_rough_single_shot)
-            self._run_stage("fine_frequency", lambda: self._stage_fine_frequency(
-                "fine_frequency"))
             self._run_stage("parity_chevron", self._stage_parity_chevron)
-            self._deactivate_feedback("readout frequency/power comparison")
-            self._run_stage("readout_after_control", lambda: self._stage_readout_grid(
-                "readout_after_control", local=True))
-            self._run_stage("reset_after_readout", lambda:
-                            self._try_activate_feedback("readout frequency/power"))
-            self._deactivate_feedback("readout-length comparison")
-            self._run_stage("readout_length", self._stage_readout_length)
-            self._run_stage("reset_after_length", lambda:
-                            self._try_activate_feedback("readout length"))
-            self._run_stage("qubit_grid", lambda: self._stage_qubit_grid(
-                "qubit_grid", local=False))
-            self._run_stage("pulse_duration", self._stage_pulse_duration)
-            self._run_stage("reset_after_duration", lambda:
-                            self._try_activate_feedback("pulse-duration selection"))
-            if bool(self.params.get("coordinate_descent_repeat", True)):
-                self._deactivate_feedback("coordinate-descent readout comparison")
-                self._run_stage("readout_repeat", lambda: self._stage_readout_grid(
-                    "readout_repeat", local=True))
-                self._run_stage("reset_after_repeat", lambda:
-                                self._try_activate_feedback(
-                                    "coordinate-descent readout"))
-                self._run_stage("qubit_repeat", lambda: self._stage_qubit_grid(
-                    "qubit_repeat", local=True))
-            # These amplified control refinements must be last.  A later one-pulse
-            # grid could otherwise undo a correction it is not sensitive enough to see.
-            self._run_stage("fine_frequency_post_duration",
-                            lambda: self._stage_fine_frequency(
-                                "fine_frequency_post_duration"))
-            self._run_stage("amplified_error", self._stage_amplified_error)
+            # The bootstrap probe may legitimately fail when the preliminary pulse is
+            # weak.  Retry with the now-confirmed coherent pulse before the expensive
+            # joint map; failure still falls back to passive relaxation and never
+            # aborts or narrows the search.
+            self._run_stage("reset_before_joint", lambda:
+                            self._try_activate_feedback("rough coherent pulse"))
+            self._run_stage("joint_search", self._stage_joint_search)
+            self._run_stage("multi_aae", self._stage_multi_candidate_aae)
+            for iteration in range(1, max(int(self.params["joint_search"].get(
+                    "closure_iterations", 2)), 0) + 1):
+                self._run_stage(
+                    "joint_closure_%d" % iteration,
+                    lambda iteration=iteration: self._stage_joint_closure(iteration))
+                # A coupled one-pulse refinement can expose a small coherent residual.
+                # Re-close it before the next/final comparison without reopening a
+                # one-way coordinate-descent chain.
+                if (iteration < int(self.params["joint_search"].get(
+                        "closure_iterations", 2))
+                        and self._joint_budget_allows(reserve_final=True)):
+                    self._run_stage(
+                        "multi_aae_closure_%d" % iteration,
+                        self._stage_multi_candidate_aae)
             # The ordinary final map first identifies the best empirical waveforms.
             # The default basic path then compares fixed-waveform duration/power
             # candidates for reproducible third-cloud growth.  Optional strict mode
             # replaces that screen with direct shelving P(f).  Either path re-closes
             # local coordinates and independently verifies the exact tuple before the
             # only replay allowed to authorize a write.
-            # Candidate-rich final comparison may contain several readout tuples, so a
-            # single raw feedback threshold cannot be applied fairly to all of them.
-            # Compare them passively, then freshly validate feedback on only the winner.
-            self._deactivate_feedback("multi-readout final comparison")
+            # Candidate-rich final comparison can now use its cached fixed-gain reset
+            # profile per frequency/integration pair.  Scoring gain is independent and
+            # therefore no longer forces an all-passive multi-readout replay.
             final = self._run_stage("final", self._stage_final)
             ordinary_final = copy.deepcopy(final) if final is not None else None
             ordinary_replay_completed = bool(self._final_replay_completed)
@@ -8880,17 +9672,14 @@ class BasicAutoTuner(ExperimentClass):
                     })
                 else:
                     self._run_stage(
-                        "qubit_post_leakage", lambda: self._stage_qubit_grid(
-                            "qubit_post_leakage", local=True))
-                    self._run_stage(
                         "frequency_post_leakage", lambda: self._stage_fine_frequency(
                             "frequency_post_leakage"))
                     self._run_stage(
                         "aae_post_leakage", self._stage_amplified_error)
-                    self._deactivate_feedback("post-leakage readout comparison")
                     self._run_stage(
-                        "readout_post_leakage", lambda: self._stage_readout_grid(
-                            "readout_post_leakage", local=True))
+                        "joint_post_leakage", lambda: self._stage_joint_closure(
+                            int(self.params["joint_search"].get(
+                                "closure_iterations", 2)) + 1))
                     if self.params["latency"].get("enabled", True):
                         # Post-screen frequency/gain/AAE closure is useful only after
                         # the refined exact tuple proves safety.  This first audit also
@@ -8969,17 +9758,14 @@ class BasicAutoTuner(ExperimentClass):
                     })
                 else:
                     self._run_stage(
-                        "qubit_post_leakage", lambda: self._stage_qubit_grid(
-                            "qubit_post_leakage", local=True))
-                    self._run_stage(
                         "frequency_post_leakage", lambda: self._stage_fine_frequency(
                             "frequency_post_leakage"))
                     self._run_stage(
                         "aae_post_leakage", self._stage_amplified_error)
-                    self._deactivate_feedback("post-screen readout comparison")
                     self._run_stage(
-                        "readout_post_leakage", lambda: self._stage_readout_grid(
-                            "readout_post_leakage", local=True))
+                        "joint_post_leakage", lambda: self._stage_joint_closure(
+                            int(self.params["joint_search"].get(
+                                "closure_iterations", 2)) + 1))
                     if self.params["latency"].get("enabled", True):
                         self._deactivate_feedback(
                             "pre-latency operational safety verification")
@@ -9095,6 +9881,30 @@ class BasicAutoTuner(ExperimentClass):
             })
             return
         best = self._annotate_candidate_latency(final)
+        measured_pool = [row for row in self._confirmed
+                         if all(key in row for key in self.initial)]
+        if measured_pool:
+            frontier = latency_pareto_frontier(measured_pool)
+            fidelity_reference = max(measured_pool, key=self._joint_rank)
+            fast_advisory, fast_diagnostics = select_shortest_noninferior(
+                measured_pool, fidelity_reference,
+                max_loss=float(self.params["latency"].get(
+                    "max_fidelity_loss", 0.005)),
+                confidence_z=float(self.params["latency"].get(
+                    "confidence_sigma", 1.96)),
+                minimum_mean=float(self.params["latency"].get(
+                    "minimum_mean_fidelity", 0.90)),
+                minimum_lcb=float(self.params["latency"].get(
+                    "minimum_lcb_fidelity", 0.88)),
+            )
+            self.data["joint_search"].update({
+                "best_measured_reference": copy.deepcopy(fidelity_reference),
+                "latency_pareto_frontier": copy.deepcopy(frontier),
+                # Advisory only: the existing randomized familywise latency stage is
+                # the certificate allowed to influence a write.
+                "shortest_noninferior_advisory": copy.deepcopy(fast_advisory),
+                "shortest_noninferior_diagnostics": fast_diagnostics,
+            })
         # Convert arrays to ordinary lists only in the compact top-level result; full
         # numpy evidence remains in confirmed_candidates and the pickle.
         for array_key in (
@@ -9410,6 +10220,33 @@ class BasicAutoTuner(ExperimentClass):
             "leakage_verified", "reset",
         )
         summary = {key: data.get(key) for key in keys if key in data}
+        joint = data.get("joint_search", {})
+        if isinstance(joint, dict):
+            compact_joint = {key: joint.get(key) for key in (
+                "enabled", "status", "coarse_row_count",
+                "medium_candidate_count", "drift_epochs",
+                "runtime_minutes_after_coarse", "runtime_minutes_after_search",
+            ) if key in joint}
+            coverage = joint.get("coverage")
+            if isinstance(coverage, dict):
+                compact_joint["coverage"] = copy.deepcopy(coverage)
+            candidate_keys = TUNED_KEYS + (
+                "fidelity", "fidelity_se", "fidelity_lcb_95",
+                "crossfit_fidelity", "crossfit_fidelity_se",
+                "crossfit_fidelity_lcb_95", "confirmation_blocks",
+                "chain_latency_us",
+            )
+            for name in ("selected", "best_measured_reference",
+                         "shortest_noninferior_advisory"):
+                candidate = joint.get(name)
+                if isinstance(candidate, dict):
+                    compact_joint[name] = {
+                        key: candidate.get(key) for key in candidate_keys
+                        if key in candidate
+                    }
+            compact_joint["pareto_point_count"] = len(
+                joint.get("latency_pareto_frontier", []))
+            summary["joint_search"] = compact_joint
         latency = data.get("latency_optimization", {})
         if isinstance(latency, dict):
             scalar_keys = (
@@ -9582,9 +10419,9 @@ class BasicAutoTuner(ExperimentClass):
         preferred = [
             ("iq_rabi", "row_r2"),
             ("parity_chevron", "parity_score"),
+            ("joint_search", "duration_best_fidelity"),
             ("readout_grid", "fidelity"),
-            ("qubit_grid", "fidelity"),
-            ("pulse_duration", "fidelity"),
+            ("amplified_error", "parity_score"),
         ]
         for axis, (stage, field) in zip(axes[1:], preferred):
             mapping = self._maps.get(stage, {})

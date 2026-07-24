@@ -13,6 +13,7 @@ import copy
 import io
 import importlib.util
 import os
+import pickle
 import sys
 import tempfile
 import types
@@ -40,6 +41,8 @@ matplotlib.use("Agg")
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments import (  # noqa: E402
     mBasicAutoTuner as T,
     mActiveResetProbe as ARP,
+    mRabiChevronIQ as RI,
+    mSingleShot1Q as SS,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (  # noqa: E402
     find_blob_median,
@@ -157,6 +160,36 @@ FAST_PARAMS = {
         "gain_fraction": 0.20, "gain_points": 3, "shots": 67,
         "shortlist": 3, "confirm_shots": 131, "confirm_blocks": 2,
     },
+    "joint_search": {
+        "enabled": True,
+        "read_lengths_us": [4.0, 30.0],
+        "sigma_values_us": [0.10, 0.25],
+        "read_gain_min": 1500, "read_gain_max": 8500,
+        "read_gain_points": 3,
+        "qubit_gain_points_including_ground": 9,
+        "qubit_gain_max_scale": 2.0,
+        "qubit_gain_hard_max": 24000,
+        "coarse_shots": 43,
+        "medium_per_duration_pair": 1,
+        "medium_global_count": 2,
+        "medium_max_candidates": 8,
+        "medium_shots": 83, "medium_blocks": 2,
+        "trust_regions": 2, "trust_proposals": 4,
+        "trust_pool_size": 300,
+        "trust_read_frequency_radius_mhz": 0.40,
+        "trust_qubit_frequency_radius_mhz": 0.70,
+        "trust_read_gain_fraction": 0.25,
+        "trust_qubit_gain_fraction": 0.25,
+        "trust_shots": 89, "trust_blocks": 2,
+        "closure_iterations": 1,
+        "closure_frequency_radius_scale": 0.5,
+        "closure_gain_radius_scale": 0.5,
+        "runtime_budget_minutes": 30.0,
+        "reserve_final_minutes": 0.0,
+    },
+    # Legacy timing-unit fixtures below were authored around a one-point epsilon.
+    # Production joint-search-v1 tightens the default to 0.5 percentage point.
+    "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
     # screening tests enable the production-default screen explicitly.
@@ -711,6 +744,163 @@ def test_readout_tie_prefers_lower_power_duration_exposure():
     assert selected is lower
 
 
+class _DurationCoverageTuner(VirtualBasicAutoTuner):
+    """Make every global coarse winner share the deliberately bad seed duration."""
+
+    def __init__(self, *args, coordinate, optimum, **kwargs):
+        self.coverage_coordinate = str(coordinate)
+        self.coverage_optimum = float(optimum)
+        self.confirmed_durations = set()
+        super().__init__(*args, **kwargs)
+
+    def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                           archive=True, reference_discriminator=None):
+        del shots, reference_discriminator
+        coordinate = float(candidate[self.coverage_coordinate])
+        label = str(label)
+        if "coarse" in label:
+            seed = float(self.initial[self.coverage_coordinate])
+            # All three variants of the starting duration outrank every other
+            # duration in the noisy discovery map.  A global top-3 shortlist therefore
+            # has no timing coverage at all.
+            if np.isclose(coordinate, seed):
+                fidelity = 0.990 - 1e-6 * abs(float(candidate[
+                    "read_pulse_gain" if self.coverage_coordinate == "read_length"
+                    else "qubit_pi_gain"]))
+            else:
+                fidelity = 0.800 - 0.01 * abs(
+                    coordinate - self.coverage_optimum)
+        else:
+            self.confirmed_durations.add(coordinate)
+            fidelity = (0.940 if np.isclose(coordinate, self.coverage_optimum)
+                        else 0.840)
+        row = dict(candidate)
+        row.update({
+            "fidelity": float(fidelity),
+            "fidelity_se": 0.0005,
+            "fidelity_lcb_95": float(fidelity - 1.96 * 0.0005),
+            "sep_sigma": 4.0,
+            "third_blob_excess_ucb_95": 0.0,
+            "label": label,
+            "state_order": str(state_order),
+            "measurement_index": len(self._archive),
+        })
+        if archive:
+            self._archive.append(row)
+        return row
+
+
+def test_readout_length_confirmation_covers_every_length_not_only_seed():
+    cfg = _base_config()
+    cfg["read_length"] = 10.0
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = _DurationCoverageTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+            coordinate="read_length", optimum=20.0,
+        )
+        lengths = (10.0, 20.0, 30.0)
+        gains = (3000, 5000, 7000)
+        candidates = [
+            T._with_candidate(
+                tuner.working, read_length=length, read_pulse_gain=gain)
+            for length in lengths for gain in gains
+        ]
+        best = tuner._direct_grid(
+            "readout_length_seed_regression", candidates,
+            (len(lengths), len(gains)),
+            {"read_length_us": np.asarray(lengths),
+             "read_gain_dac": np.asarray(gains)},
+            shots=41, shortlist=3, confirm_shots=101, confirm_blocks=2,
+            coverage_values=[row["read_length"] for row in candidates],
+            coverage_per_value=2, primary_fidelity_only=True,
+        )
+    assert tuner.confirmed_durations == {10.0, 20.0, 30.0}
+    assert best["read_length"] == 20.0
+    assert tuner.working["read_length"] == 20.0
+    assert tuner.data["maps"]["readout_length_seed_regression"][
+        "coverage_confirmation"]["groups"] == [10.0, 20.0, 30.0]
+
+
+def test_pi_duration_confirmation_covers_every_sigma_not_only_seed():
+    cfg = _base_config()
+    cfg["sigma"] = 0.10
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = _DurationCoverageTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=FAST_PARAMS,
+            coordinate="sigma", optimum=0.25,
+        )
+        sigmas = (0.10, 0.25, 0.50)
+        gains = (3000, 5000, 7000)
+        candidates = [
+            T._with_candidate(tuner.working, sigma=sigma, qubit_pi_gain=gain)
+            for sigma in sigmas for gain in gains
+        ]
+        best = tuner._direct_grid(
+            "pulse_duration_seed_regression", candidates,
+            (len(sigmas), len(gains)),
+            {"sigma_us": np.asarray(sigmas),
+             "qubit_gain_dac": np.asarray(gains)},
+            shots=41, shortlist=3, confirm_shots=101, confirm_blocks=2,
+            coverage_values=[row["sigma"] for row in candidates],
+            coverage_per_value=2, primary_fidelity_only=True,
+        )
+    assert tuner.confirmed_durations == {0.10, 0.25, 0.50}
+    assert best["sigma"] == 0.25
+    assert tuner.working["sigma"] == 0.25
+
+
+def test_operational_screen_retries_discriminator_drift_before_rejecting_waveform():
+    class TransientDriftTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.operational_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _operational_waveform_pool(self):
+            return [dict(self.working)]
+
+        def _measure_operational_leakage_candidate(
+                self, candidate, shots, reference_shots, label):
+            del shots, reference_shots
+            self.operational_calls += 1
+            safe = self.operational_calls >= 3
+            row = dict(candidate)
+            row.update({
+                "fidelity": 0.92,
+                "fidelity_se": 0.002,
+                "fidelity_lcb_95": 0.91608,
+                "third_blob_excess_ucb": 0.004,
+                "max_even_return_error_ucb": np.nan,
+                "max_odd_inversion_error_ucb": np.nan,
+                "valid": bool(safe),
+                "operational_safe": bool(safe),
+                "leakage_safe": bool(safe),
+                "label": str(label),
+                "failure": (None if safe
+                            else "the bracketing discriminator drifted"),
+            })
+            return row
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": False,
+        "operational_enabled": True,
+        "operational_drift_retries": 2,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = TransientDriftTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        chosen = tuner._stage_operational_leakage()
+    attempts = tuner.data["leakage"]["attempts"][0]["rows"]
+    assert tuner.operational_calls == 3
+    assert [row["bracket_attempt"] for row in attempts] == [1, 2, 3]
+    assert chosen["third_blob_excess_ucb"] <= 0.05
+    assert tuner.data["leakage"]["selection_safe"] is True
+
+
 def _latency_candidate(read_length, sigma, fidelity, fidelity_se=0.001,
                        **changes):
     """Complete physical tuple plus deterministic held-out fidelity evidence."""
@@ -1066,6 +1256,7 @@ def test_latency_search_expands_to_later_frontier_after_early_arms_fail():
         "max_control_candidates": 1,
         "minimum_mean_fidelity": 0.88,
         "minimum_lcb_fidelity": 0.87,
+        "max_fidelity_loss": 0.010,
     })
     folder = tempfile.TemporaryDirectory()
     try:
@@ -1531,6 +1722,7 @@ def test_latency_stage_retries_transient_measurement_and_evidence_failures():
         "max_control_candidates": 4,
         "min_read_length_us": 4.0,
         "max_sigma_us": 0.50,
+        "max_fidelity_loss": 0.010,
     })
     with tempfile.TemporaryDirectory() as folder:
         tuner = RetryingLatencyTuner(
@@ -1790,6 +1982,7 @@ def test_binding_unsafe_reference_is_lazily_removed_before_latency_decision():
         "adaptive_confirmation_rounds": 0,
         "max_readout_candidates": 3,
         "max_control_candidates": 3,
+        "max_fidelity_loss": 0.010,
     })
     params["leakage"] = copy.deepcopy(T.BASIC_DEFAULTS["leakage"])
     params["leakage"].update({
@@ -1935,6 +2128,7 @@ def _run_adaptive_latency_fixture(fail_optional_round):
         "max_control_candidates": 2,
         "min_read_length_us": 4.0,
         "max_sigma_us": 0.50,
+        "max_fidelity_loss": 0.010,
     })
     with tempfile.TemporaryDirectory() as folder:
         tuner = _AdaptiveLatencyEvidenceTuner(
@@ -2110,6 +2304,7 @@ def _simultaneous_blocker_latency_fixture(blocker_is_coherent):
         "max_control_candidates": 3,
         "minimum_mean_fidelity": 0.90,
         "minimum_lcb_fidelity": 0.90,
+        "max_fidelity_loss": 0.010,
     })
     folder = tempfile.TemporaryDirectory()
     tuner = _SimultaneousBlockerLatencyTuner(
@@ -2904,28 +3099,112 @@ def test_sequence_feedback_declares_its_frozen_reset_waveform():
     })
 
 
-def test_feedback_threshold_is_bound_to_one_exact_readout_tuple():
+def test_feedback_profile_is_bound_to_frequency_and_length_not_scoring_gain():
     cfg = _base_config()
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
             soc=None, soccfg=None, path="q4", outerFolder=folder,
             cfg=cfg, params=FAST_PARAMS,
         )
+        profile_key = tuner._reset_profile_signature(tuner.working)
         tuner._reset_runtime = {
             "reset_mode": "feedback", "reset_threshold_raw": 1234,
             "reset_oper": "lower", "reset_ground_below": True,
             "reset_max_iters": 3, "reset_pi_freq": 2534.5,
             "reset_pi_gain": 5790, "reset_pi_sigma": 0.25,
             "reset_pi_drag_beta": 0.04,
+            "reset_read_pulse_gain": 5000,
+            "reset_read_pulse_freq": tuner.working["read_pulse_freq"],
+            "reset_profile_key": profile_key,
         }
+        tuner._reset_profiles[profile_key] = copy.deepcopy(tuner._reset_runtime)
         tuner._reset_readout_key = tuner._reset_readout_signature(tuner.working)
         exact = tuner._cfg_for(tuner.working)
-        mismatched = tuner._cfg_for(T._with_candidate(
+        gain_changed = tuner._cfg_for(T._with_candidate(
+            tuner.working,
+            read_pulse_gain=tuner.working["read_pulse_gain"] + 1000))
+        frequency_changed = tuner._cfg_for(T._with_candidate(
             tuner.working,
             read_pulse_freq=tuner.working["read_pulse_freq"] + 0.1))
     assert exact["reset_mode"] == "feedback"
     assert exact["reset_pi_gain"] == 5790
-    assert mismatched["reset_mode"] == "passive"
+    assert gain_changed["reset_mode"] == "feedback"
+    assert gain_changed["reset_read_pulse_gain"] == 5000
+    assert frequency_changed["reset_mode"] == "passive"
+
+
+def test_single_shot_feedback_uses_fixed_reset_gain_then_restores_scoring_gain():
+    program = object.__new__(SS.SingleShotProgram)
+    program.cfg = {
+        "reset_mode": "feedback", "reset_read_pulse_gain": 5000,
+        "read_pulse_gain": 7300, "read_pulse_freq": 7249.1,
+        "qubit_ch": 1, "qubit_freq": 2534.7,
+        "qubit_pi_freq": 2534.7, "qubit_pi_gain": 5800,
+        "qubit_gain": 0, "ro_chs": [0], "res_ch": 0,
+        "reset_threshold_raw": 123, "reset_max_iters": 3,
+        "reset_pi_gain": 5800, "relax_delay": 1000.0,
+        "adc_trig_offset": 0.5,
+    }
+    program.r_gain = 2
+    program.r_gain2 = 3
+    program.ch_page = lambda _channel: 0
+    program.mathi = lambda *_args, **_kwargs: None
+    program.set_pulse_registers = lambda *_args, **_kwargs: None
+    program.freq2reg = lambda value, **_kwargs: value
+    program.deg2reg = lambda value, **_kwargs: value
+    program.us2cycles = lambda value, **_kwargs: value
+    program.pulse = lambda *_args, **_kwargs: None
+    program.sync_all = lambda *_args, **_kwargs: None
+    program.measure = lambda *_args, **_kwargs: None
+    calls = []
+    original_set = SS.set_readout_pulse
+    original_reset = SS.active_reset.active_reset_block
+    original_park = SS.ff_pulse.play_static_park
+    try:
+        SS.set_readout_pulse = lambda prog, *args, gain=None, **kwargs: calls.append(
+            int(prog.cfg["read_pulse_gain"] if gain is None else gain))
+        SS.active_reset.active_reset_block = lambda *_args, **_kwargs: None
+        SS.ff_pulse.play_static_park = lambda *_args, **_kwargs: None
+        program.body()
+    finally:
+        SS.set_readout_pulse = original_set
+        SS.active_reset.active_reset_block = original_reset
+        SS.ff_pulse.play_static_park = original_park
+    assert calls == [5000, 7300]
+
+
+def test_rabi_sweep_feedback_restores_the_swept_gain_and_scoring_readout():
+    program = types.SimpleNamespace(cfg={
+        "reset_read_pulse_freq": 7249.1,
+        "read_pulse_freq": 7249.1,
+        "reset_read_pulse_gain": 5000,
+        "read_pulse_gain": 7300,
+        "qubit_ch": 1, "ro_chs": [0],
+        "reset_threshold_raw": 123, "reset_max_iters": 3,
+        "reset_pi_freq": 2534.7, "reset_pi_gain": 5800,
+        "qubit_pi_gain": 9200, "rabi_drive_freq": 2534.8,
+    })
+    program.ch_page = lambda _channel: 0
+    program.sreg = lambda _channel, _name: 2
+    math = []
+    program.mathi = lambda *args: math.append(args)
+    program.set_pulse_registers = lambda *_args, **_kwargs: None
+    program.freq2reg = lambda value, **_kwargs: value
+    program.deg2reg = lambda value, **_kwargs: value
+    readout_gains = []
+    original_set = RI.set_readout_pulse
+    original_reset = RI.active_reset.active_reset_block
+    try:
+        RI.set_readout_pulse = lambda prog, *args, gain=None, **kwargs: (
+            readout_gains.append(int(
+                prog.cfg["read_pulse_gain"] if gain is None else gain)))
+        RI.active_reset.active_reset_block = lambda *_args, **_kwargs: None
+        RI._rabi_feedback_reset(program)
+    finally:
+        RI.set_readout_pulse = original_set
+        RI.active_reset.active_reset_block = original_reset
+    assert readout_gains == [5000, 7300]
+    assert math == [(0, 27, 2, "+", 0), (0, 2, 27, "+", 0)]
 
 
 def test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word():
@@ -4023,6 +4302,76 @@ def test_final_exact_repeated_pulse_audit_rejects_saturation():
                    for row in tuner.data["control_witnesses"])
 
 
+def test_joint_search_is_independent_of_starting_readout_gain_and_length():
+    selected = []
+    for read_length, read_gain in ((4.0, 1500), (30.0, 8500)):
+        cfg = _base_config()
+        cfg.update({"read_length": read_length, "read_pulse_gain": read_gain})
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=cfg, params=FAST_PARAMS,
+            )
+            # Discovery/Rabi, rather than initialize.py, supplies this physical basin.
+            tuner.working = T._with_candidate(
+                tuner.working,
+                read_pulse_freq=tuner.READ_FREQ,
+                qubit_pi_freq=tuner.QUBIT_FREQ,
+                qubit_pi_gain=14475,
+                sigma=0.10,
+            )
+            result = tuner._stage_joint_search()
+            selected.append(result)
+    first, second = selected
+    assert first["read_length"] == second["read_length"] == 30.0
+    assert first["sigma"] == second["sigma"] == 0.25
+    assert first["read_pulse_gain"] == second["read_pulse_gain"] == 5000
+    assert abs(first["qubit_pi_gain"] - 5790) <= 750
+    assert abs(second["qubit_pi_gain"] - 5790) <= 750
+
+
+def test_joint_resume_reuses_only_matching_input_and_flux_context():
+    cfg = _base_config()
+    row = dict(cfg)
+    row.update({
+        "qubit_pi_freq": cfg["qubit_pi_freq"],
+        "qubit_freq": cfg["qubit_pi_freq"],
+        "qubit_drag_beta": cfg["qubit_drag_beta"],
+        "fidelity": 0.8,
+    })
+    previous = {
+        "revision": T.BASIC_AUTOTUNER_REVISION,
+        "initial": T._candidate_from_cfg(cfg),
+        "fast_flux_operating_point": {
+            "ff_ch": cfg["ff_ch"], "ff_park_gain": cfg["ff_park_gain"]},
+        "candidate_archive": [row],
+        "confirmed_candidates": [],
+        "joint_search": {"coarse_rows": [row]},
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        checkpoint = os.path.join(folder, "resume.pkl")
+        with open(checkpoint, "wb") as stream:
+            pickle.dump(previous, stream)
+        params = copy.deepcopy(FAST_PARAMS)
+        params["resume_checkpoint"] = checkpoint
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params)
+        assert tuner.data["resume"]["archived_measurements"] == 1
+        assert tuner.data["joint_search"]["resumed_coarse_rows"] == [row]
+
+        changed_flux = copy.deepcopy(cfg)
+        changed_flux["ff_park_gain"] = 1
+        try:
+            VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=changed_flux, params=params)
+        except ValueError as exc:
+            assert "input tuple" in str(exc) or "fast-flux" in str(exc)
+        else:
+            raise AssertionError("mismatched resume context was accepted")
+
+
 def test_bad_start_recovers_and_preserves_best_effort_contract():
     cfg = _base_config()
     # Neither physical feature is inside the old local/wide scans, but both satisfy
@@ -4071,8 +4420,9 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     assert baseline[0]["fidelity"] < 0.58
     assert any(row["name"] == "final" and row["status"] == "ok"
                for row in data["stages"])
-    assert "fine_frequency" in data["maps"]
-    assert "fine_frequency_post_duration" in data["maps"]
+    assert data["maps"]["joint_search"]["search_complete"] is True
+    assert data["joint_search"]["coverage"]["complete"] is True
+    assert any(name.startswith("joint_aae_frequency_") for name in data["maps"])
     assert "amplified_error" in data["maps"]
     assert (data["maps"]["amplified_error"]["calibration_kind"]
             == "amplified_amplitude_error_x180")
@@ -4111,14 +4461,16 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     assert outlier_confirm[0]["fidelity"] < 0.70
     assert best["read_pulse_gain"] != 8500
 
-    # Pulse duration is not a fixed-sigma comparison: each sigma has local f/g points.
+    # Joint search gives every duration pair broad readout/pi-gain coverage before
+    # local frequency proposals; no duration inherits one incumbent gain.
     duration_rows = [row for row in data["candidate_archive"]
-                     if row["label"] == "pulse_duration coarse"]
+                     if row.get("search_stage") == "joint_coarse"]
     tested_sigmas = sorted(set(float(row["sigma"]) for row in duration_rows))
     assert tested_sigmas == [0.10, 0.25]
     for sigma in tested_sigmas:
         rows = [row for row in duration_rows if float(row["sigma"]) == sigma]
-        assert len(set(float(row["qubit_pi_freq"]) for row in rows)) >= 3
+        assert len(set(float(row["read_length"]) for row in rows)) == 2
+        assert len(set(int(row["read_pulse_gain"]) for row in rows)) >= 3
         assert len(set(int(row["qubit_pi_gain"]) for row in rows)) >= 3
 
     # The experiment is dry by construction: neither the caller's dict nor returned cfg
@@ -4886,6 +5238,16 @@ def test_runner_main_never_writes_a_guard_rejected_result():
                 "allowed_min_mhz": 2424.5,
                 "allowed_max_mhz": 2624.5,
             },
+            "joint_search": {
+                "search_complete": True, "selection_confirmed": True,
+            },
+        },
+        "joint_search": {
+            "status": "complete",
+            "coverage": {
+                "complete": True, "expected_strata": 1,
+                "measured_strata": 1, "missing_strata": [],
+            },
         },
         "discovery": {
             "missing_for_write": [], "verified_for_write": True},
@@ -4921,6 +5283,12 @@ def test_runner_main_never_writes_a_guard_rejected_result():
     assert runner._write_contract_errors(
         base_result, base_result["eligible_tuned"], _base_config()) == []
 
+    forged_joint = copy.deepcopy(base_result)
+    forged_joint["joint_search"]["coverage"]["complete"] = False
+    forged_joint_errors = runner._write_contract_errors(
+        forged_joint, forged_joint["eligible_tuned"], _base_config())
+    assert any("joint-search coverage" in error for error in forged_joint_errors)
+
     # A real timing certificate is substantially stronger than the ordinary
     # ``not_run`` fallback above: it contains finite-block Student-t multiplicity,
     # complete two-fold cross-fit blocks for every feasible arm, and an exact tuple
@@ -4931,7 +5299,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "manual-workflow-v13"
+    assert T.BASIC_AUTOTUNER_REVISION == "joint-search-v1"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -4956,14 +5324,14 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "read_length": 20.0,
         "sigma": 0.25,
         "qubit_pi_gain": 5790,
-        "fidelity": 0.954,
+        "fidelity": 0.952,
         "fidelity_se": 0.001,
-        "fidelity_lcb_95": 0.954 - 1.96 * 0.001,
-        "block_fidelities": [0.954] * timing_blocks,
-        "crossfit_fidelity": 0.954,
+        "fidelity_lcb_95": 0.952 - 1.96 * 0.001,
+        "block_fidelities": [0.952] * timing_blocks,
+        "crossfit_fidelity": 0.952,
         "crossfit_fidelity_se": timing_crossfit_se,
-        "crossfit_fidelity_lcb_95": 0.954 - 1.96 * timing_crossfit_se,
-        "block_crossfit_fidelities": [0.954] * timing_blocks,
+        "crossfit_fidelity_lcb_95": 0.952 - 1.96 * timing_crossfit_se,
+        "block_crossfit_fidelities": [0.952] * timing_blocks,
     })
     family_count = 2 * (2 - 1) * (
         1 + int(runner.P_BASIC["latency"]["adaptive_confirmation_rounds"]))
@@ -5546,6 +5914,9 @@ def main():
         test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian,
         test_operational_shortlist_cannot_be_filled_by_one_duration,
         test_readout_tie_prefers_lower_power_duration_exposure,
+        test_readout_length_confirmation_covers_every_length_not_only_seed,
+        test_pi_duration_confirmation_covers_every_sigma_not_only_seed,
+        test_operational_screen_retries_discriminator_drift_before_rejecting_waveform,
         test_candidate_latency_is_read_length_plus_four_gaussian_sigmas,
         test_latency_noninferiority_rejects_low_fidelity_and_uncertainty,
         test_latency_noninferiority_uses_crossfit_not_optimistic_step5_fidelity,
@@ -5584,7 +5955,9 @@ def main():
         test_single_shot_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_declares_its_frozen_reset_waveform,
-        test_feedback_threshold_is_bound_to_one_exact_readout_tuple,
+        test_feedback_profile_is_bound_to_frequency_and_length_not_scoring_gain,
+        test_single_shot_feedback_uses_fixed_reset_gain_then_restores_scoring_gain,
+        test_rabi_sweep_feedback_restores_the_swept_gain_and_scoring_readout,
         test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
         test_reset_raw_threshold_maximizes_held_shot_assignment,
         test_active_reset_primitive_always_clears_measurement_photons,
@@ -5613,6 +5986,8 @@ def main():
         test_high_fidelity_without_coherent_control_witness_cannot_write,
         test_control_witness_must_match_the_complete_selected_waveform,
         test_final_exact_repeated_pulse_audit_rejects_saturation,
+        test_joint_search_is_independent_of_starting_readout_gain_and_length,
+        test_joint_resume_reuses_only_matching_input_and_flux_context,
         test_bad_start_recovers_and_preserves_best_effort_contract,
         test_interrupt_retains_a_completed_unconfirmed_measurement,
         test_failed_search_cannot_make_replayed_input_write_eligible,

@@ -138,7 +138,16 @@ def add_qubit_gaussian(prog, name="qubit", sigma_us=None, drag_beta=None):
     return sigma_cycles
 
 
-def set_readout_pulse(prog, read_freq=None):
+def set_readout_pulse(prog, read_freq=None, *, gain=None, length_us=None,
+                      phase_degrees=None):
+    """Install one complete readout-generator register set.
+
+    ``gain``/``length_us``/``phase_degrees`` are optional register overrides used by
+    feedback-reset programs.  The ADC integration declaration remains fixed for one
+    compiled program, but the reset drive gain can be frozen independently of the
+    candidate scoring gain and restored before the final measurement.  Existing
+    callers retain the canonical configuration-derived behavior.
+    """
     cfg = prog.cfg
     rch, ro = cfg["res_ch"], cfg["ro_chs"][0]
     style = str(cfg.get("read_pulse_style", "const")).lower()
@@ -147,10 +156,19 @@ def set_readout_pulse(prog, read_freq=None):
                          % cfg.get("read_pulse_style"))
     if read_freq is None:
         read_freq = prog.freq2reg(cfg["read_pulse_freq"], gen_ch=rch, ro_ch=ro)
-    phase = prog.deg2reg(float(cfg.get("res_phase", 0.0)), gen_ch=rch)
+    phase_value = (float(cfg.get("res_phase", 0.0))
+                   if phase_degrees is None else float(phase_degrees))
+    phase = prog.deg2reg(phase_value, gen_ch=rch)
+    pulse_gain = int(cfg["read_pulse_gain"] if gain is None else gain)
+    drive_length = (readout_drive_length_us(cfg)
+                    if length_us is None else float(length_us))
+    if not 0 <= pulse_gain <= 32767:
+        raise ValueError("readout gain is outside the 0..32767 DAC range")
+    if not np.isfinite(drive_length) or drive_length <= 0.0:
+        raise ValueError("readout generator length must be positive and finite")
     kwargs = dict(ch=rch, style="const", freq=read_freq, phase=phase,
-                  gain=int(cfg["read_pulse_gain"]),
-                  length=prog.us2cycles(readout_drive_length_us(cfg), gen_ch=rch))
+                  gain=pulse_gain,
+                  length=prog.us2cycles(drive_length, gen_ch=rch))
     if bool(cfg.get("ro_mode_periodic", False)):
         kwargs["mode"] = "periodic"
     prog.set_pulse_registers(**kwargs)

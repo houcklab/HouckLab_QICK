@@ -42,13 +42,27 @@ def flux_hold_build(prog):
 
 def _rabi_feedback_reset(prog):
     cfg = prog.cfg
+    reset_read_freq = float(cfg.get(
+        "reset_read_pulse_freq", cfg["read_pulse_freq"]))
+    if not np.isclose(
+            reset_read_freq, float(cfg["read_pulse_freq"]),
+            rtol=0.0, atol=1e-9):
+        raise ValueError(
+            "feedback reset profile does not match this Rabi program's ADC/DDC "
+            "frequency")
     page = prog.ch_page(cfg["qubit_ch"])
     r_gain = prog.sreg(cfg["qubit_ch"], "gain")
+    reset_pi_freq = (
+        cfg["reset_pi_freq"] if "reset_pi_freq" in cfg else
+        cfg["qubit_pi_freq"] if "qubit_pi_freq" in cfg else
+        cfg["qubit_freq"])
+    set_readout_pulse(
+        prog, gain=int(cfg.get(
+            "reset_read_pulse_gain", cfg["read_pulse_gain"])))
     prog.mathi(page, 27, r_gain, "+", 0)
     prog.set_pulse_registers(
         ch=cfg["qubit_ch"], style="arb",
-        freq=prog.freq2reg(float(cfg.get(
-            "reset_pi_freq", cfg.get("qubit_pi_freq", cfg["qubit_freq"]))),
+        freq=prog.freq2reg(float(reset_pi_freq),
             gen_ch=cfg["qubit_ch"]),
         phase=prog.deg2reg(0, gen_ch=cfg["qubit_ch"]),
         gain=int(cfg.get("reset_pi_gain", cfg["qubit_pi_gain"])),
@@ -64,6 +78,7 @@ def _rabi_feedback_reset(prog):
         phase=prog.deg2reg(0, gen_ch=cfg["qubit_ch"]),
         gain=0, waveform="qubit")
     prog.mathi(page, r_gain, 27, "+", 0)
+    set_readout_pulse(prog)
 
 
 def rabi_flux_body(prog):

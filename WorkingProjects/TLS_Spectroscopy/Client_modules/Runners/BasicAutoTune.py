@@ -1,4 +1,4 @@
-"""Run the streamlined, manual-workflow single-qubit autotuner.
+"""Run the structured joint-search single-qubit autotuner.
 
 This is intentionally a separate entry point from ``AutoTune.py``.  After a
 completed run, the basic tuner writes only the physical tuple that passed its
@@ -269,6 +269,24 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
                 errors.append(
                     "%s discovery map does not match the configured prior"
                     % stage_name)
+    joint_policy = params.get("joint_search", {})
+    if isinstance(joint_policy, dict) and joint_policy.get("enabled", True):
+        joint = result.get("joint_search")
+        joint_map = maps.get("joint_search") if isinstance(maps, dict) else None
+        coverage = joint.get("coverage") if isinstance(joint, dict) else None
+        if (not isinstance(joint, dict)
+                or str(joint.get("status")) != "complete"
+                or not isinstance(coverage, dict)
+                or not bool(coverage.get("complete", False))
+                or int(coverage.get("expected_strata", 0)) < 1
+                or int(coverage.get("measured_strata", -1))
+                != int(coverage.get("expected_strata", 0))
+                or coverage.get("missing_strata")):
+            errors.append("the structured joint-search coverage is incomplete")
+        if (not isinstance(joint_map, dict)
+                or not bool(joint_map.get("search_complete", False))
+                or not bool(joint_map.get("selection_confirmed", False))):
+            errors.append("the joint-search winner lacks held-out confirmation")
     fidelity_gate = result.get("write_fidelity_gate")
     if (not isinstance(fidelity_gate, dict)
             or not bool(fidelity_gate.get("passed", False))):
