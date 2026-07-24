@@ -557,7 +557,7 @@ def test_basic_default_uses_operational_screen_not_direct_ef_calibration():
     assert tuner._leakage_active is False
     assert tuner._operational_leakage_active is True
     assert tuner.data["leakage"]["direct_p2_measured"] is False
-    assert "operational" in tuner.data["leakage"]["measurement"]
+    assert "fixed-Gaussian" in tuner.data["leakage"]["measurement"]
     assert strict._leakage_active is True
     assert "qutrit" in strict.data["leakage"]["measurement"]
 
@@ -566,6 +566,7 @@ def test_operational_screen_detects_bad_repeated_returns_without_calling_it_p2()
     params = copy.deepcopy(FAST_PARAMS)
     params["leakage"] = {
         "enabled": False, "operational_enabled": True,
+        "operational_repeated_return_enabled": True,
         "operational_depths": [1, 2, 3, 4, 6, 8],
         "operational_min_binary_contrast": 0.45,
         "operational_max_even_return_error": 0.15,
@@ -593,6 +594,32 @@ def test_operational_screen_detects_bad_repeated_returns_without_calling_it_p2()
     assert unsafe["operational_safe"] is False
     assert unsafe["max_even_return_error_ucb"] > 0.15
     assert "single_p2_ucb" not in safe
+
+
+def test_default_fixed_gaussian_screen_does_not_call_repeated_or_drag_backends():
+    class FixedGaussianScreenTuner(VirtualBasicAutoTuner):
+        def _acquire_repeated_populations(self, *args, **kwargs):
+            raise AssertionError(
+                "default duration/power screen must not run repeated-return backend")
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FixedGaussianScreenTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        candidate = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=tuner.PI_GAIN_AT_SIGMA, sigma=tuner.SIGMA)
+        measured = tuner._measure_operational_leakage_candidate(
+            candidate, 200, 1000, "fixed Gaussian regression")
+    assert measured["repeated_return_enabled"] is False
+    assert measured["depths"].size == 0
+    assert measured["qubit_drag_beta"] == candidate["qubit_drag_beta"]
+    assert measured["operational_safe"] is True
 
 
 def test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian():
@@ -942,9 +969,13 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
     # is rewritten.  Only explicitly supported calibration keys may be eligible.
     assert cfg == untouched
     assert result["config"] == untouched
-    # The default operational screen calibrates DRAG without requiring e-f shelving.
-    assert set(data["eligible_tuned"]) == set(T.TUNED_KEYS)
-    assert abs(best["qubit_drag_beta"] - 0.04) < 0.04
+    # The default basic screen compares fixed-Gaussian duration/power candidates.  It
+    # must not silently introduce a custom DRAG waveform; strict direct-P(f) mode owns
+    # that optional search.
+    assert set(data["eligible_tuned"]) == (
+        set(T.TUNED_KEYS) - {"qubit_drag_beta"})
+    assert best["qubit_drag_beta"] == untouched["qubit_drag_beta"]
+    assert data["leakage"]["drag_tuned"] is False
     assert data["leakage"]["operational_verified"] is True
     assert data["leakage"]["direct_p2_measured"] is False
     for forbidden in ("res_phase", "qubit_pi2_gain"):
@@ -1230,6 +1261,76 @@ def test_failed_leakage_calibration_retains_the_validated_unconstrained_result()
     assert result["leakage_verified"] is False
     assert result["final_stable"] is False
     assert result["eligible_tuned"] == {}
+
+
+def test_failed_operational_screen_preserves_the_unconstrained_fidelity_replay():
+    """A basic safety-stage failure cannot erase or relabel the fidelity result."""
+    class FailedOperationalTuner(VirtualBasicAutoTuner):
+        def _stage_operational_leakage(self):
+            self.data["leakage"].update({
+                "selection_safe": False,
+                "verified": False,
+                "failure": "synthetic fixed-Gaussian screen failure",
+            })
+            raise RuntimeError(self.data["leakage"]["failure"])
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FailedOperationalTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        with redirect_stdout(io.StringIO()):
+            result = tuner.acquire()["data"]
+    assert result["best_found"]["label"].startswith("final exact")
+    assert result["best_found"]["fidelity"] > 0.90
+    assert result["best_fidelity_replay"]["fidelity"] == (
+        result["best_found"]["fidelity"])
+    assert result["fidelity_replay_stable"] is True
+    assert result["final_stable"] is False
+    assert result["leakage_verified"] is False
+    assert result["leakage"]["failure"] == (
+        "RuntimeError: synthetic fixed-Gaussian screen failure")
+    assert result["eligible_tuned"] == {}
+
+
+def test_partial_screened_final_cannot_replace_the_stable_fidelity_replay():
+    class PartialScreenedFinalTuner(VirtualBasicAutoTuner):
+        def _stage_final_constrained(self):
+            partial = dict(self.working)
+            partial.update({
+                "fidelity": 0.70, "fidelity_se": 0.04,
+                "fidelity_lcb_95": 0.6216,
+                "confirmation_blocks": 1,
+                "block_fidelities": np.asarray([0.70]),
+                "block_spread": 0.0,
+                "label": "final exact synthetic partial screened replay",
+            })
+            self._final_replay_completed = False
+            self._final_replay_kind = None
+            self.data["final_candidates"] = [partial]
+            return partial
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = PartialScreenedFinalTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        with redirect_stdout(io.StringIO()):
+            result = tuner.acquire()["data"]
+    assert result["leakage"]["verified"] is True
+    assert result["leakage"]["final_replay_complete"] is False
+    assert result["best_found"]["fidelity"] > 0.90
+    assert result["best_found"]["fidelity"] == (
+        result["best_fidelity_replay"]["fidelity"])
+    assert result["best_found"]["label"].startswith("final exact step-5")
+    assert result["fidelity_replay_stable"] is True
+    assert result["final_stable"] is False
+    assert result["eligible_tuned"] == {}
+    assert result["rejected_late_final_candidates"][0]["fidelity"] == 0.70
 
 
 def test_direct_leakage_verification_is_a_hard_write_gate():
@@ -1794,6 +1895,7 @@ def main():
         test_long_reference_gain_recovers_from_a_rabi_fit_alias,
         test_basic_default_uses_operational_screen_not_direct_ef_calibration,
         test_operational_screen_detects_bad_repeated_returns_without_calling_it_p2,
+        test_default_fixed_gaussian_screen_does_not_call_repeated_or_drag_backends,
         test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian,
         test_operational_shortlist_cannot_be_filled_by_one_duration,
         test_readout_tie_prefers_lower_power_duration_exposure,
@@ -1814,6 +1916,8 @@ def main():
         test_stable_full_tuple_replay_authorizes_atomic_update,
         test_leakage_constraint_prefers_safe_waveform_over_higher_binary_fidelity,
         test_failed_leakage_calibration_retains_the_validated_unconstrained_result,
+        test_failed_operational_screen_preserves_the_unconstrained_fidelity_replay,
+        test_partial_screened_final_cannot_replace_the_stable_fidelity_replay,
         test_direct_leakage_verification_is_a_hard_write_gate,
         test_verified_leakage_tuple_can_atomically_write_drag_beta,
         test_leakage_certificate_cannot_authorize_a_different_final_tuple,

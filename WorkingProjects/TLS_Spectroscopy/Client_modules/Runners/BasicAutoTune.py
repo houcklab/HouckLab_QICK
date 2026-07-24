@@ -105,8 +105,19 @@ def _print_best(result):
         best, ("confirmation_blocks", "measurement_count", "blocks"), 0)
     confirmations = int(round(confirmations_value)) if _finite(confirmations_value) else 0
 
-    print("\n[basic-auto-tune] BEST MEASURED CANDIDATE%s" % (
-        " (not written)" if not APPLY_CONFIG else ""))
+    leakage = result.get("leakage", {})
+    leakage_active = bool(
+        isinstance(leakage, dict) and leakage.get("active", False))
+    leakage_verified = bool(
+        isinstance(leakage, dict) and leakage.get("verified", False))
+    if leakage_active and leakage_verified and bool(result.get("final_stable", False)):
+        heading = "BEST SCREENED CANDIDATE"
+    elif leakage_active:
+        heading = "BEST FIDELITY CANDIDATE (safety screen not verified)"
+    else:
+        heading = "BEST MEASURED CANDIDATE"
+    print("\n[basic-auto-tune] %s%s" % (
+        heading, " (not written)" if not APPLY_CONFIG else ""))
     print("   readout   %s / %s / %s"
           % (_fmt_float(read_freq, 6, " MHz"), _fmt_int(read_gain, " DAC"),
              _fmt_float(read_length, 3, " us")))
@@ -124,7 +135,6 @@ def _print_best(result):
         print("   step-5 F  %.4f" % fidelity)
     else:
         print("   step-5 F  n/a")
-    leakage = result.get("leakage", {})
     if isinstance(leakage, dict) and leakage.get("active", False):
         third = _number(leakage, ("worst_third_blob_excess_ucb",))
         if leakage.get("strict_direct_active", False):
@@ -137,13 +147,25 @@ def _print_best(result):
                      _fmt_float(single, 4), _fmt_float(amplified, 4),
                      _fmt_float(third, 4)))
         else:
-            even = _number(leakage, ("worst_even_return_error_ucb",))
-            odd = _number(leakage, ("worst_odd_inversion_error_ucb",))
-            print("   leakage   operational screen %s | return/inversion UCB %s/%s | "
+            if not _finite(third):
+                third = _number(leakage, ("best_third_blob_excess_ucb",))
+            print("   safety     fixed-Gaussian duration/power screen %s | "
                   "third-cloud excess UCB %s (not a direct P(f) measurement)"
                   % ("PASSED" if leakage.get("verified", False) else "FAILED",
-                     _fmt_float(even, 4), _fmt_float(odd, 4),
                      _fmt_float(third, 4)))
+            if not leakage.get("verified", False) and leakage.get("failure"):
+                print("   reason     %s" % leakage["failure"])
+    fidelity_reference = result.get("best_fidelity_replay")
+    if (isinstance(fidelity_reference, dict)
+            and leakage_verified
+            and _number(fidelity_reference, ("fidelity",))
+            > fidelity + 5e-4):
+        ref_fidelity = _number(fidelity_reference, ("fidelity",))
+        ref_se = _number(fidelity_reference, ("fidelity_se",))
+        print("   reference  unconstrained best F %.4f%s; the screened result above "
+              "shows the measured safety tradeoff"
+              % (ref_fidelity,
+                 " +/- %.4f" % ref_se if _finite(ref_se) else ""))
     reset = result.get("reset", {})
     if isinstance(reset, dict):
         mode = str(reset.get("mode", "passive"))
@@ -195,6 +217,7 @@ def _history_entry(result, eligible, applied, error=None):
         "failure": result.get("failure"),
         "runner_error": error,
         "best_found": result.get("best_found"),
+        "best_fidelity_replay": result.get("best_fidelity_replay"),
         "leakage": {
             "active": bool(leakage.get("active", False)),
             "strict_direct_active": bool(
@@ -303,8 +326,19 @@ def main():
     if (bool(result.get("interrupted", False))
             or result.get("outcome") not in ("completed", "completed_with_warnings")
             or not bool(result.get("final_stable", False))):
-        print("\n[basic-auto-tune] the run did not complete a stable final replay; "
-              "refusing every config write while retaining the best measurement.")
+        leakage = result.get("leakage", {})
+        if (bool(result.get("fidelity_replay_stable", False))
+                and isinstance(leakage, dict)
+                and leakage.get("active", False)
+                and not bool(result.get("final_stable", False))):
+            print("\n[basic-auto-tune] the fidelity replay completed, but the required "
+                  "safety/write checks were not fully verified; BaseConfig is "
+                  "untouched.")
+            if leakage.get("failure"):
+                print("   %s" % leakage["failure"])
+        else:
+            print("\n[basic-auto-tune] the run did not complete a stable final replay; "
+                  "refusing every config write while retaining the best measurement.")
         try:
             config_updater.append_history(
                 _history_entry(result, eligible, False,

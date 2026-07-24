@@ -58,7 +58,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.ss_helpers import (
 )
 
 
-BASIC_AUTOTUNER_REVISION = "manual-workflow-v7"
+BASIC_AUTOTUNER_REVISION = "manual-workflow-v8"
 
 
 BASIC_DEFAULTS = {
@@ -148,24 +148,32 @@ BASIC_DEFAULTS = {
         "min_consistent_depth_fraction": 0.67,
     },
     "leakage": {
-        # The basic workflow defaults to a practical operational screen: compare
-        # Gaussian duration/gain/DRAG candidates, reject third-cloud growth and poor
-        # normalized odd/even repeated-pulse returns, then independently replay the
-        # winner.  This is deliberately *not* called P(f).  Set ``enabled`` to True
-        # (or explicitly to ``auto``) only when strict identity+shelving qutrit
-        # response inversion is desired as an additional hard gate.
+        # The basic workflow defaults to a practical fixed-Gaussian screen: compare
+        # independently tuned duration/power candidates and reject reproducible
+        # third-cloud growth, then independently replay the winner.  It deliberately
+        # does not search DRAG waveforms and does not rename an IQ-cloud anomaly P(f).
+        # Set ``enabled`` to True (or explicitly to ``auto``) only when strict
+        # identity+shelving qutrit response inversion is desired as an additional gate.
         "enabled": False, "operational_enabled": True,
         "required_for_write": True,
+        # Legacy repeated-return settings remain available for detailed diagnostics,
+        # but AAE already performs the correct multi-depth coherent-error refinement.
+        # They are off in the basic screen because return error is not a leakage
+        # measurement and custom DRAG uploads made this stage needlessly fragile.
+        "operational_repeated_return_enabled": False,
         "operational_depths": [1, 2, 3, 4, 6, 8],
-        "operational_shots": 220, "operational_reference_shots": 350,
+        "operational_shots": 220, "operational_reference_shots": 500,
         "operational_verify_shots": 650, "operational_verify_blocks": 3,
         "operational_max_even_return_error": 0.12,
         "operational_max_odd_inversion_error": 0.12,
         "operational_min_binary_contrast": 0.45,
+        "operational_tune_drag": False,
         "operational_beta_span": 0.08, "operational_beta_points": 7,
         "operational_max_beta_span": 0.16,
         "operational_max_extensions": 2,
-        "operational_max_candidate_waveforms": 4,
+        # Six slots cover every default duration instead of allowing several nearby
+        # beta values from one duration to crowd out the duration/power comparison.
+        "operational_max_candidate_waveforms": 6,
         "operational_selection_shots": 900,
         "operational_selection_blocks": 3,
         "operational_selection_shortlist": 5,
@@ -289,11 +297,11 @@ _CONCISE_STAGE_START = {
     "qubit_repeat": "Cross-checking the pi pulse...",
     "amplified_error": "Reducing amplified amplitude error...",
     "final": "Comparing the best measured calibrations...",
-    "operational_leakage": "Screening pulse duration, power, and DRAG...",
-    "operational_leakage_verify": "Verifying the leakage-sensitive checks...",
+    "operational_leakage": "Screening pulse duration and power...",
+    "operational_leakage_verify": "Verifying the pulse-safety checks...",
     "leakage": "Optimizing under the leakage constraint...",
-    "qubit_post_leakage": "Rechecking the pi pulse after leakage optimization...",
-    "readout_post_leakage": "Rechecking the readout after leakage optimization...",
+    "qubit_post_leakage": "Rechecking the pi pulse after safety screening...",
+    "readout_post_leakage": "Rechecking the readout after safety screening...",
     "leakage_verify": "Verifying leakage independently...",
     "final_safe": "Running the final screened validation...",
     "final_feedback": "Running the final active-reset validation...",
@@ -1027,9 +1035,9 @@ class BasicAutoTuner(ExperimentClass):
                 "maximize held-out TLS step-5 fidelity subject to direct shelving "
                 "P(f) and third-cloud upper-confidence constraints"
                 if self._leakage_active else
-                "maximize held-out TLS step-5 fidelity inside a fixed Gaussian pulse "
-                "family subject to leakage-sensitive repeated-return and third-cloud "
-                "upper-confidence constraints"),
+                "maximize held-out TLS step-5 fidelity, then select independently "
+                "verified fixed-Gaussian duration/power candidates without "
+                "reproducible third-cloud growth"),
             "initial": dict(self.initial),
             "working": dict(self.working),
             "best_found": None,
@@ -1056,7 +1064,7 @@ class BasicAutoTuner(ExperimentClass):
                 "measurement": (
                     "identity+shelving qutrit response inversion"
                     if self._leakage_active else
-                    "operational repeated-return and third-cloud screen"),
+                    "fixed-Gaussian duration/power third-cloud screen"),
                 "direct_p2_measured": False,
                 "third_blob_guard": True,
                 "optimized": False, "verified": False,
@@ -1381,12 +1389,12 @@ class BasicAutoTuner(ExperimentClass):
         elif name in ("leakage", "operational_leakage"):
             safe = bool((self.data.get("leakage", {}) or {}).get(
                 "selection_safe", False))
-            print("  Leakage-screened pulse found." if safe else
+            print("  Fixed-Gaussian pulse passed the initial safety screen." if safe else
                   "  No pulse passed every leakage-sensitive check; automatic writes "
                   "are blocked.")
         elif name == "operational_leakage_verify":
-            print("  Leakage-sensitive checks passed." if bool(result) else
-                  "  Leakage-sensitive checks failed; automatic writes are blocked.")
+            print("  Pulse-safety checks passed." if bool(result) else
+                  "  Pulse-safety checks failed; automatic writes are blocked.")
         elif name == "leakage_verify":
             print("  Leakage verification passed." if bool(result) else
                   "  Leakage verification failed; automatic writes are blocked.")
@@ -1441,8 +1449,14 @@ class BasicAutoTuner(ExperimentClass):
                       % row["error"])
             if not self._detailed_console():
                 label = concise_message or (str(name).replace("_", " ").capitalize() + "...")
-                print("  Warning: %s could not be completed; continuing with the best "
-                      "measurement so far." % label.rstrip("."))
+                if name in ("operational_leakage", "operational_leakage_verify",
+                            "leakage", "leakage_verify"):
+                    print("  Warning: %s could not be completed (%s); retaining the "
+                          "best completed fidelity replay."
+                          % (label.rstrip("."), row["error"]))
+                else:
+                    print("  Warning: %s could not be completed; continuing with the "
+                          "best measurement so far." % label.rstrip("."))
             return None
         finally:
             self.data["working"] = dict(self.working)
@@ -2077,7 +2091,12 @@ class BasicAutoTuner(ExperimentClass):
                 % (100.0 * coverage))
         finite = np.flatnonzero(np.isfinite(score))
         guarded = finite
-        if self._operational_leakage_active or self._leakage_active:
+        # The ordinary optimizer must remain a pure fidelity search.  Only strict
+        # direct-P(f) mode may constrain this ranking.  The default operational guard
+        # compares the resulting duration/power family afterwards and reports the
+        # unconstrained replay separately, so a failed guard cannot silently erase the
+        # best pulse the hardware actually measured.
+        if self._leakage_active:
             threshold = float(self.params["leakage"]["max_third_blob_excess"])
             safe = finite[np.isfinite(third_blob_ucb[finite])
                           & (third_blob_ucb[finite] <= threshold)]
@@ -2098,7 +2117,7 @@ class BasicAutoTuner(ExperimentClass):
         if not confirmation_complete:
             self._maps[stage]["search_complete"] = False
         guarded_confirmed = list(confirmed)
-        if self._operational_leakage_active or self._leakage_active:
+        if self._leakage_active:
             threshold = float(self.params["leakage"]["max_third_blob_excess"])
             safe_confirmed = [row for row in confirmed
                               if float(row.get(
@@ -3609,11 +3628,13 @@ class BasicAutoTuner(ExperimentClass):
 
     def _measure_operational_leakage_candidate(self, candidate, shots,
                                                reference_shots, label):
-        """Screen one Gaussian using third-cloud and normalized repeat-return tests.
+        """Screen one fixed Gaussian for a reproducible non-binary IQ cloud.
 
-        This does not identify or estimate P(f).  It catches the operational symptoms
-        that matter in a basic tune: a new IQ cloud and failure of one calibrated X180
-        to alternate reproducibly between the binary g/e manifolds at several depths.
+        The default basic screen brackets the candidate with two fresh TLS step-5
+        measurements and uses the worse third-cloud upper bound.  Optional repeated
+        returns remain available as a diagnostic, but are disabled by default: AAE is
+        the correct coherent amplitude-error experiment, and a return error is not a
+        direct leakage population measurement.
         """
         p = self.params["leakage"]
         candidate = dict(candidate)
@@ -3621,14 +3642,19 @@ class BasicAutoTuner(ExperimentClass):
             candidate, int(reference_shots), "%s discriminator" % label)
         calibration = {key: before[key] for key in
                        ("read_theta", "scale_factor", "threshold")}
-        depths = [int(value) for value in p["operational_depths"]
-                  if int(value) > 0]
-        if not depths or not any(value % 2 == 0 for value in depths) \
-                or not any(value % 2 == 1 for value in depths):
+        repeated_enabled = bool(p.get(
+            "operational_repeated_return_enabled", False))
+        depths = ([int(value) for value in p["operational_depths"]
+                   if int(value) > 0] if repeated_enabled else [])
+        if repeated_enabled and (
+                not depths or not any(value % 2 == 0 for value in depths)
+                or not any(value % 2 == 1 for value in depths)):
             raise RuntimeError(
-                "operational leakage depths require positive odd and even counts")
-        populations = np.asarray(self._acquire_repeated_populations(
+                "operational repeated-return depths require positive odd and even "
+                "counts")
+        populations = (np.asarray(self._acquire_repeated_populations(
             candidate, depths, int(shots), calibration), dtype=float)
+            if repeated_enabled else np.asarray([], dtype=float))
         after = self._measure_candidate(
             candidate, int(reference_shots), "%s discriminator post" % label,
             reference_discriminator=calibration)
@@ -3641,7 +3667,7 @@ class BasicAutoTuner(ExperimentClass):
         finite_contrast = bool(
             np.isfinite(contrast)
             and contrast >= float(p["operational_min_binary_contrast"]))
-        if finite_contrast:
+        if repeated_enabled and finite_contrast:
             normalized = (populations - p_e_ground) / contrast
             n = max(int(shots), 1)
             sequence_variance = np.asarray([
@@ -3663,40 +3689,73 @@ class BasicAutoTuner(ExperimentClass):
                 + gradient_ground ** 2 * ground_variance
                 + gradient_excited ** 2 * excited_variance,
                 0.0))
-        else:
+        elif repeated_enabled:
             normalized = np.full(len(depths), np.nan)
             normalized_se = np.full(len(depths), np.inf)
+        else:
+            normalized = np.asarray([], dtype=float)
+            normalized_se = np.asarray([], dtype=float)
         targets = np.asarray([value % 2 for value in depths], dtype=float)
         errors = np.abs(normalized - targets)
-        z = _simultaneous_z(
+        z = (_simultaneous_z(
             len(depths), p.get("familywise_alpha", 0.05),
-            p.get("confidence_sigma", 1.96))
-        error_ucb = errors + z * normalized_se
+            p.get("confidence_sigma", 1.96)) if repeated_enabled else np.nan)
+        error_ucb = (errors + z * normalized_se if repeated_enabled
+                     else np.asarray([], dtype=float))
         even = np.asarray([value % 2 == 0 for value in depths], dtype=bool)
         odd = ~even
         even_values = error_ucb[even]
         odd_values = error_ucb[odd]
         worst_even = (float(np.max(even_values[np.isfinite(even_values)]))
-                      if np.any(np.isfinite(even_values)) else np.inf)
+                      if np.any(np.isfinite(even_values)) else np.nan)
         worst_odd = (float(np.max(odd_values[np.isfinite(odd_values)]))
-                     if np.any(np.isfinite(odd_values)) else np.inf)
-        third_blob = float(before["third_blob_excess_ucb_95"])
+                     if np.any(np.isfinite(odd_values)) else np.nan)
+        third_before = float(before["third_blob_excess_ucb_95"])
+        third_after = float(after["third_blob_excess_ucb_95"])
+        third_blob = float(max(third_before, third_after))
+        fids = np.asarray([before["fidelity"], after["fidelity"]], dtype=float)
+        shot_ses = np.asarray(
+            [before["fidelity_se"], after["fidelity_se"]], dtype=float)
+        fidelity = float(np.mean(fids))
+        fidelity_se = float(max(
+            np.std(fids, ddof=1) / math.sqrt(2.0),
+            np.sqrt(np.sum(shot_ses ** 2)) / 2.0))
+        repeated_valid = bool(
+            not repeated_enabled
+            or (finite_contrast and np.all(np.isfinite(populations))
+                and np.all(np.isfinite(error_ucb))))
+        repeated_safe = bool(
+            not repeated_enabled
+            or (worst_even <= float(p["operational_max_even_return_error"])
+                and worst_odd <= float(p["operational_max_odd_inversion_error"])))
         valid = bool(
-            finite_contrast and drift_stable
-            and np.all(np.isfinite(populations))
-            and np.all(np.isfinite(error_ucb))
+            np.isfinite(fidelity) and np.isfinite(fidelity_se)
+            and drift_stable and repeated_valid
             and np.isfinite(third_blob))
         safe = bool(
-            valid
-            and worst_even <= float(p["operational_max_even_return_error"])
-            and worst_odd <= float(p["operational_max_odd_inversion_error"])
+            valid and repeated_safe
             and third_blob <= float(p["max_third_blob_excess"]))
+        failure = None
+        if not valid:
+            if not drift_stable:
+                failure = "the bracketing discriminator drifted"
+            elif not repeated_valid:
+                failure = "the optional repeated-return diagnostic was invalid"
+            else:
+                failure = "the bracketing single-shot audit was invalid"
+        elif not repeated_safe:
+            failure = "the optional repeated-return diagnostic exceeded its limit"
+        elif third_blob > float(p["max_third_blob_excess"]):
+            failure = ("third-cloud excess UCB %.4f exceeded %.4f"
+                       % (third_blob, float(p["max_third_blob_excess"])))
         row = dict(candidate)
         row.update({
-            "fidelity": float(before["fidelity"]),
-            "fidelity_se": float(before["fidelity_se"]),
-            "fidelity_lcb_95": float(before["fidelity_lcb_95"]),
+            "fidelity": fidelity,
+            "fidelity_se": fidelity_se,
+            "fidelity_lcb_95": float(fidelity - 1.96 * fidelity_se),
             "third_blob_excess_ucb": third_blob,
+            "third_blob_excess_ucb_before": third_before,
+            "third_blob_excess_ucb_after": third_after,
             "depths": np.asarray(depths, dtype=int),
             "observed_excited_fraction": populations,
             "normalized_excited_population": normalized,
@@ -3706,13 +3765,13 @@ class BasicAutoTuner(ExperimentClass):
             "max_even_return_error_ucb": worst_even,
             "max_odd_inversion_error_ucb": worst_odd,
             "binary_contrast": contrast,
+            "repeated_return_enabled": repeated_enabled,
             "calibration_drift": drift,
             "calibration_stable": drift_stable,
             "valid": valid, "operational_safe": safe,
             "leakage_safe": safe,
             "label": str(label),
-            "failure": (None if valid else
-                        "insufficient binary contrast or discriminator drift"),
+            "failure": failure,
         })
         return row
 
@@ -3760,17 +3819,68 @@ class BasicAutoTuner(ExperimentClass):
         return shortlist
 
     def _operational_waveform_pool(self):
-        return self._leakage_waveform_pool(limit=max(
-            int(self.params["leakage"].get(
-                "operational_max_candidate_waveforms", 3)), 1))
+        """One measured fixed-Gaussian control candidate per available duration."""
+        limit = max(int(self.params["leakage"].get(
+            "operational_max_candidate_waveforms", 6)), 1)
+        fixed_beta = float(self.working.get("qubit_drag_beta", 0.0))
+
+        def physical(row):
+            candidate = dict(self.working)
+            for key in ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma"):
+                candidate[key] = row[key]
+            # The basic screen compares duration and power; it never introduces a new
+            # waveform family.  Strict direct-P(f) mode owns any explicit DRAG search.
+            candidate["qubit_drag_beta"] = fixed_beta
+            return candidate
+
+        def control_key(candidate):
+            return (
+                round(float(candidate["qubit_pi_freq"]), 7),
+                int(round(candidate["qubit_pi_gain"])),
+                round(float(candidate["sigma"]), 9),
+                round(float(candidate.get("qubit_drag_beta", 0.0)), 9),
+            )
+
+        rows = (list(self.data.get("final_candidates", []))
+                + list(self._confirmed) + list(self._archive))
+        ranked = sorted(
+            (row for row in rows if all(key in row for key in self.initial)),
+            key=lambda row: (
+                float(row.get("fidelity_lcb_95", -np.inf)),
+                float(row.get("fidelity", -np.inf))), reverse=True)
+        by_duration = {}
+        for row in ranked:
+            by_duration.setdefault(round(float(row["sigma"]), 9), row)
+
+        pool = [dict(self.working)]
+        seen = {control_key(pool[0])}
+        duration_rows = [by_duration[key] for key in sorted(by_duration)]
+        slots = max(limit - 1, 0)
+        if len(duration_rows) > slots > 0:
+            # Span the full measured duration range.  The current winner is already
+            # retained separately and confirmation rejects any noisy coarse seed.
+            indices = np.unique(np.rint(np.linspace(
+                0, len(duration_rows) - 1, slots)).astype(int))
+            duration_rows = [duration_rows[int(index)] for index in indices]
+        for row in duration_rows + ranked:
+            if len(pool) >= limit:
+                break
+            candidate = physical(row)
+            key = control_key(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            pool.append(candidate)
+        return pool
 
     def _stage_operational_leakage(self):
-        """Optimize Gaussian duration and DRAG inside the operational safe set."""
+        """Select fixed-waveform Gaussian duration/power inside the operational set."""
         if not self._operational_leakage_active:
             return None
         p = self.params["leakage"]
         attempts = []
         safe_rows = []
+        tune_drag = bool(p.get("operational_tune_drag", False))
         for waveform_index, waveform in enumerate(self._operational_waveform_pool()):
             incumbent_beta = float(waveform.get("qubit_drag_beta", 0.0))
             rows = []
@@ -3778,16 +3888,18 @@ class BasicAutoTuner(ExperimentClass):
             measured = set()
             consecutive_failures = 0
             abort_waveform = False
-            for extension in range(max(int(p["operational_max_extensions"]), 1)):
+            extensions = (max(int(p["operational_max_extensions"]), 1)
+                          if tune_drag else 1)
+            for extension in range(extensions):
                 span = min(
                     float(p["operational_beta_span"]) * (1.7 ** extension),
                     float(p["operational_max_beta_span"]))
-                betas = np.unique(np.round(np.r_[
+                betas = (np.unique(np.round(np.r_[
                     np.linspace(
                         incumbent_beta - span, incumbent_beta + span,
                         max(int(p["operational_beta_points"]), 5)),
                     0.0, incumbent_beta,
-                ], 8))
+                ], 8)) if tune_drag else np.asarray([incumbent_beta], dtype=float))
                 for raw in self.rng.permutation(betas.size):
                     beta = float(betas[int(raw)])
                     if beta in measured:
@@ -3824,7 +3936,7 @@ class BasicAutoTuner(ExperimentClass):
                 if abort_waveform:
                     break
                 safe_now = [row for row in rows if row["operational_safe"]]
-                if safe_now:
+                if tune_drag and safe_now:
                     best_safe = max(safe_now, key=lambda row: (
                         float(row["fidelity_lcb_95"]),
                         -float(row["max_even_return_error_ucb"]),
@@ -3842,16 +3954,44 @@ class BasicAutoTuner(ExperimentClass):
             })
             safe_rows.extend(row for row in rows if row["operational_safe"])
         if not safe_rows:
+            completed = [row for attempt in attempts for row in attempt["rows"]]
+            failures = [failure for attempt in attempts
+                        for failure in attempt["failures"]]
+            if completed:
+                best_attempt = min(
+                    completed,
+                    key=lambda row: float(row.get(
+                        "third_blob_excess_ucb", np.inf)))
+                failure = (
+                    "no fixed-Gaussian duration/power candidate passed: best "
+                    "third-cloud excess UCB %.4f (limit %.4f)%s"
+                    % (float(best_attempt.get(
+                        "third_blob_excess_ucb", np.inf)),
+                       float(p["max_third_blob_excess"]),
+                       ("; %s" % best_attempt["failure"])
+                       if best_attempt.get("failure") else ""))
+            elif failures:
+                failure = (
+                    "the fixed-Gaussian duration/power screen completed no candidate; "
+                    "first acquisition failure: %s" % failures[0]["error"])
+                best_attempt = None
+            else:
+                failure = "the fixed-Gaussian duration/power pool was empty"
+                best_attempt = None
             self.data["leakage"].update({
                 "attempts": attempts, "optimized": False,
                 "selection_safe": False, "verified": False,
-                "failure": "no Gaussian candidate passed the operational screen",
+                "best_screened_attempt": best_attempt,
+                "best_third_blob_excess_ucb": (
+                    float(best_attempt["third_blob_excess_ucb"])
+                    if best_attempt is not None else np.inf),
+                "failure": failure,
             })
-            raise RuntimeError(self.data["leakage"]["failure"])
+            raise RuntimeError(failure)
 
-        # Reserve duration coverage before filling by score.  Otherwise several
-        # nearby beta values from the short/high-power winner can consume the whole
-        # shortlist and prevent the intended longer/lower-power comparison.
+        # Reserve duration coverage before filling by score.  This keeps the
+        # longer/lower-power alternatives in the held-out comparison even when several
+        # frequency/gain variants of one duration scored well earlier.
         shortlist = self._duration_covered_shortlist(
             safe_rows, p["operational_selection_shortlist"])
         confirmations = self._confirm_candidates(
@@ -3862,14 +4002,40 @@ class BasicAutoTuner(ExperimentClass):
         screened_by_key = {_candidate_key(row): row for row in shortlist}
         for confirmation in confirmations:
             screened_row = screened_by_key.get(_candidate_key(confirmation), {})
-            for key in ("max_even_return_error_ucb",
-                        "max_odd_inversion_error_ucb",
-                        "third_blob_excess_ucb", "operational_safe"):
-                if key in screened_row:
-                    confirmation[key] = screened_row[key]
+            confirmation["screening_third_blob_excess_ucb"] = float(
+                screened_row.get("third_blob_excess_ucb", np.inf))
+            confirmation["screening_max_even_return_error_ucb"] = float(
+                screened_row.get("max_even_return_error_ucb", np.nan))
+            confirmation["screening_max_odd_inversion_error_ucb"] = float(
+                screened_row.get("max_odd_inversion_error_ucb", np.nan))
+            confirmation["operational_safe"] = bool(
+                screened_row.get("operational_safe", False)
+                and float(confirmation.get("third_blob_excess_ucb", np.inf))
+                <= float(p["max_third_blob_excess"]))
         complete = self._confirmation_batch_complete(confirmations)
+        safe_confirmations = [row for row in confirmations
+                              if row.get("operational_safe", False)]
+        if not safe_confirmations:
+            best_confirmation = min(
+                confirmations,
+                key=lambda row: float(row.get(
+                    "third_blob_excess_ucb", np.inf)))
+            failure = (
+                "held-out duration/power confirmation reproduced no safe candidate; "
+                "best third-cloud excess UCB %.4f (limit %.4f)"
+                % (float(best_confirmation.get(
+                    "third_blob_excess_ucb", np.inf)),
+                   float(p["max_third_blob_excess"])))
+            self.data["leakage"].update({
+                "attempts": attempts,
+                "selection_confirmations": confirmations,
+                "selection_confirmation_complete": bool(complete),
+                "optimized": False, "selection_safe": False,
+                "verified": False, "failure": failure,
+            })
+            raise RuntimeError(failure)
         selected_confirmation = self._prefer_longer_noninferior(
-            confirmations, p["operational_fidelity_tie_margin"],
+            safe_confirmations, p["operational_fidelity_tie_margin"],
             p["operational_max_tie_fidelity_loss"])
         if selected_confirmation is None:
             raise RuntimeError("operational safe shortlist produced no confirmation")
@@ -3887,6 +4053,9 @@ class BasicAutoTuner(ExperimentClass):
                 selected_confirmation["confirmation_blocks"]),
             "block_fidelities": selected_confirmation["block_fidelities"],
             "block_spread": float(selected_confirmation["block_spread"]),
+            "third_blob_excess_ucb": float(max(
+                screened["third_blob_excess_ucb"],
+                selected_confirmation["third_blob_excess_ucb"])),
             "selection_confirmation_complete": bool(complete),
         })
         self._leakage_selected_candidate = {
@@ -3895,6 +4064,8 @@ class BasicAutoTuner(ExperimentClass):
         self.data["leakage"].update({
             "attempts": attempts, "chosen": chosen,
             "optimized": True, "selection_safe": True,
+            "screening_kind": "fixed_gaussian_duration_power",
+            "drag_tuned": bool(tune_drag),
             "selection_confirmations": confirmations,
             "selection_confirmation_complete": bool(complete),
             "verified": False, "failure": None,
@@ -3947,6 +4118,21 @@ class BasicAutoTuner(ExperimentClass):
             "max_odd_inversion_error_ucb", np.inf)) for row in rows), default=np.inf)
         worst_blob = max((float(row.get(
             "third_blob_excess_ucb", np.inf)) for row in rows), default=np.inf)
+        if passed:
+            failure_reason = None
+        elif failures:
+            failure_reason = (
+                "fixed-Gaussian verification acquisition failed: %s"
+                % failures[0]["error"])
+        elif rows:
+            failed_rows = [row for row in rows
+                           if not row.get("operational_safe", False)]
+            failure_reason = (
+                failed_rows[0].get("failure")
+                if failed_rows and failed_rows[0].get("failure") else
+                "fresh fixed-Gaussian third-cloud verification failed")
+        else:
+            failure_reason = "fixed-Gaussian verification completed no blocks"
         self.data["leakage"].update({
             "verification": rows, "verified": bool(passed),
             "verification_failures": failures,
@@ -3957,8 +4143,7 @@ class BasicAutoTuner(ExperimentClass):
             "worst_even_return_error_ucb": worst_even,
             "worst_odd_inversion_error_ucb": worst_odd,
             "worst_third_blob_excess_ucb": worst_blob,
-            "failure": (None if passed else
-                        "fresh operational leakage-sensitive checks failed"),
+            "failure": failure_reason,
         })
         if passed:
             self._leakage_verified_candidate_key = _candidate_key(candidate)
@@ -4853,6 +5038,16 @@ class BasicAutoTuner(ExperimentClass):
             self._final_replay_completed)
         return best
 
+    def _replay_candidate_is_stable(self, candidate):
+        """Whether a final-stage aggregate is complete enough to replace an earlier one."""
+        if not isinstance(candidate, dict) or not self._final_replay_completed:
+            return False
+        return bool(
+            int(candidate.get("confirmation_blocks", 0))
+            >= int(self.params["final"]["blocks"])
+            and float(candidate.get("block_spread", np.inf))
+            <= float(self.params["final"]["max_block_spread"]))
+
     def _current_best_for_partial_run(self):
         pool = list(self._confirmed)
         if self._archive:
@@ -4905,7 +5100,7 @@ class BasicAutoTuner(ExperimentClass):
         # statistically noninferior: a one-pulse histogram is insensitive to the small
         # coherent errors that those amplified sequences were designed to expose.
         selection_finals = list(finals)
-        if self._operational_leakage_active or self._leakage_active:
+        if self._leakage_active:
             threshold = float(self.params["leakage"]["max_third_blob_excess"])
             safe_finals = [row for row in finals
                            if float(row.get(
@@ -5070,21 +5265,26 @@ class BasicAutoTuner(ExperimentClass):
             leak = p["leakage"]
             waveform_count = max(int(
                 leak["operational_max_candidate_waveforms"]), 1)
-            beta_points = max(int(leak["operational_beta_points"]), 5) + 1
+            beta_points = (max(int(leak["operational_beta_points"]), 5) + 1
+                           if bool(leak.get("operational_tune_drag", False)) else 1)
             screen_point = (
                 4 * int(leak["operational_reference_shots"])
-                + len(leak["operational_depths"])
-                * int(leak["operational_shots"]))
+                + (len(leak["operational_depths"])
+                   * int(leak["operational_shots"])
+                   if bool(leak.get(
+                       "operational_repeated_return_enabled", False)) else 0))
             total += waveform_count * beta_points * screen_point
             total += (2 * int(leak["operational_selection_shortlist"])
                       * int(leak["operational_selection_shots"])
                       * int(leak["operational_selection_blocks"]))
             verify_point = (
                 4 * int(leak["operational_verify_shots"])
-                + len(leak["operational_depths"])
-                * int(leak["operational_verify_shots"]))
+                + (len(leak["operational_depths"])
+                   * int(leak["operational_verify_shots"])
+                   if bool(leak.get(
+                       "operational_repeated_return_enabled", False)) else 0))
             total += int(leak["operational_verify_blocks"]) * verify_point
-            # Same local closure used by strict mode after duration/DRAG selection.
+            # Same local closure used by strict mode after control-waveform selection.
             total += (2 * int(qubit["local_freq_points"])
                       * int(qubit["local_gain_points"]) * int(qubit["shots"]))
             total += (2 * (int(qubit["shortlist"]) + 1)
@@ -5188,16 +5388,50 @@ class BasicAutoTuner(ExperimentClass):
                                 "fine_frequency_post_duration"))
             self._run_stage("amplified_error", self._stage_amplified_error)
             # The ordinary final map first identifies the best empirical waveforms.
-            # The default basic path then compares duration/DRAG candidates using
-            # leakage-sensitive repeated returns and third-cloud growth.  Optional
-            # strict mode replaces that screen with direct shelving P(f).  Either path
-            # re-closes local coordinates and independently verifies the exact tuple
-            # before the only replay allowed to authorize a write.
+            # The default basic path then compares fixed-waveform duration/power
+            # candidates for reproducible third-cloud growth.  Optional strict mode
+            # replaces that screen with direct shelving P(f).  Either path re-closes
+            # local coordinates and independently verifies the exact tuple before the
+            # only replay allowed to authorize a write.
             # Candidate-rich final comparison may contain several readout tuples, so a
             # single raw feedback threshold cannot be applied fairly to all of them.
             # Compare them passively, then freshly validate feedback on only the winner.
             self._deactivate_feedback("multi-readout final comparison")
             final = self._run_stage("final", self._stage_final)
+            ordinary_final = copy.deepcopy(final) if final is not None else None
+            ordinary_replay_completed = bool(self._final_replay_completed)
+            ordinary_replay_kind = self._final_replay_kind
+            ordinary_final_candidates = copy.deepcopy(
+                self.data.get("final_candidates", []))
+
+            def restore_ordinary_final(reason):
+                if ordinary_final is None:
+                    return None
+                attempted = self.data.get("final_candidates")
+                if attempted is not None:
+                    self.data["rejected_late_final_candidates"] = copy.deepcopy(
+                        attempted)
+                self.data["final_candidates"] = copy.deepcopy(
+                    ordinary_final_candidates)
+                self._final_replay_completed = ordinary_replay_completed
+                self._final_replay_kind = ordinary_replay_kind
+                self.data["final_confirmation_complete"] = bool(
+                    ordinary_replay_completed)
+                self.working = {
+                    key: ordinary_final[key] for key in self.initial}
+                self._log(
+                    "final", "WARN",
+                    "%s; retaining the earlier stable unconstrained fidelity replay"
+                    % reason)
+                return copy.deepcopy(ordinary_final)
+
+            if final is not None:
+                # Preserve the pure-fidelity answer before any independent safety
+                # screen.  A lower-fidelity screened pulse may later become the writable
+                # result, but the operator must always see the tradeoff explicitly.
+                self.data["best_fidelity_replay"] = copy.deepcopy(final)
+                self.data["best_fidelity_replay_complete"] = bool(
+                    self._final_replay_completed)
             reset_ready = self._run_stage(
                 "reset_before_verification", lambda:
                 self._try_activate_feedback("ordinary final winner"))
@@ -5239,8 +5473,18 @@ class BasicAutoTuner(ExperimentClass):
                 if leakage_verified:
                     constrained = self._run_stage(
                         "final_safe", self._stage_final_constrained)
-                    if constrained is not None:
+                    if self._replay_candidate_is_stable(constrained):
                         final = constrained
+                        self.data["leakage"]["final_replay_complete"] = True
+                    else:
+                        failure = (
+                            "the direct leakage audit passed, but its final exact "
+                            "step-5 replay was incomplete or unstable")
+                        self.data["leakage"].update({
+                            "final_replay_complete": False,
+                            "failure": failure,
+                        })
+                        final = restore_ordinary_final(failure)
             elif self._operational_leakage_active:
                 operational_result = self._run_stage(
                     "operational_leakage", self._stage_operational_leakage)
@@ -5274,13 +5518,26 @@ class BasicAutoTuner(ExperimentClass):
                 if operational_verified:
                     constrained = self._run_stage(
                         "final_safe", self._stage_final_constrained)
-                    if constrained is not None:
+                    if self._replay_candidate_is_stable(constrained):
                         final = constrained
+                        self.data["leakage"]["final_replay_complete"] = True
+                    else:
+                        failure = (
+                            "the pulse-safety screen passed, but its final exact "
+                            "step-5 replay was incomplete or unstable")
+                        self.data["leakage"].update({
+                            "final_replay_complete": False,
+                            "failure": failure,
+                        })
+                        final = restore_ordinary_final(failure)
             elif reset_ready:
                 feedback_final = self._run_stage(
                     "final_feedback", self._stage_final_feedback)
-                if feedback_final is not None:
+                if self._replay_candidate_is_stable(feedback_final):
                     final = feedback_final
+                else:
+                    final = restore_ordinary_final(
+                        "the final active-reset replay was incomplete or unstable")
         except KeyboardInterrupt:
             self._interrupted = True
             final = None
@@ -5344,14 +5601,14 @@ class BasicAutoTuner(ExperimentClass):
                 and self._final_replay_kind == "leakage_constrained"))
         self.data["leakage_required_for_write"] = leakage_required
         self.data["leakage_verified"] = leakage_verified
-        stable = bool(is_final
-                      and self._final_replay_completed
-                      and not self._interrupted
-                      and int(best.get("confirmation_blocks", 0))
-                      >= int(self.params["final"]["blocks"])
-                      and float(best.get("block_spread", np.inf))
-                      <= float(self.params["final"]["max_block_spread"])
-                      and leakage_tuple_match)
+        fidelity_replay_stable = bool(
+            is_final and self._final_replay_completed and not self._interrupted
+            and int(best.get("confirmation_blocks", 0))
+            >= int(self.params["final"]["blocks"])
+            and float(best.get("block_spread", np.inf))
+            <= float(self.params["final"]["max_block_spread"]))
+        stable = bool(fidelity_replay_stable and leakage_tuple_match)
+        self.data["fidelity_replay_stable"] = fidelity_replay_stable
         self.data["final_stable"] = stable
         evidence = {
             key: self._key_has_evidence(key, tuned[key]) for key in TUNED_KEYS
@@ -5432,9 +5689,11 @@ class BasicAutoTuner(ExperimentClass):
     def _jsonable_summary(data):
         keys = (
             "revision", "fidelity_definition", "initial", "working", "best_found",
+            "best_fidelity_replay", "best_fidelity_replay_complete",
             "selection_objective",
             "tuned", "eligible_tuned", "eligibility", "outcome", "success", "failure",
             "candidate_count", "interrupted", "final_stable", "time", "stages",
+            "fidelity_replay_stable",
             "report", "confirmation_failures", "final_confirmation_complete",
             "unconfirmed_contenders", "leakage_required_for_write",
             "leakage_verified", "reset",
@@ -5447,6 +5706,8 @@ class BasicAutoTuner(ExperimentClass):
                 "required_for_write", "measurement", "direct_p2_measured",
                 "third_blob_guard",
                 "optimized", "verified", "selection_safe", "failure",
+                "screening_kind", "drag_tuned", "best_third_blob_excess_ucb",
+                "final_replay_complete",
                 "used_safe_seed_fallback", "worst_single_p2_ucb",
                 "worst_amplified_p2_ucb", "worst_third_blob_excess_ucb",
                 "worst_even_return_error_ucb",
