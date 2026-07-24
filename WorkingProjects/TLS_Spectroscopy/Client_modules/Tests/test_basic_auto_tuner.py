@@ -711,6 +711,2139 @@ def test_readout_tie_prefers_lower_power_duration_exposure():
     assert selected is lower
 
 
+def _latency_candidate(read_length, sigma, fidelity, fidelity_se=0.001,
+                       **changes):
+    """Complete physical tuple plus deterministic held-out fidelity evidence."""
+    candidate = T._with_candidate(
+        T._candidate_from_cfg(_base_config()),
+        read_length=float(read_length), sigma=float(sigma), **changes)
+    candidate.update({
+        "fidelity": float(fidelity),
+        "fidelity_se": float(fidelity_se),
+        "fidelity_lcb_95": float(fidelity - 1.96 * fidelity_se),
+        "confirmation_blocks": 3,
+        "block_fidelities": np.asarray([fidelity, fidelity, fidelity]),
+        "block_spread": 0.0,
+        "label": "final exact synthetic latency replay",
+    })
+    return candidate
+
+
+def _latency_settings():
+    return {
+        "max_fidelity_loss": 0.010,
+        "minimum_mean_fidelity": 0.55,
+        "minimum_lcb_fidelity": 0.55,
+        "confidence_sigma": 1.96,
+    }
+
+
+def test_candidate_latency_is_read_length_plus_four_gaussian_sigmas():
+    candidate = _latency_candidate(5.0, 0.05, 0.93)
+    competing = _latency_candidate(4.0, 0.40, 0.93)
+
+    assert np.isclose(
+        T.BasicAutoTuner._candidate_latency_us(candidate), 5.20)
+    assert np.isclose(
+        T.BasicAutoTuner._candidate_latency_us(competing), 5.60)
+    # Looking only at readout length, sigma, or read_length + sigma would choose
+    # the wrong physical tuple in this deliberately crossed example.
+    assert (T.BasicAutoTuner._candidate_latency_us(candidate)
+            < T.BasicAutoTuner._candidate_latency_us(competing))
+
+
+def test_latency_noninferiority_rejects_low_fidelity_and_uncertainty():
+    reference = _latency_candidate(30.0, 0.25, 0.930, 0.001)
+    stable = _latency_candidate(8.0, 0.20, 0.927, 0.001)
+    coinflip = _latency_candidate(1.0, 0.05, 0.600, 0.001)
+    uncertain = _latency_candidate(1.0, 0.05, 0.925, 0.020)
+
+    stable_result = T.BasicAutoTuner._latency_noninferiority(
+        reference, stable, max_loss=0.010, confidence_z=1.96)
+    coinflip_result = T.BasicAutoTuner._latency_noninferiority(
+        reference, coinflip, max_loss=0.010, confidence_z=1.96)
+    uncertain_result = T.BasicAutoTuner._latency_noninferiority(
+        reference, uncertain, max_loss=0.010, confidence_z=1.96)
+
+    expected_stable_ucb = 0.003 + 1.96 * np.hypot(0.001, 0.001)
+    assert stable_result["eligible"] is True
+    assert np.isclose(stable_result["loss_ucb"], expected_stable_ucb)
+    assert coinflip_result["eligible"] is False
+    assert coinflip_result["loss_ucb"] > 0.30
+    assert coinflip_result["reason"]
+    # A noisy fast point must demonstrate noninferiority; broad error bars cannot
+    # become permission to sacrifice an unknown amount of fidelity.
+    assert uncertain_result["eligible"] is False
+    assert uncertain_result["loss_ucb"] > 0.010
+    assert uncertain_result["reason"]
+
+
+def test_latency_noninferiority_uses_crossfit_not_optimistic_step5_fidelity():
+    reference = _latency_candidate(20.0, 0.25, 0.930, 0.001)
+    candidate = _latency_candidate(8.0, 0.10, 0.929, 0.001)
+    # The historical step-5 resubstitution scores look noninferior, but held-out
+    # discriminator scoring exposes a candidate-dependent optimism gap.
+    reference.update({
+        "crossfit_fidelity": 0.928,
+        "crossfit_fidelity_se": 0.001,
+        "crossfit_fidelity_lcb_95": 0.928 - 1.96 * 0.001,
+    })
+    candidate.update({
+        "crossfit_fidelity": 0.900,
+        "crossfit_fidelity_se": 0.001,
+        "crossfit_fidelity_lcb_95": 0.900 - 1.96 * 0.001,
+    })
+
+    ordinary = T.BasicAutoTuner._latency_noninferiority(
+        {key: value for key, value in reference.items()
+         if not key.startswith("crossfit_")},
+        {key: value for key, value in candidate.items()
+         if not key.startswith("crossfit_")},
+        max_loss=0.010, confidence_z=1.96)
+    held_out = T.BasicAutoTuner._latency_noninferiority(
+        reference, candidate, max_loss=0.010, confidence_z=1.96)
+
+    assert ordinary["eligible"] is True
+    assert held_out["fidelity_estimator"] == "two_fold_crossfit"
+    assert held_out["eligible"] is False
+    assert held_out["loss_ucb"] > 0.010
+
+
+def test_latency_selector_rejects_one_us_sixty_percent_candidate():
+    reference = _latency_candidate(30.0, 0.25, 0.930, 0.001)
+    qualified = _latency_candidate(8.0, 0.20, 0.927, 0.001)
+    fast_bad = _latency_candidate(1.0, 0.05, 0.600, 0.001)
+
+    selected, diagnostics = T.BasicAutoTuner._select_latency_constrained(
+        [fast_bad, reference, qualified], reference, _latency_settings())
+
+    assert T._candidate_key(selected) == T._candidate_key(qualified)
+    assert T._candidate_key(selected) != T._candidate_key(fast_bad)
+    assert diagnostics
+    # The absolute floors are intentionally below 60%, proving that the relative
+    # loss certificate -- rather than the unrelated write floor -- rejects it.
+    assert _latency_settings()["minimum_mean_fidelity"] < fast_bad["fidelity"]
+    assert _latency_settings()["minimum_lcb_fidelity"] < fast_bad[
+        "fidelity_lcb_95"]
+
+
+def test_latency_selector_rejects_an_uncertain_fast_contender():
+    reference = _latency_candidate(30.0, 0.25, 0.930, 0.001)
+    qualified = _latency_candidate(8.0, 0.20, 0.927, 0.001)
+    uncertain = _latency_candidate(1.0, 0.05, 0.925, 0.020)
+    settings = _latency_settings()
+    settings.update({
+        "minimum_mean_fidelity": 0.85,
+        "minimum_lcb_fidelity": 0.85,
+    })
+
+    selected, diagnostics = T.BasicAutoTuner._select_latency_constrained(
+        [uncertain, reference, qualified], reference, settings)
+
+    assert uncertain["fidelity"] > settings["minimum_mean_fidelity"]
+    assert uncertain["fidelity_lcb_95"] > settings["minimum_lcb_fidelity"]
+    assert T._candidate_key(selected) == T._candidate_key(qualified)
+    assert diagnostics
+
+
+def test_latency_selector_is_deterministic_on_equal_latency():
+    reference = _latency_candidate(30.0, 0.25, 0.930, 0.001)
+    lower_lcb = _latency_candidate(
+        5.0, 0.25, 0.925, 0.001, qubit_pi_freq=2524.4)
+    higher_lcb = _latency_candidate(
+        4.0, 0.50, 0.927, 0.001, qubit_pi_freq=2524.6)
+    assert np.isclose(
+        T.BasicAutoTuner._candidate_latency_us(lower_lcb),
+        T.BasicAutoTuner._candidate_latency_us(higher_lcb))
+
+    selected, _ = T.BasicAutoTuner._select_latency_constrained(
+        [lower_lcb, higher_lcb, reference], reference, _latency_settings())
+    assert T._candidate_key(selected) == T._candidate_key(higher_lcb)
+
+    # When both timing and evidence are exactly tied, physical tuple identity must
+    # break the tie rather than input/acquisition order.
+    tied_a = _latency_candidate(
+        4.0, 0.25, 0.927, 0.001, qubit_pi_freq=2524.4)
+    tied_b = _latency_candidate(
+        4.0, 0.25, 0.927, 0.001, qubit_pi_freq=2524.6)
+    forward, _ = T.BasicAutoTuner._select_latency_constrained(
+        [tied_a, tied_b, reference], reference, _latency_settings())
+    reverse, _ = T.BasicAutoTuner._select_latency_constrained(
+        [tied_b, tied_a, reference], reference, _latency_settings())
+    assert T._candidate_key(forward) == T._candidate_key(reverse)
+
+
+def test_latency_selector_fails_closed_on_invalid_coordinates():
+    reference = _latency_candidate(30.0, 0.25, 0.930, 0.001)
+    qualified = _latency_candidate(8.0, 0.20, 0.927, 0.001)
+    invalid_rows = []
+    for read_length, sigma in (
+            (0.0, 0.05), (-1.0, 0.05), (np.nan, 0.05),
+            (1.0, 0.0), (1.0, -0.05), (1.0, np.inf)):
+        row = _latency_candidate(1.0, 0.05, 0.930, 0.001)
+        row["read_length"] = read_length
+        row["sigma"] = sigma
+        invalid_rows.append(row)
+        assert np.isinf(T.BasicAutoTuner._candidate_latency_us(row))
+    missing = dict(invalid_rows[0])
+    missing.pop("read_length")
+    assert np.isinf(T.BasicAutoTuner._candidate_latency_us(missing))
+
+    selected, diagnostics = T.BasicAutoTuner._select_latency_constrained(
+        invalid_rows + [qualified, reference], reference, _latency_settings())
+    assert T._candidate_key(selected) == T._candidate_key(qualified)
+    assert diagnostics
+
+
+def test_latency_frontier_preserves_fast_candidate_beyond_fidelity_top_k():
+    rows = []
+    for index in range(5):
+        rows.append(_latency_candidate(
+            30.0, 0.25, 0.950 - 0.001 * index, 0.001,
+            qubit_pi_freq=2524.0 + 0.1 * index,
+            qubit_pi_gain=2000 + 100 * index))
+    medium = _latency_candidate(
+        8.0, 0.20, 0.935, 0.001,
+        qubit_pi_freq=2525.0, qubit_pi_gain=3000)
+    fast = _latency_candidate(
+        4.0, 0.10, 0.925, 0.001,
+        qubit_pi_freq=2526.0, qubit_pi_gain=4000)
+    rows.extend([medium, fast])
+
+    # A fidelity-only top-three truncation contains only 30-us rows.  The frontier
+    # must retain the fast physical basin so held-out final replay can decide whether
+    # its small fidelity loss is inside the configured budget.
+    frontier = T.BasicAutoTuner._latency_frontier_candidates(
+        rows, max_per_read_length=1, max_per_sigma=1, limit=3)
+    keys = {T._candidate_key(row) for row in frontier}
+    assert len(frontier) <= 3
+    assert T._candidate_key(rows[0]) in keys
+    assert T._candidate_key(fast) in keys
+
+
+def test_latency_frontier_densely_preserves_the_short_boundary():
+    rows = [
+        _latency_candidate(
+            length, 0.10, 0.900 + 0.002 * index, 0.001,
+            qubit_pi_gain=4000 + 100 * index)
+        for index, length in enumerate(
+            [1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0,
+             14.0, 16.0, 20.0, 24.0, 30.0, 45.0])
+    ]
+    frontier = T.BasicAutoTuner._latency_frontier_candidates(
+        rows, max_per_read_length=1, max_per_sigma=1, limit=7)
+    lengths = {float(row["read_length"]) for row in frontier}
+
+    # The first six surviving durations plus the best-fidelity anchor are retained.
+    # An evenly spaced truncation would skip 10 us and could falsely report a slower
+    # duration as the shortest point inside the final one-point fidelity plateau.
+    assert {1.0, 2.0, 4.0, 6.0, 8.0, 10.0}.issubset(lengths)
+    assert 45.0 in lengths
+
+
+def test_uncertainty_tied_joint_corner_survives_marginal_coarse_winners():
+    common = {
+        "read_pulse_freq": 7249.1,
+        "read_pulse_gain": 5000,
+        "qubit_freq": 2534.5,
+        "qubit_pi_freq": 2534.5,
+        "qubit_drag_beta": 0.0,
+    }
+    joint_corner = _latency_candidate(
+        8.0, 0.10, 0.930, 0.002,
+        qubit_pi_gain=14475, **common)
+    read_marginal = _latency_candidate(
+        8.0, 0.25, 0.934, 0.001,
+        qubit_pi_gain=5790, **common)
+    control_marginal = _latency_candidate(
+        20.0, 0.10, 0.935, 0.001,
+        qubit_pi_gain=14475, **common)
+    slow_best = _latency_candidate(
+        20.0, 0.25, 0.940, 0.001,
+        qubit_pi_gain=5790, **common)
+
+    retained = T.BasicAutoTuner._latency_frontier_candidates(
+        [joint_corner, read_marginal, control_marginal, slow_best],
+        limit=4, nondominated=False, uncertainty_sigma=3.0)
+    keys = {T._candidate_key(row) for row in retained}
+
+    # Top-1 marginal pruning would choose 8us/.25 and 20us/.10, omitting the
+    # shortest joint 8us/.10 corner.  Its uncertainty interval still overlaps both
+    # noisy marginals, so it must reach the common held-out cohort.
+    assert T._candidate_key(joint_corner) in keys
+    assert T._candidate_key(read_marginal) in keys
+    assert T._candidate_key(control_marginal) in keys
+
+
+def test_latency_search_expands_to_later_frontier_after_early_arms_fail():
+    class ProgressiveFrontierTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.frontier_pool = []
+            self.heldout_batches = []
+            super().__init__(*args, **kwargs)
+
+        def _latency_joint_candidate_pool(self, reference, control_rows=None):
+            del reference, control_rows
+            return [{key: row[key] for key in self.initial}
+                    for row in self.frontier_pool]
+
+        def _stage_final_control_verify(self, candidate):
+            self._final_control_verified_key = T._control_key(candidate)
+            return {
+                "verified": True,
+                "candidate_key": T._candidate_key(candidate),
+                "control_key": T._control_key(candidate),
+            }
+
+        def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                               archive=True, reference_discriminator=None):
+            del shots, reference_discriminator
+            length = float(candidate["read_length"])
+            if "coarse" in str(label):
+                ordered = [1.0, 2.0, 4.0, 6.0, 8.0,
+                           10.0, 12.0, 14.0, 16.0, 20.0]
+                fidelity = 0.915 + 0.002 * ordered.index(length)
+                if np.isclose(length, 10.0):
+                    fidelity = 0.932
+                elif np.isclose(length, 12.0):
+                    # A noisy coarse reversal makes 12 us look dominated by 10 us.
+                    # It must still reach the common held-out timing cohort.
+                    fidelity = 0.931
+                if np.isclose(length, 20.0):
+                    fidelity = 0.940
+            elif length <= 10.0:
+                # Every early frontier arm survives the cheap plausibility bound but
+                # fails the fresh held-out one-point noninferiority requirement.
+                fidelity = 0.900
+            else:
+                fidelity = {
+                    12.0: 0.936,
+                    14.0: 0.937,
+                    16.0: 0.938,
+                    20.0: 0.940,
+                }[length]
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": 0.00005,
+                "fidelity_lcb_95": fidelity - 1.96 * 0.00005,
+                "crossfit_fidelity": fidelity,
+                "crossfit_fidelity_se": 0.00005,
+                "crossfit_fidelity_lcb_95": fidelity - 1.96 * 0.00005,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "label": str(label),
+                "state_order": str(state_order),
+                "measurement_index": len(self._archive),
+            })
+            if archive:
+                self._archive.append(row)
+            return row
+
+        def _confirm_candidates(self, candidates, shots, blocks, label,
+                                add_to_history=True):
+            self.heldout_batches.append({
+                "label": str(label),
+                "read_lengths": tuple(sorted({
+                    float(row["read_length"]) for row in candidates})),
+            })
+            return super()._confirm_candidates(
+                candidates, shots, blocks, label,
+                add_to_history=add_to_history)
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "coarse_shots": 41,
+        # A small historical shortlist must not truncate the measured frontier.
+        "shortlist": 5,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_point_attempts": 1,
+        "max_confirmation_attempts": 1,
+        "adaptive_confirmation_rounds": 0,
+        "max_readout_candidates": 10,
+        "max_control_candidates": 1,
+        "minimum_mean_fidelity": 0.88,
+        "minimum_lcb_fidelity": 0.87,
+    })
+    folder = tempfile.TemporaryDirectory()
+    try:
+        tuner = ProgressiveFrontierTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder.name,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_gain": 5790,
+            "qubit_drag_beta": 0.0,
+        }
+        tuner.frontier_pool = [
+            _latency_candidate(length, 0.25, 0.940, 0.00005, **common)
+            for length in (
+                1.0, 2.0, 4.0, 6.0, 8.0,
+                10.0, 12.0, 14.0, 16.0, 20.0)
+        ]
+        reference = next(row for row in tuner.frontier_pool
+                         if np.isclose(row["read_length"], 20.0))
+        tuner.working = {key: reference[key] for key in tuner.initial}
+
+        selected = tuner._stage_latency_selection(reference)
+    finally:
+        folder.cleanup()
+
+    assert tuner.heldout_batches
+    # All plausible frontier arms share one interleaved held-out cohort.  This both
+    # reaches the later plateau and prevents cross-batch common drift from being
+    # mistaken for an arm-to-arm fidelity difference.
+    assert {4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 20.0}.issubset(
+        set(tuner.heldout_batches[0]["read_lengths"]))
+    coarse = tuner.data["maps"]["latency"]["coarse_rows"]
+    coarse_by_length = {float(row["read_length"]): row for row in coarse}
+    assert coarse_by_length[10.0]["fidelity"] > coarse_by_length[12.0]["fidelity"]
+    assert np.isclose(selected["read_length"], 12.0)
+    assert np.isclose(selected["fidelity"], 0.936)
+    assert tuner.data["latency_optimization"]["qualified_speedup"] is True
+    assert tuner.data["latency_optimization"]["selected_latency_us"] < (
+        tuner.data["latency_optimization"]["reference_latency_us"])
+    batches = tuner.data["maps"]["latency"].get(
+        "frontier_confirmation_batches", [])
+    assert len(batches) == 1
+    assert batches[0]["mode"] == "single_interleaved_frontier_cohort"
+    confirmations = tuner.data["maps"]["latency"]["confirmations"]
+    pairing_sets = {tuple(row.get("block_pairing_ids", []))
+                    for row in confirmations}
+    assert len(pairing_sets) == 1
+
+
+def test_integrated_latency_stage_selects_joint_fast_plateau_tuple():
+    class LatencyPlateauTuner(VirtualBasicAutoTuner):
+        def _stage_final_control_verify(self, candidate):
+            self._final_control_verified_key = T._control_key(candidate)
+            return {"verified": True, "control_key": T._control_key(candidate)}
+
+        def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                               archive=True, reference_discriminator=None):
+            del shots, reference_discriminator
+            read_length = float(candidate["read_length"])
+            sigma = float(candidate["sigma"])
+            if np.isclose(read_length, 1.0) or np.isclose(sigma, 0.05):
+                fidelity = 0.600
+            elif np.isclose(read_length, 20.0) and np.isclose(sigma, 0.25):
+                fidelity = 0.930
+            elif np.isclose(read_length, 8.0) and np.isclose(sigma, 0.10):
+                fidelity = 0.925
+            else:
+                fidelity = 0.924
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": 0.0002,
+                "fidelity_lcb_95": fidelity - 1.96 * 0.0002,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "label": str(label),
+                "state_order": str(state_order),
+                "measurement_index": len(self._archive),
+            })
+            if archive:
+                self._archive.append(row)
+            return row
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = {
+        "enabled": True,
+        "max_fidelity_loss": 0.010,
+        "minimum_mean_fidelity": 0.90,
+        "minimum_lcb_fidelity": 0.89,
+        "familywise_alpha": 0.05,
+        "confidence_sigma": 1.96,
+        "coarse_shots": 41,
+        "screening_sigma": 3.0,
+        "screening_slack": 0.020,
+        "shortlist": 8,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_block_spread": 0.08,
+        "max_reference_drift": 0.04,
+        "max_readout_candidates": 4,
+        "max_control_candidates": 4,
+        "min_read_length_us": 1.0,
+        "max_read_length_us": 45.0,
+        "min_sigma_us": 0.05,
+        "max_sigma_us": 0.50,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = LatencyPlateauTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.930, 0.0002,
+            qubit_pi_gain=5790, **common)
+        readout_representative = _latency_candidate(
+            8.0, 0.25, 0.924, 0.0002,
+            qubit_pi_gain=5790, **common)
+        control_representative = _latency_candidate(
+            20.0, 0.10, 0.924, 0.0002,
+            qubit_pi_gain=14475, **common)
+        # This tempting short readout must be measured and rejected by the fidelity
+        # constraint, rather than being prohibited by a hard timing cutoff.
+        one_us_row = _latency_candidate(
+            1.0, 0.05, 0.990, 0.0002,
+            qubit_pi_gain=28950, **common)
+        tuner._confirmed.extend([
+            reference, readout_representative,
+            control_representative, one_us_row,
+        ])
+        tuner.working = {key: reference[key] for key in tuner.initial}
+
+        selected = tuner._stage_latency_selection(reference)
+
+    assert np.isclose(selected["read_length"], 8.0)
+    assert np.isclose(selected["sigma"], 0.10)
+    assert np.isclose(selected["fidelity"], 0.925)
+    mapping = tuner.data["maps"]["latency"]
+    assert mapping["selection_confirmation_complete"] is True
+    assert mapping["search_complete"] is True
+    assert mapping["selection_confirmed"] is True
+    assert all(row["confirmation_batch_complete"] is True
+               for row in mapping["confirmations"])
+    assert all(row["confirmation_blocks"] == params["latency"]["confirm_blocks"]
+               for row in mapping["confirmations"])
+    assert any(np.isclose(row["read_length"], 1.0)
+               for row in mapping["coarse_rows"])
+    one_us_coarse = [row for row in mapping["coarse_rows"]
+                     if np.isclose(row["read_length"], 1.0)]
+    assert one_us_coarse
+    assert all(np.isclose(row["fidelity"], 0.600)
+               for row in one_us_coarse)
+    # The obviously bad fast arm is rejected by the cheap plausibility screen and
+    # therefore never consumes held-out confirmation shots.
+    assert all(not np.isclose(row["read_length"], 1.0)
+               for row in mapping["shortlist"])
+    timing = tuner.data["latency_optimization"]
+    assert timing["status"] == "selected"
+    assert timing["selected_latency_us"] > 0.0
+    assert timing["latency_saved_us"] > 0.0
+    assert timing["reference_latency_us"] > timing["selected_latency_us"]
+    assert tuner._final_replay_completed is True
+    assert tuner._final_replay_kind == "latency_unconstrained"
+    assert tuner.data["final_confirmation_complete"] is True
+
+
+def test_incomplete_latency_confirmation_preserves_reference_replay():
+    class IncompleteLatencyTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.failed_latency_confirmation = False
+            super().__init__(*args, **kwargs)
+
+        def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                               archive=True, reference_discriminator=None):
+            if ("latency Pareto replay frontier batch" in str(label)
+                    and not self.failed_latency_confirmation
+                    and np.isclose(float(candidate["read_length"]), 8.0)
+                    and np.isclose(float(candidate["sigma"]), 0.10)):
+                self.failed_latency_confirmation = True
+                raise RuntimeError("synthetic missing latency block")
+            del shots, reference_discriminator
+            read_length = float(candidate["read_length"])
+            sigma = float(candidate["sigma"])
+            fidelity = (0.930 if np.isclose(read_length, 20.0)
+                        and np.isclose(sigma, 0.25) else 0.925)
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": 0.0002,
+                "fidelity_lcb_95": fidelity - 1.96 * 0.0002,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "label": str(label),
+                "state_order": str(state_order),
+                "measurement_index": len(self._archive),
+            })
+            if archive:
+                self._archive.append(row)
+            return row
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = {
+        "enabled": True,
+        "max_fidelity_loss": 0.010,
+        "minimum_mean_fidelity": 0.90,
+        "minimum_lcb_fidelity": 0.89,
+        "familywise_alpha": 0.05,
+        "confidence_sigma": 1.96,
+        "coarse_shots": 41,
+        "screening_sigma": 3.0,
+        "screening_slack": 0.020,
+        "shortlist": 8,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_block_spread": 0.08,
+        "max_reference_drift": 0.04,
+        "max_readout_candidates": 4,
+        "max_control_candidates": 4,
+        "min_read_length_us": 4.0,
+        "max_read_length_us": 45.0,
+        "min_sigma_us": 0.05,
+        "max_sigma_us": 0.50,
+    }
+    # Production retries a transient incomplete batch once.  This test isolates the
+    # terminal fail-closed path after that retry budget is exhausted.
+    params["latency"]["max_confirmation_attempts"] = 1
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = IncompleteLatencyTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.930, 0.0002,
+            qubit_pi_gain=5790, **common)
+        tuner._confirmed.extend([
+            reference,
+            _latency_candidate(
+                8.0, 0.25, 0.925, 0.0002,
+                qubit_pi_gain=5790, **common),
+            _latency_candidate(
+                20.0, 0.10, 0.925, 0.0002,
+                qubit_pi_gain=14475, **common),
+        ])
+        tuner.working = {key: reference[key] for key in tuner.initial}
+        reference_key = T._candidate_key(tuner.working)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner.data["final_confirmation_complete"] = True
+
+        try:
+            tuner._stage_latency_selection(reference)
+        except RuntimeError as exc:
+            assert "frontier replay did not complete every randomized block" in str(exc)
+        else:
+            raise AssertionError("an incomplete latency replay selected a tuple")
+
+    assert tuner.failed_latency_confirmation is True
+    assert T._candidate_key(tuner.working) == reference_key
+    assert tuner._final_replay_completed is True
+    assert tuner._final_replay_kind == "unconstrained"
+    assert tuner.data["final_confirmation_complete"] is True
+    mapping = tuner.data["maps"]["latency"]
+    assert mapping["selection_confirmation_complete"] is False
+    assert mapping["search_complete"] is False
+    assert mapping["selection_confirmed"] is False
+    assert tuner.data["latency_optimization"]["status"] == "not_run"
+
+
+def test_paired_latency_noninferiority_uses_round_robin_block_evidence():
+    reference = _latency_candidate(20.0, 0.25, 0.930, 0.010)
+    candidate = _latency_candidate(8.0, 0.10, 0.925, 0.010)
+    reference.update({
+        "block_fidelities": np.asarray([0.940, 0.920, 0.930]),
+        "block_fidelity_ses": np.asarray([0.0002, 0.0002, 0.0002]),
+    })
+    candidate.update({
+        "block_fidelities": np.asarray([0.935, 0.915, 0.925]),
+        "block_fidelity_ses": np.asarray([0.0002, 0.0002, 0.0002]),
+    })
+
+    paired = T.BasicAutoTuner._latency_noninferiority(
+        reference, candidate, max_loss=0.010, confidence_z=1.96)
+    assert paired["method"] == "paired_round_robin_blocks"
+    assert paired["eligible"] is True
+    assert np.isclose(paired["mean_loss"], 0.005)
+    assert paired["loss_ucb"] < 0.010
+
+    # Without the block pairing, the same common-mode drift is unresolved and the
+    # aggregate uncertainties must fail closed.  This proves that fresh interleaved
+    # evidence, rather than the point estimates alone, earns latency qualification.
+    independent_reference = dict(reference)
+    independent_candidate = dict(candidate)
+    for row in (independent_reference, independent_candidate):
+        row.pop("block_fidelities")
+        row.pop("block_fidelity_ses")
+    independent = T.BasicAutoTuner._latency_noninferiority(
+        independent_reference, independent_candidate,
+        max_loss=0.010, confidence_z=1.96)
+    assert independent["method"] == "independent_aggregate"
+    assert independent["eligible"] is False
+    assert independent["loss_ucb"] > 0.010
+
+
+def test_latency_drift_bound_accounts_for_estimating_variance_from_eight_blocks():
+    reference = _latency_candidate(20.0, 0.25, 0.930, 0.002)
+    candidate = _latency_candidate(8.0, 0.10, 0.930, 0.0001)
+    # Eight paired blocks estimate, rather than know, the drift variance.  Choose the
+    # spread so the normal familywise z would pass a 1% budget while the corresponding
+    # finite-block tail does not.
+    paired_se = 0.002
+    excursion = paired_se * np.sqrt(7.0)
+    reference_blocks = 0.930 + np.asarray([-excursion, excursion] * 4)
+    candidate_blocks = np.full(8, 0.930)
+    for row, blocks in ((reference, reference_blocks),
+                        (candidate, candidate_blocks)):
+        aggregate_se = float(np.std(blocks, ddof=1) / np.sqrt(8.0))
+        row.update({
+            "fidelity": float(np.mean(blocks)),
+            "fidelity_se": aggregate_se,
+            "fidelity_lcb_95": float(np.mean(blocks) - 1.96 * aggregate_se),
+            "confirmation_blocks": 8,
+            "block_fidelities": blocks,
+            "block_fidelity_ses": np.full(8, 0.0001),
+            "block_spread": float(np.ptp(blocks)),
+            "confirmation_batch_complete": True,
+        })
+    comparisons = 6 * 5 * 3
+    normal_familywise_z = float(ndtri(1.0 - 0.05 / comparisons))
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        family = tuner._latency_family_settings(
+            comparisons, required_blocks=8)
+    result = T.BasicAutoTuner._latency_noninferiority(
+        reference, candidate, max_loss=0.010,
+        confidence_z=family["confidence_sigma"])
+
+    assert np.isclose(result["loss_se"], paired_se, rtol=0.02)
+    assert normal_familywise_z * result["loss_se"] < 0.010
+    assert family["familywise_distribution"] == "student_t"
+    assert family["familywise_degrees_of_freedom"] == 7
+    assert family["confidence_sigma"] > normal_familywise_z
+    # Treating an eight-block sample SD as a known variance would be
+    # anti-conservative; the finite-block familywise bound must reject this arm.
+    assert result["eligible"] is False
+    assert result["loss_ucb"] > 0.010
+
+
+def test_exact_epsilon_loss_is_accepted_against_max_safe_fidelity():
+    unsafe_global_best = _latency_candidate(30.0, 0.25, 0.970, 0.0)
+    unsafe_global_best["operational_safe"] = False
+    max_safe = _latency_candidate(20.0, 0.25, 0.940, 0.0)
+    max_safe["operational_safe"] = True
+    at_epsilon = _latency_candidate(8.0, 0.10, 0.930, 0.0)
+    at_epsilon["operational_safe"] = True
+    outside_epsilon = _latency_candidate(4.0, 0.10, 0.929999, 0.0)
+    outside_epsilon["operational_safe"] = True
+    settings = {
+        "max_fidelity_loss": 0.010,
+        "minimum_mean_fidelity": 0.90,
+        "minimum_lcb_fidelity": 0.90,
+        "confidence_sigma": 1.96,
+    }
+
+    selected, diagnostics = T.BasicAutoTuner._select_latency_constrained(
+        [outside_epsilon, at_epsilon, max_safe], max_safe, settings)
+    by_key = {tuple(row["candidate_key"]): row for row in diagnostics}
+    boundary = by_key[T._candidate_key(at_epsilon)]
+    outside = by_key[T._candidate_key(outside_epsilon)]
+
+    assert np.isclose(boundary["loss_ucb"], settings["max_fidelity_loss"])
+    assert boundary["accepted"] is True
+    assert outside["loss_ucb"] > settings["max_fidelity_loss"]
+    assert outside["accepted"] is False
+    assert T._candidate_key(selected) == T._candidate_key(at_epsilon)
+    # The unconstrained 97% row is deliberately unsafe.  Anchoring to it would
+    # reject the valid 93% safe tuple, so safety-constrained latency must use the
+    # maximum *safe* fidelity reference established by the preceding screen.
+    wrong_anchor = T.BasicAutoTuner._latency_noninferiority(
+        unsafe_global_best, at_epsilon,
+        max_loss=settings["max_fidelity_loss"], confidence_z=1.96)
+    assert wrong_anchor["eligible"] is False
+
+
+def test_latency_stage_retries_transient_measurement_and_evidence_failures():
+    class RetryingLatencyTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.coarse_retry_seen = False
+            self.confirmation_retry_seen = False
+            super().__init__(*args, **kwargs)
+
+        def _stage_final_control_verify(self, candidate):
+            self._final_control_verified_key = T._control_key(candidate)
+            return {"verified": True, "control_key": T._control_key(candidate)}
+
+        def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                               archive=True, reference_discriminator=None):
+            is_joint_fast = bool(
+                np.isclose(float(candidate["read_length"]), 8.0)
+                and np.isclose(float(candidate["sigma"]), 0.10))
+            if (is_joint_fast
+                    and str(label) == "latency joint coarse attempt 1"
+                    and not self.coarse_retry_seen):
+                self.coarse_retry_seen = True
+                raise RuntimeError("synthetic transient coarse fault")
+            if (is_joint_fast
+                    and "latency Pareto replay frontier batch" in str(label)
+                    and "attempt 1" in str(label)
+                    and not self.confirmation_retry_seen):
+                self.confirmation_retry_seen = True
+                raise RuntimeError("synthetic transient confirmation fault")
+            del shots, reference_discriminator
+            read_length = float(candidate["read_length"])
+            sigma = float(candidate["sigma"])
+            fidelity = (0.930 if np.isclose(read_length, 20.0)
+                        and np.isclose(sigma, 0.25) else 0.925)
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": 0.0002,
+                "fidelity_lcb_95": fidelity - 1.96 * 0.0002,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "label": str(label),
+                "state_order": str(state_order),
+                "measurement_index": len(self._archive),
+            })
+            if archive:
+                self._archive.append(row)
+            return row
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "coarse_shots": 41,
+        "shortlist": 6,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_point_attempts": 2,
+        "max_confirmation_attempts": 2,
+        "max_readout_candidates": 4,
+        "max_control_candidates": 4,
+        "min_read_length_us": 4.0,
+        "max_sigma_us": 0.50,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = RetryingLatencyTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.930, 0.0002,
+            qubit_pi_gain=5790, **common)
+        tuner._confirmed.extend([
+            reference,
+            _latency_candidate(
+                8.0, 0.25, 0.925, 0.0002,
+                qubit_pi_gain=5790, **common),
+            _latency_candidate(
+                20.0, 0.10, 0.925, 0.0002,
+                qubit_pi_gain=14475, **common),
+        ])
+        tuner.working = {key: reference[key] for key in tuner.initial}
+
+        selected = tuner._stage_latency_selection(reference)
+
+    assert tuner.coarse_retry_seen is True
+    assert tuner.confirmation_retry_seen is True
+    assert np.isclose(selected["read_length"], 8.0)
+    assert np.isclose(selected["sigma"], 0.10)
+    mapping = tuner.data["maps"]["latency"]
+    assert mapping["coverage"] == 1.0
+    assert mapping["failures"] == []
+    assert mapping["selection_confirmation_complete"] is True
+    assert all(row["confirmation_batch_complete"] is True
+               for row in mapping["confirmations"])
+    assert any("frontier batch" in row["label"]
+               and "attempt 2" in row["label"]
+               for batch in mapping["confirmation_rounds"] for row in batch)
+    selected_diagnostic = next(
+        row for row in tuner.data["latency_optimization"]["diagnostics"]
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(selected))
+    assert selected_diagnostic["accepted"] is True
+    assert selected_diagnostic["method"] == "paired_round_robin_blocks"
+    assert selected_diagnostic["loss_ucb"] <= params["latency"][
+        "max_fidelity_loss"]
+
+
+def test_latency_control_screen_falls_through_to_next_coherent_tuple():
+    class ControlFallbackTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.control_attempts = []
+            super().__init__(*args, **kwargs)
+
+        def _stage_final_control_verify(self, candidate):
+            self.control_attempts.append(T._candidate_key(candidate))
+            if np.isclose(float(candidate["read_length"]), 4.0):
+                raise RuntimeError("synthetic incoherent fastest pulse")
+            self._final_control_verified_key = T._control_key(candidate)
+            return {
+                "verified": True,
+                "control_key": T._control_key(candidate),
+                "candidate_key": T._candidate_key(candidate),
+            }
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = ControlFallbackTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = tuner._annotate_candidate_latency(_latency_candidate(
+            20.0, 0.25, 0.940, 0.0002,
+            qubit_pi_gain=5790, **common))
+        fastest = tuner._annotate_candidate_latency(_latency_candidate(
+            4.0, 0.10, 0.935, 0.0002,
+            qubit_pi_gain=14475, **common))
+        coherent_fallback = tuner._annotate_candidate_latency(_latency_candidate(
+            8.0, 0.15, 0.934, 0.0002,
+            qubit_pi_gain=9650, **common))
+        confirmations = [reference, coherent_fallback, fastest]
+        tuner._maps["latency"] = {"confirmations": confirmations}
+        tuner.data["latency_optimization"].update({
+            "status": "selected",
+            "reference": copy.deepcopy(reference),
+            "selected": copy.deepcopy(fastest),
+            "diagnostics": [{
+                "candidate_key": list(T._candidate_key(row)),
+                "accepted": True,
+            } for row in confirmations],
+        })
+        tuner.working = {key: fastest[key] for key in tuner.initial}
+
+        chosen = tuner._stage_latency_control_screen()
+
+    assert tuner.control_attempts == [
+        T._candidate_key(fastest), T._candidate_key(coherent_fallback)]
+    assert T._candidate_key(chosen) == T._candidate_key(coherent_fallback)
+    assert T._candidate_key(tuner.working) == T._candidate_key(coherent_fallback)
+    record = tuner.data["latency_optimization"]
+    assert record["control_screen_passed"] is True
+    assert len(record["control_screen_failures"]) == 1
+    assert (tuple(record["control_screen_failures"][0]["candidate_key"])
+            == T._candidate_key(fastest))
+    assert (record["selected_latency_us"]
+            < T.BasicAutoTuner._candidate_latency_us(reference))
+    assert tuner.data["maps"]["latency_control_screen"][
+        "selection_confirmed"] is True
+    # The screen is a fallback decision aid, not the later exact write certificate.
+    assert tuner._final_control_verified_key is None
+
+
+def test_retained_reference_control_screen_cannot_choose_a_slower_tuple():
+    class PassingControlTuner(VirtualBasicAutoTuner):
+        def _stage_final_control_verify(self, candidate):
+            self._final_control_verified_key = T._control_key(candidate)
+            return {
+                "verified": True,
+                "control_key": T._control_key(candidate),
+                "candidate_key": T._candidate_key(candidate),
+            }
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = PassingControlTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = tuner._annotate_candidate_latency(_latency_candidate(
+            8.0, 0.10, 0.940, 0.0002,
+            qubit_pi_gain=14475, **common))
+        slower = tuner._annotate_candidate_latency(_latency_candidate(
+            14.0, 0.15, 0.939, 0.0002,
+            qubit_pi_gain=9650, **common))
+        confirmations = [reference, slower]
+        tuner._maps["latency"] = {"confirmations": confirmations}
+        tuner.data["latency_optimization"].update({
+            "status": "retained_reference_no_qualified_speedup",
+            "reference": copy.deepcopy(reference),
+            "selected": copy.deepcopy(reference),
+            "certified_selected": copy.deepcopy(reference),
+            "certified_selected_key": list(T._candidate_key(reference)),
+            "latency_certificate_valid": True,
+            "qualified_speedup": False,
+            "diagnostics": [{
+                "candidate_key": list(T._candidate_key(row)),
+                "accepted": True,
+            } for row in confirmations],
+        })
+        tuner.working = {key: reference[key] for key in tuner.initial}
+
+        chosen = tuner._stage_latency_control_screen()
+
+    assert T._candidate_key(chosen) == T._candidate_key(reference)
+    assert (tuner.data["latency_optimization"]["selected_latency_us"]
+            == T.BasicAutoTuner._candidate_latency_us(reference))
+    assert tuner.data["latency_optimization"]["qualified_speedup"] is False
+
+
+def test_binding_unsafe_reference_is_lazily_removed_before_latency_decision():
+    class UnsafeBindingReferenceTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.synthetic_pool = []
+            self.safety_attempts = []
+            self.control_attempts = []
+            super().__init__(*args, **kwargs)
+
+        def _latency_joint_candidate_pool(self, reference, control_rows=None):
+            del reference, control_rows
+            return [dict(row) for row in self.synthetic_pool]
+
+        @staticmethod
+        def _latency_frontier_candidates(rows, max_per_read_length=1,
+                                         max_per_sigma=1, limit=8,
+                                         nondominated=True,
+                                         uncertainty_sigma=3.0):
+            del (max_per_read_length, max_per_sigma, nondominated,
+                 uncertainty_sigma)
+            return [dict(row) for row in rows[:int(limit)]]
+
+        def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                               archive=True, reference_discriminator=None):
+            del shots, reference_discriminator
+            read_length = float(candidate["read_length"])
+            if np.isclose(read_length, 20.0):
+                fidelity, fidelity_se = 0.935, 0.001
+            elif np.isclose(read_length, 14.0):
+                # Lower LCB than the 20-us arm, but enough upper uncertainty to be
+                # the binding possible-best reference for the fast candidate.
+                fidelity, fidelity_se = 0.940, 0.006
+            else:
+                fidelity, fidelity_se = 0.930, 0.001
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": fidelity_se,
+                "fidelity_lcb_95": fidelity - 1.96 * fidelity_se,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "label": str(label),
+                "state_order": str(state_order),
+                "measurement_index": len(self._archive),
+            })
+            if archive:
+                self._archive.append(row)
+            return row
+
+        def _stage_final_control_verify(self, candidate):
+            self.control_attempts.append(T._candidate_key(candidate))
+            self._final_control_verified_key = T._control_key(candidate)
+            return {"verified": True, "control_key": T._control_key(candidate)}
+
+        def _stage_operational_leakage_verify(self, allow_fallback=True):
+            del allow_fallback
+            key = T._candidate_key(self.working)
+            self.safety_attempts.append(key)
+            unsafe = np.isclose(float(self.working["read_length"]), 14.0)
+            if unsafe:
+                self._leakage_verified_candidate_key = None
+                self.data["leakage"].update({
+                    "verified": False,
+                    "failure": "synthetic unsafe binding reference",
+                })
+                return False
+            self._leakage_verified_candidate_key = key
+            self.data["leakage"].update({"verified": True, "failure": None})
+            return True
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "coarse_shots": 31,
+        "shortlist": 4,
+        "confirm_shots": 61,
+        "confirm_blocks": 8,
+        "max_point_attempts": 1,
+        "max_confirmation_attempts": 1,
+        "adaptive_confirmation_rounds": 0,
+        "max_readout_candidates": 3,
+        "max_control_candidates": 3,
+    })
+    params["leakage"] = copy.deepcopy(T.BASIC_DEFAULTS["leakage"])
+    params["leakage"].update({
+        "enabled": False,
+        "operational_enabled": True,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = UnsafeBindingReferenceTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.935, 0.001,
+            qubit_pi_gain=5790, **common)
+        unsafe_blocker = _latency_candidate(
+            14.0, 0.20, 0.940, 0.006,
+            qubit_pi_gain=7238, **common)
+        fast_safe = _latency_candidate(
+            8.0, 0.10, 0.930, 0.001,
+            qubit_pi_gain=14475, **common)
+        tuner.synthetic_pool = [reference, unsafe_blocker, fast_safe]
+        tuner.working = {key: reference[key] for key in tuner.initial}
+
+        selected = tuner._stage_latency_selection(reference)
+
+    unsafe_key = T._candidate_key(unsafe_blocker)
+    assert unsafe_key in tuner.safety_attempts
+    assert unsafe_key in {
+        tuple(key) for key in tuner.data["latency_optimization"][
+            "safety_rejected_anchor_keys"]
+    }
+    assert T._candidate_key(selected) == T._candidate_key(fast_safe)
+    selected_diagnostic = next(
+        row for row in tuner.data["latency_optimization"]["diagnostics"]
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(fast_safe))
+    assert selected_diagnostic["accepted"] is True
+
+
+def test_realistic_block_uncertainty_shrinks_across_adaptive_rounds():
+    candidate = _latency_candidate(8.0, 0.10, 0.930, 0.0094)
+
+    def block(index):
+        row = dict(candidate)
+        row.update({
+            "fidelity": 0.930,
+            "fidelity_se": 0.0094,
+            "crossfit_fidelity": 0.928,
+            "crossfit_fidelity_se": 0.0094,
+            "measurement_index": int(index),
+            "sep_sigma": 3.8,
+            "third_blob_excess_ucb_95": 0.01,
+        })
+        return row
+
+    first = T.BasicAutoTuner._aggregate(
+        candidate, [block(index) for index in range(3)],
+        "first realistic latency batch")
+    second = T.BasicAutoTuner._aggregate(
+        candidate, [block(index) for index in range(3, 6)],
+        "second realistic latency batch")
+    combined = T.BasicAutoTuner._combine_latency_confirmation_rounds(
+        [[first], [second]], "combined realistic latency evidence")[0]
+
+    assert np.isclose(first["fidelity_se"], 0.0094 / np.sqrt(3.0))
+    assert np.isclose(second["fidelity_se"], 0.0094 / np.sqrt(3.0))
+    assert np.isclose(combined["fidelity_se"], 0.0094 / np.sqrt(6.0))
+    assert np.isclose(
+        combined["fidelity_se"], first["fidelity_se"] / np.sqrt(2.0))
+    assert combined["confirmation_blocks"] == 6
+    assert combined["block_fidelity_ses"].tolist() == [0.0094] * 6
+    assert combined["fidelity_lcb_95"] > first["fidelity_lcb_95"]
+    assert combined["block_crossfit_fidelities"].tolist() == [0.928] * 6
+    assert combined["block_crossfit_fidelity_ses"].tolist() == [0.0094] * 6
+    assert np.isclose(
+        combined["crossfit_fidelity_se"],
+        first["crossfit_fidelity_se"] / np.sqrt(2.0))
+    assert combined["crossfit_fidelity_lcb_95"] > first[
+        "crossfit_fidelity_lcb_95"]
+
+
+class _AdaptiveLatencyEvidenceTuner(VirtualBasicAutoTuner):
+    def __init__(self, *args, fail_optional_round=False, **kwargs):
+        self.fail_optional_round = bool(fail_optional_round)
+        self.optional_failure_seen = False
+        super().__init__(*args, **kwargs)
+
+    def _stage_final_control_verify(self, candidate):
+        self._final_control_verified_key = T._control_key(candidate)
+        return {"verified": True, "control_key": T._control_key(candidate)}
+
+    def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                           archive=True, reference_discriminator=None):
+        if (self.fail_optional_round
+                and str(label).startswith("adaptive exact latency replay round 1")
+                and not self.optional_failure_seen
+                and np.isclose(float(candidate["read_length"]), 8.0)
+                and np.isclose(float(candidate["sigma"]), 0.10)):
+            self.optional_failure_seen = True
+            raise RuntimeError("synthetic optional adaptive-block fault")
+        del shots, reference_discriminator
+        reference = bool(
+            np.isclose(float(candidate["read_length"]), 20.0)
+            and np.isclose(float(candidate["sigma"]), 0.25))
+        fidelity = 0.930 if reference else 0.925
+        row = dict(candidate)
+        row.update({
+            "fidelity": fidelity,
+            # Three initial blocks leave the 0.5% loss unresolved; six paired blocks
+            # shrink this realistic shot term enough to certify it.
+            "fidelity_se": 0.0012,
+            "fidelity_lcb_95": fidelity - 1.96 * 0.0020,
+            "sep_sigma": 3.8,
+            "third_blob_excess_ucb_95": 0.0,
+            "label": str(label),
+            "state_order": str(state_order),
+            "measurement_index": len(self._archive),
+        })
+        if archive:
+            self._archive.append(row)
+        return row
+
+
+def _run_adaptive_latency_fixture(fail_optional_round):
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "coarse_shots": 41,
+        "shortlist": 4,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_point_attempts": 1,
+        "max_confirmation_attempts": 1,
+        "adaptive_confirmation_rounds": 1,
+        "adaptive_ucb_slack": 0.012,
+        "max_readout_candidates": 2,
+        "max_control_candidates": 2,
+        "min_read_length_us": 4.0,
+        "max_sigma_us": 0.50,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = _AdaptiveLatencyEvidenceTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+            fail_optional_round=fail_optional_round,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.930, 0.0012,
+            qubit_pi_gain=5790, **common)
+        fast = _latency_candidate(
+            8.0, 0.10, 0.925, 0.0012,
+            qubit_pi_gain=14475, **common)
+        tuner._confirmed.extend([reference, fast])
+        tuner.working = {key: reference[key] for key in tuner.initial}
+        selected = tuner._stage_latency_selection(reference)
+    return tuner, reference, fast, selected, params
+
+
+def test_adaptive_latency_evidence_moves_unresolved_candidate_to_accepted():
+    tuner, reference, fast, selected, params = _run_adaptive_latency_fixture(False)
+    mapping = tuner.data["maps"]["latency"]
+    first_round = mapping["confirmation_rounds"][0]
+    initial_reference = tuner._best_aggregate(first_round)
+    initial_settings = tuner._latency_family_settings(
+        max(len(first_round) * (len(first_round) - 1), 1),
+        params["latency"]["confirm_blocks"])
+    initial_selected, initial_diagnostics = tuner._select_latency_constrained(
+        first_round, initial_reference, initial_settings)
+    initial_fast = next(
+        row for row in initial_diagnostics
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(fast))
+
+    assert initial_fast["accepted"] is False
+    assert initial_fast["loss_ucb"] > params["latency"]["max_fidelity_loss"]
+    assert tuner._latency_has_ambiguous_faster_candidate(
+        initial_diagnostics, initial_reference, initial_selected,
+        initial_settings) is True
+    assert mapping["adaptive_rounds_completed"] == 1
+    assert mapping["adaptive_confirmation"] == [{
+        "round": 1, "complete": True,
+        "candidate_count": len(mapping["confirmations"]),
+    }]
+    assert all(row["confirmation_blocks"] == 6
+               for row in mapping["confirmations"])
+    final_fast = next(
+        row for row in tuner.data["latency_optimization"]["diagnostics"]
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(fast))
+    assert final_fast["accepted"] is True
+    assert final_fast["loss_ucb"] <= params["latency"]["max_fidelity_loss"]
+    assert T._candidate_key(selected) == T._candidate_key(fast)
+    assert tuner.data["latency_optimization"]["status"] == "selected"
+
+
+def test_incomplete_optional_adaptive_round_preserves_initial_complete_result():
+    tuner, reference, _fast, selected, params = _run_adaptive_latency_fixture(True)
+    mapping = tuner.data["maps"]["latency"]
+
+    assert tuner.optional_failure_seen is True
+    assert mapping["selection_confirmation_complete"] is True
+    assert mapping["search_complete"] is True
+    assert mapping["selection_confirmed"] is True
+    assert len(mapping["confirmation_rounds"]) == 1
+    assert mapping["adaptive_rounds_completed"] == 0
+    assert mapping["adaptive_confirmation"] == [{
+        "round": 1, "complete": False,
+        "candidate_count": len(mapping["shortlist"]),
+    }]
+    assert all(row["confirmation_batch_complete"] is True
+               for row in mapping["confirmations"])
+    assert all(row["confirmation_blocks"] == params["latency"]["confirm_blocks"]
+               for row in mapping["confirmations"])
+    assert T._candidate_key(selected) == T._candidate_key(reference)
+    record = tuner.data["latency_optimization"]
+    assert record["status"] == "retained_reference_timing_uncertain"
+    assert record["latency_certificate_valid"] is False
+    assert tuner._final_replay_completed is True
+    assert tuner._final_replay_kind == "latency_unconstrained"
+
+
+class _SimultaneousBlockerLatencyTuner(VirtualBasicAutoTuner):
+    """Three-arm latency fixture with a non-anchor statistical blocker."""
+
+    def __init__(self, *args, blocker_is_coherent, **kwargs):
+        self.blocker_is_coherent = bool(blocker_is_coherent)
+        self.control_attempts = []
+        self.synthetic_confirmations = []
+        self.blocker_key = None
+        super().__init__(*args, **kwargs)
+
+    def _latency_joint_candidate_pool(self, reference, control_rows=None):
+        del reference, control_rows
+        return [
+            {key: row[key] for key in self.initial}
+            for row in self.synthetic_confirmations
+        ]
+
+    def _measure_candidate(self, candidate, shots, label, state_order="ge",
+                           archive=True, reference_discriminator=None):
+        del shots, reference_discriminator
+        key = T._candidate_key(candidate)
+        source = next(row for row in self.synthetic_confirmations
+                      if T._candidate_key(row) == key)
+        row = dict(source)
+        row.update({
+            "fidelity_se": 0.0002,
+            "fidelity_lcb_95": float(source["fidelity"] - 1.96 * 0.0002),
+            "sep_sigma": 4.0,
+            "third_blob_excess_ucb_95": 0.0,
+            "label": str(label),
+            "state_order": str(state_order),
+            "measurement_index": len(self._archive),
+        })
+        if archive:
+            self._archive.append(row)
+        return row
+
+    def _confirm_candidates(self, candidates, shots, blocks, label,
+                            add_to_history=True):
+        del shots
+        keys = {T._candidate_key(row) for row in candidates}
+        rows = []
+        for source in self.synthetic_confirmations:
+            if T._candidate_key(source) not in keys:
+                continue
+            row = copy.deepcopy(source)
+            row.update({
+                "label": str(label),
+                "scheduled_confirmation_blocks": int(blocks),
+                "completed_confirmation_blocks": int(blocks),
+                "missing_confirmation_blocks": 0,
+                "confirmation_complete": True,
+                "confirmation_batch_complete": True,
+                "confirmation_failure_count": 0,
+            })
+            rows.append(row)
+        if add_to_history:
+            self._confirmed.extend(rows)
+        return rows
+
+    def _stage_final_control_verify(self, candidate):
+        key = T._candidate_key(candidate)
+        self.control_attempts.append(key)
+        if key == self.blocker_key and not self.blocker_is_coherent:
+            raise RuntimeError("synthetic incoherent simultaneous blocker")
+        self._final_control_verified_key = T._control_key(candidate)
+        return {
+            "verified": True,
+            "candidate_key": key,
+            "control_key": T._control_key(candidate),
+        }
+
+
+def _simultaneous_blocker_latency_fixture(blocker_is_coherent):
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "coarse_shots": 41,
+        "shortlist": 4,
+        "confirm_shots": 79,
+        "confirm_blocks": 3,
+        "max_point_attempts": 1,
+        "max_confirmation_attempts": 1,
+        "adaptive_confirmation_rounds": 0,
+        "max_readout_candidates": 3,
+        "max_control_candidates": 3,
+        "minimum_mean_fidelity": 0.90,
+        "minimum_lcb_fidelity": 0.90,
+    })
+    folder = tempfile.TemporaryDirectory()
+    tuner = _SimultaneousBlockerLatencyTuner(
+        soc=None, soccfg=None, path="q4", outerFolder=folder.name,
+        cfg=_base_config(), params=params,
+        blocker_is_coherent=blocker_is_coherent,
+    )
+    common = {
+        "read_pulse_freq": tuner.READ_FREQ,
+        "read_pulse_gain": tuner.READ_GAIN,
+        "qubit_freq": tuner.QUBIT_FREQ,
+        "qubit_pi_freq": tuner.QUBIT_FREQ,
+        "qubit_drag_beta": 0.0,
+    }
+
+    def confirmed(read_length, sigma, gain, block_fidelities):
+        block_fidelities = np.asarray(block_fidelities, dtype=float)
+        block_ses = np.full(block_fidelities.size, 0.0001, dtype=float)
+        fidelity = float(np.mean(block_fidelities))
+        between = float(np.std(block_fidelities, ddof=1)
+                        / np.sqrt(block_fidelities.size))
+        within = float(np.sqrt(np.sum(block_ses ** 2))
+                       / block_fidelities.size)
+        fidelity_se = max(between, within)
+        row = _latency_candidate(
+            read_length, sigma, fidelity, fidelity_se,
+            qubit_pi_gain=gain, **common)
+        row.update({
+            "block_fidelities": block_fidelities,
+            "block_fidelity_ses": block_ses,
+            "block_spread": float(np.ptp(block_fidelities)),
+            "confirmation_blocks": int(block_fidelities.size),
+            "confirmation_batch_complete": True,
+            "fidelity_lcb_95": fidelity - 1.96 * fidelity_se,
+        })
+        return row
+
+    # The anchor and fast arm share stable blocks, so their 0.6-point loss is
+    # certifiable.  The 93.9% middle arm has a lower LCB than the anchor but a large
+    # paired fluctuation; it is therefore the worst simultaneous reference for the
+    # fast arm despite not being the descriptive best-fidelity anchor.
+    anchor = confirmed(20.0, 0.25, 5790, [0.940, 0.940, 0.940])
+    blocker = confirmed(12.0, 0.20, 7238, [0.948, 0.930, 0.939])
+    fast = confirmed(4.0, 0.10, 14475, [0.934, 0.934, 0.934])
+    tuner.synthetic_confirmations = [anchor, blocker, fast]
+    tuner.blocker_key = T._candidate_key(blocker)
+    tuner.working = {key: anchor[key] for key in tuner.initial}
+    return folder, tuner, anchor, blocker, fast
+
+
+def test_incoherent_simultaneous_blocker_is_audited_removed_then_fast_qualifies():
+    folder, tuner, anchor, blocker, fast = (
+        _simultaneous_blocker_latency_fixture(False))
+    try:
+        selected = tuner._stage_latency_selection(anchor)
+    finally:
+        folder.cleanup()
+
+    assert T._candidate_key(anchor) in tuner.control_attempts
+    assert T._candidate_key(blocker) in tuner.control_attempts
+    assert T._candidate_key(selected) == T._candidate_key(fast)
+    selected_diagnostic = next(
+        row for row in tuner.data["latency_optimization"]["diagnostics"]
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(fast))
+    assert selected_diagnostic["accepted"] is True
+    assert all(
+        tuple(row.get("reference_key") or ()) != T._candidate_key(blocker)
+        for row in selected_diagnostic["pairwise_loss_bounds"])
+    assert tuner.data["latency_optimization"]["latency_certificate_valid"] is True
+
+
+def test_coherent_simultaneous_blocker_remains_and_prevents_certification():
+    folder, tuner, anchor, blocker, fast = (
+        _simultaneous_blocker_latency_fixture(True))
+    try:
+        selected = tuner._stage_latency_selection(anchor)
+    finally:
+        folder.cleanup()
+
+    assert T._candidate_key(blocker) in tuner.control_attempts
+    assert T._candidate_key(selected) == T._candidate_key(anchor)
+    fast_diagnostic = next(
+        row for row in tuner.data["latency_optimization"]["diagnostics"]
+        if tuple(row.get("candidate_key") or ()) == T._candidate_key(fast))
+    assert fast_diagnostic["accepted"] is False
+    assert tuple(fast_diagnostic["worst_case_reference_key"]) == (
+        T._candidate_key(blocker))
+    assert fast_diagnostic["loss_ucb"] > tuner.params["latency"][
+        "max_fidelity_loss"]
+    assert tuner.data["latency_optimization"]["latency_certificate_valid"] is False
+
+
+def test_final_tuple_mismatch_invalidates_latency_certificate():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=FAST_PARAMS,
+        )
+        certified = _latency_candidate(
+            8.0, 0.10, 0.930, 0.001,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_freq=tuner.QUBIT_FREQ,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=14475,
+            qubit_drag_beta=0.0,
+        )
+        final = T._with_candidate(certified, read_length=10.0)
+        final["label"] = "final exact changed-after-latency replay"
+        tuner.data["latency_optimization"].update({
+            "status": "selected",
+            "reference_latency_us": 21.0,
+            "selected": copy.deepcopy(certified),
+            "certified_selected": copy.deepcopy(certified),
+            "certified_selected_key": list(T._candidate_key(certified)),
+            "latency_certificate_valid": True,
+            "qualified_speedup": True,
+            "latency_saved_us": 12.0,
+            "latency_reduction_fraction": 12.0 / 21.0,
+        })
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "latency_unconstrained"
+        tuner._finalize(final)
+
+    timing = tuner.data["latency_optimization"]
+    assert timing["certificate_matches_final_tuple"] is False
+    assert timing["latency_certificate_valid"] is False
+    assert timing["status"] == "invalidated_final_tuple_changed"
+    assert timing["status_before_invalidation"] == "selected"
+    assert timing["qualified_speedup"] is False
+    assert timing["latency_saved_us"] == 0.0
+    assert timing["latency_reduction_fraction"] == 0.0
+    assert T._candidate_key(timing["final_selected"]) == T._candidate_key(final)
+    assert T._candidate_key(timing["certified_selected"]) == (
+        T._candidate_key(certified))
+
+
+def test_uncertain_timing_reference_cannot_be_promoted_by_control_or_finalize():
+    class PassingControlTuner(VirtualBasicAutoTuner):
+        def _stage_final_control_verify(self, candidate):
+            self._final_control_verified_key = T._control_key(candidate)
+            return {
+                "verified": True,
+                "control_key": T._control_key(candidate),
+                "candidate_key": T._candidate_key(candidate),
+            }
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = PassingControlTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        reference = tuner._annotate_candidate_latency(_latency_candidate(
+            20.0, 0.25, 0.930, 0.001,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_freq=tuner.QUBIT_FREQ,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=5790,
+            qubit_drag_beta=0.0,
+        ))
+        key = T._candidate_key(reference)
+        tuner._maps["latency"] = {"confirmations": [reference]}
+        tuner.data["latency_optimization"].update({
+            "status": "retained_reference_timing_uncertain",
+            "reference": copy.deepcopy(reference),
+            "selected": copy.deepcopy(reference),
+            "certified_selected": copy.deepcopy(reference),
+            "certified_selected_key": list(key),
+            "latency_certificate_valid": False,
+            "qualified_speedup": False,
+            "reference_latency_us": tuner._candidate_latency_us(reference),
+            "selected_latency_us": tuner._candidate_latency_us(reference),
+            "max_fidelity_loss": params["latency"]["max_fidelity_loss"],
+            "diagnostics": [{
+                "candidate_key": list(key),
+                "accepted": False,
+                "loss_ucb": 0.02,
+            }],
+        })
+        tuner.working = {name: reference[name] for name in tuner.initial}
+
+        chosen = tuner._stage_latency_control_screen()
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "latency_unconstrained"
+        tuner._finalize(chosen)
+
+    timing = tuner.data["latency_optimization"]
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert timing["certificate_matches_final_tuple"] is False
+    assert ("timing_uncertain" in timing["status"]
+            or timing["status"].startswith("invalidated_"))
+
+
+def test_final_latency_certificate_cannot_hide_more_loss_than_its_budget():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        certified = tuner._annotate_candidate_latency(_latency_candidate(
+            8.0, 0.10, 0.930, 0.001,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_freq=tuner.QUBIT_FREQ,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=14475,
+            qubit_drag_beta=0.0,
+        ))
+        final = copy.deepcopy(certified)
+        final.update({
+            "fidelity": 0.915,
+            "fidelity_se": 0.001,
+            "fidelity_lcb_95": 0.915 - 1.96 * 0.001,
+            "block_fidelities": np.asarray([0.915, 0.915, 0.915]),
+            "block_fidelity_ses": np.asarray([0.001, 0.001, 0.001]),
+            "block_spread": 0.0,
+            "confirmation_blocks": 3,
+            "label": "final exact timing-drift replay",
+        })
+        tuner.data["latency_optimization"].update({
+            "status": "selected",
+            "reference": copy.deepcopy(certified),
+            "reference_latency_us": 21.0,
+            "selected": copy.deepcopy(certified),
+            "certified_selected": copy.deepcopy(certified),
+            "certified_selected_key": list(T._candidate_key(certified)),
+            "latency_certificate_valid": True,
+            "qualified_speedup": True,
+            "max_fidelity_loss": params["latency"]["max_fidelity_loss"],
+            "latency_saved_us": 12.0,
+            "latency_reduction_fraction": 12.0 / 21.0,
+        })
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "latency_unconstrained"
+
+        tuner._finalize(final)
+
+    timing = tuner.data["latency_optimization"]
+    assert certified["fidelity"] - final["fidelity"] > params["latency"][
+        "max_fidelity_loss"]
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert timing["certificate_matches_final_tuple"] is False
+
+
+class _LateTimingRecoveryTuner(VirtualBasicAutoTuner):
+    """Exact-replay seam for a late timing-certificate regression."""
+
+    def __init__(self, *args, fail_reference_replay=False,
+                 reference_replay_fidelity=0.940, **kwargs):
+        self.fail_reference_replay = bool(fail_reference_replay)
+        self.reference_replay_fidelity = float(reference_replay_fidelity)
+        self.reference_replay_candidates = []
+        self.control_audit_candidates = []
+        super().__init__(*args, **kwargs)
+
+    def _stage_final_current_tuple(self, label, replay_kind, log_stage):
+        del log_stage
+        self.reference_replay_candidates.append(copy.deepcopy(self.working))
+        if self.fail_reference_replay:
+            # Match the fail-closed state transition of the production exact-replay
+            # helper: no earlier completion provenance may survive a failed attempt.
+            self._final_replay_completed = False
+            self._final_replay_kind = None
+            raise RuntimeError("synthetic fidelity-reference replay fault")
+        reference = dict(self.working)
+        rows = []
+        for index in range(int(self.params["final"]["blocks"])):
+            fidelity = self.reference_replay_fidelity
+            row = dict(reference)
+            row.update({
+                "fidelity": fidelity,
+                "fidelity_se": 0.001,
+                "crossfit_fidelity": fidelity,
+                "crossfit_fidelity_se": 0.001,
+                "sep_sigma": 4.0,
+                "third_blob_excess_ucb_95": 0.0,
+                "measurement_index": index,
+            })
+            rows.append(row)
+        replay = self._aggregate(reference, rows, str(label))
+        replay["label"] = str(label)
+        self._adopt(replay, "timing_reference_recovery")
+        self.data["final_candidates"] = [replay]
+        self._final_replay_completed = True
+        self._final_replay_kind = str(replay_kind)
+        self.data["final_confirmation_complete"] = True
+        return replay
+
+    def _stage_final_control_verify(self, candidate):
+        self.control_audit_candidates.append(copy.deepcopy(candidate))
+        self._final_control_verified_key = T._control_key(candidate)
+        return {
+            "verified": True,
+            "candidate_key": T._candidate_key(candidate),
+            "control_key": T._control_key(candidate),
+        }
+
+
+def _late_timing_recovery_fixture(fail_reference_replay=False,
+                                  reference_replay_fidelity=0.940):
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["latency"].update({
+        "max_fidelity_loss": 0.010,
+        "max_final_fidelity_drop": 0.010,
+        "minimum_mean_fidelity": 0.90,
+        "minimum_lcb_fidelity": 0.88,
+    })
+    folder = tempfile.TemporaryDirectory()
+    tuner = _LateTimingRecoveryTuner(
+        soc=None, soccfg=None, path="q4", outerFolder=folder.name,
+        cfg=_base_config(), params=params,
+        fail_reference_replay=fail_reference_replay,
+        reference_replay_fidelity=reference_replay_fidelity,
+    )
+    common = {
+        "read_pulse_freq": tuner.READ_FREQ,
+        "read_pulse_gain": tuner.READ_GAIN,
+        "qubit_freq": tuner.QUBIT_FREQ,
+        "qubit_pi_freq": tuner.QUBIT_FREQ,
+        "qubit_drag_beta": 0.0,
+    }
+    reference = _latency_candidate(
+        20.0, 0.25, 0.940, 0.001,
+        qubit_pi_gain=5790, **common)
+    fast = _latency_candidate(
+        8.0, 0.10, 0.935, 0.001,
+        qubit_pi_gain=14475, **common)
+    for row in (reference, fast):
+        row.update({
+            "crossfit_fidelity": row["fidelity"],
+            "crossfit_fidelity_se": row["fidelity_se"],
+            "crossfit_fidelity_lcb_95": row["fidelity_lcb_95"],
+        })
+    degraded_fast = copy.deepcopy(fast)
+    degraded_fast.update({
+        # This remains above the absolute .90/.88 timing floors.  Recovery is
+        # triggered specifically because the independent exact replay lost 1.5
+        # points relative to the certified fast arm, beyond the one-point allowance.
+        "fidelity": 0.920,
+        "fidelity_se": 0.001,
+        "fidelity_lcb_95": 0.920 - 1.96 * 0.001,
+        "crossfit_fidelity": 0.920,
+        "crossfit_fidelity_se": 0.001,
+        "crossfit_fidelity_lcb_95": 0.920 - 1.96 * 0.001,
+        "block_fidelities": np.asarray([0.920, 0.920, 0.920]),
+        "block_fidelity_ses": np.asarray([0.001, 0.001, 0.001]),
+        "block_crossfit_fidelities": np.asarray([0.920, 0.920, 0.920]),
+        "block_crossfit_fidelity_ses": np.asarray([0.001, 0.001, 0.001]),
+        "block_spread": 0.0,
+        "crossfit_block_spread": 0.0,
+        "confirmation_blocks": int(params["final"]["blocks"]),
+        "confirmation_batch_complete": True,
+        "label": "final exact feedback-reset step-5 replay",
+    })
+    tuner.data["latency_optimization"].update({
+        "enabled": True,
+        "status": "selected",
+        "reference": copy.deepcopy(reference),
+        "reference_latency_us": tuner._candidate_latency_us(reference),
+        "selected": copy.deepcopy(fast),
+        "certified_selected": copy.deepcopy(fast),
+        "certified_selected_key": list(T._candidate_key(fast)),
+        "latency_certificate_valid": True,
+        "qualified_speedup": True,
+        "max_fidelity_loss": 0.010,
+        "selected_latency_us": tuner._candidate_latency_us(fast),
+        "latency_saved_us": (
+            tuner._candidate_latency_us(reference)
+            - tuner._candidate_latency_us(fast)),
+    })
+    tuner.working = {key: degraded_fast[key] for key in tuner.initial}
+    tuner._final_replay_completed = True
+    tuner._final_replay_kind = "feedback_validated"
+    # Exercise the ordinary write path under real discovery/control gates, not the
+    # unit-test shortcut in which discovery is disabled.
+    tuner._discovery_guard_active = True
+    tuner._discovery_status.update({
+        "resonator": True,
+        "spectroscopy": True,
+    })
+    return folder, tuner, reference, fast, degraded_fast
+
+
+def test_late_timing_drop_replays_reference_and_preserves_ordinary_write():
+    folder, tuner, reference, fast, degraded_fast = (
+        _late_timing_recovery_fixture(False))
+    try:
+        recovered = tuner._recover_timing_reference_after_failed_final(
+            degraded_fast)
+        # acquire() performs this exact fresh audit immediately after the recovery
+        # hook and before finalization.
+        tuner._stage_final_control_verify(recovered)
+        tuner._finalize(recovered)
+    finally:
+        folder.cleanup()
+
+    timing = tuner.data["latency_optimization"]
+    assert fast["crossfit_fidelity"] - degraded_fast["crossfit_fidelity"] > 0.010
+    assert tuner.reference_replay_candidates
+    assert T._candidate_key(tuner.reference_replay_candidates[-1]) == (
+        T._candidate_key(reference))
+    assert T._candidate_key(recovered) == T._candidate_key(reference)
+    assert T._candidate_key(tuner.data["best_found"]) == T._candidate_key(reference)
+    assert T._candidate_key(tuner.data["best_found"]) != (
+        T._candidate_key(degraded_fast))
+    assert timing["status"] == (
+        "failed_final_timing_guard_retained_fidelity_reference")
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert timing["timing_certificate_was_active"] is False
+    assert timing["final_fidelity_guard_passed"] is True
+    assert tuner.control_audit_candidates
+    assert T._candidate_key(tuner.control_audit_candidates[-1]) == (
+        T._candidate_key(reference))
+    assert tuner.data["control_validation"]["verified_for_write"] is True
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligible_tuned"]
+
+
+def test_failed_late_timing_reference_replay_cannot_write_degraded_fast_arm():
+    folder, tuner, _reference, _fast, degraded_fast = (
+        _late_timing_recovery_fixture(True))
+    try:
+        recovered = tuner._recover_timing_reference_after_failed_final(
+            degraded_fast)
+        tuner._stage_final_control_verify(recovered)
+        tuner._finalize(recovered)
+    finally:
+        folder.cleanup()
+
+    timing = tuner.data["latency_optimization"]
+    assert tuner.reference_replay_candidates
+    assert T._candidate_key(recovered) == T._candidate_key(degraded_fast)
+    assert T._candidate_key(tuner.data["best_found"]) == (
+        T._candidate_key(degraded_fast))
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert timing["final_fidelity_guard_passed"] is False
+    assert tuner.data["final_stable"] is False
+    assert tuner.data["eligible_tuned"] == {}
+
+
+def test_drift_collapsed_reference_recovery_keeps_better_exact_fast_replay():
+    folder, tuner, reference, _fast, degraded_fast = (
+        _late_timing_recovery_fixture(
+            False, reference_replay_fidelity=0.880))
+    try:
+        recovered = tuner._recover_timing_reference_after_failed_final(
+            degraded_fast)
+        tuner._stage_final_control_verify(recovered)
+        tuner._finalize(recovered)
+    finally:
+        folder.cleanup()
+
+    timing = tuner.data["latency_optimization"]
+    recovery = timing["reference_recovery"]
+    assert tuner.reference_replay_candidates
+    assert T._candidate_key(tuner.reference_replay_candidates[-1]) == (
+        T._candidate_key(reference))
+    assert recovery["attempted"] is True
+    assert recovery["passed"] is True
+    assert recovery["adopted"] is False
+    assert T._candidate_key(recovery["original_final"]) == (
+        T._candidate_key(degraded_fast))
+    assert T._candidate_key(recovery["recovered_reference"]) == (
+        T._candidate_key(reference))
+    assert recovery["original_rank"] > recovery["recovered_rank"]
+    assert recovery["comparison_estimator"].startswith("two_fold_crossfit")
+    assert recovery["reason"]
+    assert T._candidate_key(recovered) == T._candidate_key(degraded_fast)
+    assert T._candidate_key(tuner.data["best_found"]) == (
+        T._candidate_key(degraded_fast))
+    assert tuner.data["best_found"]["crossfit_fidelity"] > 0.880
+    assert timing["status"] == (
+        "failed_final_timing_guard_retained_exact_final")
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligible_tuned"]
+
+
+def test_retained_reference_guard_failure_demotes_exact_tuple_without_abort():
+    folder, tuner, _reference, fast, degraded_fast = (
+        _late_timing_recovery_fixture(False))
+    try:
+        timing = tuner.data["latency_optimization"]
+        timing.update({
+            "status": "retained_reference_no_qualified_candidate",
+            "reference": copy.deepcopy(fast),
+            "selected": copy.deepcopy(fast),
+            "certified_selected": copy.deepcopy(fast),
+            "certified_selected_key": list(T._candidate_key(fast)),
+            "latency_certificate_valid": True,
+            "qualified_speedup": False,
+        })
+        recovered = tuner._recover_timing_reference_after_failed_final(
+            degraded_fast)
+        tuner._stage_final_control_verify(recovered)
+        tuner._finalize(recovered)
+    finally:
+        folder.cleanup()
+
+    timing = tuner.data["latency_optimization"]
+    recovery = timing["reference_recovery"]
+    assert tuner.reference_replay_candidates == []
+    assert T._candidate_key(recovered) == T._candidate_key(degraded_fast)
+    assert timing["status"] == (
+        "failed_final_timing_guard_retained_exact_final")
+    assert timing["latency_certificate_valid"] is False
+    assert timing["qualified_speedup"] is False
+    assert recovery["attempted"] is False
+    assert recovery["passed"] is False
+    assert recovery["adopted"] is False
+    assert "reference" in recovery["reason"]
+    assert tuner.data["latency_optimization"][
+        "final_fidelity_guard_passed"] is True
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligible_tuned"]
+
+
+def test_constrained_reference_recovery_marks_final_leakage_replay_complete():
+    class ConstrainedRecoveryTuner(_LateTimingRecoveryTuner):
+        def _stage_operational_leakage_verify(self, allow_fallback=True):
+            del allow_fallback
+            self._leakage_verified_candidate_key = T._candidate_key(self.working)
+            self.data["leakage"].update({
+                "verified": True,
+                "selection_safe": True,
+                "verified_candidate_key": list(
+                    self._leakage_verified_candidate_key),
+            })
+            return True
+
+        def _stage_final_constrained(self):
+            return self._stage_final_current_tuple(
+                "final exact leakage-screened step-5 replay",
+                "leakage_constrained", "final_safe")
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["leakage"] = {
+        "enabled": False,
+        "operational_enabled": True,
+        "required_for_write": True,
+    }
+    folder = tempfile.TemporaryDirectory()
+    try:
+        tuner = ConstrainedRecoveryTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder.name,
+            cfg=_base_config(), params=params,
+        )
+        common = {
+            "read_pulse_freq": tuner.READ_FREQ,
+            "read_pulse_gain": tuner.READ_GAIN,
+            "qubit_freq": tuner.QUBIT_FREQ,
+            "qubit_pi_freq": tuner.QUBIT_FREQ,
+            "qubit_drag_beta": 0.0,
+        }
+        reference = _latency_candidate(
+            20.0, 0.25, 0.940, 0.001,
+            qubit_pi_gain=5790, **common)
+        fast = _latency_candidate(
+            8.0, 0.10, 0.935, 0.001,
+            qubit_pi_gain=14475, **common)
+        degraded_fast = copy.deepcopy(fast)
+        degraded_fast.update({
+            "fidelity": 0.920,
+            "fidelity_se": 0.001,
+            "fidelity_lcb_95": 0.920 - 1.96 * 0.001,
+            "crossfit_fidelity": 0.920,
+            "crossfit_fidelity_se": 0.001,
+            "crossfit_fidelity_lcb_95": 0.920 - 1.96 * 0.001,
+            "label": "final exact leakage-screened step-5 replay",
+        })
+        fast.update({
+            "crossfit_fidelity": 0.935,
+            "crossfit_fidelity_se": 0.001,
+            "crossfit_fidelity_lcb_95": 0.935 - 1.96 * 0.001,
+        })
+        tuner.data["latency_optimization"].update({
+            "enabled": True,
+            "status": "selected",
+            "reference": copy.deepcopy(reference),
+            "selected": copy.deepcopy(fast),
+            "certified_selected": copy.deepcopy(fast),
+            "certified_selected_key": list(T._candidate_key(fast)),
+            "latency_certificate_valid": True,
+            "qualified_speedup": True,
+            "max_fidelity_loss": 0.010,
+        })
+        tuner.working = {key: degraded_fast[key] for key in tuner.initial}
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "leakage_constrained"
+        tuner.data["leakage"]["final_replay_complete"] = False
+
+        recovered = tuner._recover_timing_reference_after_failed_final(
+            degraded_fast)
+    finally:
+        folder.cleanup()
+
+    assert T._candidate_key(recovered) == T._candidate_key(reference)
+    assert tuner.data["leakage"]["verified"] is True
+    assert tuner.data["leakage"]["final_replay_complete"] is True
+    assert tuner._final_replay_kind == "leakage_constrained"
+
+
+def test_not_run_latency_uses_the_ordinary_exact_final_write_policy():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        candidate = dict(tuner.working)
+        candidate["read_pulse_freq"] += 0.10
+        blocks = []
+        for index in range(params["final"]["blocks"]):
+            row = dict(candidate)
+            row.update({
+                "fidelity": 0.895,
+                "fidelity_se": 0.002,
+                "sep_sigma": 3.0,
+                "third_blob_excess_ucb_95": 0.01,
+                "measurement_index": index,
+            })
+            blocks.append(row)
+        final = T.BasicAutoTuner._aggregate(
+            candidate, blocks, "final exact ordinary-fidelity fallback")
+        assert final["fidelity"] < params["latency"][
+            "minimum_mean_fidelity"]
+        assert final["fidelity_lcb_95"] > params["final"].get(
+            "minimum_write_fidelity_lcb", 0.60)
+        tuner.data["latency_optimization"]["status"] = "not_run"
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+
+        tuner._finalize(final)
+
+    assert tuner.data["latency_optimization"].get(
+        "latency_certificate_valid", False) is False
+    assert tuner.data["eligibility"]["latency_final_fidelity_guard"] is True
+    assert tuner.data["final_stable"] is True
+    assert tuner.data["eligible_tuned"] == {
+        "read_pulse_freq": candidate["read_pulse_freq"],
+    }
+
+
+def test_direct_leakage_verify_recalibrates_ef_for_final_latency_control():
+    class FreshEfCalibrationTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.ef_calibration_calls = []
+            self.leakage_measurement_calibrations = []
+            super().__init__(*args, **kwargs)
+
+        def _calibrate_ef_transition(self, candidate):
+            key = T._control_key(candidate)
+            self.ef_calibration_calls.append(key)
+            return {
+                "control_key": key,
+                "ef_frequency": float(candidate["qubit_pi_freq"]) - 200.0,
+                "ef_gain": 9000,
+                "ge_reference_gain": 4000,
+                "anharmonicity_mhz": -200.0,
+            }
+
+        def _measure_leakage_candidate(self, candidate, ef_calibration, shots,
+                                       reference_shots, label):
+            del shots, reference_shots, label
+            assert tuple(ef_calibration["control_key"]) == T._control_key(candidate)
+            self.leakage_measurement_calibrations.append(
+                tuple(ef_calibration["control_key"]))
+            row = dict(candidate)
+            row.update({
+                "valid": True,
+                "leakage_safe": True,
+                "single_p2_ucb": 0.005,
+                "amplified_p2_ucb": 0.010,
+                "third_blob_excess_ucb": 0.010,
+            })
+            return row
+
+    cfg = _base_config()
+    cfg["qubit_anharmonicity_mhz"] = -200.0
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": True,
+        "operational_enabled": False,
+        "verify_blocks": 2,
+        "verify_shots": 31,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FreshEfCalibrationTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params,
+        )
+        final_latency_control = T._with_candidate(
+            tuner.working,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=14475,
+            sigma=0.10,
+            qubit_drag_beta=0.0,
+        )
+        stale_control = T._with_candidate(
+            final_latency_control, qubit_pi_gain=5790, sigma=0.25)
+        tuner._leakage_ef_calibration = {
+            "control_key": T._control_key(stale_control),
+            "ef_frequency": tuner.QUBIT_FREQ - 199.0,
+            "ef_gain": 8000,
+        }
+        tuner.working = dict(final_latency_control)
+
+        passed = tuner._stage_leakage_verify()
+
+    final_key = T._control_key(final_latency_control)
+    assert passed is True
+    assert tuner.ef_calibration_calls == [final_key]
+    assert tuner.leakage_measurement_calibrations == [final_key, final_key]
+    assert tuple(tuner._leakage_ef_calibration["control_key"]) == final_key
+    assert tuner._leakage_verified_candidate_key == T._candidate_key(
+        final_latency_control)
+    assert tuner.data["leakage"]["verified"] is True
+    assert tuner.data["leakage"]["verification_errors"] == []
+
+
 def test_single_shot_feedback_buffers_return_only_the_final_readout():
     """Three reset reads per shot must never leak into the step-5 histograms."""
     program = object.__new__(T.SingleShotProgram)
@@ -1917,6 +4050,19 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
             == tuple(data["control_validation"]["selected_control_key"]))
     assert any(row["name"] == "final_control_verify" and row["status"] == "ok"
                for row in data["stages"])
+    stage_order = [row["name"] for row in data["stages"]]
+    ordered_safety_closure = [
+        "operational_leakage",
+        "latency_reference",
+        "latency",
+        "latency_control_screen",
+        "operational_leakage_verify",
+        "final_safe",
+        "final_control_verify",
+    ]
+    assert all(name in stage_order for name in ordered_safety_closure)
+    assert [stage_order.index(name) for name in ordered_safety_closure] == sorted(
+        stage_order.index(name) for name in ordered_safety_closure)
 
     # The exact input replay is intentionally near random, but every later stage still ran.
     baseline = [row for row in data["confirmed_candidates"]
@@ -2267,7 +4413,8 @@ def test_failed_leakage_calibration_retains_the_validated_unconstrained_result()
     assert tuner.final_safe_called is False
     assert result["best_found"]["fidelity"] > 0.90
     assert result["best_found"]["label"].startswith("final exact")
-    assert result["eligibility"]["final_replay_kind"] == "unconstrained"
+    assert result["eligibility"]["final_replay_kind"] in (
+        "unconstrained", "latency_unconstrained")
     assert result["leakage_verified"] is False
     assert result["final_stable"] is False
     assert result["eligible_tuned"] == {}
@@ -2295,6 +4442,10 @@ def test_failed_operational_screen_preserves_the_unconstrained_fidelity_replay()
             result = tuner.acquire()["data"]
     assert result["best_found"]["label"].startswith("final exact")
     assert result["best_found"]["fidelity"] > 0.90
+    # Safety-constrained runs now postpone latency selection until a safe control
+    # family exists.  A failed screen therefore retains the ordinary fidelity replay
+    # without fabricating a timing tradeoff from unscreened controls.
+    assert result["latency_optimization"]["status"] == "not_run"
     assert result["best_fidelity_replay"]["fidelity"] == (
         result["best_found"]["fidelity"])
     assert result["fidelity_replay_stable"] is True
@@ -2706,6 +4857,15 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "interrupted": False,
         "final_stable": True,
         "fidelity_replay_stable": True,
+        "latency_optimization": {
+            "enabled": True,
+            "status": "not_run",
+            "latency_certificate_valid": False,
+            "qualified_speedup": False,
+            "timing_certificate_was_active": False,
+            "final_fidelity_guard_passed": True,
+            "certificate_matches_final_tuple": False,
+        },
         "leakage": {
             "active": True, "strict_direct_active": False,
             "operational_active": True, "required_for_write": True,
@@ -2754,11 +4914,232 @@ def test_runner_main_never_writes_a_guard_rejected_result():
             "changed_keys": ["qubit_pi_gain"], "write_needed": True,
             "leakage_required": True, "leakage_verified": True,
             "leakage_tuple_match": True,
+            "latency_final_fidelity_guard": True,
             "final_replay_kind": "leakage_constrained",
         },
     }
     assert runner._write_contract_errors(
         base_result, base_result["eligible_tuned"], _base_config()) == []
+
+    # A real timing certificate is substantially stronger than the ordinary
+    # ``not_run`` fallback above: it contains finite-block Student-t multiplicity,
+    # complete two-fold cross-fit blocks for every feasible arm, and an exact tuple
+    # match at the final destructive boundary.  Keep one fully valid fixture here so
+    # future guard hardening cannot accidentally make every timing result unwritable.
+    timing_result = copy.deepcopy(base_result)
+    timing_result.update({
+        "revision": T.BASIC_AUTOTUNER_REVISION,
+        "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
+    })
+    assert T.BASIC_AUTOTUNER_REVISION == "manual-workflow-v13"
+    timing_best = timing_result["best_found"]
+    timing_blocks = 8
+    timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
+    timing_pairing_ids = ["fixture-timing-block-%d" % index
+                          for index in range(timing_blocks)]
+    timing_best.update({
+        "confirmation_blocks": timing_blocks,
+        "block_fidelities": [0.950] * timing_blocks,
+        "block_fidelity_ses": [0.001] * timing_blocks,
+        "block_spread": 0.0,
+        "crossfit_fidelity": 0.950,
+        "crossfit_fidelity_se": timing_crossfit_se,
+        "crossfit_fidelity_lcb_95": 0.950 - 1.96 * timing_crossfit_se,
+        "block_crossfit_fidelities": [0.950] * timing_blocks,
+        "block_crossfit_fidelity_ses": [0.001] * timing_blocks,
+        "block_pairing_ids": list(timing_pairing_ids),
+        "crossfit_block_spread": 0.0,
+        "fidelity_estimator_for_latency": "two_fold_crossfit",
+    })
+    timing_reference = copy.deepcopy(timing_best)
+    timing_reference.update({
+        "read_length": 20.0,
+        "sigma": 0.25,
+        "qubit_pi_gain": 5790,
+        "fidelity": 0.954,
+        "fidelity_se": 0.001,
+        "fidelity_lcb_95": 0.954 - 1.96 * 0.001,
+        "block_fidelities": [0.954] * timing_blocks,
+        "crossfit_fidelity": 0.954,
+        "crossfit_fidelity_se": timing_crossfit_se,
+        "crossfit_fidelity_lcb_95": 0.954 - 1.96 * timing_crossfit_se,
+        "block_crossfit_fidelities": [0.954] * timing_blocks,
+    })
+    family_count = 2 * (2 - 1) * (
+        1 + int(runner.P_BASIC["latency"]["adaptive_confirmation_rounds"]))
+    family_alpha = float(runner.P_BASIC["latency"]["familywise_alpha"])
+    family_df = timing_blocks - 1
+    family_z = max(
+        float(runner.P_BASIC["latency"]["confidence_sigma"]),
+        float(ndtri(1.0 - family_alpha / family_count)),
+        float(runner.student_t.ppf(
+            1.0 - family_alpha / family_count, family_df)),
+    )
+    selected_loss = T.BasicAutoTuner._latency_noninferiority(
+        timing_reference, timing_best,
+        runner.P_BASIC["latency"]["max_fidelity_loss"], family_z)
+    timing_best_key = T._candidate_key(timing_best)
+    timing_reference_key = T._candidate_key(timing_reference)
+    timing_result["maps"]["latency"] = {
+        "confirmations": [
+            copy.deepcopy(timing_reference), copy.deepcopy(timing_best)],
+        "infeasible_reference_keys": [],
+    }
+    timing_result["latency_optimization"] = {
+        "enabled": True,
+        "status": "selected",
+        "reference": copy.deepcopy(timing_reference),
+        "selected": copy.deepcopy(timing_best),
+        "certified_selected": copy.deepcopy(timing_best),
+        "certified_selected_key": list(timing_best_key),
+        "latency_certificate_valid": True,
+        "qualified_speedup": True,
+        "timing_certificate_was_active": True,
+        "certificate_matches_final_tuple": True,
+        "final_fidelity_guard_passed": True,
+        "max_fidelity_loss": float(
+            runner.P_BASIC["latency"]["max_fidelity_loss"]),
+        "max_final_fidelity_drop": float(min(
+            runner.P_BASIC["latency"]["max_final_fidelity_drop"],
+            runner.P_BASIC["latency"]["max_fidelity_loss"])),
+        "familywise_comparison_count": family_count,
+        "familywise_confidence_sigma": family_z,
+        "familywise_distribution": "student_t",
+        "familywise_degrees_of_freedom": family_df,
+        "reference_latency_us": T.BasicAutoTuner._candidate_latency_us(
+            timing_reference),
+        "selected_latency_us": T.BasicAutoTuner._candidate_latency_us(
+            timing_best),
+        "latency_saved_us": (
+            T.BasicAutoTuner._candidate_latency_us(timing_reference)
+            - T.BasicAutoTuner._candidate_latency_us(timing_best)),
+        "diagnostics": [{
+            "candidate_key": list(timing_reference_key),
+            "accepted": True,
+            "loss_ucb": 0.0,
+        }, {
+            "candidate_key": list(timing_best_key),
+            "accepted": True,
+            "loss_ucb": float(selected_loss["loss_ucb"]),
+        }],
+        "infeasible_reference_keys": [],
+        "anchor_control_audits": [],
+        "anchor_safety_audits": [],
+    }
+    assert selected_loss["eligible"] is True
+    assert runner._write_contract_errors(
+        timing_result, timing_result["eligible_tuned"], _base_config()) == []
+
+    forged_normal_z = copy.deepcopy(timing_result)
+    forged_normal_z["latency_optimization"][
+        "familywise_confidence_sigma"] = max(
+            float(runner.P_BASIC["latency"]["confidence_sigma"]),
+            float(ndtri(1.0 - family_alpha / family_count)))
+    normal_z_errors = runner._write_contract_errors(
+        forged_normal_z, forged_normal_z["eligible_tuned"], _base_config())
+    assert any("confidence multiplier is too small" in error
+               for error in normal_z_errors)
+
+    forged_missing_crossfit = copy.deepcopy(timing_result)
+    del forged_missing_crossfit["maps"]["latency"]["confirmations"][0][
+        "block_crossfit_fidelities"]
+    crossfit_errors = runner._write_contract_errors(
+        forged_missing_crossfit,
+        forged_missing_crossfit["eligible_tuned"], _base_config())
+    assert any("lacks complete cross-fit blocks" in error
+               for error in crossfit_errors)
+
+    forged_cross_cohort = copy.deepcopy(timing_result)
+    forged_cross_cohort["maps"]["latency"]["confirmations"][0][
+        "block_pairing_ids"] = ["different-drift-window-%d" % index
+                                for index in range(timing_blocks)]
+    cohort_errors = runner._write_contract_errors(
+        forged_cross_cohort,
+        forged_cross_cohort["eligible_tuned"], _base_config())
+    assert any("common interleaved drift cohort" in error
+               for error in cohort_errors)
+
+    forged_weak_recovery = copy.deepcopy(base_result)
+    recovered_reference = copy.deepcopy(forged_weak_recovery["best_found"])
+    displaced_exact_final = copy.deepcopy(recovered_reference)
+    displaced_exact_final.update({
+        "read_length": 8.0,
+        "fidelity": 0.960,
+        "fidelity_se": 0.004,
+        "fidelity_lcb_95": 0.960 - 1.96 * 0.004,
+        "block_fidelities": [0.960, 0.960, 0.960],
+        "block_spread": 0.0,
+        "label": "final exact feedback-reset step-5 replay",
+    })
+    certified_fast = copy.deepcopy(displaced_exact_final)
+    certified_fast.update({
+        "fidelity": 0.975,
+        "fidelity_se": 0.002,
+        "fidelity_lcb_95": 0.975 - 1.96 * 0.002,
+        "block_fidelities": [0.975, 0.975, 0.975],
+    })
+    forged_weak_recovery["latency_optimization"] = {
+        "enabled": True,
+        "status": "failed_final_timing_guard_retained_fidelity_reference",
+        "reference": copy.deepcopy(recovered_reference),
+        "selected": copy.deepcopy(recovered_reference),
+        "certified_selected": copy.deepcopy(certified_fast),
+        "certified_selected_key": list(T._candidate_key(certified_fast)),
+        "latency_certificate_valid": False,
+        "qualified_speedup": False,
+        "timing_certificate_was_active": False,
+        "certificate_matches_final_tuple": False,
+        "final_fidelity_guard_passed": True,
+        "late_final_guard_probe": {
+            "passed": False,
+            "candidate_key": list(T._candidate_key(displaced_exact_final)),
+            "certified_candidate_key": list(T._candidate_key(certified_fast)),
+            "final_timing_fidelity": displaced_exact_final["fidelity"],
+            "certified_timing_fidelity": certified_fast["fidelity"],
+            "maximum_drop": float(
+                runner.P_BASIC["latency"]["max_final_fidelity_drop"]),
+            "estimator": "legacy_resubstitution",
+        },
+        # Internally explicit but physically backwards: this claims that a weaker
+        # recovered reference displaced a better complete exact replay.
+        "reference_recovery": {
+            "attempted": True,
+            "passed": True,
+            "adopted": True,
+            "original_final": copy.deepcopy(displaced_exact_final),
+            "recovered_reference": copy.deepcopy(recovered_reference),
+            "selected_candidate_key": list(
+                T._candidate_key(recovered_reference)),
+            "original_rank": [
+                displaced_exact_final["fidelity_lcb_95"],
+                displaced_exact_final["fidelity"],
+            ],
+            "recovered_rank": [
+                recovered_reference["fidelity_lcb_95"],
+                recovered_reference["fidelity"],
+            ],
+            "comparison_estimator": (
+                "legacy_resubstitution_lcb_then_mean"),
+            "reason": "forged weaker reference adoption",
+        },
+    }
+    weak_recovery_errors = runner._write_contract_errors(
+        forged_weak_recovery,
+        forged_weak_recovery["eligible_tuned"], _base_config())
+    assert any("recovery" in error or "weaker" in error
+               for error in weak_recovery_errors)
+
+    forged_crossfit_summary = copy.deepcopy(timing_result)
+    forged_crossfit_summary["maps"]["latency"]["confirmations"][0].update({
+        "crossfit_fidelity_se": 0.0,
+        "crossfit_fidelity_lcb_95": 0.954,
+    })
+    summary_errors = runner._write_contract_errors(
+        forged_crossfit_summary,
+        forged_crossfit_summary["eligible_tuned"], _base_config())
+    assert any("cross-fit timing-block summary is inconsistent" in error
+               for error in summary_errors)
+
     current["result"] = copy.deepcopy(base_result)
     updater.allow_update = True
     with redirect_stdout(io.StringIO()):
@@ -2824,6 +5205,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
     stale_leakage = copy.deepcopy(base_result)
     stale_leakage["leakage"]["verified_candidate_key"] = [0] * 7
     rejected.append(stale_leakage)
+    rejected.append(forged_weak_recovery)
 
     with redirect_stdout(io.StringIO()):
         for result in rejected:
@@ -3164,6 +5546,41 @@ def main():
         test_statistical_fidelity_tie_prefers_longer_lower_power_gaussian,
         test_operational_shortlist_cannot_be_filled_by_one_duration,
         test_readout_tie_prefers_lower_power_duration_exposure,
+        test_candidate_latency_is_read_length_plus_four_gaussian_sigmas,
+        test_latency_noninferiority_rejects_low_fidelity_and_uncertainty,
+        test_latency_noninferiority_uses_crossfit_not_optimistic_step5_fidelity,
+        test_latency_selector_rejects_one_us_sixty_percent_candidate,
+        test_latency_selector_rejects_an_uncertain_fast_contender,
+        test_latency_selector_is_deterministic_on_equal_latency,
+        test_latency_selector_fails_closed_on_invalid_coordinates,
+        test_latency_frontier_preserves_fast_candidate_beyond_fidelity_top_k,
+        test_latency_frontier_densely_preserves_the_short_boundary,
+        test_uncertainty_tied_joint_corner_survives_marginal_coarse_winners,
+        test_latency_search_expands_to_later_frontier_after_early_arms_fail,
+        test_integrated_latency_stage_selects_joint_fast_plateau_tuple,
+        test_incomplete_latency_confirmation_preserves_reference_replay,
+        test_paired_latency_noninferiority_uses_round_robin_block_evidence,
+        test_latency_drift_bound_accounts_for_estimating_variance_from_eight_blocks,
+        test_exact_epsilon_loss_is_accepted_against_max_safe_fidelity,
+        test_latency_stage_retries_transient_measurement_and_evidence_failures,
+        test_latency_control_screen_falls_through_to_next_coherent_tuple,
+        test_retained_reference_control_screen_cannot_choose_a_slower_tuple,
+        test_binding_unsafe_reference_is_lazily_removed_before_latency_decision,
+        test_realistic_block_uncertainty_shrinks_across_adaptive_rounds,
+        test_adaptive_latency_evidence_moves_unresolved_candidate_to_accepted,
+        test_incomplete_optional_adaptive_round_preserves_initial_complete_result,
+        test_incoherent_simultaneous_blocker_is_audited_removed_then_fast_qualifies,
+        test_coherent_simultaneous_blocker_remains_and_prevents_certification,
+        test_final_tuple_mismatch_invalidates_latency_certificate,
+        test_uncertain_timing_reference_cannot_be_promoted_by_control_or_finalize,
+        test_final_latency_certificate_cannot_hide_more_loss_than_its_budget,
+        test_late_timing_drop_replays_reference_and_preserves_ordinary_write,
+        test_failed_late_timing_reference_replay_cannot_write_degraded_fast_arm,
+        test_drift_collapsed_reference_recovery_keeps_better_exact_fast_replay,
+        test_retained_reference_guard_failure_demotes_exact_tuple_without_abort,
+        test_constrained_reference_recovery_marks_final_leakage_replay_complete,
+        test_not_run_latency_uses_the_ordinary_exact_final_write_policy,
+        test_direct_leakage_verify_recalibrates_ef_for_final_latency_control,
         test_single_shot_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_declares_its_frozen_reset_waveform,

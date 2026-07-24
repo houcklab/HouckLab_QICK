@@ -9,6 +9,9 @@ still save and report their best measurement without modifying ``BaseConfig``.
 import copy
 import datetime
 import math
+from statistics import NormalDist
+
+from scipy.stats import t as student_t
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import (
     BaseConfig,
@@ -34,6 +37,11 @@ APPLY_CONFIG = True
 # This is a private deep copy so edits made for a run cannot mutate the module defaults
 # or leak into a second experiment in the same Python process.
 P_BASIC = copy.deepcopy(BASIC_DEFAULTS)
+
+# Tests and interactive runners may replace ``BasicAutoTuner`` with an acquisition
+# facade.  Keep the certificate implementation immutable so destructive-boundary
+# validation can never be replaced along with the hardware-facing class.
+_BASIC_AUTOTUNER_CERTIFICATE = BasicAutoTuner
 
 # Discovery is device-independent by default: BASIC_DEFAULTS searches a validated
 # +/-100-MHz prior around the frequencies loaded from initialize.py.  A device runner
@@ -77,7 +85,12 @@ def _number(mapping, keys, default=float("nan")):
 
 
 def _finite(value):
-    return isinstance(value, (int, float)) and math.isfinite(float(value))
+    if isinstance(value, (str, bytes)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 def _rounded_int(value, default=0):
@@ -91,6 +104,72 @@ def _rounded_int(value, default=0):
 
 def _as_tuple(value):
     return tuple(value) if isinstance(value, (list, tuple)) else ()
+
+
+def _candidate_key(candidate):
+    try:
+        return (
+            round(float(candidate["read_pulse_freq"]), 9),
+            int(round(float(candidate["read_pulse_gain"]))),
+            round(float(candidate["read_length"]), 9),
+            round(float(candidate["qubit_pi_freq"]), 9),
+            int(round(float(candidate["qubit_pi_gain"]))),
+            round(float(candidate["sigma"]), 9),
+            round(float(candidate.get("qubit_drag_beta", 0.0)), 9),
+        )
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return ()
+
+
+def _crossfit_timing_evidence_errors(row):
+    """Independently reconstruct one aggregate's held-out timing statistics."""
+    if not isinstance(row, dict):
+        return ["the timing certificate row is malformed"]
+    evidence = _BASIC_AUTOTUNER_CERTIFICATE._latency_fidelity_evidence(row)
+    blocks = _rounded_int(_number(row, ("confirmation_blocks",), 0))
+    fidelities = list(evidence.get("block_fidelities", []))
+    shot_ses = list(evidence.get("block_fidelity_ses", []))
+    if (evidence.get("estimator") != "two_fold_crossfit" or blocks < 2
+            or len(fidelities) != blocks or len(shot_ses) != blocks
+            or not all(_finite(value) and 0.0 <= float(value) <= 1.0
+                       for value in fidelities)
+            or not all(_finite(value) and float(value) >= 0.0
+                       for value in shot_ses)):
+        return ["the timing certificate lacks complete cross-fit blocks"]
+    values = [float(value) for value in fidelities]
+    errors = [float(value) for value in shot_ses]
+    mean = sum(values) / blocks
+    between = math.sqrt(sum((value - mean) ** 2 for value in values)
+                        / (blocks - 1)) / math.sqrt(blocks)
+    within = math.sqrt(sum(value ** 2 for value in errors)) / blocks
+    standard_error = max(between, within)
+    spread = max(values) - min(values)
+    reported_spread = _number(
+        row, ("crossfit_block_spread", "block_spread"))
+    if (not math.isclose(
+                evidence["fidelity"], mean, rel_tol=0.0, abs_tol=1e-9)
+            or not math.isclose(
+                evidence["fidelity_se"], standard_error,
+                rel_tol=0.0, abs_tol=1e-9)
+            or not math.isclose(
+                evidence["fidelity_lcb_95"], mean - 1.96 * standard_error,
+                rel_tol=0.0, abs_tol=1e-9)
+            or not _finite(reported_spread)
+            or not math.isclose(
+                reported_spread, spread, rel_tol=0.0, abs_tol=1e-9)):
+        return ["the cross-fit timing-block summary is inconsistent"]
+    return []
+
+
+def _timing_recovery_rank(row):
+    evidence = _BASIC_AUTOTUNER_CERTIFICATE._latency_fidelity_evidence(row)
+    lcb = _number(evidence, ("fidelity_lcb_95",))
+    mean = _number(evidence, ("fidelity",))
+    if not _finite(lcb):
+        lcb = float("-inf")
+    if not _finite(mean):
+        mean = float("-inf")
+    return (float(lcb), float(mean))
 
 
 def _same_tuned_value(key, first, second):
@@ -304,6 +383,367 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
                     block_spread, derived_spread,
                     rel_tol=0.0, abs_tol=1e-9)):
             errors.append("the final fidelity-block summary is inconsistent")
+
+    # Reconstruct the timing policy from raw evidence.  Do not trust the experiment's
+    # boolean: this is the last boundary before initialize.py is modified.
+    latency_policy = params.get("latency", {})
+    if not isinstance(latency_policy, dict):
+        latency_policy = {}
+    if bool(latency_policy.get("enabled", True)):
+        latency = result.get("latency_optimization")
+        if not isinstance(latency, dict):
+            errors.append("the enabled latency policy has no timing record")
+        else:
+            minimum_latency_mean = _number(
+                latency_policy, ("minimum_mean_fidelity",))
+            minimum_latency_lcb = _number(
+                latency_policy, ("minimum_lcb_fidelity",))
+            maximum_loss = _number(latency_policy, ("max_fidelity_loss",))
+            configured_final_drop = _number(
+                latency_policy, ("max_final_fidelity_drop",))
+            maximum_final_drop = (min(max(configured_final_drop, 0.0),
+                                      max(maximum_loss, 0.0))
+                                  if _finite(configured_final_drop)
+                                  and _finite(maximum_loss) else float("nan"))
+            certified = latency.get("certified_selected")
+            certificate_valid = bool(latency.get(
+                "latency_certificate_valid", False))
+            status = str(latency.get("status", ""))
+            certified_status = bool(
+                status in ("selected", "selected_control_recovery")
+                or (status.startswith("retained_reference")
+                    and status != "retained_reference_timing_uncertain"))
+            fallback_status = bool(
+                status in ("not_run", "retained_reference_timing_uncertain")
+                or status.startswith(("failed_", "not_run_", "invalidated_")))
+            if not (certified_status or fallback_status):
+                errors.append("the timing result has an unknown status")
+            timing_was_active = bool(
+                certified_status or status.startswith("invalidated_"))
+            if (bool(latency.get("timing_certificate_was_active", False))
+                    != timing_was_active):
+                errors.append("the reported timing-certificate activity is inconsistent")
+
+            final_timing = _BASIC_AUTOTUNER_CERTIFICATE._latency_fidelity_evidence(
+                best)
+            certified_timing = _BASIC_AUTOTUNER_CERTIFICATE._latency_fidelity_evidence(
+                certified if isinstance(certified, dict) else best)
+            final_timing_fidelity = _number(final_timing, ("fidelity",))
+            final_timing_se = _number(final_timing, ("fidelity_se",))
+            final_timing_lcb = _number(final_timing, ("fidelity_lcb_95",))
+            certified_fidelity = _number(certified_timing, ("fidelity",))
+            derived_final_guard = bool(
+                not timing_was_active
+                or (all(_finite(value) for value in (
+                        final_timing_fidelity, final_timing_lcb,
+                        minimum_latency_mean, minimum_latency_lcb,
+                        certified_fidelity, maximum_final_drop))
+                    and final_timing_fidelity >= minimum_latency_mean
+                    and final_timing_lcb >= minimum_latency_lcb
+                    and final_timing_fidelity
+                    >= certified_fidelity - maximum_final_drop))
+            if (bool(latency.get("final_fidelity_guard_passed", False))
+                    != derived_final_guard):
+                errors.append("the reported final timing-fidelity guard is inconsistent")
+            if (not isinstance(eligibility, dict)
+                    or bool(eligibility.get(
+                        "latency_final_fidelity_guard", False))
+                    != derived_final_guard):
+                errors.append("the eligibility timing-fidelity guard is inconsistent")
+            if not derived_final_guard:
+                errors.append("the final tuple violates the latency fidelity floors")
+            if (timing_was_active
+                    and (not _finite(final_timing_se)
+                         or final_timing_se < 0.0)):
+                errors.append("the final held-out timing fidelity is incomplete")
+
+            final_key = _candidate_key(best)
+            certified_key = (_candidate_key(certified)
+                             if isinstance(certified, dict) else ())
+            reported_key = _as_tuple(latency.get("certified_selected_key"))
+            exact_certificate_match = bool(
+                certified_status and final_key and certified_key
+                and final_key == certified_key
+                and reported_key == certified_key and derived_final_guard)
+            if (bool(latency.get("certificate_matches_final_tuple", False))
+                    != exact_certificate_match):
+                errors.append("the timing certificate tuple-match verdict is inconsistent")
+            if certified_status and (not _finite(maximum_loss)
+                    or not math.isclose(
+                        _number(latency, ("max_fidelity_loss",)), maximum_loss,
+                        rel_tol=0.0, abs_tol=1e-12)
+                    or not math.isclose(
+                        _number(latency, ("max_final_fidelity_drop",)),
+                        maximum_final_drop, rel_tol=0.0, abs_tol=1e-12)):
+                errors.append("the timing fidelity limits disagree with run policy")
+            if fallback_status and (certificate_valid
+                    or bool(latency.get("qualified_speedup", False))):
+                errors.append("an uncertified timing fallback claims a speedup")
+            recovery_exact_status = (
+                status == "failed_final_timing_guard_retained_exact_final")
+            recovery_reference_status = (
+                status
+                == "failed_final_timing_guard_retained_fidelity_reference")
+            if recovery_exact_status or recovery_reference_status:
+                recovery = latency.get("reference_recovery")
+                probe = latency.get("late_final_guard_probe")
+                selected_after_recovery = latency.get("selected")
+                original = (recovery.get("original_final")
+                            if isinstance(recovery, dict) else None)
+                recovered = (recovery.get("recovered_reference")
+                              if isinstance(recovery, dict) else None)
+                original_key = _candidate_key(original)
+                recovered_key = _candidate_key(recovered)
+                selected_after_key = _candidate_key(selected_after_recovery)
+                recovery_selected_key = _as_tuple(
+                    recovery.get("selected_candidate_key")
+                    if isinstance(recovery, dict) else None)
+                original_rank = _timing_recovery_rank(original)
+                recovered_rank = (_timing_recovery_rank(recovered)
+                                  if isinstance(recovered, dict) else None)
+                reported_original_rank = _as_tuple(
+                    recovery.get("original_rank")
+                    if isinstance(recovery, dict) else None)
+                reported_recovered_rank = _as_tuple(
+                    recovery.get("recovered_rank")
+                    if isinstance(recovery, dict) else None)
+                rank_record_valid = bool(
+                    len(reported_original_rank) == 2
+                    and all(_finite(value) for value in reported_original_rank)
+                    and all(math.isclose(
+                        float(reported_original_rank[index]), original_rank[index],
+                        rel_tol=0.0, abs_tol=1e-9) for index in range(2)))
+                if recovered_rank is not None:
+                    rank_record_valid = bool(
+                        rank_record_valid and len(reported_recovered_rank) == 2
+                        and all(_finite(value)
+                                for value in reported_recovered_rank)
+                        and all(math.isclose(
+                            float(reported_recovered_rank[index]),
+                            recovered_rank[index], rel_tol=0.0, abs_tol=1e-9)
+                            for index in range(2)))
+                else:
+                    rank_record_valid = bool(
+                        rank_record_valid
+                        and recovery.get("recovered_rank") is None)
+                special_common_valid = bool(
+                    isinstance(recovery, dict)
+                    and isinstance(probe, dict)
+                    and probe.get("passed") is False
+                    and recovery.get("comparison_estimator")
+                    == "two_fold_crossfit_lcb_then_mean"
+                    and isinstance(recovery.get("original_stable"), bool)
+                    and original_key and final_key
+                    and not _crossfit_timing_evidence_errors(original)
+                    and rank_record_valid)
+                if recovery_reference_status:
+                    special_valid = bool(
+                        special_common_valid
+                        and recovery.get("attempted") is True
+                        and recovery.get("passed") is True
+                        and recovery.get("adopted") is True
+                        and recovered_key
+                        and not _crossfit_timing_evidence_errors(recovered)
+                        and (recovery.get("original_stable") is False
+                             or recovered_rank > original_rank)
+                        and final_key == recovered_key == selected_after_key
+                        == recovery_selected_key
+                        and _candidate_key(latency.get("reference"))
+                        == recovered_key)
+                else:
+                    no_distinct_reference = bool(
+                        recovery.get("attempted") is False
+                        and recovery.get("passed") is False
+                        and recovered is None
+                        and _candidate_key(latency.get("reference"))
+                        == original_key)
+                    replayed_but_worse = bool(
+                        recovery.get("attempted") is True
+                        and recovery.get("passed") is True
+                        and recovered_key
+                        and not _crossfit_timing_evidence_errors(recovered)
+                        and original_rank >= recovered_rank)
+                    special_valid = bool(
+                        special_common_valid
+                        and recovery.get("original_stable") is True
+                        and recovery.get("adopted") is False
+                        and (no_distinct_reference or replayed_but_worse)
+                        and final_key == original_key == selected_after_key
+                        == recovery_selected_key)
+                if not special_valid:
+                    errors.append(
+                        "the failed timing-reference recovery contract is invalid")
+            if certificate_valid:
+                if not exact_certificate_match:
+                    errors.append("the timing certificate does not identify best_found")
+                reference = latency.get("reference")
+                comparisons = _rounded_int(_number(
+                    latency, ("familywise_comparison_count",), 0))
+                reported_z = _number(
+                    latency, ("familywise_confidence_sigma",))
+                family_alpha = _number(
+                    latency_policy, ("familywise_alpha",), 0.05)
+                base_z = _number(
+                    latency_policy, ("confidence_sigma",), 1.96)
+                if (not isinstance(reference, dict) or comparisons < 1
+                        or not _finite(reported_z) or not _finite(family_alpha)
+                        or not _finite(base_z)
+                        or not 0.0 < family_alpha < 1.0):
+                    errors.append("the familywise timing evidence is incomplete")
+                else:
+                    diagnostics = latency.get("diagnostics", [])
+                    diagnostic_count = len({
+                        _as_tuple(row.get("candidate_key"))
+                        for row in diagnostics if isinstance(row, dict)
+                        and _as_tuple(row.get("candidate_key"))
+                    })
+                    maximum_looks = 1 + max(_rounded_int(_number(
+                        latency_policy, ("adaptive_confirmation_rounds",), 0)), 0)
+                    minimum_comparisons = max(
+                        diagnostic_count * max(diagnostic_count - 1, 0)
+                        * maximum_looks, 1)
+                    if comparisons < minimum_comparisons:
+                        errors.append(
+                            "the timing family omits candidate pairs or adaptive looks")
+                    latency_map = maps.get("latency") if isinstance(maps, dict) else None
+                    confirmations = (latency_map.get("confirmations", [])
+                                     if isinstance(latency_map, dict) else [])
+                    record_rejected = latency.get(
+                        "infeasible_reference_keys",
+                        latency.get("safety_rejected_anchor_keys", []))
+                    rejected_keys = {
+                        _as_tuple(value) for value in record_rejected
+                        if _as_tuple(value)
+                    }
+                    mapped_rejected = {
+                        _as_tuple(value) for value in (
+                            latency_map.get("infeasible_reference_keys",
+                                latency_map.get("safety_rejected_anchor_keys", []))
+                            if isinstance(latency_map, dict) else [])
+                        if _as_tuple(value)
+                    }
+                    if mapped_rejected != rejected_keys:
+                        errors.append(
+                            "the timing record and map disagree on infeasible arms")
+                    failed_audit_keys = {
+                        _as_tuple(row.get("candidate_key"))
+                        for collection in (
+                            latency.get("anchor_control_audits", []),
+                            latency.get("anchor_safety_audits", []))
+                        for row in collection if isinstance(row, dict)
+                        and row.get("passed") is False
+                        and _as_tuple(row.get("candidate_key"))
+                    }
+                    if not rejected_keys.issubset(failed_audit_keys):
+                        errors.append(
+                            "an excluded timing arm lacks a failed physical audit")
+                    reference_rows = [
+                        row for row in confirmations if isinstance(row, dict)
+                        and _candidate_key(row) not in rejected_keys]
+                    reference_blocks = [
+                        _rounded_int(_number(
+                            row, ("confirmation_blocks",), 0))
+                        for row in reference_rows]
+                    pairing_sets = []
+                    for row, block_count in zip(
+                            reference_rows, reference_blocks):
+                        raw_ids = row.get("block_pairing_ids", [])
+                        ids = (tuple(str(value) for value in raw_ids)
+                               if isinstance(raw_ids, (list, tuple)) else ())
+                        if (len(ids) != block_count
+                                or len(set(ids)) != len(ids)):
+                            pairing_sets = []
+                            errors.append(
+                                "the timing arms lack valid shared drift cohorts")
+                            break
+                        pairing_sets.append(set(ids))
+                    common_pairing_count = (len(set.intersection(*pairing_sets))
+                                            if pairing_sets else 0)
+                    if (reference_blocks
+                            and common_pairing_count < min(reference_blocks)):
+                        errors.append(
+                            "the timing arms were not replayed in one common "
+                            "interleaved drift cohort")
+                    derived_df = (min(reference_blocks) - 1
+                                  if reference_blocks else -1)
+                    reported_df = _rounded_int(_number(
+                        latency, ("familywise_degrees_of_freedom",), -1), -1)
+                    if (str(latency.get("familywise_distribution", ""))
+                            != "student_t" or derived_df < 1
+                            or reported_df != derived_df):
+                        errors.append(
+                            "the finite-block timing distribution is inconsistent")
+                    required_z = max(
+                        base_z,
+                        NormalDist().inv_cdf(1.0 - family_alpha / comparisons),
+                        float(student_t.ppf(
+                            1.0 - family_alpha / comparisons,
+                            max(derived_df, 1))))
+                    if reported_z + 1e-12 < required_z:
+                        errors.append("the timing confidence multiplier is too small")
+                    for row in reference_rows + [certified, best]:
+                        row_errors = _crossfit_timing_evidence_errors(row)
+                        if row_errors:
+                            errors.extend(row_errors)
+                            break
+                    pairwise = [_BASIC_AUTOTUNER_CERTIFICATE.
+                                _latency_noninferiority(
+                        row, certified, maximum_loss, reported_z)
+                        for row in reference_rows]
+                    recomputed = (max(pairwise, key=lambda row: float(
+                        row.get("loss_ucb", float("inf")))) if pairwise else {})
+                    diagnostic = next((row for row in diagnostics
+                                       if isinstance(row, dict)
+                                       and _as_tuple(row.get("candidate_key"))
+                                       == certified_key), None)
+                    selected_timing = (_BASIC_AUTOTUNER_CERTIFICATE.
+                                       _latency_fidelity_evidence(certified))
+                    selected_blocks = _rounded_int(_number(
+                        certified, ("confirmation_blocks",), 0))
+                    selected_spread = _number(
+                        certified, ("crossfit_block_spread", "block_spread"))
+                    maximum_timing_spread = _number(
+                        latency_policy, ("max_block_spread",))
+                    selected_simultaneous_lcb = float(
+                        selected_timing["fidelity"]
+                        - reported_z * selected_timing["fidelity_se"])
+                    if (not pairwise
+                            or not all(row.get("eligible", False)
+                                       for row in pairwise)
+                            or not isinstance(diagnostic, dict)
+                            or not bool(diagnostic.get("accepted", False))
+                            or not _finite(_number(diagnostic, ("loss_ucb",)))
+                            or _number(diagnostic, ("loss_ucb",)) > maximum_loss
+                            or not math.isclose(
+                                _number(diagnostic, ("loss_ucb",)),
+                                float(recomputed["loss_ucb"]),
+                                rel_tol=0.0, abs_tol=1e-9)
+                            or selected_timing["fidelity"] < minimum_latency_mean
+                            or selected_simultaneous_lcb < minimum_latency_lcb
+                            or selected_blocks < max(reference_blocks, default=0)
+                            or not _finite(selected_spread)
+                            or not _finite(maximum_timing_spread)
+                            or selected_spread > maximum_timing_spread):
+                        errors.append(
+                            "the selected timing tuple lacks a valid loss certificate")
+            if status in ("selected", "selected_control_recovery"):
+                if (not certificate_valid or not exact_certificate_match
+                        or not bool(latency.get("qualified_speedup", False))):
+                    errors.append("the claimed timing speedup is not certified")
+                reference_latency = _number(
+                    latency, ("reference_latency_us",))
+                selected_latency = _number(
+                    latency, ("selected_latency_us",))
+                if (not _finite(reference_latency) or not _finite(selected_latency)
+                        or selected_latency >= reference_latency):
+                    errors.append("the claimed timing speedup is not physically faster")
+            elif status.startswith("retained_reference"):
+                if (status != "retained_reference_timing_uncertain"
+                        and (not certificate_valid or not exact_certificate_match
+                             or bool(latency.get("qualified_speedup", False)))):
+                    errors.append("the retained timing reference is inconsistent")
+            elif certified_status and not certificate_valid:
+                errors.append("the certified timing status has no valid certificate")
     try:
         expected_control_key = (
             round(float(best["qubit_pi_freq"]), 9),
@@ -486,6 +926,46 @@ def _print_best(result):
         print("   step-5 F  %.4f" % fidelity)
     else:
         print("   step-5 F  n/a")
+    latency = result.get("latency_optimization", {})
+    latency_status = str(latency.get("status", "")) if isinstance(
+        latency, dict) else ""
+    if (isinstance(latency, dict)
+            and (latency_status in ("selected", "selected_control_recovery")
+                 or latency_status.startswith("retained_reference"))):
+        requested_chain = _number(
+            latency, ("final_selected_integration_chain_us",
+                      "integration_chain_us"))
+        physical_chain = _number(
+            latency, ("final_selected_latency_us", "selected_latency_us"))
+        saved = _number(latency, ("latency_saved_us",))
+        budget = _number(latency, ("max_fidelity_loss",))
+        print("   timing     X180 + integration = %s; hardware chain %s"
+              % (_fmt_float(requested_chain, 3, " us"),
+                 _fmt_float(physical_chain, 3, " us")))
+        if (latency_status in ("selected", "selected_control_recovery")
+                and latency.get("latency_certificate_valid", False)
+                and _finite(saved) and _finite(budget)):
+            print("   tradeoff   saved %s versus the best-fidelity reference; "
+                  "certified loss budget %.3f"
+                  % (_fmt_float(saved, 3, " us"), budget))
+        elif latency_status.startswith("retained_reference"):
+            print("   tradeoff   no faster tuple proved the configured fidelity "
+                  "requirement")
+        timing_reference = latency.get("reference")
+        if (latency.get("latency_certificate_valid", False)
+                and isinstance(timing_reference, dict)
+                and _candidate_key(timing_reference) != _candidate_key(best)):
+            reference_step5 = _number(timing_reference, ("fidelity",))
+            reference_crossfit = _number(
+                timing_reference, ("crossfit_fidelity", "fidelity"))
+            selected_crossfit = _number(
+                best, ("crossfit_fidelity", "fidelity"))
+            print("   reference  best held-out fidelity: step-5 %.4f, "
+                  "cross-fit %.4f (selected cross-fit %.4f)"
+                  % (reference_step5, reference_crossfit, selected_crossfit))
+    elif latency_status == "failed_final_timing_guard_retained_fidelity_reference":
+        print("   timing     the faster tuple did not reproduce within the fidelity "
+              "budget; a fresh best-fidelity reference replay was retained")
     if isinstance(leakage, dict) and leakage.get("active", False):
         third = _number(leakage, ("worst_third_blob_excess_ucb",))
         if leakage.get("strict_direct_active", False):
@@ -558,6 +1038,49 @@ def _history_entry(result, eligible, applied, error=None):
     reset = result.get("reset", {})
     if not isinstance(reset, dict):
         reset = {}
+    latency = result.get("latency_optimization", {})
+    if not isinstance(latency, dict):
+        latency = {}
+    compact_latency = {key: latency.get(key) for key in (
+        "enabled", "status", "status_before_invalidation", "reference_kind",
+        "max_fidelity_loss", "familywise_confidence_sigma",
+        "familywise_comparison_count", "familywise_distribution",
+        "familywise_degrees_of_freedom", "confirmation_blocks",
+        "reference_latency_us", "selected_latency_us", "latency_saved_us",
+        "latency_reduction_fraction", "pre_safety_selected_fidelity_loss",
+        "qualified_speedup", "control_screen_passed",
+        "latency_certificate_valid", "certificate_matches_final_tuple",
+        "timing_certificate_was_active", "final_fidelity_guard_passed",
+        "final_timing_fidelity", "final_timing_fidelity_lcb_95",
+        "final_timing_fidelity_estimator",
+        "final_fidelity_drop_from_certificate",
+        "max_final_fidelity_drop",
+        "adaptive_rounds_completed", "final_selected_latency_us",
+        "final_selected_integration_chain_us",
+    ) if key in latency}
+    candidate_keys = (
+        "read_pulse_freq", "read_pulse_gain", "read_length",
+        "qubit_pi_freq", "qubit_pi_gain", "sigma", "qubit_drag_beta",
+        "fidelity", "fidelity_se", "fidelity_lcb_95", "latency_us",
+        "crossfit_fidelity", "crossfit_fidelity_se",
+        "crossfit_fidelity_lcb_95", "integration_chain_us",
+    )
+    for name in ("reference", "certified_selected", "final_selected"):
+        candidate = latency.get(name)
+        if isinstance(candidate, dict):
+            compact_latency[name] = {
+                key: candidate.get(key) for key in candidate_keys
+                if key in candidate
+            }
+    selected_key = tuple(latency.get("certified_selected_key") or ())
+    diagnostic = next((row for row in latency.get("diagnostics", [])
+                       if tuple(row.get("candidate_key") or ()) == selected_key), None)
+    if isinstance(diagnostic, dict):
+        compact_latency["certificate"] = {
+            key: diagnostic.get(key) for key in (
+                "mean_loss", "loss_se", "loss_ucb", "confidence_z",
+                "method", "accepted", "reason") if key in diagnostic
+        }
     return {
         "time": result.get(
             "time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -569,6 +1092,7 @@ def _history_entry(result, eligible, applied, error=None):
         "runner_error": error,
         "best_found": result.get("best_found"),
         "best_fidelity_replay": result.get("best_fidelity_replay"),
+        "latency_optimization": compact_latency,
         "discovery": result.get("discovery"),
         "write_fidelity_gate": result.get("write_fidelity_gate"),
         "control_validation": result.get("control_validation"),
