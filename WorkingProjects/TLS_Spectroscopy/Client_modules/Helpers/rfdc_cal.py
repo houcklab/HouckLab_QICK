@@ -1,9 +1,9 @@
 import time
 
 _SERVER_MSG = ("The board's Pyro server does not expose %s(...). The RF-ADC lives on the RFSoC, "
-               "so the freeze must run server-side: start the board with "
-               "WorkingProjects/TLS_Spectroscopy/pynq/qick_server.py (QickSocCal), or add that "
-               "QickSocCal subclass to your server.py and restart it, then reconnect (makeProxy).")
+               "so the freeze must run server-side: add the QickSoc cal-freeze methods "
+               "(WorkingProjects/TLS_Spectroscopy/pynq/add_cal_methods.py) before start_server on "
+               "the board and restart it, then reconnect (makeProxy).")
 
 
 def _method(soc, name):
@@ -15,14 +15,17 @@ def _method(soc, name):
 
 def cal_freeze_status(soc, ro_ch=0):
     st = _method(soc, "get_readout_cal_freeze")(ro_ch)
-    print(f"[rfdc] ro_ch={ro_ch} -> ADC tile {st['tile']} block {st['block']} | CalFreeze={st['status']}")
+    print(f"[rfdc] readout cal-freeze status: {st}")
     return st
 
 
 def freeze_readout_cal(soc, ro_ch=0, freeze=True):
     st = _method(soc, "set_readout_cal_freeze")(ro_ch, bool(freeze))
+    if st.get("status") is None:
+        raise RuntimeError(f"Could not {'freeze' if freeze else 'thaw'} the ADC cal on this board. "
+                           f"Server returned {st}. Send the 'api' list so the right call can be used.")
     print(f"[rfdc] ADC tile {st['tile']} block {st['block']} -> "
-          f"{'FROZEN' if freeze else 'THAWED'} (CalFrozen={st['status'].get('CalFrozen')})")
+          f"{'FROZEN' if freeze else 'THAWED'} | status {st['status']}")
     return st
 
 
