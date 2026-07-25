@@ -92,6 +92,9 @@ P_RABI_CHEVRON_IQ = {
     "a_points": 41,
     "freq_span_mhz": 20.0,
     "freq_points": 21,
+    # Unused as-is: run_rabi_chevron_iq uses feedback (active reset + 25 us photon-clear), same
+    # as SS.  This is only the QUA-faithful passive fallback, applied if you flip that reset_mode
+    # back to "passive".
     "relax_delay_us": 1000.0,
 }
 
