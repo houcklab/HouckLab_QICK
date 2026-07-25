@@ -158,11 +158,10 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
             target_if_hz = np.where(bad, park_if_hz, target_if_hz)
         readout_if_hz = np.full(n, park_if_hz) if self.readout_after_park else target_if_hz
         if source == "flat_r_IF" and not self.readout_after_park:
-            raise RuntimeError(
-                "Held-flux readout with no resonator tracking (flat readout IF): the spec-vs-flux "
-                "map will show a flux-axis gradient. Run step 1 (resonator spec) this session, or "
-                "set USE_RESONATOR_LOOKUP=True / RESONATOR_LOOKUP_CSV / RESONATOR_FIT_PARAMS. If the "
-                "resonator genuinely barely tunes, set readout_after_park=True to read at park.")
+            print("NOTE: held-flux readout with no resonator tracking (flat readout IF) -> expect "
+                  "a smooth flux-axis gradient; the per-flux-normalized panel removes it. For "
+                  "tracking prefer USE_RESONATOR_LOOKUP=True (measured dip, no model extrapolation) "
+                  "over RESONATOR_FIT_PARAMS (the fit can drift off the resonator at high flux).")
         return readout_if_hz, target_if_hz, source
 
     def _probe_time_window_ns(self):
