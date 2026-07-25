@@ -2,6 +2,7 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import signal
 from qick import RAveragerProgram
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
@@ -188,19 +189,26 @@ class QubitSpecVsFlux(ExperimentClass):
         d = data['data']
         while plt.fignum_exists(num=figNum):
             figNum += 1
-        fig, ax = plt.subplots(1, 1, figsize=(8, 6), num=figNum)
         extent = [d['fpts'][0] / 1e3, d['fpts'][-1] / 1e3, d['volts'][0], d['volts'][-1]]
-        im = ax.imshow(d['magnitude'], aspect='auto', origin='lower', extent=extent,
-                       interpolation='none')
-        ax.scatter(d['qubit_dip_MHz'] / 1e3, d['volts'], s=8, c='r', marker='x')
+        phase = np.where(np.isfinite(d['phase']), d['phase'], 0.0)
+        phase = np.where(np.all(np.isfinite(d['phase']), axis=1, keepdims=True),
+                         signal.detrend(phase, axis=-1), np.nan)
+        fig, ax = plt.subplots(1, 2, figsize=(13, 6), sharey=True, num=figNum)
+        panels = [(ax[0], d['magnitude'], "Amplitude", "|IQ| (a.u.)"),
+                  (ax[1], phase, "Phase (detrended)", "phase (rad)")]
+        for a, M, title, lbl in panels:
+            im = a.imshow(M, aspect='auto', origin='lower', extent=extent, interpolation='none')
+            a.scatter(d['qubit_dip_MHz'] / 1e3, d['volts'], s=8, c='r', marker='x')
+            if 'flux_fit_params' in d:
+                fq = fx.estimate_fit_frequency_ghz_array(d['flux_fit_params'], d['volts'])
+                a.plot(fq, d['volts'], 'w--', lw=1, label='transmon fit')
+            a.set_xlabel("Qubit frequency (GHz)")
+            a.set_title(title)
+            fig.colorbar(im, ax=a, label=lbl)
+        ax[0].set_ylabel("Yoko voltage (V)")
         if 'flux_fit_params' in d:
-            fq = fx.estimate_fit_frequency_ghz_array(d['flux_fit_params'], d['volts'])
-            ax.plot(fq, d['volts'], 'w--', lw=1, label='transmon fit')
-            ax.legend(loc='upper right')
-        ax.set_xlabel("Qubit frequency (GHz)")
-        ax.set_ylabel("Yoko voltage (V)")
-        ax.set_title("Qubit spectroscopy vs flux")
-        fig.colorbar(im, ax=ax, label="|IQ| (a.u.)")
+            ax[0].legend(loc='upper right')
+        fig.suptitle("Qubit spectroscopy vs flux")
         plt.tight_layout()
         plt.savefig(self.iname)
         if plotDisp:
