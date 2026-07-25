@@ -79,7 +79,8 @@ P_RABI_CHEVRON_SS = {
     "a_points": 21,
     "freq_span_mhz": 1.0,
     "freq_points": 21,
-    "relax_delay_us": 2000.0,
+    # SS Rabi resets via feedback + reset_thermalization_us (25 us, matching QUA); there is no
+    # passive relax between shots, so no relax_delay is set here.
 }
 
 P_RABI_LINECUT_SS = {
@@ -188,7 +189,11 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
-        "reset_mode": "passive",
+        # Feedback reset + 25 us photon-clear instead of a 1000 us passive relax: ~5-7x faster
+        # and fine for the averaged, background-subtracted IQ.  Needs a valid reset threshold --
+        # a stale one visibly inverts/breaks the chevron; set "passive" (QUA-faithful) to fall
+        # back to relax_delay_us=1000.
+        "reset_mode": "feedback",
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
