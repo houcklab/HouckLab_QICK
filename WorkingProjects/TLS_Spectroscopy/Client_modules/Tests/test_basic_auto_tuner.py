@@ -187,8 +187,9 @@ FAST_PARAMS = {
         "runtime_budget_minutes": 30.0,
         "reserve_final_minutes": 0.0,
     },
+    "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production joint-search-v2 tightens the default to 0.5 percentage point.
+    # Production duration-portfolio-v5 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -430,6 +431,240 @@ def test_third_blob_guard_catches_binary_invisible_excited_cloud():
     assert measured["excited_outlier_frac"] > 0.08
     assert measured["ground_outlier_frac"] < 0.02
     assert measured["third_blob_excess_ucb_95"] > 0.08
+
+
+def test_common_mode_third_cloud_cannot_cancel_out_of_the_safety_metric():
+    """Regression for the visibly three-cloud 8-us hardware SS-cal failure."""
+    rng = np.random.default_rng(441)
+
+    def cloud(center, count, scale=0.55):
+        points = (rng.normal(size=(int(count), 2)) * float(scale)
+                  + np.asarray(center, dtype=float))
+        return points[:, 0] + 1j * points[:, 1]
+
+    # The extra population has the same 15% weight in both preparations.  Therefore
+    # the old excited-minus-ground tail statistic cancels even though a third physical
+    # cloud is unmistakable in IQ.
+    ground = np.r_[
+        cloud((-4.0, 0.0), 750),
+        cloud((4.0, 0.0), 100),
+        cloud((0.0, 6.0), 150),
+    ]
+    excited = np.r_[
+        cloud((-4.0, 0.0), 100),
+        cloud((4.0, 0.0), 750),
+        cloud((0.0, 6.0), 150),
+    ]
+    measured = T.step5_metrics(
+        ground.real, ground.imag, excited.real, excited.imag,
+        analyze_multimodality=True)
+    assert measured["third_blob_excess_ucb_95"] < 0.05
+    assert measured["third_cluster_guard_available"] is True
+    assert measured["third_cluster_supported"] is True
+    assert measured["third_cluster_detected"] is True
+    assert abs(measured["third_cluster_fraction"] - 0.15) < 0.02
+    assert measured["third_cluster_fraction_ucb_95"] > 0.15
+    assert measured["third_cluster_bic_improvement"] > 20.0
+    assert measured["third_cluster_min_separation_sigma"] > 2.5
+
+
+def test_two_physical_clouds_are_not_penalized_when_gmm_splits_a_tail():
+    rng = np.random.default_rng(442)
+
+    def cloud(center, count, scale=0.60):
+        points = (rng.normal(size=(int(count), 2)) * float(scale)
+                  + np.asarray(center, dtype=float))
+        return points[:, 0] + 1j * points[:, 1]
+
+    ground = np.r_[cloud((-4.0, 0.0), 950), cloud((4.0, 0.0), 50)]
+    excited = np.r_[cloud((-4.0, 0.0), 150), cloud((4.0, 0.0), 850)]
+    diagnostic = T._third_cluster_diagnostics(ground, excited)
+    assert diagnostic["third_cluster_guard_available"] is True
+    assert diagnostic["third_cluster_supported"] is False
+    assert diagnostic["third_cluster_detected"] is False
+
+
+def test_operational_safety_path_rejects_a_common_mode_third_population():
+    """The real safety wrapper, not just its helper, must reject the shown fault."""
+    rng = np.random.default_rng(443)
+
+    def cloud(center, count, scale=0.50):
+        points = (rng.normal(size=(int(count), 2)) * float(scale)
+                  + np.asarray(center, dtype=float))
+        return points[:, 0] + 1j * points[:, 1]
+
+    ground = np.r_[
+        cloud((-4.0, 0.0), 750), cloud((4.0, 0.0), 100),
+        cloud((0.0, 6.0), 150)]
+    excited = np.r_[
+        cloud((-4.0, 0.0), 100), cloud((4.0, 0.0), 750),
+        cloud((0.0, 6.0), 150)]
+    raw = (ground.real, ground.imag, excited.real, excited.imag)
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {
+        "enabled": False, "operational_enabled": True,
+        "max_third_cluster_fraction": 0.08,
+        "max_single_state_third_cluster_fraction": 0.12,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        tuner._acquire_ss_pair = lambda candidate, shots, state_order="ge": raw
+        measured = tuner._measure_operational_leakage_candidate(
+            tuner.working, 1000, 1000, "common third population regression")
+    assert measured["third_blob_excess_ucb"] < 0.05
+    assert measured["third_cluster_fraction_ucb_95"] > 0.14
+    assert measured["operational_safe"] is False
+    assert "resolved third IQ population" in measured["failure"]
+
+
+def test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths():
+    """Each fixed length gets its own exact safety result and no write winner."""
+    class PortfolioVirtualTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            rng = np.random.default_rng(444)
+
+            def cloud(center, count, scale=0.48):
+                points = (rng.normal(size=(int(count), 2)) * float(scale)
+                          + np.asarray(center, dtype=float))
+                return points[:, 0] + 1j * points[:, 1]
+
+            ground = np.r_[
+                cloud((-4.0, 0.0), 750), cloud((4.0, 0.0), 100),
+                cloud((0.0, 6.0), 150)]
+            excited = np.r_[
+                cloud((-4.0, 0.0), 100), cloud((4.0, 0.0), 750),
+                cloud((0.0, 6.0), 150)]
+            self.unsafe_pair = (
+                ground.real, ground.imag, excited.real, excited.imag)
+
+        def _physical_fidelity(self, candidate):
+            return float(0.88 + 0.01 * float(candidate["read_length"]))
+
+        def _acquire_ss_pair(self, candidate, shots, state_order="ge"):
+            del state_order
+            length = float(candidate["read_length"])
+            if self._analyze_multimodality and np.isclose(length, 3.0):
+                raise RuntimeError("synthetic IQ-safety backend outage")
+            if np.isclose(length, 1.0):
+                return self.unsafe_pair
+            return self._shots_for_fidelity(
+                self._physical_fidelity(candidate), shots)
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params.update({
+        "reset": {"enabled": False},
+        "leakage": {"enabled": False, "operational_enabled": True},
+        "duration_portfolio": {
+            "enabled": True, "read_lengths_us": [1.0, 2.0, 3.0],
+            "native_seeds_per_length": 1,
+            "readout_seeds_per_length": 1,
+            "control_seed_count": 1,
+            "local_proposals_per_length": 0,
+            "refine_shots": 101, "refine_blocks": 2,
+            "screen_candidates_per_length": 1,
+            "screen_shots": 101, "screen_reference_shots": 500,
+            "screen_drift_retries": 1,
+            "confirm_shots": 503, "confirm_blocks": 2,
+            "require_control_audit": True,
+        },
+        "control_verify": {
+            "enabled": True, "pulse_counts": [1, 2, 3, 4],
+            "shots": 101, "calibration_shots": 151, "blocks": 1,
+            "minimum_binary_contrast": 0.30,
+            "max_even_return_error_ucb": 0.30,
+            "max_odd_inversion_error_ucb": 0.30,
+        },
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = PortfolioVirtualTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        seeds = []
+        for length in (1.0, 2.0, 3.0):
+            candidate = T._with_candidate(
+                tuner.working, read_pulse_freq=tuner.READ_FREQ,
+                read_pulse_gain=tuner.READ_GAIN, read_length=length,
+                qubit_pi_freq=tuner.QUBIT_FREQ,
+                qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA),
+                sigma=tuner.SIGMA)
+            candidate.update({
+                "fidelity": 0.88 + 0.01 * length,
+                "fidelity_se": 0.005,
+                "fidelity_lcb_95": 0.88 + 0.01 * length - 0.0098,
+            })
+            seeds.append(candidate)
+        tuner._joint_rows = seeds
+        best = tuner._stage_duration_portfolio()
+        tuner._finalize(best)
+
+    entries = tuner.data["duration_portfolio"]["entries"]
+    assert [entry["read_length_us"] for entry in entries] == [1.0, 2.0, 3.0]
+    statuses = [entry["status"] for entry in entries]
+    assert statuses == ["UNSAFE", "SAFE", "INCONCLUSIVE"], [
+        (entry["read_length_us"], entry["status"], entry["failures"],
+         {key: entry.get("selected", {}).get(key) for key in (
+             "third_blob_excess_ucb", "third_cluster_supported",
+             "third_cluster_fraction_ucb_95", "portfolio_safe",
+             "third_cluster_binary_axis_projection",
+             "third_cluster_perpendicular_ratio", "third_cluster_size_ratio",
+             "control_failure")})
+        for entry in entries]
+    assert entries[0]["selected"]["third_cluster_fraction_ucb_95"] > 0.14
+    assert entries[1]["selected"]["control_verified"] is True
+    assert np.isnan(entries[2]["selected"][
+        "third_cluster_fraction_ucb_95"])
+    assert tuner.data["duration_portfolio"]["equal_refinement_budget"] is True
+    assert tuner.data["eligible_tuned"] == {}
+    assert tuner.data["manual_selection_required"] is True
+    assert tuner.data["automatic_config_write_allowed"] is False
+    assert tuner.data["final_stable"] is False
+
+
+def test_production_portfolio_covers_every_integer_us_and_caps_at_twenty():
+    expected = [float(value) for value in range(1, 21)]
+    assert T.BASIC_DEFAULTS["duration_portfolio"]["read_lengths_us"] == expected
+    assert T.BASIC_DEFAULTS["joint_search"]["read_lengths_us"] == expected
+    assert T.BASIC_DEFAULTS["readout_length"]["values_us"] == expected
+    assert T.BASIC_DEFAULTS["readout_length"]["max_us"] == 20.0
+    assert T.BASIC_DEFAULTS["latency"]["max_read_length_us"] == 20.0
+
+
+def test_portfolio_score_trades_small_fidelity_gain_for_much_less_leakage():
+    """The per-duration winner uses the requested fidelity/leakage objective."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {
+        "enabled": True,
+        "leakage_penalty_weight": 1.0,
+        "amplified_leakage_penalty_weight": 0.5,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        higher_fidelity = T._with_candidate(tuner.working, **{
+            "fidelity": 0.91, "fidelity_se": 0.005,
+            "fidelity_lcb_95": 0.9002,
+            "third_blob_excess_ucb": 0.0,
+            "third_cluster_supported": True,
+            "third_cluster_fraction_ucb_95": 0.040,
+            "third_cluster_single_state_fraction_ucb_95": 0.040,
+        })
+        cleaner = T._with_candidate(tuner.working, **{
+            "fidelity": 0.89, "fidelity_se": 0.005,
+            "fidelity_lcb_95": 0.8802,
+            "third_blob_excess_ucb": 0.0,
+            "third_cluster_supported": True,
+            "third_cluster_fraction_ucb_95": 0.005,
+            "third_cluster_single_state_fraction_ucb_95": 0.005,
+        })
+        higher_fidelity = tuner._annotate_portfolio_objective(higher_fidelity)
+        cleaner = tuner._annotate_portfolio_objective(cleaner)
+    assert np.isclose(higher_fidelity["portfolio_score"], 0.8602)
+    assert np.isclose(cleaner["portfolio_score"], 0.8752)
+    assert tuner._portfolio_rank(cleaner) > tuner._portfolio_rank(higher_fidelity)
 
 
 def test_shelving_inversion_recovers_direct_f_population():
@@ -858,7 +1093,14 @@ def test_operational_screen_retries_discriminator_drift_before_rejecting_wavefor
             super().__init__(*args, **kwargs)
 
         def _operational_waveform_pool(self):
-            return [dict(self.working)]
+            return [T._with_candidate(
+                self.working,
+                read_pulse_freq=self.READ_FREQ,
+                read_pulse_gain=self.READ_GAIN,
+                read_length=self.READ_LENGTH,
+                qubit_pi_freq=self.QUBIT_FREQ,
+                qubit_pi_gain=self.PI_GAIN_AT_SIGMA,
+                sigma=self.SIGMA)]
 
         def _measure_operational_leakage_candidate(
                 self, candidate, shots, reference_shots, label):
@@ -4490,6 +4732,203 @@ def test_joint_search_is_independent_of_starting_readout_gain_and_length():
     assert abs(second["qubit_pi_gain"] - 5790) <= 750
 
 
+def test_runtime_limited_joint_search_covers_every_duration_before_repeating_power():
+    """Even a zero optional budget must measure long and short duration families."""
+    class MandatoryCoverageTuner(VirtualBasicAutoTuner):
+        def _joint_budget_allows(self, reserve_final=True,
+                                 additional_reserve_minutes=0.0):
+            del reserve_final, additional_reserve_minutes
+            return False
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["joint_search"].update({
+        "read_lengths_us": [4.0, 8.0, 20.0],
+        "sigma_values_us": [0.10, 0.25],
+        "read_gain_min": 1000, "read_gain_max": 9000,
+        "read_gain_points": 5,
+        "minimum_duration_coverage_passes": 1,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = MandatoryCoverageTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        tuner.working = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=14475,
+            sigma=0.10,
+        )
+        tuner._stage_joint_search()
+
+    joint = tuner.data["joint_search"]
+    assert joint["coarse_gain_passes_completed"] == 1
+    assert joint["coverage"]["complete"] is True
+    assert joint["coarse_cells_attempted"] == 6
+    rows = joint["coarse_rows"]
+    assert {float(row["read_length"]) for row in rows} == {4.0, 8.0, 20.0}
+    assert {float(row["sigma"]) for row in rows} == {0.10, 0.25}
+    assert len({int(row["read_pulse_gain"]) for row in rows}) == 1
+
+
+def test_duration_balanced_schedule_uses_central_power_for_every_duration_first():
+    jobs = T.duration_balanced_joint_jobs(
+        [4.0, 8.0, 20.0], [0.10, 0.25],
+        [1000, 3000, 5000, 8000, 10000], np.random.default_rng(19))
+    first = jobs[:6]
+    second = jobs[6:12]
+    expected = {(length, sigma)
+                for length in (4.0, 8.0, 20.0)
+                for sigma in (0.10, 0.25)}
+    assert {(row[0], row[1]) for row in first} == expected
+    assert {(row[0], row[1]) for row in second} == expected
+    assert {row[2] for row in first} == {5000}
+    assert {row[2] for row in second} == {3000}
+
+
+def test_finalize_reports_best_overall_and_shortest_near_best_separately():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"].update({
+        "enabled": True, "max_fidelity_loss": 0.010,
+        "minimum_mean_fidelity": 0.90, "minimum_lcb_fidelity": 0.90,
+    })
+    params["leakage"] = {"enabled": False, "operational_enabled": False}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+        )
+
+        def replay(read_length, sigma, gain, fidelity):
+            row = T._with_candidate(
+                common, read_length=read_length, sigma=sigma,
+                qubit_pi_gain=gain)
+            row.update({
+                "fidelity": fidelity, "fidelity_se": 0.001,
+                "fidelity_lcb_95": fidelity - 0.00196,
+                "confirmation_blocks": params["final"]["blocks"],
+                "confirmation_complete": True,
+                "block_spread": 0.002,
+                "label": "final exact objective regression",
+            })
+            return row
+
+        overall = replay(20.0, 0.25, 5790, 0.950)
+        faster = replay(8.0, 0.10, 14475, 0.945)
+        tuner._remember_final_replays(
+            [overall, faster], "unconstrained", batch_complete=True)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._finalize(overall)
+
+    assert (T._candidate_key(tuner.data["best_overall_candidate"])
+            == T._candidate_key(overall))
+    assert (T._candidate_key(tuner.data["shortest_high_fidelity_candidate"])
+            == T._candidate_key(faster))
+    assert tuner.data["shortest_high_fidelity_status"] == (
+        "independent_noninferiority_advisory_not_familywise_certified")
+
+
+def test_practical_short_report_keeps_eight_us_candidate_but_rejects_one_us_coinflip():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["latency"] = copy.deepcopy(T.BASIC_DEFAULTS["latency"])
+    params["leakage"] = {"enabled": False, "operational_enabled": False}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+        )
+
+        def replay(read_length, sigma, gain, fidelity, fidelity_se):
+            row = T._with_candidate(
+                common, read_length=read_length, sigma=sigma,
+                qubit_pi_gain=gain)
+            row.update({
+                "fidelity": fidelity, "fidelity_se": fidelity_se,
+                "fidelity_lcb_95": fidelity - 1.96 * fidelity_se,
+                "confirmation_blocks": params["final"]["blocks"],
+                "confirmation_complete": True,
+                "block_spread": 0.010,
+                "label": "final exact practical-Pareto regression",
+            })
+            return row
+
+        overall = replay(20.0, 0.25, 5790, 0.930, 0.003)
+        practical = replay(8.0, 0.10, 16677, 0.884, 0.007)
+        coinflip = replay(1.0, 0.05, 26000, 0.600, 0.010)
+        tuner._remember_final_replays(
+            [overall, practical, coinflip], "unconstrained", batch_complete=True)
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "unconstrained"
+        tuner._finalize(overall)
+
+    assert (T._candidate_key(tuner.data["best_overall_candidate"])
+            == T._candidate_key(overall))
+    assert (T._candidate_key(tuner.data["shortest_high_fidelity_candidate"])
+            == T._candidate_key(practical))
+    assert tuner.data["shortest_high_fidelity_status"] == (
+        "practical_pareto_advisory_not_write_eligible")
+
+
+def test_short_report_cannot_borrow_a_different_tuples_safety_certificate():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        common = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+        )
+
+        def replay(read_length, sigma, gain, fidelity):
+            row = T._with_candidate(
+                common, read_length=read_length, sigma=sigma,
+                qubit_pi_gain=gain)
+            row.update({
+                "fidelity": fidelity, "fidelity_se": 0.003,
+                "fidelity_lcb_95": fidelity - 0.00588,
+                "confirmation_blocks": params["final"]["blocks"],
+                "confirmation_complete": True, "block_spread": 0.005,
+                "label": "final exact safety-identity regression",
+            })
+            return row
+
+        safe_overall = replay(20.0, 0.25, 5790, 0.930)
+        unsafe_fast = replay(8.0, 0.10, 16677, 0.925)
+        tuner._remember_final_replays(
+            [safe_overall, unsafe_fast], "unconstrained", batch_complete=True)
+        tuner._leakage_verified_candidate_key = T._candidate_key(safe_overall)
+        tuner.data["leakage"].update({"verified": True, "selection_safe": True})
+        tuner._final_replay_completed = True
+        tuner._final_replay_kind = "leakage_constrained"
+        tuner._finalize(safe_overall)
+
+    assert (T._candidate_key(tuner.data["shortest_high_fidelity_candidate"])
+            == T._candidate_key(safe_overall))
+    assert (T._candidate_key(tuner.data["shortest_high_fidelity_candidate"])
+            != T._candidate_key(unsafe_fast))
+    assert tuner.data["shortest_high_fidelity_candidate"][
+        "safety_screen_verified_for_exact_tuple"] is True
+
+
 def test_joint_resume_reuses_only_matching_input_and_flux_context():
     cfg = _base_config()
     row = dict(cfg)
@@ -5224,8 +5663,8 @@ def test_interrupt_after_final_replay_never_emits_eligibility():
     assert tuner.data["eligible_tuned"] == {}
 
 
-def test_runner_enables_only_the_guarded_initialize_update_by_default():
-    """The shipped runner applies stable replayed tuples, never partial results."""
+def test_runner_is_report_only_for_manual_duration_portfolio_selection():
+    """The shipped portfolio runner never applies one row automatically."""
     runner_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "..", "Runners", "BasicAutoTune.py"))
     with open(runner_path, encoding="utf-8") as stream:
@@ -5236,7 +5675,7 @@ def test_runner_enables_only_the_guarded_initialize_update_by_default():
         for node in tree.body if isinstance(node, ast.Assign)
         for target in node.targets if isinstance(target, ast.Name)
     }
-    assert ast.literal_eval(assignments["APPLY_CONFIG"]) is True
+    assert ast.literal_eval(assignments["APPLY_CONFIG"]) is False
     assert 'not bool(result.get("final_stable", False))' in source
     assert 'bool(result.get("interrupted", False))' in source
     assert "expected_source_hash=startup_source_hash" in source
@@ -5382,6 +5821,11 @@ def test_runner_main_never_writes_a_guard_rejected_result():
             "active": True, "strict_direct_active": False,
             "operational_active": True, "required_for_write": True,
             "selection_safe": True, "verified": True,
+            "third_cluster_guard": True,
+            "worst_third_cluster_fraction": 0.02,
+            "worst_third_cluster_fraction_ucb_95": 0.025,
+            "worst_third_cluster_single_state_fraction": 0.03,
+            "worst_third_cluster_single_state_fraction_ucb_95": 0.035,
             "final_replay_complete": True,
             "verified_candidate_key": list(candidate_key),
         },
@@ -5475,7 +5919,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "joint-search-v2"
+    assert T.BASIC_AUTOTUNER_REVISION == "duration-portfolio-v5"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -5749,6 +6193,14 @@ def test_runner_main_never_writes_a_guard_rejected_result():
     stale_leakage = copy.deepcopy(base_result)
     stale_leakage["leakage"]["verified_candidate_key"] = [0] * 7
     rejected.append(stale_leakage)
+    resolved_third_population = copy.deepcopy(base_result)
+    resolved_third_population["leakage"].update({
+        "worst_third_cluster_fraction": 0.18,
+        "worst_third_cluster_fraction_ucb_95": 0.19,
+        "worst_third_cluster_single_state_fraction": 0.24,
+        "worst_third_cluster_single_state_fraction_ucb_95": 0.25,
+    })
+    rejected.append(resolved_third_population)
     rejected.append(forged_weak_recovery)
 
     with redirect_stdout(io.StringIO()):
@@ -6080,6 +6532,12 @@ def main():
     tests = [
         test_step5_metric_matches_shared_helpers,
         test_third_blob_guard_catches_binary_invisible_excited_cloud,
+        test_common_mode_third_cloud_cannot_cancel_out_of_the_safety_metric,
+        test_two_physical_clouds_are_not_penalized_when_gmm_splits_a_tail,
+        test_operational_safety_path_rejects_a_common_mode_third_population,
+        test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths,
+        test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
+        test_portfolio_score_trades_small_fidelity_gain_for_much_less_leakage,
         test_shelving_inversion_recovers_direct_f_population,
         test_independent_long_reference_exposes_candidate_one_pulse_leakage,
         test_opposed_ef_scans_match_a_reproduced_feature_after_rank_swaps,
@@ -6166,6 +6624,11 @@ def main():
         test_control_witness_must_match_the_complete_selected_waveform,
         test_final_exact_repeated_pulse_audit_rejects_saturation,
         test_joint_search_is_independent_of_starting_readout_gain_and_length,
+        test_runtime_limited_joint_search_covers_every_duration_before_repeating_power,
+        test_duration_balanced_schedule_uses_central_power_for_every_duration_first,
+        test_finalize_reports_best_overall_and_shortest_near_best_separately,
+        test_practical_short_report_keeps_eight_us_candidate_but_rejects_one_us_coinflip,
+        test_short_report_cannot_borrow_a_different_tuples_safety_certificate,
         test_joint_resume_reuses_only_matching_input_and_flux_context,
         test_bad_start_recovers_and_preserves_best_effort_contract,
         test_interrupt_retains_a_completed_unconfirmed_measurement,
@@ -6182,7 +6645,7 @@ def main():
         test_refined_rabi_candidate_cannot_evict_a_spectral_basin,
         test_partial_wrapper_grid_can_report_but_not_authorize,
         test_interrupt_after_final_replay_never_emits_eligibility,
-        test_runner_enables_only_the_guarded_initialize_update_by_default,
+        test_runner_is_report_only_for_manual_duration_portfolio_selection,
         test_runner_main_never_writes_a_guard_rejected_result,
         test_config_update_compare_and_swap_refuses_stale_input,
         test_config_source_hash_refuses_untuned_physical_change,

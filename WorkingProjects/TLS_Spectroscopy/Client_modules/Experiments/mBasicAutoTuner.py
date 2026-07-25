@@ -75,14 +75,14 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "joint-search-v2"
+BASIC_AUTOTUNER_REVISION = "duration-portfolio-v5"
 
 
 BASIC_DEFAULTS = {
     "random_seed": 271828,
-    # Optional explicit pickle from an interrupted joint-search-v2 run.  Only complete
-    # coarse cells with the same physical input contract are reused; medium/final
-    # candidates are freshly replayed in the current drift epoch.
+    # Optional explicit pickle from an interrupted run of this exact revision.  Only
+    # complete coarse cells with the same physical input contract are reused;
+    # medium/final candidates are freshly replayed in the current drift epoch.
     "resume_checkpoint": None,
     "max_consecutive_point_failures": 5,
     # ``concise`` keeps the operator informed at human-scale stage boundaries while
@@ -279,6 +279,15 @@ BASIC_DEFAULTS = {
         # the longer, lower-power Gaussian wins that tie.
         "operational_fidelity_tie_margin": 0.003,
         "operational_max_tie_fidelity_loss": 0.010,
+        # The legacy tail-excess metric can cancel when a readout-induced third cloud
+        # appears in *both* prepared states.  A deterministic 2-D Gaussian-mixture
+        # model therefore compares two versus three resolved IQ populations.  A
+        # supported third population may be small, but it may not exceed either the
+        # combined or single-preparation bounds below.
+        "third_cluster_min_bic_improvement": 20.0,
+        "third_cluster_min_separation_sigma": 3.5,
+        "max_third_cluster_fraction": 0.05,
+        "max_single_state_third_cluster_fraction": 0.08,
         "anharmonicity_prior_mhz": None,
         "ef_span_mhz": 100.0, "ef_points": 101,
         "ef_narrow_span_mhz": 6.0, "ef_narrow_points": 61,
@@ -336,9 +345,8 @@ BASIC_DEFAULTS = {
         # coarse 8->14 us jump from masquerading as the shortest acceptable result.
         # Very short points are measured, not forbidden; the fidelity constraint is
         # what rejects a 1-us/60% readout.
-        "values_us": [1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0,
-                      16.0, 20.0, 24.0, 30.0, 45.0],
-        "min_us": 1.0, "max_us": 100.0,
+        "values_us": [float(value) for value in range(1, 21)],
+        "min_us": 1.0, "max_us": 20.0,
         "freq_span_mhz": 0.8, "freq_points": 3,
         # A separate broad power axis is measured at every length.  Reusing one
         # +/-25% neighborhood biases the comparison because short integrations can
@@ -371,8 +379,7 @@ BASIC_DEFAULTS = {
         # This replaces greedy readout-length/qubit-gain/pulse-duration coordinate
         # descent.  Every duration pair receives a broad joint readout/pi-gain sweep.
         "enabled": True,
-        "read_lengths_us": [1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0,
-                            16.0, 20.0, 24.0, 30.0, 45.0],
+        "read_lengths_us": [float(value) for value in range(1, 21)],
         "sigma_values_us": [0.05, 0.10, 0.15, 0.25, 0.35, 0.50],
         "read_gain_min": 1000, "read_gain_max": 10000,
         # Ten points give an input-independent 1000-DAC backbone (including 5000)
@@ -406,11 +413,64 @@ BASIC_DEFAULTS = {
         "closure_iterations": 2,
         "closure_frequency_radius_scale": 0.55,
         "closure_gain_radius_scale": 0.60,
+        # A runtime-limited search must not become a short-duration search merely
+        # because those cells happened to be shuffled first.  The first gain pass is
+        # mandatory and covers every read-length/sigma pair before any pair receives
+        # a second readout power.  Three mandatory passes exercise the centre and both
+        # interior quartiles; later passes retain the same round-robin rule.
+        "minimum_duration_coverage_passes": 3,
+        # Reserve distinct tails for held-out duration-stratified comparison and for
+        # frequency/AAE closure.  Without these reservations the coarse map can consume
+        # the entire soft budget, leaving its winner unconfirmed and uncorrected.
+        "reserve_medium_minutes": 6.0,
+        "reserve_control_refinement_minutes": 7.0,
         # The operator never discovers an hour-long fallback after launch.  This is a
         # soft acquisition budget: completed measurements remain reportable and final
         # confirmation receives a reserved tail budget.
         "runtime_budget_minutes": 30.0,
         "reserve_final_minutes": 5.0,
+    },
+    "duration_portfolio": {
+        # Manual-selection mode: produce one independently screened calibration for
+        # every integer readout duration and never write initialize.py.  Discovery,
+        # averaged Rabi, and AAE are shared; the full readout/control tuple is then
+        # remeasured and safety-audited separately at each duration.
+        "enabled": True,
+        "manual_selection_only": True,
+        "read_lengths_us": [float(value) for value in range(1, 21)],
+        # Cross several measured readout basins with several AAE/Rabi control basins,
+        # then add a small fixed-duration trust-region refinement.  Every duration
+        # receives the same number of attempted candidates.
+        "native_seeds_per_length": 3,
+        "readout_seeds_per_length": 2,
+        "control_seed_count": 3,
+        "local_proposals_per_length": 4,
+        "local_read_frequency_radius_mhz": 0.30,
+        "local_qubit_frequency_radius_mhz": 0.50,
+        "local_read_gain_fraction": 0.22,
+        "local_qubit_gain_fraction": 0.22,
+        "refine_shots": 260,
+        "refine_blocks": 2,
+        # Substantial leakage remains a hard constraint.  Within (and, for honest
+        # reporting, outside) that boundary, rank by a conservative utility:
+        # held-out fidelity LCB minus upper-bounded leakage probability.  A unit
+        # penalty is physically interpretable--one percent population outside the
+        # computational manifold costs at least one percentage point--and avoids an
+        # arbitrary fidelity/time ratio.  Amplified-sequence P(f) is a stress test,
+        # so it receives a smaller additional penalty instead of being double-counted.
+        "leakage_penalty_weight": 1.0,
+        "amplified_leakage_penalty_weight": 0.5,
+        # Several held-out contenders per duration are screened so failure of the
+        # apparent winner falls through to another basin instead of erasing that
+        # duration.  The best risk-adjusted contenders receive the expensive replay.
+        "screen_candidates_per_length": 10,
+        "confirm_candidates_per_length": 4,
+        "screen_shots": 220,
+        "screen_reference_shots": 500,
+        "screen_drift_retries": 2,
+        "confirm_shots": 900,
+        "confirm_blocks": 3,
+        "require_control_audit": True,
     },
     "latency": {
         # Latency is a secondary, epsilon-constrained objective.  First establish
@@ -422,6 +482,14 @@ BASIC_DEFAULTS = {
         "max_fidelity_loss": 0.005,
         "minimum_mean_fidelity": 0.90,
         "minimum_lcb_fidelity": 0.88,
+        # Reporting has a second, explicitly non-writing Pareto option.  It answers
+        # "what is the fastest still-useful chain?" even when no faster arm can meet
+        # the much stricter 0.5-point noninferiority certificate above.  Mean/LCB
+        # floors exclude seductive 1-us/60%-fidelity points, while the five-point
+        # loss cap keeps the option anchored to the measured device ceiling.
+        "practical_max_mean_fidelity_loss": 0.05,
+        "practical_minimum_mean_fidelity": 0.85,
+        "practical_minimum_lcb_fidelity": 0.82,
         "familywise_alpha": 0.05,
         "confidence_sigma": 1.96,
         # A cheap joint cross of the already retuned representative at each readout
@@ -458,10 +526,10 @@ BASIC_DEFAULTS = {
         # original noninferiority budget.
         "max_final_fidelity_drop": 0.010,
         # Preserve every default readout-length arm in the bounded joint cross.
-        "max_readout_candidates": 13,
+        "max_readout_candidates": 20,
         "max_control_candidates": 6,
         "min_read_length_us": 1.0,
-        "max_read_length_us": 45.0,
+        "max_read_length_us": 20.0,
         # The primary/safety searches remain free to use slower controls.  The joint
         # latency stage spans the full existing Gaussian search envelope.
         "min_sigma_us": 0.05,
@@ -528,6 +596,8 @@ _CONCISE_STAGE_START = {
     "qubit_repeat": "Cross-checking the pi pulse...",
     "amplified_error": "Reducing amplified amplitude error...",
     "final": "Comparing the best measured calibrations...",
+    "duration_portfolio": (
+        "Building the 1-20 us fidelity/leakage calibration table..."),
     "operational_leakage": "Screening pulse duration and power...",
     "operational_leakage_verify": "Verifying the pulse-safety checks...",
     "leakage": "Optimizing under the leakage constraint...",
@@ -631,18 +701,177 @@ def _third_blob_diagnostics(c0, c1, theta, scale_factor, sigma_cut=4.0):
     kg, ke = int(np.count_nonzero(fg)), int(np.count_nonzero(fe))
     ng, ne = max(int(fg.size), 1), max(int(fe.size), 1)
     pg, pe = float(kg / ng), float(ke / ne)
+    pg_se = math.sqrt(_binomial_variance_jeffreys(kg, ng))
+    pe_se = math.sqrt(_binomial_variance_jeffreys(ke, ne))
     excess = max(0.0, pe - pg)
-    excess_se = math.sqrt(
-        _binomial_variance_jeffreys(ke, ne)
-        + _binomial_variance_jeffreys(kg, ng))
+    excess_se = math.sqrt(pe_se ** 2 + pg_se ** 2)
     return {
         "outlier_frac": float((kg + ke) / (ng + ne)),
         "ground_outlier_frac": pg,
         "excited_outlier_frac": pe,
+        "ground_outlier_ucb_95": float(min(pg + 1.96 * pg_se, 1.0)),
+        "excited_outlier_ucb_95": float(min(pe + 1.96 * pe_se, 1.0)),
         "third_blob_excess": excess,
         "third_blob_excess_se": float(excess_se),
         "third_blob_excess_ucb_95": float(excess + 1.96 * excess_se),
         "outlier_sigma_cut": float(sigma_cut),
+    }
+
+
+def _third_cluster_diagnostics(c0, c1):
+    """Detect a resolved third IQ population without assuming which state it is.
+
+    The ordinary binary discriminator is intentionally blind to structure orthogonal
+    to its threshold.  Here a full-covariance two-component GMM is compared with a
+    three-component model using BIC.  The two components most associated with the
+    ground- and excited-preparation records are treated as the intended binary pair;
+    the remaining component is the non-binary population.  This catches the failure
+    visible in an SS-cal plot even when that extra cloud occurs equally in both
+    preparations and the old ``P_outlier(e)-P_outlier(g)`` statistic cancels to zero.
+    """
+    unavailable = {
+        "third_cluster_guard_available": False,
+        "third_cluster_supported": False,
+        "third_cluster_detected": False,
+        "third_cluster_fraction": np.nan,
+        "third_cluster_fraction_ucb_95": np.nan,
+        "third_cluster_ground_fraction": np.nan,
+        "third_cluster_excited_fraction": np.nan,
+        "third_cluster_single_state_fraction": np.nan,
+        "third_cluster_single_state_fraction_ucb_95": np.nan,
+        "third_cluster_bic_improvement": np.nan,
+        "third_cluster_min_separation_sigma": np.nan,
+        "third_cluster_binary_axis_projection": np.nan,
+        "third_cluster_perpendicular_ratio": np.nan,
+        "third_cluster_size_ratio": np.nan,
+    }
+    try:
+        from sklearn.mixture import GaussianMixture
+    except Exception:
+        return unavailable
+    ground = np.column_stack((np.real(c0), np.imag(c0))).astype(float)
+    excited = np.column_stack((np.real(c1), np.imag(c1))).astype(float)
+    if ground.shape[0] < 50 or excited.shape[0] < 50:
+        return unavailable
+    points = np.vstack((ground, excited))
+    finite = np.all(np.isfinite(points), axis=1)
+    if np.count_nonzero(finite) < 100:
+        return unavailable
+    # step5_metrics has already paired and finite-filtered c0/c1, so this is normally
+    # all true.  Keep the split explicit to avoid silently mixing labels if a caller
+    # invokes the helper directly.
+    if not np.all(finite):
+        return unavailable
+    centre = np.median(points, axis=0)
+    scale = np.asarray([
+        max(_robust_scale(points[:, axis]), np.std(points[:, axis]) * 0.05, 1e-9)
+        for axis in range(2)], dtype=float)
+    normalized = (points - centre) / scale
+    try:
+        models = []
+        for components in (2, 3):
+            model = GaussianMixture(
+                n_components=components, covariance_type="full",
+                reg_covar=1e-3, n_init=4, max_iter=300, tol=1e-4,
+                random_state=1729,
+            ).fit(normalized)
+            if not bool(model.converged_):
+                return unavailable
+            models.append(model)
+        two, three = models
+        bic_improvement = float(two.bic(normalized) - three.bic(normalized))
+        responsibility = np.asarray(three.predict_proba(normalized), dtype=float)
+        n_ground = ground.shape[0]
+        n_excited = excited.shape[0]
+        ground_mass = np.mean(responsibility[:n_ground], axis=0)
+        excited_mass = np.mean(responsibility[n_ground:], axis=0)
+        pairs = [(g_index, e_index)
+                 for g_index in range(3) for e_index in range(3)
+                 if g_index != e_index]
+        canonical_ground, canonical_excited = max(
+            pairs, key=lambda pair: (
+                float(ground_mass[pair[0]] + excited_mass[pair[1]]),
+                float(ground_mass[pair[0]]), float(excited_mass[pair[1]])))
+        anomalous = next(index for index in range(3)
+                         if index not in (canonical_ground, canonical_excited))
+        third_ground = float(ground_mass[anomalous])
+        third_excited = float(excited_mass[anomalous])
+        third_total = float(
+            (n_ground * third_ground + n_excited * third_excited)
+            / max(n_ground + n_excited, 1))
+        third_total_se = math.sqrt(_binomial_variance_jeffreys(
+            int(round(third_total * (n_ground + n_excited))),
+            n_ground + n_excited))
+        third_ground_se = math.sqrt(_binomial_variance_jeffreys(
+            int(round(third_ground * n_ground)), n_ground))
+        third_excited_se = math.sqrt(_binomial_variance_jeffreys(
+            int(round(third_excited * n_excited)), n_excited))
+        third_total_ucb = float(min(
+            third_total + 1.96 * third_total_se, 1.0))
+        third_single_state_ucb = float(max(
+            min(third_ground + 1.96 * third_ground_se, 1.0),
+            min(third_excited + 1.96 * third_excited_se, 1.0)))
+        separations = []
+        for canonical in (canonical_ground, canonical_excited):
+            delta = three.means_[anomalous] - three.means_[canonical]
+            covariance = 0.5 * (
+                three.covariances_[anomalous] + three.covariances_[canonical])
+            distance2 = float(delta @ np.linalg.pinv(covariance) @ delta)
+            separations.append(math.sqrt(max(distance2, 0.0)))
+        minimum_separation = float(min(separations))
+        transform = np.diag(scale)
+        means_raw = three.means_ * scale[None, :] + centre[None, :]
+        covariances_raw = np.asarray([
+            transform @ covariance @ transform
+            for covariance in three.covariances_])
+        binary_axis = (means_raw[canonical_excited]
+                       - means_raw[canonical_ground])
+        axis_norm2 = float(binary_axis @ binary_axis)
+        offset = means_raw[anomalous] - means_raw[canonical_ground]
+        projection = float(offset @ binary_axis / max(axis_norm2, 1e-18))
+        perpendicular = offset - projection * binary_axis
+        perpendicular_ratio = float(
+            np.linalg.norm(perpendicular)
+            / max(math.sqrt(axis_norm2), 1e-9))
+        anomalous_size = float(np.trace(covariances_raw[anomalous]))
+        canonical_size = float(max(
+            np.trace(covariances_raw[canonical_ground]),
+            np.trace(covariances_raw[canonical_excited]), 1e-18))
+        size_ratio = float(anomalous_size / canonical_size)
+    except Exception:
+        return unavailable
+    topology_distinct = bool(
+        projection < -0.15 or projection > 1.15
+        or perpendicular_ratio >= 0.20
+        # A compact population between the two intended states is also physical,
+        # but a compact component close to either endpoint is usually just a GMM
+        # splitting one skewed/non-Gaussian binary cloud.  Requiring an interior
+        # location prevents that ordinary model mismatch from being called leakage.
+        or (size_ratio <= 2.0 and 0.20 <= projection <= 0.80))
+    supported = bool(
+        np.all(np.isfinite([
+            bic_improvement, minimum_separation, third_total,
+            third_ground, third_excited, projection,
+            perpendicular_ratio, size_ratio]))
+        and bic_improvement >= 20.0 and minimum_separation >= 3.5
+        and topology_distinct)
+    return {
+        "third_cluster_guard_available": True,
+        "third_cluster_supported": supported,
+        "third_cluster_detected": supported,
+        "third_cluster_fraction": third_total,
+        "third_cluster_fraction_ucb_95": third_total_ucb,
+        "third_cluster_ground_fraction": third_ground,
+        "third_cluster_excited_fraction": third_excited,
+        "third_cluster_single_state_fraction": float(
+            max(third_ground, third_excited)),
+        "third_cluster_single_state_fraction_ucb_95": (
+            third_single_state_ucb),
+        "third_cluster_bic_improvement": bic_improvement,
+        "third_cluster_min_separation_sigma": minimum_separation,
+        "third_cluster_binary_axis_projection": projection,
+        "third_cluster_perpendicular_ratio": perpendicular_ratio,
+        "third_cluster_size_ratio": size_ratio,
     }
 
 
@@ -780,7 +1009,61 @@ def _unique_candidates(candidates):
     return out
 
 
-def step5_metrics(ig, qg, ie, qe):
+def duration_balanced_joint_jobs(read_lengths, sigmas, read_gains, rng):
+    """Return a gain-pass-major joint-grid schedule.
+
+    Every prefix ending at a complete read-gain pass contains every physical
+    read-length/sigma stratum exactly once.  This property makes a partial,
+    runtime-limited acquisition interpretable: a short readout cannot win simply
+    because random job order never reached the longer integrations.
+
+    Readout powers are visited in a space-filling order (centre, quartiles, bounds,
+    then farthest unsampled value) so the first few complete passes are useful even
+    when passive reset prevents acquisition of the full power lattice.
+    """
+    lengths = np.asarray(read_lengths, dtype=float)
+    pulse_sigmas = np.asarray(sigmas, dtype=float)
+    gains = np.asarray(sorted(set(int(round(value)) for value in read_gains)),
+                       dtype=int)
+    if not lengths.size or not pulse_sigmas.size or not gains.size:
+        return []
+
+    chosen = []
+    unused = set(range(gains.size))
+    span = max(float(gains[-1] - gains[0]), 1.0)
+    # Resolve the central operating regime before testing the compression/no-signal
+    # bounds.  Ties deliberately select the lower DAC value.
+    for fraction in (0.50, 0.25, 0.75, 0.0, 1.0):
+        if not unused:
+            break
+        target = float(gains[0]) + fraction * span
+        index = min(unused, key=lambda raw: (
+            abs(float(gains[raw]) - target), int(gains[raw])))
+        chosen.append(index)
+        unused.remove(index)
+    while unused:
+        # Maximin completion distributes later passes between already sampled powers
+        # instead of walking monotonically through DAC gain.
+        index = max(unused, key=lambda raw: (
+            min(abs(float(gains[raw]) - float(gains[prior]))
+                for prior in chosen),
+            -int(gains[raw])))
+        chosen.append(index)
+        unused.remove(index)
+
+    strata = [(float(length), float(sigma))
+              for length in lengths for sigma in pulse_sigmas]
+    jobs = []
+    for pass_index, gain_index in enumerate(chosen):
+        order = np.asarray(rng.permutation(len(strata)), dtype=int)
+        for raw in order:
+            read_length, sigma = strata[int(raw)]
+            jobs.append((read_length, sigma, int(gains[gain_index]),
+                         int(pass_index)))
+    return jobs
+
+
+def step5_metrics(ig, qg, ie, qe, analyze_multimodality=False):
     """Reproduce TLS step-5 fidelity and return its operational discriminator.
 
     This intentionally uses ``find_blob_median`` and the same 100-threshold
@@ -898,6 +1181,23 @@ def step5_metrics(ig, qg, ie, qe):
     se = max(_robust_scale(xe), 1e-12)
     sep_sigma = float(abs(np.median(xe) - np.median(xg)) / (0.5 * (sg + se)))
     anomaly = _third_blob_diagnostics(c0, c1, theta, factor)
+    cluster = (_third_cluster_diagnostics(c0, c1)
+               if bool(analyze_multimodality) else {
+                   "third_cluster_guard_available": False,
+                   "third_cluster_supported": False,
+                   "third_cluster_detected": False,
+                   "third_cluster_fraction": np.nan,
+                   "third_cluster_fraction_ucb_95": np.nan,
+                   "third_cluster_ground_fraction": np.nan,
+                   "third_cluster_excited_fraction": np.nan,
+                   "third_cluster_single_state_fraction": np.nan,
+                   "third_cluster_single_state_fraction_ucb_95": np.nan,
+                   "third_cluster_bic_improvement": np.nan,
+                   "third_cluster_min_separation_sigma": np.nan,
+                   "third_cluster_binary_axis_projection": np.nan,
+                   "third_cluster_perpendicular_ratio": np.nan,
+                   "third_cluster_size_ratio": np.nan,
+               })
     return {
         "fidelity": fidelity,
         "fidelity_se": fidelity_se,
@@ -931,6 +1231,7 @@ def step5_metrics(ig, qg, ie, qe):
         "projected_excited_center": float(
             factor * np.real(np.exp(-1j * theta) * center_e)),
         **anomaly,
+        **cluster,
     }
 
 
@@ -1386,6 +1687,8 @@ class BasicAutoTuner(ExperimentClass):
         self._leakage_active = self._leakage_enabled()
         self._operational_leakage_active = bool(
             self.params["leakage"].get("operational_enabled", True))
+        self._duration_portfolio_active = bool(
+            self.params["duration_portfolio"].get("enabled", True))
         self._leakage_selected_candidate = None
         self._leakage_ef_calibration = None
         self._leakage_verified_candidate_key = None
@@ -1399,6 +1702,9 @@ class BasicAutoTuner(ExperimentClass):
         self._feedback_profiles_suspended = False
         self._reset_unavailable = False
         self._run_started_monotonic = None
+        self._joint_search_started_monotonic = None
+        self._final_replays = []
+        self._analyze_multimodality = False
         self.data = {
             "revision": BASIC_AUTOTUNER_REVISION,
             "autotuner_revision": BASIC_AUTOTUNER_REVISION,
@@ -1406,6 +1712,11 @@ class BasicAutoTuner(ExperimentClass):
             "initial_pulse_signature": self._pulse_signature(self.initial),
             "fidelity_definition": "TLS step-5 balanced assignment fidelity",
             "selection_objective": (
+                "at every integer readout duration from 1 through 20 us, report the "
+                "full tuple maximizing held-out fidelity LCB minus leakage UCB, "
+                "subject to substantial-leakage and coherent-control constraints; "
+                "manual selection only"
+                if self._duration_portfolio_active else
                 "minimize measured X180-plus-readout latency among candidates within "
                 "a familywise held-out noninferiority bound of the best TLS step-5 "
                 "fidelity, subject to direct shelving P(f) and third-cloud "
@@ -1414,7 +1725,7 @@ class BasicAutoTuner(ExperimentClass):
                 "minimize measured X180-plus-readout latency among candidates within "
                 "a familywise held-out noninferiority bound of the best TLS step-5 "
                 "fidelity, then require independently verified fixed-Gaussian "
-                "duration/power candidates without reproducible third-cloud growth"),
+                "duration/power candidates without a resolved third IQ population"),
             "initial": dict(self.initial),
             "working": dict(self.working),
             "best_found": None,
@@ -1427,16 +1738,30 @@ class BasicAutoTuner(ExperimentClass):
                 "status": "not_run", "coarse_rows": [],
                 "medium_rows": [], "trust_rows": [], "closure_rounds": [],
             },
+            "final_replay_history": self._final_replays,
             "stages": self._stages,
             "report": self._report,
             "discovery": self._discovery_status,
             "control_witnesses": self._control_witnesses,
             "confirmation_failures": [],
             "latency_optimization": {
-                "enabled": bool(self.params["latency"].get("enabled", True)),
+                "enabled": bool(
+                    not self._duration_portfolio_active
+                    and self.params["latency"].get("enabled", True)),
                 "objective": "readout generator duration plus four-sigma X180",
                 "requested_objective": "read_length plus four-sigma X180",
                 "status": "not_run",
+            },
+            "duration_portfolio": {
+                "enabled": bool(self._duration_portfolio_active),
+                "manual_selection_only": bool(
+                    self.params["duration_portfolio"].get(
+                        "manual_selection_only", True)),
+                "read_lengths_us": list(
+                    self.params["duration_portfolio"].get(
+                        "read_lengths_us", [])),
+                "entries": [], "status": "not_run",
+                "automatic_write_allowed": False,
             },
             "key_evidence": self._key_evidence,
             "eligible_tuned": {},
@@ -1454,9 +1779,10 @@ class BasicAutoTuner(ExperimentClass):
                 "measurement": (
                     "identity+shelving qutrit response inversion"
                     if self._leakage_active else
-                    "fixed-Gaussian duration/power third-cloud screen"),
+                    "fixed-Gaussian duration/power 2-D third-population screen"),
                 "direct_p2_measured": False,
                 "third_blob_guard": True,
+                "third_cluster_guard": True,
                 "optimized": False, "verified": False,
                 "failure": None,
             },
@@ -2005,6 +2331,15 @@ class BasicAutoTuner(ExperimentClass):
                      " with complete duration coverage"
                      if coverage.get("complete", False) else
                      " from the completed measurements"))
+        elif name == "duration_portfolio":
+            portfolio = self.data.get("duration_portfolio", {})
+            entries = portfolio.get("entries", []) if isinstance(
+                portfolio, dict) else []
+            safe = sum(str(row.get("status", "")).upper() == "SAFE"
+                       for row in entries if isinstance(row, dict))
+            print("  Portfolio complete: %d/%d readout lengths have a leakage-safe, "
+                  "coherently verified candidate."
+                  % (safe, len(entries)))
         elif name == "multi_aae":
             print("  AAE-refined pi pulse: %.6f MHz / %d DAC / %.1f ns."
                   % (self.working["qubit_pi_freq"],
@@ -2257,12 +2592,24 @@ class BasicAutoTuner(ExperimentClass):
             return 0.0
         return float((time.monotonic() - self._run_started_monotonic) / 60.0)
 
-    def _joint_budget_allows(self, reserve_final=True):
+    def _joint_runtime_minutes(self):
+        if self._joint_search_started_monotonic is None:
+            return 0.0
+        return float(
+            (time.monotonic() - self._joint_search_started_monotonic) / 60.0)
+
+    def _joint_budget_allows(self, reserve_final=True,
+                             additional_reserve_minutes=0.0):
         settings = self.params["joint_search"]
         budget = float(settings.get("runtime_budget_minutes", 30.0))
         reserve = (float(settings.get("reserve_final_minutes", 5.0))
                    if reserve_final else 0.0)
-        return self._runtime_minutes() < max(budget - reserve, 0.0)
+        reserve += max(float(additional_reserve_minutes), 0.0)
+        # Discovery, resonator backtracking, and bootstrap Rabi can legitimately be
+        # slow.  Charging those stages against the joint optimizer used to leave a
+        # passive-reset run with only a random fragment of its duration grid.  This
+        # budget begins at the joint map itself.
+        return self._joint_runtime_minutes() < max(budget - reserve, 0.0)
 
     @staticmethod
     def _joint_rank(row):
@@ -2380,7 +2727,9 @@ class BasicAutoTuner(ExperimentClass):
                            archive=True, reference_discriminator=None):
         ig, qg, ie, qe = self._acquire_ss_pair(
             dict(candidate), int(shots), state_order=state_order)
-        metrics = step5_metrics(ig, qg, ie, qe)
+        metrics = step5_metrics(
+            ig, qg, ie, qe,
+            analyze_multimodality=bool(self._analyze_multimodality))
         row = dict(candidate)
         row.update({key: value for key, value in metrics.items()
                     if key != "confusion"})
@@ -2436,6 +2785,43 @@ class BasicAutoTuner(ExperimentClass):
             "third_blob_excess_ucb": float(max(
                 row.get("third_blob_excess_ucb_95", np.inf)
                 for row in measurements)),
+            "ground_outlier_ucb_95": float(max(
+                row.get("ground_outlier_ucb_95", np.inf)
+                for row in measurements)),
+            "excited_outlier_ucb_95": float(max(
+                row.get("excited_outlier_ucb_95", np.inf)
+                for row in measurements)),
+        })
+        cluster_available = bool(all(
+            row.get("third_cluster_guard_available", False)
+            for row in measurements))
+        supported_clusters = [
+            row for row in measurements
+            if row.get("third_cluster_supported", False)]
+        out.update({
+            "third_cluster_guard_available": cluster_available,
+            "third_cluster_supported": bool(supported_clusters),
+            "third_cluster_detected": bool(any(
+                row.get("third_cluster_detected", False)
+                for row in measurements)),
+            "third_cluster_fraction": float(max((
+                row.get("third_cluster_fraction", 0.0)
+                for row in supported_clusters), default=0.0)),
+            "third_cluster_fraction_ucb_95": float(max((
+                row.get("third_cluster_fraction_ucb_95", 0.0)
+                for row in supported_clusters), default=0.0)),
+            "third_cluster_single_state_fraction": float(max((
+                row.get("third_cluster_single_state_fraction", 0.0)
+                for row in supported_clusters), default=0.0)),
+            "third_cluster_single_state_fraction_ucb_95": float(max((
+                row.get("third_cluster_single_state_fraction_ucb_95", 0.0)
+                for row in supported_clusters), default=0.0)),
+            "third_cluster_bic_improvement": float(max((
+                row.get("third_cluster_bic_improvement", -np.inf)
+                for row in measurements), default=-np.inf)),
+            "third_cluster_min_separation_sigma": float(min((
+                row.get("third_cluster_min_separation_sigma", np.inf)
+                for row in supported_clusters), default=np.inf)),
         })
         crossfit_fids = np.asarray([
             row.get("crossfit_fidelity", np.nan) for row in measurements],
@@ -5377,6 +5763,7 @@ class BasicAutoTuner(ExperimentClass):
         if not p.get("enabled", True):
             self.data["joint_search"]["status"] = "disabled"
             return None
+        self._joint_search_started_monotonic = time.monotonic()
         base = dict(self.working)
         read_lengths = np.asarray(sorted(set(
             float(value) for value in p["read_lengths_us"]
@@ -5397,10 +5784,16 @@ class BasicAutoTuner(ExperimentClass):
             read_gains = np.sort(np.unique(np.append(
                 read_gains, base_read_gain))).astype(int)
         gain_points = max(int(p["qubit_gain_points_including_ground"]), 5)
-        jobs = [(float(read_length), float(sigma), int(read_gain))
-                for read_length in read_lengths
-                for sigma in sigmas for read_gain in read_gains]
-        order = self.rng.permutation(len(jobs))
+        jobs = duration_balanced_joint_jobs(
+            read_lengths, sigmas, read_gains, self.rng)
+        strata_per_pass = int(read_lengths.size * sigmas.size)
+        minimum_passes = min(
+            max(int(p.get("minimum_duration_coverage_passes", 1)), 1),
+            int(read_gains.size))
+        mandatory_jobs = int(minimum_passes * strata_per_pass)
+        coarse_tail_reserve = (
+            float(p.get("reserve_medium_minutes", 6.0))
+            + float(p.get("reserve_control_refinement_minutes", 7.0)))
         coarse_rows, failures = [], []
         resumed_rows = list(self.data["joint_search"].get(
             "resumed_coarse_rows", []))
@@ -5409,11 +5802,18 @@ class BasicAutoTuner(ExperimentClass):
         anchor, _ = self._joint_anchor_probe(
             base, max(int(p["coarse_shots"]), 80),
             "joint-search anchor epoch 0")
-        anchor_interval = max(len(read_gains) * len(sigmas), 1)
-        for serial, job_index in enumerate(order):
-            if not self._joint_budget_allows(reserve_final=True):
+        anchor_interval = max(strata_per_pass, 1)
+        completed_jobs = 0
+        for serial, job in enumerate(jobs):
+            # Complete the mandatory duration-balanced pass even if a slow backend
+            # crosses the soft estimate while that pass is in flight.  Only later
+            # readout-power passes are optional.
+            if (serial >= mandatory_jobs
+                    and not self._joint_budget_allows(
+                        reserve_final=True,
+                        additional_reserve_minutes=coarse_tail_reserve)):
                 break
-            read_length, sigma, read_gain = jobs[int(job_index)]
+            read_length, sigma, read_gain, _gain_pass = job
             candidate = _with_candidate(
                 base, read_length=read_length, read_pulse_gain=read_gain,
                 sigma=sigma)
@@ -5428,8 +5828,9 @@ class BasicAutoTuner(ExperimentClass):
             gains = step * np.arange(gain_points, dtype=int)
             gains = gains[gains <= int(p["qubit_gain_hard_max"])]
             if gains.size < 3:
-                failures.append({"job": jobs[int(job_index)],
+                failures.append({"job": job[:3],
                                  "error": "gain axis collapsed"})
+                completed_jobs += 1
                 continue
             prior = [row for row in resumed_rows
                      if np.isclose(float(row.get("read_length", np.nan)), read_length)
@@ -5446,6 +5847,7 @@ class BasicAutoTuner(ExperimentClass):
                     row for row in prior
                     if int(round(float(row["qubit_pi_gain"]))) in set(gains[1:])])
                 resumed_cells += 1
+                completed_jobs += 1
                 continue
             try:
                 coarse_rows.extend(self._acquire_joint_gain_sweep(
@@ -5456,11 +5858,14 @@ class BasicAutoTuner(ExperimentClass):
                 raise
             except Exception as exc:
                 failures.append({
-                    "job": jobs[int(job_index)],
+                    "job": job[:3],
                     "error": "%s: %s" % (type(exc).__name__, exc),
                 })
+            completed_jobs += 1
             if ((serial + 1) % anchor_interval == 0
-                    and self._joint_budget_allows(reserve_final=True)):
+                    and self._joint_budget_allows(
+                        reserve_final=True,
+                        additional_reserve_minutes=coarse_tail_reserve)):
                 new_anchor, drifted = self._joint_anchor_probe(
                     base, max(int(p["coarse_shots"]), 80),
                     "joint-search anchor check", previous=anchor)
@@ -5480,8 +5885,15 @@ class BasicAutoTuner(ExperimentClass):
             "read_lengths_us": read_lengths,
             "sigma_values_us": sigmas,
             "read_gains_dac": read_gains,
+            "read_gain_pass_order_dac": np.asarray([
+                jobs[index * strata_per_pass][2]
+                for index in range(len(read_gains))], dtype=int),
+            "mandatory_duration_passes": int(minimum_passes),
+            "coarse_cells_attempted": int(completed_jobs),
+            "coarse_gain_passes_completed": int(
+                completed_jobs // max(strata_per_pass, 1)),
             "drift_epochs": int(epoch + 1),
-            "runtime_minutes_after_coarse": self._runtime_minutes(),
+            "runtime_minutes_after_coarse": self._joint_runtime_minutes(),
         })
         if not coarse_rows:
             raise RuntimeError("joint search completed no coarse measurements")
@@ -5494,7 +5906,11 @@ class BasicAutoTuner(ExperimentClass):
         )
         medium_candidates = [
             PulseCandidate.from_mapping(row).as_dict() for row in medium_seeds]
-        if self._joint_budget_allows(reserve_final=True):
+        control_reserve = float(p.get(
+            "reserve_control_refinement_minutes", 7.0))
+        if self._joint_budget_allows(
+                reserve_final=True,
+                additional_reserve_minutes=control_reserve):
             medium_rows = self._confirm_candidates(
                 medium_candidates + [base], int(p["medium_shots"]),
                 int(p["medium_blocks"]), "joint medium held-out",
@@ -5533,9 +5949,13 @@ class BasicAutoTuner(ExperimentClass):
         proposals = self._quantize_joint_proposals(
             proposals, base, read_radius, qubit_radius)
         for candidate in proposals:
-            if self._joint_budget_allows(reserve_final=True):
+            if self._joint_budget_allows(
+                    reserve_final=True,
+                    additional_reserve_minutes=control_reserve):
                 self._ensure_reset_profile(candidate, "joint trust-region proposal")
-        if proposals and self._joint_budget_allows(reserve_final=True):
+        if (proposals and self._joint_budget_allows(
+                reserve_final=True,
+                additional_reserve_minutes=control_reserve)):
             trust_rows = self._confirm_candidates(
                 proposals, int(p["trust_shots"]), int(p["trust_blocks"]),
                 "joint trust-region held-out", add_to_history=True)
@@ -5544,7 +5964,7 @@ class BasicAutoTuner(ExperimentClass):
         record.update({
             "trust_proposals": proposals,
             "trust_rows": trust_rows,
-            "runtime_minutes_after_search": self._runtime_minutes(),
+            "runtime_minutes_after_search": self._joint_runtime_minutes(),
         })
         candidate_pool.extend(trust_rows)
         best = max(candidate_pool, key=self._joint_rank)
@@ -7757,7 +8177,702 @@ class BasicAutoTuner(ExperimentClass):
                     "duration map non-authoritative until exact final tuple replay")
         return result
 
+    # ----------------------------------------- fixed-readout-duration manual portfolio
+    def _portfolio_source_rows(self):
+        """Every measured complete tuple which can seed a fixed-length search."""
+        rows = []
+        sources = (
+            self.data.get("final_candidates", []),
+            self.data.get("joint_search", {}).get("aae_candidates", []),
+            self._joint_rows, self._confirmed, self._archive,
+        )
+        for source in sources:
+            if not isinstance(source, (list, tuple)):
+                continue
+            for row in source:
+                if (isinstance(row, dict)
+                        and all(key in row for key in self.initial)
+                        and np.isfinite(float(row.get("fidelity", np.nan)))):
+                    rows.append(row)
+        return rows
+
+    def _portfolio_candidates_for_length(self, read_length, source_rows):
+        """Build an equally budgeted full-tuple refinement set for one duration."""
+        p = self.params["duration_portfolio"]
+        length = float(read_length)
+        local = [row for row in source_rows
+                 if np.isclose(float(row.get("read_length", np.nan)), length,
+                               rtol=0.0, atol=1e-9)]
+        local = sorted(local, key=self._joint_rank, reverse=True)
+        if not local:
+            return [], {
+                "source_rows": 0, "native_seed_count": 0,
+                "cross_seed_count": 0, "proposal_count": 0,
+                "failure": "the structured joint search measured no tuple at this "
+                           "readout duration",
+            }
+
+        native = _unique_candidates([
+            {key: row[key] for key in self.initial}
+            for row in local[:max(int(p["native_seeds_per_length"]), 1)]
+        ])
+
+        readouts, seen_readouts = [], set()
+        for row in local:
+            key = (round(float(row["read_pulse_freq"]), 9),
+                   int(round(row["read_pulse_gain"])))
+            if key in seen_readouts:
+                continue
+            seen_readouts.add(key)
+            readouts.append(row)
+            if len(readouts) >= max(int(p["readout_seeds_per_length"]), 1):
+                break
+
+        # AAE and coherent-Rabi calibration are properties of the control waveform,
+        # not of integration time.  Cross their best measured control basins with
+        # each length's best readout basins, then remeasure the complete physical
+        # tuples so no fidelity or safety evidence is borrowed across durations.
+        control_source = []
+        aae = self.data.get("joint_search", {}).get("aae_candidates", [])
+        if isinstance(aae, list):
+            control_source.extend(aae)
+        control_source.extend(source_rows)
+        control_source = sorted(
+            (row for row in control_source
+             if isinstance(row, dict)
+             and all(key in row for key in self.initial)),
+            key=self._joint_rank, reverse=True)
+        controls, seen_controls = [], set()
+        for row in control_source:
+            key = _control_key(row)
+            if key in seen_controls:
+                continue
+            seen_controls.add(key)
+            controls.append(row)
+            if len(controls) >= max(int(p["control_seed_count"]), 1):
+                break
+
+        crossed = []
+        for readout in readouts:
+            for control in controls:
+                crossed.append(_with_candidate(
+                    readout, read_length=length,
+                    qubit_pi_freq=float(control["qubit_pi_freq"]),
+                    qubit_pi_gain=int(control["qubit_pi_gain"]),
+                    sigma=float(control["sigma"]),
+                    qubit_drag_beta=float(control.get(
+                        "qubit_drag_beta", 0.0))))
+
+        training = local
+        center = native[0]
+        read_radius = float(p["local_read_frequency_radius_mhz"])
+        qubit_radius = float(p["local_qubit_frequency_radius_mhz"])
+        proposal_count = max(int(p["local_proposals_per_length"]), 0)
+        proposals = []
+        if proposal_count:
+            limits = {
+                "read_pulse_freq": (
+                    float(center["read_pulse_freq"]) - read_radius,
+                    float(center["read_pulse_freq"]) + read_radius),
+                "read_pulse_gain": (
+                    int(self.params["joint_search"]["read_gain_min"]),
+                    int(self.params["joint_search"]["read_gain_max"])),
+                "read_length": (length, length),
+                "qubit_pi_freq": (
+                    float(center["qubit_pi_freq"]) - qubit_radius,
+                    float(center["qubit_pi_freq"]) + qubit_radius),
+                "qubit_pi_gain": (
+                    1, int(self.params["joint_search"]["qubit_gain_hard_max"])),
+                "sigma": (
+                    min(self.params["joint_search"]["sigma_values_us"]),
+                    max(self.params["joint_search"]["sigma_values_us"])),
+            }
+            try:
+                proposals = propose_trust_region_candidates(
+                    training, rng=self.rng, count=proposal_count,
+                    proposal_limits=limits,
+                    read_frequency_radius_mhz=read_radius,
+                    qubit_frequency_radius_mhz=qubit_radius,
+                    read_gain_fraction=float(p["local_read_gain_fraction"]),
+                    qubit_gain_fraction=float(p["local_qubit_gain_fraction"]),
+                    trust_regions=min(
+                        max(int(self.params["joint_search"]["trust_regions"]), 1),
+                        max(len(native), 1)),
+                    pool_size=max(
+                        int(self.params["joint_search"]["trust_pool_size"]),
+                        300),
+                )
+                proposals = self._quantize_joint_proposals(
+                    proposals, center, read_radius, qubit_radius)
+                proposals = [_with_candidate(row, read_length=length)
+                             for row in proposals[:proposal_count]]
+            except Exception as exc:
+                proposals = []
+                proposal_failure = "%s: %s" % (type(exc).__name__, exc)
+            else:
+                proposal_failure = None
+        else:
+            proposal_failure = None
+
+        candidates = _unique_candidates(native + crossed + proposals)
+        # Fill duplicate-collapsed sets from measured local rows.  The target is the
+        # same at every duration, preserving equal opportunity under runtime limits.
+        target = max(
+            int(p["native_seeds_per_length"])
+            + int(p["readout_seeds_per_length"]) * int(p["control_seed_count"])
+            + proposal_count, 1)
+        for row in local:
+            if len(candidates) >= target:
+                break
+            candidates = _unique_candidates(candidates + [
+                {key: row[key] for key in self.initial}])
+        candidates = candidates[:target]
+        return candidates, {
+            "source_rows": len(local),
+            "native_seed_count": len(native),
+            "cross_seed_count": len(_unique_candidates(crossed)),
+            "proposal_count": len(proposals),
+            "target_candidate_count": target,
+            "proposal_failure": proposal_failure,
+        }
+
+    def _portfolio_screen_candidate(self, candidate, length, rank):
+        """Apply the active direct or operational safety test to one exact tuple."""
+        p = self.params["duration_portfolio"]
+        label = "portfolio %.0f us candidate %d" % (float(length), int(rank))
+        if self._leakage_active:
+            calibration = self._calibrate_ef_transition(candidate)
+            row = self._measure_leakage_candidate(
+                candidate, calibration,
+                max(int(p["screen_shots"]),
+                    int(self.params["leakage"]["shots"])),
+                max(int(p["screen_reference_shots"]),
+                    int(self.params["leakage"]["reference_shots"])),
+                label)
+            row["portfolio_safe"] = bool(row.get("leakage_safe", False))
+            row["portfolio_safety_kind"] = "direct_shelving_p_f_and_2d_iq"
+            return row
+        if not self._operational_leakage_active:
+            raise RuntimeError(
+                "neither direct P(f) nor operational 2-D IQ safety is enabled")
+        attempts = 1 + max(int(p.get("screen_drift_retries", 2)), 0)
+        row = None
+        for attempt in range(attempts):
+            row = self._measure_operational_leakage_candidate(
+                candidate, int(p["screen_shots"]),
+                int(p["screen_reference_shots"]),
+                "%s bracket %d" % (label, attempt + 1))
+            row["portfolio_screen_attempt"] = int(attempt + 1)
+            if (row.get("valid", False)
+                    or row.get("failure")
+                    != "the bracketing discriminator drifted"):
+                break
+        row["portfolio_safe"] = bool(row.get("operational_safe", False))
+        row["portfolio_safety_kind"] = "resolved_2d_iq_population"
+        return row
+
+    @staticmethod
+    def _portfolio_safety_shortlist(ranked, limit):
+        """Preserve fidelity, pulse duration, and low-power safety directions."""
+        ranked = list(ranked)
+        limit = max(int(limit), 1)
+        if len(ranked) <= limit:
+            return ranked
+        chosen = []
+
+        def add(row):
+            if (row is not None
+                    and not any(_candidate_key(row) == _candidate_key(existing)
+                                for existing in chosen)
+                    and len(chosen) < limit):
+                chosen.append(row)
+
+        add(ranked[0])
+        # One top-fidelity member of every Gaussian duration protects the primary
+        # control-leakage direction from a global top-K collapse.
+        by_sigma = {}
+        for row in ranked:
+            by_sigma.setdefault(round(float(row["sigma"]), 9), row)
+        for row in sorted(by_sigma.values(), key=BasicAutoTuner._joint_rank,
+                          reverse=True):
+            add(row)
+        # Lower readout and control exposure can remove ionization/leakage at a small
+        # fidelity cost.  Preserve those Pareto directions before filling by score.
+        for row in sorted(ranked, key=lambda item: (
+                float(item["read_pulse_gain"]) ** 2
+                * float(item["read_length"]),
+                float(item["qubit_pi_gain"]) ** 2 * float(item["sigma"]),
+                -float(item.get("fidelity_lcb_95", -np.inf)))):
+            add(row)
+            if len(chosen) >= limit:
+                break
+        for row in ranked:
+            add(row)
+            if len(chosen) >= limit:
+                break
+        return chosen
+
+    def _portfolio_confirmation_safe(self, screening, confirmation):
+        """Require the safety screen and held-out IQ replay to agree."""
+        p = self.params["leakage"]
+        supported = bool(confirmation.get("third_cluster_supported", False))
+        cluster_safe = bool(
+            confirmation.get("third_cluster_guard_available", False)
+            and (not supported
+                 or (float(confirmation.get(
+                     "third_cluster_fraction_ucb_95", np.inf))
+                     <= float(p["max_third_cluster_fraction"])
+                     and float(confirmation.get(
+                         "third_cluster_single_state_fraction_ucb_95", np.inf))
+                     <= float(p[
+                         "max_single_state_third_cluster_fraction"]))))
+        return bool(
+            screening.get("portfolio_safe", False)
+            and confirmation.get("confirmation_complete", False)
+            and cluster_safe
+            and float(confirmation.get("third_blob_excess_ucb", np.inf))
+            <= float(p["max_third_blob_excess"]))
+
+    def _portfolio_merge_evidence(self, screening, confirmation=None):
+        """Attach worst-case exact-tuple safety evidence to held-out fidelity."""
+        row = dict(confirmation if isinstance(confirmation, dict) else screening)
+        rows = [screening]
+        if isinstance(confirmation, dict):
+            rows.append(confirmation)
+
+        def worst(key, default=np.inf):
+            values = [float(item.get(key, default)) for item in rows]
+            finite = [value for value in values if np.isfinite(value)]
+            return float(max(finite)) if finite else float(default)
+
+        row.update({
+            "third_blob_excess_ucb": worst("third_blob_excess_ucb"),
+            # A supported third component in either the screening bracket or the
+            # held-out replay is physical evidence and must remain in the objective;
+            # a later inconclusive GMM fit cannot erase it.
+            "third_cluster_supported": any(bool(item.get(
+                "third_cluster_supported", False)) for item in rows),
+            "third_cluster_guard_available": all(bool(item.get(
+                "third_cluster_guard_available", False)) for item in rows),
+            "third_cluster_fraction": worst(
+                "third_cluster_fraction", default=0.0),
+            "third_cluster_fraction_ucb_95": worst(
+                "third_cluster_fraction_ucb_95", default=0.0),
+            "third_cluster_single_state_fraction": worst(
+                "third_cluster_single_state_fraction", default=0.0),
+            "third_cluster_single_state_fraction_ucb_95": worst(
+                "third_cluster_single_state_fraction_ucb_95", default=0.0),
+            "single_p2_ucb": worst("single_p2_ucb"),
+            "amplified_p2_ucb": worst("amplified_p2_ucb"),
+            "portfolio_safety_kind": screening.get(
+                "portfolio_safety_kind"),
+            "screening": copy.deepcopy(screening),
+            "held_out_confirmation": copy.deepcopy(confirmation),
+        })
+        return row
+
+    def _portfolio_objective(self, row):
+        """Conservative fidelity-minus-leakage utility for one exact tuple.
+
+        Fidelity enters through its 95% lower confidence bound and leakage through
+        upper confidence bounds.  The hard safety limits are evaluated separately;
+        this score decides which candidate is best *within* a safety class and which
+        unsafe result is most useful to report when no candidate meets the limits.
+        """
+        p = self.params["duration_portfolio"]
+        fidelity_lcb = float(row.get("fidelity_lcb_95", np.nan))
+        if not np.isfinite(fidelity_lcb):
+            fidelity = float(row.get("fidelity", np.nan))
+            fidelity_se = float(row.get("fidelity_se", np.nan))
+            if not np.isfinite(fidelity):
+                return -np.inf
+            fidelity_lcb = fidelity - (1.96 * fidelity_se
+                                       if np.isfinite(fidelity_se) else 0.0)
+
+        risks = []
+        blob = float(row.get("third_blob_excess_ucb", np.nan))
+        if np.isfinite(blob):
+            risks.append(max(blob, 0.0))
+        if bool(row.get("third_cluster_supported", False)):
+            for key in ("third_cluster_fraction_ucb_95",
+                        "third_cluster_single_state_fraction_ucb_95"):
+                value = float(row.get(key, np.nan))
+                if np.isfinite(value):
+                    risks.append(max(value, 0.0))
+        if self._leakage_active:
+            direct = float(row.get("single_p2_ucb", np.nan))
+            if np.isfinite(direct):
+                risks.append(max(direct, 0.0))
+        leakage_risk = max(risks) if risks else np.nan
+        if not np.isfinite(leakage_risk):
+            return -np.inf
+
+        amplified_risk = 0.0
+        if self._leakage_active:
+            amplified = float(row.get("amplified_p2_ucb", np.nan))
+            if np.isfinite(amplified):
+                amplified_risk = max(amplified, 0.0)
+        score = (
+            fidelity_lcb
+            - float(p.get("leakage_penalty_weight", 1.0)) * leakage_risk
+            - float(p.get("amplified_leakage_penalty_weight", 0.5))
+            * amplified_risk)
+        return float(score)
+
+    def _annotate_portfolio_objective(self, row):
+        """Attach the exact quantities used for manual-portfolio ranking."""
+        row = dict(row)
+        risks = []
+        blob = float(row.get("third_blob_excess_ucb", np.nan))
+        if np.isfinite(blob):
+            risks.append(max(blob, 0.0))
+        if bool(row.get("third_cluster_supported", False)):
+            for key in ("third_cluster_fraction_ucb_95",
+                        "third_cluster_single_state_fraction_ucb_95"):
+                value = float(row.get(key, np.nan))
+                if np.isfinite(value):
+                    risks.append(max(value, 0.0))
+        if self._leakage_active:
+            direct = float(row.get("single_p2_ucb", np.nan))
+            if np.isfinite(direct):
+                risks.append(max(direct, 0.0))
+        row["portfolio_leakage_risk_ucb"] = (
+            float(max(risks)) if risks else np.nan)
+        row["portfolio_score"] = self._portfolio_objective(row)
+        return row
+
+    def _portfolio_rank(self, row):
+        """Deterministic risk-adjusted rank with fidelity as the tie breaker."""
+        return (self._portfolio_objective(row),) + tuple(self._joint_rank(row))
+
+    def _portfolio_control_audit(self, candidate, length):
+        """Run and retain an odd/even coherence audit without selecting a config."""
+        previous_key = self._final_control_verified_key
+        previous_map = copy.deepcopy(self._maps.get("final_control_verify"))
+        try:
+            audit = self._stage_final_control_verify(candidate)
+            return copy.deepcopy(audit), None
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            audit = copy.deepcopy(self._maps.get("final_control_verify"))
+            return audit, "%s: %s" % (type(exc).__name__, exc)
+        finally:
+            self._final_control_verified_key = previous_key
+            if previous_map is None:
+                self._maps.pop("final_control_verify", None)
+            else:
+                self._maps["final_control_verify"] = previous_map
+
+    def _stage_duration_portfolio(self):
+        """Return one constrained optimum for every requested readout duration."""
+        if not self._duration_portfolio_active:
+            return None
+        p = self.params["duration_portfolio"]
+        lengths = sorted(set(
+            float(value) for value in p.get("read_lengths_us", [])
+            if np.isfinite(float(value)) and 1.0 <= float(value) <= 20.0))
+        if not lengths:
+            raise ValueError("duration portfolio needs read lengths in [1, 20] us")
+        source_rows = self._portfolio_source_rows()
+        entries, all_failures, control_audits = [], [], []
+        expected_refine_candidates = None
+
+        for length in lengths:
+            entry = {
+                "read_length_us": float(length), "status": "INCONCLUSIVE",
+                "leakage_status": "INCONCLUSIVE", "control_status": "NOT_RUN",
+                "selected": None, "search": {}, "screened_candidates": [],
+                "failures": [],
+            }
+            try:
+                candidates, search = self._portfolio_candidates_for_length(
+                    length, source_rows)
+                entry["search"] = search
+                if expected_refine_candidates is None and candidates:
+                    expected_refine_candidates = len(candidates)
+                if not candidates:
+                    raise RuntimeError(search.get(
+                        "failure", "no candidate seeds were available"))
+                for candidate in candidates:
+                    self._ensure_reset_profile(
+                        candidate, "portfolio %.0f us refinement" % length)
+                refined = self._confirm_candidates(
+                    candidates, int(p["refine_shots"]),
+                    int(p["refine_blocks"]),
+                    "portfolio %.0f us equal-budget refinement" % length,
+                    add_to_history=True)
+                entry["search"].update({
+                    "candidate_count": len(candidates),
+                    "refined_candidate_count": len(refined),
+                    "refinement_complete": bool(
+                        len(refined) == len(candidates)
+                        and all(row.get("confirmation_complete", False)
+                                for row in refined)),
+                })
+                ranked = sorted(refined, key=self._joint_rank, reverse=True)
+                screen_count = max(int(p["screen_candidates_per_length"]), 1)
+                screen_shortlist = self._portfolio_safety_shortlist(
+                    ranked, screen_count)
+                screened = []
+                for rank, candidate in enumerate(screen_shortlist, 1):
+                    try:
+                        screened.append(self._annotate_portfolio_objective(
+                            self._portfolio_screen_candidate(
+                                candidate, length, rank)))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as exc:
+                        failure = {
+                            "phase": "safety_screen", "candidate_rank": rank,
+                            "error": "%s: %s" % (type(exc).__name__, exc),
+                        }
+                        entry["failures"].append(failure)
+                        all_failures.append(dict(failure, read_length_us=length))
+                entry["screened_candidates"] = screened
+
+                # Every candidate which passed the first bracket receives its own
+                # multi-block, 2-D held-out replay.  No all-duration batch is used:
+                # a backend fault at 1 us must not invalidate complete evidence at
+                # 20 us or vice versa.
+                final_rows = []
+                safe_screened = [row for row in screened
+                                 if row.get("portfolio_safe", False)]
+                if safe_screened:
+                    safe_screened = sorted(
+                        safe_screened, key=self._portfolio_rank, reverse=True)
+                    safe_screened = safe_screened[:max(
+                        int(p.get("confirm_candidates_per_length", 4)), 1)]
+                for index, screening in enumerate(safe_screened, 1):
+                    candidate = {key: screening[key] for key in self.initial}
+                    try:
+                        confirmation = self._confirm_candidates_with_multimodality(
+                            [candidate], int(p["confirm_shots"]),
+                            int(p["confirm_blocks"]),
+                            "portfolio %.0f us exact safety replay %d"
+                            % (length, index), add_to_history=True)[0]
+                        merged = self._portfolio_merge_evidence(
+                            screening, confirmation)
+                        merged["portfolio_safe"] = self._portfolio_confirmation_safe(
+                            screening, confirmation)
+                        final_rows.append(
+                            self._annotate_portfolio_objective(merged))
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as exc:
+                        failure = {
+                            "phase": "held_out_confirmation",
+                            "candidate_rank": index,
+                            "error": "%s: %s" % (type(exc).__name__, exc),
+                        }
+                        entry["failures"].append(failure)
+                        all_failures.append(dict(failure, read_length_us=length))
+
+                safe_final = sorted(
+                    (row for row in final_rows
+                     if row.get("portfolio_safe", False)),
+                    key=self._portfolio_rank, reverse=True)
+                selected = None
+                require_control = bool(p.get("require_control_audit", True))
+                for contender in safe_final:
+                    if not require_control:
+                        contender["control_verified"] = True
+                        contender["control_audit"] = None
+                        selected = contender
+                        break
+                    audit, error = self._portfolio_control_audit(
+                        contender, length)
+                    audit_row = {
+                        "read_length_us": length,
+                        "candidate_key": list(_candidate_key(contender)),
+                        "verified": bool(error is None),
+                        "error": error, "audit": audit,
+                    }
+                    control_audits.append(audit_row)
+                    contender["control_verified"] = bool(error is None)
+                    contender["control_audit"] = audit
+                    contender["control_failure"] = error
+                    if error is None:
+                        selected = contender
+                        break
+
+                if selected is not None:
+                    entry.update({
+                        "status": "SAFE", "leakage_status": "SAFE",
+                        "control_status": "VERIFIED",
+                        "selected": copy.deepcopy(selected),
+                    })
+                elif safe_final:
+                    selected = safe_final[0]
+                    entry.update({
+                        "status": "INCONCLUSIVE", "leakage_status": "SAFE",
+                        "control_status": "FAILED",
+                        "selected": copy.deepcopy(selected),
+                    })
+                else:
+                    valid_screened = [row for row in screened
+                                      if row.get("valid", False)]
+                    if valid_screened:
+                        selected = max(
+                            valid_screened, key=self._portfolio_rank)
+                        selected = self._annotate_portfolio_objective(
+                            self._portfolio_merge_evidence(selected))
+                        selected["portfolio_safe"] = False
+                        entry.update({
+                            "status": "UNSAFE", "leakage_status": "UNSAFE",
+                            "control_status": "NOT_RUN",
+                            "selected": copy.deepcopy(selected),
+                        })
+                    elif screened:
+                        selected = max(screened, key=self._portfolio_rank)
+                        entry.update({
+                            "status": "INCONCLUSIVE",
+                            "leakage_status": "INCONCLUSIVE",
+                            "control_status": "NOT_RUN",
+                            "selected": copy.deepcopy(selected),
+                        })
+                    else:
+                        # The operator asked for one parameter set at every duration.
+                        # Preserve the best held-out fidelity tuple when the safety
+                        # backend itself failed, but label its leakage INCONCLUSIVE and
+                        # leave every leakage field unavailable.  It is never SAFE and
+                        # can never be written automatically.
+                        selected = copy.deepcopy(ranked[0])
+                        selected.update({
+                            "portfolio_safe": False,
+                            "control_verified": False,
+                            "portfolio_safety_kind": "unavailable",
+                            "third_cluster_fraction": np.nan,
+                            "third_cluster_fraction_ucb_95": np.nan,
+                            "third_cluster_single_state_fraction": np.nan,
+                            "third_cluster_single_state_fraction_ucb_95": np.nan,
+                            "single_p2_ucb": np.nan,
+                            "amplified_p2_ucb": np.nan,
+                            "portfolio_leakage_risk_ucb": np.nan,
+                            "portfolio_score": np.nan,
+                        })
+                        entry.update({
+                            "status": "INCONCLUSIVE",
+                            "leakage_status": "INCONCLUSIVE",
+                            "control_status": "NOT_RUN",
+                            "selected": selected,
+                        })
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                failure = {"phase": "duration", "error": "%s: %s" % (
+                    type(exc).__name__, exc)}
+                entry["failures"].append(failure)
+                all_failures.append(dict(failure, read_length_us=length))
+            entries.append(entry)
+
+        safe_entries = [entry for entry in entries
+                        if entry.get("status") == "SAFE"
+                        and isinstance(entry.get("selected"), dict)]
+        reportable_entries = [entry for entry in entries
+                              if isinstance(entry.get("selected"), dict)]
+        best_safe_entry = (max(
+            safe_entries,
+            key=lambda entry: self._portfolio_rank(entry["selected"]))
+            if safe_entries else None)
+        best_entry = (best_safe_entry if best_safe_entry is not None else
+            (max(reportable_entries, key=lambda entry: self._portfolio_rank(
+                entry["selected"])) if reportable_entries else None))
+        requested = len(lengths)
+        complete_lengths = sum(isinstance(entry.get("selected"), dict)
+                               for entry in entries)
+        equal_budget = bool(
+            expected_refine_candidates is not None
+            and all((not entry.get("search", {}).get("candidate_count"))
+                    or int(entry["search"]["candidate_count"])
+                    == int(expected_refine_candidates)
+                    for entry in entries))
+        portfolio = {
+            "enabled": True, "manual_selection_only": True,
+            "automatic_write_allowed": False,
+            "selection_objective": (
+                "fidelity_lcb_95 - leakage_penalty_weight * "
+                "leakage_risk_ucb - amplified_leakage_penalty_weight * "
+                "amplified_p2_ucb"),
+            "leakage_penalty_weight": float(
+                p.get("leakage_penalty_weight", 1.0)),
+            "amplified_leakage_penalty_weight": float(
+                p.get("amplified_leakage_penalty_weight", 0.5)),
+            "read_lengths_us": lengths, "entries": entries,
+            "requested_length_count": requested,
+            "reportable_length_count": complete_lengths,
+            "safe_length_count": len(safe_entries),
+            "unsafe_length_count": sum(
+                entry.get("status") == "UNSAFE" for entry in entries),
+            "inconclusive_length_count": sum(
+                entry.get("status") == "INCONCLUSIVE" for entry in entries),
+            "equal_refinement_budget": equal_budget,
+            "expected_refine_candidates_per_length": expected_refine_candidates,
+            "control_audits": control_audits,
+            "failures": all_failures,
+            "best_safe_entry": copy.deepcopy(best_safe_entry),
+            "status": ("complete" if complete_lengths == requested
+                       else "partial"),
+        }
+        self.data["duration_portfolio"] = portfolio
+        self._maps["duration_portfolio"] = {
+            "read_length_us": np.asarray(lengths, dtype=float),
+            "fidelity": np.asarray([
+                float(entry.get("selected", {}).get("fidelity", np.nan))
+                for entry in entries]),
+            "fidelity_se": np.asarray([
+                float(entry.get("selected", {}).get("fidelity_se", np.nan))
+                for entry in entries]),
+            "third_population_ucb_95": np.asarray([
+                float(entry.get("selected", {}).get(
+                    "third_cluster_fraction_ucb_95", np.nan))
+                for entry in entries]),
+            "single_p2_ucb": np.asarray([
+                float(entry.get("selected", {}).get("single_p2_ucb", np.nan))
+                for entry in entries]),
+            "status_code": np.asarray([
+                {"SAFE": 1, "UNSAFE": -1}.get(entry.get("status"), 0)
+                for entry in entries], dtype=int),
+            "search_complete": bool(complete_lengths == requested),
+            "selection_confirmed": bool(len(safe_entries) > 0),
+            "equal_refinement_budget": equal_budget,
+        }
+        self.data["leakage"].update({
+            "portfolio_screened": True,
+            "portfolio_safe_length_count": len(safe_entries),
+            # There is intentionally no single selected write tuple in this mode.
+            "verified": False, "required_for_write": False,
+            "final_replay_complete": False,
+        })
+        self._final_control_verified_key = None
+        self._leakage_verified_candidate_key = None
+        if best_entry is None:
+            raise RuntimeError(
+                "the duration portfolio completed no reportable parameter set")
+        best = copy.deepcopy(best_entry["selected"])
+        self.working = {key: best[key] for key in self.initial}
+        return best
+
     # ----------------------------------------------- practical operational leakage screen
+    def _measure_candidate_with_multimodality(self, candidate, shots, label,
+                                               **kwargs):
+        previous = bool(self._analyze_multimodality)
+        self._analyze_multimodality = True
+        try:
+            return self._measure_candidate(candidate, shots, label, **kwargs)
+        finally:
+            self._analyze_multimodality = previous
+
+    def _confirm_candidates_with_multimodality(self, candidates, shots, blocks,
+                                                label, **kwargs):
+        previous = bool(self._analyze_multimodality)
+        self._analyze_multimodality = True
+        try:
+            return self._confirm_candidates(
+                candidates, shots, blocks, label, **kwargs)
+        finally:
+            self._analyze_multimodality = previous
+
     def _acquire_repeated_populations(self, candidate, pulse_counts, shots,
                                       calibration):
         """Measure exact-candidate odd/even repeated-pulse populations."""
@@ -7930,7 +9045,7 @@ class BasicAutoTuner(ExperimentClass):
         """
         p = self.params["leakage"]
         candidate = dict(candidate)
-        before = self._measure_candidate(
+        before = self._measure_candidate_with_multimodality(
             candidate, int(reference_shots), "%s discriminator" % label)
         calibration = {key: before[key] for key in
                        ("read_theta", "scale_factor", "threshold")}
@@ -7947,7 +9062,7 @@ class BasicAutoTuner(ExperimentClass):
         populations = (np.asarray(self._acquire_repeated_populations(
             candidate, depths, int(shots), calibration), dtype=float)
             if repeated_enabled else np.asarray([], dtype=float))
-        after = self._measure_candidate(
+        after = self._measure_candidate_with_multimodality(
             candidate, int(reference_shots), "%s discriminator post" % label,
             reference_discriminator=calibration)
         drift = self._calibration_drift(before, after)
@@ -8005,6 +9120,62 @@ class BasicAutoTuner(ExperimentClass):
         third_before = float(before["third_blob_excess_ucb_95"])
         third_after = float(after["third_blob_excess_ucb_95"])
         third_blob = float(max(third_before, third_after))
+
+        def cluster_guard(row):
+            available = bool(row.get("third_cluster_guard_available", False))
+            bic = float(row.get("third_cluster_bic_improvement", np.nan))
+            separation = float(row.get(
+                "third_cluster_min_separation_sigma", np.nan))
+            supported = bool(
+                available and bool(row.get("third_cluster_supported", False))
+                and np.all(np.isfinite([bic, separation]))
+                and bic >= float(p["third_cluster_min_bic_improvement"])
+                and separation >= float(
+                    p["third_cluster_min_separation_sigma"]))
+            fraction = (float(row.get("third_cluster_fraction", np.nan))
+                        if supported else 0.0)
+            fraction_ucb = (float(row.get(
+                "third_cluster_fraction_ucb_95", np.nan))
+                if supported else 0.0)
+            single_state = (float(row.get(
+                "third_cluster_single_state_fraction", np.nan))
+                            if supported else 0.0)
+            single_state_ucb = (float(row.get(
+                "third_cluster_single_state_fraction_ucb_95", np.nan))
+                if supported else 0.0)
+            valid_guard = bool(
+                available and np.all(np.isfinite([
+                    fraction, fraction_ucb, single_state,
+                    single_state_ucb])))
+            safe_guard = bool(
+                valid_guard
+                and fraction_ucb <= float(p["max_third_cluster_fraction"])
+                and single_state_ucb <= float(
+                    p["max_single_state_third_cluster_fraction"]))
+            return {
+                "available": available, "supported": supported,
+                "valid": valid_guard, "safe": safe_guard,
+                "fraction": fraction, "fraction_ucb_95": fraction_ucb,
+                "single_state_fraction": single_state,
+                "single_state_fraction_ucb_95": single_state_ucb,
+                "bic_improvement": bic, "separation_sigma": separation,
+            }
+
+        cluster_before = cluster_guard(before)
+        cluster_after = cluster_guard(after)
+        cluster_valid = bool(cluster_before["valid"] and cluster_after["valid"])
+        third_cluster_fraction = float(max(
+            cluster_before["fraction"], cluster_after["fraction"]))
+        third_cluster_fraction_ucb = float(max(
+            cluster_before["fraction_ucb_95"],
+            cluster_after["fraction_ucb_95"]))
+        third_cluster_single_state = float(max(
+            cluster_before["single_state_fraction"],
+            cluster_after["single_state_fraction"]))
+        third_cluster_single_state_ucb = float(max(
+            cluster_before["single_state_fraction_ucb_95"],
+            cluster_after["single_state_fraction_ucb_95"]))
+        cluster_safe = bool(cluster_before["safe"] and cluster_after["safe"])
         fids = np.asarray([before["fidelity"], after["fidelity"]], dtype=float)
         shot_ses = np.asarray(
             [before["fidelity_se"], after["fidelity_se"]], dtype=float)
@@ -8023,9 +9194,9 @@ class BasicAutoTuner(ExperimentClass):
         valid = bool(
             np.isfinite(fidelity) and np.isfinite(fidelity_se)
             and drift_stable and repeated_valid
-            and np.isfinite(third_blob))
+            and np.isfinite(third_blob) and cluster_valid)
         safe = bool(
-            valid and repeated_safe
+            valid and repeated_safe and cluster_safe
             and third_blob <= float(p["max_third_blob_excess"]))
         failure = None
         if not valid:
@@ -8033,10 +9204,21 @@ class BasicAutoTuner(ExperimentClass):
                 failure = "the bracketing discriminator drifted"
             elif not repeated_valid:
                 failure = "the optional repeated-return diagnostic was invalid"
+            elif not cluster_valid:
+                failure = "the three-cloud IQ safety model was unavailable or invalid"
             else:
                 failure = "the bracketing single-shot audit was invalid"
         elif not repeated_safe:
             failure = "the optional repeated-return diagnostic exceeded its limit"
+        elif not cluster_safe:
+            failure = (
+                "resolved third IQ population 95%% UCB %.1f%% overall / %.1f%% "
+                "in one preparation exceeded %.1f%% / %.1f%%"
+                % (100.0 * third_cluster_fraction_ucb,
+                   100.0 * third_cluster_single_state_ucb,
+                   100.0 * float(p["max_third_cluster_fraction"]),
+                   100.0 * float(
+                       p["max_single_state_third_cluster_fraction"])))
         elif third_blob > float(p["max_third_blob_excess"]):
             failure = ("third-cloud excess UCB %.4f exceeded %.4f"
                        % (third_blob, float(p["max_third_blob_excess"])))
@@ -8048,6 +9230,17 @@ class BasicAutoTuner(ExperimentClass):
             "third_blob_excess_ucb": third_blob,
             "third_blob_excess_ucb_before": third_before,
             "third_blob_excess_ucb_after": third_after,
+            "third_cluster_guard_available": cluster_valid,
+            "third_cluster_supported": bool(
+                cluster_before["supported"] or cluster_after["supported"]),
+            "third_cluster_detected": bool(not cluster_safe),
+            "third_cluster_fraction": third_cluster_fraction,
+            "third_cluster_fraction_ucb_95": third_cluster_fraction_ucb,
+            "third_cluster_single_state_fraction": third_cluster_single_state,
+            "third_cluster_single_state_fraction_ucb_95": (
+                third_cluster_single_state_ucb),
+            "third_cluster_before": cluster_before,
+            "third_cluster_after": cluster_after,
             "depths": np.asarray(depths, dtype=int),
             "observed_excited_fraction": populations,
             "normalized_excited_population": normalized,
@@ -8297,7 +9490,7 @@ class BasicAutoTuner(ExperimentClass):
         # frequency/gain variants of one duration scored well earlier.
         shortlist = self._duration_covered_shortlist(
             safe_rows, p["operational_selection_shortlist"])
-        confirmations = self._confirm_candidates(
+        confirmations = self._confirm_candidates_with_multimodality(
             shortlist, int(p["operational_selection_shots"]),
             int(p["operational_selection_blocks"]),
             "held-out operationally safe fidelity selection",
@@ -8311,8 +9504,19 @@ class BasicAutoTuner(ExperimentClass):
                 screened_row.get("max_even_return_error_ucb", np.nan))
             confirmation["screening_max_odd_inversion_error_ucb"] = float(
                 screened_row.get("max_odd_inversion_error_ucb", np.nan))
+            cluster_available = bool(confirmation.get(
+                "third_cluster_guard_available", False))
+            cluster_fraction_ucb = float(confirmation.get(
+                "third_cluster_fraction_ucb_95", np.inf))
+            cluster_single_state_ucb = float(confirmation.get(
+                "third_cluster_single_state_fraction_ucb_95", np.inf))
             confirmation["operational_safe"] = bool(
                 screened_row.get("operational_safe", False)
+                and cluster_available
+                and cluster_fraction_ucb <= float(
+                    p["max_third_cluster_fraction"])
+                and cluster_single_state_ucb <= float(
+                    p["max_single_state_third_cluster_fraction"])
                 and float(confirmation.get("third_blob_excess_ucb", np.inf))
                 <= float(p["max_third_blob_excess"]))
         complete = self._confirmation_batch_complete(confirmations)
@@ -8365,6 +9569,29 @@ class BasicAutoTuner(ExperimentClass):
             "third_blob_excess_ucb": float(max(
                 screened["third_blob_excess_ucb"],
                 selected_confirmation["third_blob_excess_ucb"])),
+            "third_cluster_guard_available": bool(
+                screened.get("third_cluster_guard_available", False)
+                and selected_confirmation.get(
+                    "third_cluster_guard_available", False)),
+            "third_cluster_supported": bool(
+                screened.get("third_cluster_supported", False)
+                or selected_confirmation.get("third_cluster_supported", False)),
+            "third_cluster_fraction": float(max(
+                screened.get("third_cluster_fraction", 0.0),
+                selected_confirmation.get("third_cluster_fraction", 0.0))),
+            "third_cluster_fraction_ucb_95": float(max(
+                screened.get("third_cluster_fraction_ucb_95", 0.0),
+                selected_confirmation.get(
+                    "third_cluster_fraction_ucb_95", 0.0))),
+            "third_cluster_single_state_fraction": float(max(
+                screened.get("third_cluster_single_state_fraction", 0.0),
+                selected_confirmation.get(
+                    "third_cluster_single_state_fraction", 0.0))),
+            "third_cluster_single_state_fraction_ucb_95": float(max(
+                screened.get(
+                    "third_cluster_single_state_fraction_ucb_95", 0.0),
+                selected_confirmation.get(
+                    "third_cluster_single_state_fraction_ucb_95", 0.0))),
             "selection_confirmation_complete": bool(complete),
         })
         self._leakage_selected_candidate = {
@@ -8434,6 +9661,17 @@ class BasicAutoTuner(ExperimentClass):
             "max_odd_inversion_error_ucb", np.inf)) for row in rows), default=np.inf)
         worst_blob = max((float(row.get(
             "third_blob_excess_ucb", np.inf)) for row in rows), default=np.inf)
+        worst_cluster = max((float(row.get(
+            "third_cluster_fraction", np.inf)) for row in rows), default=np.inf)
+        worst_cluster_ucb = max((float(row.get(
+            "third_cluster_fraction_ucb_95", np.inf))
+                                 for row in rows), default=np.inf)
+        worst_cluster_single_state = max((float(row.get(
+            "third_cluster_single_state_fraction", np.inf))
+                                          for row in rows), default=np.inf)
+        worst_cluster_single_state_ucb = max((float(row.get(
+            "third_cluster_single_state_fraction_ucb_95", np.inf))
+                                              for row in rows), default=np.inf)
         if passed:
             failure_reason = None
         elif failures:
@@ -8459,6 +9697,12 @@ class BasicAutoTuner(ExperimentClass):
             "worst_even_return_error_ucb": worst_even,
             "worst_odd_inversion_error_ucb": worst_odd,
             "worst_third_blob_excess_ucb": worst_blob,
+            "worst_third_cluster_fraction": worst_cluster,
+            "worst_third_cluster_fraction_ucb_95": worst_cluster_ucb,
+            "worst_third_cluster_single_state_fraction": (
+                worst_cluster_single_state),
+            "worst_third_cluster_single_state_fraction_ucb_95": (
+                worst_cluster_single_state_ucb),
             "failure": failure_reason,
         })
         if passed:
@@ -8902,7 +10146,7 @@ class BasicAutoTuner(ExperimentClass):
         """Measure step-5 fidelity, third-cloud excess, and direct/amplified P(f)."""
         p = self.params["leakage"]
         candidate = dict(candidate)
-        direct = self._measure_candidate(
+        direct = self._measure_candidate_with_multimodality(
             candidate, int(reference_shots), "%s direct step-5" % label)
         response = self._leakage_response_calibration(
             candidate, ef_calibration, int(reference_shots))
@@ -8916,6 +10160,18 @@ class BasicAutoTuner(ExperimentClass):
             "third_blob_excess_ucb": float(direct["third_blob_excess_ucb_95"]),
             "ground_outlier_frac": float(direct["ground_outlier_frac"]),
             "excited_outlier_frac": float(direct["excited_outlier_frac"]),
+            "third_cluster_guard_available": bool(direct.get(
+                "third_cluster_guard_available", False)),
+            "third_cluster_supported": bool(direct.get(
+                "third_cluster_supported", False)),
+            "third_cluster_fraction": float(direct.get(
+                "third_cluster_fraction", np.nan)),
+            "third_cluster_fraction_ucb_95": float(direct.get(
+                "third_cluster_fraction_ucb_95", np.nan)),
+            "third_cluster_single_state_fraction": float(direct.get(
+                "third_cluster_single_state_fraction", np.nan)),
+            "third_cluster_single_state_fraction_ucb_95": float(direct.get(
+                "third_cluster_single_state_fraction_ucb_95", np.nan)),
             "response": response, "witnesses": [], "label": str(label),
         })
         if not response.get("ok", False):
@@ -8959,13 +10215,24 @@ class BasicAutoTuner(ExperimentClass):
             (w["p2_ucb"] for w in amplified_witnesses), default=single_ucb)
         finite = bool(
             np.isfinite(row["fidelity"]) and np.isfinite(row["fidelity_se"])
-            and np.isfinite(single_ucb) and np.isfinite(amplified_ucb))
+            and np.isfinite(single_ucb) and np.isfinite(amplified_ucb)
+            and row["third_cluster_guard_available"]
+            and np.isfinite(row["third_cluster_fraction_ucb_95"])
+            and np.isfinite(
+                row["third_cluster_single_state_fraction_ucb_95"]))
         safe = bool(
             finite
             and single_ucb <= float(p["max_single_p2"])
             and amplified_ucb <= float(p["max_amplified_p2"])
             and row["third_blob_excess_ucb"]
-            <= float(p["max_third_blob_excess"]))
+            <= float(p["max_third_blob_excess"])
+            and (not row["third_cluster_supported"]
+                 or (row["third_cluster_fraction_ucb_95"]
+                     <= float(p["max_third_cluster_fraction"])
+                     and row[
+                         "third_cluster_single_state_fraction_ucb_95"]
+                     <= float(
+                         p["max_single_state_third_cluster_fraction"]))))
         row.update({
             "valid": finite, "leakage_safe": safe,
             "single_p2_ucb": float(single_ucb),
@@ -9436,7 +10703,33 @@ class BasicAutoTuner(ExperimentClass):
             str(replay_kind) if self._final_replay_completed else None)
         self.data["final_confirmation_complete"] = bool(
             self._final_replay_completed)
+        self._remember_final_replays(
+            finals, replay_kind, self._final_replay_completed)
         return best
+
+    def _remember_final_replays(self, rows, replay_kind, batch_complete):
+        """Keep immutable evidence for both optimization objectives.
+
+        Safety and timing stages are allowed to replace ``working``.  They must not
+        erase a longer, higher-fidelity exact replay, nor may a later short replay be
+        mislabeled as the overall optimum.  Each final batch is therefore retained
+        independently and classified only from its own completion/spread evidence.
+        """
+        for source in rows or []:
+            row = copy.deepcopy(source)
+            stable = bool(
+                batch_complete
+                and bool(row.get("confirmation_complete", True))
+                and int(row.get("confirmation_blocks", 0))
+                >= int(self.params["final"]["blocks"])
+                and float(row.get("block_spread", np.inf))
+                <= float(self.params["final"]["max_block_spread"]))
+            row.update({
+                "final_replay_kind": str(replay_kind),
+                "final_replay_batch_complete": bool(batch_complete),
+                "final_replay_stable": stable,
+            })
+            self._final_replays.append(row)
 
     def _replay_candidate_is_stable(self, candidate):
         """Whether a final-stage aggregate is complete enough to replace an earlier one."""
@@ -9785,6 +11078,8 @@ class BasicAutoTuner(ExperimentClass):
             "unconstrained" if self._final_replay_completed else None)
         self.data["final_confirmation_complete"] = bool(
             self._final_replay_completed)
+        self._remember_final_replays(
+            finals, "unconstrained", self._final_replay_completed)
         return best
 
     def _estimate_default_measurement_repetitions(self):
@@ -9906,7 +11201,60 @@ class BasicAutoTuner(ExperimentClass):
                       * int(amplified["freq_points"])
                       * int(amplified["gain_points"]) * int(amplified["shots"]))
             total += 4 * int(amplified["confirm_shots"]) * int(amplified["confirm_blocks"])
-        if self._leakage_active:
+        if self._duration_portfolio_active:
+            portfolio = p["duration_portfolio"]
+            length_count = len(set(float(value) for value in portfolio.get(
+                "read_lengths_us", []) if 1.0 <= float(value) <= 20.0))
+            candidate_count = max(
+                int(portfolio["native_seeds_per_length"])
+                + int(portfolio["readout_seeds_per_length"])
+                * int(portfolio["control_seed_count"])
+                + int(portfolio["local_proposals_per_length"]), 1)
+            total += (2 * length_count * candidate_count
+                      * int(portfolio["refine_shots"])
+                      * int(portfolio["refine_blocks"]))
+            screen_count = min(
+                candidate_count,
+                max(int(portfolio["screen_candidates_per_length"]), 1))
+            if self._leakage_active:
+                leak = p["leakage"]
+                calibration_point = (
+                    2 * (int(leak["ef_points"])
+                         + int(leak["ef_narrow_points"]))
+                    * int(leak["ef_spec_shots"])
+                    + (int(leak["reference_gain_points"]) + 3)
+                    * int(leak["reference_rabi_shots"])
+                    + 3 * (int(leak["ef_gain_points"]) + 3)
+                    * int(leak["ef_rabi_shots"]))
+                screen_point = (
+                    4 * 6 * int(math.ceil(
+                        float(portfolio["screen_reference_shots"]) / 4.0))
+                    + 2 * int(portfolio["screen_reference_shots"])
+                    + 8 * len(leak["depths"]) * len(leak["gap_phases"])
+                    * int(math.ceil(
+                        float(portfolio["screen_shots"]) / 4.0)))
+                total += (length_count * screen_count
+                          * (calibration_point + screen_point))
+            else:
+                leak = p["leakage"]
+                drift_attempts = 1 + max(int(portfolio.get(
+                    "screen_drift_retries", 2)), 0)
+                screen_point = (
+                    4 * int(portfolio["screen_reference_shots"])
+                    + (len(leak["operational_depths"])
+                       * int(portfolio["screen_shots"])
+                       if bool(leak.get(
+                           "operational_repeated_return_enabled", False)) else 0))
+                total += (length_count * screen_count * screen_point
+                          * drift_attempts)
+            confirm_count = min(
+                screen_count,
+                max(int(portfolio.get(
+                    "confirm_candidates_per_length", 4)), 1))
+            total += (2 * length_count * confirm_count
+                      * int(portfolio["confirm_shots"])
+                      * int(portfolio["confirm_blocks"]))
+        elif self._leakage_active:
             leak = p["leakage"]
             # Nominal constrained search: independently calibrate g-e/e-f and run a
             # complete initial beta map for every retained duration.  Boundary span
@@ -10017,7 +11365,7 @@ class BasicAutoTuner(ExperimentClass):
         total += (2 * (2 * int(final["top_candidates"]) + 2)
                   * int(final["shots"]) * int(final["blocks"]))
         latency = p["latency"]
-        if latency.get("enabled", True):
+        if latency.get("enabled", True) and not self._duration_portfolio_active:
             joint_points = (int(latency["max_readout_candidates"])
                             * int(latency["max_control_candidates"]))
             total += (2 * joint_points * int(latency["coarse_shots"])
@@ -10028,12 +11376,26 @@ class BasicAutoTuner(ExperimentClass):
                       * (int(latency.get("max_confirmation_attempts", 2))
                          + int(latency.get(
                              "adaptive_confirmation_rounds", 0))))
-        if self._leakage_active or self._operational_leakage_active:
+        if ((self._leakage_active or self._operational_leakage_active)
+                and not self._duration_portfolio_active):
             total += 2 * int(final["shots"]) * int(final["blocks"])
         control_verify = p["control_verify"]
         if control_verify.get("enabled", True):
-            control_audits = (1 + int(p["latency"].get("shortlist", 0))
-                              if p["latency"].get("enabled", True) else 1)
+            if self._duration_portfolio_active:
+                portfolio = p["duration_portfolio"]
+                screen_count = min(
+                    (int(portfolio["native_seeds_per_length"])
+                     + int(portfolio["readout_seeds_per_length"])
+                     * int(portfolio["control_seed_count"])
+                     + int(portfolio["local_proposals_per_length"])),
+                    int(portfolio["screen_candidates_per_length"]))
+                control_audits = (
+                    len(portfolio.get("read_lengths_us", []))
+                    * min(screen_count, max(int(portfolio.get(
+                        "confirm_candidates_per_length", 4)), 1)))
+            else:
+                control_audits = (1 + int(p["latency"].get("shortlist", 0))
+                                  if p["latency"].get("enabled", True) else 1)
             total += control_audits * int(control_verify["blocks"]) * (
                 4 * int(control_verify["calibration_shots"])
                 + len(control_verify["pulse_counts"])
@@ -10159,8 +11521,9 @@ class BasicAutoTuner(ExperimentClass):
                 # the feasible control durations are known.  Otherwise an unsafe fast
                 # pulse can drag readout length short and hide the true shortest safe
                 # combination.  Unconstrained runs can optimize immediately.
-                if not (self._leakage_active
-                        or self._operational_leakage_active):
+                if (not self._duration_portfolio_active
+                        and not (self._leakage_active
+                                 or self._operational_leakage_active)):
                     latency_result = self._run_stage(
                         "latency", lambda: self._stage_latency_selection(
                             final, reference_kind="unconstrained"))
@@ -10177,7 +11540,12 @@ class BasicAutoTuner(ExperimentClass):
             reset_ready = self._run_stage(
                 "reset_before_verification", lambda:
                 self._try_activate_feedback("best-fidelity winner"))
-            if self._leakage_active:
+            if self._duration_portfolio_active:
+                portfolio_best = self._run_stage(
+                    "duration_portfolio", self._stage_duration_portfolio)
+                if portfolio_best is not None:
+                    final = portfolio_best
+            elif self._leakage_active:
                 # Direct qutrit programs may load candidate, g-e reference, and e-f
                 # waveforms together.  Passive reset avoids adding a frozen reset
                 # waveform to that memory footprint and also compares durations fairly.
@@ -10351,7 +11719,7 @@ class BasicAutoTuner(ExperimentClass):
                 else:
                     final = restore_ordinary_final(
                         "the final active-reset replay was incomplete or unstable")
-            if final is not None:
+            if final is not None and not self._duration_portfolio_active:
                 recovered = self._run_stage(
                     "timing_reference_recovery",
                     lambda: self._recover_timing_reference_after_failed_final(
@@ -10379,6 +11747,122 @@ class BasicAutoTuner(ExperimentClass):
             self._log("plot", "WARN", "summary plot failed: %s" % exc)
         return {"config": copy.deepcopy(self.input_cfg), "data": self.data}
 
+    def _finalize_duration_portfolio(self, final):
+        """Finalize a report-only portfolio without manufacturing a write winner."""
+        portfolio = self.data.get("duration_portfolio", {})
+        entries = (portfolio.get("entries", [])
+                   if isinstance(portfolio, dict) else [])
+        reportable = [entry for entry in entries
+                      if isinstance(entry, dict)
+                      and isinstance(entry.get("selected"), dict)]
+        safe = [entry for entry in reportable
+                if str(entry.get("status", "")).upper() == "SAFE"]
+        best_overall_entry = (max(
+            reportable,
+            key=lambda entry: self._portfolio_rank(entry["selected"]))
+            if reportable else None)
+        best_safe_entry = (max(
+            safe, key=lambda entry: self._portfolio_rank(entry["selected"]))
+            if safe else None)
+        selected_entry = best_safe_entry or best_overall_entry
+        candidate = (copy.deepcopy(selected_entry["selected"])
+                     if selected_entry is not None else
+                     (copy.deepcopy(final) if isinstance(final, dict) else None))
+        if candidate is None:
+            self.data.update({
+                "outcome": "duration_portfolio_no_measurement",
+                "success": False,
+                "failure": "the duration portfolio produced no reportable tuple",
+                "best_found": None, "tuned": {}, "eligible_tuned": {},
+                "final_stable": False, "fidelity_replay_stable": False,
+                "manual_selection_required": True,
+            })
+            return
+        for key in ("block_fidelities", "block_fidelity_ses",
+                    "block_crossfit_fidelities", "block_crossfit_fidelity_ses"):
+            if isinstance(candidate.get(key), np.ndarray):
+                candidate[key] = candidate[key].tolist()
+        candidate["gate_length_ns"] = 4000.0 * float(candidate["sigma"])
+        candidate["portfolio_status"] = (
+            selected_entry.get("status") if selected_entry else "INCONCLUSIVE")
+        candidate["label"] = "duration portfolio report-only reference"
+        tuned = {key: candidate[key] for key in TUNED_KEYS}
+        requested = int(portfolio.get("requested_length_count", len(entries)) or 0)
+        reportable_count = int(portfolio.get(
+            "reportable_length_count", len(reportable)) or 0)
+        complete = bool(requested > 0 and reportable_count == requested)
+        replay_stable = bool(
+            int(candidate.get("confirmation_blocks", 0))
+            >= int(self.params["duration_portfolio"]["confirm_blocks"])
+            and bool(candidate.get("confirmation_complete", False)))
+        self.data.update({
+            "best_found": candidate,
+            "best_overall_candidate": copy.deepcopy(
+                best_overall_entry["selected"]
+                if best_overall_entry is not None else candidate),
+            "best_safe_candidate": copy.deepcopy(
+                best_safe_entry["selected"]
+                if best_safe_entry is not None else None),
+            "best_fidelity_replay": copy.deepcopy(
+                best_overall_entry["selected"]
+                if best_overall_entry is not None else candidate),
+            "best_fidelity_replay_complete": bool(best_overall_entry is not None),
+            "shortest_high_fidelity_candidate": None,
+            "shortest_high_fidelity_status": "replaced_by_manual_duration_portfolio",
+            "tuned": tuned,
+            "eligible_tuned": {},
+            "manual_selection_required": True,
+            "automatic_config_write_allowed": False,
+            "fidelity_replay_stable": replay_stable,
+            # Deliberately false: there is no operator-selected portfolio row yet.
+            "final_stable": False,
+            "success": complete,
+            "outcome": ("duration_portfolio_complete" if complete
+                        else "duration_portfolio_partial"),
+            "failure": (None if complete else
+                        "%d of %d requested readout durations produced a reportable "
+                        "tuple" % (reportable_count, requested)),
+            "leakage_required_for_write": False,
+            "leakage_verified": False,
+            "write_fidelity_gate": {
+                "passed": False,
+                "reason": "manual duration-portfolio selection is required",
+                "measured_lcb": float(candidate.get(
+                    "fidelity_lcb_95", np.nan)),
+                "minimum_lcb": float(self.params["final"].get(
+                    "minimum_write_fidelity_lcb", 0.60)),
+            },
+            "control_validation": {
+                "required_for_write": False,
+                "verified_for_write": False,
+                "reason": "portfolio mode never authorizes an automatic write",
+                "portfolio_control_audits": copy.deepcopy(
+                    portfolio.get("control_audits", [])),
+            },
+            "eligibility": {
+                "atomic_tuple_safe": False,
+                "manual_selection_required": True,
+                "automatic_write_allowed": False,
+                "changed_keys": [], "write_needed": False,
+                "discovery_verified": bool(
+                    self._discovery_status.get("resonator", False)
+                    and self._discovery_status.get("spectroscopy", False)),
+                "write_fidelity_qualified": False,
+                "control_verified": False,
+                "leakage_required": False,
+                "leakage_verified": False,
+                "leakage_tuple_match": False,
+                "final_replay_kind": "manual_duration_portfolio",
+            },
+        })
+        self.data["working"] = {key: candidate[key] for key in self.initial}
+        self.working = dict(self.data["working"])
+        self._log(
+            "result", "OK",
+            "duration portfolio reports %d/%d lengths (%d SAFE); initialize.py "
+            "remains untouched pending manual selection"
+            % (reportable_count, requested, len(safe)))
+
     def _finalize(self, final):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.data["time"] = now
@@ -10402,7 +11886,29 @@ class BasicAutoTuner(ExperimentClass):
                 "best_found": None, "tuned": {}, "eligible_tuned": {},
             })
             return
+        if self._duration_portfolio_active:
+            self._finalize_duration_portfolio(final)
+            return
         best = self._annotate_candidate_latency(final)
+        stable_replays = [
+            self._annotate_candidate_latency(row)
+            for row in self._final_replays
+            if bool(row.get("final_replay_stable", False))
+            and all(key in row for key in self.initial)
+        ]
+        # ``best_found`` remains the exact tuple selected by safety/timing/write
+        # policy.  The fidelity objective is an independent immutable answer: the
+        # strongest stable exact replay from *any* final batch, including a later
+        # screened batch which happens to outperform the earlier unconstrained one.
+        if stable_replays:
+            best_overall = max(stable_replays, key=self._joint_rank)
+        else:
+            prior = self.data.get("best_fidelity_replay")
+            best_overall = self._annotate_candidate_latency(
+                prior if isinstance(prior, dict) else best)
+        self.data["best_overall_candidate"] = copy.deepcopy(best_overall)
+        self.data["best_fidelity_replay"] = copy.deepcopy(best_overall)
+        self.data["best_fidelity_replay_complete"] = bool(stable_replays)
         measured_pool = [row for row in self._confirmed
                          if all(key in row for key in self.initial)]
         if measured_pool:
@@ -10543,6 +12049,113 @@ class BasicAutoTuner(ExperimentClass):
                             max(raw_saved, 0.0)
                             / max(reference_latency, 1e-12)),
                     })
+
+        # Report the two requested optimization answers separately.  Prefer the
+        # randomized paired/familywise timing certificate when it survived the exact
+        # final guard.  Otherwise provide a clearly labeled advisory from completed
+        # held-out confirmations; it is useful evidence but cannot authorize a
+        # configuration write or claim a proven speedup.
+        safety_active = bool(
+            self._leakage_active or self._operational_leakage_active)
+        verified_safety_key = (
+            tuple(self._leakage_verified_candidate_key)
+            if self._leakage_verified_candidate_key is not None else None)
+        certified_short = None
+        if (isinstance(latency_record, dict)
+                and bool(latency_record.get("latency_certificate_valid", False))
+                and bool(latency_record.get("qualified_speedup", False))):
+            candidate = latency_record.get("certified_selected")
+            if (isinstance(candidate, dict)
+                    and (not safety_active
+                         or (verified_safety_key is not None
+                             and _candidate_key(candidate)
+                             == verified_safety_key))):
+                certified_short = self._annotate_candidate_latency(candidate)
+        advisory_pool = list(stable_replays)
+        advisory_pool.extend(
+            self._annotate_candidate_latency(row) for row in self._confirmed
+            if all(key in row for key in self.initial)
+            and bool(row.get("confirmation_complete", True))
+            and int(row.get("confirmation_blocks", 0)) >= 2)
+        advisory_pool = unique_candidate_rows(advisory_pool)
+        if safety_active:
+            # A fast tuple is not a usable leakage-safe answer merely because another
+            # duration passed.  Only the exact readout/control tuple independently
+            # verified by the active safety path may be called the short candidate.
+            advisory_pool = [
+                row for row in advisory_pool
+                if verified_safety_key is not None
+                and _candidate_key(row) == verified_safety_key]
+        shortest_diagnostics = []
+        if certified_short is not None:
+            shortest = certified_short
+            shortest_status = "familywise_paired_noninferiority_certified"
+        elif advisory_pool:
+            strict_shortest, shortest_diagnostics = select_shortest_noninferior(
+                advisory_pool, best_overall,
+                max_loss=float(self.params["latency"].get(
+                    "max_fidelity_loss", 0.005)),
+                confidence_z=float(self.params["latency"].get(
+                    "confidence_sigma", 1.96)),
+                minimum_mean=float(self.params["latency"].get(
+                    "minimum_mean_fidelity", 0.90)),
+                minimum_lcb=float(self.params["latency"].get(
+                    "minimum_lcb_fidelity", 0.88)),
+            )
+            strict_shortest = self._annotate_candidate_latency(strict_shortest)
+            self.data["shortest_strict_noninferior_candidate"] = copy.deepcopy(
+                strict_shortest)
+            if _candidate_key(strict_shortest) != _candidate_key(best_overall):
+                shortest = strict_shortest
+                shortest_status = (
+                    "independent_noninferiority_advisory_not_familywise_certified")
+            else:
+                best_mean = fidelity_evidence(best_overall)[0]
+                maximum_mean_loss = float(self.params["latency"].get(
+                    "practical_max_mean_fidelity_loss", 0.05))
+                minimum_mean = float(self.params["latency"].get(
+                    "practical_minimum_mean_fidelity", 0.85))
+                minimum_lcb = float(self.params["latency"].get(
+                    "practical_minimum_lcb_fidelity", 0.82))
+                practical = []
+                for row in advisory_pool:
+                    mean, _se, lcb = fidelity_evidence(row)
+                    if (np.all(np.isfinite([mean, lcb, best_mean]))
+                            and mean >= minimum_mean
+                            and lcb >= minimum_lcb
+                            and best_mean - mean <= maximum_mean_loss):
+                        practical.append(row)
+                if practical:
+                    shortest = min(practical, key=lambda row: (
+                        self._candidate_latency_us(row),
+                        -fidelity_evidence(row)[2],
+                        -fidelity_evidence(row)[0]))
+                    shortest = self._annotate_candidate_latency(shortest)
+                else:
+                    shortest = copy.deepcopy(best_overall)
+                shortest_status = (
+                    "same_as_best_overall_no_faster_high_fidelity_option"
+                    if _candidate_key(shortest) == _candidate_key(best_overall)
+                    else "practical_pareto_advisory_not_write_eligible")
+        elif safety_active:
+            shortest = None
+            shortest_status = "no_short_candidate_passed_exact_tuple_safety"
+        else:
+            shortest = copy.deepcopy(best_overall)
+            shortest_status = "best_effort_no_complete_final_replay_set"
+        for candidate in (best_overall, shortest):
+            if not isinstance(candidate, dict):
+                continue
+            candidate["safety_screen_required"] = safety_active
+            candidate["safety_screen_verified_for_exact_tuple"] = bool(
+                not safety_active
+                or (verified_safety_key is not None
+                    and _candidate_key(candidate) == verified_safety_key))
+        self.data["best_overall_candidate"] = copy.deepcopy(best_overall)
+        self.data["best_fidelity_replay"] = copy.deepcopy(best_overall)
+        self.data["shortest_high_fidelity_candidate"] = copy.deepcopy(shortest)
+        self.data["shortest_high_fidelity_status"] = shortest_status
+        self.data["shortest_high_fidelity_diagnostics"] = shortest_diagnostics
         tuned = {key: best[key] for key in TUNED_KEYS}
         self.data["tuned"] = tuned
         is_final = str(best.get("label", "")).startswith("final exact")
@@ -10731,6 +12344,9 @@ class BasicAutoTuner(ExperimentClass):
         keys = (
             "revision", "fidelity_definition", "initial", "working", "best_found",
             "best_fidelity_replay", "best_fidelity_replay_complete",
+            "best_overall_candidate", "best_safe_candidate",
+            "shortest_high_fidelity_candidate",
+            "shortest_high_fidelity_status",
             "selection_objective",
             "tuned", "eligible_tuned", "eligibility", "outcome", "success", "failure",
             "candidate_count", "interrupted", "final_stable", "time", "stages",
@@ -10739,9 +12355,45 @@ class BasicAutoTuner(ExperimentClass):
             "control_witnesses",
             "report", "confirmation_failures", "final_confirmation_complete",
             "unconfirmed_contenders", "leakage_required_for_write",
-            "leakage_verified", "reset",
+            "leakage_verified", "reset", "manual_selection_required",
+            "automatic_config_write_allowed",
         )
         summary = {key: data.get(key) for key in keys if key in data}
+        portfolio = data.get("duration_portfolio", {})
+        if isinstance(portfolio, dict) and portfolio.get("enabled", False):
+            compact_portfolio = {key: portfolio.get(key) for key in (
+                "enabled", "manual_selection_only", "automatic_write_allowed",
+                "status", "read_lengths_us", "requested_length_count",
+                "reportable_length_count", "safe_length_count",
+                "unsafe_length_count", "inconclusive_length_count",
+                "equal_refinement_budget",
+                "expected_refine_candidates_per_length",
+                "selection_objective", "leakage_penalty_weight",
+                "amplified_leakage_penalty_weight",
+            ) if key in portfolio}
+            compact_entries = []
+            for entry in portfolio.get("entries", []):
+                if not isinstance(entry, dict):
+                    continue
+                selected = entry.get("selected")
+                row = {key: entry.get(key) for key in (
+                    "read_length_us", "status", "leakage_status",
+                    "control_status")}
+                if isinstance(selected, dict):
+                    row["selected"] = {key: selected.get(key) for key in (
+                        *TUNED_KEYS, "fidelity", "fidelity_se",
+                        "fidelity_lcb_95", "third_blob_excess_ucb",
+                        "third_cluster_fraction",
+                        "third_cluster_fraction_ucb_95",
+                        "third_cluster_single_state_fraction",
+                        "third_cluster_single_state_fraction_ucb_95",
+                        "single_p2_ucb", "amplified_p2_ucb",
+                        "portfolio_leakage_risk_ucb", "portfolio_score",
+                        "control_verified", "portfolio_safety_kind",
+                    ) if key in selected}
+                compact_entries.append(row)
+            compact_portfolio["entries"] = compact_entries
+            summary["duration_portfolio"] = compact_portfolio
         joint = data.get("joint_search", {})
         if isinstance(joint, dict):
             compact_joint = {key: joint.get(key) for key in (
@@ -10824,12 +12476,16 @@ class BasicAutoTuner(ExperimentClass):
             scalar_keys = (
                 "active", "strict_direct_active", "operational_active",
                 "required_for_write", "measurement", "direct_p2_measured",
-                "third_blob_guard",
+                "third_blob_guard", "third_cluster_guard",
                 "optimized", "verified", "selection_safe", "failure",
                 "screening_kind", "drag_tuned", "best_third_blob_excess_ucb",
                 "final_replay_complete",
                 "used_safe_seed_fallback", "worst_single_p2_ucb",
                 "worst_amplified_p2_ucb", "worst_third_blob_excess_ucb",
+                "worst_third_cluster_fraction",
+                "worst_third_cluster_fraction_ucb_95",
+                "worst_third_cluster_single_state_fraction",
+                "worst_third_cluster_single_state_fraction_ucb_95",
                 "worst_even_return_error_ucb",
                 "worst_odd_inversion_error_ucb",
             )
@@ -10845,7 +12501,10 @@ class BasicAutoTuner(ExperimentClass):
                         "single_p2_ucb", "amplified_p2_ucb",
                         "max_even_return_error_ucb",
                         "max_odd_inversion_error_ucb",
-                        "third_blob_excess_ucb", "leakage_safe",
+                        "third_blob_excess_ucb", "third_cluster_fraction",
+                        "third_cluster_fraction_ucb_95",
+                        "third_cluster_single_state_fraction",
+                        "third_cluster_single_state_fraction_ucb_95", "leakage_safe",
                         "operational_safe")
                     if key in chosen
                 }
@@ -10902,6 +12561,12 @@ class BasicAutoTuner(ExperimentClass):
                     "third_blob_excess_ucb": [
                         row.get("third_blob_excess_ucb_95", np.nan)
                         for row in self._archive],
+                    "third_cluster_fraction": [
+                        row.get("third_cluster_fraction", np.nan)
+                        for row in self._archive],
+                    "third_cluster_fraction_ucb_95": [
+                        row.get("third_cluster_fraction_ucb_95", np.nan)
+                        for row in self._archive],
                 }
                 for key, value in columns.items():
                     h5.add("candidate_archive/%s" % key, np.asarray(value))
@@ -10910,7 +12575,11 @@ class BasicAutoTuner(ExperimentClass):
                 for key in ("single_p2_ucb", "amplified_p2_ucb",
                             "max_even_return_error_ucb",
                             "max_odd_inversion_error_ucb",
-                            "third_blob_excess_ucb", "fidelity"):
+                            "third_blob_excess_ucb", "third_cluster_fraction",
+                            "third_cluster_fraction_ucb_95",
+                            "third_cluster_single_state_fraction",
+                            "third_cluster_single_state_fraction_ucb_95",
+                            "fidelity"):
                     h5.add(
                         "leakage_verification/%s" % key,
                         np.asarray([row.get(key, np.nan) for row in leakage_rows],
@@ -10964,7 +12633,43 @@ class BasicAutoTuner(ExperimentClass):
                 fig.colorbar(image, ax=axis, shrink=0.8)
             axis.set_title("%s: %s" % (stage.replace("_", " "), field))
         leakage = self.data.get("leakage", {})
-        if isinstance(leakage, dict) and leakage.get("active", False):
+        portfolio = self.data.get("duration_portfolio", {})
+        portfolio_entries = (portfolio.get("entries", [])
+                             if isinstance(portfolio, dict) else [])
+        if portfolio_entries:
+            axis = axes[-1]
+            axis.clear()
+            lengths = np.asarray([
+                entry.get("read_length_us", np.nan)
+                for entry in portfolio_entries], dtype=float)
+            fidelity = np.asarray([
+                entry.get("selected", {}).get("fidelity", np.nan)
+                for entry in portfolio_entries], dtype=float)
+            fidelity_se = np.asarray([
+                entry.get("selected", {}).get("fidelity_se", np.nan)
+                for entry in portfolio_entries], dtype=float)
+            third_ucb = np.asarray([
+                entry.get("selected", {}).get(
+                    "third_cluster_fraction_ucb_95", np.nan)
+                for entry in portfolio_entries], dtype=float)
+            colors = [{"SAFE": "tab:green", "UNSAFE": "tab:red"}.get(
+                str(entry.get("status", "")).upper(), "tab:gray")
+                for entry in portfolio_entries]
+            axis.errorbar(lengths, fidelity, yerr=fidelity_se, color="0.35",
+                          lw=1.0, marker="", capsize=2)
+            axis.scatter(lengths, fidelity, c=colors, s=28, zorder=3)
+            axis.set_ylim(0.45, 1.01)
+            axis.set_xlabel("readout length (us)")
+            axis.set_ylabel("held-out fidelity")
+            leakage_axis = axis.twinx()
+            leakage_axis.plot(lengths, third_ucb, "o--", color="tab:purple",
+                              ms=3, lw=1.0, label="third-population UCB")
+            leakage_axis.axhline(float(self.params["leakage"]
+                                      ["max_third_cluster_fraction"]),
+                                 color="tab:purple", ls=":", lw=1.0)
+            leakage_axis.set_ylabel("third-population 95% UCB")
+            axis.set_title("1-20 us manual-selection portfolio")
+        elif isinstance(leakage, dict) and leakage.get("active", False):
             axis = axes[-1]
             axis.clear()
             rows = []
@@ -11013,6 +12718,14 @@ class BasicAutoTuner(ExperimentClass):
                           ha="center", va="center")
         best = self.data.get("best_found")
         if best:
+            if portfolio_entries:
+                leakage_label = "manual 1-20 us portfolio"
+            elif leakage.get("active", False):
+                leakage_label = (
+                    "verified" if leakage.get("verified", False)
+                    else "not verified")
+            else:
+                leakage_label = "inactive"
             title = ("Basic auto tune %s | F=%.4f +/- %.4f | read %.6f/%d/%.1fus | "
                      "pi %.6f @ %d, %.1fns, DRAG %+.5f | leakage %s"
                      % (self.path, best["fidelity"], best["fidelity_se"],
@@ -11020,9 +12733,7 @@ class BasicAutoTuner(ExperimentClass):
                         best["read_length"], best["qubit_pi_freq"],
                         best["qubit_pi_gain"], 4000.0 * best["sigma"],
                         best.get("qubit_drag_beta", 0.0),
-                        ("verified" if leakage.get("verified", False)
-                         else "not verified")
-                        if leakage.get("active", False) else "inactive"))
+                        leakage_label))
         else:
             title = "Basic auto tune %s | no completed direct SS candidate" % self.path
         fig.suptitle(title)

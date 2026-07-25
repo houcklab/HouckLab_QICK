@@ -1,9 +1,8 @@
-"""Run the structured joint-search single-qubit autotuner.
+"""Run the fixed-readout-duration single-qubit calibration portfolio.
 
-This is intentionally a separate entry point from ``AutoTune.py``.  After a
-completed run, the basic tuner writes only the physical tuple that passed its
-stable, repeated, exact final replay.  Interrupted, partial, or unstable runs
-still save and report their best measurement without modifying ``BaseConfig``.
+This is intentionally a report-only entry point.  It measures the best screened
+full parameter tuple at every integer readout duration from 1 through 20 us and
+never modifies ``BaseConfig``; the operator makes the final manual choice.
 """
 
 import copy
@@ -29,10 +28,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-# The write path remains guarded by a completed, stable exact final replay and a
-# compare-and-swap check that initialize.py has not changed during acquisition.
-# Set this to False only when an explicitly dry diagnostic run is desired.
-APPLY_CONFIG = True
+# Portfolio rows are alternatives for an operator, not one automatically selected
+# calibration.  Keep the destructive path disabled unconditionally for this runner.
+APPLY_CONFIG = False
 
 # This is a private deep copy so edits made for a run cannot mutate the module defaults
 # or leak into a second experiment in the same Python process.
@@ -370,6 +368,28 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
             errors.append("the reported leakage requirement disagrees with run policy")
         if leakage_required and not bool(leakage.get("verified", False)):
             errors.append("the required leakage/safety certificate did not pass")
+        if leakage_required and operational_policy:
+            settings = params.get("leakage", {})
+            if not isinstance(settings, dict):
+                settings = {}
+            maximum_cluster = _number(
+                settings, ("max_third_cluster_fraction",))
+            maximum_single_state = _number(
+                settings, ("max_single_state_third_cluster_fraction",))
+            measured_cluster = _number(
+                leakage, ("worst_third_cluster_fraction_ucb_95",))
+            measured_single_state = _number(
+                leakage,
+                ("worst_third_cluster_single_state_fraction_ucb_95",))
+            if not bool(leakage.get("third_cluster_guard", False)):
+                errors.append("the 2-D third-population safety guard is absent")
+            if (not all(_finite(value) for value in (
+                    maximum_cluster, maximum_single_state,
+                    measured_cluster, measured_single_state))
+                    or measured_cluster > maximum_cluster
+                    or measured_single_state > maximum_single_state):
+                errors.append(
+                    "the resolved third-population limits were not satisfied")
 
     eligibility = result.get("eligibility")
     if (not isinstance(eligibility, dict)
@@ -944,11 +964,115 @@ def _fmt_int(value, suffix=""):
     return (str(int(round(value))) + suffix) if _finite(value) else "n/a"
 
 
+def _print_objective_candidate(heading, candidate, status=None):
+    if not isinstance(candidate, dict):
+        return
+    read_freq = _number(candidate, ("read_pulse_freq", "read_freq"))
+    read_gain = _number(candidate, ("read_pulse_gain", "read_gain"))
+    read_length = _number(
+        candidate, ("read_length", "read_length_us", "readout_length"))
+    qubit_freq = _number(
+        candidate, ("qubit_pi_freq", "drive_freq", "qubit_freq"))
+    qubit_gain = _number(
+        candidate, ("qubit_pi_gain", "pi_gain", "qubit_gain"))
+    sigma = _number(candidate, ("sigma", "sigma_us", "qubit_sigma_us"))
+    fidelity = _number(
+        candidate, ("fidelity", "ss_fidelity", "fid", "mean_fidelity"))
+    fidelity_se = _number(
+        candidate, ("fidelity_se", "ss_fidelity_se", "fid_se"))
+    safety_required = bool(candidate.get("safety_screen_required", False))
+    safety_verified = bool(candidate.get(
+        "safety_screen_verified_for_exact_tuple", not safety_required))
+    print("\n[basic-auto-tune] %s" % heading)
+    print("   readout %s / %s / %s | X180 %s / %s / %s | F %s%s"
+          % (_fmt_float(read_freq, 6, " MHz"), _fmt_int(read_gain, " DAC"),
+             _fmt_float(read_length, 3, " us"),
+             _fmt_float(qubit_freq, 6, " MHz"), _fmt_int(qubit_gain, " DAC"),
+             _fmt_float(4000.0 * sigma, 1, " ns"),
+             _fmt_float(fidelity, 4),
+             " +/- %.4f" % fidelity_se if _finite(fidelity_se) else ""))
+    qualifiers = []
+    if status:
+        qualifiers.append(str(status).replace("_", " "))
+    if safety_required:
+        qualifiers.append("exact-tuple safety %s" % (
+            "verified" if safety_verified else "not verified"))
+    if qualifiers:
+        print("   status  %s" % "; ".join(qualifiers))
+
+
+def _print_duration_portfolio(result):
+    """Print the twenty report-only parameter sets as one compact operator table."""
+    portfolio = result.get("duration_portfolio", {})
+    entries = portfolio.get("entries", []) if isinstance(portfolio, dict) else []
+    if not entries:
+        return False
+    print("\n[basic-auto-tune] READOUT-DURATION PORTFOLIO (manual selection only)")
+    print("   len  status        fidelity (95% LCB)   score    leakage 95% UCB   "
+          "readout MHz/gain       X180 MHz/gain/length")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        length = _number(entry, ("read_length_us",))
+        status = str(entry.get("status", "INCONCLUSIVE")).upper()
+        selected = entry.get("selected")
+        if not isinstance(selected, dict):
+            print("   %2sus %-13s no reportable tuple" % (
+                _fmt_int(length), status))
+            continue
+        fidelity = _number(selected, ("fidelity",))
+        fidelity_se = _number(selected, ("fidelity_se",))
+        fidelity_lcb = _number(selected, ("fidelity_lcb_95",))
+        score = _number(selected, ("portfolio_score",))
+        third_ucb = _number(
+            selected, ("portfolio_leakage_risk_ucb",
+                       "third_cluster_fraction_ucb_95"))
+        direct_p2 = _number(selected, ("single_p2_ucb",))
+        leakage_text = (_fmt_float(100.0 * third_ucb, 1, "%")
+                        if _finite(third_ucb) else "n/a")
+        if _finite(direct_p2):
+            leakage_text += "; P(f) %s" % _fmt_float(
+                100.0 * direct_p2, 1, "%")
+        gate_ns = 4000.0 * _number(selected, ("sigma",))
+        print("   %2sus %-13s %s +/- %s (%s)   %s   %-19s   %s/%s   %s/%s/%s"
+              % (_fmt_int(length), status,
+                 _fmt_float(fidelity, 4), _fmt_float(fidelity_se, 4),
+                 _fmt_float(fidelity_lcb, 4), _fmt_float(score, 4), leakage_text,
+                 _fmt_float(_number(selected, ("read_pulse_freq",)), 6),
+                 _fmt_int(_number(selected, ("read_pulse_gain",))),
+                 _fmt_float(_number(selected, ("qubit_pi_freq",)), 6),
+                 _fmt_int(_number(selected, ("qubit_pi_gain",))),
+                 _fmt_float(gate_ns, 1, "ns")))
+    print("   SAFE requires both the leakage-sensitive IQ/P(f) limits and the exact "
+          "odd/even coherent-control audit. No row is written automatically.")
+    print("   score = fidelity 95% LCB - IQ/direct-leakage 95% UCB"
+          " (and 0.5 x amplified P(f) UCB when direct shelving is available).")
+    return True
+
+
 def _print_best(result):
     best = _best_candidate(result)
     if best is None:
         print("\n[basic-auto-tune] no single-shot candidate was measured.")
         return None
+
+    portfolio_printed = _print_duration_portfolio(result)
+    if not portfolio_printed:
+        overall = result.get("best_overall_candidate")
+        if not isinstance(overall, dict):
+            overall = result.get("best_fidelity_replay")
+        if isinstance(overall, dict):
+            _print_objective_candidate("BEST OVERALL FIDELITY", overall)
+        shortest = result.get("shortest_high_fidelity_candidate")
+        if isinstance(shortest, dict):
+            _print_objective_candidate(
+                "SHORTEST HIGH-FIDELITY CANDIDATE", shortest,
+                result.get("shortest_high_fidelity_status"))
+        elif result.get("shortest_high_fidelity_status") == (
+                "no_short_candidate_passed_exact_tuple_safety"):
+            print("\n[basic-auto-tune] NO LEAKAGE-SAFE SHORT CANDIDATE WAS VERIFIED")
+    else:
+        return best
 
     read_freq = _number(best, ("read_pulse_freq", "read_freq"))
     read_gain = _number(best, ("read_pulse_gain", "read_gain"))
@@ -971,12 +1095,14 @@ def _print_best(result):
         isinstance(leakage, dict) and leakage.get("active", False))
     leakage_verified = bool(
         isinstance(leakage, dict) and leakage.get("verified", False))
-    if leakage_active and leakage_verified and bool(result.get("final_stable", False)):
-        heading = "BEST SCREENED CANDIDATE"
+    if portfolio_printed:
+        heading = "REPORT REFERENCE ONLY"
+    elif leakage_active and leakage_verified:
+        heading = "SELECTED CONFIG CANDIDATE (screened)"
     elif leakage_active:
-        heading = "BEST FIDELITY CANDIDATE (safety screen not verified)"
+        heading = "SELECTED CONFIG CANDIDATE (safety not verified)"
     else:
-        heading = "BEST MEASURED CANDIDATE"
+        heading = "SELECTED CONFIG CANDIDATE"
     print("\n[basic-auto-tune] %s%s" % (
         heading, " (not written)" if not APPLY_CONFIG else ""))
     print("   readout   %s / %s / %s"
@@ -1050,9 +1176,17 @@ def _print_best(result):
         else:
             if not _finite(third):
                 third = _number(leakage, ("best_third_blob_excess_ucb",))
+            cluster = _number(
+                leakage, ("worst_third_cluster_fraction_ucb_95",))
+            cluster_state = _number(
+                leakage,
+                ("worst_third_cluster_single_state_fraction_ucb_95",))
             print("   safety     fixed-Gaussian duration/power screen %s | "
-                  "third-cloud excess UCB %s (not a direct P(f) measurement)"
+                  "resolved third-population 95%% UCB %s overall/%s one-prep | "
+                  "legacy tail-excess UCB %s (not a direct P(f) measurement)"
                   % ("PASSED" if leakage.get("verified", False) else "FAILED",
+                     _fmt_float(100.0 * cluster, 1, "%"),
+                     _fmt_float(100.0 * cluster_state, 1, "%"),
                      _fmt_float(third, 4)))
             if not leakage.get("verified", False) and leakage.get("failure"):
                 print("   reason     %s" % leakage["failure"])
@@ -1151,6 +1285,33 @@ def _history_entry(result, eligible, applied, error=None):
                 "mean_loss", "loss_se", "loss_ucb", "confidence_z",
                 "method", "accepted", "reason") if key in diagnostic
         }
+    portfolio = result.get("duration_portfolio", {})
+    compact_portfolio = None
+    if isinstance(portfolio, dict) and portfolio.get("enabled", False):
+        compact_portfolio = {key: portfolio.get(key) for key in (
+            "enabled", "manual_selection_only", "automatic_write_allowed",
+            "status", "requested_length_count", "reportable_length_count",
+            "safe_length_count", "unsafe_length_count",
+            "inconclusive_length_count", "equal_refinement_budget",
+            "selection_objective", "leakage_penalty_weight",
+            "amplified_leakage_penalty_weight",
+        ) if key in portfolio}
+        compact_portfolio["entries"] = []
+        for entry in portfolio.get("entries", []):
+            if not isinstance(entry, dict):
+                continue
+            selected = entry.get("selected")
+            row = {key: entry.get(key) for key in (
+                "read_length_us", "status", "leakage_status", "control_status")}
+            if isinstance(selected, dict):
+                row["selected"] = {key: selected.get(key) for key in (
+                    *TUNED_KEYS, "fidelity", "fidelity_se",
+                    "fidelity_lcb_95", "third_cluster_fraction_ucb_95",
+                    "third_cluster_single_state_fraction_ucb_95",
+                    "single_p2_ucb", "amplified_p2_ucb",
+                    "portfolio_leakage_risk_ucb", "portfolio_score",
+                ) if key in selected}
+            compact_portfolio["entries"].append(row)
     return {
         "time": result.get(
             "time", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -1162,6 +1323,12 @@ def _history_entry(result, eligible, applied, error=None):
         "runner_error": error,
         "best_found": result.get("best_found"),
         "best_fidelity_replay": result.get("best_fidelity_replay"),
+        "best_overall_candidate": result.get("best_overall_candidate"),
+        "shortest_high_fidelity_candidate": result.get(
+            "shortest_high_fidelity_candidate"),
+        "shortest_high_fidelity_status": result.get(
+            "shortest_high_fidelity_status"),
+        "duration_portfolio": compact_portfolio,
         "latency_optimization": compact_latency,
         "discovery": result.get("discovery"),
         "write_fidelity_gate": result.get("write_fidelity_gate"),
@@ -1178,6 +1345,14 @@ def _history_entry(result, eligible, applied, error=None):
             "worst_amplified_p2_ucb": leakage.get("worst_amplified_p2_ucb"),
             "worst_third_blob_excess_ucb": leakage.get(
                 "worst_third_blob_excess_ucb"),
+            "worst_third_cluster_fraction": leakage.get(
+                "worst_third_cluster_fraction"),
+            "worst_third_cluster_fraction_ucb_95": leakage.get(
+                "worst_third_cluster_fraction_ucb_95"),
+            "worst_third_cluster_single_state_fraction": leakage.get(
+                "worst_third_cluster_single_state_fraction"),
+            "worst_third_cluster_single_state_fraction_ucb_95": leakage.get(
+                "worst_third_cluster_single_state_fraction_ucb_95"),
             "worst_even_return_error_ucb": leakage.get(
                 "worst_even_return_error_ucb"),
             "worst_odd_inversion_error_ucb": leakage.get(
@@ -1251,6 +1426,12 @@ def main():
                 _history_entry(result, eligible, False, acquire_error))
         except Exception as exc:
             print("[basic-auto-tune] could not append calibration history: %s" % exc)
+        if bool(result.get("manual_selection_required", False)):
+            print("\n[basic-auto-tune] portfolio saved; BaseConfig is untouched. "
+                  "Choose a row manually after reviewing fidelity and leakage.")
+            if getattr(experiment, "iname", None):
+                print("   Summary plot: %s" % experiment.iname)
+            return 0 if best is not None else 1
         print("\n[basic-auto-tune] APPLY_CONFIG=False -- BaseConfig is untouched.")
         if eligible and not write_contract_errors:
             print("   The following repeated-final values would be eligible:")
