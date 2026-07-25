@@ -82,6 +82,7 @@ P1_RESONATOR = {
     "dc_max": 12000,
     "dc_step": 300,
     "lookup_smooth_points": None,
+    "live_plot": True,
 }
 
 P2_QUBIT_SPEC_FULL = {
@@ -256,7 +257,12 @@ def _dc_vec(p):
 
 
 def _freq_vec_mhz(p):
-    return np.arange(p["freq_min"], p["freq_max"], p["freq_step"])
+    v = np.arange(p["freq_min"], p["freq_max"], p["freq_step"])
+    if v.size == 0:
+        raise ValueError(f"empty frequency vector: need freq_min < freq_max with freq_step > 0 "
+                         f"(got freq_min={p['freq_min']}, freq_max={p['freq_max']}, "
+                         f"freq_step={p['freq_step']})")
+    return v
 
 
 def _auto_freq_window(p, dc_baseline, dc_target):
@@ -303,7 +309,7 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
         save_resonator_lookup=SAVE_RESONATOR_LOOKUP,
         resonator_lookup_smooth_points=p.get("lookup_smooth_points", None),
     )
-    data = exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
+    data = exp.acquire(progress=True, plotDisp=bool(p.get("live_plot", True)) and LIVE_PLOTS)
     lookup_csv = data['data'].get('resonator_lookup_csv')
     print("[1] Done. To make steps 2-4 track the readout freq with flux (QUA-style), paste the printed")
     print("    'dispersive fit parameters' 7-tuple into RESONATOR_FIT_PARAMS at the top of this file")
