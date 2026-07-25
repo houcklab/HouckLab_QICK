@@ -1,4 +1,5 @@
 import gc
+import time
 
 import numpy as np
 import matplotlib
@@ -17,6 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec, QubitSpecGainSweep
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
 
 QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
@@ -156,8 +158,11 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     cfg["relax_delay"] = 50
     exp = ExperimentClass(path=QUBIT, outerFolder=outer_folder, suffix="GateCal_TransSweep", cfg=cfg)
     mag = np.full((len(gains), len(freqs)), np.nan)
+    total = len(gains) * len(freqs)
     print(f"[transmission sweep] {len(gains)} readout gains x {len(freqs)} freqs at "
-          f"ff_gain={FF_HOLD_GAIN} ({len(gains) * len(freqs)} points -- slow)")
+          f"ff_gain={FF_HOLD_GAIN} ({total} points -- slow)")
+    start_time = time.time()
+    step = 0
     for i, g in enumerate(gains):
         cfg["read_pulse_gain"] = int(g)
         for j, f in enumerate(freqs):
@@ -165,6 +170,8 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
             res = FFTransProgram(soccfg, cfg).acquire(soc, load_pulses=True, progress=False)
             I, Q = np.array(res[0]).mean(), np.array(res[1]).mean()
             mag[i, j] = 20.0 * np.log10(np.hypot(I, Q) + 1e-12)
+            progress_counter(step, total, start_time=start_time, label="transmission sweep")
+            step += 1
     fig = plt.figure(figsize=(7, 4.5))
     plt.pcolormesh(freqs, gains, mag, shading="nearest")
     plt.xlabel("Readout frequency [MHz]"); plt.ylabel("Readout gain [DAC]")
