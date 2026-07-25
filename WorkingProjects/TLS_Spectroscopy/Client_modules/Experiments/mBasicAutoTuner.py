@@ -75,7 +75,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "qualified-transition-v6"
+BASIC_AUTOTUNER_REVISION = "frequency-qualified-v7"
 
 
 BASIC_DEFAULTS = {
@@ -219,21 +219,21 @@ BASIC_DEFAULTS = {
         "min_contrast_sigma": 5.0, "min_depth_correctness": 0.55,
         "min_consistent_depth_fraction": 0.67,
         # Qualify every independently coherent Rabi basin before the expensive joint
-        # optimizer.  A one-pulse SS maximum is not allowed to choose the transition.
+        # optimizer.  A one-pulse SS maximum is not allowed to create a transition,
+        # but a rough pulse is not required to pass the *final* pulse-quality audit
+        # before the optimizer has had a chance to tune its gain and duration.
         "max_control_branches": 6,
         "branch_compare_shots": 900, "branch_compare_blocks": 3,
         "max_rabi_frequency_shift_mhz": 2.0,
         "qualified_basin_radius_mhz": 2.0,
-        "allow_exact_odd_even_fallback": True,
         # Early readout is only a bootstrap discriminator.  It may have much lower
         # contrast than the later optimized readout, but must still resolve enough
         # population to test odd/even action rather than confuse readout quality with
         # transition coherence.
         "fallback_minimum_binary_contrast": 0.12,
-        # This audit runs only for the few coherent-Rabi branches, before the much
-        # larger joint optimization.  Eight times the final-audit shot count is
-        # intentional: a weak bootstrap discriminator must not reject a real
-        # transition merely because population normalization has a wide interval.
+        # This high-statistics rough audit runs only for the few coherent-Rabi
+        # branches.  Passing it can resolve two competing transitions; failing it is
+        # now provisional evidence and cannot block gain/duration optimization.
         "prequalification_shot_multiplier": 8,
     },
     "fine_frequency": {
@@ -1767,6 +1767,8 @@ class BasicAutoTuner(ExperimentClass):
             "control_witnesses": self._control_witnesses,
             "control_branch_qualification": {
                 "status": "not_run", "qualified": False,
+                "frequency_qualified": False,
+                "selected_control_verified": False,
                 "selected": None, "branches": [],
                 "expensive_search_allowed": False,
             },
@@ -2349,11 +2351,15 @@ class BasicAutoTuner(ExperimentClass):
             qualified = self.data.get("control_branch_qualification", {})
             branches = qualified.get("branches", []) if isinstance(
                 qualified, dict) else []
-            count = sum(row.get("status") == "qualified" for row in branches)
-            print("  Qubit transition qualified near %.6f MHz (%d coherent branch%s "
-                  "passed)."
+            count = sum(str(row.get("status", "")).startswith(
+                        "frequency_qualified") for row in branches)
+            verified = bool(qualified.get("selected_control_verified", False))
+            print("  Qubit transition frequency qualified near %.6f MHz (%d coherent "
+                  "branch%s); rough repeated-pulse control %s."
                   % (self.working["qubit_pi_freq"], count,
-                     "" if count == 1 else "es"))
+                     "" if count == 1 else "es",
+                     "verified" if verified else
+                     "is provisional until final candidate audits"))
         elif name == "pre_expensive_gate":
             print("  Resonator and qubit transition are locked; starting the full "
                   "parameter search.")
@@ -7656,16 +7662,30 @@ class BasicAutoTuner(ExperimentClass):
         }
 
     def _stage_parity_chevron(self):
-        """Qualify and compare coherent transition branches before joint search."""
+        """Select a coherent transition; keep rough pulse quality provisional.
+
+        Resonator/opposed spectroscopy plus a resolved averaged-IQ Rabi establish a
+        workable transition frequency.  The parity map and exact odd/even audit add
+        useful branch-selection evidence, but at this point gain and duration are
+        deliberately still rough.  Requiring them to pass the final pulse certificate
+        here would make the optimizer demand an already tuned pi pulse before it is
+        allowed to tune one.
+        """
         p = self.params["parity_chevron"]
         self._qualified_control_candidates = []
         self._qualified_transition_frequency = None
         self._qualified_control_key = None
         self._final_control_verified_key = None
-        if not p.get("enabled", True):
+        source = list(self._rough_control_candidates)
+        # Isolated map/calibration helpers are used directly by deterministic unit
+        # tests and notebooks.  Production ``acquire`` activates the discovery guard
+        # and may never manufacture this fallback.
+        if not source and not self._discovery_guard_active:
+            source = [dict(self.working)]
+        if not source:
             raise RuntimeError(
-                "repeated-pulse transition qualification is disabled")
-        source = list(self._rough_control_candidates) or [dict(self.working)]
+                "no held-out coherent-Rabi control branch is available for "
+                "transition selection")
         branches, seen = [], set()
         for row in sorted(source, key=self._joint_rank, reverse=True):
             frequency = round(float(row["qubit_pi_freq"]), 6)
@@ -7674,10 +7694,10 @@ class BasicAutoTuner(ExperimentClass):
             if any(abs(frequency - existing) <= 0.5 for existing in seen):
                 continue
             seen.add(frequency)
-            branches.append({key: row[key] for key in self.initial})
+            branches.append(copy.deepcopy(row))
             if len(branches) >= max(int(p.get("max_control_branches", 6)), 1):
                 break
-        records, qualified = [], []
+        records, admitted = [], []
         original = dict(self.working)
         for index, seed in enumerate(branches, 1):
             stage = "parity_chevron" if index == 1 else (
@@ -7685,34 +7705,41 @@ class BasicAutoTuner(ExperimentClass):
             record = {
                 "branch": index, "seed": copy.deepcopy(seed),
                 "rabi_frequency_mhz": float(seed["qubit_pi_freq"]),
-                "status": "rejected", "candidate": None,
+                "status": "frequency_qualified_control_provisional",
+                "candidate": None, "control_verified": False,
                 "parity_failure": None, "control_failure": None,
                 "qualification_kind": None,
             }
-            candidates = []
-            try:
-                refined = self._parity_refine_branch(
-                    seed, stage, "transition branch %d parity" % index)
-                record["parity"] = copy.deepcopy(refined)
-                candidates = sorted(
-                    refined["confirmed"], key=self._joint_rank, reverse=True)
-                preferred_key = _candidate_key(refined["candidate"])
-                candidates.sort(
-                    key=lambda row: _candidate_key(row) == preferred_key,
-                    reverse=True)
-            except KeyboardInterrupt:
-                raise
-            except Exception as exc:
-                record["parity_failure"] = "%s: %s" % (
-                    type(exc).__name__, exc)
-                if bool(p.get("allow_exact_odd_even_fallback", True)):
-                    candidates = [seed]
-                    record["qualification_kind"] = "exact_odd_even_fallback"
+            candidates = [seed]
+            if p.get("enabled", True):
+                try:
+                    refined = self._parity_refine_branch(
+                        seed, stage, "transition branch %d parity" % index)
+                    record["parity"] = copy.deepcopy(refined)
+                    candidates = sorted(
+                        refined["confirmed"], key=self._joint_rank, reverse=True)
+                    preferred_key = _candidate_key(refined["candidate"])
+                    candidates.sort(
+                        key=lambda row: _candidate_key(row) == preferred_key,
+                        reverse=True)
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    record["parity_failure"] = "%s: %s" % (
+                        type(exc).__name__, exc)
+            else:
+                record["parity_failure"] = "repeated-pulse refinement is disabled"
             maximum_shift = float(p.get("max_rabi_frequency_shift_mhz", 2.0))
+            candidates = [
+                contender for contender in candidates
+                if abs(float(contender["qubit_pi_freq"])
+                       - float(seed["qubit_pi_freq"])) <= maximum_shift]
+            if not candidates:
+                candidates = [seed]
+            provisional = copy.deepcopy(candidates[0])
+            verified_candidate = None
+            verified_audit = None
             for contender in candidates:
-                if (abs(float(contender["qubit_pi_freq"])
-                        - float(seed["qubit_pi_freq"])) > maximum_shift):
-                    continue
                 try:
                     audit = self._stage_final_control_verify(
                         contender,
@@ -7727,33 +7754,54 @@ class BasicAutoTuner(ExperimentClass):
                 except Exception as exc:
                     record["control_failure"] = "%s: %s" % (
                         type(exc).__name__, exc)
+                    failed_audit = self._maps.get("final_control_verify")
+                    if isinstance(failed_audit, dict):
+                        record["control_audit_attempt"] = copy.deepcopy(
+                            failed_audit)
                     continue
-                candidate = copy.deepcopy(contender)
-                candidate["transition_qualification_kind"] = (
-                    record["qualification_kind"] or
-                    "rabi_plus_parity_plus_exact_odd_even")
-                candidate["transition_rabi_seed_mhz"] = float(
-                    seed["qubit_pi_freq"])
-                candidate["transition_control_audit"] = copy.deepcopy(audit)
-                qualified.append(candidate)
-                record.update({
-                    "status": "qualified", "candidate": copy.deepcopy(candidate),
-                    "control_audit": copy.deepcopy(audit),
-                    "qualification_kind": candidate[
-                        "transition_qualification_kind"],
-                })
+                verified_candidate = copy.deepcopy(contender)
+                verified_audit = copy.deepcopy(audit)
                 break
+            candidate = (verified_candidate if verified_candidate is not None
+                         else provisional)
+            if verified_candidate is not None:
+                kind = ("rabi_plus_parity_plus_exact_odd_even"
+                        if record.get("parity_failure") is None else
+                        "coherent_rabi_plus_exact_odd_even")
+                record.update({
+                    "status": "frequency_qualified_control_verified",
+                    "control_verified": True,
+                    "control_audit": verified_audit,
+                    "control_failure": None,
+                })
+            elif record.get("parity_failure") is None:
+                kind = "coherent_rabi_plus_parity_control_provisional"
+            else:
+                kind = "coherent_rabi_plus_heldout_ss_control_provisional"
+            candidate = copy.deepcopy(candidate)
+            candidate.update({
+                "transition_qualification_kind": kind,
+                "transition_rabi_seed_mhz": float(seed["qubit_pi_freq"]),
+                "transition_control_verified": bool(
+                    verified_candidate is not None),
+                "transition_control_audit": copy.deepcopy(verified_audit),
+            })
+            record.update({
+                "candidate": copy.deepcopy(candidate),
+                "qualification_kind": kind,
+            })
+            admitted.append(candidate)
             records.append(record)
 
-        if not qualified:
+        if not admitted:
             self.working = original
             self.data["control_branch_qualification"] = {
                 "status": "failed", "qualified": False,
+                "frequency_qualified": False,
+                "selected_control_verified": False,
                 "selected": None, "branches": records,
                 "expensive_search_allowed": False,
-                "failure": (
-                    "no coherent-Rabi transition passed repeated-pulse and exact "
-                    "odd/even qualification"),
+                "failure": "no held-out coherent-Rabi transition was selectable",
             }
             self._maps["control_branch_qualification"] = {
                 "branch_seed_frequency_mhz": np.asarray([
@@ -7762,30 +7810,52 @@ class BasicAutoTuner(ExperimentClass):
                 "search_complete": True, "selection_confirmed": False,
             }
             raise RuntimeError(
-                "no coherent-Rabi branch passed repeated-pulse qualification; "
+                "no coherent-Rabi branch remained after transition selection; "
                 "refusing to start the expensive joint search")
 
-        comparison = self._confirm_candidates(
-            [{key: row[key] for key in self.initial} for row in qualified],
-            int(p.get("branch_compare_shots", 900)),
-            int(p.get("branch_compare_blocks", 3)),
-            "qualified transition branch comparison", add_to_history=True)
-        if not self._confirmation_batch_complete(comparison):
-            raise RuntimeError(
-                "the common held-out comparison of qualified transitions was incomplete")
-        selected = max(comparison, key=self._joint_rank)
+        # If any rough branch already passed the exact control audit, do not let a
+        # higher one-pulse score from an unverified branch displace it.  When none pass,
+        # all branches remain workable coherent-Rabi frequencies and pulse quality is
+        # explicitly deferred to the optimizer and per-row final audits.
+        verified = [row for row in admitted
+                    if bool(row.get("transition_control_verified", False))]
+        selection_pool = verified or admitted
+        comparison_failure = None
+        try:
+            comparison = self._confirm_candidates(
+                [{key: row[key] for key in self.initial}
+                 for row in selection_pool],
+                int(p.get("branch_compare_shots", 900)),
+                int(p.get("branch_compare_blocks", 3)),
+                "coherent transition branch comparison", add_to_history=True)
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            comparison = []
+            comparison_failure = "%s: %s" % (type(exc).__name__, exc)
+        comparison_complete = bool(
+            comparison and self._confirmation_batch_complete(comparison))
+        selected = max(
+            comparison if comparison else selection_pool,
+            key=self._joint_rank)
         selected_key = _control_key(selected)
         selected_record = next(
             row for row in records
             if isinstance(row.get("candidate"), dict)
             and _control_key(row["candidate"]) == selected_key)
-        selected_audit = copy.deepcopy(selected_record["control_audit"])
-        self._qualified_control_candidates = copy.deepcopy(comparison)
+        selected_verified = bool(selected_record.get("control_verified", False))
+        selected_audit = copy.deepcopy(selected_record.get("control_audit"))
+        self._qualified_control_candidates = copy.deepcopy(
+            comparison if comparison else selection_pool)
         self._qualified_transition_frequency = float(selected["qubit_pi_freq"])
         self._qualified_control_key = selected_key
-        self._final_control_verified_key = selected_key
+        self._final_control_verified_key = (
+            selected_key if selected_verified else None)
         self.working = {key: selected[key] for key in self.initial}
-        self._maps["final_control_verify"] = selected_audit
+        if selected_verified and isinstance(selected_audit, dict):
+            self._maps["final_control_verify"] = selected_audit
+        else:
+            self._maps.pop("final_control_verify", None)
         selected_stage = selected_record.get("parity", {}).get("stage")
         if selected_stage and selected_stage in self._maps:
             selected_map = copy.deepcopy(self._maps[selected_stage])
@@ -7804,21 +7874,33 @@ class BasicAutoTuner(ExperimentClass):
             "branch_seed_frequency_mhz": np.asarray([
                 row["rabi_frequency_mhz"] for row in records], dtype=float),
             "branch_qualified": np.asarray([
-                row["status"] == "qualified" for row in records], dtype=bool),
+                row["status"].startswith("frequency_qualified")
+                for row in records], dtype=bool),
+            "branch_control_verified": np.asarray([
+                bool(row.get("control_verified", False))
+                for row in records], dtype=bool),
             "qualified_frequency_mhz": np.asarray([
-                row["qubit_pi_freq"] for row in comparison], dtype=float),
+                row["qubit_pi_freq"] for row in selection_pool], dtype=float),
             "selected_frequency_mhz": self._qualified_transition_frequency,
+            "selected_control_verified": selected_verified,
+            "branch_comparison_complete": comparison_complete,
             "search_complete": True, "selection_confirmed": True,
         }
         self.data["control_branch_qualification"] = {
-            "status": "qualified", "qualified": True,
+            "status": ("frequency_qualified_control_verified"
+                       if selected_verified else
+                       "frequency_qualified_control_provisional"),
+            "qualified": True, "frequency_qualified": True,
+            "selected_control_verified": selected_verified,
             "selected": copy.deepcopy(selected), "branches": records,
             "comparison": copy.deepcopy(comparison),
+            "comparison_complete": comparison_complete,
+            "comparison_failure": comparison_failure,
             "expensive_search_allowed": True,
         }
         self._adopt(selected, "parity_chevron")
         self._record_key_evidence(
-            ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"),
+            ("qubit_freq", "qubit_pi_freq"),
             "control_branch_qualification", True)
         return selected
 
@@ -7842,7 +7924,7 @@ class BasicAutoTuner(ExperimentClass):
                 and self._candidate_in_qualified_transition(row)]
 
     def _stage_pre_expensive_gate(self):
-        """Hard discovery boundary before the joint power/duration optimizer."""
+        """Require frequency identity, not a pre-optimized pulse, before joint search."""
         resonator = self._maps.get("resonator", {})
         spectroscopy = self._maps.get("spectroscopy", {})
         rabi = self._maps.get("iq_rabi", {})
@@ -7860,10 +7942,10 @@ class BasicAutoTuner(ExperimentClass):
                 and bool(rabi.get("selection_confirmed", False))):
             failures.append("no confirmed coherent Rabi witness exists")
         if not (isinstance(qualification, dict)
-                and bool(qualification.get("qualified", False))
+                and bool(qualification.get("frequency_qualified", False))
                 and isinstance(qualification.get("selected"), dict)
                 and self._qualified_control_key is not None):
-            failures.append("no repeated-pulse-qualified transition was selected")
+            failures.append("no coherent-Rabi-qualified transition was selected")
         selected = qualification.get("selected") if isinstance(
             qualification, dict) else None
         if isinstance(selected, dict):
@@ -7879,11 +7961,6 @@ class BasicAutoTuner(ExperimentClass):
                     > maximum_shift):
                 failures.append(
                     "selected transition is not connected to a coherent Rabi line")
-        audit = self._maps.get("final_control_verify", {})
-        if not (isinstance(audit, dict) and bool(audit.get("verified", False))
-                and tuple(audit.get("control_key", ()))
-                == tuple(self._qualified_control_key or ())):
-            failures.append("the exact selected odd/even control audit is missing")
         passed = not failures
         gate = {
             "passed": passed, "failures": failures,
@@ -7892,6 +7969,13 @@ class BasicAutoTuner(ExperimentClass):
                 float(self._qualified_transition_frequency)
                 if self._qualified_transition_frequency is not None else np.nan),
             "control_key": list(self._qualified_control_key or ()),
+            "rough_control_verified": bool(
+                qualification.get("selected_control_verified", False))
+            if isinstance(qualification, dict) else False,
+            "rough_control_status": qualification.get("status")
+            if isinstance(qualification, dict) else None,
+            "qualification_basis": (
+                "confirmed_resonator_plus_opposed_spectroscopy_plus_coherent_rabi"),
             "search_complete": passed, "selection_confirmed": passed,
         }
         self._maps["pre_expensive_gate"] = gate

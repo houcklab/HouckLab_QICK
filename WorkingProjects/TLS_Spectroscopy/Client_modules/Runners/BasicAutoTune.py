@@ -1056,6 +1056,26 @@ def _print_best(result):
         print("\n[basic-auto-tune] no single-shot candidate was measured.")
         return None
 
+    if result.get("outcome") == "transition_qualification_failed":
+        print("\n[basic-auto-tune] FREQUENCY QUALIFICATION FAILED -- "
+              "THE 1-20 us PORTFOLIO WAS NOT RUN")
+        gate = result.get("pre_expensive_gate", {})
+        failures = gate.get("failures", []) if isinstance(gate, dict) else []
+        if failures:
+            print("   reason: %s" % "; ".join(str(value) for value in failures))
+        qualification = result.get("control_branch_qualification", {})
+        branches = qualification.get("branches", []) if isinstance(
+            qualification, dict) else []
+        for branch in branches:
+            if not isinstance(branch, dict):
+                continue
+            detail = branch.get("parity_failure") or branch.get("control_failure")
+            if detail:
+                print("   %.6f MHz diagnostic: %s" % (
+                    _number(branch, ("rabi_frequency_mhz",)), detail))
+        _print_objective_candidate("BEST DIAGNOSTIC MEASUREMENT (NOT A TUNE)", best)
+        return best
+
     portfolio_printed = _print_duration_portfolio(result)
     if not portfolio_printed:
         overall = result.get("best_overall_candidate")
@@ -1426,6 +1446,12 @@ def main():
                 _history_entry(result, eligible, False, acquire_error))
         except Exception as exc:
             print("[basic-auto-tune] could not append calibration history: %s" % exc)
+        if result.get("outcome") == "transition_qualification_failed":
+            print("\n[basic-auto-tune] BaseConfig is untouched; resolve frequency "
+                  "qualification before rerunning the portfolio.")
+            if getattr(experiment, "iname", None):
+                print("   Summary plot: %s" % experiment.iname)
+            return 1
         if bool(result.get("manual_selection_required", False)):
             print("\n[basic-auto-tune] portfolio saved; BaseConfig is untouched. "
                   "Choose a row manually after reviewing fidelity and leakage.")

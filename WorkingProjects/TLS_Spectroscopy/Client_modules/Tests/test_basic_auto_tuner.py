@@ -189,7 +189,7 @@ FAST_PARAMS = {
     },
     "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production qualified-transition-v6 tightens the default to 0.5 percentage point.
+    # Production frequency-qualified-v7 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -5032,9 +5032,9 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
             == "amplified_amplitude_error_x180")
     assert data["maps"]["amplified_error"]["leakage_measurement"] is False
 
-    # A failed parity-map backend is not allowed to waive transition qualification.
-    # The independent, higher-statistics exact odd/even fallback must qualify the
-    # coherent Rabi branch before any expensive search can start.
+    # A failed parity-map backend cannot erase the already established coherent-Rabi
+    # transition.  Its high-statistics odd/even audit is useful rough evidence, while
+    # final candidates still receive their own strict control audits.
     parity = [row for row in data["stages"] if row["name"] == "parity_chevron"]
     assert len(parity) == 1
     assert parity[0]["status"] == "ok"
@@ -5693,7 +5693,6 @@ def test_transition_qualification_falls_through_failed_high_fidelity_branch():
     params = copy.deepcopy(FAST_PARAMS)
     params["parity_chevron"].update({
         "branch_compare_shots": 101, "branch_compare_blocks": 2,
-        "allow_exact_odd_even_fallback": True,
     })
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
@@ -5748,11 +5747,109 @@ def test_transition_qualification_falls_through_failed_high_fidelity_branch():
     assert abs(selected["qubit_pi_freq"] - tuner.QUBIT_FREQ) < 0.3
     records = tuner.data["control_branch_qualification"]["branches"]
     wrong_record = min(records, key=lambda row: row["rabi_frequency_mhz"])
-    assert wrong_record["status"] == "rejected"
+    assert wrong_record["status"] == "frequency_qualified_control_provisional"
     assert "incoherent saturation" in wrong_record["control_failure"]
     assert gate["qubit_pi_freq"] == selected["qubit_pi_freq"]
     assert tuner.data["control_branch_qualification"][
         "expensive_search_allowed"] is True
+
+
+def test_rough_control_audit_failure_does_not_block_frequency_optimization():
+    """A rough gain may be imperfect after the transition frequency is established."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["parity_chevron"].update({
+        "branch_compare_shots": 101, "branch_compare_blocks": 2,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        candidate = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=10.0,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA), sigma=tuner.SIGMA)
+        candidate.update({
+            "fidelity": 0.94, "fidelity_se": 0.006,
+            "fidelity_lcb_95": 0.928, "confirmation_complete": True,
+        })
+        tuner._rough_control_candidates = [candidate]
+
+        def unavailable_parity(seed, stage, label):
+            del seed, stage, label
+            raise RuntimeError("synthetic rough parity-map fault")
+
+        def imperfect_rough_control(contender, **kwargs):
+            del contender, kwargs
+            raise RuntimeError("synthetic rough amplitude error")
+
+        tuner._parity_refine_branch = unavailable_parity
+        tuner._stage_final_control_verify = imperfect_rough_control
+        selected = tuner._stage_parity_chevron()
+        tuner._discovery_status.update({"resonator": True, "spectroscopy": True})
+        tuner._maps["resonator"] = {
+            "search_complete": True, "selection_confirmed": True}
+        tuner._maps["spectroscopy"] = {
+            "search_complete": True, "selection_confirmed": True}
+        tuner._maps["iq_rabi"] = {
+            "coherent_witness": True, "selection_confirmed": True,
+            "coherent_witness_frequencies_mhz": np.asarray([tuner.QUBIT_FREQ]),
+        }
+        gate = tuner._stage_pre_expensive_gate()
+
+    qualification = tuner.data["control_branch_qualification"]
+    gate = tuner.data["pre_expensive_gate"]
+    assert abs(selected["qubit_pi_freq"] - tuner.QUBIT_FREQ) < 0.3
+    assert qualification["frequency_qualified"] is True
+    assert qualification["selected_control_verified"] is False
+    assert qualification["status"] == "frequency_qualified_control_provisional"
+    assert qualification["expensive_search_allowed"] is True
+    assert gate["passed"] is True
+    assert gate["rough_control_verified"] is False
+
+
+def test_provisional_rough_control_still_produces_the_duration_portfolio():
+    """Final rows own strict control certification; the rough seed does not."""
+    class ProvisionalControlTuner(VirtualBasicAutoTuner):
+        def _stage_final_control_verify(self, candidate, **kwargs):
+            del kwargs
+            self._maps["final_control_verify"] = {
+                "verified": False, "control_key": T._control_key(candidate),
+                "search_complete": False, "selection_confirmed": False,
+            }
+            raise RuntimeError("synthetic exact odd/even control failure")
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {
+        "enabled": True, "read_lengths_us": [1.0, 2.0, 3.0],
+        "native_seeds_per_length": 1,
+        "readout_seeds_per_length": 1,
+        "control_seed_count": 1,
+        "local_proposals_per_length": 0,
+        "refine_shots": 101, "refine_blocks": 2,
+        "screen_candidates_per_length": 1,
+        "screen_shots": 101, "screen_reference_shots": 151,
+        "screen_drift_retries": 0,
+        "confirm_shots": 151, "confirm_blocks": 2,
+        "confirm_candidates_per_length": 1,
+        "require_control_audit": True,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = ProvisionalControlTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params, fail_parity=True)
+        with redirect_stdout(io.StringIO()):
+            data = tuner.acquire(plotDisp=False)["data"]
+
+    stage_names = [row["name"] for row in data["stages"]]
+    entries = data["duration_portfolio"]["entries"]
+    assert data["pre_expensive_gate"]["passed"] is True
+    assert data["pre_expensive_gate"]["rough_control_verified"] is False
+    assert "joint_search" in stage_names
+    assert "duration_portfolio" in stage_names
+    assert len(entries) == 3
+    assert all(entry["status"] != "SAFE" for entry in entries)
+    assert all(entry["control_status"] != "VERIFIED" for entry in entries)
 
 
 def test_rejected_transition_cannot_reenter_late_recovery_or_safety_pools():
@@ -5907,6 +6004,8 @@ def test_runner_is_report_only_for_manual_duration_portfolio_selection():
     assert 'bool(result.get("interrupted", False))' in source
     assert "expected_source_hash=startup_source_hash" in source
     assert 'eligible = result.get("eligible_tuned", {})' in source
+    assert "FREQUENCY QUALIFICATION FAILED" in source
+    assert 'result.get("outcome") == "transition_qualification_failed"' in source
 
     discovery_updates = {}
     for node in ast.walk(tree):
@@ -6146,7 +6245,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "qualified-transition-v6"
+    assert T.BASIC_AUTOTUNER_REVISION == "frequency-qualified-v7"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -6438,6 +6537,32 @@ def test_runner_main_never_writes_a_guard_rejected_result():
     assert len(updater.update_calls) == 1
     assert len(updater.history) == len(rejected) + 1
     assert all(row["applied"] is False for row in updater.history[1:])
+
+    qualification_failure = copy.deepcopy(base_result)
+    qualification_failure.update({
+        "outcome": "transition_qualification_failed",
+        "success": False, "final_stable": False,
+        "fidelity_replay_stable": False,
+        "eligible_tuned": {},
+        "pre_expensive_gate": {
+            "passed": False,
+            "failures": ["no coherent-Rabi-qualified transition was selected"],
+        },
+        "control_branch_qualification": {
+            "status": "failed", "frequency_qualified": False,
+            "branches": [],
+        },
+    })
+    current["result"] = qualification_failure
+    runner.APPLY_CONFIG = False
+    output = io.StringIO()
+    with redirect_stdout(output):
+        assert runner.main() == 1
+    rendered = output.getvalue()
+    assert "FREQUENCY QUALIFICATION FAILED" in rendered
+    assert "BEST DIAGNOSTIC MEASUREMENT (NOT A TUNE)" in rendered
+    assert "independent write contract:" not in rendered
+    assert len(updater.update_calls) == 1
 
 
 def test_config_update_compare_and_swap_refuses_stale_input():
@@ -6872,6 +6997,8 @@ def main():
         test_refined_rabi_candidate_cannot_evict_a_spectral_basin,
         test_noncoherent_spectral_branch_cannot_enter_the_control_search,
         test_transition_qualification_falls_through_failed_high_fidelity_branch,
+        test_rough_control_audit_failure_does_not_block_frequency_optimization,
+        test_provisional_rough_control_still_produces_the_duration_portfolio,
         test_rejected_transition_cannot_reenter_late_recovery_or_safety_pools,
         test_portfolio_safety_failure_is_not_mislabeled_as_leakage,
         test_partial_wrapper_grid_can_report_but_not_authorize,
