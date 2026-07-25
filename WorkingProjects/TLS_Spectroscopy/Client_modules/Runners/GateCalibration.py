@@ -92,10 +92,6 @@ P_RABI_CHEVRON_IQ = {
     "a_points": 41,
     "freq_span_mhz": 20.0,
     "freq_points": 21,
-    # Unused as-is: run_rabi_chevron_iq uses feedback (active reset + 25 us photon-clear), same
-    # as SS.  This is only the QUA-faithful passive fallback, applied if you flip that reset_mode
-    # back to "passive".
-    "relax_delay_us": 1000.0,
 }
 
 P_RABI_CHEVRON_SS = {
@@ -254,11 +250,12 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
-        # Feedback reset + 25 us photon-clear instead of a 1000 us passive relax: ~5-7x faster
-        # and fine for the averaged, background-subtracted IQ.  Needs a valid reset threshold --
-        # a stale one visibly inverts/breaks the chevron; set "passive" (QUA-faithful) to fall
-        # back to relax_delay_us=1000.
+        # Feedback reset + 25 us photon-clear instead of a 1000 us passive relax: ~5-7x faster,
+        # same as SS, and fine for the averaged IQ.  Needs a valid reset threshold -- a stale one
+        # visibly inverts/breaks the chevron.  Set reset_mode "passive" to go QUA-faithful; the
+        # relax_delay below is the 1000 us used in that mode.
         "reset_mode": "feedback",
+        "relax_delay": 1000.0,
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
