@@ -64,6 +64,11 @@ RESONATOR_FIT_PARAMS = None
 
 INTERLEAVE_ROUNDS = 10
 
+PROBE_RESET = True
+RESET_THRESHOLD_RAW = 7087
+RESET_OPER = "lower"
+RESET_GROUND_BELOW = True
+
 
 P1_RESONATOR = {
     "run": False,
@@ -604,7 +609,7 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     cfg["qubit_pulse_style"] = "arb"
     cfg["qubit_gain"] = BaseConfig["qubit_pi_gain"]
     cfg["reset_mode"] = str(P5_SS_CAL.get("reset_mode", "passive"))
-    if cfg["reset_mode"] == "feedback":
+    if cfg["reset_mode"] == "feedback" and PROBE_RESET:
         rec = probe_reset_params(
             soc, soccfg, cfg, path=QUBIT, outer_folder=outer_folder,
             shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True)
@@ -622,6 +627,18 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
                     P5_SS_CAL.get("reset_thermalization_us", 25.0)),
                 "active_reset_post_measure_delay_us": 0.05,
             })
+    elif cfg["reset_mode"] == "feedback":
+        print(f"[5] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
+              f"({RESET_OPER}) without re-probing")
+        cfg.update({
+            "reset_threshold_raw": int(RESET_THRESHOLD_RAW),
+            "reset_oper": str(RESET_OPER),
+            "reset_ground_below": bool(RESET_GROUND_BELOW),
+            "reset_max_iters": int(P5_SS_CAL.get("reset_max_iters", 3)),
+            "reset_thermalization_us": float(
+                P5_SS_CAL.get("reset_thermalization_us", 25.0)),
+            "active_reset_post_measure_delay_us": 0.05,
+        })
     ss = SingleShot1Q(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                       suffix="SS_Cal", cfg=cfg, save=True, plot=True, min_F=0.0)
     ss.acquire(progress=True, plotDisp=LIVE_PLOTS)
@@ -699,7 +716,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
     p = dict(P6_3PT_T1)
-    if p.get("reset_mode") == "feedback":
+    if p.get("reset_mode") == "feedback" and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
                                  shots=int(p.get("reset_probe_shots", 2000)))
@@ -710,6 +727,12 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             p["reset_threshold_raw"] = int(rec["threshold_raw"])
             p["reset_oper"] = str(rec["oper"])
             p["reset_ground_below"] = bool(rec["ground_below"])
+    elif p.get("reset_mode") == "feedback":
+        print(f"[6] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
+              f"({RESET_OPER}) without re-probing")
+        p["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
+        p["reset_oper"] = str(RESET_OPER)
+        p["reset_ground_below"] = bool(RESET_GROUND_BELOW)
     freq_step_mhz = p.get("freq_step_mhz", None)
     if freq_step_mhz is not None:
         if FLUX_FIT_PARAMS is None:

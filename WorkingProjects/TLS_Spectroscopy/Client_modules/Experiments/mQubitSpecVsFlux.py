@@ -9,6 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.pulse_setup import 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import fit_functions as ff
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import flux_fit as fx
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.glitch import remeasure_glitched_rows
 
 
 class QubitSpecProgram(RAveragerProgram):
@@ -118,26 +119,35 @@ class QubitSpecVsFlux(ExperimentClass):
             self.flux_source.SetVoltage(float(volts[0]))
             time.sleep(self.magnet_relax)
 
-        start = time.time()
-        for i, v in enumerate(volts):
+        def measure_row(i):
+            v = float(volts[int(i)])
             if self.flux_source is not None:
-                self.flux_source.SetVoltage(float(v))
+                self.flux_source.SetVoltage(v)
                 time.sleep(self.magnet_relax)
             cfg["read_pulse_freq"] = self._readout_freq_at(v)
-            prog = QubitSpecProgram(self.soccfg, cfg)
-            x_pts, avgi, avgq = prog.acquire(self.soc, load_pulses=True, progress=False)
+            _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
+                self.soc, load_pulses=True, progress=False)
             sig = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
-            mag = np.abs(sig)
-            Z_mag[i, :] = mag
-            Z_phase[i, :] = np.unwrap(np.angle(sig))
+            Z_mag[int(i), :] = np.abs(sig)
+            Z_phase[int(i), :] = np.unwrap(np.angle(sig))
+            sp, _ = ff.fit_spec_dip(fpts, np.abs(sig), kind='auto')
+            qubit_dip[int(i)] = sp['f0'] if sp is not None else np.nan
+
+        start = time.time()
+        for i, v in enumerate(volts):
+            measure_row(i)
             if progress:
                 progress_counter(i, len(volts), start_time=start, label="qubit spec vs flux")
-            sp, _ = ff.fit_spec_dip(fpts, mag, kind='auto')
-            if sp is not None:
-                qubit_dip[i] = sp['f0']
             if i == 0:
                 print(f"[2] ~{(time.time()-start)*len(volts)/60:.1f} min for "
                       f"{len(volts)} flux x {cfg['expts']} freq points")
+
+        if bool(cfg.get("remeasure_outliers", True)):
+            remeasure_glitched_rows(
+                lambda: np.median(Z_mag, axis=1), measure_row,
+                sigma=float(cfg.get("outlier_sigma", 6.0)),
+                passes=int(cfg.get("outlier_passes", 2)), label="qubit spec vs flux",
+                row_labels=[f"{v:.4f} V" for v in volts])
 
         data = {'config': cfg,
                 'data': {'fpts': fpts, 'volts': volts, 'magnitude': Z_mag,

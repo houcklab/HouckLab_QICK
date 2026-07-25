@@ -14,7 +14,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVs
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ import RabiChevronIQ
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiLinecutSS import RabiLinecutSS
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec, QubitSpecGainSweep
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 
 QUBIT = "q4"
@@ -25,6 +25,7 @@ FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
+PROBE_RESET = True
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
@@ -46,6 +47,29 @@ P_TRANSMISSION_SWEEP = {
     "gain_min": 1000,
     "gain_max": 10000,
     "gain_points": 10,
+}
+
+P_QUBIT_SPEC = {
+    "run": False,
+    "shots": 1000,
+    "freq_center_mhz": None,
+    "freq_span_mhz": 100.0,
+    "freq_points": 201,
+    "spec_gain": 500,
+    "spec_length_us": 10.0,
+    "relax_delay_us": 100.0,
+}
+P_QUBIT_SPEC_SWEEP = {
+    "run": False,
+    "shots": 1000,
+    "freq_center_mhz": None,
+    "freq_span_mhz": 100.0,
+    "freq_points": 201,
+    "gain_min": 200,
+    "gain_max": 3000,
+    "gain_points": 12,
+    "spec_length_us": 10.0,
+    "relax_delay_us": 100.0,
 }
 
 P_SS_CAL = {
@@ -82,17 +106,6 @@ P_RABI_CHEVRON_SS = {
     # SS Rabi resets via feedback + reset_thermalization_us (25 us, matching QUA); there is no
     # passive relax between shots, so no relax_delay is set here.
 }
-
-P_RABI_LINECUT_SS = {
-    "run": False,
-    "shots": 1000,
-    "num_pi": 1,
-    "pulse_type": "X180",
-    "a_span": 6000,
-    "a_points": 51,
-    "relax_delay_us": 2000.0,
-}
-
 
 def _base_cfg(p, extra=None):
     cfg = dict(BaseConfig)
@@ -170,6 +183,51 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     print("[transmission sweep] pick the readout gain with the cleanest dip -> read_pulse_gain.")
 
 
+def run_qubit_spec(outer_folder, soc, soccfg):
+    p = P_QUBIT_SPEC
+    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
+              else float(BaseConfig["qubit_pi_freq"]))
+    cfg = _base_cfg(p, extra={
+        "reset_mode": "passive",
+        "qubit_pulse_style": "const",
+        "qubit_gain": int(p["spec_gain"]),
+        "qubit_length": float(p["spec_length_us"]),
+        "qubit_freq_start": center - p["freq_span_mhz"] / 2.0,
+        "qubit_freq_stop": center + p["freq_span_mhz"] / 2.0,
+        "qubit_freq_expts": int(p["freq_points"]),
+    })
+    print(f"[qubit spec] two-tone: {p['freq_points']} freqs over {p['freq_span_mhz']:.0f} MHz "
+          f"around {center:.1f} MHz, spec gain {p['spec_gain']} DAC")
+    exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                    suffix="GateCal_Qubit_Spec", cfg=cfg, live_plot=LIVE_PLOTS)
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
+    plt.close("all"); gc.collect()
+    return exp
+
+
+def run_qubit_spec_sweep(outer_folder, soc, soccfg):
+    p = P_QUBIT_SPEC_SWEEP
+    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
+              else float(BaseConfig["qubit_pi_freq"]))
+    gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
+    cfg = _base_cfg(p, extra={
+        "reset_mode": "passive",
+        "qubit_pulse_style": "const",
+        "qubit_length": float(p["spec_length_us"]),
+        "qubit_freq_start": center - p["freq_span_mhz"] / 2.0,
+        "qubit_freq_stop": center + p["freq_span_mhz"] / 2.0,
+        "qubit_freq_expts": int(p["freq_points"]),
+    })
+    print(f"[qubit spec sweep] {p['gain_points']} spec gains {p['gain_min']}..{p['gain_max']} DAC "
+          f"x {p['freq_points']} freqs over {p['freq_span_mhz']:.0f} MHz around {center:.1f} MHz")
+    exp = QubitSpecGainSweep(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
+                             suffix="GateCal_Qubit_Spec_Gain", cfg=cfg, gains=gains,
+                             live_plot=LIVE_PLOTS)
+    exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
+    plt.close("all"); gc.collect()
+    return exp
+
+
 def run_ss_cal(outer_folder, soc, soccfg):
     p = P_SS_CAL
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
@@ -219,48 +277,12 @@ def run_rabi_chevron_ss(outer_folder, soc, soccfg, calib_params):
     return exp
 
 
-def run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params):
-    p = P_RABI_LINECUT_SS
-    num_pi = p["num_pi"]
-    if isinstance(num_pi, (list, tuple)):
-        stacked, last = [], None
-        for npi in num_pi:
-            cfg = _base_cfg(p, extra={"a_span": p["a_span"], "a_points": p["a_points"]})
-            exp = RabiLinecutSS(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-                                suffix=f"Rabi_Linecut_SS_npi{npi}", cfg=cfg,
-                                calib_params=calib_params, num_pi_pulses=int(npi),
-                                pulse_type=p["pulse_type"], live_plot=False)
-            exp.acquire(progress=True)
-            stacked.append(exp.data["ss_data"]); last = exp
-        fig = plt.figure(figsize=(7, 4.5))
-        plt.pcolor(last.data["gain_vec"], np.asarray(num_pi, dtype=float),
-                   np.asarray(stacked), shading="auto")
-        plt.xlabel("Qubit pulse gain [DAC]"); plt.ylabel("# pi pulses")
-        plt.colorbar(label="Excited population")
-        plt.title(f"{QUBIT} error-amplification pi sweep")
-        plt.savefig(last.iname[:-4] + "_pi_sweep.png", bbox_inches="tight")
-        plt.close(fig)
-        print(f"[Linecut] error-amp sweep saved for num_pi = {list(num_pi)}")
-        return last
-    else:
-        cfg = _base_cfg(p, extra={"a_span": p["a_span"], "a_points": p["a_points"]})
-        exp = RabiLinecutSS(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
-                            suffix="Rabi_Linecut_SS", cfg=cfg, calib_params=calib_params,
-                            num_pi_pulses=int(num_pi), pulse_type=p["pulse_type"],
-                            live_plot=LIVE_PLOTS)
-        exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
-        plt.close("all"); gc.collect()
-        print(f"[Linecut] paste pi gain {exp.data['pi_gain']:.0f} into "
-              f"BaseConfig['qubit_pi_gain'] (or qubit_pi2_gain for X90).")
-        return exp
-
-
 def main():
     soc, soccfg = makeProxy()
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
-    if RESET_MODE == "feedback":
+    if RESET_MODE == "feedback" and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder)
         if rec is None:
@@ -269,6 +291,9 @@ def main():
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
+    elif RESET_MODE == "feedback":
+        print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
+              f"({RESET_OPER}) without re-probing")
 
     print("=" * 70)
     flux_note = ("PARK (ff_gain=0)" if FF_HOLD_GAIN == 0 else
@@ -278,10 +303,11 @@ def main():
         print(f"  NOTE: qubit_pi_freq={BaseConfig['qubit_pi_freq']} MHz must be the qubit freq AT ff_gain={FF_HOLD_GAIN}")
     for name, on in [("Transmission", P_TRANSMISSION["run"]),
                      ("Transmission_Sweep", P_TRANSMISSION_SWEEP["run"]),
+                     ("Qubit_Spec", P_QUBIT_SPEC["run"]),
+                     ("Qubit_Spec_Sweep", P_QUBIT_SPEC_SWEEP["run"]),
                      ("SS_Cal", P_SS_CAL["run"]),
                      ("Rabi_Chevron_IQ", P_RABI_CHEVRON_IQ["run"]),
-                     ("Rabi_Chevron_SS", P_RABI_CHEVRON_SS["run"]),
-                     ("Rabi_Linecut_SS", P_RABI_LINECUT_SS["run"])]:
+                     ("Rabi_Chevron_SS", P_RABI_CHEVRON_SS["run"])]:
         print(f"  {'[x]' if on else '[ ]'} {name}")
     print("=" * 70)
 
@@ -289,6 +315,10 @@ def main():
         run_transmission(outer_folder, soc, soccfg)
     if P_TRANSMISSION_SWEEP["run"]:
         run_transmission_sweep(outer_folder, soc, soccfg)
+    if P_QUBIT_SPEC["run"]:
+        run_qubit_spec(outer_folder, soc, soccfg)
+    if P_QUBIT_SPEC_SWEEP["run"]:
+        run_qubit_spec_sweep(outer_folder, soc, soccfg)
 
     calib_params = None
     if P_SS_CAL["run"]:
@@ -300,11 +330,6 @@ def main():
             print("[SS] Chevron_SS needs a single-shot calibration; running SS_Cal first.")
             calib_params = run_ss_cal(outer_folder, soc, soccfg)
         run_rabi_chevron_ss(outer_folder, soc, soccfg, calib_params)
-    if P_RABI_LINECUT_SS["run"]:
-        if calib_params is None:
-            print("[SS] Linecut_SS needs a single-shot calibration; running SS_Cal first.")
-            calib_params = run_ss_cal(outer_folder, soc, soccfg)
-        run_rabi_linecut_ss(outer_folder, soc, soccfg, calib_params)
 
     print("\npi-pulse calibration complete.")
 
