@@ -244,7 +244,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
-        "reset_mode": "feedback",
+        "reset_mode": "passive",
         "relax_delay": 1000.0,
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
