@@ -475,7 +475,12 @@ class QubitFluxStepResponse(ExperimentClass):
             ok = np.isfinite(v) & np.isfinite(f)
             return v[ok], f[ok]
 
-        branch_voltage, branch_frequency = _sample_branch(0.0)
+        branch_voltage, branch_frequency = _sample_branch(0.25)
+        _bf_diff = np.diff(branch_frequency)
+        if branch_frequency.size < 3 or not (
+            np.all(_bf_diff >= -1e-9) or np.all(_bf_diff <= 1e-9)
+        ):
+            branch_voltage, branch_frequency = _sample_branch(0.0)
         if branch_voltage.size < 3:
             return np.full_like(frequency_ghz, np.nan, dtype=float)
 
