@@ -41,6 +41,8 @@ P_TRANSMISSION = {
     "freq_start_mhz": None,
     "freq_stop_mhz": None,
     "freq_points": 201,
+    "spec_amp": None,
+    "spec_len_us": None,
 }
 P_TRANSMISSION_SWEEP = {
     "run": False,
@@ -51,6 +53,7 @@ P_TRANSMISSION_SWEEP = {
     "gain_min": 1000,
     "gain_max": 10000,
     "gain_points": 10,
+    "spec_len_us": None,
 }
 
 P_QUBIT_SPEC = {
@@ -131,6 +134,14 @@ def _base_cfg(p, extra=None):
     return cfg
 
 
+def _apply_spec_probe(cfg, p):
+    if p.get("spec_amp") is not None:
+        cfg["read_pulse_gain"] = int(p["spec_amp"])
+    if p.get("spec_len_us") is not None:
+        cfg["read_length"] = float(p["spec_len_us"])
+    return cfg
+
+
 def run_transmission(outer_folder, soc, soccfg):
     p = P_TRANSMISSION
     f0 = float(BaseConfig["read_pulse_freq"])
@@ -139,6 +150,7 @@ def run_transmission(outer_folder, soc, soccfg):
     f_vec = np.linspace(float(start), float(stop), int(p["freq_points"]))
     cfg = _base_cfg(p)
     cfg["relax_delay"] = 50
+    _apply_spec_probe(cfg, p)
     print(f"[transmission] {p['freq_points']} freqs {start:.3f}-{stop:.3f} MHz at ff_gain={FF_HOLD_GAIN}")
     exp = Transmission(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                        suffix="GateCal_Transmission", cfg=cfg, f_vec=f_vec)
@@ -156,6 +168,7 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
     cfg = _base_cfg(p, extra={"ff_gain": int(FF_HOLD_GAIN), "ff_settle_us": 20.0})
     cfg["relax_delay"] = 50
+    _apply_spec_probe(cfg, p)
     exp = ExperimentClass(path=QUBIT, outerFolder=outer_folder, suffix="GateCal_TransSweep", cfg=cfg)
     mag = np.full((len(gains), len(freqs)), np.nan)
     total = len(gains) * len(freqs)

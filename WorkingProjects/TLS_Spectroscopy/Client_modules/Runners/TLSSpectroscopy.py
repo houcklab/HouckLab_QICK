@@ -83,6 +83,8 @@ P1_RESONATOR = {
     "dc_step": 300,
     "lookup_smooth_points": None,
     "live_plot": True,
+    "spec_amp": None,
+    "spec_len_us": None,
 }
 
 P2_QUBIT_SPEC_FULL = {
@@ -303,6 +305,10 @@ def run_step1_resonator_spec(outer_folder, soc, soccfg):
     cfg["trans_freq_vec"] = f_vec
     cfg["ff_gain_vec"] = dc_vec
     cfg["ff_settle_us"] = 20.0
+    if p.get("spec_amp") is not None:
+        cfg["read_pulse_gain"] = int(p["spec_amp"])
+    if p.get("spec_len_us") is not None:
+        cfg["read_length"] = float(p["spec_len_us"])
     exp = TransmissionVsFFGain(
         soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
         suffix="Resonator_Spec_vs_Flux", cfg=cfg,
