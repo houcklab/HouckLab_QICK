@@ -41,8 +41,8 @@ P_TRANSMISSION = {
 P_TRANSMISSION_SWEEP = {
     "run": False,
     "shots": 500,
-    "freq_center_mhz": None,
-    "freq_span_mhz": 4.0,
+    "freq_start_mhz": None,
+    "freq_stop_mhz": None,
     "freq_points": 101,
     "gain_min": 1000,
     "gain_max": 10000,
@@ -52,8 +52,8 @@ P_TRANSMISSION_SWEEP = {
 P_QUBIT_SPEC = {
     "run": False,
     "shots": 1000,
-    "freq_center_mhz": None,
-    "freq_span_mhz": 100.0,
+    "freq_start_mhz": None,
+    "freq_stop_mhz": None,
     "freq_points": 201,
     "spec_gain": 500,
     "spec_length_us": 10.0,
@@ -62,8 +62,8 @@ P_QUBIT_SPEC = {
 P_QUBIT_SPEC_SWEEP = {
     "run": False,
     "shots": 1000,
-    "freq_center_mhz": None,
-    "freq_span_mhz": 100.0,
+    "freq_start_mhz": None,
+    "freq_stop_mhz": None,
     "freq_points": 201,
     "gain_min": 200,
     "gain_max": 3000,
@@ -148,10 +148,10 @@ def run_transmission(outer_folder, soc, soccfg):
 
 def run_transmission_sweep(outer_folder, soc, soccfg):
     p = P_TRANSMISSION_SWEEP
-    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
-              else float(BaseConfig["read_pulse_freq"]))
-    freqs = np.linspace(center - p["freq_span_mhz"] / 2.0, center + p["freq_span_mhz"] / 2.0,
-                        int(p["freq_points"]))
+    f0 = float(BaseConfig["read_pulse_freq"])
+    start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else f0 - 2.0
+    stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else f0 + 2.0
+    freqs = np.linspace(float(start), float(stop), int(p["freq_points"]))
     gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
     cfg = _base_cfg(p, extra={"ff_gain": int(FF_HOLD_GAIN), "ff_settle_us": 20.0})
     cfg["relax_delay"] = 50
@@ -185,19 +185,20 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
 
 def run_qubit_spec(outer_folder, soc, soccfg):
     p = P_QUBIT_SPEC
-    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
-              else float(BaseConfig["qubit_pi_freq"]))
+    q0 = float(BaseConfig["qubit_pi_freq"])
+    start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else q0 - 50.0
+    stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else q0 + 50.0
     cfg = _base_cfg(p, extra={
         "reset_mode": "passive",
         "qubit_pulse_style": "const",
         "qubit_gain": int(p["spec_gain"]),
         "qubit_length": float(p["spec_length_us"]),
-        "qubit_freq_start": center - p["freq_span_mhz"] / 2.0,
-        "qubit_freq_stop": center + p["freq_span_mhz"] / 2.0,
+        "qubit_freq_start": float(start),
+        "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
     })
-    print(f"[qubit spec] two-tone: {p['freq_points']} freqs over {p['freq_span_mhz']:.0f} MHz "
-          f"around {center:.1f} MHz, spec gain {p['spec_gain']} DAC")
+    print(f"[qubit spec] two-tone: {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz, "
+          f"spec gain {p['spec_gain']} DAC")
     exp = QubitSpec(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                     suffix="GateCal_Qubit_Spec", cfg=cfg, live_plot=LIVE_PLOTS)
     exp.acquire(progress=True, plotDisp=LIVE_PLOTS)
@@ -207,19 +208,20 @@ def run_qubit_spec(outer_folder, soc, soccfg):
 
 def run_qubit_spec_sweep(outer_folder, soc, soccfg):
     p = P_QUBIT_SPEC_SWEEP
-    center = (p["freq_center_mhz"] if p["freq_center_mhz"] is not None
-              else float(BaseConfig["qubit_pi_freq"]))
+    q0 = float(BaseConfig["qubit_pi_freq"])
+    start = p["freq_start_mhz"] if p["freq_start_mhz"] is not None else q0 - 50.0
+    stop = p["freq_stop_mhz"] if p["freq_stop_mhz"] is not None else q0 + 50.0
     gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
     cfg = _base_cfg(p, extra={
         "reset_mode": "passive",
         "qubit_pulse_style": "const",
         "qubit_length": float(p["spec_length_us"]),
-        "qubit_freq_start": center - p["freq_span_mhz"] / 2.0,
-        "qubit_freq_stop": center + p["freq_span_mhz"] / 2.0,
+        "qubit_freq_start": float(start),
+        "qubit_freq_stop": float(stop),
         "qubit_freq_expts": int(p["freq_points"]),
     })
     print(f"[qubit spec sweep] {p['gain_points']} spec gains {p['gain_min']}..{p['gain_max']} DAC "
-          f"x {p['freq_points']} freqs over {p['freq_span_mhz']:.0f} MHz around {center:.1f} MHz")
+          f"x {p['freq_points']} freqs {start:.1f}-{stop:.1f} MHz")
     exp = QubitSpecGainSweep(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                              suffix="GateCal_Qubit_Spec_Gain", cfg=cfg, gains=gains,
                              live_plot=LIVE_PLOTS)
