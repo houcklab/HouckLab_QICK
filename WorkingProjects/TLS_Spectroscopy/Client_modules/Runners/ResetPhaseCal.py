@@ -13,10 +13,11 @@ else:
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
-from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import ActiveResetProbe
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
 QUBIT = "q4"
 
+APPLY_CONFIG = True
 SWEEP_SHOTS = 800
 CHECK_SHOTS = 3000
 PHASE_STEP_DEG = 15.0
@@ -24,16 +25,17 @@ PHASE_STEP_DEG = 15.0
 
 def main():
     soc, soccfg = makeProxy()
-    cfg = dict(BaseConfig)
-    cfg["shots"] = cfg["reps"] = int(SWEEP_SHOTS)
-    cfg["relax_delay"] = 500.0
-    exp = ActiveResetProbe(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
-                           suffix="Reset_Phase_Cal", cfg=cfg)
-    import numpy as np
-    exp.calibrate_res_phase(phases=np.arange(0.0, 180.0, PHASE_STEP_DEG),
-                            sweep_shots=SWEEP_SHOTS, check_shots=CHECK_SHOTS)
-    print("\nDone.  Paste the BEST res_phase into Calib/initialize.py BaseConfig['res_phase'],")
-    print("then re-run -- the active-reset probe should read CLEAN with a stable sign.")
+    best = calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outerFolder,
+                               apply_config=APPLY_CONFIG, sweep_shots=SWEEP_SHOTS,
+                               check_shots=CHECK_SHOTS, phase_step_deg=PHASE_STEP_DEG)
+    if best is None:
+        return
+    if APPLY_CONFIG:
+        print("\nDone -- res_phase written to Calib/initialize.py (timestamped backup kept). "
+              "The active-reset probe should now read CLEAN with a stable sign.")
+    else:
+        print(f"\nMeasure-only (APPLY_CONFIG=False). Set BaseConfig['res_phase'] = {best:.1f} "
+              "in Calib/initialize.py to apply.")
 
 
 if __name__ == "__main__":

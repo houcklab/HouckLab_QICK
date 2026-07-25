@@ -16,6 +16,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec, QubitSpecGainSweep
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
 QUBIT = "q4"
 CHIP_NAME_FOR_CONFIG = "FTTv02_SiOxJJ"
@@ -26,6 +27,7 @@ READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
 PROBE_RESET = True
+CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
@@ -284,6 +286,8 @@ def main():
     outer_folder = outerFolder
 
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
+    if CAL_RES_PHASE:
+        calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
     if RESET_MODE == "feedback" and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder)

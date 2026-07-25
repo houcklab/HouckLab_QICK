@@ -17,6 +17,7 @@ import numpy as np
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitLongTimeSpecVsFlux import QubitLongTimeSpecVsFlux
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitFluxStepResponse import QubitFluxStepResponse
@@ -65,6 +66,7 @@ RESONATOR_FIT_PARAMS = None
 INTERLEAVE_ROUNDS = 10
 
 PROBE_RESET = True
+CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
@@ -843,6 +845,9 @@ def main():
     for name, on in steps_enabled:
         print(f"  {'[x]' if on else '[ ]'} {name}")
     print("=" * 70)
+
+    if CAL_RES_PHASE:
+        calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
 
     correction_json = None
     calib_params = None
