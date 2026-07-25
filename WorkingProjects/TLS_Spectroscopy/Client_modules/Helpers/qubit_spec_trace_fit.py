@@ -280,7 +280,8 @@ def print_fit_report(result, label="Advanced qubit-spec fit"):
     print("]")
 
 
-def save_fit_overlay_png(png_path, dc_v, freq_ghz, mag_dbm, result, title=None):
+def save_fit_overlay_png(png_path, dc_v, freq_ghz, mag_dbm, result, title=None,
+                         xlabel="DC offset [V]"):
     import matplotlib.pyplot as plt
     dc_v = np.asarray(dc_v, dtype=float)
     freq_ghz = np.asarray(freq_ghz, dtype=float)
@@ -294,7 +295,7 @@ def save_fit_overlay_png(png_path, dc_v, freq_ghz, mag_dbm, result, title=None):
     ax.plot(dense, flux_tunable_transmon_frequency_with_tilt(dense, *result["params"]),
             "-", lw=2.0, color="red",
             label=f"Transmon fit (RMS {result['rms_mhz']:.1f} MHz)")
-    ax.set_xlabel("DC offset [V]")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("Probe frequency [GHz]")
     if title:
         ax.set_title(title)

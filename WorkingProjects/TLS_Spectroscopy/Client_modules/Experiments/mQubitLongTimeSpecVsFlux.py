@@ -489,28 +489,29 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         dc_scaled = self.dc_vec * DAC_TO_VOLT_SCALE
         freq_ghz = fpts_mhz / 1e3
         raw_map_png = os.path.splitext(self.iname)[0] + "_raw_map.png"
-        norm = mag_dbm_2d - np.nanmedian(mag_dbm_2d, axis=0, keepdims=True)
-        fig, ax = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True, sharey=True)
+        phase_2d = np.nanmean(np.asarray(self.data['phase'], dtype=float), axis=2)
+        amp_n = mag_dbm_2d - np.nanmedian(mag_dbm_2d, axis=0, keepdims=True)
+        ph_n = phase_2d - np.nanmedian(phase_2d, axis=0, keepdims=True)
+        fig, ax = plt.subplots(2, 2, figsize=(16, 11), constrained_layout=True,
+                               sharex=True, sharey=True)
         for a, M, lbl, title in (
-                (ax[0], mag_dbm_2d, "Magnitude [dBm]", "raw"),
-                (ax[1], norm, "Magnitude [dBm] (per-flux normalized)", "per-flux background removed")):
+                (ax[0, 0], mag_dbm_2d, "Magnitude [dBm]", "amplitude (raw)"),
+                (ax[0, 1], amp_n, "Magnitude [dBm] (per-flux normalized)", "amplitude (background removed)"),
+                (ax[1, 0], phase_2d, "Phase [rad]", "phase (raw)"),
+                (ax[1, 1], ph_n, "Phase [rad] (per-flux normalized)", "phase (background removed)")):
             mesh = a.pcolormesh(self.dc_vec, freq_ghz, M, shading="auto", cmap="viridis")
             fig.colorbar(mesh, ax=a, pad=0.015, label=lbl)
-            a.set_xlabel("DC offset [ff_gain DAC]")
             a.set_title(title)
-        ax[0].set_ylabel("Probe frequency [GHz]")
+        for a in ax[1, :]:
+            a.set_xlabel("DC offset [ff_gain DAC]")
+        for a in ax[:, 0]:
+            a.set_ylabel("Probe frequency [GHz]")
         fig.suptitle(f"{self.element} raw qubit-spec map")
         fig.savefig(raw_map_png, bbox_inches="tight")
         plt.close(fig)
         self.data['raw_map_png'] = raw_map_png
 
         result = qst.fit_qubit_spec_map(dc_scaled, freq_ghz, mag_dbm_2d)
-        overlay_png = os.path.splitext(self.iname)[0] + "_advanced_fit.png"
-        qst.save_fit_overlay_png(overlay_png, dc_scaled, freq_ghz, mag_dbm_2d, result,
-                                 title=f"{self.element} advanced qubit-spec fit "
-                                       f"(DC axis scaled x{DAC_TO_VOLT_SCALE:g})")
-        self.data['advanced_fit_png'] = overlay_png
-
         S = DAC_TO_VOLT_SCALE
         result_dac = copy.deepcopy(result)
         p = result_dac["params"]
@@ -521,6 +522,11 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         result_dac["fit_window_v"] = [v / S for v in result_dac["fit_window_v"]]
         result_dac["extrema"] = [[v / S, f, k] for v, f, k in result_dac["extrema"]]
         result_dac["dc"] = np.asarray(result_dac["dc"]) / S
+        overlay_png = os.path.splitext(self.iname)[0] + "_advanced_fit.png"
+        qst.save_fit_overlay_png(overlay_png, self.dc_vec, freq_ghz, mag_dbm_2d, result_dac,
+                                 title=f"{self.element} advanced qubit-spec fit",
+                                 xlabel="DC offset [ff_gain DAC]")
+        self.data['advanced_fit_png'] = overlay_png
         qst.print_fit_report(result_dac,
                              label=f"[{self.step_tag}] Advanced qubit-spec fit (ff_gain DAC units)")
         self.data['flux_fit_params'] = [float(v) for v in result_dac["params"]]
