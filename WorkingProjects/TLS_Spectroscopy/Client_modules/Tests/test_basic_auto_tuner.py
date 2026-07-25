@@ -189,7 +189,7 @@ FAST_PARAMS = {
     },
     "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production duration-portfolio-v5 tightens the default to 0.5 percentage point.
+    # Production qualified-transition-v6 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -4489,10 +4489,15 @@ def test_failed_critical_discovery_and_coinflip_replay_can_never_write():
         with redirect_stdout(io.StringIO()):
             result = tuner.acquire()["data"]
 
-    assert result["fidelity_replay_stable"] is True
+    assert result["outcome"] == "transition_qualification_failed"
+    assert result["success"] is False
+    assert result["expensive_search_skipped"] is True
+    assert result["fidelity_replay_stable"] is False
     assert result["best_found"]["fidelity"] < 0.55
-    assert result["discovery"]["missing_for_write"] == ["resonator"]
-    assert result["write_fidelity_gate"]["passed"] is False
+    assert result["pre_expensive_gate"]["passed"] is False
+    assert any("resonator" in reason
+               for reason in result["pre_expensive_gate"]["failures"])
+    assert "joint_search" not in [row["name"] for row in result["stages"]]
     assert result["final_stable"] is False
     assert result["eligible_tuned"] == {}
 
@@ -4990,7 +4995,7 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
 
     data = result["data"]
     best = data["best_found"]
-    assert data["outcome"] == "completed_with_warnings"
+    assert data["outcome"] == "completed"
     assert data["success"] is True
     assert data["final_stable"] is True
     assert data["control_validation"]["verified_for_write"] is True
@@ -5027,11 +5032,20 @@ def test_bad_start_recovers_and_preserves_best_effort_contract():
             == "amplified_amplitude_error_x180")
     assert data["maps"]["amplified_error"]["leakage_measurement"] is False
 
-    # A recoverable optional-stage exception is recorded and cannot erase direct SS data.
+    # A failed parity-map backend is not allowed to waive transition qualification.
+    # The independent, higher-statistics exact odd/even fallback must qualify the
+    # coherent Rabi branch before any expensive search can start.
     parity = [row for row in data["stages"] if row["name"] == "parity_chevron"]
     assert len(parity) == 1
-    assert parity[0]["status"] == "warning"
-    assert "synthetic parity backend fault" in parity[0]["error"]
+    assert parity[0]["status"] == "ok"
+    qualification = data["control_branch_qualification"]
+    assert qualification["qualified"] is True
+    assert qualification["expensive_search_allowed"] is True
+    assert any("synthetic parity backend fault" in str(row["parity_failure"])
+               for row in qualification["branches"])
+    assert data["pre_expensive_gate"]["passed"] is True
+    assert stage_order.index("pre_expensive_gate") < stage_order.index(
+        "joint_search")
     assert data["candidate_count"] > 0
 
     # The final tuple lies in the known high-fidelity basin reached from a very bad prior.
@@ -5155,10 +5169,15 @@ def test_failed_search_cannot_make_replayed_input_write_eligible():
         )
         result = tuner.acquire(plotDisp=False)
     data = result["data"]
-    assert data["outcome"] == "completed_with_warnings"
-    assert data["success"] is True
+    assert data["outcome"] == "transition_qualification_failed"
+    assert data["success"] is False
     assert data["best_found"] is not None
     assert data["eligible_tuned"] == {}
+    assert data["expensive_search_skipped"] is True
+    stage_names = [row["name"] for row in data["stages"]]
+    assert "pre_expensive_gate" in stage_names
+    assert "joint_search" not in stage_names
+    assert "duration_portfolio" not in stage_names
 
 
 def test_partial_direct_grid_with_failed_confirmation_has_no_key_evidence():
@@ -5580,7 +5599,8 @@ def test_refined_rabi_candidate_cannot_evict_a_spectral_basin():
                     "frequency": float(frequency), "projection": projection,
                     "fit": {"ok": True, "pi_gain": 1000.0 + 100.0 * nearest,
                             "r2": 0.98, "yfit": projection},
-                    "score": score,
+                    "score": score, "snr": 20.0,
+                    "relative_contrast": 0.8,
                 })
             best = max(rows, key=lambda row: row["score"])
             return {"ok": True, "best": best, "rows": rows}
@@ -5598,6 +5618,213 @@ def test_refined_rabi_candidate_cannot_evict_a_spectral_basin():
     refined = min(tuner._rabi_candidates,
                   key=lambda candidate: abs(candidate["qubit_pi_freq"] - centers[0]))
     assert refined["qubit_pi_gain"] == 1111
+
+
+def test_noncoherent_spectral_branch_cannot_enter_the_control_search():
+    """A strong non-oscillatory line must not beat a weaker coherent Rabi line."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["iq_rabi"].update({
+        "local_span_mhz": 2.0, "freq_points_per_candidate": 3,
+        "gain_points": 9, "fine_gain_points": 9, "shortlist": 4,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        distractor, target = 2526.7, 2534.3
+        tuner._spec_candidates_mhz = [distractor, target]
+        tuner._resonator_seed = tuner.READ_FREQ
+        tuner._discovery_readout = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=10.0)
+        tuner._acquire_iq_chevron = lambda freqs, gains, candidate, shots: (
+            np.zeros((len(freqs), len(gains))),
+            np.zeros((len(freqs), len(gains))))
+        original_analysis = T.analyze_iq_chevron
+
+        def synthetic_analysis(freqs, gains, i_map, q_map, min_r2=0.55):
+            del i_map, q_map, min_r2
+            freqs = np.asarray(freqs, dtype=float)
+            gains = np.asarray(gains, dtype=float)
+            projection = np.cos(np.linspace(0.0, 2.0 * np.pi, gains.size))
+            if freqs.size == 1:
+                row = {
+                    "frequency": float(freqs[0]), "projection": projection,
+                    "fit": {"ok": True, "pi_gain": 5700.0, "r2": 0.98,
+                            "yfit": projection},
+                    "score": 10.0,
+                }
+                return {"ok": True, "best": row, "rows": [row]}
+            rows = []
+            for frequency in freqs:
+                is_distractor = abs(float(frequency) - distractor) < 1e-9
+                is_target = abs(float(frequency) - target) < 1e-9
+                rows.append({
+                    "frequency": float(frequency), "projection": projection,
+                    "fit": {"ok": True, "pi_gain": 4000.0 if is_distractor
+                            else 5700.0, "r2": 0.99, "yfit": projection},
+                    # The distractor deliberately wins the generic map score but has
+                    # neither statistically resolved nor relative Rabi contrast.
+                    "score": 100.0 if is_distractor else (50.0 if is_target else 1.0),
+                    "snr": 1.0 if is_distractor else (20.0 if is_target else 1.0),
+                    "relative_contrast": (0.02 if is_distractor
+                                          else (0.80 if is_target else 0.02)),
+                })
+            return {"ok": True, "best": max(rows, key=lambda row: row["score"]),
+                    "rows": rows}
+
+        T.analyze_iq_chevron = synthetic_analysis
+        try:
+            tuner._stage_iq_rabi()
+        finally:
+            T.analyze_iq_chevron = original_analysis
+
+    assert tuner._rabi_candidates
+    assert all(abs(row["qubit_pi_freq"] - target) <= 1e-6
+               for row in tuner._rabi_candidates)
+    assert abs(tuner.working["qubit_pi_freq"] - target) <= 1e-6
+    rejected = tuner.data["maps"]["iq_rabi"][
+        "rejected_spectral_basin_indices"]
+    assert 0 in rejected
+
+
+def test_transition_qualification_falls_through_failed_high_fidelity_branch():
+    """One-shot fidelity cannot retain a branch that fails coherent odd/even action."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["parity_chevron"].update({
+        "branch_compare_shots": 101, "branch_compare_blocks": 2,
+        "allow_exact_odd_even_fallback": True,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        wrong = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=10.0,
+            qubit_pi_freq=2527.7, qubit_pi_gain=3000, sigma=tuner.SIGMA)
+        right = T._with_candidate(
+            wrong, qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA))
+        wrong.update({"fidelity": 0.97, "fidelity_se": 0.002,
+                      "fidelity_lcb_95": 0.966,
+                      "confirmation_complete": True})
+        right.update({"fidelity": 0.90, "fidelity_se": 0.004,
+                      "fidelity_lcb_95": 0.892,
+                      "confirmation_complete": True})
+        tuner._rough_control_candidates = [wrong, right]
+
+        def unavailable_parity(seed, stage, label):
+            del seed, stage, label
+            raise RuntimeError("synthetic parity-map backend fault")
+
+        def exact_audit(candidate, **kwargs):
+            del kwargs
+            if abs(candidate["qubit_pi_freq"] - tuner.QUBIT_FREQ) > 1.0:
+                raise RuntimeError("synthetic incoherent saturation")
+            audit = {
+                "verified": True, "control_key": T._control_key(candidate),
+                "search_complete": True, "selection_confirmed": True,
+            }
+            tuner._maps["final_control_verify"] = audit
+            return audit
+
+        tuner._parity_refine_branch = unavailable_parity
+        tuner._stage_final_control_verify = exact_audit
+        selected = tuner._stage_parity_chevron()
+
+        tuner._discovery_status.update({"resonator": True, "spectroscopy": True})
+        tuner._maps["resonator"] = {
+            "search_complete": True, "selection_confirmed": True}
+        tuner._maps["spectroscopy"] = {
+            "search_complete": True, "selection_confirmed": True}
+        tuner._maps["iq_rabi"] = {
+            "coherent_witness": True, "selection_confirmed": True,
+            "coherent_witness_frequencies_mhz": np.asarray([
+                tuner.QUBIT_FREQ]),
+        }
+        gate = tuner._stage_pre_expensive_gate()
+
+    assert abs(selected["qubit_pi_freq"] - tuner.QUBIT_FREQ) < 0.3
+    records = tuner.data["control_branch_qualification"]["branches"]
+    wrong_record = min(records, key=lambda row: row["rabi_frequency_mhz"])
+    assert wrong_record["status"] == "rejected"
+    assert "incoherent saturation" in wrong_record["control_failure"]
+    assert gate["qubit_pi_freq"] == selected["qubit_pi_freq"]
+    assert tuner.data["control_branch_qualification"][
+        "expensive_search_allowed"] is True
+
+
+def test_rejected_transition_cannot_reenter_late_recovery_or_safety_pools():
+    """Raw archives cannot bypass the qualified transition phase boundary."""
+    params = copy.deepcopy(FAST_PARAMS)
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        right = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=tuner.READ_LENGTH,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA), sigma=tuner.SIGMA)
+        wrong = T._with_candidate(
+            right, qubit_pi_freq=2527.7, qubit_pi_gain=3000)
+        right.update({"fidelity": 0.91, "fidelity_lcb_95": 0.89,
+                      "confirmation_complete": True})
+        wrong.update({"fidelity": 0.99, "fidelity_lcb_95": 0.98,
+                      "confirmation_complete": True})
+        tuner._qualified_transition_frequency = tuner.QUBIT_FREQ
+        tuner._qualified_control_key = T._control_key(right)
+        tuner.working = dict(right)
+        tuner._confirmed = [wrong, right]
+        tuner._archive = [wrong, right]
+        tuner.data["final_candidates"] = [wrong, right]
+        tuner._unconfirmed_contenders = [{
+            "candidate": wrong, "missing_blocks": 3, "completed_blocks": 0,
+            "scheduled_blocks": 3, "batch_incomplete": True,
+            "label": "rejected transition regression", "order": 0,
+        }]
+
+        operational = tuner._operational_waveform_pool()
+        direct = tuner._leakage_waveform_pool()
+        tuner._stage_final()
+
+    for row in operational + direct + tuner.data["final_candidates"]:
+        assert abs(row["qubit_pi_freq"] - tuner.QUBIT_FREQ) <= 2.0
+    assert not any(abs(row["qubit_pi_freq"] - 2527.7) < 1e-6
+                   for row in tuner.data["final_candidates"])
+
+
+def test_portfolio_safety_failure_is_not_mislabeled_as_leakage():
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {"enabled": True}
+    params["leakage"] = {"enabled": False, "operational_enabled": True}
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        screening = {
+            "valid": True, "portfolio_safe": True,
+            "third_blob_excess_ucb": 0.004,
+            "third_cluster_guard_available": True,
+            "third_cluster_supported": False,
+        }
+        unavailable = {
+            "confirmation_complete": False,
+            "third_cluster_guard_available": False,
+            "third_blob_excess_ucb": 0.004,
+        }
+        leaking = {
+            "confirmation_complete": True,
+            "third_cluster_guard_available": True,
+            "third_cluster_supported": True,
+            "third_blob_excess_ucb": 0.004,
+            "third_cluster_fraction_ucb_95": 0.20,
+            "third_cluster_single_state_fraction_ucb_95": 0.25,
+        }
+    assert tuner._portfolio_confirmation_status(
+        screening, unavailable) == "INCONCLUSIVE"
+    assert tuner._portfolio_confirmation_status(screening, leaking) == "UNSAFE"
 
 
 def test_partial_wrapper_grid_can_report_but_not_authorize():
@@ -5919,7 +6146,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "duration-portfolio-v5"
+    assert T.BASIC_AUTOTUNER_REVISION == "qualified-transition-v6"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -6643,6 +6870,10 @@ def main():
         test_verified_leakage_tuple_can_atomically_write_drag_beta,
         test_leakage_certificate_cannot_authorize_a_different_final_tuple,
         test_refined_rabi_candidate_cannot_evict_a_spectral_basin,
+        test_noncoherent_spectral_branch_cannot_enter_the_control_search,
+        test_transition_qualification_falls_through_failed_high_fidelity_branch,
+        test_rejected_transition_cannot_reenter_late_recovery_or_safety_pools,
+        test_portfolio_safety_failure_is_not_mislabeled_as_leakage,
         test_partial_wrapper_grid_can_report_but_not_authorize,
         test_interrupt_after_final_replay_never_emits_eligibility,
         test_runner_is_report_only_for_manual_duration_portfolio_selection,

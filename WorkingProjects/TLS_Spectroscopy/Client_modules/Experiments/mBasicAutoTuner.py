@@ -75,7 +75,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "duration-portfolio-v5"
+BASIC_AUTOTUNER_REVISION = "qualified-transition-v6"
 
 
 BASIC_DEFAULTS = {
@@ -218,6 +218,23 @@ BASIC_DEFAULTS = {
         "shots": 100, "confirm_shots": 600, "confirm_blocks": 2,
         "min_contrast_sigma": 5.0, "min_depth_correctness": 0.55,
         "min_consistent_depth_fraction": 0.67,
+        # Qualify every independently coherent Rabi basin before the expensive joint
+        # optimizer.  A one-pulse SS maximum is not allowed to choose the transition.
+        "max_control_branches": 6,
+        "branch_compare_shots": 900, "branch_compare_blocks": 3,
+        "max_rabi_frequency_shift_mhz": 2.0,
+        "qualified_basin_radius_mhz": 2.0,
+        "allow_exact_odd_even_fallback": True,
+        # Early readout is only a bootstrap discriminator.  It may have much lower
+        # contrast than the later optimized readout, but must still resolve enough
+        # population to test odd/even action rather than confuse readout quality with
+        # transition coherence.
+        "fallback_minimum_binary_contrast": 0.12,
+        # This audit runs only for the few coherent-Rabi branches, before the much
+        # larger joint optimization.  Eight times the final-audit shot count is
+        # intentional: a weak bootstrap discriminator must not reject a real
+        # transition merely because population normalization has a wide interval.
+        "prequalification_shot_multiplier": 8,
     },
     "fine_frequency": {
         # Repeated (+Xpi,-Xpi) pseudoidentity pairs amplify coherent detuning without
@@ -582,7 +599,8 @@ _CONCISE_STAGE_START = {
     "readout_grid": "Optimizing the initial readout...",
     "reset_after_bootstrap": "Setting up active reset...",
     "rough_ss": "Refining the pi pulse with single-shot measurements...",
-    "parity_chevron": "Checking repeated-pulse errors...",
+    "parity_chevron": "Qualifying the qubit transition with repeated pulses...",
+    "pre_expensive_gate": "Locking the resonator and qubit transition...",
     "joint_search": "Searching readout and pi-pulse power/length together...",
     "multi_aae": "Reducing amplified amplitude error across the best pulses...",
     "joint_closure_1": "Rechecking the coupled parameters after AAE...",
@@ -1680,6 +1698,10 @@ class BasicAutoTuner(ExperimentClass):
         self._control_witnesses = []
         self._final_control_verified_key = None
         self._rabi_candidates = []
+        self._rough_control_candidates = []
+        self._qualified_control_candidates = []
+        self._qualified_transition_frequency = None
+        self._qualified_control_key = None
         self._interrupted = False
         self._final_replay_completed = False
         self._final_replay_kind = None
@@ -1743,6 +1765,11 @@ class BasicAutoTuner(ExperimentClass):
             "report": self._report,
             "discovery": self._discovery_status,
             "control_witnesses": self._control_witnesses,
+            "control_branch_qualification": {
+                "status": "not_run", "qualified": False,
+                "selected": None, "branches": [],
+                "expensive_search_allowed": False,
+            },
             "confirmation_failures": [],
             "latency_optimization": {
                 "enabled": bool(
@@ -2318,7 +2345,19 @@ class BasicAutoTuner(ExperimentClass):
                   % (self.working["qubit_pi_freq"],
                      int(round(self.working["qubit_pi_gain"])),
                      4000.0 * self.working["sigma"]))
-        elif name in ("parity_chevron", "amplified_error"):
+        elif name == "parity_chevron":
+            qualified = self.data.get("control_branch_qualification", {})
+            branches = qualified.get("branches", []) if isinstance(
+                qualified, dict) else []
+            count = sum(row.get("status") == "qualified" for row in branches)
+            print("  Qubit transition qualified near %.6f MHz (%d coherent branch%s "
+                  "passed)."
+                  % (self.working["qubit_pi_freq"], count,
+                     "" if count == 1 else "es"))
+        elif name == "pre_expensive_gate":
+            print("  Resonator and qubit transition are locked; starting the full "
+                  "parameter search.")
+        elif name == "amplified_error":
             print("  Repeated-pulse refinement complete.")
         elif name == "joint_search":
             coverage = self.data.get("joint_search", {}).get("coverage", {})
@@ -5763,6 +5802,12 @@ class BasicAutoTuner(ExperimentClass):
         if not p.get("enabled", True):
             self.data["joint_search"]["status"] = "disabled"
             return None
+        if (self._discovery_guard_active
+                and (self._qualified_transition_frequency is None
+                     or not self._candidate_in_qualified_transition(self.working))):
+            raise RuntimeError(
+                "joint search cannot start without a repeated-pulse-qualified "
+                "transition")
         self._joint_search_started_monotonic = time.monotonic()
         base = dict(self.working)
         read_lengths = np.asarray(sorted(set(
@@ -5948,6 +5993,7 @@ class BasicAutoTuner(ExperimentClass):
         )
         proposals = self._quantize_joint_proposals(
             proposals, base, read_radius, qubit_radius)
+        proposals = self._qualified_transition_rows(proposals)
         for candidate in proposals:
             if self._joint_budget_allows(
                     reserve_final=True,
@@ -6000,7 +6046,9 @@ class BasicAutoTuner(ExperimentClass):
     def _stage_multi_candidate_aae(self):
         """Run frequency/AAE closure from several measured control basins."""
         p = self.params["joint_search"]
-        pool = sorted(self._confirmed, key=self._joint_rank, reverse=True)
+        pool = sorted(
+            self._qualified_transition_rows(self._confirmed),
+            key=self._joint_rank, reverse=True)
         seeds, seen_controls = [], set()
         for row in pool:
             key = _control_key(row)
@@ -6023,12 +6071,20 @@ class BasicAutoTuner(ExperimentClass):
                 self._stage_fine_frequency(
                     "joint_aae_frequency_%d" % (index + 1))
                 self._stage_amplified_error()
-                refined.append(dict(self.working))
+                if self._candidate_in_qualified_transition(self.working):
+                    refined.append(dict(self.working))
+                else:
+                    self._log(
+                        "multi_aae", "WARN",
+                        "control basin %d refinement left the qualified transition; "
+                        "discarding it" % (index + 1))
+                    self.working = dict(seed)
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
                 self._log("multi_aae", "WARN", "control basin %d failed (%s: %s)"
                           % (index + 1, type(exc).__name__, exc))
+        self.working = dict(original)
         candidates = _unique_candidates(refined + seeds + [original])
         if not candidates:
             self.working = original
@@ -6045,14 +6101,24 @@ class BasicAutoTuner(ExperimentClass):
     def _stage_joint_closure(self, iteration):
         """Reopen a small coupled neighborhood after AAE changes the control."""
         p = self.params["joint_search"]
-        source = list(self._joint_rows) + list(self._confirmed)
+        source = self._qualified_transition_rows(
+            list(self._joint_rows) + list(self._confirmed))
         if not source or not self._joint_budget_allows(reserve_final=True):
             return None
         scale = float(p.get("closure_frequency_radius_scale", 0.55))
         gain_scale = float(p.get("closure_gain_radius_scale", 0.60))
-        base = dict(self.working)
+        base = (dict(self.working)
+                if self._candidate_in_qualified_transition(self.working)
+                else dict(max(source, key=self._joint_rank)))
         read_radius = scale * float(p["trust_read_frequency_radius_mhz"])
         qubit_radius = scale * float(p["trust_qubit_frequency_radius_mhz"])
+        qualified_radius = float(self.params["parity_chevron"].get(
+            "qualified_basin_radius_mhz", 2.0))
+        qualified_center = self._qualified_transition_frequency
+        qualified_lower = (-np.inf if qualified_center is None else
+                           float(qualified_center) - qualified_radius)
+        qualified_upper = (np.inf if qualified_center is None else
+                           float(qualified_center) + qualified_radius)
         limits = {
             "read_pulse_freq": (base["read_pulse_freq"] - read_radius,
                                 base["read_pulse_freq"] + read_radius),
@@ -6060,8 +6126,11 @@ class BasicAutoTuner(ExperimentClass):
                                 int(p["read_gain_max"])),
             "read_length": (min(p["read_lengths_us"]),
                             max(p["read_lengths_us"])),
-            "qubit_pi_freq": (base["qubit_pi_freq"] - qubit_radius,
-                              base["qubit_pi_freq"] + qubit_radius),
+            "qubit_pi_freq": (
+                max(base["qubit_pi_freq"] - qubit_radius,
+                    qualified_lower),
+                min(base["qubit_pi_freq"] + qubit_radius,
+                    qualified_upper)),
             "qubit_pi_gain": (1, int(p["qubit_gain_hard_max"])),
             "sigma": (min(p["sigma_values_us"]), max(p["sigma_values_us"])),
         }
@@ -6078,6 +6147,7 @@ class BasicAutoTuner(ExperimentClass):
         )
         proposals = self._quantize_joint_proposals(
             proposals, base, read_radius, qubit_radius)
+        proposals = self._qualified_transition_rows(proposals)
         for candidate in proposals:
             self._ensure_reset_profile(
                 candidate, "joint closure %d" % int(iteration))
@@ -7209,7 +7279,6 @@ class BasicAutoTuner(ExperimentClass):
             freqs, gains, rabi_base, p["shots"])
         analysis = analyze_iq_chevron(
             freqs, gains, i_map, q_map, min_r2=p["min_r2"])
-        best = analysis["best"]
         coherent_rows = [
             row for row in analysis["rows"]
             if bool(row["fit"].get("ok", False))
@@ -7220,6 +7289,31 @@ class BasicAutoTuner(ExperimentClass):
             and float(row.get("relative_contrast", 0.0))
             >= float(p.get("witness_min_relative_contrast", 0.10))
         ]
+        if not coherent_rows:
+            self._maps["iq_rabi"] = {
+                "axes": {"qubit_frequency_mhz": freqs,
+                         "qubit_gain_dac": gains},
+                "I": i_map, "Q": q_map,
+                "row_scores": np.asarray([
+                    row["score"] for row in analysis["rows"]]),
+                "row_r2": np.asarray([
+                    row["fit"].get("r2", np.nan)
+                    for row in analysis["rows"]]),
+                "row_pi_gain": np.asarray([
+                    row["fit"].get("pi_gain", np.nan)
+                    for row in analysis["rows"]]),
+                "coherent_witness": False,
+                "coherent_witness_frequencies_mhz": np.asarray([], dtype=float),
+                "search_complete": False, "selection_confirmed": False,
+                "failure": "no spectral basin produced a coherent Rabi witness",
+            }
+            raise RuntimeError(
+                "none of the reproduced spectral features produced a coherent Rabi "
+                "witness; refusing to nominate a qubit transition")
+        # A large non-oscillatory excursion can have a high generic chevron score.
+        # It may be useful spectroscopy, but it is not an X180 seed.  From this point
+        # onward only rows satisfying the explicit coherent-witness requirements exist.
+        best = max(coherent_rows, key=lambda row: float(row["score"]))
         rough_freq = float(best["frequency"])
         rough_gain = float(best["fit"].get("pi_gain", np.nan))
         if not np.isfinite(rough_gain):
@@ -7256,11 +7350,12 @@ class BasicAutoTuner(ExperimentClass):
                 pi_gain=float(row["fit"].get("pi_gain", np.nan)),
             )
 
-        ranked_rows = sorted(analysis["rows"], key=lambda row: row["score"],
+        ranked_rows = sorted(coherent_rows, key=lambda row: row["score"],
                              reverse=True)
         rabi_candidates = []
         selected_rows = []
-        # Preserve at least one coherent candidate from every spectral basin.  Without
+        # Preserve at least one *actually coherent* candidate from every spectral basin.
+        # Spectroscopy-only basins are deliberately omitted.  Without
         # this non-maximum suppression, four adjacent samples around one strong TLS can
         # crowd the configured-prior/qubit basin out of the direct-SS shortlist.
         spectral_centers = np.asarray(self._spec_candidates_mhz, dtype=float)
@@ -7326,6 +7421,22 @@ class BasicAutoTuner(ExperimentClass):
         else:
             rabi_candidates = [dict(self.working)]
         self._rabi_candidates = _unique_candidates(rabi_candidates)[:rabi_capacity]
+        if not self._rabi_candidates:
+            raise RuntimeError("coherent Rabi analysis produced no physical candidate")
+        coherent_centers = sorted(set(
+            int(np.argmin(np.abs(spectral_centers - float(row["frequency"]))))
+            for row in coherent_rows))
+        self._maps["iq_rabi"].update({
+            "coherent_spectral_basin_indices": np.asarray(
+                coherent_centers, dtype=int),
+            "rejected_spectral_basin_indices": np.asarray([
+                index for index in range(len(spectral_centers))
+                if index not in coherent_centers], dtype=int),
+            "candidate_frequencies_mhz": np.asarray([
+                candidate["qubit_pi_freq"]
+                for candidate in self._rabi_candidates], dtype=float),
+            "search_complete": True, "selection_confirmed": True,
+        })
         self._log("iq_rabi", "OK" if analysis["ok"] else "WARN",
                   "common-mode-subtracted Rabi seed %.6f MHz @ %d DAC (r2 %.3f)"
                   % (rough_freq, rough_gain, best["fit"].get("r2", np.nan)))
@@ -7438,8 +7549,11 @@ class BasicAutoTuner(ExperimentClass):
                     qubit_pi_gain=int(seed["qubit_pi_gain"])))
         if not basin_winners:
             raise RuntimeError("no Rabi basin is available for direct SS confirmation")
+        # The arbitrary input tuple is a diagnostic baseline, not a transition
+        # candidate.  Every tuple admitted here descends from a coherent Rabi witness.
+        admitted = _unique_candidates(basin_winners + [incumbent])
         confirmed = self._confirm_candidates(
-            basin_winners + [incumbent, self.initial],
+            admitted,
             p["shots"], p["blocks"],
             "rough pulse exact step-5")
         confirmation_complete = self._confirmation_batch_complete(confirmed)
@@ -7448,50 +7562,59 @@ class BasicAutoTuner(ExperimentClass):
             confirmation_complete)
         if not confirmation_complete:
             self._maps["rough_ss_chevron"]["search_complete"] = False
+        admitted_keys = {_candidate_key(row) for row in admitted}
+        self._rough_control_candidates = sorted([
+            copy.deepcopy(row) for row in confirmed
+            if _candidate_key(row) in admitted_keys
+            and bool(row.get("confirmation_complete", False))
+        ], key=self._joint_rank, reverse=True)
+        self._maps["rough_ss_chevron"].update({
+            "admitted_candidate_keys": [
+                list(_candidate_key(row)) for row in admitted],
+            "confirmed_coherent_candidates": copy.deepcopy(
+                self._rough_control_candidates),
+            "coherent_only": True,
+        })
+        if not self._rough_control_candidates:
+            raise RuntimeError(
+                "no coherent-Rabi-derived control candidate completed its held-out "
+                "single-shot replay")
         direct_best = self._best_aggregate(confirmed)
         best = self._noninferior_seed(
             confirmed, incumbent, direct_best, margin=0.005)
         self._adopt(best, "rough_ss")
         return best
 
-    def _stage_parity_chevron(self):
+    def _parity_refine_branch(self, incumbent, stage, label):
+        """Refine one coherent-Rabi branch without selecting it globally."""
         p = self.params["parity_chevron"]
-        if not p.get("enabled", True):
-            self._log("parity_chevron", "SKIP", "disabled")
-            return None
-        incumbent = dict(self.working)
         calibration_shots = max(int(p["shots"]), 300)
         initial = self._parity_map(
-            "parity_chevron", incumbent, p,
+            stage, incumbent, p,
             incumbent["qubit_pi_freq"], incumbent["qubit_pi_gain"],
-            calibration_shots, "parity chevron")
+            calibration_shots, label)
         index = initial["index"]
-        initial_edge = (index[0] in (0, initial["frequencies"].size - 1)
-                        or index[1] in (0, initial["gains"].size - 1))
-        self._maps["parity_chevron"]["initial_edge_winner"] = bool(initial_edge)
-        seeds = [initial["seed"]]
-        preferred = initial["seed"]
-        maps = [initial]
-        final_edge = bool(initial_edge)
-        expansion_ok = False
+        initial_edge = bool(
+            index[0] in (0, initial["frequencies"].size - 1)
+            or index[1] in (0, initial["gains"].size - 1))
+        self._maps[stage]["initial_edge_winner"] = initial_edge
+        seeds, preferred, maps = [initial["seed"]], initial["seed"], [initial]
+        final_edge, expansion_ok = initial_edge, False
+        edge_stage = stage + "_edge"
         if initial_edge:
-            self._maps["parity_chevron"]["search_complete"] = False
-            self._log(
-                "parity_chevron", "WARN",
-                "raw amplified optimum is on a boundary; running one centered/outward "
-                "frequency/gain expansion before deciding")
+            self._maps[stage]["search_complete"] = False
             try:
                 expanded = self._parity_map(
-                    "parity_chevron_edge", incumbent, p,
+                    edge_stage, incumbent, p,
                     initial["seed"]["qubit_pi_freq"],
                     initial["seed"]["qubit_pi_gain"], calibration_shots,
-                    "parity chevron expansion")
+                    label + " expansion")
                 expanded_index = expanded["index"]
                 final_edge = bool(
                     expanded_index[0] in (0, expanded["frequencies"].size - 1)
                     or expanded_index[1] in (0, expanded["gains"].size - 1))
-                self._maps["parity_chevron_edge"]["edge_winner"] = final_edge
-                self._maps["parity_chevron_edge"]["search_complete"] = bool(
+                self._maps[edge_stage]["edge_winner"] = final_edge
+                self._maps[edge_stage]["search_complete"] = bool(
                     expanded["data_complete"] and not final_edge)
                 seeds.insert(0, expanded["seed"])
                 preferred = expanded["seed"]
@@ -7500,53 +7623,287 @@ class BasicAutoTuner(ExperimentClass):
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
-                final_edge = True
-                self._maps["parity_chevron"]["expansion_failure"] = \
-                    "%s: %s" % (type(exc).__name__, exc)
-                self._log(
-                    "parity_chevron", "WARN",
-                    "boundary expansion failed (%s: %s); directly confirming the "
-                    "best measured edge point and incumbent anyway"
-                    % (type(exc).__name__, exc))
+                self._maps[stage]["expansion_failure"] = "%s: %s" % (
+                    type(exc).__name__, exc)
         confirmed = self._confirm_candidates(
             seeds + [incumbent], p["confirm_shots"], p["confirm_blocks"],
-            "parity winner direct step-5")
+            label + " direct step-5", add_to_history=True)
         confirmation_complete = self._confirmation_batch_complete(confirmed)
-        # One-pulse assignment fidelity is intentionally insensitive to the coherent
-        # error amplified by this map.  Keep the map optimum when its direct replay is
-        # noninferior, exactly as in the final variable-depth refinement.
         best = self._noninferior_seed(confirmed, preferred, incumbent)
-        self._adopt(best, "parity_chevron")
         for mapping in maps:
-            self._maps[mapping["stage"]]["selection_confirmed"] = True
-            self._maps[mapping["stage"]]["selection_confirmation_complete"] = bool(
+            self._maps[mapping["stage"]]["selection_confirmed"] = bool(
                 confirmation_complete)
+            self._maps[mapping["stage"]][
+                "selection_confirmation_complete"] = bool(confirmation_complete)
             if not confirmation_complete:
                 self._maps[mapping["stage"]]["search_complete"] = False
         complete = bool(
             confirmation_complete and initial["data_complete"]
             and (not initial_edge
                  or (expansion_ok and maps[-1]["data_complete"] and not final_edge)))
-        self._maps["parity_chevron"]["expanded"] = bool(initial_edge)
-        self._maps["parity_chevron"]["edge_winner"] = bool(
-            initial_edge and final_edge)
-        self._maps["parity_chevron"]["search_complete"] = complete
+        self._maps[stage].update({
+            "expanded": initial_edge,
+            "edge_winner": bool(initial_edge and final_edge),
+            "search_complete": complete,
+        })
+        if not complete:
+            raise RuntimeError(
+                "the repeated-pulse map was incomplete or remained boundary-limited")
+        return {
+            "candidate": best, "confirmed": confirmed,
+            "stage": stage, "edge_stage": edge_stage if initial_edge else None,
+            "map": copy.deepcopy(self._maps[stage]),
+        }
+
+    def _stage_parity_chevron(self):
+        """Qualify and compare coherent transition branches before joint search."""
+        p = self.params["parity_chevron"]
+        self._qualified_control_candidates = []
+        self._qualified_transition_frequency = None
+        self._qualified_control_key = None
+        self._final_control_verified_key = None
+        if not p.get("enabled", True):
+            raise RuntimeError(
+                "repeated-pulse transition qualification is disabled")
+        source = list(self._rough_control_candidates) or [dict(self.working)]
+        branches, seen = [], set()
+        for row in sorted(source, key=self._joint_rank, reverse=True):
+            frequency = round(float(row["qubit_pi_freq"]), 6)
+            # Adjacent SS samples within one Rabi linewidth are one branch, not
+            # separate opportunities to crowd a physically distinct transition out.
+            if any(abs(frequency - existing) <= 0.5 for existing in seen):
+                continue
+            seen.add(frequency)
+            branches.append({key: row[key] for key in self.initial})
+            if len(branches) >= max(int(p.get("max_control_branches", 6)), 1):
+                break
+        records, qualified = [], []
+        original = dict(self.working)
+        for index, seed in enumerate(branches, 1):
+            stage = "parity_chevron" if index == 1 else (
+                "parity_chevron_basin_%d" % index)
+            record = {
+                "branch": index, "seed": copy.deepcopy(seed),
+                "rabi_frequency_mhz": float(seed["qubit_pi_freq"]),
+                "status": "rejected", "candidate": None,
+                "parity_failure": None, "control_failure": None,
+                "qualification_kind": None,
+            }
+            candidates = []
+            try:
+                refined = self._parity_refine_branch(
+                    seed, stage, "transition branch %d parity" % index)
+                record["parity"] = copy.deepcopy(refined)
+                candidates = sorted(
+                    refined["confirmed"], key=self._joint_rank, reverse=True)
+                preferred_key = _candidate_key(refined["candidate"])
+                candidates.sort(
+                    key=lambda row: _candidate_key(row) == preferred_key,
+                    reverse=True)
+            except KeyboardInterrupt:
+                raise
+            except Exception as exc:
+                record["parity_failure"] = "%s: %s" % (
+                    type(exc).__name__, exc)
+                if bool(p.get("allow_exact_odd_even_fallback", True)):
+                    candidates = [seed]
+                    record["qualification_kind"] = "exact_odd_even_fallback"
+            maximum_shift = float(p.get("max_rabi_frequency_shift_mhz", 2.0))
+            for contender in candidates:
+                if (abs(float(contender["qubit_pi_freq"])
+                        - float(seed["qubit_pi_freq"])) > maximum_shift):
+                    continue
+                try:
+                    audit = self._stage_final_control_verify(
+                        contender,
+                        minimum_binary_contrast=float(p.get(
+                            "fallback_minimum_binary_contrast", 0.12)),
+                        shot_multiplier=max(int(p.get(
+                            "prequalification_shot_multiplier", 4)), 1))
+                    if not bool(audit.get("verified", False)):
+                        raise RuntimeError("exact odd/even audit returned unverified")
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    record["control_failure"] = "%s: %s" % (
+                        type(exc).__name__, exc)
+                    continue
+                candidate = copy.deepcopy(contender)
+                candidate["transition_qualification_kind"] = (
+                    record["qualification_kind"] or
+                    "rabi_plus_parity_plus_exact_odd_even")
+                candidate["transition_rabi_seed_mhz"] = float(
+                    seed["qubit_pi_freq"])
+                candidate["transition_control_audit"] = copy.deepcopy(audit)
+                qualified.append(candidate)
+                record.update({
+                    "status": "qualified", "candidate": copy.deepcopy(candidate),
+                    "control_audit": copy.deepcopy(audit),
+                    "qualification_kind": candidate[
+                        "transition_qualification_kind"],
+                })
+                break
+            records.append(record)
+
+        if not qualified:
+            self.working = original
+            self.data["control_branch_qualification"] = {
+                "status": "failed", "qualified": False,
+                "selected": None, "branches": records,
+                "expensive_search_allowed": False,
+                "failure": (
+                    "no coherent-Rabi transition passed repeated-pulse and exact "
+                    "odd/even qualification"),
+            }
+            self._maps["control_branch_qualification"] = {
+                "branch_seed_frequency_mhz": np.asarray([
+                    row["rabi_frequency_mhz"] for row in records], dtype=float),
+                "branch_qualified": np.zeros(len(records), dtype=bool),
+                "search_complete": True, "selection_confirmed": False,
+            }
+            raise RuntimeError(
+                "no coherent-Rabi branch passed repeated-pulse qualification; "
+                "refusing to start the expensive joint search")
+
+        comparison = self._confirm_candidates(
+            [{key: row[key] for key in self.initial} for row in qualified],
+            int(p.get("branch_compare_shots", 900)),
+            int(p.get("branch_compare_blocks", 3)),
+            "qualified transition branch comparison", add_to_history=True)
+        if not self._confirmation_batch_complete(comparison):
+            raise RuntimeError(
+                "the common held-out comparison of qualified transitions was incomplete")
+        selected = max(comparison, key=self._joint_rank)
+        selected_key = _control_key(selected)
+        selected_record = next(
+            row for row in records
+            if isinstance(row.get("candidate"), dict)
+            and _control_key(row["candidate"]) == selected_key)
+        selected_audit = copy.deepcopy(selected_record["control_audit"])
+        self._qualified_control_candidates = copy.deepcopy(comparison)
+        self._qualified_transition_frequency = float(selected["qubit_pi_freq"])
+        self._qualified_control_key = selected_key
+        self._final_control_verified_key = selected_key
+        self.working = {key: selected[key] for key in self.initial}
+        self._maps["final_control_verify"] = selected_audit
+        selected_stage = selected_record.get("parity", {}).get("stage")
+        if selected_stage and selected_stage in self._maps:
+            selected_map = copy.deepcopy(self._maps[selected_stage])
+            selected_edge = selected_record.get("parity", {}).get("edge_stage")
+            selected_map.update({
+                "branch_records": copy.deepcopy(records),
+                "selected_branch": int(selected_record["branch"]),
+                "selected_frequency_mhz": self._qualified_transition_frequency,
+                "branch_selection_confirmed": True,
+            })
+            self._maps["parity_chevron"] = selected_map
+            if selected_edge and selected_edge in self._maps:
+                self._maps["parity_chevron_edge"] = copy.deepcopy(
+                    self._maps[selected_edge])
+        self._maps["control_branch_qualification"] = {
+            "branch_seed_frequency_mhz": np.asarray([
+                row["rabi_frequency_mhz"] for row in records], dtype=float),
+            "branch_qualified": np.asarray([
+                row["status"] == "qualified" for row in records], dtype=bool),
+            "qualified_frequency_mhz": np.asarray([
+                row["qubit_pi_freq"] for row in comparison], dtype=float),
+            "selected_frequency_mhz": self._qualified_transition_frequency,
+            "search_complete": True, "selection_confirmed": True,
+        }
+        self.data["control_branch_qualification"] = {
+            "status": "qualified", "qualified": True,
+            "selected": copy.deepcopy(selected), "branches": records,
+            "comparison": copy.deepcopy(comparison),
+            "expensive_search_allowed": True,
+        }
+        self._adopt(selected, "parity_chevron")
         self._record_key_evidence(
             ("qubit_freq", "qubit_pi_freq", "qubit_pi_gain"),
-            "parity_chevron", complete)
-        if initial_edge and not final_edge and complete:
-            self._log("parity_chevron", "OK",
-                      "expanded amplified optimum is interior; joint control search "
-                      "is complete")
-        elif initial_edge:
-            self._log("parity_chevron", "WARN",
-                      "expanded amplified optimum remains boundary-limited or incomplete; "
-                      "best candidate retained for the exact final tuple replay")
-        elif not complete:
-            self._log("parity_chevron", "WARN",
-                      "parity map was incomplete; confirmed candidate retained but "
-                      "does not have independent coordinate-search evidence")
-        return best
+            "control_branch_qualification", True)
+        return selected
+
+    def _candidate_in_qualified_transition(self, candidate):
+        """Whether a candidate remains in the pre-qualified transition basin."""
+        if self._qualified_transition_frequency is None:
+            return True
+        try:
+            frequency = float(candidate["qubit_pi_freq"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+        radius = float(self.params["parity_chevron"].get(
+            "qualified_basin_radius_mhz", 2.0))
+        return bool(np.isfinite(frequency) and abs(
+            frequency - self._qualified_transition_frequency) <= radius)
+
+    def _qualified_transition_rows(self, rows):
+        """Remove measurements from spectral branches rejected before joint search."""
+        return [row for row in rows
+                if isinstance(row, dict)
+                and self._candidate_in_qualified_transition(row)]
+
+    def _stage_pre_expensive_gate(self):
+        """Hard discovery boundary before the joint power/duration optimizer."""
+        resonator = self._maps.get("resonator", {})
+        spectroscopy = self._maps.get("spectroscopy", {})
+        rabi = self._maps.get("iq_rabi", {})
+        qualification = self.data.get("control_branch_qualification", {})
+        failures = []
+        if not (self._discovery_status.get("resonator", False)
+                and bool(resonator.get("search_complete", False))
+                and bool(resonator.get("selection_confirmed", False))):
+            failures.append("resonator discovery/confirmation is incomplete")
+        if not (self._discovery_status.get("spectroscopy", False)
+                and bool(spectroscopy.get("search_complete", False))
+                and bool(spectroscopy.get("selection_confirmed", False))):
+            failures.append("opposed qubit spectroscopy is incomplete")
+        if not (bool(rabi.get("coherent_witness", False))
+                and bool(rabi.get("selection_confirmed", False))):
+            failures.append("no confirmed coherent Rabi witness exists")
+        if not (isinstance(qualification, dict)
+                and bool(qualification.get("qualified", False))
+                and isinstance(qualification.get("selected"), dict)
+                and self._qualified_control_key is not None):
+            failures.append("no repeated-pulse-qualified transition was selected")
+        selected = qualification.get("selected") if isinstance(
+            qualification, dict) else None
+        if isinstance(selected, dict):
+            if _control_key(selected) != self._qualified_control_key:
+                failures.append("qualified transition key is internally inconsistent")
+            coherent_frequencies = np.asarray(
+                rabi.get("coherent_witness_frequencies_mhz", []), dtype=float)
+            maximum_shift = float(self.params["parity_chevron"].get(
+                "max_rabi_frequency_shift_mhz", 2.0))
+            if (not coherent_frequencies.size
+                    or np.min(np.abs(coherent_frequencies
+                                     - float(selected["qubit_pi_freq"])))
+                    > maximum_shift):
+                failures.append(
+                    "selected transition is not connected to a coherent Rabi line")
+        audit = self._maps.get("final_control_verify", {})
+        if not (isinstance(audit, dict) and bool(audit.get("verified", False))
+                and tuple(audit.get("control_key", ()))
+                == tuple(self._qualified_control_key or ())):
+            failures.append("the exact selected odd/even control audit is missing")
+        passed = not failures
+        gate = {
+            "passed": passed, "failures": failures,
+            "resonator_frequency_mhz": float(self._resonator_seed),
+            "qubit_frequency_mhz": (
+                float(self._qualified_transition_frequency)
+                if self._qualified_transition_frequency is not None else np.nan),
+            "control_key": list(self._qualified_control_key or ()),
+            "search_complete": passed, "selection_confirmed": passed,
+        }
+        self._maps["pre_expensive_gate"] = gate
+        self.data["pre_expensive_gate"] = copy.deepcopy(gate)
+        if not passed:
+            self.data["control_branch_qualification"][
+                "expensive_search_allowed"] = False
+            raise RuntimeError(
+                "pre-expensive calibration gate failed: %s" % "; ".join(failures))
+        self.data["control_branch_qualification"][
+            "expensive_search_allowed"] = True
+        return copy.deepcopy(selected)
 
     def _stage_fine_frequency(self, stage="fine_frequency"):
         p = self.params["fine_frequency"]
@@ -8194,7 +8551,7 @@ class BasicAutoTuner(ExperimentClass):
                         and all(key in row for key in self.initial)
                         and np.isfinite(float(row.get("fidelity", np.nan)))):
                     rows.append(row)
-        return rows
+        return self._qualified_transition_rows(rows)
 
     def _portfolio_candidates_for_length(self, read_length, source_rows):
         """Build an equally budgeted full-tuple refinement set for one duration."""
@@ -8240,7 +8597,8 @@ class BasicAutoTuner(ExperimentClass):
         control_source = sorted(
             (row for row in control_source
              if isinstance(row, dict)
-             and all(key in row for key in self.initial)),
+             and all(key in row for key in self.initial)
+             and self._candidate_in_qualified_transition(row)),
             key=self._joint_rank, reverse=True)
         controls, seen_controls = [], set()
         for row in control_source:
@@ -8306,6 +8664,7 @@ class BasicAutoTuner(ExperimentClass):
                     proposals, center, read_radius, qubit_radius)
                 proposals = [_with_candidate(row, read_length=length)
                              for row in proposals[:proposal_count]]
+                proposals = self._qualified_transition_rows(proposals)
             except Exception as exc:
                 proposals = []
                 proposal_failure = "%s: %s" % (type(exc).__name__, exc)
@@ -8314,7 +8673,8 @@ class BasicAutoTuner(ExperimentClass):
         else:
             proposal_failure = None
 
-        candidates = _unique_candidates(native + crossed + proposals)
+        candidates = self._qualified_transition_rows(
+            _unique_candidates(native + crossed + proposals))
         # Fill duplicate-collapsed sets from measured local rows.  The target is the
         # same at every duration, preserving equal opportunity under runtime limits.
         target = max(
@@ -8326,7 +8686,7 @@ class BasicAutoTuner(ExperimentClass):
                 break
             candidates = _unique_candidates(candidates + [
                 {key: row[key] for key in self.initial}])
-        candidates = candidates[:target]
+        candidates = self._qualified_transition_rows(candidates)[:target]
         return candidates, {
             "source_rows": len(local),
             "native_seed_count": len(native),
@@ -8412,26 +8772,39 @@ class BasicAutoTuner(ExperimentClass):
                 break
         return chosen
 
-    def _portfolio_confirmation_safe(self, screening, confirmation):
-        """Require the safety screen and held-out IQ replay to agree."""
+    def _portfolio_confirmation_status(self, screening, confirmation):
+        """Classify exact-tuple safety without conflating failure and leakage."""
         p = self.params["leakage"]
+        if not bool(screening.get("valid", False)):
+            return "INCONCLUSIVE"
+        if not bool(screening.get("portfolio_safe", False)):
+            return "UNSAFE"
+        if not bool(confirmation.get("confirmation_complete", False)):
+            return "INCONCLUSIVE"
         supported = bool(confirmation.get("third_cluster_supported", False))
-        cluster_safe = bool(
-            confirmation.get("third_cluster_guard_available", False)
-            and (not supported
-                 or (float(confirmation.get(
-                     "third_cluster_fraction_ucb_95", np.inf))
-                     <= float(p["max_third_cluster_fraction"])
-                     and float(confirmation.get(
-                         "third_cluster_single_state_fraction_ucb_95", np.inf))
-                     <= float(p[
-                         "max_single_state_third_cluster_fraction"]))))
-        return bool(
-            screening.get("portfolio_safe", False)
-            and confirmation.get("confirmation_complete", False)
-            and cluster_safe
-            and float(confirmation.get("third_blob_excess_ucb", np.inf))
-            <= float(p["max_third_blob_excess"]))
+        if not bool(confirmation.get("third_cluster_guard_available", False)):
+            return "INCONCLUSIVE"
+        values = [float(confirmation.get("third_blob_excess_ucb", np.nan))]
+        if not np.all(np.isfinite(values)):
+            return "INCONCLUSIVE"
+        if values[0] > float(p["max_third_blob_excess"]):
+            return "UNSAFE"
+        if supported:
+            fraction = float(confirmation.get(
+                "third_cluster_fraction_ucb_95", np.nan))
+            single = float(confirmation.get(
+                "third_cluster_single_state_fraction_ucb_95", np.nan))
+            if not np.all(np.isfinite([fraction, single])):
+                return "INCONCLUSIVE"
+            if (fraction > float(p["max_third_cluster_fraction"])
+                    or single > float(
+                        p["max_single_state_third_cluster_fraction"])):
+                return "UNSAFE"
+        return "SAFE"
+
+    def _portfolio_confirmation_safe(self, screening, confirmation):
+        return self._portfolio_confirmation_status(
+            screening, confirmation) == "SAFE"
 
     def _portfolio_merge_evidence(self, screening, confirmation=None):
         """Attach worst-case exact-tuple safety evidence to held-out fidelity."""
@@ -8653,8 +9026,11 @@ class BasicAutoTuner(ExperimentClass):
                             % (length, index), add_to_history=True)[0]
                         merged = self._portfolio_merge_evidence(
                             screening, confirmation)
-                        merged["portfolio_safe"] = self._portfolio_confirmation_safe(
-                            screening, confirmation)
+                        merged["portfolio_safety_status"] = (
+                            self._portfolio_confirmation_status(
+                                screening, confirmation))
+                        merged["portfolio_safe"] = bool(
+                            merged["portfolio_safety_status"] == "SAFE")
                         final_rows.append(
                             self._annotate_portfolio_objective(merged))
                     except KeyboardInterrupt:
@@ -8670,7 +9046,15 @@ class BasicAutoTuner(ExperimentClass):
 
                 safe_final = sorted(
                     (row for row in final_rows
-                     if row.get("portfolio_safe", False)),
+                     if row.get("portfolio_safety_status") == "SAFE"),
+                    key=self._portfolio_rank, reverse=True)
+                unsafe_final = sorted(
+                    (row for row in final_rows
+                     if row.get("portfolio_safety_status") == "UNSAFE"),
+                    key=self._portfolio_rank, reverse=True)
+                inconclusive_final = sorted(
+                    (row for row in final_rows
+                     if row.get("portfolio_safety_status") == "INCONCLUSIVE"),
                     key=self._portfolio_rank, reverse=True)
                 selected = None
                 require_control = bool(p.get("require_control_audit", True))
@@ -8709,12 +9093,33 @@ class BasicAutoTuner(ExperimentClass):
                         "control_status": "FAILED",
                         "selected": copy.deepcopy(selected),
                     })
+                elif unsafe_final:
+                    selected = unsafe_final[0]
+                    entry.update({
+                        "status": "UNSAFE", "leakage_status": "UNSAFE",
+                        "control_status": "NOT_RUN",
+                        "selected": copy.deepcopy(selected),
+                    })
+                elif inconclusive_final:
+                    selected = inconclusive_final[0]
+                    entry.update({
+                        "status": "INCONCLUSIVE",
+                        "leakage_status": "INCONCLUSIVE",
+                        "control_status": "NOT_RUN",
+                        "selected": copy.deepcopy(selected),
+                    })
                 else:
-                    valid_screened = [row for row in screened
-                                      if row.get("valid", False)]
-                    if valid_screened:
+                    unsafe_screened = [
+                        row for row in screened
+                        if row.get("valid", False)
+                        and not row.get("portfolio_safe", False)]
+                    safe_screen_only = [
+                        row for row in screened
+                        if row.get("valid", False)
+                        and row.get("portfolio_safe", False)]
+                    if unsafe_screened and not safe_screen_only:
                         selected = max(
-                            valid_screened, key=self._portfolio_rank)
+                            unsafe_screened, key=self._portfolio_rank)
                         selected = self._annotate_portfolio_objective(
                             self._portfolio_merge_evidence(selected))
                         selected["portfolio_safe"] = False
@@ -8724,6 +9129,9 @@ class BasicAutoTuner(ExperimentClass):
                             "selected": copy.deepcopy(selected),
                         })
                     elif screened:
+                        # At least one initial bracket was safe, but no exact held-out
+                        # replay completed.  That is unavailable evidence, not measured
+                        # leakage, so never mislabel it UNSAFE.
                         selected = max(screened, key=self._portfolio_rank)
                         entry.update({
                             "status": "INCONCLUSIVE",
@@ -8893,7 +9301,9 @@ class BasicAutoTuner(ExperimentClass):
                 discriminate_with_metrics(shot_i, shot_q, calibration)))
         return populations
 
-    def _stage_final_control_verify(self, final):
+    def _stage_final_control_verify(self, final,
+                                    minimum_binary_contrast=None,
+                                    shot_multiplier=1):
         """Certify coherent odd/even action of the exact selected X180 tuple.
 
         The step-5 objective establishes readout assignment and state-preparation
@@ -8903,6 +9313,9 @@ class BasicAutoTuner(ExperimentClass):
         exact-tuple parity witness) may authorize an automatic configuration write.
         """
         p = self.params["control_verify"]
+        contrast_floor = float(
+            p["minimum_binary_contrast"] if minimum_binary_contrast is None
+            else minimum_binary_contrast)
         self._final_control_verified_key = None
         if not p.get("enabled", True):
             raise RuntimeError(
@@ -8918,8 +9331,9 @@ class BasicAutoTuner(ExperimentClass):
             raise ValueError(
                 "final control verification requires at least four positive odd/even "
                 "pulse depths")
-        shots = max(int(p["shots"]), 1)
-        reference_shots = max(int(p["calibration_shots"]), 1)
+        multiplier = max(int(shot_multiplier), 1)
+        shots = max(int(p["shots"]) * multiplier, 1)
+        reference_shots = max(int(p["calibration_shots"]) * multiplier, 1)
         blocks = max(int(p["blocks"]), 1)
         familywise_z = _simultaneous_z(
             int(counts.size * blocks), p.get("familywise_alpha", 0.05),
@@ -8945,7 +9359,7 @@ class BasicAutoTuner(ExperimentClass):
             contrast = float(p_e_excited - p_e_ground)
             contrast_valid = bool(
                 np.isfinite(contrast)
-                and contrast >= float(p["minimum_binary_contrast"]))
+                and contrast >= contrast_floor)
             if contrast_valid and populations.shape == counts.shape:
                 normalized = (populations - p_e_ground) / contrast
                 sequence_variance = np.asarray([
@@ -9326,8 +9740,9 @@ class BasicAutoTuner(ExperimentClass):
                 round(float(candidate.get("qubit_drag_beta", 0.0)), 9),
             )
 
-        rows = (list(self.data.get("final_candidates", []))
-                + list(self._confirmed) + list(self._archive))
+        rows = self._qualified_transition_rows(
+            list(self.data.get("final_candidates", []))
+            + list(self._confirmed) + list(self._archive))
         ranked = sorted(
             (row for row in rows if all(key in row for key in self.initial)),
             key=lambda row: (
@@ -9337,7 +9752,15 @@ class BasicAutoTuner(ExperimentClass):
         for row in ranked:
             by_duration.setdefault(round(float(row["sigma"]), 9), row)
 
-        pool = [dict(self.working)]
+        pool = ([dict(self.working)]
+                if self._candidate_in_qualified_transition(self.working) else [])
+        if not pool:
+            qualified = self._qualified_transition_rows(ranked)
+            if not qualified:
+                raise RuntimeError(
+                    "no qualified-transition waveform is available for safety "
+                    "screening")
+            pool = [physical(qualified[0])]
         seen = {control_key(pool[0])}
         duration_rows = [by_duration[key] for key in sorted(by_duration)]
         slots = max(limit - 1, 0)
@@ -10264,9 +10687,15 @@ class BasicAutoTuner(ExperimentClass):
                 round(float(row["sigma"]), 9),
             )
 
-        pool = [dict(self.working)]
+        pool = ([dict(self.working)]
+                if self._candidate_in_qualified_transition(self.working) else [])
+        if not pool:
+            raise RuntimeError(
+                "no qualified-transition waveform is available for direct leakage "
+                "screening")
         seen = {control_key(self.working)}
-        rows = list(self.data.get("final_candidates", [])) + list(self._confirmed)
+        rows = self._qualified_transition_rows(
+            list(self.data.get("final_candidates", [])) + list(self._confirmed))
         ranked = sorted(rows, key=lambda row: (
             float(row.get("fidelity_lcb_95", -np.inf)),
             float(row.get("fidelity", -np.inf))), reverse=True)
@@ -11023,11 +11452,11 @@ class BasicAutoTuner(ExperimentClass):
         self._final_replay_kind = None
         p = self.params["final"]
         ranked = sorted(
-            self._confirmed,
+            self._qualified_transition_rows(self._confirmed),
             key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
                              float(row.get("fidelity", -np.inf))), reverse=True)
         raw_ranked = sorted(
-            self._archive,
+            self._qualified_transition_rows(self._archive),
             key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
                              float(row.get("fidelity", -np.inf))), reverse=True)
 
@@ -11040,11 +11469,17 @@ class BasicAutoTuner(ExperimentClass):
         # out, while omitting it could permanently lose the correct Rabi basin.
         candidates = [physical_candidate(row)
                       for row in ranked[:int(p["top_candidates"])]]
-        candidates.extend(dict(entry["candidate"])
-                          for entry in self._unconfirmed_contenders)
+        candidates.extend(
+            dict(entry["candidate"])
+            for entry in self._unconfirmed_contenders
+            if isinstance(entry.get("candidate"), dict)
+            and self._candidate_in_qualified_transition(entry["candidate"]))
         candidates.extend(physical_candidate(row)
                           for row in raw_ranked[:int(p["top_candidates"])])
-        candidates.extend([dict(self.working), dict(self.initial)])
+        if self._candidate_in_qualified_transition(self.working):
+            candidates.append(dict(self.working))
+        if self._candidate_in_qualified_transition(self.initial):
+            candidates.append(dict(self.initial))
         candidates = _unique_candidates(candidates)
         if not candidates:
             raise RuntimeError("no measured candidate is available for final replay")
@@ -11402,6 +11837,21 @@ class BasicAutoTuner(ExperimentClass):
                 * int(control_verify["shots"]))
         return int(total)
 
+    def _complete_acquire(self, final, plotDisp=False):
+        """Finalize and persist either a full run or an intentional early stop."""
+        if final is None:
+            final = self._current_best_for_partial_run()
+        self._finalize(final)
+        try:
+            self._checkpoint()
+        except Exception as exc:
+            self._log("save", "WARN", "pickle save failed: %s" % exc)
+        try:
+            self.save_plot(plotDisp=plotDisp)
+        except Exception as exc:
+            self._log("plot", "WARN", "summary plot failed: %s" % exc)
+        return {"config": copy.deepcopy(self.input_cfg), "data": self.data}
+
     # --------------------------------------------------------------- orchestration
     def acquire(self, progress=False, debug=False, plotDisp=False):
         del progress, debug
@@ -11451,6 +11901,18 @@ class BasicAutoTuner(ExperimentClass):
                             self._try_activate_feedback("bootstrap readout"))
             self._run_stage("rough_ss", self._stage_rough_single_shot)
             self._run_stage("parity_chevron", self._stage_parity_chevron)
+            gate = self._run_stage(
+                "pre_expensive_gate", self._stage_pre_expensive_gate)
+            if gate is None:
+                self.data["expensive_search_skipped"] = True
+                self.data["expensive_search_skip_reason"] = (
+                    "resonator/qubit transition qualification did not pass")
+                self._log(
+                    "run", "WARN",
+                    "stopping before joint optimization because the resonator and "
+                    "qubit transition were not both independently qualified")
+                return self._complete_acquire(
+                    self._current_best_for_partial_run(), plotDisp=plotDisp)
             # The bootstrap probe may legitimately fail when the preliminary pulse is
             # weak.  Retry with the now-confirmed coherent pulse before the expensive
             # joint map; failure still falls back to passive relaxation and never
@@ -11734,24 +12196,40 @@ class BasicAutoTuner(ExperimentClass):
             final = None
             self._log("run", "WARN", "operator interrupted; retaining completed measurements")
 
-        if final is None:
-            final = self._current_best_for_partial_run()
-        self._finalize(final)
-        try:
-            self._checkpoint()
-        except Exception as exc:
-            self._log("save", "WARN", "pickle save failed: %s" % exc)
-        try:
-            self.save_plot(plotDisp=plotDisp)
-        except Exception as exc:
-            self._log("plot", "WARN", "summary plot failed: %s" % exc)
-        return {"config": copy.deepcopy(self.input_cfg), "data": self.data}
+        return self._complete_acquire(final, plotDisp=plotDisp)
 
     def _finalize_duration_portfolio(self, final):
         """Finalize a report-only portfolio without manufacturing a write winner."""
         portfolio = self.data.get("duration_portfolio", {})
         entries = (portfolio.get("entries", [])
                    if isinstance(portfolio, dict) else [])
+        if bool(self.data.get("expensive_search_skipped", False)) and not entries:
+            candidate = copy.deepcopy(final) if isinstance(final, dict) else None
+            tuned = ({key: candidate[key] for key in TUNED_KEYS}
+                     if isinstance(candidate, dict)
+                     and all(key in candidate for key in TUNED_KEYS) else {})
+            self.data.update({
+                "outcome": "transition_qualification_failed",
+                "success": False,
+                "failure": self.data.get(
+                    "expensive_search_skip_reason",
+                    "resonator/qubit qualification failed before joint search"),
+                "best_found": candidate,
+                "best_overall_candidate": candidate,
+                "best_safe_candidate": None,
+                "best_fidelity_replay": candidate,
+                "best_fidelity_replay_complete": False,
+                "tuned": tuned, "eligible_tuned": {},
+                "final_stable": False, "fidelity_replay_stable": False,
+                "manual_selection_required": False,
+                "automatic_config_write_allowed": False,
+            })
+            if isinstance(portfolio, dict):
+                portfolio.update({
+                    "status": "not_run_transition_unqualified",
+                    "automatic_write_allowed": False,
+                })
+            return
         reportable = [entry for entry in entries
                       if isinstance(entry, dict)
                       and isinstance(entry.get("selected"), dict)]
@@ -11885,6 +12363,36 @@ class BasicAutoTuner(ExperimentClass):
                 "failure": "no direct single-shot candidate was completed",
                 "best_found": None, "tuned": {}, "eligible_tuned": {},
             })
+            return
+        # Discovery qualification is a hard phase boundary.  A baseline or bootstrap
+        # histogram remains useful diagnostic evidence, but it is not a partially
+        # successful tune and must never be dressed up as a final/portfolio result.
+        if bool(self.data.get("expensive_search_skipped", False)):
+            candidate = copy.deepcopy(final)
+            tuned = ({key: candidate[key] for key in TUNED_KEYS}
+                     if all(key in candidate for key in TUNED_KEYS) else {})
+            self.data.update({
+                "outcome": "transition_qualification_failed",
+                "success": False,
+                "failure": self.data.get(
+                    "expensive_search_skip_reason",
+                    "resonator/qubit qualification failed before joint search"),
+                "best_found": candidate,
+                "best_overall_candidate": candidate,
+                "best_safe_candidate": None,
+                "best_fidelity_replay": candidate,
+                "best_fidelity_replay_complete": False,
+                "tuned": tuned, "eligible_tuned": {},
+                "final_stable": False, "fidelity_replay_stable": False,
+                "manual_selection_required": False,
+                "automatic_config_write_allowed": False,
+            })
+            portfolio = self.data.get("duration_portfolio")
+            if isinstance(portfolio, dict):
+                portfolio.update({
+                    "status": "not_run_transition_unqualified",
+                    "automatic_write_allowed": False,
+                })
             return
         if self._duration_portfolio_active:
             self._finalize_duration_portfolio(final)
@@ -12357,6 +12865,8 @@ class BasicAutoTuner(ExperimentClass):
             "unconfirmed_contenders", "leakage_required_for_write",
             "leakage_verified", "reset", "manual_selection_required",
             "automatic_config_write_allowed",
+            "control_branch_qualification", "pre_expensive_gate",
+            "expensive_search_skipped", "expensive_search_skip_reason",
         )
         summary = {key: data.get(key) for key in keys if key in data}
         portfolio = data.get("duration_portfolio", {})
