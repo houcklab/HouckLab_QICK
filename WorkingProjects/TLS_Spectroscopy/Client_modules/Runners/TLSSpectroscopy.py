@@ -242,15 +242,17 @@ def _wall_clock_seconds(duration_min):
 
 
 def _resolve_resonator_lookup(latest_lookup_csv):
-    if not USE_RESONATOR_LOOKUP:
-        return None
     lookup_csv = RESONATOR_LOOKUP_CSV or latest_lookup_csv
-    if lookup_csv is None:
-        raise RuntimeError(
-            "USE_RESONATOR_LOOKUP=True but no lookup CSV is available. Run step 1 "
-            "(resonator spec) in this same session, or set RESONATOR_LOOKUP_CSV to a "
-            "saved *_resonator_lookup.csv path."
-        )
+    if USE_RESONATOR_LOOKUP:
+        if lookup_csv is None:
+            raise RuntimeError(
+                "USE_RESONATOR_LOOKUP=True but no lookup CSV is available. Run step 1 "
+                "(resonator spec) in this same session, or set RESONATOR_LOOKUP_CSV to a "
+                "saved *_resonator_lookup.csv path."
+            )
+        return lookup_csv
+    if RESONATOR_FIT_PARAMS is not None:
+        return None
     return lookup_csv
 
 

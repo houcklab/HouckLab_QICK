@@ -157,6 +157,12 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
                   f"readout is correct if the resonator barely tunes).")
             target_if_hz = np.where(bad, park_if_hz, target_if_hz)
         readout_if_hz = np.full(n, park_if_hz) if self.readout_after_park else target_if_hz
+        if source == "flat_r_IF" and not self.readout_after_park:
+            raise RuntimeError(
+                "Held-flux readout with no resonator tracking (flat readout IF): the spec-vs-flux "
+                "map will show a flux-axis gradient. Run step 1 (resonator spec) this session, or "
+                "set USE_RESONATOR_LOOKUP=True / RESONATOR_LOOKUP_CSV / RESONATOR_FIT_PARAMS. If the "
+                "resonator genuinely barely tunes, set readout_after_park=True to read at park.")
         return readout_if_hz, target_if_hz, source
 
     def _probe_time_window_ns(self):
@@ -457,20 +463,27 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
 
     def _draw_summary_plot(self, long_time_mag_dbm, fpts_mhz, plotDisp):
         d = self.data
-        fig, axs = plt.subplots(2, 1, figsize=(9, 9), constrained_layout=True)
+        norm = long_time_mag_dbm - np.nanmedian(long_time_mag_dbm, axis=0, keepdims=True)
+        trace_mhz = d['long_time_frequency_ghz'] * 1e3
+        fig, axs = plt.subplots(3, 1, figsize=(9, 12), constrained_layout=True)
         pcm = axs[0].pcolormesh(self.dc_vec, fpts_mhz, long_time_mag_dbm,
                                 shading="nearest")
         fig.colorbar(pcm, ax=axs[0], label="Magnitude [dBm] (tau-averaged)")
-        axs[0].plot(self.dc_vec, d['long_time_frequency_ghz'] * 1e3, "r.-", ms=3, lw=0.8,
-                    label="extracted trace")
+        axs[0].plot(self.dc_vec, trace_mhz, "r.-", ms=3, lw=0.8, label="extracted trace")
         axs[0].set_xlabel("Flux DC target")
         axs[0].set_ylabel("Probe freq [MHz]")
         axs[0].set_title(f"{self.element} long-time spec vs flux")
         axs[0].legend(loc="best", fontsize=8)
-        axs[1].errorbar(self.dc_vec, d['long_time_frequency_ghz'],
-                        yerr=d['long_time_frequency_std_ghz'], fmt=".-", capsize=2)
+        pcn = axs[1].pcolormesh(self.dc_vec, fpts_mhz, norm, shading="nearest")
+        fig.colorbar(pcn, ax=axs[1], label="Magnitude [dBm] (per-flux normalized)")
+        axs[1].plot(self.dc_vec, trace_mhz, "r.-", ms=3, lw=0.8)
         axs[1].set_xlabel("Flux DC target")
-        axs[1].set_ylabel("Long-time frequency [GHz]")
+        axs[1].set_ylabel("Probe freq [MHz]")
+        axs[1].set_title("per-flux background removed")
+        axs[2].errorbar(self.dc_vec, d['long_time_frequency_ghz'],
+                        yerr=d['long_time_frequency_std_ghz'], fmt=".-", capsize=2)
+        axs[2].set_xlabel("Flux DC target")
+        axs[2].set_ylabel("Long-time frequency [GHz]")
         fig.savefig(self.iname, bbox_inches="tight")
         if plotDisp:
             plt.show(block=False)
@@ -482,13 +495,17 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         dc_scaled = self.dc_vec * DAC_TO_VOLT_SCALE
         freq_ghz = fpts_mhz / 1e3
         raw_map_png = os.path.splitext(self.iname)[0] + "_raw_map.png"
-        fig, ax = plt.subplots(1, 1, figsize=(11, 6), constrained_layout=True)
-        mesh = ax.pcolormesh(self.dc_vec, freq_ghz, mag_dbm_2d, shading="auto",
-                             cmap="viridis")
-        fig.colorbar(mesh, ax=ax, pad=0.015, label="Magnitude [dBm]")
-        ax.set_xlabel("DC offset [ff_gain DAC]")
-        ax.set_ylabel("Probe frequency [GHz]")
-        ax.set_title(f"{self.element} raw qubit-spec map")
+        norm = mag_dbm_2d - np.nanmedian(mag_dbm_2d, axis=0, keepdims=True)
+        fig, ax = plt.subplots(1, 2, figsize=(16, 6), constrained_layout=True, sharey=True)
+        for a, M, lbl, title in (
+                (ax[0], mag_dbm_2d, "Magnitude [dBm]", "raw"),
+                (ax[1], norm, "Magnitude [dBm] (per-flux normalized)", "per-flux background removed")):
+            mesh = a.pcolormesh(self.dc_vec, freq_ghz, M, shading="auto", cmap="viridis")
+            fig.colorbar(mesh, ax=a, pad=0.015, label=lbl)
+            a.set_xlabel("DC offset [ff_gain DAC]")
+            a.set_title(title)
+        ax[0].set_ylabel("Probe frequency [GHz]")
+        fig.suptitle(f"{self.element} raw qubit-spec map")
         fig.savefig(raw_map_png, bbox_inches="tight")
         plt.close(fig)
         self.data['raw_map_png'] = raw_map_png
