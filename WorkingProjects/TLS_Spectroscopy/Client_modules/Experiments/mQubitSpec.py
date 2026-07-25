@@ -99,15 +99,17 @@ class QubitSpecGainSweep(ExperimentClass):
         gains = self.gains
         n_g, n_f = len(gains), len(fpts)
         mag = np.full((n_g, n_f), np.nan)
+        phase = np.full((n_g, n_f), np.nan)
         qubit_dip = np.full(n_g, np.nan)
 
         def measure_row(i):
             cfg["qubit_gain"] = int(gains[int(i)])
             _x, avgi, avgq = QubitSpecProgram(self.soccfg, cfg).acquire(
                 self.soc, load_pulses=True, progress=False)
-            m = np.abs(np.array(avgi[0][0]) + 1j * np.array(avgq[0][0]))
-            mag[int(i), :] = m
-            qubit_dip[int(i)] = _feature_freq(fpts, m)
+            sig = np.array(avgi[0][0]) + 1j * np.array(avgq[0][0])
+            mag[int(i), :] = np.abs(sig)
+            phase[int(i), :] = np.unwrap(np.angle(sig))
+            qubit_dip[int(i)] = _feature_freq(fpts, np.abs(sig))
 
         print(f"[Qubit Spec gain sweep] {n_g} spec gains x {n_f} freqs, "
               f"{cfg['shots']} shots/pt ({n_g * n_f} points)")
@@ -126,21 +128,24 @@ class QubitSpecGainSweep(ExperimentClass):
 
         self.data = {
             'config': dict(cfg), 'element': self.element,
-            'fpts': fpts, 'gain_vec': gains, 'magnitude': mag, 'qubit_dip_mhz': qubit_dip,
+            'fpts': fpts, 'gain_vec': gains, 'magnitude': mag, 'phase': phase,
+            'qubit_dip_mhz': qubit_dip,
             'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         }
         if self.save:
-            self._plot(fpts, gains, mag, qubit_dip, plotDisp=plotDisp)
+            self._plot(fpts, gains, mag, phase, qubit_dip, plotDisp=plotDisp)
             self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    def _plot(self, fpts, gains, mag, qubit_dip, plotDisp=False):
-        fig = plt.figure(figsize=(7, 4.5))
-        plt.pcolormesh(fpts / 1e3, gains, mag, shading="nearest")
-        plt.plot(qubit_dip / 1e3, gains, 'rx', ms=5)
-        plt.xlabel("Qubit drive frequency (GHz)"); plt.ylabel("Spec drive gain [DAC]")
-        plt.colorbar(label="|IQ| (a.u.)")
-        plt.title(f"{self.element} two-tone spectroscopy vs drive power")
+    def _plot(self, fpts, gains, mag, phase, qubit_dip, plotDisp=False):
+        fig, ax = plt.subplots(1, 2, figsize=(12, 4.5), sharey=True)
+        for a, M, lbl in ((ax[0], mag, "|IQ| (a.u.)"), (ax[1], phase, "phase (rad)")):
+            pc = a.pcolormesh(fpts / 1e3, gains, M, shading="nearest")
+            a.plot(qubit_dip / 1e3, gains, 'rx', ms=5)
+            a.set_xlabel("Qubit drive frequency (GHz)")
+            fig.colorbar(pc, ax=a, label=lbl)
+        ax[0].set_ylabel("Spec drive gain [DAC]")
+        fig.suptitle(f"{self.element} two-tone spectroscopy vs drive power")
         plt.tight_layout()
         plt.savefig(self.iname, bbox_inches="tight")
         if plotDisp:
@@ -153,4 +158,4 @@ class QubitSpecGainSweep(ExperimentClass):
             data = self.data
         print(f'Saving {self.fname}')
         super().save_data(data={'fpts': self.data['fpts'], 'gain_vec': self.data['gain_vec'],
-                                'magnitude': self.data['magnitude']})
+                                'magnitude': self.data['magnitude'], 'phase': self.data['phase']})

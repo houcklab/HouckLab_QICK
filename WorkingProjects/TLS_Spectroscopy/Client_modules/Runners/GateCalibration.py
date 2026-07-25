@@ -1,5 +1,4 @@
 import gc
-import os
 
 import numpy as np
 import matplotlib
@@ -7,6 +6,7 @@ matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
+from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.Experiment import ExperimentClass
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmission import Transmission
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import (
@@ -104,8 +104,6 @@ P_RABI_CHEVRON_SS = {
     "a_points": 21,
     "freq_span_mhz": 1.0,
     "freq_points": 21,
-    # SS Rabi resets via feedback + reset_thermalization_us (25 us, matching QUA); there is no
-    # passive relax between shots, so no relax_delay is set here.
 }
 
 def _base_cfg(p, extra=None):
@@ -156,6 +154,7 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     gains = np.linspace(p["gain_min"], p["gain_max"], int(p["gain_points"]))
     cfg = _base_cfg(p, extra={"ff_gain": int(FF_HOLD_GAIN), "ff_settle_us": 20.0})
     cfg["relax_delay"] = 50
+    exp = ExperimentClass(path=QUBIT, outerFolder=outer_folder, suffix="GateCal_TransSweep", cfg=cfg)
     mag = np.full((len(gains), len(freqs)), np.nan)
     print(f"[transmission sweep] {len(gains)} readout gains x {len(freqs)} freqs at "
           f"ff_gain={FF_HOLD_GAIN} ({len(gains) * len(freqs)} points -- slow)")
@@ -171,13 +170,8 @@ def run_transmission_sweep(outer_folder, soc, soccfg):
     plt.xlabel("Readout frequency [MHz]"); plt.ylabel("Readout gain [DAC]")
     plt.colorbar(label="|S21| [dB]")
     plt.title(f"{QUBIT} transmission vs readout power (ff_gain={FF_HOLD_GAIN})")
-    try:
-        os.makedirs(os.path.join(outer_folder, QUBIT), exist_ok=True)
-        ipath = os.path.join(outer_folder, QUBIT, f"{QUBIT}_GateCal_TransSweep.png")
-        plt.savefig(ipath, bbox_inches="tight")
-        print(f"[transmission sweep] saved {ipath}")
-    except Exception as e:
-        print(f"[transmission sweep] could not save PNG: {e}")
+    plt.savefig(exp.iname, bbox_inches="tight")
+    print(f"[transmission sweep] saved {exp.iname}")
     if LIVE_PLOTS:
         plt.show(block=False); plt.pause(0.1)
     plt.close(fig); gc.collect()
@@ -250,10 +244,6 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
     cfg = _base_cfg(p, extra={
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
-        # Feedback reset + 25 us photon-clear instead of a 1000 us passive relax: ~5-7x faster,
-        # same as SS, and fine for the averaged IQ.  Needs a valid reset threshold -- a stale one
-        # visibly inverts/breaks the chevron.  Set reset_mode "passive" to go QUA-faithful; the
-        # relax_delay below is the 1000 us used in that mode.
         "reset_mode": "feedback",
         "relax_delay": 1000.0,
     })
