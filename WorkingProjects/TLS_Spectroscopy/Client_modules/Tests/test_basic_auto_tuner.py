@@ -631,6 +631,203 @@ def test_production_portfolio_covers_every_integer_us_and_caps_at_twenty():
     assert T.BASIC_DEFAULTS["latency"]["max_read_length_us"] == 20.0
 
 
+def test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners():
+    """A coarse 5000/10060 winner is a center, never the final gain grid."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {
+        "enabled": True, "deterministic_gain_refinement": True,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        center = T._with_candidate(
+            tuner.working, read_pulse_freq=7248.971132,
+            read_pulse_gain=5000, read_length=14.0,
+            qubit_pi_freq=2534.24577, qubit_pi_gain=10060,
+            sigma=0.15, fidelity=0.93, fidelity_se=0.004,
+            fidelity_lcb_95=0.92216, evidence_tier=3)
+        tuner._qualified_transition_frequency = 2534.24577
+        tuner._qualified_transition_frequencies = [2534.24577]
+        candidates, record = tuner._portfolio_deterministic_gain_candidates(
+            [center], 14.0)
+        zoom, zoom_record = tuner._portfolio_gain_zoom_candidates(center, 14.0)
+
+    read_axis = list(record["read_gain_axis_dac"])
+    qubit_axis = list(record["qubit_gain_axis_dac"])
+    assert 5000 in read_axis and len(read_axis) == 5
+    assert any(value not in (4000, 5000, 6000) for value in read_axis)
+    assert 10060 in qubit_axis and len(qubit_axis) == 5
+    assert any(value not in (9054, 10060, 11066) for value in qubit_axis)
+    partners = {(round(float(row["sigma"]), 6), int(row["qubit_pi_gain"]))
+                for row in candidates}
+    assert any(np.isclose(sigma, 0.30) and 4500 <= gain <= 5600
+               for sigma, gain in partners)
+    assert any(np.isclose(sigma, 0.075) and 18000 <= gain <= 22500
+               for sigma, gain in partners)
+    assert len(zoom) == 9
+    assert list(zoom_record["read_gain_axis_dac"]) == [4800, 5000, 5200]
+    assert 10060 in list(zoom_record["qubit_gain_axis_dac"])
+
+
+def test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress():
+    """A longer clean pulse is optional; a resolved fidelity loss is ineligible."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {
+        "enabled": True, "balanced_max_fidelity_loss": 0.010,
+        "balanced_confidence_sigma": 1.96,
+    }
+    pairing = ["balanced-fixture-%d" % index for index in range(8)]
+
+    def evidence(candidate, fidelity, risk, status="SAFE"):
+        row = T._with_candidate(candidate)
+        values = np.full(8, float(fidelity))
+        row.update({
+            "fidelity": float(fidelity), "fidelity_se": 0.0005,
+            "fidelity_lcb_95": float(fidelity) - 0.00098,
+            "block_fidelities": values,
+            "block_fidelity_ses": np.full(8, 0.001),
+            "block_pairing_ids": list(pairing),
+            "portfolio_leakage_risk_ucb": float(risk),
+            "portfolio_safety_status": status,
+        })
+        return row
+
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        fast = evidence(T._with_candidate(
+            tuner.working, read_length=14.0, sigma=0.15,
+            qubit_pi_gain=10060), 0.930, 0.040)
+        longer = evidence(T._with_candidate(
+            fast, sigma=0.30, qubit_pi_gain=5030), 0.928, 0.006)
+        too_low = evidence(T._with_candidate(
+            fast, sigma=0.50, qubit_pi_gain=3018), 0.900, 0.002)
+        ordered = tuner._portfolio_balanced_order(
+            [fast, longer, too_low], fast)
+
+    assert T._candidate_key(ordered[0]) == T._candidate_key(longer)
+    assert any(T._candidate_key(row) == T._candidate_key(fast)
+               for row in ordered)
+    assert not any(T._candidate_key(row) == T._candidate_key(too_low)
+                   for row in ordered)
+    assert ordered[0]["balanced_noninferiority"]["eligible"] is True
+
+
+def test_portfolio_exact_replay_interleaves_all_readout_lengths():
+    """Final table rows share one randomized cohort instead of sequential epochs."""
+    class InterleavedPortfolioTuner(VirtualBasicAutoTuner):
+        def __init__(self, *args, **kwargs):
+            self.confirmation_calls = []
+            super().__init__(*args, **kwargs)
+
+        def _confirm_candidates(self, candidates, shots, blocks, label,
+                                add_to_history=True):
+            del shots, add_to_history
+            candidates = T._unique_candidates(candidates)
+            self.confirmation_calls.append((
+                str(label), sorted(set(float(row["read_length"])
+                                       for row in candidates))))
+            rows = []
+            for candidate in candidates:
+                length = float(candidate["read_length"])
+                fidelity = 0.88 + 0.005 * length
+                row = dict(candidate)
+                row.update({
+                    "fidelity": fidelity, "fidelity_se": 0.003,
+                    "fidelity_lcb_95": fidelity - 0.00588,
+                    "confirmation_blocks": int(blocks),
+                    "confirmation_complete": True,
+                    "confirmation_batch_complete": True,
+                    "block_fidelities": np.full(int(blocks), fidelity),
+                    "block_fidelity_ses": np.full(int(blocks), 0.003),
+                    "block_pairing_ids": [
+                        "%s::block-%d" % (label, index + 1)
+                        for index in range(int(blocks))],
+                    "third_blob_excess_ucb": 0.0,
+                    "third_cluster_guard_available": True,
+                    "third_cluster_supported": False,
+                    "third_cluster_fraction": 0.0,
+                    "third_cluster_fraction_ucb_95": 0.0,
+                    "third_cluster_single_state_fraction": 0.0,
+                    "third_cluster_single_state_fraction_ucb_95": 0.0,
+                    "evidence_tier": 3,
+                })
+                rows.append(row)
+            return rows
+
+        def _portfolio_screen_candidate(self, candidate, length, rank):
+            del length, rank
+            row = dict(candidate)
+            row.update({
+                "valid": True, "portfolio_safe": True,
+                "portfolio_safety_kind": "resolved_2d_iq_population",
+                "third_blob_excess_ucb": 0.0,
+                "third_cluster_guard_available": True,
+                "third_cluster_supported": False,
+                "third_cluster_fraction": 0.0,
+                "third_cluster_fraction_ucb_95": 0.0,
+                "third_cluster_single_state_fraction": 0.0,
+                "third_cluster_single_state_fraction_ucb_95": 0.0,
+            })
+            return row
+
+        def _portfolio_control_audit(self, candidate, length):
+            del candidate, length
+            return {"verified": True}, None
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params.update({
+        "reset": {"enabled": False},
+        "leakage": {"enabled": False, "operational_enabled": True},
+        "duration_portfolio": {
+            "enabled": True, "read_lengths_us": [1.0, 2.0],
+            "native_seeds_per_length": 1,
+            "readout_seeds_per_length": 1,
+            "control_seed_count": 1,
+            "local_proposals_per_length": 0,
+            "deterministic_gain_refinement": False,
+            "pulse_family_champions_per_length": 1,
+            "historical_champions_per_length": 1,
+            "confirm_candidates_per_length": 2,
+            "balanced_screen_candidates_per_length": 1,
+            "refine_shots": 31, "refine_blocks": 2,
+            "confirm_shots": 41, "confirm_blocks": 3,
+            "screen_shots": 31, "screen_reference_shots": 31,
+            "require_control_audit": True,
+        },
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = InterleavedPortfolioTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        tuner._qualified_transition_frequency = tuner.QUBIT_FREQ
+        tuner._qualified_transition_frequencies = [tuner.QUBIT_FREQ]
+        tuner._bootstrap_control_candidate = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=tuner.READ_GAIN, read_length=1.0,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=int(tuner.PI_GAIN_AT_SIGMA), sigma=tuner.SIGMA,
+            fidelity=0.90, fidelity_se=0.003,
+            fidelity_lcb_95=0.89412, evidence_tier=3)
+        tuner._joint_rows = [
+            T._with_candidate(
+                tuner._bootstrap_control_candidate, read_length=length,
+                fidelity=0.88 + 0.005 * length, fidelity_se=0.003,
+                fidelity_lcb_95=0.87412 + 0.005 * length,
+                evidence_tier=3)
+            for length in (1.0, 2.0)]
+        tuner._stage_duration_portfolio()
+
+    exact_calls = [call for call in tuner.confirmation_calls
+                   if "duration-interleaved exact fidelity replay" in call[0]]
+    assert exact_calls == [(
+        "portfolio duration-interleaved exact fidelity replay", [1.0, 2.0])]
+    assert tuner.data["duration_portfolio"][
+        "duration_interleaved_exact_replay"] is True
+
+
 def test_portfolio_rank_uses_fidelity_only_and_never_leakage():
     """A cleaner lower-fidelity tuple cannot replace the fidelity winner."""
     params = copy.deepcopy(FAST_PARAMS)
@@ -6559,7 +6756,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "reset-qualified-portfolio-v10"
+    assert T.BASIC_AUTOTUNER_REVISION == "gain-converged-portfolio-v11"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7203,6 +7400,9 @@ def main():
         test_operational_safety_path_rejects_a_common_mode_third_population,
         test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths,
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
+        test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
+        test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,
+        test_portfolio_exact_replay_interleaves_all_readout_lengths,
         test_portfolio_rank_uses_fidelity_only_and_never_leakage,
         test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity,
         test_portfolio_protects_heldout_control_from_perfect_shared_ground_outlier,

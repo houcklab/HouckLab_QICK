@@ -1,9 +1,10 @@
 """Run the fixed-readout-duration single-qubit calibration portfolio.
 
-This is intentionally a report-only entry point.  It measures the best held-out
-fidelity tuple at every integer readout duration from 1 through 20 us, then reports
-leakage and coherent-control checks on that exact tuple without reranking it.  It
-never modifies ``BaseConfig``; the operator makes the final manual choice.
+This is intentionally a report-only entry point.  It measures the locally converged
+best held-out fidelity tuple at every integer readout duration from 1 through 20 us,
+then reports leakage and coherent-control checks without reranking that winner.  A
+separate balanced row may identify a statistically noninferior, longer/lower-drive
+pulse.  It never modifies ``BaseConfig``; the operator makes the final manual choice.
 """
 
 import copy
@@ -1009,19 +1010,10 @@ def _print_duration_portfolio(result):
     if not entries:
         return False
     print("\n[basic-auto-tune] READOUT-DURATION PORTFOLIO (manual selection only)")
-    print("   len  fidelity (95% LCB)       leakage 95% UCB/status   control    "
+    print("   len/type fidelity (95% LCB)  leakage 95% UCB/status   control    "
           "readout MHz/gain       X180 MHz/gain/length")
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        length = _number(entry, ("read_length_us",))
-        leakage_status = str(entry.get(
-            "leakage_status", "INCONCLUSIVE")).upper()
-        control_status = str(entry.get("control_status", "NOT_RUN")).upper()
-        selected = entry.get("selected")
-        if not isinstance(selected, dict):
-            print("   %2sus no reportable tuple" % _fmt_int(length))
-            continue
+
+    def print_row(length, kind, selected, leakage_status, control_status):
         fidelity = _number(selected, ("fidelity",))
         fidelity_se = _number(selected, ("fidelity_se",))
         fidelity_lcb = _number(selected, ("fidelity_lcb_95",))
@@ -1035,18 +1027,39 @@ def _print_duration_portfolio(result):
             leakage_text += "; P(f) %s" % _fmt_float(
                 100.0 * direct_p2, 1, "%")
         gate_ns = 4000.0 * _number(selected, ("sigma",))
-        print("   %2sus %s +/- %s (%s)   %-10s %-12s %-10s %s/%s   %s/%s/%s"
-              % (_fmt_int(length),
+        print("   %2sus/%-4s %s +/- %s (%s)   %-10s %-12s %-10s %s/%s   %s/%s/%s"
+              % (_fmt_int(length), kind,
                  _fmt_float(fidelity, 4), _fmt_float(fidelity_se, 4),
-                 _fmt_float(fidelity_lcb, 4), leakage_text, leakage_status,
-                 control_status,
+                 _fmt_float(fidelity_lcb, 4), leakage_text,
+                 str(leakage_status).upper(), str(control_status).upper(),
                  _fmt_float(_number(selected, ("read_pulse_freq",)), 6),
                  _fmt_int(_number(selected, ("read_pulse_gain",))),
                  _fmt_float(_number(selected, ("qubit_pi_freq",)), 6),
                  _fmt_int(_number(selected, ("qubit_pi_gain",))),
                  _fmt_float(gate_ns, 1, "ns")))
-    print("   Each row is selected only by held-out fidelity. Leakage and control are "
-          "reported afterward and never rerank or suppress it. No row is written.")
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        length = _number(entry, ("read_length_us",))
+        leakage_status = str(entry.get(
+            "leakage_status", "INCONCLUSIVE")).upper()
+        control_status = str(entry.get("control_status", "NOT_RUN")).upper()
+        selected = entry.get("selected")
+        if not isinstance(selected, dict):
+            print("   %2sus no reportable tuple" % _fmt_int(length))
+            continue
+        print_row(length, "Fmax", selected, leakage_status, control_status)
+        balanced = entry.get("balanced")
+        if (isinstance(balanced, dict)
+                and _candidate_key(balanced) != _candidate_key(selected)):
+            print_row(
+                length, "bal", balanced,
+                entry.get("balanced_leakage_status", "INCONCLUSIVE"),
+                entry.get("balanced_control_status", "NOT_RUN"))
+    print("   Fmax is selected only by the common interleaved held-out fidelity "
+          "replay. 'bal' is an optional paired-noninferior lower-stress alternative; "
+          "it never replaces Fmax. No row is written.")
     return True
 
 
@@ -1314,7 +1327,10 @@ def _history_entry(result, eligible, applied, error=None):
             "safe_length_count", "unsafe_length_count",
             "inconclusive_length_count", "equal_refinement_budget",
             "selection_objective", "leakage_affects_selection",
-            "control_audit_affects_selection",
+            "control_audit_affects_selection", "balanced_selection_objective",
+            "balanced_max_fidelity_loss",
+            "balanced_reportable_length_count",
+            "duration_interleaved_exact_replay",
         ) if key in portfolio}
         compact_portfolio["entries"] = []
         for entry in portfolio.get("entries", []):
@@ -1332,6 +1348,20 @@ def _history_entry(result, eligible, applied, error=None):
                     "portfolio_leakage_risk_ucb",
                     "portfolio_selection_fidelity_lcb",
                 ) if key in selected}
+            balanced = entry.get("balanced")
+            if isinstance(balanced, dict):
+                row.update({key: entry.get(key) for key in (
+                    "balanced_status", "balanced_leakage_status",
+                    "balanced_control_status")})
+                row["balanced"] = {key: balanced.get(key) for key in (
+                    *TUNED_KEYS, "fidelity", "fidelity_se",
+                    "fidelity_lcb_95", "third_cluster_fraction_ucb_95",
+                    "third_cluster_single_state_fraction_ucb_95",
+                    "single_p2_ucb", "amplified_p2_ucb",
+                    "portfolio_leakage_risk_ucb",
+                    "portfolio_selection_fidelity_lcb",
+                    "balanced_noninferiority", "balanced_is_fidelity_winner",
+                ) if key in balanced}
             compact_portfolio["entries"].append(row)
     return {
         "time": result.get(
