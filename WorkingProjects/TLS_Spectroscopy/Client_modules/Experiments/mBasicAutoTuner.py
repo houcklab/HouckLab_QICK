@@ -80,7 +80,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "gain-only-search-v14"
+BASIC_AUTOTUNER_REVISION = "phase-aligned-fixed-sigma-v13"
 
 
 BASIC_DEFAULTS = {
@@ -120,8 +120,6 @@ BASIC_DEFAULTS = {
         "enabled": True, "probe_shots": 2000, "max_iters": 3,
         "min_activation_fidelity": 0.75,
         "min_raw_assignment_fidelity": 0.80,
-        "min_passive_relax_t1_multiple": 5.0,
-        "assumed_qubit_t1_us": None,
         "res_phase_calibration": {
             "enabled": True, "phase_step_deg": 15.0,
             "sweep_shots": 800, "check_shots": 3000,
@@ -539,12 +537,12 @@ BASIC_DEFAULTS = {
         # exact half/double-duration partners, including sigma values (such as 0.30
         # us) which are absent from the original coarse duration list.  Each partner
         # receives its own local amplitude challenge; area scaling is only a seed.
-        "constant_area_sigma_factors": [],
+        "constant_area_sigma_factors": [0.5, 2.0],
         "constant_area_qubit_fraction": 0.08,
         "constant_area_qubit_points": 5,
         "constant_area_sigma_min_us": 0.05,
         "constant_area_sigma_max_us": 0.50,
-        "pulse_family_aae_enabled": False,
+        "pulse_family_aae_enabled": True,
         # Selection is deliberately one-dimensional: maximize independently replayed
         # single-shot fidelity at the fixed readout duration.  Leakage and coherent
         # control are measured afterward on that exact winner and reported as separate
@@ -565,8 +563,7 @@ BASIC_DEFAULTS = {
         # lower-drive candidate only when its paired fidelity loss is statistically
         # bounded.  This is a Pareto report, not leakage-based replacement of the
         # maximum-fidelity row.
-        "balanced_row_enabled": False,
-        "balanced_screen_candidates_per_length": 0,
+        "balanced_screen_candidates_per_length": 3,
         "balanced_max_fidelity_loss": 0.010,
         "balanced_confidence_sigma": 1.96,
         "balanced_control_attempts": 2,
@@ -720,12 +717,10 @@ def configure_gain_only_search(params, sigma_us):
     configured["latency"]["max_sigma_us"] = sigma
     configured["duration_portfolio"].update({
         "qubit_sigma_us": sigma,
-        "search_axes": "read_pulse_gain_and_qubit_pi_gain",
         "constant_area_sigma_factors": [],
         "pulse_family_aae_enabled": False,
         "pulse_family_champions_per_length": 1,
-        "balanced_screen_candidates_per_length": 0,
-        "balanced_row_enabled": False,
+        "balanced_screen_candidates_per_length": 1,
     })
     return configured
 
@@ -1931,7 +1926,6 @@ class BasicAutoTuner(ExperimentClass):
         self._reset_unavailable = False
         self._feedback_disqualified = False
         self._res_phase_calibrated = False
-        self._thermalization = {"verified": False}
         self._run_started_monotonic = None
         self._joint_search_started_monotonic = None
         self._final_replays = []
@@ -2362,9 +2356,8 @@ class BasicAutoTuner(ExperimentClass):
         except KeyboardInterrupt:
             raise
         except Exception as exc:
-            record.update({
-                "applied": False,
-                "failure": "%s: %s" % (type(exc).__name__, exc)})
+            record.update({"applied": False,
+                           "failure": "%s: %s" % (type(exc).__name__, exc)})
             self.data["reset"]["res_phase_calibration"] = record
             self._log("reset", "WARN",
                       "readout-phase alignment failed before %s (%s: %s); keeping "
@@ -2375,13 +2368,9 @@ class BasicAutoTuner(ExperimentClass):
         except (TypeError, ValueError):
             best = float("nan")
         if not np.isfinite(best):
-            record.update({
-                "applied": False,
-                "failure": "no aligned readout phase was returned"})
+            record.update({"applied": False,
+                           "failure": "no aligned readout phase was returned"})
             self.data["reset"]["res_phase_calibration"] = record
-            self._log("reset", "WARN",
-                      "readout-phase alignment produced no usable angle before %s; "
-                      "keeping the configured res_phase" % reason)
             return None
         self.input_cfg["res_phase"] = best
         record.update({
@@ -2390,11 +2379,10 @@ class BasicAutoTuner(ExperimentClass):
             "aligned_pulse_signature": self._pulse_signature(self.working),
         })
         self.data["reset"]["res_phase_calibration"] = record
-        self._log(
-            "reset", "OK",
-            "aligned the readout phase for tProc discrimination: res_phase "
-            "%.1f -> %.1f deg (run-scoped; initialize.py untouched, step-5 "
-            "fidelity is invariant to this rotation)" % (previous, best))
+        self._log("reset", "OK",
+                  "aligned the readout phase for tProc discrimination: res_phase "
+                  "%.1f -> %.1f deg (run-scoped; initialize.py untouched)"
+                  % (previous, best))
         return best
 
     def _try_activate_feedback(self, reason):
@@ -2707,42 +2695,6 @@ class BasicAutoTuner(ExperimentClass):
                         "FF_Qubits Gain_Readout/Gain_Expt/Gain_Pulse sequences")
         if float(cfg["sigma"]) <= 0 or float(cfg["read_length"]) <= 0:
             raise ValueError("sigma and read_length must be positive")
-        relax_delay = float(cfg["relax_delay"])
-        settings = self.params["reset"]
-        multiple = float(settings.get("min_passive_relax_t1_multiple", 5.0))
-        raw_t1 = cfg.get("qubit_t1_us", settings.get("assumed_qubit_t1_us"))
-        try:
-            t1 = float(raw_t1) if raw_t1 is not None else float("nan")
-        except (TypeError, ValueError):
-            t1 = float("nan")
-        thermalization = {
-            "passive_relax_delay_us": relax_delay,
-            "qubit_t1_us": t1 if np.isfinite(t1) else None,
-            "required_multiple_of_t1": multiple,
-            "verified": False,
-        }
-        if np.isfinite(t1) and t1 > 0.0:
-            required = multiple * t1
-            thermalization.update({
-                "required_relax_delay_us": required,
-                "relax_delay_in_t1": float(relax_delay / t1),
-                "verified": bool(relax_delay >= required - 1e-9),
-            })
-            if relax_delay < required - 1e-9:
-                raise ValueError(
-                    "relax_delay %.0f us is only %.1f x the configured qubit_t1_us "
-                    "%.0f us; passive preparation needs at least %.1f x T1 (%.0f us) "
-                    "or every ground-state measurement starts partly excited"
-                    % (relax_delay, relax_delay / t1, t1, multiple, required))
-        else:
-            self._log(
-                "preflight", "OK",
-                "no qubit_t1_us is configured, so the %.0f us passive relaxation "
-                "delay is an unverified thermalization assumption; a delay shorter "
-                "than about %.0fx T1 corrupts every ground-state preparation"
-                % (relax_delay, multiple))
-        self._thermalization = thermalization
-        self.data["thermalization"] = dict(thermalization)
         self._fast_gain_sweep = _qubit_gain_sweep_supported(
             self.soccfg, cfg["qubit_ch"])
         if self.soccfg is not None and self._fast_gain_sweep is not True:
@@ -6650,14 +6602,10 @@ class BasicAutoTuner(ExperimentClass):
         minimum_passes = min(
             max(int(p.get("minimum_duration_coverage_passes", 1)), 1),
             int(read_gains.size))
-        mandatory_passes_requested = int(minimum_passes)
-        mandatory_passes_granted = int(minimum_passes)
         mandatory_jobs = int(minimum_passes * strata_per_pass)
         coarse_tail_reserve = (
             float(p.get("reserve_medium_minutes", 6.0))
             + float(p.get("reserve_control_refinement_minutes", 7.0)))
-        pass_started_monotonic = time.monotonic()
-        pass_minutes = []
         coarse_rows, failures = [], []
         resumed_rows = list(self.data["joint_search"].get(
             "resumed_coarse_rows", []))
@@ -6669,27 +6617,6 @@ class BasicAutoTuner(ExperimentClass):
         anchor_interval = max(strata_per_pass, 1)
         completed_jobs = 0
         for serial, job in enumerate(jobs):
-            if serial and serial % strata_per_pass == 0:
-                boundary = time.monotonic()
-                pass_minutes.append(
-                    float((boundary - pass_started_monotonic) / 60.0))
-                pass_started_monotonic = boundary
-                completed_passes = int(serial // strata_per_pass)
-                if (completed_passes < mandatory_passes_granted
-                        and not self._joint_budget_allows(
-                            reserve_final=True,
-                            additional_reserve_minutes=(
-                                coarse_tail_reserve
-                                + float(np.mean(pass_minutes))))):
-                    mandatory_passes_granted = completed_passes
-                    mandatory_jobs = int(completed_passes * strata_per_pass)
-                    self._log(
-                        "joint_search", "WARN",
-                        "measured %.1f min per duration-coverage pass; granting %d "
-                        "of %d mandatory readout-power passes so the held-out "
-                        "medium/trust refinement keeps its reserved budget"
-                        % (float(np.mean(pass_minutes)), completed_passes,
-                           mandatory_passes_requested))
             # Complete the mandatory duration-balanced pass even if a slow backend
             # crosses the soft estimate while that pass is in flight.  Only later
             # readout-power passes are optional.
@@ -6773,12 +6700,7 @@ class BasicAutoTuner(ExperimentClass):
             "read_gain_pass_order_dac": np.asarray([
                 jobs[index * strata_per_pass][2]
                 for index in range(len(read_gains))], dtype=int),
-            "mandatory_duration_passes": int(mandatory_passes_granted),
-            "mandatory_duration_passes_requested": int(
-                mandatory_passes_requested),
-            "mandatory_coverage_reduced_for_budget": bool(
-                mandatory_passes_granted < mandatory_passes_requested),
-            "coarse_pass_minutes": list(pass_minutes),
+            "mandatory_duration_passes": int(minimum_passes),
             "coarse_cells_attempted": int(completed_jobs),
             "coarse_gain_passes_completed": int(
                 completed_jobs // max(strata_per_pass, 1)),
@@ -9512,6 +9434,126 @@ class BasicAutoTuner(ExperimentClass):
         return result
 
     # ----------------------------------------- fixed-readout-duration manual portfolio
+    def _stage_portfolio_pulse_family_aae(self, reference):
+        """AAE-refine exact constant-area partners once before the 1--20 us table.
+
+        The physical X180 does not depend on the subsequent integration duration.
+        Repeating a full amplified-error map twenty times would therefore spend time
+        measuring the same control.  Instead, refine half/double-sigma partners once
+        with the best available readout, retain their exact control waveforms as
+        protected portfolio seeds, and still audit the eventual crossed tuple at each
+        readout duration.
+        """
+        p = self.params["duration_portfolio"]
+        if (not self._duration_portfolio_active
+                or not bool(p.get("pulse_family_aae_enabled", True))
+                or not self.params["amplified_error"].get("enabled", True)):
+            self._portfolio_aae_candidates = []
+            return None
+        if not isinstance(reference, dict):
+            raise RuntimeError("pulse-family AAE needs a measured reference tuple")
+        original = dict(self.working)
+        base = {key: reference[key] for key in self.initial}
+        sigma_min = float(p.get("constant_area_sigma_min_us", 0.05))
+        sigma_max = float(p.get("constant_area_sigma_max_us", 0.50))
+        hard_gain = int(self.params["joint_search"]["qubit_gain_hard_max"])
+        partners = []
+        for factor in p.get("constant_area_sigma_factors", (0.5, 2.0)):
+            factor = float(factor)
+            sigma = float(base["sigma"]) * factor
+            if (not np.isfinite(factor) or factor <= 0.0
+                    or sigma < sigma_min - 1e-12
+                    or sigma > sigma_max + 1e-12):
+                continue
+            gain = int(np.clip(round(
+                float(base["qubit_pi_gain"]) / factor), 1, hard_gain))
+            partners.append(_with_candidate(
+                base, sigma=sigma, qubit_pi_gain=gain))
+        partners = self._qualified_transition_rows(_unique_candidates(partners))
+        refined, attempts = [], []
+        previous_map = copy.deepcopy(self._maps.get("amplified_error"))
+        previous_edge = copy.deepcopy(self._maps.get("amplified_error_edge"))
+        try:
+            for index, partner in enumerate(partners, start=1):
+                self.working = dict(partner)
+                self._maps.pop("amplified_error", None)
+                self._maps.pop("amplified_error_edge", None)
+                self._ensure_reset_profile(
+                    partner, "constant-area pulse-family AAE %d" % index)
+                try:
+                    chosen = self._stage_amplified_error()
+                    if (isinstance(chosen, dict)
+                            and self._candidate_in_qualified_transition(chosen)):
+                        refined.append(copy.deepcopy(chosen))
+                    attempts.append({
+                        "seed": copy.deepcopy(partner),
+                        "chosen": copy.deepcopy(chosen),
+                        "amplified_error_map": copy.deepcopy(
+                            self._maps.get("amplified_error")),
+                        "amplified_error_edge_map": copy.deepcopy(
+                            self._maps.get("amplified_error_edge")),
+                        "failure": None,
+                    })
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    attempts.append({
+                        "seed": copy.deepcopy(partner), "chosen": None,
+                        "amplified_error_map": copy.deepcopy(
+                            self._maps.get("amplified_error")),
+                        "amplified_error_edge_map": copy.deepcopy(
+                            self._maps.get("amplified_error_edge")),
+                        "failure": "%s: %s" % (type(exc).__name__, exc),
+                    })
+        finally:
+            self.working = original
+            if previous_map is None:
+                self._maps.pop("amplified_error", None)
+            else:
+                self._maps["amplified_error"] = previous_map
+            if previous_edge is None:
+                self._maps.pop("amplified_error_edge", None)
+            else:
+                self._maps["amplified_error_edge"] = previous_edge
+
+        candidates = _unique_candidates([base] + refined)
+        confirmed = []
+        if candidates:
+            confirmed = self._confirm_candidates(
+                candidates,
+                int(self.params["amplified_error"]["confirm_shots"]),
+                int(self.params["amplified_error"]["confirm_blocks"]),
+                "constant-area pulse-family AAE held-out comparison",
+                add_to_history=True)
+        self._portfolio_aae_candidates = self._qualified_transition_rows(
+            confirmed or candidates)
+        result = {
+            "enabled": True,
+            "reference": copy.deepcopy(base),
+            "attempts": attempts,
+            "refined_candidates": copy.deepcopy(refined),
+            "confirmed_candidates": copy.deepcopy(confirmed),
+            "candidate_count": len(self._portfolio_aae_candidates),
+            "complete": bool(
+                len(refined) == len(partners)
+                and (not candidates or self._confirmation_batch_complete(
+                    confirmed))),
+        }
+        self.data["portfolio_pulse_family_aae"] = result
+        self._maps["portfolio_pulse_family_aae"] = {
+            "seed_sigma_us": np.asarray([
+                row["sigma"] for row in partners], dtype=float),
+            "seed_gain_dac": np.asarray([
+                row["qubit_pi_gain"] for row in partners], dtype=int),
+            "refined_sigma_us": np.asarray([
+                row["sigma"] for row in refined], dtype=float),
+            "refined_gain_dac": np.asarray([
+                row["qubit_pi_gain"] for row in refined], dtype=int),
+            "search_complete": bool(result["complete"]),
+            "selection_confirmed": bool(confirmed),
+        }
+        return result
+
     def _portfolio_source_rows(self):
         """Every measured complete tuple which can seed a fixed-length search."""
         rows = []
@@ -9711,7 +9753,6 @@ class BasicAutoTuner(ExperimentClass):
             candidates = _unique_candidates(candidates + [
                 {key: row[key] for key in self.initial}])
         candidates = self._qualified_transition_rows(candidates)[:target]
-        held_out = [row for row in local if self._evidence_tier(row) >= 2]
         return candidates, {
             "source_rows": len(local),
             "native_seed_count": len(native),
@@ -9719,10 +9760,6 @@ class BasicAutoTuner(ExperimentClass):
             "proposal_count": len(proposals),
             "target_candidate_count": target,
             "proposal_failure": proposal_failure,
-            "source_max_evidence_tier": int(max(
-                (self._evidence_tier(row) for row in local), default=0)),
-            "source_held_out_row_count": len(held_out),
-            "readout_seeded_from_proposals_only": bool(not held_out),
         }
 
     @staticmethod
@@ -9779,6 +9816,39 @@ class BasicAutoTuner(ExperimentClass):
             _with_candidate(center, qubit_pi_gain=int(gain))
             for gain in qubit_axis)
 
+        sigma_min = float(p.get(
+            "constant_area_sigma_min_us",
+            min(self.params["joint_search"]["sigma_values_us"])))
+        sigma_max = float(p.get(
+            "constant_area_sigma_max_us",
+            max(self.params["joint_search"]["sigma_values_us"])))
+        partner_records = []
+        for factor in p.get("constant_area_sigma_factors", (0.5, 2.0)):
+            factor = float(factor)
+            sigma = float(center["sigma"]) * factor
+            if (not np.isfinite(factor) or factor <= 0.0
+                    or sigma < sigma_min - 1e-12
+                    or sigma > sigma_max + 1e-12):
+                continue
+            predicted_gain = int(np.clip(round(
+                float(center["qubit_pi_gain"]) / factor), 1,
+                int(self.params["joint_search"]["qubit_gain_hard_max"])))
+            partner = _with_candidate(
+                center, sigma=sigma, qubit_pi_gain=predicted_gain)
+            partner_axis = self._portfolio_centered_gain_axis(
+                predicted_gain, p["constant_area_qubit_fraction"],
+                p["constant_area_qubit_points"],
+                p["gain_minimum_qubit_step_dac"], 1,
+                self.params["joint_search"]["qubit_gain_hard_max"])
+            candidates.extend(
+                _with_candidate(partner, qubit_pi_gain=int(gain))
+                for gain in partner_axis)
+            partner_records.append({
+                "sigma_factor": factor,
+                "sigma_us": sigma,
+                "ideal_area_gain_dac": predicted_gain,
+                "gain_axis_dac": partner_axis,
+            })
         candidates = self._qualified_transition_rows(
             _unique_candidates(candidates))
         return candidates, {
@@ -9786,6 +9856,7 @@ class BasicAutoTuner(ExperimentClass):
             "reference_candidate_key": list(_candidate_key(center)),
             "read_gain_axis_dac": read_axis,
             "qubit_gain_axis_dac": qubit_axis,
+            "constant_area_partners": partner_records,
             "candidate_count": len(candidates),
         }
 
@@ -10485,10 +10556,8 @@ class BasicAutoTuner(ExperimentClass):
                     "NOT_REQUIRED" if not require_control else
                     "VERIFIED" if selected_audit["verified"] else "FAILED")
 
-                balanced_enabled = bool(p.get("balanced_row_enabled", False))
-                balanced_order = (
-                    self._portfolio_balanced_order(screened_rows, selected)
-                    if balanced_enabled else [])
+                balanced_order = self._portfolio_balanced_order(
+                    screened_rows, selected)
                 balanced = None
                 balanced_record = None
                 attempts = max(int(p.get(
@@ -10502,25 +10571,11 @@ class BasicAutoTuner(ExperimentClass):
                         balanced = copy.deepcopy(candidate)
                         balanced_record = record
                         break
-                if balanced is None and balanced_enabled:
+                if balanced is None:
                     balanced = copy.deepcopy(selected)
                     balanced_record = selected_audit
                     balanced["balanced_noninferiority"] = \
                         self._portfolio_balance_diagnostic(selected, selected)
-                if balanced is None:
-                    entry.update({
-                        "status": ("UNSAFE" if leakage_status == "UNSAFE" else
-                                   "SAFE" if (leakage_status == "SAFE"
-                                              and control_status in (
-                                                  "VERIFIED", "NOT_REQUIRED"))
-                                   else "INCONCLUSIVE"),
-                        "leakage_status": leakage_status,
-                        "control_status": control_status,
-                        "selected": copy.deepcopy(selected),
-                        "balanced_status": "NOT_RUN", "balanced": None,
-                        "evaluated_exact_candidates": copy.deepcopy(screened_rows),
-                    })
-                    continue
                 balanced["control_verified"] = bool(
                     balanced_record["verified"] if require_control else False)
                 balanced["control_audit"] = balanced_record["audit"]
@@ -10624,26 +10679,26 @@ class BasicAutoTuner(ExperimentClass):
         self._maps["duration_portfolio"] = {
             "read_length_us": np.asarray(lengths, dtype=float),
             "fidelity": np.asarray([
-                float((entry.get("selected") or {}).get("fidelity", np.nan))
+                float(entry.get("selected", {}).get("fidelity", np.nan))
                 for entry in entries]),
             "fidelity_se": np.asarray([
-                float((entry.get("selected") or {}).get("fidelity_se", np.nan))
+                float(entry.get("selected", {}).get("fidelity_se", np.nan))
                 for entry in entries]),
             "balanced_fidelity": np.asarray([
-                float((entry.get("balanced") or {}).get("fidelity", np.nan))
+                float(entry.get("balanced", {}).get("fidelity", np.nan))
                 for entry in entries]),
             "balanced_sigma_us": np.asarray([
-                float((entry.get("balanced") or {}).get("sigma", np.nan))
+                float(entry.get("balanced", {}).get("sigma", np.nan))
                 for entry in entries]),
             "balanced_qubit_gain_dac": np.asarray([
-                float((entry.get("balanced") or {}).get(
+                float(entry.get("balanced", {}).get(
                     "qubit_pi_gain", np.nan)) for entry in entries]),
             "third_population_ucb_95": np.asarray([
-                float((entry.get("selected") or {}).get(
+                float(entry.get("selected", {}).get(
                     "third_cluster_fraction_ucb_95", np.nan))
                 for entry in entries]),
             "single_p2_ucb": np.asarray([
-                float((entry.get("selected") or {}).get("single_p2_ucb", np.nan))
+                float(entry.get("selected", {}).get("single_p2_ucb", np.nan))
                 for entry in entries]),
             "status_code": np.asarray([
                 {"SAFE": 1, "UNSAFE": -1}.get(entry.get("status"), 0)
@@ -10651,7 +10706,7 @@ class BasicAutoTuner(ExperimentClass):
             "search_complete": bool(complete_lengths == requested),
             "selection_confirmed": bool(
                 complete_lengths == requested
-                and all((entry.get("selected") or {}).get(
+                and all(entry.get("selected", {}).get(
                     "portfolio_fidelity_selection_basis")
                         == "complete_duration_interleaved_exact_replay"
                         for entry in entries)),
@@ -12952,9 +13007,8 @@ class BasicAutoTuner(ExperimentClass):
             # The safe bootstrap and a distinct input readout can both be required
             # when the first gain fails its fresh confirmation.
             total += 2 * int(resonator["shots"]) * int(coarse_points)
-            total += (2 * max(int(resonator.get("max_candidates", 8)), 1)
-                      * int(resonator.get(
-                          "confirmation_shots", resonator["shots"]))
+            total += (2 * int(resonator.get(
+                "confirmation_shots", resonator["shots"]))
                       * int(resonator.get("confirmation_points", 81)))
         if p["spectroscopy"].get("enabled", True):
             spectroscopy = p["spectroscopy"]
@@ -13003,31 +13057,54 @@ class BasicAutoTuner(ExperimentClass):
                       * int(readout["shots"]))
             total += (2 * (int(readout["shortlist"]) + 1)
                       * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+            # Local readout replay after direct/amplified control selection.
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+        length = p["readout_length"]
+        if length.get("enabled", True):
+            length_count = len(length["values_us"]) + 1
+            total += (2 * length_count
+                      * int(length["freq_points"]) * int(length["gain_points"])
+                      * int(length["shots"]))
+            length_confirmations = (
+                int(length["shortlist"])
+                + length_count * max(int(length.get(
+                    "confirm_per_length", 2)), 1) + 1)
+            total += (2 * length_confirmations
+                      * int(length["confirm_shots"]) * int(length["confirm_blocks"]))
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
         qubit = p["qubit"]
-        joint = p["joint_search"]
-        if joint.get("enabled", True):
-            joint_lengths = len(set(
-                float(value) for value in joint["read_lengths_us"]
-                if np.isfinite(float(value)) and float(value) > 0.0))
-            joint_sigmas = len(set(
-                float(value) for value in joint["sigma_values_us"]
-                if np.isfinite(float(value)) and float(value) > 0.0))
-            strata = max(joint_lengths * joint_sigmas, 1)
-            gain_passes = min(
-                max(int(joint.get("minimum_duration_coverage_passes", 1)), 1),
-                max(int(joint["read_gain_points"]), 1))
-            gain_points = max(
-                int(joint["qubit_gain_points_including_ground"]), 5)
-            total += (strata * gain_passes * gain_points
-                      * int(joint["coarse_shots"]))
-            total += (2 * (int(joint["medium_max_candidates"]) + 1)
-                      * int(joint["medium_shots"]) * int(joint["medium_blocks"]))
-            total += (2 * int(joint["trust_proposals"])
-                      * int(joint["trust_shots"]) * int(joint["trust_blocks"]))
-            closure_rounds = max(int(joint.get("closure_iterations", 2)), 0)
-            total += (closure_rounds * 2
-                      * (max(int(joint["trust_proposals"]) // 2, 8) + 1)
-                      * int(joint["trust_shots"]) * int(joint["trust_blocks"]))
+        if qubit.get("enabled", True):
+            total += (2 * int(qubit["freq_points"]) * int(qubit["gain_points"])
+                      * int(qubit["shots"]))
+            total += (2 * (int(qubit["shortlist"]) + 1)
+                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
+        duration = p["pulse_duration"]
+        if duration.get("enabled", True):
+            duration_count = len(duration["sigma_values_us"]) + 1
+            total += (2 * duration_count
+                      * int(duration["freq_points"]) * int(duration["gain_points"])
+                      * int(duration["shots"]))
+            duration_confirmations = (
+                int(duration["shortlist"])
+                + duration_count * max(int(duration.get(
+                    "confirm_per_sigma", 2)), 1) + 1)
+            total += (2 * duration_confirmations
+                      * int(duration["confirm_shots"]) * int(duration["confirm_blocks"]))
+        if p.get("coordinate_descent_repeat", True):
+            total += (2 * int(readout["local_freq_points"])
+                      * int(readout["local_gain_points"]) * int(readout["shots"]))
+            total += (2 * (int(readout["shortlist"]) + 1)
+                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
+            total += (2 * int(qubit["local_freq_points"])
+                      * int(qubit["local_gain_points"]) * int(qubit["shots"]))
+            total += (2 * (int(qubit["shortlist"]) + 1)
+                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
         amplified = p["amplified_error"]
         if amplified.get("enabled", True):
             total += 2 * int(amplified["calibration_shots"])
@@ -13300,24 +13377,6 @@ class BasicAutoTuner(ExperimentClass):
         self._discovery_guard_active = True
         self._final_control_verified_key = None
         self._preflight()
-        repetitions = self._estimate_default_measurement_repetitions()
-        relax_delay_us = float(self.input_cfg.get("relax_delay", np.nan))
-        passive_hours = float(repetitions * relax_delay_us / 1e6 / 3600.0)
-        self.data["planned_repetitions"] = int(repetitions)
-        self.data["planned_passive_idle_hours"] = passive_hours
-        if not self._detailed_console():
-            print("  Planned workload: about %.1fM single-shot repetitions."
-                  % (repetitions / 1e6))
-            print("  Repetition delay alone is about %.1f h at the configured "
-                  "%.0f us passive relaxation; qualified active reset removes "
-                  "most of it." % (passive_hours, relax_delay_us))
-            if self._duration_portfolio_active:
-                lengths = self.params["duration_portfolio"].get(
-                    "read_lengths_us", [])
-                print("  Readout durations requested: %d (%s)."
-                      % (len(lengths),
-                         self.params["duration_portfolio"].get(
-                             "readout_length_mode", "custom")))
         if self._detailed_console():
             print("=" * 78)
             print("BASIC AUTO TUNER  %s" % self.path)
@@ -13334,8 +13393,11 @@ class BasicAutoTuner(ExperimentClass):
                       "third-cloud excess %.3f"
                       % (leakage["max_single_p2"], leakage["max_amplified_p2"],
                          leakage["max_third_blob_excess"]))
+            repetitions = self._estimate_default_measurement_repetitions()
+            passive_minutes = (
+                repetitions * float(self.input_cfg["relax_delay"]) / 1e6 / 60.0)
             print("  worst-case all-passive delay: %.1f min over about %.0fk repetitions"
-                  % (passive_hours * 60.0, repetitions / 1000.0))
+                  % (passive_minutes, repetitions / 1000.0))
             print("=" * 78)
 
         try:
@@ -13465,6 +13527,9 @@ class BasicAutoTuner(ExperimentClass):
                 "reset_before_verification", lambda:
                 self._try_activate_feedback("best-fidelity winner"))
             if self._duration_portfolio_active:
+                self._run_stage(
+                    "portfolio_pulse_family_aae",
+                    lambda: self._stage_portfolio_pulse_family_aae(final))
                 portfolio_best = self._run_stage(
                     "duration_portfolio", self._stage_duration_portfolio)
                 if portfolio_best is not None:
@@ -13816,182 +13881,12 @@ class BasicAutoTuner(ExperimentClass):
             "remains untouched pending manual selection"
             % (reportable_count, requested, len(safe)))
 
-    def _run_health(self):
-        concerns = []
-        failed_stages = [
-            {"name": str(row.get("name")), "status": str(row.get("status")),
-             "error": row.get("error")}
-            for row in self._stages
-            if str(row.get("status", "")) != "ok"
-        ]
-        for row in failed_stages:
-            if row["status"] == "warning":
-                concerns.append(
-                    "stage '%s' did not complete: %s"
-                    % (row["name"], row["error"]))
-
-        reset = self.data.get("reset", {})
-        reset = reset if isinstance(reset, dict) else {}
-        reset_mode = str(reset.get("mode", "passive"))
-        relax_delay = float(self.input_cfg.get("relax_delay", np.nan))
-        if reset_mode != "feedback":
-            concerns.append(
-                "every acquisition paid the %.0f us passive relaxation delay; "
-                "feedback reset was not active at the end of the run"
-                % relax_delay)
-        if bool(reset.get("feedback_disqualified", False)):
-            concerns.append(
-                "feedback reset was disqualified by the exact passive/feedback "
-                "A/B and stayed off for the rest of the run")
-        if not bool(self._thermalization.get("verified", False)):
-            concerns.append(
-                "the %.0f us passive relaxation delay was never checked against a "
-                "measured T1; set qubit_t1_us so preflight can enforce the %.1fx "
-                "margin, because a short delay silently corrupts every "
-                "ground-state preparation"
-                % (relax_delay, float(self.params["reset"].get(
-                    "min_passive_relax_t1_multiple", 5.0))))
-
-        joint = self.data.get("joint_search", {})
-        joint = joint if isinstance(joint, dict) else {}
-        coverage = joint.get("coverage", {})
-        coverage = coverage if isinstance(coverage, dict) else {}
-        joint_health = {
-            "status": joint.get("status"),
-            "coverage_complete": bool(coverage.get("complete", False)),
-            "measured_strata": coverage.get("measured_strata"),
-            "expected_strata": coverage.get("expected_strata"),
-            "mandatory_duration_passes_requested": joint.get(
-                "mandatory_duration_passes_requested"),
-            "mandatory_duration_passes": joint.get("mandatory_duration_passes"),
-            "mandatory_coverage_reduced_for_budget": bool(joint.get(
-                "mandatory_coverage_reduced_for_budget", False)),
-            "gain_passes_completed": joint.get("coarse_gain_passes_completed"),
-            "medium_row_count": len(joint.get("medium_rows", []) or []),
-            "trust_row_count": len(joint.get("trust_rows", []) or []),
-            "runtime_minutes": joint.get("runtime_minutes_after_search"),
-        }
-        if joint.get("enabled", True) and joint.get("status") not in (
-                "disabled", "not_run"):
-            if not joint_health["coverage_complete"]:
-                concerns.append(
-                    "the joint search measured %s of %s duration strata; its "
-                    "winner rests on partial coverage"
-                    % (coverage.get("measured_strata"),
-                       coverage.get("expected_strata")))
-            if joint_health["mandatory_coverage_reduced_for_budget"]:
-                concerns.append(
-                    "the joint search granted %s of %s mandatory readout-power "
-                    "passes to protect its reserved refinement budget"
-                    % (joint_health["mandatory_duration_passes"],
-                       joint_health["mandatory_duration_passes_requested"]))
-            if not joint_health["medium_row_count"]:
-                concerns.append(
-                    "the joint search ran out of budget before its held-out "
-                    "medium replay; downstream stages were seeded from coarse "
-                    "shared-ground rows only")
-            if not joint_health["trust_row_count"]:
-                concerns.append(
-                    "the joint search ran out of budget before its trust-region "
-                    "refinement")
-
-        portfolio = self.data.get("duration_portfolio", {})
-        portfolio = portfolio if isinstance(portfolio, dict) else {}
-        entries = portfolio.get("entries", []) if portfolio.get(
-            "enabled", False) else []
-        basis_counts, degraded_lengths, unconverged_lengths = {}, [], []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            selected = entry.get("selected")
-            basis = (str(selected.get("portfolio_fidelity_selection_basis",
-                                      "unknown"))
-                     if isinstance(selected, dict) else "no_reportable_tuple")
-            basis_counts[basis] = basis_counts.get(basis, 0) + 1
-            search = entry.get("search", {})
-            if not isinstance(search, dict):
-                continue
-            if bool(search.get("readout_seeded_from_proposals_only", False)):
-                degraded_lengths.append(float(entry.get("read_length_us", np.nan)))
-            zoom = search.get("deterministic_gain_zoom", {})
-            if (isinstance(zoom, dict)
-                    and not bool(zoom.get("locally_converged", False))):
-                unconverged_lengths.append(
-                    float(entry.get("read_length_us", np.nan)))
-        portfolio_health = {
-            "enabled": bool(portfolio.get("enabled", False)),
-            "readout_length_mode": portfolio.get("readout_length_mode"),
-            "requested_length_count": portfolio.get("requested_length_count"),
-            "reportable_length_count": portfolio.get("reportable_length_count"),
-            "equal_refinement_budget": portfolio.get("equal_refinement_budget"),
-            "selection_basis_counts": basis_counts,
-            "lengths_seeded_without_held_out_readout": degraded_lengths,
-            "lengths_without_local_gain_convergence": unconverged_lengths,
-            "failure_count": len(portfolio.get("failures", []) or []),
-        }
-        if portfolio_health["enabled"]:
-            fallback = int(basis_counts.get("gain_refinement_fallback", 0))
-            partial = int(basis_counts.get(
-                "partial_duration_interleaved_exact_replay", 0))
-            missing = int(basis_counts.get("no_reportable_tuple", 0))
-            if fallback or partial:
-                concerns.append(
-                    "%d readout length(s) were decided without a complete "
-                    "interleaved exact replay (%d partial, %d fallback)"
-                    % (fallback + partial, partial, fallback))
-            if missing:
-                concerns.append(
-                    "%d readout length(s) produced no reportable tuple" % missing)
-            if degraded_lengths:
-                concerns.append(
-                    "%d readout length(s) had no held-out readout basin to seed "
-                    "from and used coarse proposals only" % len(degraded_lengths))
-            if unconverged_lengths:
-                concerns.append(
-                    "%d readout length(s) ended the gain zoom on an axis edge, so "
-                    "their gains are not locally converged"
-                    % len(unconverged_lengths))
-
-        discovery = {
-            "resonator": bool(self._discovery_status.get("resonator", False)),
-            "spectroscopy": bool(
-                self._discovery_status.get("spectroscopy", False)),
-        }
-        if not discovery["resonator"]:
-            concerns.append("resonator discovery was not independently confirmed")
-        if not discovery["spectroscopy"]:
-            concerns.append("qubit spectroscopy was not independently confirmed")
-        if self._interrupted:
-            concerns.append("the operator interrupted the run")
-
-        return {
-            "degraded": bool(concerns),
-            "concerns": concerns,
-            "warned_stages": failed_stages,
-            "reset": {
-                "mode": reset_mode,
-                "feedback_disqualified": bool(
-                    reset.get("feedback_disqualified", False)),
-                "profile_count": reset.get("profile_count"),
-                "fallback_relax_delay_us": relax_delay,
-                "res_phase_calibration": reset.get("res_phase_calibration"),
-                "thermalization": dict(self._thermalization),
-            },
-            "discovery": discovery,
-            "joint_search": joint_health,
-            "duration_portfolio": portfolio_health,
-            "runtime_minutes": self._runtime_minutes(),
-            "estimated_repetitions": int(
-                self.data.get("planned_repetitions", 0) or 0),
-        }
-
     def _finalize(self, final):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.data["time"] = now
         self.data["working"] = dict(self.working)
         self.data["candidate_count"] = len(self._archive)
         self.data["interrupted"] = bool(self._interrupted)
-        self.data["run_health"] = self._run_health()
         if self._archive:
             observed = max(self._archive, key=lambda row: float(
                 row.get("fidelity", -np.inf)))
@@ -14513,8 +14408,7 @@ class BasicAutoTuner(ExperimentClass):
             "automatic_config_write_allowed",
             "control_branch_qualification", "pre_expensive_gate",
             "expensive_search_skipped", "expensive_search_skip_reason",
-            "diagnostic_bundle", "run_health", "planned_repetitions",
-            "planned_passive_idle_hours",
+            "diagnostic_bundle",
         )
         summary = {key: data.get(key) for key in keys if key in data}
         portfolio = data.get("duration_portfolio", {})
@@ -14832,13 +14726,13 @@ class BasicAutoTuner(ExperimentClass):
                 entry.get("read_length_us", np.nan)
                 for entry in portfolio_entries], dtype=float)
             fidelity = np.asarray([
-                (entry.get("selected") or {}).get("fidelity", np.nan)
+                entry.get("selected", {}).get("fidelity", np.nan)
                 for entry in portfolio_entries], dtype=float)
             fidelity_se = np.asarray([
-                (entry.get("selected") or {}).get("fidelity_se", np.nan)
+                entry.get("selected", {}).get("fidelity_se", np.nan)
                 for entry in portfolio_entries], dtype=float)
             third_ucb = np.asarray([
-                (entry.get("selected") or {}).get(
+                entry.get("selected", {}).get(
                     "third_cluster_fraction_ucb_95", np.nan)
                 for entry in portfolio_entries], dtype=float)
             colors = [{"SAFE": "tab:green", "UNSAFE": "tab:red"}.get(
