@@ -24,14 +24,14 @@ RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
-PASSIVE_RELAX_MIN_US = 1000.0
+THERMALIZATION_US = 25.0
+PASSIVE_RESET_US = 1000.0
 
 P_SS_CAL = {
     "run": True,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
-    "relax_delay_us": 1000.0,
 }
 
 P_T1 = {
@@ -40,7 +40,6 @@ P_T1 = {
     "t_min_us": 1.0,
     "t_max_us": 300.0,
     "t_points": 61,
-    "relax_delay_us": 25.0,
 }
 
 P_T1_FLUX_RAMP = {
@@ -50,7 +49,6 @@ P_T1_FLUX_RAMP = {
     "t_min_us": 1.0,
     "t_max_us": 300.0,
     "t_points": 61,
-    "relax_delay_us": 25.0,
 }
 
 
@@ -58,7 +56,6 @@ def _base_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["shots"] = int(p["shots"])
     cfg["reps"] = int(p["shots"])
-    cfg["relax_delay"] = float(p.get("relax_delay_us", 25.0))
     cfg["ff_gain"] = int(FF_HOLD_GAIN)
     cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
@@ -71,14 +68,11 @@ def _base_cfg(p, extra=None):
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
+        cfg["reset_thermalization_us"] = THERMALIZATION_US
     if extra:
         cfg.update(extra)
-    if str(cfg.get("reset_mode")) != "feedback" and float(cfg["relax_delay"]) < PASSIVE_RELAX_MIN_US:
-        print(f"[reset] {cfg.get('reset_mode')} reset with relax_delay="
-              f"{float(cfg['relax_delay']):.0f}us is << T1 and would NOT reset the qubit; "
-              f"bumping to {PASSIVE_RELAX_MIN_US:.0f}us. Enable feedback (run the reset probe) "
-              f"or raise the passive relax explicitly if T1 is long.")
-        cfg["relax_delay"] = PASSIVE_RELAX_MIN_US
+    cfg["relax_delay"] = (THERMALIZATION_US if str(cfg.get("reset_mode")) == "feedback"
+                          else PASSIVE_RESET_US)
     return cfg
 
 
@@ -135,6 +129,8 @@ def main():
                                  outer_folder=outer_folder)
         if rec is None:
             RESET_MODE = "passive"
+            print(f"[reset] no feedback discrimination this session -> passive reset "
+                  f"({PASSIVE_RESET_US:.0f}us). Verify it exceeds ~5x T1.")
         else:
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
