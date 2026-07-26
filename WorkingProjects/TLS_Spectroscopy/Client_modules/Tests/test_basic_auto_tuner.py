@@ -5304,6 +5304,58 @@ def test_joint_budget_reduces_mandatory_passes_instead_of_starving_refinement():
     assert {float(row["sigma"]) for row in rows} == {0.10, 0.25}
 
 
+def test_reset_phase_alignment_runs_once_and_never_writes_initialize_py():
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import reset_phase
+
+    calls = []
+
+    def fake_calibrate(soc, soccfg, base_cfg, path, outer_folder, **kwargs):
+        calls.append({"cfg": dict(base_cfg), "kwargs": dict(kwargs)})
+        return 42.5
+
+    original = reset_phase.calibrate_res_phase
+    reset_phase.calibrate_res_phase = fake_calibrate
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS),
+            )
+            tuner.input_cfg["res_phase"] = 135.0
+            first = tuner._calibrate_reset_phase("bootstrap readout")
+            second = tuner._calibrate_reset_phase("rough coherent pulse")
+
+        assert first == 42.5
+        assert second is None
+        assert len(calls) == 1
+        assert calls[0]["kwargs"]["apply_config"] is False
+        assert calls[0]["cfg"]["qubit_gain"] == int(
+            round(tuner.working["qubit_pi_gain"]))
+        assert tuner.input_cfg["res_phase"] == 42.5
+        record = tuner.data["reset"]["res_phase_calibration"]
+        assert record["applied"] is True
+        assert record["res_phase_before_deg"] == 135.0
+        assert record["res_phase_shift_deg"] == 42.5 - 135.0
+        assert record["writes_initialize_py"] is False
+
+        def failing(*args, **kwargs):
+            raise RuntimeError("probe exploded")
+
+        reset_phase.calibrate_res_phase = failing
+        with tempfile.TemporaryDirectory() as folder:
+            broken = VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS),
+            )
+            broken.input_cfg["res_phase"] = 135.0
+            assert broken._calibrate_reset_phase("bootstrap readout") is None
+            assert broken.input_cfg["res_phase"] == 135.0
+            assert broken.data["reset"]["res_phase_calibration"][
+                "applied"] is False
+    finally:
+        reset_phase.calibrate_res_phase = original
+
+
 def test_cost_model_counts_the_joint_search_and_ignores_unreachable_stages():
     def estimate(mutate=None):
         params = copy.deepcopy(FAST_PARAMS)
@@ -7570,6 +7622,7 @@ def main():
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
         test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value,
         test_joint_budget_reduces_mandatory_passes_instead_of_starving_refinement,
+        test_reset_phase_alignment_runs_once_and_never_writes_initialize_py,
         test_cost_model_counts_the_joint_search_and_ignores_unreachable_stages,
         test_run_health_flags_degraded_coverage_seeding_and_passive_reset,
         test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,

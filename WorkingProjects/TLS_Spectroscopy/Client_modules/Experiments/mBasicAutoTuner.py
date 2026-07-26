@@ -120,6 +120,11 @@ BASIC_DEFAULTS = {
         "enabled": True, "probe_shots": 2000, "max_iters": 3,
         "min_activation_fidelity": 0.75,
         "min_raw_assignment_fidelity": 0.80,
+        "res_phase_calibration": {
+            "enabled": True, "phase_step_deg": 15.0,
+            "sweep_shots": 800, "check_shots": 3000,
+            "relax_delay_us": 500.0,
+        },
         # Clear residual measurement photons before every calibrated control pulse.
         # Kept explicit in the saved reset record even though the shared primitive
         # also fails safe to this value for non-tuner callers.
@@ -1897,6 +1902,7 @@ class BasicAutoTuner(ExperimentClass):
         self._feedback_profiles_suspended = False
         self._reset_unavailable = False
         self._feedback_disqualified = False
+        self._res_phase_calibrated = False
         self._run_started_monotonic = None
         self._joint_search_started_monotonic = None
         self._final_replays = []
@@ -2291,6 +2297,77 @@ class BasicAutoTuner(ExperimentClass):
                 "(95%% lower bound %.3f)" % (loss, loss_lcb))
         return False
 
+    def _calibrate_reset_phase(self, reason):
+        settings = self.params["reset"].get("res_phase_calibration", {})
+        if not isinstance(settings, dict) or not bool(settings.get("enabled", True)):
+            return None
+        if self._res_phase_calibrated:
+            return None
+        self._res_phase_calibrated = True
+        from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import (
+            calibrate_res_phase,
+        )
+        previous = float(self.input_cfg.get("res_phase", 0.0))
+        probe_cfg = self._cfg_for(self.working, reset_mode="passive")
+        record = {
+            "attempted": True, "reason": str(reason),
+            "res_phase_before_deg": previous,
+            "candidate": {key: self.working[key] for key in self.initial},
+            "writes_initialize_py": False,
+        }
+        try:
+            def run_calibration():
+                return calibrate_res_phase(
+                    self.soc, self.soccfg, probe_cfg, self.path,
+                    self.outerFolder, apply_config=False,
+                    sweep_shots=int(settings.get("sweep_shots", 800)),
+                    check_shots=int(settings.get("check_shots", 3000)),
+                    phase_step_deg=float(settings.get("phase_step_deg", 15.0)),
+                    relax_delay_us=float(settings.get("relax_delay_us", 500.0)))
+
+            if self._detailed_console():
+                best = run_calibration()
+            else:
+                with redirect_stdout(io.StringIO()):
+                    best = run_calibration()
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:
+            record.update({
+                "applied": False,
+                "failure": "%s: %s" % (type(exc).__name__, exc)})
+            self.data["reset"]["res_phase_calibration"] = record
+            self._log("reset", "WARN",
+                      "readout-phase alignment failed before %s (%s: %s); keeping "
+                      "the configured res_phase" % (reason, type(exc).__name__, exc))
+            return None
+        try:
+            best = float(best)
+        except (TypeError, ValueError):
+            best = float("nan")
+        if not np.isfinite(best):
+            record.update({
+                "applied": False,
+                "failure": "no aligned readout phase was returned"})
+            self.data["reset"]["res_phase_calibration"] = record
+            self._log("reset", "WARN",
+                      "readout-phase alignment produced no usable angle before %s; "
+                      "keeping the configured res_phase" % reason)
+            return None
+        self.input_cfg["res_phase"] = best
+        record.update({
+            "applied": True, "res_phase_deg": best,
+            "res_phase_shift_deg": float(best - previous),
+            "aligned_pulse_signature": self._pulse_signature(self.working),
+        })
+        self.data["reset"]["res_phase_calibration"] = record
+        self._log(
+            "reset", "OK",
+            "aligned the readout phase for tProc discrimination: res_phase "
+            "%.1f -> %.1f deg (run-scoped; initialize.py untouched, step-5 "
+            "fidelity is invariant to this rotation)" % (previous, best))
+        return best
+
     def _try_activate_feedback(self, reason):
         """Freshly calibrate feedback for the exact current readout/control tuple."""
         settings = self.params["reset"]
@@ -2303,6 +2380,7 @@ class BasicAutoTuner(ExperimentClass):
             self.data["reset"]["events"].append({
                 "mode": "passive", "reason": "feedback path unavailable"})
             return False
+        self._calibrate_reset_phase(reason)
         # A weak starting tuple must never gate either tuning or the attempt to make
         # tuning faster.  The end-to-end reset probe below is the authority: if the
         # rough pulse/readout cannot support reset it rejects the profile safely, but
@@ -13964,6 +14042,7 @@ class BasicAutoTuner(ExperimentClass):
                     reset.get("feedback_disqualified", False)),
                 "profile_count": reset.get("profile_count"),
                 "fallback_relax_delay_us": relax_delay,
+                "res_phase_calibration": reset.get("res_phase_calibration"),
             },
             "discovery": discovery,
             "joint_search": joint_health,
