@@ -25,6 +25,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mBasicAutoTuner
     BASIC_DEFAULTS,
     BasicAutoTuner,
     TUNED_KEYS,
+    configure_gain_only_search,
     configure_readout_length_mode,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updater
@@ -33,10 +34,11 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-# True: optimize and report one full calibration for every integer readout duration
-# from 1 through 20 us. False: keep the readout duration fixed at the exact
-# BaseConfig["read_length"] loaded from initialize.py while still optimizing readout
-# frequency/gain and the complete X180 frequency/gain/duration pulse family.
+# True: optimize and report one calibration for every integer readout duration from
+# 1 through 20 us. False: keep the readout duration fixed at the exact
+# BaseConfig["read_length"] loaded from initialize.py.  In both modes the Gaussian
+# sigma is replayed from initialize.py and only readout gain and X180 gain, plus the
+# local readout/qubit frequencies, are searched.
 RUN_1_TO_20_US_MODE = True
 
 # Portfolio rows are alternatives for an operator, not one automatically selected
@@ -45,10 +47,13 @@ APPLY_CONFIG = False
 
 # This returns a private deep copy so mode selection cannot mutate module defaults or
 # leak into a second experiment in the same Python process.
-P_BASIC = configure_readout_length_mode(
-    BASIC_DEFAULTS,
-    BaseConfig["read_length"],
-    scan_1_to_20_us=RUN_1_TO_20_US_MODE,
+P_BASIC = configure_gain_only_search(
+    configure_readout_length_mode(
+        BASIC_DEFAULTS,
+        BaseConfig["read_length"],
+        scan_1_to_20_us=RUN_1_TO_20_US_MODE,
+    ),
+    BaseConfig["sigma"],
 )
 
 # Tests and interactive runners may replace ``BasicAutoTuner`` with an acquisition

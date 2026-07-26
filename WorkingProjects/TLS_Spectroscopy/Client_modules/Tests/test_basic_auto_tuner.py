@@ -668,8 +668,7 @@ def test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value():
             raise AssertionError("invalid fixed readout length was accepted")
 
 
-def test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners():
-    """A coarse 5000/10060 winner is a center, never the final gain grid."""
+def test_portfolio_gain_refinement_tests_nonround_neighbors_and_pins_sigma():
     params = copy.deepcopy(FAST_PARAMS)
     params["duration_portfolio"] = {
         "enabled": True, "deterministic_gain_refinement": True,
@@ -696,60 +695,72 @@ def test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners():
     assert any(value not in (4000, 5000, 6000) for value in read_axis)
     assert 10060 in qubit_axis and len(qubit_axis) == 5
     assert any(value not in (9054, 10060, 11066) for value in qubit_axis)
-    partners = {(round(float(row["sigma"]), 6), int(row["qubit_pi_gain"]))
-                for row in candidates}
-    assert any(np.isclose(sigma, 0.30) and 4500 <= gain <= 5600
-               for sigma, gain in partners)
-    assert any(np.isclose(sigma, 0.075) and 18000 <= gain <= 22500
-               for sigma, gain in partners)
+    assert {round(float(row["sigma"]), 9) for row in candidates} == {0.15}
+    assert "constant_area_partners" not in record
     assert len(zoom) == 9
     assert list(zoom_record["read_gain_axis_dac"]) == [4800, 5000, 5200]
     assert 10060 in list(zoom_record["qubit_gain_axis_dac"])
 
 
-def test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress():
-    """A longer clean pulse is optional; a resolved fidelity loss is ineligible."""
+def test_gain_only_mode_pins_sigma_and_removes_the_pulse_family_machinery():
+    base = T.configure_readout_length_mode(
+        T.BASIC_DEFAULTS, 10.0, scan_1_to_20_us=True)
+    original = copy.deepcopy(T.BASIC_DEFAULTS)
+    configured = T.configure_gain_only_search(base, 0.25)
+    assert configured["joint_search"]["sigma_values_us"] == [0.25]
+    assert configured["pulse_duration"]["enabled"] is False
+    assert configured["latency"]["min_sigma_us"] == 0.25
+    assert configured["latency"]["max_sigma_us"] == 0.25
+    portfolio = configured["duration_portfolio"]
+    assert portfolio["qubit_sigma_us"] == 0.25
+    assert portfolio["constant_area_sigma_factors"] == []
+    assert portfolio["pulse_family_aae_enabled"] is False
+    assert portfolio["balanced_row_enabled"] is False
+    assert portfolio["balanced_screen_candidates_per_length"] == 0
+    assert portfolio["read_lengths_us"] == [float(v) for v in range(1, 21)]
+    assert T.BASIC_DEFAULTS == original
+    assert not hasattr(T.BasicAutoTuner, "_stage_portfolio_pulse_family_aae")
+    for invalid in (0.0, -1.0, float("nan"), "not-a-sigma"):
+        try:
+            T.configure_gain_only_search(base, invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid sigma was accepted")
+
+
+def test_preflight_rejects_a_passive_delay_that_is_short_against_t1():
     params = copy.deepcopy(FAST_PARAMS)
-    params["duration_portfolio"] = {
-        "enabled": True, "balanced_max_fidelity_loss": 0.010,
-        "balanced_confidence_sigma": 1.96,
-    }
-    pairing = ["balanced-fixture-%d" % index for index in range(8)]
-
-    def evidence(candidate, fidelity, risk, status="SAFE"):
-        row = T._with_candidate(candidate)
-        values = np.full(8, float(fidelity))
-        row.update({
-            "fidelity": float(fidelity), "fidelity_se": 0.0005,
-            "fidelity_lcb_95": float(fidelity) - 0.00098,
-            "block_fidelities": values,
-            "block_fidelity_ses": np.full(8, 0.001),
-            "block_pairing_ids": list(pairing),
-            "portfolio_leakage_risk_ucb": float(risk),
-            "portfolio_safety_status": status,
-        })
-        return row
-
     with tempfile.TemporaryDirectory() as folder:
+        cfg = _base_config()
+        cfg.update({"relax_delay": 1000.0, "qubit_t1_us": 732.0})
         tuner = VirtualBasicAutoTuner(
             soc=None, soccfg=None, path="q4", outerFolder=folder,
-            cfg=_base_config(), params=params)
-        fast = evidence(T._with_candidate(
-            tuner.working, read_length=14.0, sigma=0.15,
-            qubit_pi_gain=10060), 0.930, 0.040)
-        longer = evidence(T._with_candidate(
-            fast, sigma=0.30, qubit_pi_gain=5030), 0.928, 0.006)
-        too_low = evidence(T._with_candidate(
-            fast, sigma=0.50, qubit_pi_gain=3018), 0.900, 0.002)
-        ordered = tuner._portfolio_balanced_order(
-            [fast, longer, too_low], fast)
+            cfg=cfg, params=copy.deepcopy(params))
+        try:
+            tuner._preflight()
+        except ValueError as exc:
+            assert "qubit_t1_us" in str(exc)
+        else:
+            raise AssertionError("a 1.4x T1 passive delay was accepted")
 
-    assert T._candidate_key(ordered[0]) == T._candidate_key(longer)
-    assert any(T._candidate_key(row) == T._candidate_key(fast)
-               for row in ordered)
-    assert not any(T._candidate_key(row) == T._candidate_key(too_low)
-                   for row in ordered)
-    assert ordered[0]["balanced_noninferiority"]["eligible"] is True
+        safe_cfg = _base_config()
+        safe_cfg.update({"relax_delay": 4000.0, "qubit_t1_us": 732.0})
+        safe = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=safe_cfg, params=copy.deepcopy(params))
+        safe._preflight()
+        assert safe.data["thermalization"]["verified"] is True
+
+        unknown_cfg = _base_config()
+        unknown_cfg["relax_delay"] = 1000.0
+        unknown = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=unknown_cfg, params=copy.deepcopy(params))
+        unknown._preflight()
+        assert unknown.data["thermalization"]["verified"] is False
+        assert any("never checked against a measured T1" in value
+                   for value in unknown._run_health()["concerns"])
 
 
 def test_portfolio_exact_replay_interleaves_all_readout_lengths():
@@ -6976,7 +6987,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "run-health-v13"
+    assert T.BASIC_AUTOTUNER_REVISION == "gain-only-search-v14"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7625,8 +7636,9 @@ def main():
         test_reset_phase_alignment_runs_once_and_never_writes_initialize_py,
         test_cost_model_counts_the_joint_search_and_ignores_unreachable_stages,
         test_run_health_flags_degraded_coverage_seeding_and_passive_reset,
-        test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
-        test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,
+        test_portfolio_gain_refinement_tests_nonround_neighbors_and_pins_sigma,
+        test_gain_only_mode_pins_sigma_and_removes_the_pulse_family_machinery,
+        test_preflight_rejects_a_passive_delay_that_is_short_against_t1,
         test_portfolio_exact_replay_interleaves_all_readout_lengths,
         test_portfolio_rank_uses_fidelity_only_and_never_leakage,
         test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity,
