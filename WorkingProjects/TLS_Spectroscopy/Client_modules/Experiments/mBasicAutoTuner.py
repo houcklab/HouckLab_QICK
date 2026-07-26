@@ -77,7 +77,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "diagnostic-bundle-v9"
+BASIC_AUTOTUNER_REVISION = "reset-qualified-portfolio-v10"
 
 
 BASIC_DEFAULTS = {
@@ -128,6 +128,21 @@ BASIC_DEFAULTS = {
         "profile_shots": 650,
         "profile_min_raw_fidelity": 0.72,
         "profile_validate": True,
+        # The residual-population reset probe is necessary but not authoritative:
+        # a threshold/path error can pass that probe while destroying the actual
+        # TLS step-5 g/e clouds.  Every profile must therefore reproduce the same
+        # complete pulse tuple against passive preparation before it is allowed to
+        # affect an optimizer score.
+        "exact_qualification_shots": 650,
+        "exact_qualification_blocks": 2,
+        "exact_min_feedback_fidelity": 0.70,
+        "exact_max_fidelity_loss": 0.030,
+        "exact_max_block_loss": 0.080,
+        "exact_min_separation_ratio": 0.70,
+        # A large, statistically resolved passive-to-feedback collapse is a path
+        # mismatch, not a profile-specific fluctuation.  Disable feedback for the
+        # remainder of the run instead of repeatedly poisoning later durations.
+        "exact_catastrophic_loss": 0.10,
     },
     "baseline": {"shots": 800, "blocks": 2},
     "resonator": {
@@ -240,6 +255,10 @@ BASIC_DEFAULTS = {
         "branch_compare_shots": 900, "branch_compare_blocks": 3,
         "max_rabi_frequency_shift_mhz": 2.0,
         "qualified_basin_radius_mhz": 2.0,
+        # A branch comparison made with a collapsed discriminator must not erase a
+        # strong passive bootstrap/Rabi basin over a millipercent coin-flip tie.
+        "minimum_informative_branch_fidelity_lcb": 0.60,
+        "minimum_informative_branch_separation_sigma": 0.75,
         # Early readout is only a bootstrap discriminator.  It may have much lower
         # contrast than the later optimized readout, but must still resolve enough
         # population to test odd/even action rather than confuse readout quality with
@@ -1762,7 +1781,9 @@ class BasicAutoTuner(ExperimentClass):
         self._rough_control_candidates = []
         self._qualified_control_candidates = []
         self._qualified_transition_frequency = None
+        self._qualified_transition_frequencies = []
         self._qualified_control_key = None
+        self._bootstrap_control_candidate = None
         self._interrupted = False
         self._final_replay_completed = False
         self._final_replay_kind = None
@@ -1778,12 +1799,14 @@ class BasicAutoTuner(ExperimentClass):
         self._latency_reference_key = None
         self._confirmation_cohort_serial = 0
         self._reset_runtime = {"reset_mode": "passive"}
+        self._last_compiled_reset_runtime = {"reset_mode": "passive"}
         self._reset_readout_key = None
         self._reset_profiles = {}
         self._reset_fixed_readout_gain = None
         self._reset_fixed_control = None
         self._feedback_profiles_suspended = False
         self._reset_unavailable = False
+        self._feedback_disqualified = False
         self._run_started_monotonic = None
         self._joint_search_started_monotonic = None
         self._final_replays = []
@@ -1903,6 +1926,8 @@ class BasicAutoTuner(ExperimentClass):
             "reset": {
                 "requested": bool(self.params["reset"].get("enabled", True)),
                 "mode": "passive", "fresh": False,
+                "authority": "exact_same_tuple_passive_feedback_step5_ab",
+                "feedback_disqualified": False,
                 "readout_key": None, "events": [],
                 "fallback_relax_delay_us": float(
                     self.input_cfg.get("relax_delay", np.nan)),
@@ -2028,10 +2053,153 @@ class BasicAutoTuner(ExperimentClass):
                      "raw_assignment_fidelity"),
                  "validation": record.get("validation")})
 
+    def _qualify_feedback_runtime(self, candidate, runtime, reason):
+        """Require exact step-5 equivalence before feedback can score a tuple.
+
+        The reset probe observes residual reset-readout outcomes.  It does not prove
+        that the complete ground/excited preparation and scoring path is unchanged.
+        This randomized passive/feedback A/B replay is therefore the authority for
+        every threshold profile used by the tuner.
+        """
+        settings = self.params["reset"]
+        shots = max(int(settings.get("exact_qualification_shots", 650)), 1)
+        blocks = max(int(settings.get("exact_qualification_blocks", 2)), 1)
+        profile_key = self._reset_profile_signature(candidate)
+        runtime = copy.deepcopy(runtime)
+        runtime["reset_profile_key"] = profile_key
+        self._reset_profiles[profile_key] = copy.deepcopy(runtime)
+        previous_runtime = copy.deepcopy(self._reset_runtime)
+        previous_suspended = bool(self._feedback_profiles_suspended)
+        passive_rows, feedback_rows, failures = [], [], []
+        try:
+            # Reverse acquisition order every block so slow drift cannot be assigned
+            # systematically to one reset mode.  GE/EG also alternates by block.
+            for block in range(blocks):
+                modes = ("passive", "feedback") if block % 2 == 0 else (
+                    "feedback", "passive")
+                for mode in modes:
+                    self._reset_runtime = copy.deepcopy(runtime)
+                    self._feedback_profiles_suspended = mode == "passive"
+                    try:
+                        row = self._measure_candidate(
+                            candidate, shots,
+                            "feedback exact A/B %s block %d after %s" % (
+                                mode, block + 1, reason),
+                            state_order="ge" if block % 2 == 0 else "eg",
+                            archive=False)
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception as exc:
+                        failures.append({
+                            "mode": mode, "block": int(block + 1),
+                            "error": "%s: %s" % (type(exc).__name__, exc),
+                        })
+                    else:
+                        (passive_rows if mode == "passive" else
+                         feedback_rows).append(row)
+        finally:
+            self._reset_runtime = previous_runtime
+            self._feedback_profiles_suspended = previous_suspended
+
+        passive = (self._aggregate(candidate, passive_rows,
+                                   "feedback exact A/B passive")
+                   if passive_rows else None)
+        feedback = (self._aggregate(candidate, feedback_rows,
+                                    "feedback exact A/B feedback")
+                    if feedback_rows else None)
+        complete = bool(
+            not failures and len(passive_rows) == blocks
+            and len(feedback_rows) == blocks)
+        passive_fidelity = float(
+            passive.get("fidelity", np.nan) if passive else np.nan)
+        feedback_fidelity = float(
+            feedback.get("fidelity", np.nan) if feedback else np.nan)
+        passive_se = float(
+            passive.get("fidelity_se", np.inf) if passive else np.inf)
+        feedback_se = float(
+            feedback.get("fidelity_se", np.inf) if feedback else np.inf)
+        difference_se = float(np.hypot(passive_se, feedback_se))
+        loss = passive_fidelity - feedback_fidelity
+        loss_ucb = float(loss + 1.96 * difference_se)
+        loss_lcb = float(loss - 1.96 * difference_se)
+        paired_losses = [
+            float(passive_rows[index]["fidelity"]
+                  - feedback_rows[index]["fidelity"])
+            for index in range(min(len(passive_rows), len(feedback_rows)))]
+        worst_block_loss = float(max(paired_losses, default=np.inf))
+        passive_sep = float(passive.get("sep_sigma", np.nan)
+                            if passive else np.nan)
+        feedback_sep = float(feedback.get("sep_sigma", np.nan)
+                             if feedback else np.nan)
+        separation_ratio = float(
+            feedback_sep / passive_sep
+            if np.isfinite(passive_sep) and passive_sep > 1e-9 else np.nan)
+        feedback_lcb = float(feedback_fidelity - 1.96 * feedback_se)
+        passed = bool(
+            complete
+            and np.all(np.isfinite([
+                feedback_lcb, loss_ucb, worst_block_loss, separation_ratio]))
+            and feedback_lcb >= float(settings.get(
+                "exact_min_feedback_fidelity", 0.70))
+            and loss_ucb <= float(settings.get(
+                "exact_max_fidelity_loss", 0.030))
+            and worst_block_loss <= float(settings.get(
+                "exact_max_block_loss", 0.080))
+            and separation_ratio >= float(settings.get(
+                "exact_min_separation_ratio", 0.70)))
+        catastrophic = bool(
+            complete
+            and np.isfinite(loss_lcb)
+            and np.isfinite(passive_fidelity)
+            and passive_fidelity >= float(settings.get(
+                "exact_min_feedback_fidelity", 0.70))
+            and loss_lcb >= float(settings.get(
+                "exact_catastrophic_loss", 0.10)))
+        qualification = {
+            "reason": str(reason), "profile_key": list(profile_key),
+            "candidate": {key: candidate[key] for key in self.initial},
+            "shots_per_block": shots, "requested_blocks": blocks,
+            "complete": complete, "passed": passed,
+            "catastrophic_path_mismatch": catastrophic,
+            "passive": copy.deepcopy(passive),
+            "feedback": copy.deepcopy(feedback),
+            "fidelity_loss": loss, "fidelity_loss_se": difference_se,
+            "fidelity_loss_lcb_95": loss_lcb,
+            "fidelity_loss_ucb_95": loss_ucb,
+            "worst_paired_block_loss": worst_block_loss,
+            "separation_ratio": separation_ratio,
+            "failures": failures,
+        }
+        self.data["reset"].setdefault(
+            "exact_step5_qualifications", []).append(qualification)
+        if passed:
+            self._reset_runtime = copy.deepcopy(runtime)
+            self._feedback_profiles_suspended = False
+            self._reset_profiles[profile_key] = copy.deepcopy(runtime)
+            return True
+
+        self._reset_profiles.pop(profile_key, None)
+        self._reset_runtime = {"reset_mode": "passive"}
+        self._feedback_profiles_suspended = True
+        self.data["reset"].setdefault("failed_profiles", []).append({
+            "profile_key": list(profile_key), "reason": str(reason),
+            "failure": "exact step-5 passive/feedback equivalence failed",
+            "qualification": copy.deepcopy(qualification),
+        })
+        if catastrophic:
+            self._feedback_disqualified = True
+            self._reset_profiles.clear()
+            self.data["reset"]["feedback_disqualified"] = True
+            self.data["reset"]["feedback_disqualification_reason"] = (
+                "exact same-tuple feedback replay degraded fidelity by %.3f "
+                "(95%% lower bound %.3f)" % (loss, loss_lcb))
+        return False
+
     def _try_activate_feedback(self, reason):
         """Freshly calibrate feedback for the exact current readout/control tuple."""
         settings = self.params["reset"]
-        if not bool(settings.get("enabled", True)) or self._reset_unavailable:
+        if (not bool(settings.get("enabled", True)) or self._reset_unavailable
+                or self._feedback_disqualified):
             return False
         if self.soccfg is None or not active_reset.active_reset_supported(
                 self.soccfg, self.input_cfg["ro_chs"][0]):
@@ -2113,6 +2281,12 @@ class BasicAutoTuner(ExperimentClass):
         }
         self._reset_profiles[profile_key] = copy.deepcopy(self._reset_runtime)
         self._feedback_profiles_suspended = False
+        if not self._qualify_feedback_runtime(
+                self.working, self._reset_runtime, reason):
+            self._deactivate_feedback(
+                "exact passive/feedback step-5 qualification failed after %s"
+                % reason)
+            return False
         self._reset_readout_key = self._reset_readout_signature(self.working)
         event = {
             "mode": "feedback", "reason": str(reason),
@@ -2154,12 +2328,14 @@ class BasicAutoTuner(ExperimentClass):
         """
         settings = self.params["reset"]
         key = self._reset_profile_signature(candidate)
+        if (not bool(settings.get("enabled", True))
+                or self._reset_unavailable or self._feedback_disqualified):
+            return False
         if key in self._reset_profiles:
             self._reset_runtime = copy.deepcopy(self._reset_profiles[key])
             self._feedback_profiles_suspended = False
             return True
-        if (not bool(settings.get("enabled", True)) or self._reset_unavailable
-                or self.soccfg is None or not active_reset.active_reset_supported(
+        if (self.soccfg is None or not active_reset.active_reset_supported(
                     self.soccfg, self.input_cfg["ro_chs"][0])):
             return False
         if self._reset_fixed_readout_gain is None or self._reset_fixed_control is None:
@@ -2225,6 +2401,8 @@ class BasicAutoTuner(ExperimentClass):
         self._reset_profiles[key] = copy.deepcopy(runtime)
         self._reset_runtime = copy.deepcopy(runtime)
         self._feedback_profiles_suspended = False
+        if not self._qualify_feedback_runtime(probe_candidate, runtime, reason):
+            return False
         event = {
             "mode": "feedback_profile", "reason": str(reason),
             "profile_key": list(key),
@@ -2373,6 +2551,19 @@ class BasicAutoTuner(ExperimentClass):
         cfg["use_switch"] = False
         cfg["switch_triggered"] = False
         cfg.update(extra)
+        # Diagnostics must describe the reset mode compiled into this acquisition,
+        # not the tuner's global desired mode.  In particular an unmatched profile
+        # deliberately compiles passive even while another feedback profile is live.
+        reset_keys = {
+            key for key in cfg
+            if str(key).startswith("reset_")
+        }
+        reset_keys.add("reset_mode")
+        if "active_reset_post_measure_delay_us" in cfg:
+            reset_keys.add("active_reset_post_measure_delay_us")
+        self._last_compiled_reset_runtime = {
+            key: copy.deepcopy(cfg[key]) for key in reset_keys if key in cfg}
+        self._last_compiled_reset_runtime.setdefault("reset_mode", "passive")
         return cfg
 
     def _detailed_console(self):
@@ -2432,6 +2623,9 @@ class BasicAutoTuner(ExperimentClass):
         elif name == "reset_after_bootstrap":
             if bool(result):
                 print("  Active reset is ready.")
+            elif self._feedback_disqualified:
+                print("  Active reset did not preserve the calibration; using passive "
+                      "relaxation.")
             else:
                 print("  Active reset was unavailable; using passive relaxation.")
         elif name in ("leakage", "operational_leakage"):
@@ -2632,7 +2826,9 @@ class BasicAutoTuner(ExperimentClass):
                 if candidate_payload else None,
                 cls=NpEncoder, sort_keys=True)
             group.attrs["reset_runtime_json"] = json.dumps(
-                self._reset_runtime, cls=NpEncoder, sort_keys=True)
+                self._last_compiled_reset_runtime,
+                cls=NpEncoder, sort_keys=True)
+            group.attrs["reset_runtime_source"] = "compiled_acquisition_cfg"
             group.attrs["metadata_json"] = json.dumps(
                 {} if metadata is None else metadata,
                 cls=NpEncoder, sort_keys=True)
@@ -2878,6 +3074,10 @@ class BasicAutoTuner(ExperimentClass):
                     candidate, int(shots), "%s gain %d" % (label, int(gain)),
                     state_order="ge" if index % 2 == 0 else "eg",
                     archive=False)
+                row.update({
+                    "evidence_level": "coarse_direct_proposal",
+                    "evidence_tier": 1,
+                })
                 rows.append(self._joint_archive.append(
                     row, stage="joint_coarse", fidelity_level="coarse",
                     epoch=int(epoch)))
@@ -2913,6 +3113,8 @@ class BasicAutoTuner(ExperimentClass):
                 "confusion": np.asarray(metrics["confusion"]),
                 "label": "%s gain %d" % (label, int(gain)),
                 "state_order": "shared-ground-gain-sweep",
+                "evidence_level": "shared_ground_proposal",
+                "evidence_tier": 0,
                 "measurement_index": len(self._archive),
                 "pulse_signature": self._pulse_signature(candidate),
             })
@@ -2950,6 +3152,43 @@ class BasicAutoTuner(ExperimentClass):
         mean, se, lcb = fidelity_evidence(row)
         return (lcb, mean, -se,
                 -PulseCandidate.from_mapping(row).chain_latency_us())
+
+    @staticmethod
+    def _evidence_tier(row):
+        """Cross-stage authority of one fidelity estimate.
+
+        Shared-ground low-shot sweeps are excellent proposal generators, but their
+        many correlated comparisons cannot outrank a fresh paired, multi-block
+        replay merely because one of them observed a perfect finite sample.
+        """
+        try:
+            explicit = int(row.get("evidence_tier"))
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            explicit = None
+        if explicit is not None:
+            return int(np.clip(explicit, 0, 3))
+        if not isinstance(row, dict):
+            return 0
+        state_order = str(row.get("state_order", "")).lower()
+        level = str(row.get("evidence_level", "")).lower()
+        if "shared-ground" in state_order or "shared_ground" in level:
+            return 0
+        blocks = int(row.get(
+            "completed_confirmation_blocks",
+            row.get("confirmation_blocks", 0)) or 0)
+        if (bool(row.get("confirmation_complete", False))
+                and bool(row.get("confirmation_batch_complete", True))
+                and blocks >= 2):
+            return 3
+        if blocks >= 2:
+            return 2
+        if state_order in ("ge", "eg") or level == "paired_single_shot":
+            return 1
+        return 0
+
+    @classmethod
+    def _authoritative_rank(cls, row):
+        return (cls._evidence_tier(row),) + tuple(cls._joint_rank(row))
 
     def _joint_anchor_probe(self, candidate, shots, label, previous=None):
         row = self._measure_candidate(candidate, int(shots), label)
@@ -3116,6 +3355,8 @@ class BasicAutoTuner(ExperimentClass):
             })
         row["label"] = str(label)
         row["state_order"] = str(state_order)
+        row["evidence_level"] = "paired_single_shot"
+        row["evidence_tier"] = 1
         row["measurement_index"] = len(self._archive)
         row["pulse_signature"] = self._pulse_signature(candidate)
         if archive:
@@ -3139,6 +3380,8 @@ class BasicAutoTuner(ExperimentClass):
         out.update({
             "fidelity": mean, "fidelity_se": se,
             "fidelity_lcb_95": float(mean - 1.96 * se),
+            "evidence_level": "multi_block_replay",
+            "evidence_tier": 2,
             "confirmation_blocks": int(fids.size),
             "block_fidelities": fids,
             "block_fidelity_ses": shot_ses,
@@ -3294,6 +3537,11 @@ class BasicAutoTuner(ExperimentClass):
                 # can therefore be pooled without falsely pairing unrelated drift
                 # windows merely because both happen to contain eight blocks.
                 "block_pairing_ids": list(pairing_ids),
+                "evidence_level": (
+                    "held_out_complete_multi_block" if batch_complete else
+                    "incomplete_multi_block"),
+                "evidence_tier": 3 if (
+                    batch_complete and len(rows) >= 2) else 2,
             })
             aggregates.append(aggregate)
         limit = max(int(self.params["final"].get(
@@ -7996,6 +8244,7 @@ class BasicAutoTuner(ExperimentClass):
         p = self.params["parity_chevron"]
         self._qualified_control_candidates = []
         self._qualified_transition_frequency = None
+        self._qualified_transition_frequencies = []
         self._qualified_control_key = None
         self._final_control_verified_key = None
         source = list(self._rough_control_candidates)
@@ -8009,7 +8258,7 @@ class BasicAutoTuner(ExperimentClass):
                 "no held-out coherent-Rabi control branch is available for "
                 "transition selection")
         branches, seen = [], set()
-        for row in sorted(source, key=self._joint_rank, reverse=True):
+        for row in sorted(source, key=self._authoritative_rank, reverse=True):
             frequency = round(float(row["qubit_pi_freq"]), 6)
             # Adjacent SS samples within one Rabi linewidth are one branch, not
             # separate opportunities to crowd a physically distinct transition out.
@@ -8157,18 +8406,61 @@ class BasicAutoTuner(ExperimentClass):
             comparison_failure = "%s: %s" % (type(exc).__name__, exc)
         comparison_complete = bool(
             comparison and self._confirmation_batch_complete(comparison))
-        selected = max(
-            comparison if comparison else selection_pool,
-            key=self._joint_rank)
+        informative_comparison = [
+            row for row in comparison
+            if (float(row.get("fidelity_lcb_95", -np.inf))
+                >= float(p.get(
+                    "minimum_informative_branch_fidelity_lcb", 0.60))
+                and float(row.get("sep_sigma", -np.inf))
+                >= float(p.get(
+                    "minimum_informative_branch_separation_sigma", 0.75)))]
+        if informative_comparison:
+            selected = max(informative_comparison,
+                           key=self._authoritative_rank)
+            selection_reason = "informative held-out branch comparison"
+        elif verified:
+            selected = max(verified, key=self._authoritative_rank)
+            selection_reason = "exact odd/even verified branch fallback"
+        else:
+            bootstrap = self._bootstrap_control_candidate
+            admitted_frequencies = [
+                float(row["qubit_pi_freq"]) for row in admitted]
+            radius = float(p.get("qualified_basin_radius_mhz", 2.0))
+            if (isinstance(bootstrap, dict)
+                    and all(key in bootstrap for key in self.initial)
+                    and any(abs(float(bootstrap["qubit_pi_freq"]) - frequency)
+                            <= radius for frequency in admitted_frequencies)):
+                selected = copy.deepcopy(bootstrap)
+                selection_reason = (
+                    "passive bootstrap retained because branch comparison had "
+                    "no informative contrast")
+            else:
+                selected = max(selection_pool, key=self._authoritative_rank)
+                selection_reason = (
+                    "strongest coherent-Rabi seed retained because branch "
+                    "comparison had no informative contrast")
         selected_key = _control_key(selected)
-        selected_record = next(
+        exact_selected_record = next((
             row for row in records
             if isinstance(row.get("candidate"), dict)
-            and _control_key(row["candidate"]) == selected_key)
-        selected_verified = bool(selected_record.get("control_verified", False))
+            and _control_key(row["candidate"]) == selected_key), None)
+        selected_record = exact_selected_record or min(
+            records, key=lambda row: abs(
+                float(row["candidate"]["qubit_pi_freq"])
+                - float(selected["qubit_pi_freq"])))
+        selected_verified = bool(
+            exact_selected_record is not None
+            and selected_record.get("control_verified", False))
         selected_audit = copy.deepcopy(selected_record.get("control_audit"))
+        protected_candidates = []
+        if isinstance(self._bootstrap_control_candidate, dict):
+            protected_candidates.append(self._bootstrap_control_candidate)
+        protected_candidates.extend(comparison)
+        protected_candidates.extend(admitted)
         self._qualified_control_candidates = copy.deepcopy(
-            comparison if comparison else selection_pool)
+            _unique_candidates(protected_candidates))
+        self._qualified_transition_frequencies = sorted(set(
+            round(float(row["qubit_pi_freq"]), 9) for row in admitted))
         self._qualified_transition_frequency = float(selected["qubit_pi_freq"])
         self._qualified_control_key = selected_key
         self._final_control_verified_key = (
@@ -8186,7 +8478,8 @@ class BasicAutoTuner(ExperimentClass):
                 "branch_records": copy.deepcopy(records),
                 "selected_branch": int(selected_record["branch"]),
                 "selected_frequency_mhz": self._qualified_transition_frequency,
-                "branch_selection_confirmed": True,
+                "branch_selection_confirmed": bool(informative_comparison),
+                "branch_selection_reason": selection_reason,
             })
             self._maps["parity_chevron"] = selected_map
             if selected_edge and selected_edge in self._maps:
@@ -8202,10 +8495,12 @@ class BasicAutoTuner(ExperimentClass):
                 bool(row.get("control_verified", False))
                 for row in records], dtype=bool),
             "qualified_frequency_mhz": np.asarray([
-                row["qubit_pi_freq"] for row in selection_pool], dtype=float),
+                row["qubit_pi_freq"] for row in admitted], dtype=float),
             "selected_frequency_mhz": self._qualified_transition_frequency,
             "selected_control_verified": selected_verified,
             "branch_comparison_complete": comparison_complete,
+            "branch_comparison_informative": bool(informative_comparison),
+            "selection_reason": selection_reason,
             "search_complete": True, "selection_confirmed": True,
         }
         self.data["control_branch_qualification"] = {
@@ -8218,6 +8513,10 @@ class BasicAutoTuner(ExperimentClass):
             "comparison": copy.deepcopy(comparison),
             "comparison_complete": comparison_complete,
             "comparison_failure": comparison_failure,
+            "comparison_informative": bool(informative_comparison),
+            "qualified_frequencies_mhz": list(
+                self._qualified_transition_frequencies),
+            "selection_reason": selection_reason,
             "expensive_search_allowed": True,
         }
         self._adopt(selected, "parity_chevron")
@@ -8228,7 +8527,10 @@ class BasicAutoTuner(ExperimentClass):
 
     def _candidate_in_qualified_transition(self, candidate):
         """Whether a candidate remains in the pre-qualified transition basin."""
-        if self._qualified_transition_frequency is None:
+        centers = list(self._qualified_transition_frequencies)
+        if not centers and self._qualified_transition_frequency is not None:
+            centers = [float(self._qualified_transition_frequency)]
+        if not centers:
             return True
         try:
             frequency = float(candidate["qubit_pi_freq"])
@@ -8236,8 +8538,8 @@ class BasicAutoTuner(ExperimentClass):
             return False
         radius = float(self.params["parity_chevron"].get(
             "qualified_basin_radius_mhz", 2.0))
-        return bool(np.isfinite(frequency) and abs(
-            frequency - self._qualified_transition_frequency) <= radius)
+        return bool(np.isfinite(frequency) and any(
+            abs(frequency - float(center)) <= radius for center in centers))
 
     def _qualified_transition_rows(self, rows):
         """Remove measurements from spectral branches rejected before joint search."""
@@ -8945,6 +9247,9 @@ class BasicAutoTuner(ExperimentClass):
         """Every measured complete tuple which can seed a fixed-length search."""
         rows = []
         sources = (
+            [self._bootstrap_control_candidate]
+            if isinstance(self._bootstrap_control_candidate, dict) else [],
+            self._qualified_control_candidates,
             self.data.get("final_candidates", []),
             self.data.get("joint_search", {}).get("aae_candidates", []),
             self._joint_rows, self._confirmed, self._archive,
@@ -8959,6 +9264,46 @@ class BasicAutoTuner(ExperimentClass):
                     rows.append(row)
         return self._qualified_transition_rows(rows)
 
+    def _portfolio_control_seeds(self, rows, count):
+        """Select control waveforms without promoting coarse correlated outliers."""
+        count = max(int(count), 1)
+        eligible = [
+            row for row in rows
+            if isinstance(row, dict)
+            and all(key in row for key in self.initial)
+            and self._candidate_in_qualified_transition(row)]
+        # Once held-out multi-block controls exist, shared-ground proposal rows have
+        # fulfilled their purpose.  They may still train the local surrogate, but may
+        # not consume the few protected control slots at every readout duration.
+        if any(self._evidence_tier(row) >= 2 for row in eligible):
+            eligible = [row for row in eligible
+                        if self._evidence_tier(row) >= 2]
+        ordered = sorted(eligible, key=self._authoritative_rank, reverse=True)
+        selected, seen = [], set()
+
+        def add(row):
+            if not isinstance(row, dict) or not all(
+                    key in row for key in self.initial):
+                return
+            key = _control_key(row)
+            if key not in seen:
+                seen.add(key)
+                selected.append(row)
+
+        # The passive bootstrap is the last known control before feedback or later
+        # branch-selection machinery can alter state preparation.  Give that exact
+        # waveform one protected slot whenever it has real fidelity evidence.
+        bootstrap = self._bootstrap_control_candidate
+        if (isinstance(bootstrap, dict)
+                and np.isfinite(float(bootstrap.get("fidelity", np.nan)))
+                and self._candidate_in_qualified_transition(bootstrap)):
+            add(bootstrap)
+        for row in ordered:
+            add(row)
+            if len(selected) >= count:
+                break
+        return selected[:count]
+
     def _portfolio_candidates_for_length(self, read_length, source_rows):
         """Build an equally budgeted full-tuple refinement set for one duration."""
         p = self.params["duration_portfolio"]
@@ -8966,7 +9311,7 @@ class BasicAutoTuner(ExperimentClass):
         local = [row for row in source_rows
                  if np.isclose(float(row.get("read_length", np.nan)), length,
                                rtol=0.0, atol=1e-9)]
-        local = sorted(local, key=self._joint_rank, reverse=True)
+        local = sorted(local, key=self._authoritative_rank, reverse=True)
         if not local:
             return [], {
                 "source_rows": 0, "native_seed_count": 0,
@@ -8981,40 +9326,42 @@ class BasicAutoTuner(ExperimentClass):
         ])
 
         readouts, seen_readouts = [], set()
-        for row in local:
+
+        def add_readout(row):
+            if not isinstance(row, dict) or not all(
+                    key in row for key in self.initial):
+                return
             key = (round(float(row["read_pulse_freq"]), 9),
                    int(round(row["read_pulse_gain"])))
-            if key in seen_readouts:
-                continue
-            seen_readouts.add(key)
-            readouts.append(row)
+            if key not in seen_readouts:
+                seen_readouts.add(key)
+                readouts.append(row)
+
+        # As with the control waveform, replay the passive bootstrap readout at every
+        # duration.  One noisy 56-shot power cell must not prevent the known working
+        # resonator/gain neighborhood from receiving equal-budget confirmation.
+        if isinstance(self._bootstrap_control_candidate, dict):
+            add_readout(self._bootstrap_control_candidate)
+        for row in local:
+            add_readout(row)
             if len(readouts) >= max(int(p["readout_seeds_per_length"]), 1):
                 break
+        readouts = readouts[:max(int(p["readout_seeds_per_length"]), 1)]
 
         # AAE and coherent-Rabi calibration are properties of the control waveform,
         # not of integration time.  Cross their best measured control basins with
         # each length's best readout basins, then remeasure the complete physical
         # tuples so no fidelity or safety evidence is borrowed across durations.
         control_source = []
+        if isinstance(self._bootstrap_control_candidate, dict):
+            control_source.append(self._bootstrap_control_candidate)
+        control_source.extend(self._qualified_control_candidates)
         aae = self.data.get("joint_search", {}).get("aae_candidates", [])
         if isinstance(aae, list):
             control_source.extend(aae)
         control_source.extend(source_rows)
-        control_source = sorted(
-            (row for row in control_source
-             if isinstance(row, dict)
-             and all(key in row for key in self.initial)
-             and self._candidate_in_qualified_transition(row)),
-            key=self._joint_rank, reverse=True)
-        controls, seen_controls = [], set()
-        for row in control_source:
-            key = _control_key(row)
-            if key in seen_controls:
-                continue
-            seen_controls.add(key)
-            controls.append(row)
-            if len(controls) >= max(int(p["control_seed_count"]), 1):
-                break
+        controls = self._portfolio_control_seeds(
+            control_source, int(p["control_seed_count"]))
 
         crossed = []
         for readout in readouts:
@@ -9251,13 +9598,14 @@ class BasicAutoTuner(ExperimentClass):
         noisy low-shot refinement temporarily ranks them lower.  Remaining slots are
         filled by fresh fidelity rank.  Leakage fields are deliberately never read.
         """
-        refined = sorted(list(refined), key=self._joint_rank, reverse=True)
+        refined = sorted(
+            list(refined), key=self._authoritative_rank, reverse=True)
         historical = sorted((
             row for row in source_rows
             if isinstance(row, dict)
             and np.isclose(float(row.get("read_length", np.nan)), float(length),
                            rtol=0.0, atol=1e-9)
-        ), key=self._joint_rank, reverse=True)
+        ), key=self._authoritative_rank, reverse=True)
         historical_count = max(int(self.params["duration_portfolio"].get(
             "historical_champions_per_length", 1)), 0)
         chosen = []
@@ -12223,8 +12571,17 @@ class BasicAutoTuner(ExperimentClass):
             # later exact comparison among all Rabi basins meaningful.  This bootstrap
             # map is deliberately not write evidence; readout is re-optimized after the
             # direct/amplified control choice.
-            self._run_stage("readout_grid", lambda: self._stage_readout_grid(
-                "readout_grid", local=False, record_evidence=False))
+            bootstrap = self._run_stage(
+                "readout_grid", lambda: self._stage_readout_grid(
+                    "readout_grid", local=False, record_evidence=False))
+            if isinstance(bootstrap, dict):
+                # Preserve the exact passive-preparation tuple and its held-out
+                # evidence.  It is crossed into every later duration even if a
+                # failed feedback profile makes a subsequent branch comparison
+                # temporarily look like coin flips.
+                self._bootstrap_control_candidate = copy.deepcopy(bootstrap)
+                self.data["bootstrap_control_candidate"] = copy.deepcopy(
+                    bootstrap)
             self._run_stage("reset_after_bootstrap", lambda:
                             self._try_activate_feedback("bootstrap readout"))
             self._run_stage("rough_ss", self._stage_rough_single_shot)

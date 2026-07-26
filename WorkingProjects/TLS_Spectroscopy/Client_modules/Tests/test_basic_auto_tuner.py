@@ -189,7 +189,7 @@ FAST_PARAMS = {
     },
     "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production diagnostic-bundle-v9 tightens the default to 0.5 percentage point.
+    # Production v10 retains the tightened 0.5-percentage-point timing default.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -778,6 +778,50 @@ def test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity():
     portfolio = tuner.data["duration_portfolio"]
     assert portfolio["selection_objective"] == "held_out_fidelity_lcb_95_only"
     assert portfolio["leakage_affects_selection"] is False
+
+
+def test_portfolio_protects_heldout_control_from_perfect_shared_ground_outlier():
+    """A 56-shot F=1 proposal cannot evict a confirmed passive Rabi control."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["duration_portfolio"] = {
+        "enabled": True, "control_seed_count": 1,
+        "native_seeds_per_length": 1, "readout_seeds_per_length": 1,
+        "local_proposals_per_length": 0,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        confirmed = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=5500, read_length=10.0,
+            qubit_pi_freq=tuner.QUBIT_FREQ, qubit_pi_gain=5750,
+            sigma=0.25, fidelity=0.94, fidelity_se=0.005,
+            fidelity_lcb_95=0.9302, confirmation_blocks=2,
+            confirmation_complete=True, confirmation_batch_complete=True,
+            evidence_level="held_out_complete_multi_block", evidence_tier=3)
+        coarse_outlier = T._with_candidate(
+            confirmed, read_length=8.0, qubit_pi_freq=tuner.QUBIT_FREQ - 2.0,
+            qubit_pi_gain=3600, fidelity=1.0, fidelity_se=0.0088,
+            fidelity_lcb_95=0.9828,
+            state_order="shared-ground-gain-sweep",
+            evidence_level="shared_ground_proposal", evidence_tier=0)
+        tuner._bootstrap_control_candidate = copy.deepcopy(confirmed)
+        tuner._qualified_control_candidates = [coarse_outlier, confirmed]
+        tuner._qualified_transition_frequency = tuner.QUBIT_FREQ
+        tuner._qualified_transition_frequencies = [
+            tuner.QUBIT_FREQ - 2.0, tuner.QUBIT_FREQ]
+        candidates, search = tuner._portfolio_candidates_for_length(
+            8.0, [coarse_outlier, confirmed])
+
+    assert search["cross_seed_count"] == 1
+    assert any(
+        np.isclose(row["read_length"], 8.0)
+        and np.isclose(row["qubit_pi_freq"], tuner.QUBIT_FREQ)
+        and int(row["qubit_pi_gain"]) == 5750
+        for row in candidates)
+    assert tuner._authoritative_rank(confirmed) > tuner._authoritative_rank(
+        coarse_outlier)
 
 
 def test_shelving_inversion_recovers_direct_f_population():
@@ -3486,6 +3530,63 @@ def test_feedback_profile_is_bound_to_frequency_and_length_not_scoring_gain():
     assert gain_changed["reset_mode"] == "feedback"
     assert gain_changed["reset_read_pulse_gain"] == 5000
     assert frequency_changed["reset_mode"] == "passive"
+    assert tuner._last_compiled_reset_runtime["reset_mode"] == "passive"
+
+
+def test_feedback_exact_ab_rejects_the_observed_step5_collapse():
+    """A residual-reset pass cannot authorize a 94%-to-53% scoring collapse."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["reset"] = {
+        "enabled": True, "exact_qualification_shots": 101,
+        "exact_qualification_blocks": 2,
+        "exact_min_feedback_fidelity": 0.70,
+        "exact_max_fidelity_loss": 0.03,
+        "exact_max_block_loss": 0.08,
+        "exact_min_separation_ratio": 0.70,
+        "exact_catastrophic_loss": 0.10,
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        profile_key = tuner._reset_profile_signature(tuner.working)
+        runtime = {
+            "reset_mode": "feedback", "reset_profile_key": profile_key,
+            "reset_threshold_raw": 1234, "reset_oper": "lower",
+            "reset_ground_below": True, "reset_max_iters": 3,
+            "reset_pi_freq": tuner.working["qubit_pi_freq"],
+            "reset_pi_gain": tuner.working["qubit_pi_gain"],
+            "reset_pi_sigma": tuner.working["sigma"],
+            "reset_read_pulse_freq": tuner.working["read_pulse_freq"],
+            "reset_read_pulse_gain": tuner.working["read_pulse_gain"],
+        }
+
+        def measured(candidate, shots, label, state_order="ge", archive=True):
+            del shots, label, state_order, archive
+            feedback = not tuner._feedback_profiles_suspended
+            fidelity = 0.53 if feedback else 0.94
+            row = dict(candidate)
+            row.update({
+                "fidelity": fidelity, "fidelity_se": 0.005,
+                "fidelity_lcb_95": fidelity - 0.0098,
+                "sep_sigma": 0.08 if feedback else 5.8,
+                "measurement_index": 0,
+            })
+            return row
+
+        tuner._measure_candidate = measured
+        activated = tuner._qualify_feedback_runtime(
+            tuner.working, runtime, "regression bundle")
+        compiled = tuner._cfg_for(tuner.working)
+
+    assert activated is False
+    assert tuner._feedback_disqualified is True
+    assert profile_key not in tuner._reset_profiles
+    assert compiled["reset_mode"] == "passive"
+    qualification = tuner.data["reset"]["exact_step5_qualifications"][-1]
+    assert qualification["catastrophic_path_mismatch"] is True
+    assert qualification["passive"]["fidelity"] > 0.93
+    assert qualification["feedback"]["fidelity"] < 0.54
 
 
 def test_single_shot_feedback_uses_fixed_reset_gain_then_restores_scoring_gain():
@@ -5958,6 +6059,70 @@ def test_rough_control_audit_failure_does_not_block_frequency_optimization():
     assert gate["rough_control_verified"] is False
 
 
+def test_uninformative_branch_comparison_preserves_passive_bootstrap_and_basins():
+    """Coin-flip feedback rows cannot select a branch or discard coherent Rabi."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params["parity_chevron"].update({
+        "branch_compare_shots": 101, "branch_compare_blocks": 2,
+        "minimum_informative_branch_fidelity_lcb": 0.60,
+        "minimum_informative_branch_separation_sigma": 0.75,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        wrong = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=5500, read_length=10.0,
+            qubit_pi_freq=tuner.QUBIT_FREQ - 2.0,
+            qubit_pi_gain=3600, sigma=0.25,
+            fidelity=0.52, fidelity_se=0.005,
+            fidelity_lcb_95=0.5102, sep_sigma=0.08,
+            confirmation_blocks=2, confirmation_complete=True,
+            confirmation_batch_complete=True, evidence_tier=3)
+        right = T._with_candidate(
+            wrong, qubit_pi_freq=tuner.QUBIT_FREQ, qubit_pi_gain=5750,
+            fidelity=0.94, fidelity_se=0.005,
+            fidelity_lcb_95=0.9302, sep_sigma=5.8)
+        tuner._rough_control_candidates = [wrong, right]
+        tuner._bootstrap_control_candidate = copy.deepcopy(right)
+        tuner._parity_refine_branch = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("synthetic unavailable parity"))
+        tuner._stage_final_control_verify = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("synthetic unavailable exact audit"))
+
+        def collapsed_comparison(candidates, shots, blocks, label,
+                                 add_to_history=True):
+            del shots, label, add_to_history
+            rows = []
+            for index, candidate in enumerate(candidates):
+                row = dict(candidate)
+                fidelity = 0.532 if index == 0 else 0.531
+                row.update({
+                    "fidelity": fidelity, "fidelity_se": 0.006,
+                    "fidelity_lcb_95": fidelity - 0.01176,
+                    "sep_sigma": 0.09, "confirmation_blocks": blocks,
+                    "confirmation_complete": True,
+                    "confirmation_batch_complete": True,
+                    "evidence_tier": 3,
+                })
+                rows.append(row)
+            return rows
+
+        tuner._confirm_candidates = collapsed_comparison
+        selected = tuner._stage_parity_chevron()
+
+    assert np.isclose(selected["qubit_pi_freq"], tuner.QUBIT_FREQ)
+    assert int(selected["qubit_pi_gain"]) == 5750
+    assert sorted(tuner._qualified_transition_frequencies) == sorted([
+        tuner.QUBIT_FREQ - 2.0, tuner.QUBIT_FREQ])
+    qualification = tuner.data["control_branch_qualification"]
+    assert qualification["comparison_informative"] is False
+    assert "passive bootstrap retained" in qualification["selection_reason"]
+    assert tuner._candidate_in_qualified_transition(wrong)
+    assert tuner._candidate_in_qualified_transition(right)
+
+
 def test_provisional_rough_control_still_produces_the_duration_portfolio():
     """Final rows own strict control certification; the rough seed does not."""
     class ProvisionalControlTuner(VirtualBasicAutoTuner):
@@ -6394,7 +6559,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "diagnostic-bundle-v9"
+    assert T.BASIC_AUTOTUNER_REVISION == "reset-qualified-portfolio-v10"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7040,6 +7205,7 @@ def main():
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
         test_portfolio_rank_uses_fidelity_only_and_never_leakage,
         test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity,
+        test_portfolio_protects_heldout_control_from_perfect_shared_ground_outlier,
         test_shelving_inversion_recovers_direct_f_population,
         test_independent_long_reference_exposes_candidate_one_pulse_leakage,
         test_opposed_ef_scans_match_a_reproduced_feature_after_rank_swaps,
@@ -7092,6 +7258,7 @@ def main():
         test_sequence_feedback_buffers_return_only_the_final_readout,
         test_sequence_feedback_declares_its_frozen_reset_waveform,
         test_feedback_profile_is_bound_to_frequency_and_length_not_scoring_gain,
+        test_feedback_exact_ab_rejects_the_observed_step5_collapse,
         test_single_shot_feedback_uses_fixed_reset_gain_then_restores_scoring_gain,
         test_rabi_sweep_feedback_restores_the_swept_gain_and_scoring_readout,
         test_reset_probe_uses_the_full_raw_distribution_not_last_dmem_word,
@@ -7149,6 +7316,7 @@ def main():
         test_noncoherent_spectral_branch_cannot_enter_the_control_search,
         test_transition_qualification_falls_through_failed_high_fidelity_branch,
         test_rough_control_audit_failure_does_not_block_frequency_optimization,
+        test_uninformative_branch_comparison_preserves_passive_bootstrap_and_basins,
         test_provisional_rough_control_still_produces_the_duration_portfolio,
         test_rejected_transition_cannot_reenter_late_recovery_or_safety_pools,
         test_portfolio_safety_failure_is_not_mislabeled_as_leakage,
