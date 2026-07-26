@@ -89,10 +89,14 @@ class _CoherenceBase(ExperimentClass):
         fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
         ax.plot(self.t_vec_us, pe, "o", ms=4)
         if fit is not None:
-            tt = np.linspace(self.t_vec_us.min(), self.t_vec_us.max(), 400)
+            tt = np.logspace(np.log10(self.t_vec_us.min()), np.log10(self.t_vec_us.max()), 400)
+            err = fit.get("tau_err_us", np.nan)
+            label = (f"tau = {fit['tau_us']:.2f} +/- {err:.2f} us"
+                     if np.isfinite(err) else f"tau = {fit['tau_us']:.2f} us")
             ax.plot(tt, fit["P0"] + (fit["P1"] - fit["P0"]) * np.exp(-tt / fit["tau_us"]),
-                    "-r", lw=1.5, label=f"tau = {fit['tau_us']:.2f} us")
+                    "-r", lw=1.5, label=label)
             ax.legend()
+        ax.set_xscale("log")
         ax.set_xlabel("Delay time [us]")
         ax.set_ylabel(ylabel)
         ax.set_title(title)

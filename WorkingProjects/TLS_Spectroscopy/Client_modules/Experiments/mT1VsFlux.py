@@ -764,6 +764,7 @@ class T1FullCurveVsFlux(_T1VsFluxBase):
             X, Y = np.meshgrid(t_us, dc_vec)
             pcm = ax.pcolormesh(X, Y, ss, shading="nearest")
             fig.colorbar(pcm, ax=ax, label="P(e)")
+            ax.set_xscale("log")
             ax.set_xlabel("Wait time t (us)")
             ax.set_ylabel("Flux DC target")
             ax.set_title(f"{self.element} full T1 curves vs flux (P(e){sfx})")
