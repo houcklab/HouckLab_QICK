@@ -759,7 +759,7 @@ _CONCISE_STAGE_START = {
     "amplified_error": "Reducing amplified amplitude error...",
     "final": "Comparing the best measured calibrations...",
     "duration_portfolio": (
-        "Building the 1-20 us fidelity/leakage calibration table..."),
+        "Building the readout-duration calibration table..."),
     "operational_leakage": "Screening pulse duration and power...",
     "operational_leakage_verify": "Verifying the pulse-safety checks...",
     "leakage": "Optimizing under the leakage constraint...",
@@ -2923,6 +2923,14 @@ class BasicAutoTuner(ExperimentClass):
         row = {"name": name, "status": "running", "error": None}
         self._stages.append(row)
         concise_message = None if self._detailed_console() else _CONCISE_STAGE_START.get(name)
+        if concise_message and name == "duration_portfolio":
+            lengths = [float(value) for value in self.params[
+                "duration_portfolio"].get("read_lengths_us", [])]
+            concise_message = (
+                "Building the calibration table for %d readout duration%s (%s)..."
+                % (len(lengths), "" if len(lengths) == 1 else "s",
+                   ", ".join("%g" % value for value in lengths[:3])
+                   + (", ..." if len(lengths) > 3 else "") + " us"))
         if concise_message:
             print("  " + concise_message)
         try:
@@ -13377,6 +13385,19 @@ class BasicAutoTuner(ExperimentClass):
         self._discovery_guard_active = True
         self._final_control_verified_key = None
         self._preflight()
+        portfolio_lengths = [float(value) for value in self.params[
+            "duration_portfolio"].get("read_lengths_us", [])]
+        if not self._detailed_console():
+            print("  Readout durations to optimize: %d (%s); mode %s."
+                  % (len(portfolio_lengths),
+                     ", ".join("%g" % value for value in portfolio_lengths[:6])
+                     + (", ..." if len(portfolio_lengths) > 6 else "") + " us",
+                     self.params["duration_portfolio"].get(
+                         "readout_length_mode", "custom")))
+            print("  Gaussian sigma is fixed at %g us (%.0f ns X180); only readout "
+                  "gain and X180 gain are searched."
+                  % (float(self.initial["sigma"]),
+                     4000.0 * float(self.initial["sigma"])))
         if self._detailed_console():
             print("=" * 78)
             print("BASIC AUTO TUNER  %s" % self.path)
@@ -14751,7 +14772,7 @@ class BasicAutoTuner(ExperimentClass):
                                       ["max_third_cluster_fraction"]),
                                  color="tab:purple", ls=":", lw=1.0)
             leakage_axis.set_ylabel("third-population 95% UCB")
-            axis.set_title("1-20 us manual-selection portfolio")
+            axis.set_title("manual-selection readout-duration portfolio")
         elif isinstance(leakage, dict) and leakage.get("active", False):
             axis = axes[-1]
             axis.clear()
@@ -14802,7 +14823,7 @@ class BasicAutoTuner(ExperimentClass):
         best = self.data.get("best_found")
         if best:
             if portfolio_entries:
-                leakage_label = "manual 1-20 us portfolio"
+                leakage_label = "manual readout-duration portfolio"
             elif leakage.get("active", False):
                 leakage_label = (
                     "verified" if leakage.get("verified", False)
