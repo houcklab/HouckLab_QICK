@@ -24,6 +24,7 @@ RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
+PASSIVE_RELAX_MIN_US = 1000.0
 
 P_SS_CAL = {
     "run": True,
@@ -72,6 +73,12 @@ def _base_cfg(p, extra=None):
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
     if extra:
         cfg.update(extra)
+    if str(cfg.get("reset_mode")) != "feedback" and float(cfg["relax_delay"]) < PASSIVE_RELAX_MIN_US:
+        print(f"[reset] {cfg.get('reset_mode')} reset with relax_delay="
+              f"{float(cfg['relax_delay']):.0f}us is << T1 and would NOT reset the qubit; "
+              f"bumping to {PASSIVE_RELAX_MIN_US:.0f}us. Enable feedback (run the reset probe) "
+              f"or raise the passive relax explicitly if T1 is long.")
+        cfg["relax_delay"] = PASSIVE_RELAX_MIN_US
     return cfg
 
 
