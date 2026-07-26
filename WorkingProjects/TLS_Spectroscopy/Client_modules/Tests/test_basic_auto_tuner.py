@@ -631,6 +631,43 @@ def test_production_portfolio_covers_every_integer_us_and_caps_at_twenty():
     assert T.BASIC_DEFAULTS["latency"]["max_read_length_us"] == 20.0
 
 
+def test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value():
+    """The runner switch must collapse every length consumer, not just the table."""
+    original = copy.deepcopy(T.BASIC_DEFAULTS)
+    full = T.configure_readout_length_mode(
+        T.BASIC_DEFAULTS, current_read_length_us=13.25,
+        scan_1_to_20_us=True)
+    fixed = T.configure_readout_length_mode(
+        T.BASIC_DEFAULTS, current_read_length_us=13.25,
+        scan_1_to_20_us=False)
+
+    expected = [float(value) for value in range(1, 21)]
+    assert full["joint_search"]["read_lengths_us"] == expected
+    assert full["duration_portfolio"]["read_lengths_us"] == expected
+    assert full["readout_length"]["values_us"] == expected
+    assert full["latency"]["max_read_length_us"] == 20.0
+    assert full["duration_portfolio"]["readout_length_mode"] == "1_to_20_us"
+
+    for section in ("joint_search", "duration_portfolio"):
+        assert fixed[section]["read_lengths_us"] == [13.25]
+    assert fixed["readout_length"]["values_us"] == [13.25]
+    assert fixed["readout_length"]["min_us"] == 13.25
+    assert fixed["readout_length"]["max_us"] == 13.25
+    assert fixed["latency"]["max_read_length_us"] == 13.25
+    assert fixed["duration_portfolio"]["readout_length_mode"] == (
+        "fixed_initialize_read_length")
+    assert T.BASIC_DEFAULTS == original
+
+    for invalid in (0.0, -1.0, float("nan"), "not-a-duration"):
+        try:
+            T.configure_readout_length_mode(
+                T.BASIC_DEFAULTS, invalid, scan_1_to_20_us=False)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid fixed readout length was accepted")
+
+
 def test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners():
     """A coarse 5000/10060 winner is a center, never the final gain grid."""
     params = copy.deepcopy(FAST_PARAMS)
@@ -6511,6 +6548,7 @@ def test_runner_is_report_only_for_manual_duration_portfolio_selection():
         for target in node.targets if isinstance(target, ast.Name)
     }
     assert ast.literal_eval(assignments["APPLY_CONFIG"]) is False
+    assert ast.literal_eval(assignments["RUN_1_TO_20_US_MODE"]) is True
     assert 'not bool(result.get("final_stable", False))' in source
     assert 'bool(result.get("interrupted", False))' in source
     assert "expected_source_hash=startup_source_hash" in source
@@ -6756,7 +6794,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "gain-converged-portfolio-v11"
+    assert T.BASIC_AUTOTUNER_REVISION == "selectable-readout-mode-v12"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7400,6 +7438,7 @@ def main():
         test_operational_safety_path_rejects_a_common_mode_third_population,
         test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths,
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
+        test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value,
         test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
         test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,
         test_portfolio_exact_replay_interleaves_all_readout_lengths,

@@ -80,7 +80,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "gain-converged-portfolio-v11"
+BASIC_AUTOTUNER_REVISION = "selectable-readout-mode-v12"
 
 
 BASIC_DEFAULTS = {
@@ -653,6 +653,48 @@ BASIC_DEFAULTS = {
         "max_unconfirmed_contenders": 16,
     },
 }
+
+
+def configure_readout_length_mode(params, current_read_length_us,
+                                   scan_1_to_20_us=True):
+    """Return an isolated parameter tree for broad or fixed readout-length tuning.
+
+    Four independent policies contain a readout-duration axis. Changing only the
+    final portfolio would still let the joint search, legacy length refinement, or
+    latency guard measure other durations. Keep those axes identical so fixed mode
+    means exactly what it says: optimize every other candidate coordinate while every
+    scored readout uses the value loaded from ``initialize.py``.
+    """
+    configured = copy.deepcopy(params)
+    if bool(scan_1_to_20_us):
+        lengths = [float(value) for value in range(1, 21)]
+        mode = "1_to_20_us"
+    else:
+        try:
+            current = float(current_read_length_us)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(
+                "fixed readout-length mode needs a numeric initialize.py "
+                "read_length")
+        if not math.isfinite(current) or current <= 0.0:
+            raise ValueError(
+                "fixed readout-length mode needs a positive finite initialize.py "
+                "read_length")
+        lengths = [current]
+        mode = "fixed_initialize_read_length"
+
+    configured["joint_search"]["read_lengths_us"] = list(lengths)
+    configured["duration_portfolio"]["read_lengths_us"] = list(lengths)
+    configured["duration_portfolio"]["readout_length_mode"] = mode
+    configured["duration_portfolio"][
+        "configured_initialize_read_length_us"] = float(current_read_length_us)
+    configured["readout_length"].update({
+        "values_us": list(lengths),
+        "min_us": float(min(lengths)),
+        "max_us": float(max(lengths)),
+    })
+    configured["latency"]["max_read_length_us"] = float(max(lengths))
+    return configured
 
 
 TUNED_KEYS = (
@@ -1875,7 +1917,7 @@ class BasicAutoTuner(ExperimentClass):
             "initial_pulse_signature": self._pulse_signature(self.initial),
             "fidelity_definition": "TLS step-5 balanced assignment fidelity",
             "selection_objective": (
-                "at every integer readout duration from 1 through 20 us, report the "
+                "at every requested readout duration, report the "
                 "locally gain-converged full tuple maximizing one common interleaved "
                 "held-out fidelity LCB; also report a constant-area, lower-drive "
                 "balanced alternative only when paired noninferiority, leakage, and "
@@ -1928,6 +1970,11 @@ class BasicAutoTuner(ExperimentClass):
                 "manual_selection_only": bool(
                     self.params["duration_portfolio"].get(
                         "manual_selection_only", True)),
+                "readout_length_mode": self.params["duration_portfolio"].get(
+                    "readout_length_mode", "custom"),
+                "configured_initialize_read_length_us": self.params[
+                    "duration_portfolio"].get(
+                        "configured_initialize_read_length_us"),
                 "read_lengths_us": list(
                     self.params["duration_portfolio"].get(
                         "read_lengths_us", [])),
@@ -10049,9 +10096,9 @@ class BasicAutoTuner(ExperimentClass):
         p = self.params["duration_portfolio"]
         lengths = sorted(set(
             float(value) for value in p.get("read_lengths_us", [])
-            if np.isfinite(float(value)) and 1.0 <= float(value) <= 20.0))
+            if np.isfinite(float(value)) and float(value) > 0.0))
         if not lengths:
-            raise ValueError("duration portfolio needs read lengths in [1, 20] us")
+            raise ValueError("duration portfolio needs positive read lengths")
         source_rows = self._portfolio_source_rows()
         entries, all_failures, control_audits = [], [], []
         plans = {}
@@ -10504,6 +10551,9 @@ class BasicAutoTuner(ExperimentClass):
         portfolio = {
             "enabled": True, "manual_selection_only": True,
             "automatic_write_allowed": False,
+            "readout_length_mode": p.get("readout_length_mode", "custom"),
+            "configured_initialize_read_length_us": p.get(
+                "configured_initialize_read_length_us"),
             "selection_objective": "held_out_fidelity_lcb_95_only",
             "leakage_affects_selection": False,
             "control_audit_affects_selection": False,
@@ -12970,7 +13020,8 @@ class BasicAutoTuner(ExperimentClass):
         if self._duration_portfolio_active:
             portfolio = p["duration_portfolio"]
             length_count = len(set(float(value) for value in portfolio.get(
-                "read_lengths_us", []) if 1.0 <= float(value) <= 20.0))
+                "read_lengths_us", [])
+                if np.isfinite(float(value)) and float(value) > 0.0))
             candidate_count = max(
                 int(portfolio["native_seeds_per_length"])
                 + int(portfolio["readout_seeds_per_length"])
@@ -14269,6 +14320,7 @@ class BasicAutoTuner(ExperimentClass):
         if isinstance(portfolio, dict) and portfolio.get("enabled", False):
             compact_portfolio = {key: portfolio.get(key) for key in (
                 "enabled", "manual_selection_only", "automatic_write_allowed",
+                "readout_length_mode", "configured_initialize_read_length_us",
                 "status", "read_lengths_us", "requested_length_count",
                 "reportable_length_count", "balanced_reportable_length_count",
                 "safe_length_count",

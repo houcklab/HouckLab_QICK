@@ -1,10 +1,12 @@
-"""Run the fixed-readout-duration single-qubit calibration portfolio.
+"""Run the single-qubit calibration in 1--20 us or fixed-readout mode.
 
 This is intentionally a report-only entry point.  It measures the locally converged
-best held-out fidelity tuple at every integer readout duration from 1 through 20 us,
-then reports leakage and coherent-control checks without reranking that winner.  A
+best held-out fidelity tuple at every requested readout duration, then reports leakage
+and coherent-control checks without reranking that winner.  Set the top-level mode flag
+false to optimize only the readout length currently loaded from ``initialize.py``.  A
 separate balanced row may identify a statistically noninferior, longer/lower-drive
-pulse.  It never modifies ``BaseConfig``; the operator makes the final manual choice.
+X180 pulse.  It never modifies ``BaseConfig``; the operator makes the final manual
+choice.
 """
 
 import copy
@@ -23,6 +25,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mBasicAutoTuner
     BASIC_DEFAULTS,
     BasicAutoTuner,
     TUNED_KEYS,
+    configure_readout_length_mode,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updater
 
@@ -30,13 +33,23 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
+# True: optimize and report one full calibration for every integer readout duration
+# from 1 through 20 us. False: keep the readout duration fixed at the exact
+# BaseConfig["read_length"] loaded from initialize.py while still optimizing readout
+# frequency/gain and the complete X180 frequency/gain/duration pulse family.
+RUN_1_TO_20_US_MODE = True
+
 # Portfolio rows are alternatives for an operator, not one automatically selected
 # calibration.  Keep the destructive path disabled unconditionally for this runner.
 APPLY_CONFIG = False
 
-# This is a private deep copy so edits made for a run cannot mutate the module defaults
-# or leak into a second experiment in the same Python process.
-P_BASIC = copy.deepcopy(BASIC_DEFAULTS)
+# This returns a private deep copy so mode selection cannot mutate module defaults or
+# leak into a second experiment in the same Python process.
+P_BASIC = configure_readout_length_mode(
+    BASIC_DEFAULTS,
+    BaseConfig["read_length"],
+    scan_1_to_20_us=RUN_1_TO_20_US_MODE,
+)
 
 # Tests and interactive runners may replace ``BasicAutoTuner`` with an acquisition
 # facade.  Keep the certificate implementation immutable so destructive-boundary
@@ -1009,7 +1022,12 @@ def _print_duration_portfolio(result):
     entries = portfolio.get("entries", []) if isinstance(portfolio, dict) else []
     if not entries:
         return False
-    print("\n[basic-auto-tune] READOUT-DURATION PORTFOLIO (manual selection only)")
+    if portfolio.get("readout_length_mode") == "fixed_initialize_read_length":
+        print("\n[basic-auto-tune] FIXED READOUT-LENGTH RESULT "
+              "(initialize.py value; manual selection only)")
+    else:
+        print("\n[basic-auto-tune] READOUT-DURATION PORTFOLIO "
+              "(manual selection only)")
     print("   len/type fidelity (95% LCB)  leakage 95% UCB/status   control    "
           "readout MHz/gain       X180 MHz/gain/length")
 
@@ -1323,6 +1341,7 @@ def _history_entry(result, eligible, applied, error=None):
     if isinstance(portfolio, dict) and portfolio.get("enabled", False):
         compact_portfolio = {key: portfolio.get(key) for key in (
             "enabled", "manual_selection_only", "automatic_write_allowed",
+            "readout_length_mode", "configured_initialize_read_length_us",
             "status", "requested_length_count", "reportable_length_count",
             "safe_length_count", "unsafe_length_count",
             "inconclusive_length_count", "equal_refinement_budget",
