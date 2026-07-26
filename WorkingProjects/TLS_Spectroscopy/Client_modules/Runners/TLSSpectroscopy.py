@@ -125,7 +125,6 @@ P3_STEP_RESPONSE = {
 
 P4_LONG_TIME = {
     "run": False,
-    "fit_trace": True,
     "advanced_fit": False,
     "shots": 100,
     "relax_delay_us": 700.0,
@@ -180,6 +179,28 @@ P6_3PT_T1 = {
         "t_points": 71,
         "num_pulses": 1,
     },
+}
+
+
+P6_FULL_T1 = {
+    "run": False,
+    "shots": 2000,
+    "dc_min": 0,
+    "dc_max": 12000,
+    "dc_step": 60,
+    "freq_step_mhz": 1,
+    "wall_clock_duration_min": None,
+    "quality_factor": None,
+    "t_max_us": None,
+    "auto_tmax_factor": 3.0,
+    "t_min_us_default": 1.0,
+    "t_points_default": 41,
+    "reset_mode": "feedback",
+    "reset_threshold_raw": 7087,
+    "reset_oper": "lower",
+    "reset_ground_below": True,
+    "reset_max_iters": 3,
+    "T1_probe_cfg": None,
 }
 
 STEP3B_GAIN_SWEEP = None
