@@ -697,6 +697,102 @@ def test_reset_phase_alignment_runs_once_and_never_writes_initialize_py():
         reset_phase.calibrate_res_phase = original
 
 
+def test_two_stage_split_hands_off_discovery_and_seeds_the_gain_search():
+    discovery_params = T.configure_discovery_stage(T.BASIC_DEFAULTS)
+    assert discovery_params["run_mode"] == "discovery"
+    assert discovery_params["joint_search"]["enabled"] is False
+    assert discovery_params["duration_portfolio"]["enabled"] is False
+
+    cfg = _base_config()
+    cfg.update({"read_pulse_freq": 7200.0, "qubit_freq": 2560.0,
+                "qubit_pi_freq": 2560.0})
+    params = _relative_100mhz_search_params()
+    params = T._deep_merge(params, {"run_mode": "discovery",
+                                    "joint_search": {"enabled": False},
+                                    "duration_portfolio": {"enabled": False},
+                                    "latency": {"enabled": False}})
+    with tempfile.TemporaryDirectory() as folder:
+        stage1 = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=params)
+        result = stage1.acquire(plotDisp=False)["data"]
+
+    assert result["run_mode"] == "discovery"
+    assert result["outcome"] == "discovery_complete"
+    assert result["eligible_tuned"] == {}
+    assert result["final_stable"] is False
+    handoff = result["discovery_handoff"]
+    for key in ("read_pulse_freq", "read_pulse_gain", "read_length",
+                "qubit_pi_freq", "qubit_pi_gain", "sigma",
+                "qualified_transition_frequencies_mhz"):
+        assert key in handoff
+    assert abs(float(handoff["qubit_pi_freq"]) - stage1.QUBIT_FREQ) <= 2.0
+    assert handoff["qualified_transition_frequencies_mhz"]
+
+    gain_params = T.configure_gain_search_stage(
+        T.configure_gain_only_search(
+            T.configure_readout_length_mode(
+                params, handoff["read_length"], scan_1_to_20_us=False),
+            handoff["sigma"]),
+        handoff)
+    assert gain_params["run_mode"] == "gain_search"
+    assert gain_params["resonator"]["enabled"] is False
+    assert gain_params["spectroscopy"]["enabled"] is False
+    assert gain_params["iq_rabi"]["enabled"] is False
+    gain_params = T._deep_merge(gain_params, {
+        "joint_search": {"enabled": True},
+        "duration_portfolio": {"enabled": True},
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        stage2 = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=cfg, params=gain_params)
+        stage2._seed_gain_search_stage()
+
+    assert stage2._qualified_transition_frequency == handoff["qubit_pi_freq"]
+    assert stage2.working["sigma"] == handoff["sigma"]
+    assert stage2.working["qubit_pi_freq"] == handoff["qubit_pi_freq"]
+    assert stage2._discovery_status["resonator"] is True
+    assert stage2._discovery_status["spectroscopy"] is True
+    assert isinstance(stage2._bootstrap_control_candidate, dict)
+    assert stage2.data["control_branch_qualification"][
+        "expensive_search_allowed"] is True
+
+
+def test_gain_ladder_refines_to_the_ones_place_and_stops_on_noise():
+    A = T.BasicAutoTuner
+    step = 200
+    axes = []
+    while True:
+        axes.append((step, list(map(int, A._portfolio_stepped_gain_axis(
+            5000, step, 3, 1000, 10000)))))
+        if step <= 1:
+            break
+        step = max(int(round(step / 4.0)), 1)
+    steps = [row[0] for row in axes]
+    assert steps[0] == 200 and steps[-1] == 1
+    assert all(later < earlier for earlier, later in zip(steps, steps[1:]))
+    assert axes[-1][1] == [4999, 5000, 5001]
+
+    assert T.BASIC_DEFAULTS["duration_portfolio"][
+        "gain_minimum_read_step_dac"] == 1
+    assert T.BASIC_DEFAULTS["duration_portfolio"][
+        "gain_minimum_qubit_step_dac"] == 1
+    assert T.BASIC_DEFAULTS["duration_portfolio"][
+        "gain_zoom_target_step_dac"] == 1
+
+    gains = np.array([4800.0, 5000.0, 5200.0])
+    clean = 0.93 - 4e-8 * (gains - 5137.0) ** 2
+    fit = A._parabolic_gain_vertex(gains, clean, np.full(3, 5e-4))
+    assert fit["ok"] is True
+    assert abs(int(fit["vertex_dac"]) - 5137) <= 3
+    flat = A._parabolic_gain_vertex(gains, np.full(3, 0.9), np.full(3, 5e-4))
+    assert flat["ok"] is False
+    rising = A._parabolic_gain_vertex(
+        gains, np.array([0.90, 0.92, 0.94]), np.full(3, 5e-4))
+    assert rising["ok"] is False
+
+
 def test_gain_only_search_pins_sigma_from_the_config():
     original = copy.deepcopy(T.BASIC_DEFAULTS)
     base = T.configure_readout_length_mode(
@@ -7493,6 +7589,8 @@ def main():
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
         test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value,
         test_reset_phase_alignment_runs_once_and_never_writes_initialize_py,
+        test_two_stage_split_hands_off_discovery_and_seeds_the_gain_search,
+        test_gain_ladder_refines_to_the_ones_place_and_stops_on_noise,
         test_gain_only_search_pins_sigma_from_the_config,
         test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
         test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,

@@ -526,9 +526,12 @@ BASIC_DEFAULTS = {
         "gain_zoom_read_points": 3,
         "gain_zoom_qubit_fraction": 0.025,
         "gain_zoom_qubit_points": 3,
-        "gain_zoom_max_rounds": 3,
-        "gain_minimum_read_step_dac": 100,
-        "gain_minimum_qubit_step_dac": 100,
+        "gain_zoom_max_rounds": 5,
+        "gain_zoom_step_ratio": 4.0,
+        "gain_zoom_target_step_dac": 1,
+        "gain_vertex_refinement": True,
+        "gain_minimum_read_step_dac": 1,
+        "gain_minimum_qubit_step_dac": 1,
         "gain_refine_shots": 300,
         "gain_refine_blocks": 2,
         "gain_zoom_shots": 420,
@@ -699,6 +702,55 @@ def configure_readout_length_mode(params, current_read_length_us,
         "max_us": float(max(lengths)),
     })
     configured["latency"]["max_read_length_us"] = float(max(lengths))
+    return configured
+
+
+def configure_discovery_stage(params):
+    configured = copy.deepcopy(params)
+    configured["run_mode"] = "discovery"
+    configured["duration_portfolio"]["enabled"] = False
+    configured["joint_search"]["enabled"] = False
+    configured["latency"]["enabled"] = False
+    return configured
+
+
+def configure_gain_search_stage(params, discovery):
+    configured = copy.deepcopy(params)
+    required = ("read_pulse_freq", "read_pulse_gain", "read_length",
+                "qubit_pi_freq", "qubit_pi_gain", "sigma")
+    missing = [key for key in required if discovery.get(key) is None]
+    if missing:
+        raise ValueError(
+            "gain-search stage needs these discovery values: %s"
+            % ", ".join(missing))
+    seed = {
+        "read_pulse_freq": float(discovery["read_pulse_freq"]),
+        "read_pulse_gain": int(round(float(discovery["read_pulse_gain"]))),
+        "read_length": float(discovery["read_length"]),
+        "qubit_freq": float(discovery["qubit_pi_freq"]),
+        "qubit_pi_freq": float(discovery["qubit_pi_freq"]),
+        "qubit_pi_gain": int(round(float(discovery["qubit_pi_gain"]))),
+        "sigma": float(discovery["sigma"]),
+        "qubit_drag_beta": float(discovery.get("qubit_drag_beta", 0.0) or 0.0),
+    }
+    for key in ("read_pulse_freq", "read_length", "qubit_pi_freq", "sigma"):
+        if not math.isfinite(seed[key]) or seed[key] <= 0.0:
+            raise ValueError("discovery value %s must be positive and finite" % key)
+    if not 0 <= seed["read_pulse_gain"] <= 32767:
+        raise ValueError("discovery read_pulse_gain is outside the DAC range")
+    if not 0 < seed["qubit_pi_gain"] <= 32767:
+        raise ValueError("discovery qubit_pi_gain is outside the DAC range")
+    basins = discovery.get("qualified_transition_frequencies_mhz")
+    if not basins:
+        basins = [seed["qubit_pi_freq"]]
+    configured["run_mode"] = "gain_search"
+    configured["gain_search_seed"] = seed
+    configured["gain_search_transition_frequencies_mhz"] = [
+        float(value) for value in basins]
+    configured["resonator"]["enabled"] = False
+    configured["spectroscopy"]["enabled"] = False
+    configured["iq_rabi"]["enabled"] = False
+    configured["parity_chevron"]["enabled"] = False
     return configured
 
 
@@ -3579,8 +3631,10 @@ class BasicAutoTuner(ExperimentClass):
         out.update({
             "fidelity": mean, "fidelity_se": se,
             "fidelity_lcb_95": float(mean - 1.96 * se),
-            "evidence_level": "multi_block_replay",
-            "evidence_tier": 2,
+            "evidence_level": ("multi_block_replay" if fids.size >= 2
+                               else "single_block_replay"),
+            "evidence_tier": 2 if fids.size >= 2 else 1,
+            "block_spread_defined": bool(fids.size >= 2),
             "confirmation_blocks": int(fids.size),
             "block_fidelities": fids,
             "block_fidelity_ses": shot_ses,
@@ -6943,6 +6997,72 @@ class BasicAutoTuner(ExperimentClass):
         self._joint_rows.extend(confirmed)
         return best
 
+    def _seed_gain_search_stage(self):
+        seed = dict(self.params["gain_search_seed"])
+        basins = sorted(set(
+            round(float(value), 9) for value in
+            self.params["gain_search_transition_frequencies_mhz"]))
+        self.working = {key: seed[key] for key in self.initial}
+        self._qualified_transition_frequencies = list(basins)
+        self._qualified_transition_frequency = float(seed["qubit_pi_freq"])
+        self._qualified_control_key = _control_key(seed)
+        self._resonator_seed = float(seed["read_pulse_freq"])
+        self._discovery_readout = dict(self.working)
+        self._discovery_status.update(
+            {"resonator": True, "spectroscopy": True})
+        p = self.params["rough_single_shot"]
+        rows = self._confirm_candidates(
+            [dict(self.working)], int(p["shots"]), int(p["blocks"]),
+            "gain-search operator seed replay", add_to_history=True)
+        best = self._best_aggregate(rows)
+        self._bootstrap_control_candidate = copy.deepcopy(best)
+        self.data["bootstrap_control_candidate"] = copy.deepcopy(best)
+        self._rough_control_candidates = [copy.deepcopy(best)]
+        self._qualified_control_candidates = [copy.deepcopy(best)]
+        self.data["control_branch_qualification"] = {
+            "status": "operator_supplied_transition",
+            "qualified": True, "frequency_qualified": True,
+            "selected_control_verified": False,
+            "selected": copy.deepcopy(best), "branches": [],
+            "qualified_frequencies_mhz": list(basins),
+            "selection_reason": "frequencies supplied by the discovery stage",
+            "expensive_search_allowed": True,
+        }
+        self.data["gain_search_seed"] = {
+            "seed": dict(seed),
+            "qualified_transition_frequencies_mhz": list(basins),
+            "measured_seed_fidelity": float(best.get("fidelity", np.nan)),
+            "measured_seed_fidelity_se": float(best.get("fidelity_se", np.nan)),
+        }
+        self._adopt(best, "gain_search_seed")
+        return best
+
+    def _discovery_handoff(self):
+        working = dict(self.working)
+        handoff = {
+            "read_pulse_freq": float(working["read_pulse_freq"]),
+            "read_pulse_gain": int(round(working["read_pulse_gain"])),
+            "read_length": float(working["read_length"]),
+            "qubit_pi_freq": float(working["qubit_pi_freq"]),
+            "qubit_pi_gain": int(round(working["qubit_pi_gain"])),
+            "sigma": float(working["sigma"]),
+            "qubit_drag_beta": float(working.get("qubit_drag_beta", 0.0)),
+            "qualified_transition_frequencies_mhz": [
+                float(value) for value in self._qualified_transition_frequencies],
+            "resonator_frequency_mhz": (
+                float(self._resonator_seed)
+                if self._resonator_seed is not None else None),
+            "resonator_candidates_mhz": [
+                float(row["read_pulse_freq"])
+                for row in self._resonator_candidates
+                if isinstance(row, dict) and "read_pulse_freq" in row],
+            "spectroscopy_candidates_mhz": [
+                float(value) for value in self._spec_candidates_mhz],
+            "discovery_verified": dict(self._discovery_status),
+        }
+        self.data["discovery_handoff"] = handoff
+        return handoff
+
     def _stage_baseline(self):
         p = self.params["baseline"]
         rows = self._confirm_candidates(
@@ -9868,20 +9988,93 @@ class BasicAutoTuner(ExperimentClass):
             "candidate_count": len(candidates),
         }
 
-    def _portfolio_gain_zoom_candidates(self, center, length):
+    @staticmethod
+    def _portfolio_stepped_gain_axis(center, step, points, lower, upper):
+        center = int(np.clip(round(center), int(lower), int(upper)))
+        points = max(int(points), 3)
+        if points % 2 == 0:
+            points += 1
+        half = points // 2
+        step = max(int(round(step)), 1)
+        values = center + step * np.arange(-half, half + 1, dtype=int)
+        values = np.clip(values, int(lower), int(upper))
+        return np.sort(np.unique(np.r_[values, center])).astype(int)
+
+    @staticmethod
+    def _parabolic_gain_vertex(gains, fidelities, errors):
+        gains = np.asarray(gains, dtype=float)
+        values = np.asarray(fidelities, dtype=float)
+        errors = np.asarray(errors, dtype=float)
+        good = (np.isfinite(gains) & np.isfinite(values)
+                & np.isfinite(errors) & (errors > 0.0))
+        gains, values, errors = gains[good], values[good], errors[good]
+        result = {"ok": False, "vertex_dac": None, "vertex_se_dac": None,
+                  "curvature": None}
+        if gains.size < 3 or np.ptp(gains) <= 0:
+            return result
+        origin = float(np.mean(gains))
+        covariance = None
+        try:
+            if gains.size >= 5:
+                coeffs, covariance = np.polyfit(
+                    gains - origin, values, 2, w=1.0 / errors, cov=True)
+            else:
+                coeffs = np.polyfit(gains - origin, values, 2, w=1.0 / errors)
+        except Exception:
+            return result
+        a, b = float(coeffs[0]), float(coeffs[1])
+        if not np.isfinite(a) or not np.isfinite(b) or a >= 0.0:
+            return result
+        vertex = origin - b / (2.0 * a)
+        if not (gains.min() <= vertex <= gains.max()):
+            return result
+        vertex_se = None
+        if covariance is not None:
+            da, db = b / (2.0 * a * a), -1.0 / (2.0 * a)
+            variance = (da * da * covariance[0, 0]
+                        + 2.0 * da * db * covariance[0, 1]
+                        + db * db * covariance[1, 1])
+            if np.isfinite(variance) and variance >= 0.0:
+                vertex_se = float(math.sqrt(variance))
+        else:
+            typical = float(np.median(errors))
+            if np.isfinite(typical) and typical > 0.0:
+                vertex_se = float(math.sqrt(typical / abs(a)))
+        result.update({
+            "ok": True, "vertex_dac": int(round(vertex)),
+            "vertex_se_dac": vertex_se, "curvature": a,
+            "fit_points": int(gains.size),
+        })
+        return result
+
+    def _portfolio_gain_zoom_candidates(self, center, length, read_step=None,
+                                        qubit_step=None):
         """Full local 2-D interaction grid around a freshly measured winner."""
         p = self.params["duration_portfolio"]
         physical = {key: center[key] for key in self.initial}
         physical = _with_candidate(physical, read_length=float(length))
-        read_axis = self._portfolio_centered_gain_axis(
-            physical["read_pulse_gain"], p["gain_zoom_read_fraction"],
-            p["gain_zoom_read_points"], p["gain_minimum_read_step_dac"],
-            self.params["joint_search"]["read_gain_min"],
-            self.params["joint_search"]["read_gain_max"])
-        qubit_axis = self._portfolio_centered_gain_axis(
-            physical["qubit_pi_gain"], p["gain_zoom_qubit_fraction"],
-            p["gain_zoom_qubit_points"], p["gain_minimum_qubit_step_dac"],
-            1, self.params["joint_search"]["qubit_gain_hard_max"])
+        if read_step is None:
+            read_axis = self._portfolio_centered_gain_axis(
+                physical["read_pulse_gain"], p["gain_zoom_read_fraction"],
+                p["gain_zoom_read_points"], p["gain_minimum_read_step_dac"],
+                self.params["joint_search"]["read_gain_min"],
+                self.params["joint_search"]["read_gain_max"])
+        else:
+            read_axis = self._portfolio_stepped_gain_axis(
+                physical["read_pulse_gain"], read_step,
+                p["gain_zoom_read_points"],
+                self.params["joint_search"]["read_gain_min"],
+                self.params["joint_search"]["read_gain_max"])
+        if qubit_step is None:
+            qubit_axis = self._portfolio_centered_gain_axis(
+                physical["qubit_pi_gain"], p["gain_zoom_qubit_fraction"],
+                p["gain_zoom_qubit_points"], p["gain_minimum_qubit_step_dac"],
+                1, self.params["joint_search"]["qubit_gain_hard_max"])
+        else:
+            qubit_axis = self._portfolio_stepped_gain_axis(
+                physical["qubit_pi_gain"], qubit_step,
+                p["gain_zoom_qubit_points"], 1,
+                self.params["joint_search"]["qubit_gain_hard_max"])
         candidates = [
             _with_candidate(
                 physical, read_pulse_gain=int(read_gain),
@@ -10075,7 +10268,7 @@ class BasicAutoTuner(ExperimentClass):
 
     def _portfolio_objective(self, row):
         """Return the sole portfolio selection objective: held-out fidelity LCB."""
-        fidelity_lcb = float(row.get("fidelity_lcb_95", np.nan))
+        fidelity_lcb = float(fidelity_evidence(row)[2])
         if not np.isfinite(fidelity_lcb):
             fidelity = float(row.get("fidelity", np.nan))
             fidelity_se = float(row.get("fidelity_se", np.nan))
@@ -10284,11 +10477,23 @@ class BasicAutoTuner(ExperimentClass):
                             first_pool, key=self._portfolio_rank)
                         zoom_records = []
                         locally_converged = False
+                        ratio = max(float(p.get("gain_zoom_step_ratio", 4.0)), 1.5)
+                        target = max(int(p.get("gain_zoom_target_step_dac", 1)), 1)
+                        read_step = max(int(round(abs(
+                            float(zoom_center["read_pulse_gain"])
+                            * float(p["gain_zoom_read_fraction"]))
+                            / max(int(p["gain_zoom_read_points"]) // 2, 1))), target)
+                        qubit_step = max(int(round(abs(
+                            float(zoom_center["qubit_pi_gain"])
+                            * float(p["gain_zoom_qubit_fraction"]))
+                            / max(int(p["gain_zoom_qubit_points"]) // 2, 1))), target)
+                        final_rows = []
                         for zoom_round in range(max(int(p.get(
-                                "gain_zoom_max_rounds", 3)), 1)):
+                                "gain_zoom_max_rounds", 8)), 1)):
                             zoom_candidates, zoom_record = \
                                 self._portfolio_gain_zoom_candidates(
-                                    zoom_center, length)
+                                    zoom_center, length,
+                                    read_step=read_step, qubit_step=qubit_step)
                             for candidate in zoom_candidates:
                                 self._ensure_reset_profile(
                                     candidate,
@@ -10301,9 +10506,10 @@ class BasicAutoTuner(ExperimentClass):
                                         zoom_candidates,
                                         int(p["gain_zoom_shots"]),
                                         int(p["gain_zoom_blocks"]),
-                                        "portfolio %.0f us deterministic 2-D gain "
-                                        "zoom round %d" % (
-                                            length, zoom_round + 1),
+                                        "portfolio %.0f us gain zoom round %d "
+                                        "(step %d/%d DAC)" % (
+                                            length, zoom_round + 1,
+                                            read_step, qubit_step),
                                         add_to_history=True)
                                 except KeyboardInterrupt:
                                     raise
@@ -10332,38 +10538,153 @@ class BasicAutoTuner(ExperimentClass):
                                 })
                                 zoom_records.append(zoom_record)
                                 break
+                            final_rows = round_rows
                             winner = max(round_rows, key=self._portfolio_rank)
                             read_axis = np.asarray(
                                 zoom_record["read_gain_axis_dac"], dtype=int)
                             qubit_axis = np.asarray(
                                 zoom_record["qubit_gain_axis_dac"], dtype=int)
+                            read_low = int(self.params["joint_search"][
+                                "read_gain_min"])
+                            read_high = int(self.params["joint_search"][
+                                "read_gain_max"])
                             read_edge = bool(
-                                read_axis.size > 1
+                                read_axis.size > 2
                                 and int(winner["read_pulse_gain"]) in (
-                                    int(read_axis[0]), int(read_axis[-1])))
+                                    int(read_axis[0]), int(read_axis[-1]))
+                                and int(winner["read_pulse_gain"]) not in (
+                                    read_low, read_high))
                             qubit_edge = bool(
-                                qubit_axis.size > 1
+                                qubit_axis.size > 2
                                 and int(winner["qubit_pi_gain"]) in (
-                                    int(qubit_axis[0]), int(qubit_axis[-1])))
+                                    int(qubit_axis[0]), int(qubit_axis[-1]))
+                                and int(winner["qubit_pi_gain"]) not in (
+                                    1, int(self.params["joint_search"][
+                                        "qubit_gain_hard_max"])))
+                            at_target = bool(read_step <= target
+                                             and qubit_step <= target)
+                            ordered_rows = sorted(
+                                round_rows, key=self._portfolio_rank, reverse=True)
+                            runner_up = (ordered_rows[1] if len(ordered_rows) > 1
+                                         else ordered_rows[0])
+                            spread = float(
+                                float(winner.get("fidelity", np.nan))
+                                - float(runner_up.get("fidelity", np.nan)))
+                            noise = float(1.96 * math.hypot(
+                                float(winner.get("fidelity_se", np.inf)),
+                                float(runner_up.get("fidelity_se", np.inf))))
+                            noise_limited = bool(
+                                np.isfinite(spread) and np.isfinite(noise)
+                                and spread <= noise)
                             locally_converged = bool(
-                                not read_edge and not qubit_edge)
+                                not read_edge and not qubit_edge
+                                and (at_target or noise_limited))
                             zoom_record.update({
                                 "round": int(zoom_round + 1),
                                 "complete": True,
+                                "read_step_dac": int(read_step),
+                                "qubit_step_dac": int(qubit_step),
                                 "winner_candidate_key": list(
                                     _candidate_key(winner)),
                                 "read_gain_edge": read_edge,
                                 "qubit_gain_edge": qubit_edge,
+                                "fidelity_spread": spread,
+                                "noise_band": noise,
+                                "resolution_limited_by_noise": noise_limited,
                                 "locally_converged": locally_converged,
                             })
                             zoom_records.append(zoom_record)
-                            zoom_center = winner
+                            if not noise_limited:
+                                zoom_center = winner
                             if locally_converged:
                                 break
+                            if not read_edge:
+                                read_step = max(
+                                    int(round(read_step / ratio)), target)
+                            if not qubit_edge:
+                                qubit_step = max(
+                                    int(round(qubit_step / ratio)), target)
+                        vertex = {"enabled": bool(
+                            p.get("gain_vertex_refinement", True))}
+                        if vertex["enabled"] and final_rows:
+                            best_row = max(final_rows, key=self._portfolio_rank)
+                            for axis_key, field in (
+                                    ("read", "read_pulse_gain"),
+                                    ("qubit", "qubit_pi_gain")):
+                                line = [
+                                    row for row in final_rows
+                                    if all(int(round(float(row[other])))
+                                           == int(round(float(best_row[other])))
+                                           for other in ("read_pulse_gain",
+                                                         "qubit_pi_gain")
+                                           if other != field)]
+                                fit = self._parabolic_gain_vertex(
+                                    [float(row[field]) for row in line],
+                                    [float(row.get("fidelity", np.nan))
+                                     for row in line],
+                                    [max(float(row.get("fidelity_se", np.nan)),
+                                         1e-6) for row in line])
+                                vertex[axis_key] = fit
+                            proposals = []
+                            candidate = dict(best_row)
+                            changed = False
+                            for axis_key, field, lo, hi in (
+                                    ("read", "read_pulse_gain",
+                                     self.params["joint_search"]["read_gain_min"],
+                                     self.params["joint_search"]["read_gain_max"]),
+                                    ("qubit", "qubit_pi_gain", 1,
+                                     self.params["joint_search"][
+                                         "qubit_gain_hard_max"])):
+                                fit = vertex.get(axis_key, {})
+                                usable = bool(
+                                    fit.get("ok")
+                                    and fit.get("vertex_dac") is not None
+                                    and fit.get("vertex_se_dac") is not None
+                                    and np.isfinite(float(
+                                        fit.get("vertex_se_dac", np.inf)))
+                                    and abs(float(fit["vertex_dac"])
+                                            - float(best_row[field]))
+                                    <= 3.0 * float(fit["vertex_se_dac"]))
+                                fit["adopted"] = usable
+                                if usable:
+                                    value = int(np.clip(
+                                        int(fit["vertex_dac"]), int(lo), int(hi)))
+                                    if value != int(round(float(
+                                            best_row[field]))):
+                                        candidate[field] = value
+                                        changed = True
+                            if changed:
+                                proposals = self._qualified_transition_rows(
+                                    _unique_candidates([_with_candidate(
+                                        {key: candidate[key]
+                                         for key in self.initial},
+                                        read_length=float(length))]))
+                            if proposals:
+                                try:
+                                    vertex_rows = self._confirm_candidates(
+                                        proposals, int(p["gain_zoom_shots"]),
+                                        int(p["gain_zoom_blocks"]),
+                                        "portfolio %.0f us interpolated gain vertex"
+                                        % length, add_to_history=True)
+                                    zoom_rows.extend(vertex_rows)
+                                    vertex["measured"] = True
+                                except KeyboardInterrupt:
+                                    raise
+                                except Exception as exc:
+                                    vertex["measured"] = False
+                                    vertex["failure"] = "%s: %s" % (
+                                        type(exc).__name__, exc)
+                        entry["search"]["gain_vertex"] = vertex
                         entry["search"]["deterministic_gain_zoom"] = {
                             "rounds": zoom_records,
                             "locally_converged": locally_converged,
                             "round_count": len(zoom_records),
+                            "final_read_step_dac": int(read_step),
+                            "final_qubit_step_dac": int(qubit_step),
+                            "target_step_dac": int(target),
+                            "stopped_on_noise_floor": bool(
+                                zoom_records and zoom_records[-1].get(
+                                    "resolution_limited_by_noise", False)),
                             "final_center_candidate_key": list(
                                 _candidate_key(zoom_center)),
                         }
@@ -13421,7 +13742,34 @@ class BasicAutoTuner(ExperimentClass):
                   % (passive_minutes, repetitions / 1000.0))
             print("=" * 78)
 
+        run_mode = str(self.params.get("run_mode", "full")).strip().lower()
+        self.data["run_mode"] = run_mode
         try:
+            if run_mode == "gain_search":
+                self._run_stage(
+                    "gain_search_seed", self._seed_gain_search_stage)
+                self._run_stage("reset_before_joint", lambda:
+                                self._try_activate_feedback("operator seed"))
+                self._run_stage("joint_search", self._stage_joint_search)
+                self._run_stage("multi_aae", self._stage_multi_candidate_aae)
+                for iteration in range(1, max(int(
+                        self.params["joint_search"].get(
+                            "closure_iterations", 2)), 0) + 1):
+                    self._run_stage(
+                        "joint_closure_%d" % iteration,
+                        lambda iteration=iteration:
+                            self._stage_joint_closure(iteration))
+                final = self._run_stage("final", self._stage_final)
+                if final is not None:
+                    self.data["best_fidelity_replay"] = copy.deepcopy(final)
+                    self.data["best_fidelity_replay_complete"] = bool(
+                        self._final_replay_completed)
+                if self._duration_portfolio_active:
+                    portfolio_best = self._run_stage(
+                        "duration_portfolio", self._stage_duration_portfolio)
+                    if portfolio_best is not None:
+                        final = portfolio_best
+                return self._complete_acquire(final, plotDisp=plotDisp)
             self._run_stage("baseline", self._stage_baseline)
             self._run_stage("resonator", self._stage_resonator)
             self._run_stage("spectroscopy", self._stage_spectroscopy)
@@ -13448,6 +13796,15 @@ class BasicAutoTuner(ExperimentClass):
             self._run_stage("parity_chevron", self._stage_parity_chevron)
             gate = self._run_stage(
                 "pre_expensive_gate", self._stage_pre_expensive_gate)
+            if run_mode == "discovery":
+                if gate is None:
+                    self.data["expensive_search_skipped"] = True
+                    self.data["expensive_search_skip_reason"] = (
+                        "resonator/qubit transition qualification did not pass")
+                else:
+                    self._discovery_handoff()
+                return self._complete_acquire(
+                    self._current_best_for_partial_run(), plotDisp=plotDisp)
             if gate is None:
                 self.data["expensive_search_skipped"] = True
                 self.data["expensive_search_skip_reason"] = (
@@ -13902,12 +14259,45 @@ class BasicAutoTuner(ExperimentClass):
             "remains untouched pending manual selection"
             % (reportable_count, requested, len(safe)))
 
+    def _finalize_discovery(self, final):
+        handoff = self.data.get("discovery_handoff")
+        candidate = copy.deepcopy(final) if isinstance(final, dict) else None
+        complete = bool(isinstance(handoff, dict)
+                        and self._discovery_status.get("resonator", False)
+                        and self._discovery_status.get("spectroscopy", False))
+        self.data.update({
+            "outcome": ("discovery_complete" if complete
+                        else "discovery_incomplete"),
+            "success": bool(complete),
+            "failure": (None if complete else
+                        "resonator/qubit discovery did not both confirm"),
+            "best_found": candidate,
+            "best_overall_candidate": candidate,
+            "best_fidelity_replay": candidate,
+            "best_fidelity_replay_complete": False,
+            "tuned": ({key: candidate[key] for key in TUNED_KEYS}
+                      if isinstance(candidate, dict)
+                      and all(key in candidate for key in TUNED_KEYS) else {}),
+            "eligible_tuned": {},
+            "manual_selection_required": True,
+            "automatic_config_write_allowed": False,
+            "final_stable": False,
+            "fidelity_replay_stable": False,
+        })
+        self._log(
+            "result", "OK",
+            "discovery stage %s; paste discovery_handoff into the gain-search runner"
+            % ("complete" if complete else "incomplete"))
+
     def _finalize(self, final):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.data["time"] = now
         self.data["working"] = dict(self.working)
         self.data["candidate_count"] = len(self._archive)
         self.data["interrupted"] = bool(self._interrupted)
+        if str(self.data.get("run_mode", "full")).strip().lower() == "discovery":
+            self._finalize_discovery(final)
+            return
         if self._archive:
             observed = max(self._archive, key=lambda row: float(
                 row.get("fidelity", -np.inf)))
