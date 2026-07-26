@@ -101,7 +101,7 @@ class FFStepResponseSpecProgram(RAveragerProgram):
         self.sync_all(self.us2cycles(0.01))
         if cfg.get("readout_after_park", True):
             ff_pulse.play_ramp_down(self, self.ff_segs)
-            self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
+            self.sync_all(self.us2cycles(cfg.get("flux_settle_time", 100) / 1000.0))
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))

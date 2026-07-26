@@ -125,6 +125,7 @@ P3_STEP_RESPONSE = {
 
 P4_LONG_TIME = {
     "run": False,
+    "fit_trace": True,
     "advanced_fit": False,
     "shots": 100,
     "relax_delay_us": 700.0,
@@ -610,7 +611,7 @@ def run_step4_long_time_spec(outer_folder, soc, soccfg, correction_json,
         park_voltage=BASELINE_DC_OFFSET,
         inter_target_wait_ns=p.get("inter_target_wait_us", 100.0) * 1e3,
         flux_tail_compensation=flux_tail_compensation,
-        fit_trace=False, advanced_fit=bool(p.get("advanced_fit", False)),
+        fit_trace=bool(p.get("fit_trace", True)), advanced_fit=bool(p.get("advanced_fit", False)),
         live_plot=bool(p.get("live_plot", False)) and LIVE_PLOTS,
         resonator_lookup_csv=resonator_lookup_csv,
     )

@@ -401,7 +401,7 @@ class FFT1Program(AveragerProgram):
             ff_pulse.play_ramp_up_hold(self, self.ff_segs, dt_play_us=cfg.get("dt_pulseplay", 5.0))
             self.sync_all(self.us2cycles(0.01))
             ff_pulse.play_ramp_down(self, self.ff_segs)
-        self.sync_all(self.us2cycles(cfg.get("pre_meas_delay", 0.1)))
+        self.sync_all(self.us2cycles(cfg.get("flux_settle_time", 100) / 1000.0))
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                      adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                      wait=True, syncdelay=self.us2cycles(cfg["relax_delay"]))
@@ -455,7 +455,8 @@ class _T1VsFluxBase(ExperimentClass):
         self.park_voltage = (park_voltage if park_voltage is not None
                              else cfg.get("ff_park_gain", 0))
         self.flux_settle_time_ns = (flux_settle_time_ns if flux_settle_time_ns is not None
-                                    else cfg.get("flux_settle_time", 0))
+                                    else cfg.get("flux_settle_time", 100))
+        cfg["flux_settle_time"] = self.flux_settle_time_ns
         self.reset_mode = reset_mode
         cfg["reset_mode"] = reset_mode
         self.repeat_metadata = dict(repeat_metadata or {})

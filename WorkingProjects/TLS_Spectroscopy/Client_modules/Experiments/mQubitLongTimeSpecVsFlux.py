@@ -116,7 +116,8 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
         self.inter_target_wait_ns = float(inter_target_wait_ns)
         self.readout_after_park = bool(readout_after_park)
         self.park_readout_settle_ns = (park_readout_settle_ns if park_readout_settle_ns
-                                       is not None else cfg.get("flux_settle_time", 0))
+                                       is not None else cfg.get("flux_settle_time", 100))
+        cfg["flux_settle_time"] = self.park_readout_settle_ns
         self.post_readout_reset_ns = (post_readout_reset_ns if post_readout_reset_ns
                                       is not None else cfg.get("relax_delay", 0) * 1e3)
         self.fit_trace = bool(fit_trace)
@@ -343,11 +344,15 @@ class QubitLongTimeSpecVsFlux(ExperimentClass):
               f"{np.nanmedian(long_time_frequency_std_ghz) * 1e3:.3f} MHz")
 
         if self.fit_trace:
-            self._write_summary_csv()
-            self._write_trace_csv()
-            self._save_trace_interpolation_plot()
-            self._save_frequency_trace_plot()
-            self._draw_summary_plot(long_time_mag_dbm, fpts_mhz, plotDisp)
+            try:
+                self._write_summary_csv()
+                self._write_trace_csv()
+                self._save_trace_interpolation_plot()
+                self._save_frequency_trace_plot()
+                self._draw_summary_plot(long_time_mag_dbm, fpts_mhz, plotDisp)
+            except Exception as exc:
+                print(f"[{self.step_tag}] trace plotting failed ({exc}); "
+                      f"raw_sweep CSV + pickle remain for offline analysis.")
 
         if self.advanced_fit:
             try:
