@@ -793,6 +793,112 @@ def test_gain_ladder_refines_to_the_ones_place_and_stops_on_noise():
     assert rising["ok"] is False
 
 
+def test_noise_cannot_buy_a_statistical_tie():
+    common = {"max_even_return_error_ucb": 0.04,
+              "max_odd_inversion_error_ucb": 0.04,
+              "third_blob_excess_ucb": 0.01}
+    best = dict(common, fidelity=0.950, fidelity_se=0.004,
+                fidelity_lcb_95=0.942, sigma=0.05, qubit_pi_gain=28000,
+                read_pulse_gain=8000, read_length=10.0)
+    sloppy = dict(common, fidelity=0.930, fidelity_se=0.050,
+                  fidelity_lcb_95=0.832, sigma=0.25, qubit_pi_gain=5800,
+                  read_pulse_gain=3000, read_length=10.0)
+    assert T.BasicAutoTuner._prefer_longer_noninferior(
+        [best, sloppy], margin=0.003) is best
+    assert T.BasicAutoTuner._prefer_lower_readout_exposure(
+        [best, sloppy], margin=0.003) is best
+    precise = dict(sloppy, fidelity=0.944, fidelity_se=0.004,
+                   fidelity_lcb_95=0.936)
+    assert T.BasicAutoTuner._prefer_longer_noninferior(
+        [best, precise], margin=0.003) is precise
+
+
+def test_noninferior_seed_uses_the_error_of_the_difference():
+    def row(candidate, fidelity, se):
+        out = T._with_candidate(candidate)
+        out.update({"fidelity": fidelity, "fidelity_se": se,
+                    "fidelity_lcb_95": fidelity - 1.96 * se})
+        return out
+
+    base = T._candidate_from_cfg(_base_config())
+    seed = T._with_candidate(base, read_pulse_gain=4000)
+    incumbent = T._with_candidate(base, read_pulse_gain=6000)
+    noisy_incumbent = row(incumbent, 0.950, 0.020)
+    precise_seed = row(seed, 0.910, 0.001)
+    chosen = T.BasicAutoTuner._noninferior_seed(
+        [noisy_incumbent, precise_seed], seed, incumbent, margin=0.005)
+    assert T._candidate_key(chosen) == T._candidate_key(incumbent)
+    close_seed = row(seed, 0.9495, 0.001)
+    chosen = T.BasicAutoTuner._noninferior_seed(
+        [row(incumbent, 0.950, 0.001), close_seed], seed, incumbent,
+        margin=0.005)
+    assert T._candidate_key(chosen) == T._candidate_key(seed)
+
+
+def test_partial_confirmation_is_not_promoted_to_complete_evidence():
+    base = T._candidate_from_cfg(_base_config())
+    single = T.BasicAutoTuner._aggregate(
+        base, [{"fidelity": 0.9, "fidelity_se": 0.01, "sep_sigma": 3.0,
+                "measurement_index": 0}], "one block")
+    assert single["evidence_tier"] == 1
+    assert single["evidence_level"] == "single_block_replay"
+    assert single["block_spread_defined"] is False
+    pair = T.BasicAutoTuner._aggregate(
+        base,
+        [{"fidelity": 0.9, "fidelity_se": 0.01, "sep_sigma": 3.0,
+          "measurement_index": 0},
+         {"fidelity": 0.9, "fidelity_se": 0.01, "sep_sigma": 3.0,
+          "measurement_index": 1}], "two blocks")
+    assert pair["evidence_tier"] == 2
+    assert pair["fidelity_se"] >= 0.01 / np.sqrt(2) - 1e-12
+
+
+def test_deliberate_passive_reset_survives_a_cached_profile():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS))
+        key = tuner._reset_profile_signature(tuner.working)
+        tuner._reset_profiles[key] = {"reset_mode": "feedback",
+                                      "reset_profile_key": key}
+        tuner._reset_fixed_readout_gain = int(tuner.working["read_pulse_gain"])
+        tuner._reset_fixed_control = {
+            "qubit_pi_freq": float(tuner.working["qubit_pi_freq"]),
+            "qubit_pi_gain": int(tuner.working["qubit_pi_gain"]),
+            "sigma": float(tuner.working["sigma"]), "qubit_drag_beta": 0.0}
+        tuner._deactivate_feedback("leakage waveform comparison")
+        assert tuner._passive_override is True
+        assert tuner._ensure_reset_profile(
+            tuner.working, "cache hit after deliberate passive") is False
+        assert tuner._feedback_profiles_suspended is True
+        cfg = tuner._cfg_for(tuner.working)
+        assert cfg["reset_mode"] == "passive"
+
+
+def test_measured_rows_record_the_reset_mode_actually_compiled():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS))
+        row = tuner._measure_candidate(
+            dict(tuner.working), 60, "reset provenance")
+    assert row["compiled_reset_mode"] == "passive"
+    assert "reference_fidelity" not in row
+
+
+def test_unseeded_basin_filter_fails_closed_under_the_discovery_guard():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS))
+        tuner._qualified_transition_frequencies = []
+        tuner._qualified_transition_frequency = None
+        tuner._discovery_guard_active = False
+        assert tuner._candidate_in_qualified_transition(tuner.working) is True
+        tuner._discovery_guard_active = True
+        assert tuner._candidate_in_qualified_transition(tuner.working) is False
+
+
 def test_gain_only_search_pins_sigma_from_the_config():
     original = copy.deepcopy(T.BASIC_DEFAULTS)
     base = T.configure_readout_length_mode(
@@ -7591,6 +7697,12 @@ def main():
         test_reset_phase_alignment_runs_once_and_never_writes_initialize_py,
         test_two_stage_split_hands_off_discovery_and_seeds_the_gain_search,
         test_gain_ladder_refines_to_the_ones_place_and_stops_on_noise,
+        test_noise_cannot_buy_a_statistical_tie,
+        test_noninferior_seed_uses_the_error_of_the_difference,
+        test_partial_confirmation_is_not_promoted_to_complete_evidence,
+        test_deliberate_passive_reset_survives_a_cached_profile,
+        test_measured_rows_record_the_reset_mode_actually_compiled,
+        test_unseeded_basin_filter_fails_closed_under_the_discovery_guard,
         test_gain_only_search_pins_sigma_from_the_config,
         test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
         test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,

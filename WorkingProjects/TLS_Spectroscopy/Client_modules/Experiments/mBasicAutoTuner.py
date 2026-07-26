@@ -1381,6 +1381,10 @@ def step5_metrics(ig, qg, ie, qe, analyze_multimodality=False):
         + _binomial_variance_jeffreys(
             crossfit_excited_errors, crossfit_excited_total)))
     crossfit_fidelity_se = float(math.sqrt(max(crossfit_variance, 0.0)))
+    if len(crossfit_fold_fidelities) == 2:
+        crossfit_fidelity_se = float(max(
+            crossfit_fidelity_se,
+            0.5 * abs(crossfit_fold_fidelities[0] - crossfit_fold_fidelities[1])))
     crossfit_confusion = np.array([
         [1.0 - crossfit_p_e_given_g, crossfit_p_g_given_e],
         [crossfit_p_e_given_g, 1.0 - crossfit_p_g_given_e],
@@ -1977,6 +1981,7 @@ class BasicAutoTuner(ExperimentClass):
         self._feedback_profiles_suspended = False
         self._reset_unavailable = False
         self._feedback_disqualified = False
+        self._passive_override = False
         self._res_phase_calibrated = False
         self._run_started_monotonic = None
         self._joint_search_started_monotonic = None
@@ -2187,6 +2192,7 @@ class BasicAutoTuner(ExperimentClass):
     def _deactivate_feedback(self, reason=None):
         was_feedback = self._reset_runtime.get("reset_mode") == "feedback"
         self._feedback_profiles_suspended = True
+        self._passive_override = True
         self._reset_runtime = {"reset_mode": "passive"}
         self.data["reset"].update({"mode": "passive", "fresh": False})
         if reason is not None:
@@ -2443,6 +2449,7 @@ class BasicAutoTuner(ExperimentClass):
         if (not bool(settings.get("enabled", True)) or self._reset_unavailable
                 or self._feedback_disqualified):
             return False
+        self._passive_override = False
         if self.soccfg is None or not active_reset.active_reset_supported(
                 self.soccfg, self.input_cfg["ro_chs"][0]):
             self._reset_unavailable = True
@@ -2572,7 +2579,8 @@ class BasicAutoTuner(ExperimentClass):
         settings = self.params["reset"]
         key = self._reset_profile_signature(candidate)
         if (not bool(settings.get("enabled", True))
-                or self._reset_unavailable or self._feedback_disqualified):
+                or self._reset_unavailable or self._feedback_disqualified
+                or self._passive_override):
             return False
         if key in self._reset_profiles:
             self._reset_runtime = copy.deepcopy(self._reset_profiles[key])
@@ -2768,8 +2776,7 @@ class BasicAutoTuner(ExperimentClass):
             "read_pulse_freq", "read_pulse_gain", "read_length",
             "qubit_freq", "qubit_pi_freq", "qubit_pi_gain", "sigma",
         )})
-        cfg["qubit_drag_beta"] = float(c.get(
-            "qubit_drag_beta", self.input_cfg.get("qubit_drag_beta", 0.0)) or 0.0)
+        cfg["qubit_drag_beta"] = float(c.get("qubit_drag_beta", 0.0) or 0.0)
         # This key is the RAverager register step used by SingleShotProgram.  Omitting
         # it was the exact kind of pulse-path mismatch that made older automatic runs
         # disagree with a 91.65% manual step-5 run.
@@ -3284,6 +3291,7 @@ class BasicAutoTuner(ExperimentClass):
                     # Match SingleShotProgram's gain-zero ground arm exactly: it still
                     # emits the zero-amplitude waveform and the same 10 ns post-pulse gap.
                     sequence_phases_deg=[0.0], shots=int(shots), reps=int(shots),
+                    seq_gap_us=0.010,
                 )
                 program = BasicSequenceProgram(self.soccfg, cfg)
                 program.acquire(self.soc, load_pulses=True, progress=False)
@@ -3604,6 +3612,12 @@ class BasicAutoTuner(ExperimentClass):
                 "reference_p_e_given_g": p_e_given_g,
                 "reference_p_g_given_e": p_g_given_e,
             })
+        for stale in ("reference_fidelity", "reference_p_e_given_g",
+                      "reference_p_g_given_e"):
+            if reference_discriminator is None:
+                row.pop(stale, None)
+        row["compiled_reset_mode"] = str(
+            self._last_compiled_reset_runtime.get("reset_mode", "passive"))
         row["label"] = str(label)
         row["state_order"] = str(state_order)
         row["evidence_level"] = "paired_single_shot"
@@ -3622,7 +3636,8 @@ class BasicAutoTuner(ExperimentClass):
         shot_ses = np.asarray([row["fidelity_se"] for row in measurements], dtype=float)
         mean = float(np.mean(fids))
         if fids.size > 1:
-            between = float(np.std(fids, ddof=1) / np.sqrt(fids.size))
+            inflation = float(student_t.ppf(0.975, fids.size - 1) / 1.96)
+            between = float(np.std(fids, ddof=1) / np.sqrt(fids.size)) * inflation
         else:
             between = 0.0
         within = float(np.sqrt(np.sum(shot_ses ** 2)) / fids.size)
@@ -3646,7 +3661,11 @@ class BasicAutoTuner(ExperimentClass):
             # Multiple blocks are a family of fresh anomaly checks.  Preserve the
             # worst upper bound so a transient third cloud cannot be averaged away.
             "third_blob_excess_ucb": float(max(
-                row.get("third_blob_excess_ucb_95", np.inf)
+                float(row.get("third_blob_excess", 0.0))
+                + _simultaneous_z(len(measurements))
+                * float(row.get("third_blob_excess_se", np.inf))
+                if np.isfinite(float(row.get("third_blob_excess_se", np.inf)))
+                else float(row.get("third_blob_excess_ucb_95", np.inf))
                 for row in measurements)),
             "ground_outlier_ucb_95": float(max(
                 row.get("ground_outlier_ucb_95", np.inf)
@@ -3721,6 +3740,8 @@ class BasicAutoTuner(ExperimentClass):
         candidates = _unique_candidates(candidates)
         if not candidates:
             raise ValueError("cannot confirm an empty candidate list")
+        for candidate in candidates:
+            self._ensure_reset_profile(candidate, "confirmation cohort %s" % label)
         requested_blocks = max(int(blocks), 1)
         buckets = [[] for _ in candidates]
         pairing_buckets = [[] for _ in candidates]
@@ -3759,7 +3780,7 @@ class BasicAutoTuner(ExperimentClass):
             key = _candidate_key(candidate)
             existing = next((entry for entry in self._unconfirmed_contenders
                              if _candidate_key(entry["candidate"]) == key), None)
-            if not batch_complete:
+            if len(rows) < requested_blocks:
                 entry = {
                     "candidate": {name: candidate[name] for name in self.initial},
                     "missing_blocks": int(requested_blocks - len(rows)),
@@ -3771,7 +3792,8 @@ class BasicAutoTuner(ExperimentClass):
                 }
                 if existing is None:
                     self._unconfirmed_contenders.append(entry)
-                elif entry["missing_blocks"] >= existing["missing_blocks"]:
+                else:
+                    entry["order"] = int(existing["order"])
                     existing.update(entry)
             elif existing is not None:
                 self._unconfirmed_contenders.remove(existing)
@@ -3783,7 +3805,9 @@ class BasicAutoTuner(ExperimentClass):
                 "completed_confirmation_blocks": len(rows),
                 "missing_confirmation_blocks": requested_blocks - len(rows),
                 "confirmation_complete": bool(len(rows) == requested_blocks),
-                "confirmation_batch_complete": batch_complete,
+                "confirmation_batch_complete": bool(
+                    len(rows) == requested_blocks),
+                "confirmation_cohort_complete": batch_complete,
                 "confirmation_failure_count": len(failures),
                 # These opaque ids are equal only for candidates acquired in the
                 # same randomized round-robin block.  Sequential frontier batches
@@ -3791,10 +3815,11 @@ class BasicAutoTuner(ExperimentClass):
                 # windows merely because both happen to contain eight blocks.
                 "block_pairing_ids": list(pairing_ids),
                 "evidence_level": (
-                    "held_out_complete_multi_block" if batch_complete else
+                    "held_out_complete_multi_block"
+                    if len(rows) == requested_blocks and len(rows) >= 2 else
                     "incomplete_multi_block"),
                 "evidence_tier": 3 if (
-                    batch_complete and len(rows) >= 2) else 2,
+                    len(rows) == requested_blocks and len(rows) >= 2) else 2,
             })
             aggregates.append(aggregate)
         limit = max(int(self.params["final"].get(
@@ -3823,7 +3848,9 @@ class BasicAutoTuner(ExperimentClass):
     @staticmethod
     def _confirmation_batch_complete(aggregates):
         return bool(aggregates and all(
-            row.get("confirmation_batch_complete", False) for row in aggregates))
+            row.get("confirmation_cohort_complete",
+                    row.get("confirmation_batch_complete", False))
+            for row in aggregates))
 
     @staticmethod
     def _best_aggregate(rows):
@@ -5230,9 +5257,11 @@ class BasicAutoTuner(ExperimentClass):
             return BasicAutoTuner._best_aggregate(aggregates)
         if incumbent_row is None:
             return seed_row
-        floor = (float(incumbent_row["fidelity"])
-                 - 1.96 * float(incumbent_row["fidelity_se"]) - float(margin))
-        if float(seed_row["fidelity_lcb_95"]) >= floor:
+        loss = float(incumbent_row["fidelity"]) - float(seed_row["fidelity"])
+        loss_ucb = loss + 1.96 * math.hypot(
+            float(incumbent_row.get("fidelity_se", np.inf)),
+            float(seed_row.get("fidelity_se", np.inf)))
+        if np.isfinite(loss_ucb) and loss_ucb <= float(margin):
             return seed_row
         return BasicAutoTuner._best_aggregate(aggregates)
 
@@ -5245,11 +5274,13 @@ class BasicAutoTuner(ExperimentClass):
         best = BasicAutoTuner._best_aggregate(aggregates)
         tied = []
         for row in aggregates:
-            uncertainty = 1.96 * math.hypot(
-                float(best.get("fidelity_se", np.inf)),
-                float(row.get("fidelity_se", np.inf)))
+            best_se = float(best.get("fidelity_se", np.inf))
+            row_se = float(row.get("fidelity_se", np.inf))
+            uncertainty = 1.96 * math.hypot(best_se, row_se)
             loss = float(best["fidelity"]) - float(row["fidelity"])
-            if (loss <= uncertainty + float(margin)
+            comparable = bool(np.isfinite(row_se) and np.isfinite(best_se)
+                              and row_se <= 2.0 * best_se)
+            if (comparable and loss <= uncertainty + float(margin)
                     and loss <= float(max_mean_loss)):
                 tied.append(row)
         return min(tied or [best], key=lambda row: (
@@ -8850,7 +8881,7 @@ class BasicAutoTuner(ExperimentClass):
         if not centers and self._qualified_transition_frequency is not None:
             centers = [float(self._qualified_transition_frequency)]
         if not centers:
-            return True
+            return not self._discovery_guard_active
         try:
             frequency = float(candidate["qubit_pi_freq"])
         except (KeyError, TypeError, ValueError, OverflowError):
@@ -11483,11 +11514,13 @@ class BasicAutoTuner(ExperimentClass):
         best = BasicAutoTuner._best_aggregate(aggregates)
         tied = []
         for row in aggregates:
-            uncertainty = 1.96 * math.hypot(
-                float(best.get("fidelity_se", np.inf)),
-                float(row.get("fidelity_se", np.inf)))
+            best_se = float(best.get("fidelity_se", np.inf))
+            row_se = float(row.get("fidelity_se", np.inf))
+            uncertainty = 1.96 * math.hypot(best_se, row_se)
             loss = float(best["fidelity"]) - float(row["fidelity"])
-            if (loss <= uncertainty + float(margin)
+            comparable = bool(np.isfinite(row_se) and np.isfinite(best_se)
+                              and row_se <= 2.0 * best_se)
+            if (comparable and loss <= uncertainty + float(margin)
                     and loss <= float(max_mean_loss)):
                 tied.append(row)
         return max(tied or [best], key=lambda row: (
@@ -13258,12 +13291,10 @@ class BasicAutoTuner(ExperimentClass):
         p = self.params["final"]
         ranked = sorted(
             self._qualified_transition_rows(self._confirmed),
-            key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
-                             float(row.get("fidelity", -np.inf))), reverse=True)
+            key=self._authoritative_rank, reverse=True)
         raw_ranked = sorted(
             self._qualified_transition_rows(self._archive),
-            key=lambda row: (float(row.get("fidelity_lcb_95", -np.inf)),
-                             float(row.get("fidelity", -np.inf))), reverse=True)
+            key=self._authoritative_rank, reverse=True)
 
         def physical_candidate(row):
             return {key: row[key] for key in self.initial}
