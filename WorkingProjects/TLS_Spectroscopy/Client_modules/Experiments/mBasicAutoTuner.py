@@ -80,7 +80,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "selectable-readout-mode-v12"
+BASIC_AUTOTUNER_REVISION = "run-health-v13"
 
 
 BASIC_DEFAULTS = {
@@ -6507,10 +6507,14 @@ class BasicAutoTuner(ExperimentClass):
         minimum_passes = min(
             max(int(p.get("minimum_duration_coverage_passes", 1)), 1),
             int(read_gains.size))
+        mandatory_passes_requested = int(minimum_passes)
+        mandatory_passes_granted = int(minimum_passes)
         mandatory_jobs = int(minimum_passes * strata_per_pass)
         coarse_tail_reserve = (
             float(p.get("reserve_medium_minutes", 6.0))
             + float(p.get("reserve_control_refinement_minutes", 7.0)))
+        pass_started_monotonic = time.monotonic()
+        pass_minutes = []
         coarse_rows, failures = [], []
         resumed_rows = list(self.data["joint_search"].get(
             "resumed_coarse_rows", []))
@@ -6522,6 +6526,27 @@ class BasicAutoTuner(ExperimentClass):
         anchor_interval = max(strata_per_pass, 1)
         completed_jobs = 0
         for serial, job in enumerate(jobs):
+            if serial and serial % strata_per_pass == 0:
+                boundary = time.monotonic()
+                pass_minutes.append(
+                    float((boundary - pass_started_monotonic) / 60.0))
+                pass_started_monotonic = boundary
+                completed_passes = int(serial // strata_per_pass)
+                if (completed_passes < mandatory_passes_granted
+                        and not self._joint_budget_allows(
+                            reserve_final=True,
+                            additional_reserve_minutes=(
+                                coarse_tail_reserve
+                                + float(np.mean(pass_minutes))))):
+                    mandatory_passes_granted = completed_passes
+                    mandatory_jobs = int(completed_passes * strata_per_pass)
+                    self._log(
+                        "joint_search", "WARN",
+                        "measured %.1f min per duration-coverage pass; granting %d "
+                        "of %d mandatory readout-power passes so the held-out "
+                        "medium/trust refinement keeps its reserved budget"
+                        % (float(np.mean(pass_minutes)), completed_passes,
+                           mandatory_passes_requested))
             # Complete the mandatory duration-balanced pass even if a slow backend
             # crosses the soft estimate while that pass is in flight.  Only later
             # readout-power passes are optional.
@@ -6605,7 +6630,12 @@ class BasicAutoTuner(ExperimentClass):
             "read_gain_pass_order_dac": np.asarray([
                 jobs[index * strata_per_pass][2]
                 for index in range(len(read_gains))], dtype=int),
-            "mandatory_duration_passes": int(minimum_passes),
+            "mandatory_duration_passes": int(mandatory_passes_granted),
+            "mandatory_duration_passes_requested": int(
+                mandatory_passes_requested),
+            "mandatory_coverage_reduced_for_budget": bool(
+                mandatory_passes_granted < mandatory_passes_requested),
+            "coarse_pass_minutes": list(pass_minutes),
             "coarse_cells_attempted": int(completed_jobs),
             "coarse_gain_passes_completed": int(
                 completed_jobs // max(strata_per_pass, 1)),
@@ -9658,6 +9688,7 @@ class BasicAutoTuner(ExperimentClass):
             candidates = _unique_candidates(candidates + [
                 {key: row[key] for key in self.initial}])
         candidates = self._qualified_transition_rows(candidates)[:target]
+        held_out = [row for row in local if self._evidence_tier(row) >= 2]
         return candidates, {
             "source_rows": len(local),
             "native_seed_count": len(native),
@@ -9665,6 +9696,10 @@ class BasicAutoTuner(ExperimentClass):
             "proposal_count": len(proposals),
             "target_candidate_count": target,
             "proposal_failure": proposal_failure,
+            "source_max_evidence_tier": int(max(
+                (self._evidence_tier(row) for row in local), default=0)),
+            "source_held_out_row_count": len(held_out),
+            "readout_seeded_from_proposals_only": bool(not held_out),
         }
 
     @staticmethod
@@ -12912,8 +12947,9 @@ class BasicAutoTuner(ExperimentClass):
             # The safe bootstrap and a distinct input readout can both be required
             # when the first gain fails its fresh confirmation.
             total += 2 * int(resonator["shots"]) * int(coarse_points)
-            total += (2 * int(resonator.get(
-                "confirmation_shots", resonator["shots"]))
+            total += (2 * max(int(resonator.get("max_candidates", 8)), 1)
+                      * int(resonator.get(
+                          "confirmation_shots", resonator["shots"]))
                       * int(resonator.get("confirmation_points", 81)))
         if p["spectroscopy"].get("enabled", True):
             spectroscopy = p["spectroscopy"]
@@ -12962,54 +12998,31 @@ class BasicAutoTuner(ExperimentClass):
                       * int(readout["shots"]))
             total += (2 * (int(readout["shortlist"]) + 1)
                       * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
-            # Local readout replay after direct/amplified control selection.
-            total += (2 * int(readout["local_freq_points"])
-                      * int(readout["local_gain_points"]) * int(readout["shots"]))
-            total += (2 * (int(readout["shortlist"]) + 1)
-                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
-        length = p["readout_length"]
-        if length.get("enabled", True):
-            length_count = len(length["values_us"]) + 1
-            total += (2 * length_count
-                      * int(length["freq_points"]) * int(length["gain_points"])
-                      * int(length["shots"]))
-            length_confirmations = (
-                int(length["shortlist"])
-                + length_count * max(int(length.get(
-                    "confirm_per_length", 2)), 1) + 1)
-            total += (2 * length_confirmations
-                      * int(length["confirm_shots"]) * int(length["confirm_blocks"]))
-            total += (2 * int(readout["local_freq_points"])
-                      * int(readout["local_gain_points"]) * int(readout["shots"]))
-            total += (2 * (int(readout["shortlist"]) + 1)
-                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
         qubit = p["qubit"]
-        if qubit.get("enabled", True):
-            total += (2 * int(qubit["freq_points"]) * int(qubit["gain_points"])
-                      * int(qubit["shots"]))
-            total += (2 * (int(qubit["shortlist"]) + 1)
-                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
-        duration = p["pulse_duration"]
-        if duration.get("enabled", True):
-            duration_count = len(duration["sigma_values_us"]) + 1
-            total += (2 * duration_count
-                      * int(duration["freq_points"]) * int(duration["gain_points"])
-                      * int(duration["shots"]))
-            duration_confirmations = (
-                int(duration["shortlist"])
-                + duration_count * max(int(duration.get(
-                    "confirm_per_sigma", 2)), 1) + 1)
-            total += (2 * duration_confirmations
-                      * int(duration["confirm_shots"]) * int(duration["confirm_blocks"]))
-        if p.get("coordinate_descent_repeat", True):
-            total += (2 * int(readout["local_freq_points"])
-                      * int(readout["local_gain_points"]) * int(readout["shots"]))
-            total += (2 * (int(readout["shortlist"]) + 1)
-                      * int(readout["confirm_shots"]) * int(readout["confirm_blocks"]))
-            total += (2 * int(qubit["local_freq_points"])
-                      * int(qubit["local_gain_points"]) * int(qubit["shots"]))
-            total += (2 * (int(qubit["shortlist"]) + 1)
-                      * int(qubit["confirm_shots"]) * int(qubit["confirm_blocks"]))
+        joint = p["joint_search"]
+        if joint.get("enabled", True):
+            joint_lengths = len(set(
+                float(value) for value in joint["read_lengths_us"]
+                if np.isfinite(float(value)) and float(value) > 0.0))
+            joint_sigmas = len(set(
+                float(value) for value in joint["sigma_values_us"]
+                if np.isfinite(float(value)) and float(value) > 0.0))
+            strata = max(joint_lengths * joint_sigmas, 1)
+            gain_passes = min(
+                max(int(joint.get("minimum_duration_coverage_passes", 1)), 1),
+                max(int(joint["read_gain_points"]), 1))
+            gain_points = max(
+                int(joint["qubit_gain_points_including_ground"]), 5)
+            total += (strata * gain_passes * gain_points
+                      * int(joint["coarse_shots"]))
+            total += (2 * (int(joint["medium_max_candidates"]) + 1)
+                      * int(joint["medium_shots"]) * int(joint["medium_blocks"]))
+            total += (2 * int(joint["trust_proposals"])
+                      * int(joint["trust_shots"]) * int(joint["trust_blocks"]))
+            closure_rounds = max(int(joint.get("closure_iterations", 2)), 0)
+            total += (closure_rounds * 2
+                      * (max(int(joint["trust_proposals"]) // 2, 8) + 1)
+                      * int(joint["trust_shots"]) * int(joint["trust_blocks"]))
         amplified = p["amplified_error"]
         if amplified.get("enabled", True):
             total += 2 * int(amplified["calibration_shots"])
@@ -13282,6 +13295,24 @@ class BasicAutoTuner(ExperimentClass):
         self._discovery_guard_active = True
         self._final_control_verified_key = None
         self._preflight()
+        repetitions = self._estimate_default_measurement_repetitions()
+        relax_delay_us = float(self.input_cfg.get("relax_delay", np.nan))
+        passive_hours = float(repetitions * relax_delay_us / 1e6 / 3600.0)
+        self.data["planned_repetitions"] = int(repetitions)
+        self.data["planned_passive_idle_hours"] = passive_hours
+        if not self._detailed_console():
+            print("  Planned workload: about %.1fM single-shot repetitions."
+                  % (repetitions / 1e6))
+            print("  Repetition delay alone is about %.1f h at the configured "
+                  "%.0f us passive relaxation; qualified active reset removes "
+                  "most of it." % (passive_hours, relax_delay_us))
+            if self._duration_portfolio_active:
+                lengths = self.params["duration_portfolio"].get(
+                    "read_lengths_us", [])
+                print("  Readout durations requested: %d (%s)."
+                      % (len(lengths),
+                         self.params["duration_portfolio"].get(
+                             "readout_length_mode", "custom")))
         if self._detailed_console():
             print("=" * 78)
             print("BASIC AUTO TUNER  %s" % self.path)
@@ -13298,11 +13329,8 @@ class BasicAutoTuner(ExperimentClass):
                       "third-cloud excess %.3f"
                       % (leakage["max_single_p2"], leakage["max_amplified_p2"],
                          leakage["max_third_blob_excess"]))
-            repetitions = self._estimate_default_measurement_repetitions()
-            passive_minutes = (
-                repetitions * float(self.input_cfg["relax_delay"]) / 1e6 / 60.0)
             print("  worst-case all-passive delay: %.1f min over about %.0fk repetitions"
-                  % (passive_minutes, repetitions / 1000.0))
+                  % (passive_hours * 60.0, repetitions / 1000.0))
             print("=" * 78)
 
         try:
@@ -13786,12 +13814,172 @@ class BasicAutoTuner(ExperimentClass):
             "remains untouched pending manual selection"
             % (reportable_count, requested, len(safe)))
 
+    def _run_health(self):
+        concerns = []
+        failed_stages = [
+            {"name": str(row.get("name")), "status": str(row.get("status")),
+             "error": row.get("error")}
+            for row in self._stages
+            if str(row.get("status", "")) != "ok"
+        ]
+        for row in failed_stages:
+            if row["status"] == "warning":
+                concerns.append(
+                    "stage '%s' did not complete: %s"
+                    % (row["name"], row["error"]))
+
+        reset = self.data.get("reset", {})
+        reset = reset if isinstance(reset, dict) else {}
+        reset_mode = str(reset.get("mode", "passive"))
+        relax_delay = float(self.input_cfg.get("relax_delay", np.nan))
+        if reset_mode != "feedback":
+            concerns.append(
+                "every acquisition paid the %.0f us passive relaxation delay; "
+                "feedback reset was not active at the end of the run"
+                % relax_delay)
+        if bool(reset.get("feedback_disqualified", False)):
+            concerns.append(
+                "feedback reset was disqualified by the exact passive/feedback "
+                "A/B and stayed off for the rest of the run")
+
+        joint = self.data.get("joint_search", {})
+        joint = joint if isinstance(joint, dict) else {}
+        coverage = joint.get("coverage", {})
+        coverage = coverage if isinstance(coverage, dict) else {}
+        joint_health = {
+            "status": joint.get("status"),
+            "coverage_complete": bool(coverage.get("complete", False)),
+            "measured_strata": coverage.get("measured_strata"),
+            "expected_strata": coverage.get("expected_strata"),
+            "mandatory_duration_passes_requested": joint.get(
+                "mandatory_duration_passes_requested"),
+            "mandatory_duration_passes": joint.get("mandatory_duration_passes"),
+            "mandatory_coverage_reduced_for_budget": bool(joint.get(
+                "mandatory_coverage_reduced_for_budget", False)),
+            "gain_passes_completed": joint.get("coarse_gain_passes_completed"),
+            "medium_row_count": len(joint.get("medium_rows", []) or []),
+            "trust_row_count": len(joint.get("trust_rows", []) or []),
+            "runtime_minutes": joint.get("runtime_minutes_after_search"),
+        }
+        if joint.get("enabled", True) and joint.get("status") not in (
+                "disabled", "not_run"):
+            if not joint_health["coverage_complete"]:
+                concerns.append(
+                    "the joint search measured %s of %s duration strata; its "
+                    "winner rests on partial coverage"
+                    % (coverage.get("measured_strata"),
+                       coverage.get("expected_strata")))
+            if joint_health["mandatory_coverage_reduced_for_budget"]:
+                concerns.append(
+                    "the joint search granted %s of %s mandatory readout-power "
+                    "passes to protect its reserved refinement budget"
+                    % (joint_health["mandatory_duration_passes"],
+                       joint_health["mandatory_duration_passes_requested"]))
+            if not joint_health["medium_row_count"]:
+                concerns.append(
+                    "the joint search ran out of budget before its held-out "
+                    "medium replay; downstream stages were seeded from coarse "
+                    "shared-ground rows only")
+            if not joint_health["trust_row_count"]:
+                concerns.append(
+                    "the joint search ran out of budget before its trust-region "
+                    "refinement")
+
+        portfolio = self.data.get("duration_portfolio", {})
+        portfolio = portfolio if isinstance(portfolio, dict) else {}
+        entries = portfolio.get("entries", []) if portfolio.get(
+            "enabled", False) else []
+        basis_counts, degraded_lengths, unconverged_lengths = {}, [], []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            selected = entry.get("selected")
+            basis = (str(selected.get("portfolio_fidelity_selection_basis",
+                                      "unknown"))
+                     if isinstance(selected, dict) else "no_reportable_tuple")
+            basis_counts[basis] = basis_counts.get(basis, 0) + 1
+            search = entry.get("search", {})
+            if not isinstance(search, dict):
+                continue
+            if bool(search.get("readout_seeded_from_proposals_only", False)):
+                degraded_lengths.append(float(entry.get("read_length_us", np.nan)))
+            zoom = search.get("deterministic_gain_zoom", {})
+            if (isinstance(zoom, dict)
+                    and not bool(zoom.get("locally_converged", False))):
+                unconverged_lengths.append(
+                    float(entry.get("read_length_us", np.nan)))
+        portfolio_health = {
+            "enabled": bool(portfolio.get("enabled", False)),
+            "readout_length_mode": portfolio.get("readout_length_mode"),
+            "requested_length_count": portfolio.get("requested_length_count"),
+            "reportable_length_count": portfolio.get("reportable_length_count"),
+            "equal_refinement_budget": portfolio.get("equal_refinement_budget"),
+            "selection_basis_counts": basis_counts,
+            "lengths_seeded_without_held_out_readout": degraded_lengths,
+            "lengths_without_local_gain_convergence": unconverged_lengths,
+            "failure_count": len(portfolio.get("failures", []) or []),
+        }
+        if portfolio_health["enabled"]:
+            fallback = int(basis_counts.get("gain_refinement_fallback", 0))
+            partial = int(basis_counts.get(
+                "partial_duration_interleaved_exact_replay", 0))
+            missing = int(basis_counts.get("no_reportable_tuple", 0))
+            if fallback or partial:
+                concerns.append(
+                    "%d readout length(s) were decided without a complete "
+                    "interleaved exact replay (%d partial, %d fallback)"
+                    % (fallback + partial, partial, fallback))
+            if missing:
+                concerns.append(
+                    "%d readout length(s) produced no reportable tuple" % missing)
+            if degraded_lengths:
+                concerns.append(
+                    "%d readout length(s) had no held-out readout basin to seed "
+                    "from and used coarse proposals only" % len(degraded_lengths))
+            if unconverged_lengths:
+                concerns.append(
+                    "%d readout length(s) ended the gain zoom on an axis edge, so "
+                    "their gains are not locally converged"
+                    % len(unconverged_lengths))
+
+        discovery = {
+            "resonator": bool(self._discovery_status.get("resonator", False)),
+            "spectroscopy": bool(
+                self._discovery_status.get("spectroscopy", False)),
+        }
+        if not discovery["resonator"]:
+            concerns.append("resonator discovery was not independently confirmed")
+        if not discovery["spectroscopy"]:
+            concerns.append("qubit spectroscopy was not independently confirmed")
+        if self._interrupted:
+            concerns.append("the operator interrupted the run")
+
+        return {
+            "degraded": bool(concerns),
+            "concerns": concerns,
+            "warned_stages": failed_stages,
+            "reset": {
+                "mode": reset_mode,
+                "feedback_disqualified": bool(
+                    reset.get("feedback_disqualified", False)),
+                "profile_count": reset.get("profile_count"),
+                "fallback_relax_delay_us": relax_delay,
+            },
+            "discovery": discovery,
+            "joint_search": joint_health,
+            "duration_portfolio": portfolio_health,
+            "runtime_minutes": self._runtime_minutes(),
+            "estimated_repetitions": int(
+                self.data.get("planned_repetitions", 0) or 0),
+        }
+
     def _finalize(self, final):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.data["time"] = now
         self.data["working"] = dict(self.working)
         self.data["candidate_count"] = len(self._archive)
         self.data["interrupted"] = bool(self._interrupted)
+        self.data["run_health"] = self._run_health()
         if self._archive:
             observed = max(self._archive, key=lambda row: float(
                 row.get("fidelity", -np.inf)))
@@ -14313,7 +14501,8 @@ class BasicAutoTuner(ExperimentClass):
             "automatic_config_write_allowed",
             "control_branch_qualification", "pre_expensive_gate",
             "expensive_search_skipped", "expensive_search_skip_reason",
-            "diagnostic_bundle",
+            "diagnostic_bundle", "run_health", "planned_repetitions",
+            "planned_passive_idle_hours",
         )
         summary = {key: data.get(key) for key in keys if key in data}
         portfolio = data.get("duration_portfolio", {})

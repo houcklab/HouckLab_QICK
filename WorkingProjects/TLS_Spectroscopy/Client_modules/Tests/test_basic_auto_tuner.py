@@ -5262,6 +5262,136 @@ def test_runtime_limited_joint_search_covers_every_duration_before_repeating_pow
     assert len({int(row["read_pulse_gain"]) for row in rows}) == 1
 
 
+def test_joint_budget_reduces_mandatory_passes_instead_of_starving_refinement():
+    class TailBudgetTuner(VirtualBasicAutoTuner):
+        def _joint_budget_allows(self, reserve_final=True,
+                                 additional_reserve_minutes=0.0):
+            del reserve_final
+            return float(additional_reserve_minutes) <= 0.2 + 1e-12
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params["joint_search"].update({
+        "read_lengths_us": [4.0, 8.0, 20.0],
+        "sigma_values_us": [0.10, 0.25],
+        "read_gain_min": 1000, "read_gain_max": 9000,
+        "read_gain_points": 5,
+        "minimum_duration_coverage_passes": 3,
+        "reserve_medium_minutes": 0.1,
+        "reserve_control_refinement_minutes": 0.1,
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = TailBudgetTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params,
+        )
+        tuner.working = T._with_candidate(
+            tuner.working,
+            read_pulse_freq=tuner.READ_FREQ,
+            qubit_pi_freq=tuner.QUBIT_FREQ,
+            qubit_pi_gain=14475,
+            sigma=0.10,
+        )
+        tuner._stage_joint_search()
+
+    joint = tuner.data["joint_search"]
+    assert joint["mandatory_duration_passes_requested"] == 3
+    assert joint["mandatory_duration_passes"] < 3
+    assert joint["mandatory_coverage_reduced_for_budget"] is True
+    assert joint["coverage"]["complete"] is True
+    assert len(joint["coarse_pass_minutes"]) >= 1
+    rows = joint["coarse_rows"]
+    assert {float(row["read_length"]) for row in rows} == {4.0, 8.0, 20.0}
+    assert {float(row["sigma"]) for row in rows} == {0.10, 0.25}
+
+
+def test_cost_model_counts_the_joint_search_and_ignores_unreachable_stages():
+    def estimate(mutate=None):
+        params = copy.deepcopy(FAST_PARAMS)
+        if mutate is not None:
+            mutate(params)
+        with tempfile.TemporaryDirectory() as folder:
+            tuner = VirtualBasicAutoTuner(
+                soc=None, soccfg=None, path="q4", outerFolder=folder,
+                cfg=_base_config(), params=params,
+            )
+            return tuner._estimate_default_measurement_repetitions()
+
+    def disable_joint(params):
+        params["joint_search"]["enabled"] = False
+
+    def inflate_unreachable(params):
+        params.setdefault("readout_length", {})
+        params["readout_length"]["values_us"] = [
+            float(value) for value in range(1, 41)]
+        params["readout_length"]["shots"] = 90000
+        params.setdefault("pulse_duration", {})
+        params["pulse_duration"]["sigma_values_us"] = [
+            0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.50]
+        params["pulse_duration"]["shots"] = 90000
+        params.setdefault("qubit", {})
+        params["qubit"]["shots"] = 90000
+        params["coordinate_descent_repeat"] = True
+
+    baseline = estimate()
+    assert estimate(disable_joint) < baseline
+    assert estimate(inflate_unreachable) == baseline
+
+
+def test_run_health_flags_degraded_coverage_seeding_and_passive_reset():
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=copy.deepcopy(FAST_PARAMS),
+        )
+        tuner._discovery_status.update(
+            {"resonator": True, "spectroscopy": True})
+        tuner.data["joint_search"].update({
+            "status": "partial_with_candidate",
+            "coverage": {"complete": False, "measured_strata": 4,
+                         "expected_strata": 12},
+            "mandatory_duration_passes_requested": 3,
+            "mandatory_duration_passes": 1,
+            "mandatory_coverage_reduced_for_budget": True,
+            "coarse_gain_passes_completed": 1,
+            "medium_rows": [], "trust_rows": [],
+        })
+        tuner.data["duration_portfolio"].update({
+            "enabled": True, "requested_length_count": 2,
+            "reportable_length_count": 2,
+            "entries": [
+                {"read_length_us": 4.0,
+                 "selected": {"portfolio_fidelity_selection_basis":
+                              "complete_duration_interleaved_exact_replay"},
+                 "search": {"readout_seeded_from_proposals_only": False,
+                            "deterministic_gain_zoom": {
+                                "locally_converged": True}}},
+                {"read_length_us": 8.0,
+                 "selected": {"portfolio_fidelity_selection_basis":
+                              "gain_refinement_fallback"},
+                 "search": {"readout_seeded_from_proposals_only": True,
+                            "deterministic_gain_zoom": {
+                                "locally_converged": False}}},
+            ],
+        })
+        health = tuner._run_health()
+
+    assert health["degraded"] is True
+    assert health["joint_search"]["coverage_complete"] is False
+    assert health["joint_search"]["mandatory_coverage_reduced_for_budget"] is True
+    assert health["duration_portfolio"][
+        "lengths_seeded_without_held_out_readout"] == [8.0]
+    assert health["duration_portfolio"][
+        "lengths_without_local_gain_convergence"] == [8.0]
+    assert health["duration_portfolio"]["selection_basis_counts"][
+        "gain_refinement_fallback"] == 1
+    joined = " | ".join(health["concerns"])
+    assert "passive relaxation" in joined
+    assert "medium replay" in joined
+    assert "mandatory readout-power passes" in joined
+    assert "complete interleaved exact replay" in joined
+    assert "locally converged" in joined
+
+
 def test_duration_balanced_schedule_uses_central_power_for_every_duration_first():
     jobs = T.duration_balanced_joint_jobs(
         [4.0, 8.0, 20.0], [0.10, 0.25],
@@ -6794,7 +6924,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "selectable-readout-mode-v12"
+    assert T.BASIC_AUTOTUNER_REVISION == "run-health-v13"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7439,6 +7569,9 @@ def main():
         test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths,
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
         test_readout_length_mode_uses_full_portfolio_or_exact_initialize_value,
+        test_joint_budget_reduces_mandatory_passes_instead_of_starving_refinement,
+        test_cost_model_counts_the_joint_search_and_ignores_unreachable_stages,
+        test_run_health_flags_degraded_coverage_seeding_and_passive_reset,
         test_portfolio_gain_refinement_tests_nonround_neighbors_and_area_partners,
         test_balanced_pulse_requires_paired_noninferiority_and_prefers_lower_stress,
         test_portfolio_exact_replay_interleaves_all_readout_lengths,

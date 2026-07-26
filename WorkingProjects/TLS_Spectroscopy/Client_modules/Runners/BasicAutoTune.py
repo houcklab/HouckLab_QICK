@@ -1081,6 +1081,49 @@ def _print_duration_portfolio(result):
     return True
 
 
+def _print_run_health(result):
+    health = result.get("run_health")
+    if not isinstance(health, dict):
+        return
+    joint = health.get("joint_search", {})
+    joint = joint if isinstance(joint, dict) else {}
+    portfolio = health.get("duration_portfolio", {})
+    portfolio = portfolio if isinstance(portfolio, dict) else {}
+    reset = health.get("reset", {})
+    reset = reset if isinstance(reset, dict) else {}
+    concerns = [str(value) for value in health.get("concerns", [])]
+
+    print("\n[basic-auto-tune] RUN HEALTH -- %s"
+          % ("DEGRADED; read the notes below before trusting the table"
+             if health.get("degraded", False) else
+             "every measurement invariant held"))
+    print("   runtime    %s min over %s planned repetitions"
+          % (_fmt_float(_number(health, ("runtime_minutes",)), 1),
+             _fmt_int(_number(health, ("estimated_repetitions",)))))
+    print("   reset      %s%s" % (
+        str(reset.get("mode", "unknown")),
+        " (feedback disqualified by the exact A/B)"
+        if reset.get("feedback_disqualified", False) else ""))
+    if joint.get("status") not in (None, "not_run", "disabled"):
+        print("   joint      %s; strata %s/%s; power passes %s; "
+              "medium/trust rows %s/%s"
+              % (joint.get("status"), joint.get("measured_strata"),
+                 joint.get("expected_strata"),
+                 joint.get("gain_passes_completed"),
+                 joint.get("medium_row_count"), joint.get("trust_row_count")))
+    if portfolio.get("enabled", False):
+        basis = portfolio.get("selection_basis_counts", {})
+        basis = basis if isinstance(basis, dict) else {}
+        print("   portfolio  %s/%s lengths reported; selection basis %s"
+              % (portfolio.get("reportable_length_count"),
+                 portfolio.get("requested_length_count"),
+                 ", ".join("%s=%d" % (str(key).replace(
+                     "_duration_interleaved_exact_replay", "-interleaved"), value)
+                     for key, value in sorted(basis.items())) or "n/a"))
+    for concern in concerns:
+        print("   ! %s" % concern)
+
+
 def _print_best(result):
     best = _best_candidate(result)
     if best is None:
@@ -1391,6 +1434,7 @@ def _history_entry(result, eligible, applied, error=None):
         "outcome": result.get("outcome"),
         "failure": result.get("failure"),
         "runner_error": error,
+        "run_health": result.get("run_health"),
         "best_found": result.get("best_found"),
         "best_fidelity_replay": result.get("best_fidelity_replay"),
         "best_overall_candidate": result.get("best_overall_candidate"),
@@ -1478,6 +1522,7 @@ def main():
 
     result = _result_dict(acquired, experiment)
     best = _print_best(result)
+    _print_run_health(result)
 
     # This is deliberately the sole source of configuration writes.  Diagnostic
     # ``tuned``/``working``/``best_found`` values must never reach initialize.py.
