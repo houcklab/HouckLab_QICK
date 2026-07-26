@@ -9,10 +9,10 @@ This module automates the tune-up that has worked manually in this repository:
 The implementation is intentionally independent of :mod:`mAutoTuner`.  Early
 averaged-IQ experiments are *seeds*, never verdicts.  The optimization objective is
 the exact paired ground/excited ``SingleShotProgram`` used by
-``TLSSpectroscopy.py`` step 5, constrained by a calibrated e-f shelving measurement
-of population outside the computational subspace.  A weak starting point never
-prevents the search, and an optional-stage failure never erases the best directly
-measured candidate.
+``TLSSpectroscopy.py`` step 5.  In the report-only duration portfolio, leakage and
+coherent action are measured afterward on each fidelity winner and never alter its
+selection.  A weak starting point never prevents the search, and an optional-stage
+failure never erases the best directly measured candidate.
 
 After spectroscopy and coherent Rabi locate physical frequency basins, the tuner uses
 a structured joint search over readout duration/gain and Gaussian duration/pi gain.
@@ -75,7 +75,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "frequency-qualified-v7"
+BASIC_AUTOTUNER_REVISION = "fidelity-first-portfolio-v8"
 
 
 BASIC_DEFAULTS = {
@@ -468,19 +468,13 @@ BASIC_DEFAULTS = {
         "local_qubit_gain_fraction": 0.22,
         "refine_shots": 260,
         "refine_blocks": 2,
-        # Substantial leakage remains a hard constraint.  Within (and, for honest
-        # reporting, outside) that boundary, rank by a conservative utility:
-        # held-out fidelity LCB minus upper-bounded leakage probability.  A unit
-        # penalty is physically interpretable--one percent population outside the
-        # computational manifold costs at least one percentage point--and avoids an
-        # arbitrary fidelity/time ratio.  Amplified-sequence P(f) is a stress test,
-        # so it receives a smaller additional penalty instead of being double-counted.
-        "leakage_penalty_weight": 1.0,
-        "amplified_leakage_penalty_weight": 0.5,
-        # Several held-out contenders per duration are screened so failure of the
-        # apparent winner falls through to another basin instead of erasing that
-        # duration.  The best risk-adjusted contenders receive the expensive replay.
-        "screen_candidates_per_length": 10,
+        # Selection is deliberately one-dimensional: maximize independently replayed
+        # single-shot fidelity at the fixed readout duration.  Leakage and coherent
+        # control are measured afterward on that exact winner and reported as separate
+        # facts; neither can replace it with a lower-fidelity tuple.  Keep the strongest
+        # historical same-duration tuple in the expensive replay cohort so a winner
+        # already observed earlier in this run cannot silently disappear.
+        "historical_champions_per_length": 1,
         "confirm_candidates_per_length": 4,
         "screen_shots": 220,
         "screen_reference_shots": 500,
@@ -2380,11 +2374,11 @@ class BasicAutoTuner(ExperimentClass):
             portfolio = self.data.get("duration_portfolio", {})
             entries = portfolio.get("entries", []) if isinstance(
                 portfolio, dict) else []
-            safe = sum(str(row.get("status", "")).upper() == "SAFE"
-                       for row in entries if isinstance(row, dict))
-            print("  Portfolio complete: %d/%d readout lengths have a leakage-safe, "
-                  "coherently verified candidate."
-                  % (safe, len(entries)))
+            measured = sum(isinstance(row.get("selected"), dict)
+                           for row in entries if isinstance(row, dict))
+            print("  Portfolio complete: %d/%d fidelity-first rows measured; "
+                  "leakage and coherent control are reported separately."
+                  % (measured, len(entries)))
         elif name == "multi_aae":
             print("  AAE-refined pi pulse: %.6f MHz / %d DAC / %.1f ns."
                   % (self.working["qubit_pi_freq"],
@@ -8815,47 +8809,6 @@ class BasicAutoTuner(ExperimentClass):
         row["portfolio_safety_kind"] = "resolved_2d_iq_population"
         return row
 
-    @staticmethod
-    def _portfolio_safety_shortlist(ranked, limit):
-        """Preserve fidelity, pulse duration, and low-power safety directions."""
-        ranked = list(ranked)
-        limit = max(int(limit), 1)
-        if len(ranked) <= limit:
-            return ranked
-        chosen = []
-
-        def add(row):
-            if (row is not None
-                    and not any(_candidate_key(row) == _candidate_key(existing)
-                                for existing in chosen)
-                    and len(chosen) < limit):
-                chosen.append(row)
-
-        add(ranked[0])
-        # One top-fidelity member of every Gaussian duration protects the primary
-        # control-leakage direction from a global top-K collapse.
-        by_sigma = {}
-        for row in ranked:
-            by_sigma.setdefault(round(float(row["sigma"]), 9), row)
-        for row in sorted(by_sigma.values(), key=BasicAutoTuner._joint_rank,
-                          reverse=True):
-            add(row)
-        # Lower readout and control exposure can remove ionization/leakage at a small
-        # fidelity cost.  Preserve those Pareto directions before filling by score.
-        for row in sorted(ranked, key=lambda item: (
-                float(item["read_pulse_gain"]) ** 2
-                * float(item["read_length"]),
-                float(item["qubit_pi_gain"]) ** 2 * float(item["sigma"]),
-                -float(item.get("fidelity_lcb_95", -np.inf)))):
-            add(row)
-            if len(chosen) >= limit:
-                break
-        for row in ranked:
-            add(row)
-            if len(chosen) >= limit:
-                break
-        return chosen
-
     def _portfolio_confirmation_status(self, screening, confirmation):
         """Classify exact-tuple safety without conflating failure and leakage."""
         p = self.params["leakage"]
@@ -8885,10 +8838,6 @@ class BasicAutoTuner(ExperimentClass):
                         p["max_single_state_third_cluster_fraction"])):
                 return "UNSAFE"
         return "SAFE"
-
-    def _portfolio_confirmation_safe(self, screening, confirmation):
-        return self._portfolio_confirmation_status(
-            screening, confirmation) == "SAFE"
 
     def _portfolio_merge_evidence(self, screening, confirmation=None):
         """Attach worst-case exact-tuple safety evidence to held-out fidelity."""
@@ -8929,14 +8878,7 @@ class BasicAutoTuner(ExperimentClass):
         return row
 
     def _portfolio_objective(self, row):
-        """Conservative fidelity-minus-leakage utility for one exact tuple.
-
-        Fidelity enters through its 95% lower confidence bound and leakage through
-        upper confidence bounds.  The hard safety limits are evaluated separately;
-        this score decides which candidate is best *within* a safety class and which
-        unsafe result is most useful to report when no candidate meets the limits.
-        """
-        p = self.params["duration_portfolio"]
+        """Return the sole portfolio selection objective: held-out fidelity LCB."""
         fidelity_lcb = float(row.get("fidelity_lcb_95", np.nan))
         if not np.isfinite(fidelity_lcb):
             fidelity = float(row.get("fidelity", np.nan))
@@ -8945,39 +8887,10 @@ class BasicAutoTuner(ExperimentClass):
                 return -np.inf
             fidelity_lcb = fidelity - (1.96 * fidelity_se
                                        if np.isfinite(fidelity_se) else 0.0)
-
-        risks = []
-        blob = float(row.get("third_blob_excess_ucb", np.nan))
-        if np.isfinite(blob):
-            risks.append(max(blob, 0.0))
-        if bool(row.get("third_cluster_supported", False)):
-            for key in ("third_cluster_fraction_ucb_95",
-                        "third_cluster_single_state_fraction_ucb_95"):
-                value = float(row.get(key, np.nan))
-                if np.isfinite(value):
-                    risks.append(max(value, 0.0))
-        if self._leakage_active:
-            direct = float(row.get("single_p2_ucb", np.nan))
-            if np.isfinite(direct):
-                risks.append(max(direct, 0.0))
-        leakage_risk = max(risks) if risks else np.nan
-        if not np.isfinite(leakage_risk):
-            return -np.inf
-
-        amplified_risk = 0.0
-        if self._leakage_active:
-            amplified = float(row.get("amplified_p2_ucb", np.nan))
-            if np.isfinite(amplified):
-                amplified_risk = max(amplified, 0.0)
-        score = (
-            fidelity_lcb
-            - float(p.get("leakage_penalty_weight", 1.0)) * leakage_risk
-            - float(p.get("amplified_leakage_penalty_weight", 0.5))
-            * amplified_risk)
-        return float(score)
+        return float(fidelity_lcb)
 
     def _annotate_portfolio_objective(self, row):
-        """Attach the exact quantities used for manual-portfolio ranking."""
+        """Attach leakage reporting fields without changing fidelity ranking."""
         row = dict(row)
         risks = []
         blob = float(row.get("third_blob_excess_ucb", np.nan))
@@ -8995,12 +8908,51 @@ class BasicAutoTuner(ExperimentClass):
                 risks.append(max(direct, 0.0))
         row["portfolio_leakage_risk_ucb"] = (
             float(max(risks)) if risks else np.nan)
-        row["portfolio_score"] = self._portfolio_objective(row)
+        row["portfolio_selection_fidelity_lcb"] = self._portfolio_objective(row)
         return row
 
     def _portfolio_rank(self, row):
-        """Deterministic risk-adjusted rank with fidelity as the tie breaker."""
-        return (self._portfolio_objective(row),) + tuple(self._joint_rank(row))
+        """Deterministic fidelity-only rank; leakage never affects selection."""
+        return tuple(self._joint_rank(row))
+
+    def _portfolio_fidelity_shortlist(self, refined, source_rows, length, limit):
+        """Choose expensive replays by fidelity while protecting prior winners.
+
+        The first member is the best tuple from the fresh equal-budget refinement.
+        The strongest historical same-duration tuple(s) are mandatory even when a
+        noisy low-shot refinement temporarily ranks them lower.  Remaining slots are
+        filled by fresh fidelity rank.  Leakage fields are deliberately never read.
+        """
+        refined = sorted(list(refined), key=self._joint_rank, reverse=True)
+        historical = sorted((
+            row for row in source_rows
+            if isinstance(row, dict)
+            and np.isclose(float(row.get("read_length", np.nan)), float(length),
+                           rtol=0.0, atol=1e-9)
+        ), key=self._joint_rank, reverse=True)
+        historical_count = max(int(self.params["duration_portfolio"].get(
+            "historical_champions_per_length", 1)), 0)
+        chosen = []
+
+        def add(row):
+            if not isinstance(row, dict) or not all(
+                    key in row for key in self.initial):
+                return
+            candidate = {key: row[key] for key in self.initial}
+            if not any(_candidate_key(candidate) == _candidate_key(existing)
+                       for existing in chosen):
+                chosen.append(candidate)
+
+        if refined:
+            add(refined[0])
+        for row in historical[:historical_count]:
+            add(row)
+        target = max(int(limit), len(chosen), 1)
+        for row in refined:
+            add(row)
+            if len(chosen) >= target:
+                break
+        return chosen[:target]
 
     def _portfolio_control_audit(self, candidate, length):
         """Run and retain an odd/even coherence audit without selecting a config."""
@@ -9022,7 +8974,11 @@ class BasicAutoTuner(ExperimentClass):
                 self._maps["final_control_verify"] = previous_map
 
     def _stage_duration_portfolio(self):
-        """Return one constrained optimum for every requested readout duration."""
+        """Return the held-out fidelity winner at every requested readout duration.
+
+        Leakage and odd/even control are measured only after the exact fidelity
+        winner has been selected.  They are reporting axes, never selection axes.
+        """
         if not self._duration_portfolio_active:
             return None
         p = self.params["duration_portfolio"]
@@ -9068,187 +9024,142 @@ class BasicAutoTuner(ExperimentClass):
                                 for row in refined)),
                 })
                 ranked = sorted(refined, key=self._joint_rank, reverse=True)
-                screen_count = max(int(p["screen_candidates_per_length"]), 1)
-                screen_shortlist = self._portfolio_safety_shortlist(
-                    ranked, screen_count)
-                screened = []
-                for rank, candidate in enumerate(screen_shortlist, 1):
-                    try:
-                        screened.append(self._annotate_portfolio_objective(
-                            self._portfolio_screen_candidate(
-                                candidate, length, rank)))
-                    except KeyboardInterrupt:
-                        raise
-                    except Exception as exc:
-                        failure = {
-                            "phase": "safety_screen", "candidate_rank": rank,
-                            "error": "%s: %s" % (type(exc).__name__, exc),
-                        }
-                        entry["failures"].append(failure)
-                        all_failures.append(dict(failure, read_length_us=length))
-                entry["screened_candidates"] = screened
+                if not ranked:
+                    raise RuntimeError("fixed-duration refinement returned no rows")
 
-                # Every candidate which passed the first bracket receives its own
-                # multi-block, 2-D held-out replay.  No all-duration batch is used:
-                # a backend fault at 1 us must not invalidate complete evidence at
-                # 20 us or vice versa.
-                final_rows = []
-                safe_screened = [row for row in screened
-                                 if row.get("portfolio_safe", False)]
-                if safe_screened:
-                    safe_screened = sorted(
-                        safe_screened, key=self._portfolio_rank, reverse=True)
-                    safe_screened = safe_screened[:max(
-                        int(p.get("confirm_candidates_per_length", 4)), 1)]
-                for index, screening in enumerate(safe_screened, 1):
-                    candidate = {key: screening[key] for key in self.initial}
-                    try:
-                        confirmation = self._confirm_candidates_with_multimodality(
-                            [candidate], int(p["confirm_shots"]),
-                            int(p["confirm_blocks"]),
-                            "portfolio %.0f us exact safety replay %d"
-                            % (length, index), add_to_history=True)[0]
-                        merged = self._portfolio_merge_evidence(
-                            screening, confirmation)
-                        merged["portfolio_safety_status"] = (
-                            self._portfolio_confirmation_status(
-                                screening, confirmation))
-                        merged["portfolio_safe"] = bool(
-                            merged["portfolio_safety_status"] == "SAFE")
-                        final_rows.append(
-                            self._annotate_portfolio_objective(merged))
-                    except KeyboardInterrupt:
-                        raise
-                    except Exception as exc:
-                        failure = {
-                            "phase": "held_out_confirmation",
-                            "candidate_rank": index,
-                            "error": "%s: %s" % (type(exc).__name__, exc),
-                        }
-                        entry["failures"].append(failure)
-                        all_failures.append(dict(failure, read_length_us=length))
+                # Successive halving is based only on held-out fidelity.  Force the
+                # strongest historical same-duration tuple into this expensive cohort
+                # so a previously observed winner (for example the 19 us joint-search
+                # incumbent) is always independently replayed rather than forgotten.
+                exact_candidates = self._portfolio_fidelity_shortlist(
+                    refined, source_rows, length,
+                    max(int(p.get("confirm_candidates_per_length", 4)), 1))
+                for candidate in exact_candidates:
+                    self._ensure_reset_profile(
+                        candidate, "portfolio %.0f us fidelity replay" % length)
+                exact_rows = []
+                try:
+                    exact_rows = self._confirm_candidates_with_multimodality(
+                        exact_candidates, int(p["confirm_shots"]),
+                        int(p["confirm_blocks"]),
+                        "portfolio %.0f us exact fidelity replay" % length,
+                        add_to_history=True)
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    failure = {
+                        "phase": "held_out_fidelity_confirmation",
+                        "error": "%s: %s" % (type(exc).__name__, exc),
+                    }
+                    entry["failures"].append(failure)
+                    all_failures.append(dict(failure, read_length_us=length))
 
-                safe_final = sorted(
-                    (row for row in final_rows
-                     if row.get("portfolio_safety_status") == "SAFE"),
-                    key=self._portfolio_rank, reverse=True)
-                unsafe_final = sorted(
-                    (row for row in final_rows
-                     if row.get("portfolio_safety_status") == "UNSAFE"),
-                    key=self._portfolio_rank, reverse=True)
-                inconclusive_final = sorted(
-                    (row for row in final_rows
-                     if row.get("portfolio_safety_status") == "INCONCLUSIVE"),
-                    key=self._portfolio_rank, reverse=True)
-                selected = None
+                complete_exact = [row for row in exact_rows
+                                  if row.get("confirmation_complete", False)]
+                fidelity_pool = complete_exact or exact_rows or ranked
+                selected = copy.deepcopy(max(
+                    fidelity_pool, key=self._portfolio_rank))
+                selected["portfolio_fidelity_selection_basis"] = (
+                    "complete_exact_replay" if complete_exact else
+                    "partial_exact_replay" if exact_rows else
+                    "equal_budget_refinement_fallback")
+
+                local_history = sorted((
+                    row for row in source_rows
+                    if np.isclose(float(row.get("read_length", np.nan)), length,
+                                  rtol=0.0, atol=1e-9)
+                ), key=self._joint_rank, reverse=True)
+                historical_best = local_history[0] if local_history else None
+                historical_key = (_candidate_key(historical_best)
+                                  if historical_best is not None else None)
+                replayed_keys = {_candidate_key(row) for row in exact_candidates}
+                entry["search"].update({
+                    "exact_fidelity_candidate_count": len(exact_candidates),
+                    "exact_fidelity_row_count": len(exact_rows),
+                    "exact_fidelity_confirmation_complete": bool(
+                        complete_exact and len(complete_exact) == len(exact_candidates)),
+                    "historical_best_candidate_key": (
+                        list(historical_key) if historical_key is not None else None),
+                    "historical_best_fidelity": (
+                        float(historical_best.get("fidelity", np.nan))
+                        if historical_best is not None else np.nan),
+                    "historical_best_replayed": bool(
+                        historical_key is not None
+                        and historical_key in replayed_keys),
+                    "selected_candidate_key": list(_candidate_key(selected)),
+                })
+
+                # Leakage is measured after fidelity selection.  Merge only its
+                # leakage evidence into the selected replay; never replace the replay's
+                # fidelity with a bracketing/shelving acquisition and never fall through
+                # to a cleaner but lower-fidelity tuple.
+                leakage_status = "INCONCLUSIVE"
+                try:
+                    screening = self._portfolio_screen_candidate(
+                        selected, length, 1)
+                    entry["screened_candidates"] = [copy.deepcopy(screening)]
+                    selected = self._portfolio_merge_evidence(
+                        screening, selected)
+                    leakage_status = self._portfolio_confirmation_status(
+                        screening, selected)
+                    selected["portfolio_safety_kind"] = screening.get(
+                        "portfolio_safety_kind")
+                except KeyboardInterrupt:
+                    raise
+                except Exception as exc:
+                    failure = {
+                        "phase": "leakage_measurement",
+                        "error": "%s: %s" % (type(exc).__name__, exc),
+                    }
+                    entry["failures"].append(failure)
+                    all_failures.append(dict(failure, read_length_us=length))
+                    selected.update({
+                        "portfolio_safety_kind": "unavailable",
+                        "third_blob_excess_ucb": np.nan,
+                        "third_cluster_fraction": np.nan,
+                        "third_cluster_fraction_ucb_95": np.nan,
+                        "third_cluster_single_state_fraction": np.nan,
+                        "third_cluster_single_state_fraction_ucb_95": np.nan,
+                        "single_p2_ucb": np.nan,
+                        "amplified_p2_ucb": np.nan,
+                    })
+                selected["portfolio_safety_status"] = leakage_status
+                selected["portfolio_safe"] = bool(leakage_status == "SAFE")
+                selected = self._annotate_portfolio_objective(selected)
+
+                # Coherent-control validity is also an independent report on the same
+                # selected tuple.  Failure cannot substitute a different row.
                 require_control = bool(p.get("require_control_audit", True))
-                for contender in safe_final:
-                    if not require_control:
-                        contender["control_verified"] = True
-                        contender["control_audit"] = None
-                        selected = contender
-                        break
-                    audit, error = self._portfolio_control_audit(
-                        contender, length)
+                if require_control:
+                    audit, error = self._portfolio_control_audit(selected, length)
+                    control_status = "VERIFIED" if error is None else "FAILED"
                     audit_row = {
                         "read_length_us": length,
-                        "candidate_key": list(_candidate_key(contender)),
+                        "candidate_key": list(_candidate_key(selected)),
                         "verified": bool(error is None),
                         "error": error, "audit": audit,
                     }
                     control_audits.append(audit_row)
-                    contender["control_verified"] = bool(error is None)
-                    contender["control_audit"] = audit
-                    contender["control_failure"] = error
-                    if error is None:
-                        selected = contender
-                        break
-
-                if selected is not None:
-                    entry.update({
-                        "status": "SAFE", "leakage_status": "SAFE",
-                        "control_status": "VERIFIED",
-                        "selected": copy.deepcopy(selected),
-                    })
-                elif safe_final:
-                    selected = safe_final[0]
-                    entry.update({
-                        "status": "INCONCLUSIVE", "leakage_status": "SAFE",
-                        "control_status": "FAILED",
-                        "selected": copy.deepcopy(selected),
-                    })
-                elif unsafe_final:
-                    selected = unsafe_final[0]
-                    entry.update({
-                        "status": "UNSAFE", "leakage_status": "UNSAFE",
-                        "control_status": "NOT_RUN",
-                        "selected": copy.deepcopy(selected),
-                    })
-                elif inconclusive_final:
-                    selected = inconclusive_final[0]
-                    entry.update({
-                        "status": "INCONCLUSIVE",
-                        "leakage_status": "INCONCLUSIVE",
-                        "control_status": "NOT_RUN",
-                        "selected": copy.deepcopy(selected),
-                    })
+                    selected["control_verified"] = bool(error is None)
+                    selected["control_audit"] = audit
+                    selected["control_failure"] = error
                 else:
-                    unsafe_screened = [
-                        row for row in screened
-                        if row.get("valid", False)
-                        and not row.get("portfolio_safe", False)]
-                    safe_screen_only = [
-                        row for row in screened
-                        if row.get("valid", False)
-                        and row.get("portfolio_safe", False)]
-                    if unsafe_screened and not safe_screen_only:
-                        selected = max(
-                            unsafe_screened, key=self._portfolio_rank)
-                        selected = self._annotate_portfolio_objective(
-                            self._portfolio_merge_evidence(selected))
-                        selected["portfolio_safe"] = False
-                        entry.update({
-                            "status": "UNSAFE", "leakage_status": "UNSAFE",
-                            "control_status": "NOT_RUN",
-                            "selected": copy.deepcopy(selected),
-                        })
-                    elif screened:
-                        # At least one initial bracket was safe, but no exact held-out
-                        # replay completed.  That is unavailable evidence, not measured
-                        # leakage, so never mislabel it UNSAFE.
-                        selected = max(screened, key=self._portfolio_rank)
-                        entry.update({
-                            "status": "INCONCLUSIVE",
-                            "leakage_status": "INCONCLUSIVE",
-                            "control_status": "NOT_RUN",
-                            "selected": copy.deepcopy(selected),
-                        })
-                    else:
-                        # The operator asked for one parameter set at every duration.
-                        # Preserve the best held-out fidelity tuple when the safety
-                        # backend itself failed, but label its leakage INCONCLUSIVE and
-                        # leave every leakage field unavailable.  It is never SAFE and
-                        # can never be written automatically.
-                        selected = copy.deepcopy(ranked[0])
-                        selected.update({
-                            "portfolio_safe": False,
-                            "control_verified": False,
-                            "portfolio_safety_kind": "unavailable",
-                            "third_cluster_fraction": np.nan,
-                            "third_cluster_fraction_ucb_95": np.nan,
-                            "third_cluster_single_state_fraction": np.nan,
-                            "third_cluster_single_state_fraction_ucb_95": np.nan,
-                            "single_p2_ucb": np.nan,
-                            "amplified_p2_ucb": np.nan,
-                            "portfolio_leakage_risk_ucb": np.nan,
-                            "portfolio_score": np.nan,
-                        })
-                        entry.update({
-                            "status": "INCONCLUSIVE",
-                            "leakage_status": "INCONCLUSIVE",
-                            "control_status": "NOT_RUN",
-                            "selected": selected,
-                        })
+                    control_status = "NOT_REQUIRED"
+                    selected["control_verified"] = False
+                    selected["control_audit"] = None
+                    selected["control_failure"] = None
+
+                overall_status = (
+                    "UNSAFE" if leakage_status == "UNSAFE" else
+                    "SAFE" if (leakage_status == "SAFE"
+                               and control_status in ("VERIFIED", "NOT_REQUIRED"))
+                    else "INCONCLUSIVE")
+                entry.update({
+                    "status": overall_status,
+                    "leakage_status": leakage_status,
+                    "control_status": control_status,
+                    "selected": copy.deepcopy(selected),
+                })
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
@@ -9267,9 +9178,10 @@ class BasicAutoTuner(ExperimentClass):
             safe_entries,
             key=lambda entry: self._portfolio_rank(entry["selected"]))
             if safe_entries else None)
-        best_entry = (best_safe_entry if best_safe_entry is not None else
-            (max(reportable_entries, key=lambda entry: self._portfolio_rank(
-                entry["selected"])) if reportable_entries else None))
+        best_entry = (max(
+            reportable_entries,
+            key=lambda entry: self._portfolio_rank(entry["selected"]))
+            if reportable_entries else None)
         requested = len(lengths)
         complete_lengths = sum(isinstance(entry.get("selected"), dict)
                                for entry in entries)
@@ -9282,14 +9194,9 @@ class BasicAutoTuner(ExperimentClass):
         portfolio = {
             "enabled": True, "manual_selection_only": True,
             "automatic_write_allowed": False,
-            "selection_objective": (
-                "fidelity_lcb_95 - leakage_penalty_weight * "
-                "leakage_risk_ucb - amplified_leakage_penalty_weight * "
-                "amplified_p2_ucb"),
-            "leakage_penalty_weight": float(
-                p.get("leakage_penalty_weight", 1.0)),
-            "amplified_leakage_penalty_weight": float(
-                p.get("amplified_leakage_penalty_weight", 0.5)),
+            "selection_objective": "held_out_fidelity_lcb_95_only",
+            "leakage_affects_selection": False,
+            "control_audit_affects_selection": False,
             "read_lengths_us": lengths, "entries": entries,
             "requested_length_count": requested,
             "reportable_length_count": complete_lengths,
@@ -9326,7 +9233,12 @@ class BasicAutoTuner(ExperimentClass):
                 {"SAFE": 1, "UNSAFE": -1}.get(entry.get("status"), 0)
                 for entry in entries], dtype=int),
             "search_complete": bool(complete_lengths == requested),
-            "selection_confirmed": bool(len(safe_entries) > 0),
+            "selection_confirmed": bool(
+                complete_lengths == requested
+                and all(entry.get("selected", {}).get(
+                    "portfolio_fidelity_selection_basis")
+                        == "complete_exact_replay"
+                        for entry in entries)),
             "equal_refinement_budget": equal_budget,
         }
         self.data["leakage"].update({
@@ -11732,9 +11644,9 @@ class BasicAutoTuner(ExperimentClass):
             total += (2 * length_count * candidate_count
                       * int(portfolio["refine_shots"])
                       * int(portfolio["refine_blocks"]))
-            screen_count = min(
-                candidate_count,
-                max(int(portfolio["screen_candidates_per_length"]), 1))
+            # Only the fidelity winner is leakage-screened.  High-stat fidelity
+            # confirmation happens first for a small successive-halving cohort.
+            screen_count = 1
             if self._leakage_active:
                 leak = p["leakage"]
                 calibration_point = (
@@ -11767,9 +11679,11 @@ class BasicAutoTuner(ExperimentClass):
                 total += (length_count * screen_count * screen_point
                           * drift_attempts)
             confirm_count = min(
-                screen_count,
+                candidate_count,
                 max(int(portfolio.get(
-                    "confirm_candidates_per_length", 4)), 1))
+                    "confirm_candidates_per_length", 4)),
+                    int(portfolio.get(
+                        "historical_champions_per_length", 1)) + 1, 1))
             total += (2 * length_count * confirm_count
                       * int(portfolio["confirm_shots"])
                       * int(portfolio["confirm_blocks"]))
@@ -11902,16 +11816,9 @@ class BasicAutoTuner(ExperimentClass):
         if control_verify.get("enabled", True):
             if self._duration_portfolio_active:
                 portfolio = p["duration_portfolio"]
-                screen_count = min(
-                    (int(portfolio["native_seeds_per_length"])
-                     + int(portfolio["readout_seeds_per_length"])
-                     * int(portfolio["control_seed_count"])
-                     + int(portfolio["local_proposals_per_length"])),
-                    int(portfolio["screen_candidates_per_length"]))
-                control_audits = (
-                    len(portfolio.get("read_lengths_us", []))
-                    * min(screen_count, max(int(portfolio.get(
-                        "confirm_candidates_per_length", 4)), 1)))
+                # One audit reports coherent action of each already-selected
+                # fidelity winner; it never searches for a replacement.
+                control_audits = len(portfolio.get("read_lengths_us", []))
             else:
                 control_audits = (1 + int(p["latency"].get("shortlist", 0))
                                   if p["latency"].get("enabled", True) else 1)
@@ -12326,7 +12233,10 @@ class BasicAutoTuner(ExperimentClass):
         best_safe_entry = (max(
             safe, key=lambda entry: self._portfolio_rank(entry["selected"]))
             if safe else None)
-        selected_entry = best_safe_entry or best_overall_entry
+        # Report reference follows the same fidelity-only objective as every row.
+        # Safety remains available separately as best_safe_candidate and can never
+        # replace the best-fidelity tuple in report-only portfolio mode.
+        selected_entry = best_overall_entry
         candidate = (copy.deepcopy(selected_entry["selected"])
                      if selected_entry is not None else
                      (copy.deepcopy(final) if isinstance(final, dict) else None))
@@ -12962,8 +12872,8 @@ class BasicAutoTuner(ExperimentClass):
                 "unsafe_length_count", "inconclusive_length_count",
                 "equal_refinement_budget",
                 "expected_refine_candidates_per_length",
-                "selection_objective", "leakage_penalty_weight",
-                "amplified_leakage_penalty_weight",
+                "selection_objective", "leakage_affects_selection",
+                "control_audit_affects_selection",
             ) if key in portfolio}
             compact_entries = []
             for entry in portfolio.get("entries", []):
@@ -12982,7 +12892,8 @@ class BasicAutoTuner(ExperimentClass):
                         "third_cluster_single_state_fraction",
                         "third_cluster_single_state_fraction_ucb_95",
                         "single_p2_ucb", "amplified_p2_ucb",
-                        "portfolio_leakage_risk_ucb", "portfolio_score",
+                        "portfolio_leakage_risk_ucb",
+                        "portfolio_selection_fidelity_lcb",
                         "control_verified", "portfolio_safety_kind",
                     ) if key in selected}
                 compact_entries.append(row)

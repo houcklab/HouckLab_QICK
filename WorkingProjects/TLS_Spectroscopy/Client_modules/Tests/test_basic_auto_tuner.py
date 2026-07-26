@@ -189,7 +189,7 @@ FAST_PARAMS = {
     },
     "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production frequency-qualified-v7 tightens the default to 0.5 percentage point.
+    # Production fidelity-first-portfolio-v8 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -564,7 +564,6 @@ def test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths():
             "control_seed_count": 1,
             "local_proposals_per_length": 0,
             "refine_shots": 101, "refine_blocks": 2,
-            "screen_candidates_per_length": 1,
             "screen_shots": 101, "screen_reference_shots": 500,
             "screen_drift_retries": 1,
             "confirm_shots": 503, "confirm_blocks": 2,
@@ -632,14 +631,10 @@ def test_production_portfolio_covers_every_integer_us_and_caps_at_twenty():
     assert T.BASIC_DEFAULTS["latency"]["max_read_length_us"] == 20.0
 
 
-def test_portfolio_score_trades_small_fidelity_gain_for_much_less_leakage():
-    """The per-duration winner uses the requested fidelity/leakage objective."""
+def test_portfolio_rank_uses_fidelity_only_and_never_leakage():
+    """A cleaner lower-fidelity tuple cannot replace the fidelity winner."""
     params = copy.deepcopy(FAST_PARAMS)
-    params["duration_portfolio"] = {
-        "enabled": True,
-        "leakage_penalty_weight": 1.0,
-        "amplified_leakage_penalty_weight": 0.5,
-    }
+    params["duration_portfolio"] = {"enabled": True}
     with tempfile.TemporaryDirectory() as folder:
         tuner = VirtualBasicAutoTuner(
             soc=None, soccfg=None, path="q4", outerFolder=folder,
@@ -662,9 +657,127 @@ def test_portfolio_score_trades_small_fidelity_gain_for_much_less_leakage():
         })
         higher_fidelity = tuner._annotate_portfolio_objective(higher_fidelity)
         cleaner = tuner._annotate_portfolio_objective(cleaner)
-    assert np.isclose(higher_fidelity["portfolio_score"], 0.8602)
-    assert np.isclose(cleaner["portfolio_score"], 0.8752)
-    assert tuner._portfolio_rank(cleaner) > tuner._portfolio_rank(higher_fidelity)
+    assert np.isclose(
+        higher_fidelity["portfolio_selection_fidelity_lcb"], 0.9002)
+    assert np.isclose(cleaner["portfolio_selection_fidelity_lcb"], 0.8802)
+    assert tuner._portfolio_rank(higher_fidelity) > tuner._portfolio_rank(cleaner)
+
+
+def test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity():
+    """Regression for a 93.5% 19-us incumbent becoming a 50% table row."""
+    class FidelityFirstPortfolioTuner(VirtualBasicAutoTuner):
+        def _confirm_candidates(self, candidates, shots, blocks, label,
+                                add_to_history=True):
+            del shots, add_to_history
+            exact = "exact fidelity replay" in str(label)
+            rows = []
+            for candidate in T._unique_candidates(candidates):
+                is_incumbent = int(candidate["qubit_pi_gain"]) == 6000
+                if exact:
+                    fidelity = 0.935 if is_incumbent else 0.900
+                else:
+                    # Simulate an unlucky low-shot refinement which would drop the
+                    # already observed incumbent without protected replay.
+                    fidelity = 0.600 if is_incumbent else 0.910
+                se = 0.004
+                row = dict(candidate)
+                row.update({
+                    "fidelity": fidelity, "fidelity_se": se,
+                    "fidelity_lcb_95": fidelity - 1.96 * se,
+                    "confirmation_blocks": int(blocks),
+                    "confirmation_complete": True,
+                    "confirmation_batch_complete": True,
+                    "third_blob_excess_ucb": 0.0,
+                    "third_cluster_guard_available": True,
+                    "third_cluster_supported": False,
+                    "third_cluster_fraction": 0.0,
+                    "third_cluster_fraction_ucb_95": 0.0,
+                    "third_cluster_single_state_fraction": 0.0,
+                    "third_cluster_single_state_fraction_ucb_95": 0.0,
+                })
+                rows.append(row)
+            return rows
+
+        def _portfolio_screen_candidate(self, candidate, length, rank):
+            del length, rank
+            # Leakage acquisition has a different preparation/sequence and may have
+            # a very different binary-fidelity number.  It must contribute leakage
+            # fields only, never overwrite the selected replay's 0.935 fidelity.
+            row = dict(candidate)
+            row.update({
+                "fidelity": 0.510, "fidelity_se": 0.030,
+                "fidelity_lcb_95": 0.4512,
+                "valid": True, "portfolio_safe": False,
+                "portfolio_safety_kind": "resolved_2d_iq_population",
+                "third_blob_excess_ucb": 0.20,
+                "third_cluster_guard_available": True,
+                "third_cluster_supported": True,
+                "third_cluster_fraction": 0.20,
+                "third_cluster_fraction_ucb_95": 0.25,
+                "third_cluster_single_state_fraction": 0.20,
+                "third_cluster_single_state_fraction_ucb_95": 0.25,
+            })
+            return row
+
+        def _portfolio_control_audit(self, candidate, length):
+            del candidate, length
+            return {"verified": True}, None
+
+    params = copy.deepcopy(FAST_PARAMS)
+    params.update({
+        "reset": {"enabled": False},
+        "leakage": {"enabled": False, "operational_enabled": True},
+        "duration_portfolio": {
+            "enabled": True, "read_lengths_us": [19.0],
+            "native_seeds_per_length": 2,
+            "readout_seeds_per_length": 1,
+            "control_seed_count": 2,
+            "local_proposals_per_length": 0,
+            "historical_champions_per_length": 1,
+            "confirm_candidates_per_length": 1,
+            "refine_shots": 101, "refine_blocks": 2,
+            "confirm_shots": 503, "confirm_blocks": 3,
+            "screen_shots": 101, "screen_reference_shots": 101,
+            "require_control_audit": True,
+        },
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = FidelityFirstPortfolioTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        incumbent = T._with_candidate(
+            tuner.working, read_pulse_freq=tuner.READ_FREQ,
+            read_pulse_gain=5200, read_length=19.0,
+            qubit_pi_freq=tuner.QUBIT_FREQ, qubit_pi_gain=6000,
+            sigma=tuner.SIGMA)
+        incumbent.update({
+            "fidelity": 0.935, "fidelity_se": 0.004,
+            "fidelity_lcb_95": 0.92716,
+        })
+        challenger = T._with_candidate(
+            incumbent, read_pulse_gain=5000, qubit_pi_gain=5000)
+        challenger.update({
+            "fidelity": 0.900, "fidelity_se": 0.004,
+            "fidelity_lcb_95": 0.89216,
+        })
+        tuner._joint_rows = [incumbent, challenger]
+        best = tuner._stage_duration_portfolio()
+        tuner._finalize(best)
+
+    entry = tuner.data["duration_portfolio"]["entries"][0]
+    selected = entry["selected"]
+    assert entry["search"]["historical_best_replayed"] is True
+    assert int(selected["qubit_pi_gain"]) == 6000
+    assert np.isclose(selected["fidelity"], 0.935)
+    assert np.isclose(entry["screened_candidates"][0]["fidelity"], 0.510)
+    assert np.isclose(selected["portfolio_leakage_risk_ucb"], 0.25)
+    assert entry["leakage_status"] == "UNSAFE"
+    assert entry["control_status"] == "VERIFIED"
+    assert np.isclose(best["fidelity"], 0.935)
+    assert np.isclose(tuner.data["best_found"]["fidelity"], 0.935)
+    portfolio = tuner.data["duration_portfolio"]
+    assert portfolio["selection_objective"] == "held_out_fidelity_lcb_95_only"
+    assert portfolio["leakage_affects_selection"] is False
 
 
 def test_shelving_inversion_recovers_direct_f_population():
@@ -5827,7 +5940,6 @@ def test_provisional_rough_control_still_produces_the_duration_portfolio():
         "control_seed_count": 1,
         "local_proposals_per_length": 0,
         "refine_shots": 101, "refine_blocks": 2,
-        "screen_candidates_per_length": 1,
         "screen_shots": 101, "screen_reference_shots": 151,
         "screen_drift_retries": 0,
         "confirm_shots": 151, "confirm_blocks": 2,
@@ -6245,7 +6357,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "frequency-qualified-v7"
+    assert T.BASIC_AUTOTUNER_REVISION == "fidelity-first-portfolio-v8"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -6889,7 +7001,8 @@ def main():
         test_operational_safety_path_rejects_a_common_mode_third_population,
         test_duration_portfolio_reports_safe_unsafe_and_inconclusive_lengths,
         test_production_portfolio_covers_every_integer_us_and_caps_at_twenty,
-        test_portfolio_score_trades_small_fidelity_gain_for_much_less_leakage,
+        test_portfolio_rank_uses_fidelity_only_and_never_leakage,
+        test_portfolio_preserves_known_winner_and_never_uses_screen_fidelity,
         test_shelving_inversion_recovers_direct_f_population,
         test_independent_long_reference_exposes_candidate_one_pulse_leakage,
         test_opposed_ef_scans_match_a_reproduced_feature_after_rank_swaps,

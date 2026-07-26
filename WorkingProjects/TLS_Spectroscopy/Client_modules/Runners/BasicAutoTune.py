@@ -1,7 +1,8 @@
 """Run the fixed-readout-duration single-qubit calibration portfolio.
 
-This is intentionally a report-only entry point.  It measures the best screened
-full parameter tuple at every integer readout duration from 1 through 20 us and
+This is intentionally a report-only entry point.  It measures the best held-out
+fidelity tuple at every integer readout duration from 1 through 20 us, then reports
+leakage and coherent-control checks on that exact tuple without reranking it.  It
 never modifies ``BaseConfig``; the operator makes the final manual choice.
 """
 
@@ -1008,22 +1009,22 @@ def _print_duration_portfolio(result):
     if not entries:
         return False
     print("\n[basic-auto-tune] READOUT-DURATION PORTFOLIO (manual selection only)")
-    print("   len  status        fidelity (95% LCB)   score    leakage 95% UCB   "
+    print("   len  fidelity (95% LCB)       leakage 95% UCB/status   control    "
           "readout MHz/gain       X180 MHz/gain/length")
     for entry in entries:
         if not isinstance(entry, dict):
             continue
         length = _number(entry, ("read_length_us",))
-        status = str(entry.get("status", "INCONCLUSIVE")).upper()
+        leakage_status = str(entry.get(
+            "leakage_status", "INCONCLUSIVE")).upper()
+        control_status = str(entry.get("control_status", "NOT_RUN")).upper()
         selected = entry.get("selected")
         if not isinstance(selected, dict):
-            print("   %2sus %-13s no reportable tuple" % (
-                _fmt_int(length), status))
+            print("   %2sus no reportable tuple" % _fmt_int(length))
             continue
         fidelity = _number(selected, ("fidelity",))
         fidelity_se = _number(selected, ("fidelity_se",))
         fidelity_lcb = _number(selected, ("fidelity_lcb_95",))
-        score = _number(selected, ("portfolio_score",))
         third_ucb = _number(
             selected, ("portfolio_leakage_risk_ucb",
                        "third_cluster_fraction_ucb_95"))
@@ -1034,19 +1035,18 @@ def _print_duration_portfolio(result):
             leakage_text += "; P(f) %s" % _fmt_float(
                 100.0 * direct_p2, 1, "%")
         gate_ns = 4000.0 * _number(selected, ("sigma",))
-        print("   %2sus %-13s %s +/- %s (%s)   %s   %-19s   %s/%s   %s/%s/%s"
-              % (_fmt_int(length), status,
+        print("   %2sus %s +/- %s (%s)   %-10s %-12s %-10s %s/%s   %s/%s/%s"
+              % (_fmt_int(length),
                  _fmt_float(fidelity, 4), _fmt_float(fidelity_se, 4),
-                 _fmt_float(fidelity_lcb, 4), _fmt_float(score, 4), leakage_text,
+                 _fmt_float(fidelity_lcb, 4), leakage_text, leakage_status,
+                 control_status,
                  _fmt_float(_number(selected, ("read_pulse_freq",)), 6),
                  _fmt_int(_number(selected, ("read_pulse_gain",))),
                  _fmt_float(_number(selected, ("qubit_pi_freq",)), 6),
                  _fmt_int(_number(selected, ("qubit_pi_gain",))),
                  _fmt_float(gate_ns, 1, "ns")))
-    print("   SAFE requires both the leakage-sensitive IQ/P(f) limits and the exact "
-          "odd/even coherent-control audit. No row is written automatically.")
-    print("   score = fidelity 95% LCB - IQ/direct-leakage 95% UCB"
-          " (and 0.5 x amplified P(f) UCB when direct shelving is available).")
+    print("   Each row is selected only by held-out fidelity. Leakage and control are "
+          "reported afterward and never rerank or suppress it. No row is written.")
     return True
 
 
@@ -1313,8 +1313,8 @@ def _history_entry(result, eligible, applied, error=None):
             "status", "requested_length_count", "reportable_length_count",
             "safe_length_count", "unsafe_length_count",
             "inconclusive_length_count", "equal_refinement_budget",
-            "selection_objective", "leakage_penalty_weight",
-            "amplified_leakage_penalty_weight",
+            "selection_objective", "leakage_affects_selection",
+            "control_audit_affects_selection",
         ) if key in portfolio}
         compact_portfolio["entries"] = []
         for entry in portfolio.get("entries", []):
@@ -1329,7 +1329,8 @@ def _history_entry(result, eligible, applied, error=None):
                     "fidelity_lcb_95", "third_cluster_fraction_ucb_95",
                     "third_cluster_single_state_fraction_ucb_95",
                     "single_p2_ucb", "amplified_p2_ucb",
-                    "portfolio_leakage_risk_ucb", "portfolio_score",
+                    "portfolio_leakage_risk_ucb",
+                    "portfolio_selection_fidelity_lcb",
                 ) if key in selected}
             compact_portfolio["entries"].append(row)
     return {
