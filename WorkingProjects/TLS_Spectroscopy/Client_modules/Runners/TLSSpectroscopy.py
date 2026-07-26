@@ -71,6 +71,8 @@ CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
+THERMALIZATION_US = 25.0
+T1_RESET_BACKSTOP_US = 2000.0
 
 
 P1_RESONATOR = {
@@ -735,7 +737,7 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "ff_gain_vec": dc_vec,
         "flux_tail_compensation": flux_tail_compensation,
         "flux_fit_params": FLUX_FIT_PARAMS,
-        "relax_delay": 2000,
+        "relax_delay": T1_RESET_BACKSTOP_US,
         "qubit_pulse_style": "arb",
     })
     if p.get("reset_mode") == "feedback":
@@ -747,6 +749,7 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
             "reset_oper": p.get("reset_oper", "lower"),
             "reset_ground_below": bool(p.get("reset_ground_below", True)),
             "reset_max_iters": int(p.get("reset_max_iters", 3)),
+            "reset_thermalization_us": THERMALIZATION_US,
         })
     return base
 

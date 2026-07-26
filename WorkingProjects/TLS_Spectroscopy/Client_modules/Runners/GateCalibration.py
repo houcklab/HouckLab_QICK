@@ -34,6 +34,8 @@ RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
 RESET_GROUND_BELOW = True
 RESET_MAX_ITERS = 3
+THERMALIZATION_US = 25.0
+PASSIVE_RESET_US = 1000.0
 
 P_TRANSMISSION = {
     "run": True,
@@ -84,7 +86,7 @@ P_SS_CAL = {
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
-    "relax_delay_us": 1000.0,
+    "relax_delay_us": PASSIVE_RESET_US,
 }
 
 P_RABI_CHEVRON_IQ = {
@@ -115,7 +117,7 @@ def _base_cfg(p, extra=None):
     cfg = dict(BaseConfig)
     cfg["shots"] = int(p["shots"])
     cfg["reps"] = int(p["shots"])
-    cfg["relax_delay"] = float(p.get("relax_delay_us", 2000.0))
+    cfg["relax_delay"] = float(p.get("relax_delay_us", PASSIVE_RESET_US))
     cfg["ff_gain"] = int(FF_HOLD_GAIN)
     cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
@@ -129,6 +131,7 @@ def _base_cfg(p, extra=None):
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
         cfg["reset_max_iters"] = int(RESET_MAX_ITERS)
+        cfg["reset_thermalization_us"] = THERMALIZATION_US
     if extra:
         cfg.update(extra)
     return cfg
@@ -265,7 +268,7 @@ def run_rabi_chevron_iq(outer_folder, soc, soccfg):
         "amp_start": p["a_min"], "amp_stop": p["a_max"], "amp_expts": p["a_points"],
         "freq_span": p["freq_span_mhz"], "freq_points": p["freq_points"],
         "reset_mode": "passive",
-        "relax_delay": 1000.0,
+        "relax_delay": PASSIVE_RESET_US,
     })
     exp = RabiChevronIQ(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                         suffix="Rabi_Chevron_IQ", cfg=cfg,
