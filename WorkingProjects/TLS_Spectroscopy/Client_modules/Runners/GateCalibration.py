@@ -28,7 +28,7 @@ FF_HOLD_GAIN = 0
 READOUT_AFTER_PARK = True
 
 RESET_MODE = "feedback"
-PROBE_RESET = True
+PROBE_RESET = False
 CAL_RES_PHASE = False
 RESET_THRESHOLD_RAW = 7087
 RESET_OPER = "lower"
@@ -37,12 +37,12 @@ RESET_MAX_ITERS = 3
 
 P_TRANSMISSION = {
     "run": True,
-    "shots": 1000,
-    "freq_start_mhz": None,
-    "freq_stop_mhz": None,
+    "shots": 500,
+    "freq_start_mhz": 7245,
+    "freq_stop_mhz": 7255,
     "freq_points": 201,
-    "spec_amp": None,
-    "spec_len_us": None,
+    "spec_amp": 8000,
+    "spec_len_us": 10,
 }
 P_TRANSMISSION_SWEEP = {
     "run": False,
@@ -59,28 +59,28 @@ P_TRANSMISSION_SWEEP = {
 P_QUBIT_SPEC = {
     "run": False,
     "shots": 1000,
-    "freq_start_mhz": None,
-    "freq_stop_mhz": None,
+    "freq_start_mhz": 2500,
+    "freq_stop_mhz": 2560,
     "freq_points": 201,
-    "spec_gain": 500,
-    "spec_length_us": 10.0,
+    "spec_gain": 1000,
+    "spec_length_us": 1.0,
     "relax_delay_us": 100.0,
 }
 P_QUBIT_SPEC_SWEEP = {
     "run": False,
     "shots": 1000,
-    "freq_start_mhz": None,
-    "freq_stop_mhz": None,
+    "freq_start_mhz": 2520,
+    "freq_stop_mhz": 2540,
     "freq_points": 201,
     "gain_min": 200,
-    "gain_max": 3000,
+    "gain_max": 10000,
     "gain_points": 12,
     "spec_length_us": 10.0,
     "relax_delay_us": 100.0,
 }
 
 P_SS_CAL = {
-    "run": True,
+    "run": False,
     "shots": 1000,
     "number_pi_pulses": 1,
     "ground_threshold": 0.7,
@@ -88,7 +88,7 @@ P_SS_CAL = {
 }
 
 P_RABI_CHEVRON_IQ = {
-    "run": True,
+    "run": False,
     "shots": 100,
     "num_pi": 1,
     "pulse_type": "X180",

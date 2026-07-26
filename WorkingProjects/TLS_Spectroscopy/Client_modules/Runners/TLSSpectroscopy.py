@@ -51,17 +51,18 @@ YOKO_VISA = "USB0::0x0B21::0x0039::91S929899::0::INSTR"
 YOKO_VOLTAGE = 0.0
 
 
-FLUX_FIT_PARAMS = None
+FLUX_FIT_PARAMS = [2.4920418041935952,0.4499777329402836,27086.84482878093,-1673.0374870537846,0.7979368734503084,3.631178225156089e-06,
+]
 
 BASELINE_DC_OFFSET = 0
-TARGET_DC_OFFSET = 8000
+TARGET_DC_OFFSET = 4000
 FLUX_TAIL_COMPENSATION_GAIN = 0.75
 
 SAVE_RESONATOR_LOOKUP = True
 USE_RESONATOR_LOOKUP = False
 RESONATOR_LOOKUP_CSV = None
 
-RESONATOR_FIT_PARAMS = None
+RESONATOR_FIT_PARAMS = None #[7246069361.953229,113435289.31239134,5.073521417128309,0.23663454523911054,62987.59314475978,-4611.599933061799,0.5368760162762044]
 
 INTERLEAVE_ROUNDS = 10
 
@@ -74,45 +75,45 @@ RESET_GROUND_BELOW = True
 
 P1_RESONATOR = {
     "run": False,
-    "shots": 200,
-    "freq_min": 7245.0,
-    "freq_max": 7252.0,
-    "freq_step": 0.05,
+    "shots": 300,
+    "freq_min": 7248.2,
+    "freq_max": 7249.2,
+    "freq_step": 0.01,
     "dc_min": 0,
-    "dc_max": 12000,
+    "dc_max": 30000,
     "dc_step": 300,
     "lookup_smooth_points": None,
     "live_plot": True,
-    "spec_amp": None,
-    "spec_len_us": None,
+    "spec_amp": 3000,
+    "spec_len_us": 15.0,
 }
 
 P2_QUBIT_SPEC_FULL = {
     "run": False,
     "advanced_fit": True,
-    "shots": 100,
+    "shots": 300,
     "relax_delay_us": 100.0,
-    "spec_amp": 7000,
+    "spec_amp": 20000,
     "spec_len_us": 0.5,
-    "freq_min": 2250.0,
+    "freq_min": 2300.0,
     "freq_max": 2570.0,
-    "freq_step": 2.0,
+    "freq_step": 1.0,
     "dc_min": 0,
-    "dc_max": 12000,
-    "dc_step": 300,
+    "dc_max": 7000,
+    "dc_step": 100,
     "live_plot": True,
 }
 
 P3_STEP_RESPONSE = {
     "run_fit": False,
     "run_correct": False,
-    "shots": 200,
-    "spec_amp": 2000,
+    "shots": 300,
+    "spec_amp": 15000,
     "spec_len_us": 0.5,
     "freq_step": 0.5,
     "auto_center_frequency_window": True,
-    "auto_freq_absolute_min_mhz": 2250.0,
-    "auto_freq_absolute_max_mhz": 2570.0,
+    "auto_freq_absolute_min_mhz": 2430.0,
+    "auto_freq_absolute_max_mhz": 2470.0,
     "t_min_us": 1.0,
     "t_max_us": 500.0,
     "t_step_us": 4.0,
@@ -124,23 +125,23 @@ P3_STEP_RESPONSE = {
 }
 
 P4_LONG_TIME = {
-    "run": False,
-    "advanced_fit": False,
-    "shots": 100,
-    "relax_delay_us": 700.0,
-    "spec_amp": 7000,
+    "run": True,
+    "advanced_fit": True,
+    "shots": 300,
+    "relax_delay_us": 500.0,
+    "spec_amp": 20000,
     "spec_len_us": 0.5,
-    "freq_min": 2250.0,
+    "freq_min": 2000.0,
     "freq_max": 2570.0,
-    "freq_step": 2.0,
+    "freq_step": 1.0,
     "dc_min": 0,
-    "dc_max": 12000,
-    "dc_step": 300,
+    "dc_max": 15000,
+    "dc_step": 100,
     "long_time_us": 5.0,
     "average_window_us": 0.0,
     "average_step_us": 0.016,
     "inter_target_wait_us": 100.0,
-    "live_plot": False,
+    "live_plot": True,
 }
 
 P5_SS_CAL = {
