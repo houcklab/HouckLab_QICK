@@ -91,8 +91,9 @@ class _CoherenceBase(ExperimentClass):
         if fit is not None:
             tt = np.logspace(np.log10(self.t_vec_us.min()), np.log10(self.t_vec_us.max()), 400)
             err = fit.get("tau_err_us", np.nan)
-            label = (f"tau = {fit['tau_us']:.2f} +/- {err:.2f} us"
-                     if np.isfinite(err) else f"tau = {fit['tau_us']:.2f} us")
+            metric = getattr(self, "_metric_name", "tau")
+            label = (f"{metric} = {fit['tau_us']:.2f} +/- {err:.2f} us"
+                     if np.isfinite(err) else f"{metric} = {fit['tau_us']:.2f} us")
             ax.plot(tt, fit["P0"] + (fit["P1"] - fit["P0"]) * np.exp(-tt / fit["tau_us"]),
                     "-r", lw=1.5, label=label)
             ax.legend()
@@ -109,6 +110,8 @@ class _CoherenceBase(ExperimentClass):
 
 
 class T1(_CoherenceBase):
+
+    _metric_name = "T1"
 
     def __init__(self, *args, ff_gain=0.0, **kw):
         super().__init__(*args, **kw)
