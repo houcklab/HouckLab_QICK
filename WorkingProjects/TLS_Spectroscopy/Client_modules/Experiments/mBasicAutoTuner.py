@@ -33,12 +33,14 @@ import json
 import math
 import os
 import pickle
+import sys
 import time
 import warnings
 from contextlib import redirect_stdout
 from statistics import NormalDist
 
 import matplotlib.pyplot as plt
+import h5py
 import numpy as np
 from scipy.optimize import OptimizeWarning, curve_fit
 from scipy.signal import find_peaks, savgol_filter
@@ -75,11 +77,23 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.basic_joint_opt
 )
 
 
-BASIC_AUTOTUNER_REVISION = "fidelity-first-portfolio-v8"
+BASIC_AUTOTUNER_REVISION = "diagnostic-bundle-v9"
 
 
 BASIC_DEFAULTS = {
     "random_seed": 271828,
+    # A normal console transcript is not enough to debug hardware-path failures.
+    # Production runs therefore stream every raw single-shot/control IQ acquisition
+    # into one self-contained HDF5 bundle and embed the complete final Python data
+    # archive at save time.  Tests stay lightweight unless force_without_hardware is
+    # explicitly enabled.
+    "diagnostics": {
+        "enabled": True,
+        "force_without_hardware": False,
+        "compression": "gzip",
+        "compression_level": 4,
+        "flush_every_records": 8,
+    },
     # Optional explicit pickle from an interrupted run of this exact revision.  Only
     # complete coarse cells with the same physical input contract are reused;
     # medium/final candidates are freshly replayed in the current drift epoch.
@@ -1645,6 +1659,59 @@ def _shots_from_program(program, cfg):
     raise RuntimeError("QICK exposes neither di_buf/dq_buf nor get_raw per-shot data")
 
 
+def load_basic_autotuner_diagnostic(path, load_raw=False):
+    """Load a self-contained diagnostic bundle produced by :class:`BasicAutoTuner`.
+
+    ``load_raw=False`` returns the complete run archive and a light record manifest.
+    Set it true only when per-shot IQ arrays are needed; hardware bundles can be large.
+    """
+    with h5py.File(os.fspath(path), "r") as handle:
+        if "snapshot/run_data_pickle" not in handle:
+            raise ValueError("diagnostic bundle has no complete run snapshot")
+        payload = np.asarray(
+            handle["snapshot/run_data_pickle"], dtype=np.uint8).tobytes()
+        run_data = pickle.loads(payload)
+        records = []
+        raw_group = handle.get("raw_records")
+        if raw_group is not None:
+            for name in sorted(raw_group):
+                group = raw_group[name]
+                row = {
+                    "record_index": int(name),
+                    "kind": str(group.attrs.get("kind", "unknown")),
+                    "timestamp_unix": float(group.attrs.get(
+                        "timestamp_unix", np.nan)),
+                    "candidate": json.loads(group.attrs.get(
+                        "candidate_json", "{}")),
+                    "pulse_signature": json.loads(group.attrs.get(
+                        "pulse_signature_json", "null")),
+                    "reset_runtime": json.loads(group.attrs.get(
+                        "reset_runtime_json", "{}")),
+                    "metadata": json.loads(group.attrs.get(
+                        "metadata_json", "{}")),
+                    "datasets": {
+                        key: {"shape": tuple(group[key].shape),
+                              "dtype": str(group[key].dtype)}
+                        for key in group.keys()},
+                }
+                if load_raw:
+                    row["raw"] = {
+                        key: np.asarray(group[key]) for key in group.keys()}
+                records.append(row)
+        return {
+            "run_data": run_data,
+            "raw_records": records,
+            "format_version": int(handle.attrs.get("format_version", 0)),
+            "autotuner_revision": str(handle.attrs.get(
+                "autotuner_revision", "unknown")),
+            "complete": bool(handle.attrs.get("complete", False)),
+            "source_sha256": str(handle.attrs.get(
+                "source_sha256", "unavailable")),
+            "write_failures": json.loads(handle.attrs.get(
+                "write_failures_json", "[]")),
+        }
+
+
 class BasicAutoTuner(ExperimentClass):
     """Streamlined autotuner built around direct TLS step-5 fidelity.
 
@@ -1721,6 +1788,15 @@ class BasicAutoTuner(ExperimentClass):
         self._joint_search_started_monotonic = None
         self._final_replays = []
         self._analyze_multimodality = False
+        diagnostic_settings = self.params["diagnostics"]
+        self.diagnostic_fname = self.dname + "_diagnostics.h5"
+        self._diagnostic_active = bool(
+            diagnostic_settings.get("enabled", True)
+            and (self.soc is not None or diagnostic_settings.get(
+                "force_without_hardware", False)))
+        self._diagnostic_h5 = None
+        self._diagnostic_record_count = 0
+        self._diagnostic_write_failures = []
         self.data = {
             "revision": BASIC_AUTOTUNER_REVISION,
             "autotuner_revision": BASIC_AUTOTUNER_REVISION,
@@ -1729,9 +1805,9 @@ class BasicAutoTuner(ExperimentClass):
             "fidelity_definition": "TLS step-5 balanced assignment fidelity",
             "selection_objective": (
                 "at every integer readout duration from 1 through 20 us, report the "
-                "full tuple maximizing held-out fidelity LCB minus leakage UCB, "
-                "subject to substantial-leakage and coherent-control constraints; "
-                "manual selection only"
+                "full tuple maximizing held-out fidelity LCB only; measure and report "
+                "leakage and coherent control afterward without reranking; manual "
+                "selection only"
                 if self._duration_portfolio_active else
                 "minimize measured X180-plus-readout latency among candidates within "
                 "a familywise held-out noninferiority bound of the best TLS step-5 "
@@ -1785,6 +1861,14 @@ class BasicAutoTuner(ExperimentClass):
                         "read_lengths_us", [])),
                 "entries": [], "status": "not_run",
                 "automatic_write_allowed": False,
+            },
+            "diagnostic_bundle": {
+                "enabled": bool(self._diagnostic_active),
+                "path": self.diagnostic_fname,
+                "format_version": 1,
+                "raw_record_count": 0,
+                "complete": False,
+                "write_failures": self._diagnostic_write_failures,
             },
             "key_evidence": self._key_evidence,
             "eligible_tuned": {},
@@ -1917,6 +2001,33 @@ class BasicAutoTuner(ExperimentClass):
         return max((float(row.get("fidelity", -np.inf)) for row in rows),
                    default=-np.inf)
 
+    def _capture_reset_probe_diagnostic(self, raw, record, candidate, reason):
+        """Move raw reset-threshold distributions into the run bundle."""
+        if not isinstance(raw, dict):
+            return
+        record = record if isinstance(record, dict) else {}
+        recommended = record.get("recommended", {})
+        if not isinstance(recommended, dict):
+            recommended = {}
+        arrays = {}
+        for state in ("ground", "excited"):
+            state_rows = raw.get(state, {})
+            if not isinstance(state_rows, dict):
+                continue
+            for quadrature in ("lower", "upper"):
+                if quadrature in state_rows:
+                    arrays["%s_%s" % (state, quadrature)] = state_rows[quadrature]
+        if arrays:
+            self._record_raw_diagnostic(
+                "active_reset_probe", candidate, arrays,
+                {"reason": str(reason),
+                 "threshold_raw": recommended.get("threshold_raw"),
+                 "oper": recommended.get("oper"),
+                 "ground_below": recommended.get("ground_below"),
+                 "raw_assignment_fidelity": record.get(
+                     "raw_assignment_fidelity"),
+                 "validation": record.get("validation")})
+
     def _try_activate_feedback(self, reason):
         """Freshly calibrate feedback for the exact current readout/control tuple."""
         settings = self.params["reset"]
@@ -1947,7 +2058,10 @@ class BasicAutoTuner(ExperimentClass):
                     outer_folder=self.outerFolder,
                     shots=int(settings.get("probe_shots", 2000)), validate=True,
                     min_raw_fidelity=float(
-                        settings.get("min_raw_assignment_fidelity", 0.80)))
+                        settings.get("min_raw_assignment_fidelity", 0.80)),
+                    diagnostic_callback=lambda raw, data:
+                        self._capture_reset_probe_diagnostic(
+                            raw, data, self.working, reason))
 
             if self._detailed_console():
                 rec = run_probe()
@@ -2070,7 +2184,10 @@ class BasicAutoTuner(ExperimentClass):
                     shots=int(settings.get("profile_shots", 650)),
                     validate=bool(settings.get("profile_validate", True)),
                     min_raw_fidelity=float(settings.get(
-                        "profile_min_raw_fidelity", 0.72)))
+                        "profile_min_raw_fidelity", 0.72)),
+                    diagnostic_callback=lambda raw, data:
+                        self._capture_reset_probe_diagnostic(
+                            raw, data, probe_candidate, reason))
 
             if self._detailed_console():
                 rec = run_probe()
@@ -2460,6 +2577,179 @@ class BasicAutoTuner(ExperimentClass):
                 if not self._detailed_console():
                     print("  Warning: the intermediate checkpoint could not be saved.")
 
+    # ------------------------------------------------------- raw diagnostic bundle
+    def _diagnostic_file(self):
+        """Open the append-only raw-acquisition bundle lazily."""
+        if not self._diagnostic_active:
+            return None
+        if self._diagnostic_h5 is None:
+            handle = h5py.File(self.diagnostic_fname, "a")
+            handle.attrs["format"] = "BasicAutoTuner diagnostic bundle"
+            handle.attrs["format_version"] = 1
+            handle.attrs["autotuner_revision"] = BASIC_AUTOTUNER_REVISION
+            handle.attrs["python_version"] = sys.version
+            handle.require_group("raw_records")
+            self._diagnostic_h5 = handle
+        return self._diagnostic_h5
+
+    def _diagnostic_failure(self, phase, exc):
+        failure = {
+            "phase": str(phase),
+            "error": "%s: %s" % (type(exc).__name__, exc),
+            "record_index": int(self._diagnostic_record_count),
+        }
+        self._diagnostic_write_failures.append(failure)
+        bundle = self.data.get("diagnostic_bundle")
+        if isinstance(bundle, dict):
+            bundle["complete"] = False
+
+    def _record_raw_diagnostic(self, kind, candidate, arrays, metadata=None):
+        """Stream one raw IQ acquisition with its exact physical tuple.
+
+        Diagnostic I/O is deliberately non-authoritative: a disk failure is recorded
+        but never changes or aborts the calibration measurement itself.
+        """
+        if not self._diagnostic_active:
+            return None
+        index = int(self._diagnostic_record_count)
+        self._diagnostic_record_count += 1
+        try:
+            handle = self._diagnostic_file()
+            records = handle["raw_records"]
+            name = "%08d" % index
+            if name in records:
+                del records[name]
+            group = records.create_group(name)
+            candidate_payload = ({key: candidate.get(key)
+                                  for key in self.initial if key in candidate}
+                                 if isinstance(candidate, dict) else {})
+            group.attrs["kind"] = str(kind)
+            group.attrs["timestamp_unix"] = float(time.time())
+            group.attrs["candidate_json"] = json.dumps(
+                candidate_payload, cls=NpEncoder, sort_keys=True)
+            group.attrs["pulse_signature_json"] = json.dumps(
+                self._pulse_signature(candidate_payload)
+                if candidate_payload else None,
+                cls=NpEncoder, sort_keys=True)
+            group.attrs["reset_runtime_json"] = json.dumps(
+                self._reset_runtime, cls=NpEncoder, sort_keys=True)
+            group.attrs["metadata_json"] = json.dumps(
+                {} if metadata is None else metadata,
+                cls=NpEncoder, sort_keys=True)
+            settings = self.params["diagnostics"]
+            compression = settings.get("compression", "gzip")
+            compression = None if not compression else str(compression)
+            compression_options = (
+                int(settings.get("compression_level", 4))
+                if compression == "gzip" else None)
+            for key, value in dict(arrays).items():
+                array = np.asarray(value)
+                if not (np.issubdtype(array.dtype, np.number)
+                        or array.dtype == bool):
+                    continue
+                options = {}
+                if array.size > 1 and compression is not None:
+                    options.update({
+                        "compression": compression,
+                        "shuffle": True,
+                    })
+                    if compression_options is not None:
+                        options["compression_opts"] = compression_options
+                if np.issubdtype(array.dtype, np.complexfloating):
+                    group.create_dataset(str(key) + "_real", data=array.real,
+                                         **options)
+                    group.create_dataset(str(key) + "_imag", data=array.imag,
+                                         **options)
+                else:
+                    group.create_dataset(str(key), data=array, **options)
+            bundle = self.data.get("diagnostic_bundle")
+            if isinstance(bundle, dict):
+                bundle["raw_record_count"] = int(self._diagnostic_record_count)
+            flush_every = max(int(settings.get("flush_every_records", 8)), 1)
+            if self._diagnostic_record_count % flush_every == 0:
+                handle.flush()
+            return index
+        except Exception as exc:
+            self._diagnostic_failure("raw_%s" % kind, exc)
+            return None
+
+    @staticmethod
+    def _replace_diagnostic_bytes(handle, path, payload):
+        if path in handle:
+            del handle[path]
+        parent, _, name = path.rpartition("/")
+        group = handle.require_group(parent) if parent else handle
+        raw = np.frombuffer(bytes(payload), dtype=np.uint8)
+        group.create_dataset(name, data=raw, compression="gzip",
+                             compression_opts=4, shuffle=True)
+
+    def _finalize_diagnostic_bundle(self, data):
+        """Embed the complete run archive beside streamed raw IQ in one HDF5."""
+        if not self._diagnostic_active:
+            return False
+        bundle = data.setdefault("diagnostic_bundle", {})
+        bundle.update({
+            "enabled": True,
+            "path": self.diagnostic_fname,
+            "format_version": 1,
+            "raw_record_count": int(self._diagnostic_record_count),
+            "complete": False,
+            "write_failures": self._diagnostic_write_failures,
+        })
+        try:
+            handle = self._diagnostic_file()
+            source_hash = None
+            try:
+                with open(__file__, "rb") as stream:
+                    source_hash = hashlib.sha256(stream.read()).hexdigest()
+            except Exception:
+                pass
+            bundle.update({
+                "complete": not bool(self._diagnostic_write_failures),
+                "source_sha256": source_hash,
+            })
+            snapshot = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+            self._replace_diagnostic_bytes(
+                handle, "snapshot/run_data_pickle", snapshot)
+            self._replace_diagnostic_bytes(
+                handle, "snapshot/summary_json", json.dumps(
+                    self._jsonable_summary(data), cls=NpEncoder,
+                    sort_keys=True).encode("utf-8"))
+            self._replace_diagnostic_bytes(
+                handle, "snapshot/params_json", json.dumps(
+                    self.params, cls=NpEncoder, sort_keys=True).encode("utf-8"))
+            self._replace_diagnostic_bytes(
+                handle, "snapshot/input_config_json", json.dumps(
+                    self.input_cfg, cls=NpEncoder,
+                    sort_keys=True).encode("utf-8"))
+            try:
+                soccfg_text = json.dumps(
+                    self.soccfg, cls=NpEncoder, sort_keys=True)
+            except Exception:
+                soccfg_text = repr(self.soccfg)
+            self._replace_diagnostic_bytes(
+                handle, "snapshot/soccfg_text", soccfg_text.encode("utf-8"))
+            handle.attrs["raw_record_count"] = int(
+                self._diagnostic_record_count)
+            handle.attrs["complete"] = bool(bundle["complete"])
+            handle.attrs["source_sha256"] = source_hash or "unavailable"
+            handle.attrs["write_failures_json"] = json.dumps(
+                self._diagnostic_write_failures, cls=NpEncoder)
+            handle.flush()
+            handle.close()
+            self._diagnostic_h5 = None
+            return True
+        except Exception as exc:
+            self._diagnostic_failure("finalize", exc)
+            try:
+                if self._diagnostic_h5 is not None:
+                    self._diagnostic_h5.flush()
+                    self._diagnostic_h5.close()
+            except Exception:
+                pass
+            self._diagnostic_h5 = None
+            return False
+
     # ---------------------------------------------------------- production backends
     def _acquire_transmission(self, freqs_mhz, candidate, shots):
         freqs = np.asarray(freqs_mhz, dtype=float)
@@ -2605,6 +2895,11 @@ class BasicAutoTuner(ExperimentClass):
         if shot_i.shape[0] != gains.size or shot_q.shape[0] != gains.size:
             raise RuntimeError("QICK joint gain sweep returned the wrong number of "
                                "gain experiments")
+        self._record_raw_diagnostic(
+            "joint_gain_sweep", base_candidate,
+            {"shot_i": shot_i, "shot_q": shot_q},
+            {"label": str(label), "gains_dac": gains,
+             "shots": int(shots), "epoch": int(epoch)})
         rows = []
         for index, gain in enumerate(gains[1:], start=1):
             candidate = _with_candidate(
@@ -2682,7 +2977,12 @@ class BasicAutoTuner(ExperimentClass):
         cfg = self._cfg_for(candidate, **extra)
         program = BasicSequenceProgram(self.soccfg, cfg)
         program.acquire(self.soc, load_pulses=True, progress=False)
-        return _shots_from_program(program, cfg)
+        shot_i, shot_q = _shots_from_program(program, cfg)
+        self._record_raw_diagnostic(
+            "sequence", candidate, {"shot_i": shot_i, "shot_q": shot_q},
+            {"sequence_ops": list(sequence_ops), "shots": int(shots),
+             "seq_gap_us": seq_gap_us})
+        return shot_i, shot_q
 
     def _acquire_parity_chevron(self, freqs_mhz, gains, candidate, shots,
                                 pulse_counts, calibration):
@@ -2705,6 +3005,14 @@ class BasicAutoTuner(ExperimentClass):
                 program = BasicSequenceProgram(self.soccfg, cfg)
                 program.acquire(self.soc, load_pulses=True, progress=False)
                 shot_i, shot_q = _shots_from_program(program, cfg)
+                exact = _with_candidate(
+                    candidate, qubit_pi_freq=float(freqs[fi]),
+                    qubit_pi_gain=int(gains[gi]))
+                self._record_raw_diagnostic(
+                    "parity_chevron_point", exact,
+                    {"shot_i": shot_i, "shot_q": shot_q},
+                    {"pulse_count": int(pulse_counts[ci]),
+                     "shots": int(shots)})
                 populations[ci, fi, gi] = float(np.mean(
                     discriminate_with_metrics(shot_i, shot_q, calibration)))
             targets = np.asarray(
@@ -2731,6 +3039,12 @@ class BasicAutoTuner(ExperimentClass):
             shot_i, shot_q = program.acquire(
                 self.soc, load_pulses=True, progress=False)
             shot_i, shot_q = np.asarray(shot_i), np.asarray(shot_q)
+            exact = _with_candidate(candidate, qubit_pi_freq=float(freq))
+            self._record_raw_diagnostic(
+                "parity_chevron_gain_line", exact,
+                {"shot_i": shot_i, "shot_q": shot_q},
+                {"pulse_count": int(count), "gains_dac": run_gains,
+                 "shots": int(shots)})
             row = np.empty(gains.size, dtype=float)
             for gain_index in range(gains.size):
                 row[gain_index] = float(
@@ -2757,6 +3071,13 @@ class BasicAutoTuner(ExperimentClass):
             program = BasicSequenceProgram(self.soccfg, cfg)
             program.acquire(self.soc, load_pulses=True, progress=False)
             shot_i, shot_q = _shots_from_program(program, cfg)
+            exact = _with_candidate(
+                candidate, qubit_pi_freq=float(freqs[index]))
+            self._record_raw_diagnostic(
+                "inverse_pair_scan", exact,
+                {"shot_i": shot_i, "shot_q": shot_q},
+                {"pair_count": int(pairs), "shots": int(shots),
+                 "phases_deg": phases})
             populations[index] = float(np.mean(
                 discriminate_with_metrics(shot_i, shot_q, calibration)))
         return populations
@@ -2766,6 +3087,13 @@ class BasicAutoTuner(ExperimentClass):
                            archive=True, reference_discriminator=None):
         ig, qg, ie, qe = self._acquire_ss_pair(
             dict(candidate), int(shots), state_order=state_order)
+        self._record_raw_diagnostic(
+            "single_shot_pair", candidate,
+            {"ground_i": ig, "ground_q": qg,
+             "excited_i": ie, "excited_q": qe},
+            {"label": str(label), "shots": int(shots),
+             "state_order": str(state_order),
+             "analyze_multimodality": bool(self._analyze_multimodality)})
         metrics = step5_metrics(
             ig, qg, ie, qe,
             analyze_multimodality=bool(self._analyze_multimodality))
@@ -9293,6 +9621,10 @@ class BasicAutoTuner(ExperimentClass):
             program = BasicSequenceProgram(self.soccfg, cfg)
             program.acquire(self.soc, load_pulses=True, progress=False)
             shot_i, shot_q = _shots_from_program(program, cfg)
+            self._record_raw_diagnostic(
+                "repeated_control", candidate,
+                {"shot_i": shot_i, "shot_q": shot_q},
+                {"pulse_count": int(counts[index]), "shots": int(shots)})
             populations[index] = float(np.mean(
                 discriminate_with_metrics(shot_i, shot_q, calibration)))
         return populations
@@ -10477,6 +10809,11 @@ class BasicAutoTuner(ExperimentClass):
         """Measure the identity/shelving response matrix for prepared g/e/f."""
         p = self.params["leakage"]
         ig, qg, ie, qe = self._acquire_ss_pair(candidate, int(shots))
+        self._record_raw_diagnostic(
+            "leakage_response_reference", candidate,
+            {"ground_i": ig, "ground_q": qg,
+             "excited_i": ie, "excited_q": qe},
+            {"shots": int(shots), "state_order": "ge"})
         metrics = step5_metrics(ig, qg, ie, qe)
         ge = self._reference_pulse(
             ef_calibration["ge_reference_gain"],
@@ -12861,6 +13198,7 @@ class BasicAutoTuner(ExperimentClass):
             "automatic_config_write_allowed",
             "control_branch_qualification", "pre_expensive_gate",
             "expensive_search_skipped", "expensive_search_skip_reason",
+            "diagnostic_bundle",
         )
         summary = {key: data.get(key) for key in keys if key in data}
         portfolio = data.get("duration_portfolio", {})
@@ -13020,6 +13358,15 @@ class BasicAutoTuner(ExperimentClass):
         if data is None:
             data = self.data
         print("Saving %s" % self.fname)
+        # Finalize the self-contained bundle first.  Even if the compact summary H5
+        # later encounters a network-drive or serialization fault, the raw evidence
+        # and complete Python archive survive in the file the operator will send back.
+        if self._diagnostic_active:
+            if self._finalize_diagnostic_bundle(data):
+                print("Diagnostic bundle: %s" % self.diagnostic_fname)
+            else:
+                print("Warning: diagnostic bundle was incomplete: %s"
+                      % self.diagnostic_fname)
         with self.datafile() as h5:
             h5.attrs["summary"] = json.dumps(self._jsonable_summary(data), cls=NpEncoder)
             h5.attrs["params"] = json.dumps(self.params, cls=NpEncoder)

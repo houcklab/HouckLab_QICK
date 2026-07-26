@@ -107,6 +107,7 @@ class ActiveResetProbe(ExperimentClass):
         super().__init__(soc=soc, soccfg=soccfg, path=path, outerFolder=outerFolder,
                          prefix=prefix, suffix=suffix, cfg=cfg, meta_dict=meta_dict, **kw)
         self.element = str(path)
+        self.raw_shots = None
 
     def _read_dmem(self, addr):
         for getter in (lambda: self.soc.tproc.single_read(addr),
@@ -252,6 +253,9 @@ class ActiveResetProbe(ExperimentClass):
                   "split along one quadrature before trusting active reset.")
         print("=" * 68)
 
+        # Keep the raw threshold-training/audit distributions available to an owning
+        # autotuner without forcing them into the probe's compact JSON/HDF5 summary.
+        self.raw_shots = raw_shots
         self.data = {
             'tproc_ch': tproc_ch, 'supported': True, 'results': results,
             'recommended': {'oper': oper, 'threshold_raw': thr, 'ground_below': ground_below},

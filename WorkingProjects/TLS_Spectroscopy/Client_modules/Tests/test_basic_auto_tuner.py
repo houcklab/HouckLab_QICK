@@ -189,7 +189,7 @@ FAST_PARAMS = {
     },
     "duration_portfolio": {"enabled": False},
     # Legacy timing-unit fixtures below were authored around a one-point epsilon.
-    # Production fidelity-first-portfolio-v8 tightens the default to 0.5 percentage point.
+    # Production diagnostic-bundle-v9 tightens the default to 0.5 percentage point.
     "latency": {"max_fidelity_loss": 0.010},
     "coordinate_descent_repeat": False,
     # Most unit tests target one subsystem in isolation.  End-to-end operational
@@ -3633,12 +3633,49 @@ def test_concise_console_hides_diagnostics_but_keeps_the_saved_report():
             tuner._log("internal_detail", "WARN", "full diagnostic text")
         assert output.getvalue() == ""
         assert tuner.data["report"][-1]["message"] == "full diagnostic text"
-
         tuner.params["console"]["verbosity"] = "detailed"
         with redirect_stdout(output):
             tuner._log("internal_detail", "WARN", "visible while debugging")
         assert "visible while debugging" in output.getvalue()
 
+
+def test_self_contained_diagnostic_bundle_round_trips_raw_iq_and_run_data():
+    """One returned HDF5 must contain both raw shots and the full run archive."""
+    params = copy.deepcopy(FAST_PARAMS)
+    params.update({
+        "reset": {"enabled": False},
+        "diagnostics": {
+            "enabled": True, "force_without_hardware": True,
+            "compression": "gzip", "compression_level": 1,
+            "flush_every_records": 1,
+        },
+    })
+    with tempfile.TemporaryDirectory() as folder:
+        tuner = VirtualBasicAutoTuner(
+            soc=None, soccfg=None, path="q4", outerFolder=folder,
+            cfg=_base_config(), params=params)
+        measured = tuner._measure_candidate(
+            tuner.working, shots=53, label="diagnostic round trip",
+            state_order="eg")
+        tuner.data["diagnostic_test_sentinel"] = {"fidelity": measured["fidelity"]}
+        tuner.save_data()
+        loaded = T.load_basic_autotuner_diagnostic(
+            tuner.diagnostic_fname, load_raw=True)
+
+    assert loaded["complete"] is True
+    assert loaded["autotuner_revision"] == T.BASIC_AUTOTUNER_REVISION
+    assert loaded["run_data"]["diagnostic_test_sentinel"]["fidelity"] == (
+        measured["fidelity"])
+    assert len(loaded["raw_records"]) == 1
+    record = loaded["raw_records"][0]
+    assert record["kind"] == "single_shot_pair"
+    assert record["metadata"]["label"] == "diagnostic round trip"
+    assert record["metadata"]["state_order"] == "eg"
+    assert record["candidate"]["read_length"] == tuner.working["read_length"]
+    assert set(record["raw"]) == {
+        "ground_i", "ground_q", "excited_i", "excited_q"}
+    assert all(np.asarray(value).shape == (53,)
+               for value in record["raw"].values())
 
 def test_static_fast_flux_is_replayed_but_never_tuned():
     """A signed park value is fixed context and survives every candidate config."""
@@ -6357,7 +6394,7 @@ def test_runner_main_never_writes_a_guard_rejected_result():
         "revision": T.BASIC_AUTOTUNER_REVISION,
         "autotuner_revision": T.BASIC_AUTOTUNER_REVISION,
     })
-    assert T.BASIC_AUTOTUNER_REVISION == "fidelity-first-portfolio-v8"
+    assert T.BASIC_AUTOTUNER_REVISION == "diagnostic-bundle-v9"
     timing_best = timing_result["best_found"]
     timing_blocks = 8
     timing_crossfit_se = 0.001 / np.sqrt(timing_blocks)
@@ -7061,6 +7098,7 @@ def main():
         test_reset_raw_threshold_maximizes_held_shot_assignment,
         test_active_reset_primitive_always_clears_measurement_photons,
         test_concise_console_hides_diagnostics_but_keeps_the_saved_report,
+        test_self_contained_diagnostic_bundle_round_trips_raw_iq_and_run_data,
         test_static_fast_flux_is_replayed_but_never_tuned,
         test_static_fast_flux_helper_forces_zero_and_nonzero_park,
         test_dynamic_flux_excursion_is_not_mistaken_for_static_park,

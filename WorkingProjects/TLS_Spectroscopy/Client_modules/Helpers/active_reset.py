@@ -68,7 +68,8 @@ def active_reset_readouts(cfg):
 
 
 def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2000,
-                       validate=True, min_raw_fidelity=0.80, min_raw_shots=200):
+                       validate=True, min_raw_fidelity=0.80, min_raw_shots=200,
+                       diagnostic_callback=None):
     from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetProbe import (
         ActiveResetProbe)
     cfg = dict(base_cfg)
@@ -79,6 +80,12 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
         probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=path,
                                  outerFolder=outer_folder, suffix="Reset_Threshold", cfg=cfg)
         data = probe.acquire().get("data", {})
+        if callable(diagnostic_callback):
+            try:
+                diagnostic_callback(getattr(probe, "raw_shots", None), data)
+            except Exception:
+                # Diagnostic persistence must never decide whether reset is usable.
+                pass
     except Exception as exc:
         print(f"[reset] threshold probe failed ({exc}) -- falling back to passive relax.")
         return None
