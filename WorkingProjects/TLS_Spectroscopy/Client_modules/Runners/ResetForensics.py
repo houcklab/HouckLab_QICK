@@ -18,7 +18,8 @@ RUN_STAGE_0_ENV = True
 RUN_STAGE_1_REFERENCE = True
 RUN_STAGE_2_FRESHNESS = True
 RUN_STAGE_3_DECISIONS = True
-RUN_STAGE_4_PI_CONTEXT = True
+RUN_STAGE_4_PI_CONTEXT = False
+RUN_STAGE_5_END_TO_END = True
 
 RES_PHASE = None
 REFERENCE_SHOTS = 2000
@@ -27,7 +28,10 @@ DIAG_RELAX_US = 1500.0
 TRACE_BASE_ADDR = 200
 TRACE_REPS = 20
 TRACE_ACQUIRES = 12
-READ_DELAY_SWEEP_US = [None, 0.0, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
+READ_DELAY_SWEEP_US = [None, 0.1, 0.2, 0.3, 0.4, 0.5, 0.7, 1.0, 1.5, 2.0, 3.0]
+
+END_TO_END_SHOTS = 2000
+END_TO_END_ITERS = [1, 2, 3, 4]
 
 PI_CONTEXT_SHOTS = 600
 PI_CONTEXT_DELAYS_US = [0.2, 1.0, 2.0, 4.0, 8.0, 16.0]
@@ -235,6 +239,7 @@ def stage1(soc, soccfg, cfg):
 def trace_run(soc, soccfg, cfg, read_delay_us, prep_excited, force_flip, n_acquires):
     max_iters = int(cfg["reset_max_iters"])
     reads = max_iters + 1
+    oper = str(cfg.get("reset_oper", "lower"))
     rows = []
     for _ in range(int(n_acquires)):
         c = dict(cfg)
@@ -246,14 +251,15 @@ def trace_run(soc, soccfg, cfg, read_delay_us, prep_excited, force_flip, n_acqui
         c["reset_read_delay_us"] = read_delay_us
         prog = ResetCheckProgram(soccfg, c)
         prog.acquire(soc, load_pulses=True, progress=False)
-        lower, _ = raw_reads(prog, TRACE_REPS, reads)
+        lower, upper = raw_reads(prog, TRACE_REPS, reads)
+        host = upper if oper == "upper" else lower
         words = read_trace(soc, TRACE_BASE_ADDR, ar.trace_word_count(max_iters))
         rows.append({
             "threshold_reg": words[0],
             "tproc_val": [words[1 + 2 * i] for i in range(max_iters)],
             "tproc_flip": [words[2 + 2 * i] for i in range(max_iters)],
-            "host_last": lower[-1].tolist(),
-            "host_prev_final": int(lower[-2][-1]) if TRACE_REPS > 1 else None,
+            "host_last": host[-1].tolist(),
+            "host_prev_final": int(host[-2][-1]) if TRACE_REPS > 1 else None,
         })
     return rows
 
@@ -326,6 +332,47 @@ def stage2(soc, soccfg, cfg, disc):
     if verdicts.get(None, 0.0) < 0.98:
         print("  --> the production code path does NOT read this iteration's value.")
     return verdicts
+
+
+def reset_residual(soc, soccfg, cfg, project, read_delay_us, max_iters, shots,
+                   prep_excited, do_reset):
+    c = dict(cfg)
+    c["reps"] = c["shots"] = int(shots)
+    c["prep_excited"] = bool(prep_excited)
+    c["do_reset"] = bool(do_reset)
+    c["reset_max_iters"] = int(max_iters)
+    c["reset_read_delay_us"] = read_delay_us
+    c["reset_force_flip"] = False
+    c.pop("reset_trace_base_addr", None)
+    I, Q = ResetCheckProgram(soccfg, c).acquire(soc, load_pulses=True)
+    return project(I, Q)
+
+
+def stage5(soc, soccfg, cfg, ref, disc, read_delay_us):
+    banner("STAGE 5 -- END-TO-END RESET RESIDUAL (the gate that keeps failing)")
+    project = make_projector(ref)
+    c = dict(cfg)
+    c["reset_threshold_raw"] = int(disc["threshold_raw"])
+    c["reset_ground_below"] = bool(disc["ground_below"])
+    baseline = reset_residual(soc, soccfg, c, project, None, 1, END_TO_END_SHOTS,
+                              True, False)
+    print(f"  no-reset baseline (prepared |e>, must be ~1.0): {baseline:+.3f}")
+    print("  gate requires reset |g> < 0.2 AND reset |e> < 0.2\n")
+    delays = []
+    for d in (None, read_delay_us):
+        if d not in delays:
+            delays.append(d)
+    print(f"  {'read_delay':>10s} {'iters':>5s} | {'reset |g>':>9s} {'reset |e>':>9s} "
+          f"| verdict")
+    for delay in delays:
+        for iters in END_TO_END_ITERS:
+            rg = reset_residual(soc, soccfg, c, project, delay, iters,
+                                END_TO_END_SHOTS, False, True)
+            re = reset_residual(soc, soccfg, c, project, delay, iters,
+                                END_TO_END_SHOTS, True, True)
+            ok = abs(rg) <= 0.2 and abs(re) <= 0.2
+            print(f"  {str(delay):>10s} {iters:>5d} | {rg:>9.3f} {re:>9.3f} | "
+                  f"{'PASS' if ok else 'fail'}")
 
 
 def stage3(soc, soccfg, cfg, disc, read_delay_us):
@@ -444,14 +491,22 @@ def main():
         verdicts = stage2(soc, soccfg, cfg, disc)
         candidates = [d for d in READ_DELAY_SWEEP_US
                       if d is not None and verdicts.get(d, 0.0) >= 0.98]
-        best_delay = candidates[0] if candidates else None
-        print(f"\n  chosen read_delay_us for the rest of the run: {best_delay}")
+        if candidates:
+            best_delay = candidates[-1]
+            print(f"\n  smallest delay with a fully fresh read: {candidates[0]}")
+        else:
+            best_delay = max(d for d in READ_DELAY_SWEEP_US if d is not None)
+            print("\n  no delay gave a fully fresh read; falling back to the largest swept")
+        print(f"  chosen read_delay_us for the rest of the run: {best_delay}")
 
     if RUN_STAGE_3_DECISIONS:
         stage3(soc, soccfg, cfg, disc, best_delay)
 
     if RUN_STAGE_4_PI_CONTEXT:
         stage4(soc, soccfg, cfg, ref)
+
+    if RUN_STAGE_5_END_TO_END:
+        stage5(soc, soccfg, cfg, ref, disc, best_delay)
 
     banner("forensics complete -- paste the whole log back")
 

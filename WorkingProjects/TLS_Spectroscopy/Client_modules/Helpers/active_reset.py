@@ -212,7 +212,7 @@ def probe_reset_params(soc, soccfg, base_cfg, path="q", outer_folder="", shots=2
         try:
             residual = probe._residual_at(
                 float(cfg.get("res_phase", 0.0)), int(rec["threshold_raw"]),
-                bool(rec["ground_below"]), max(500, int(shots)))
+                bool(rec["ground_below"]), max(500, int(shots)), oper=rec["oper"])
         except Exception as exc:
             print(f"[reset] end-to-end validation failed ({exc}) -- falling back to "
                   "passive relax.")
