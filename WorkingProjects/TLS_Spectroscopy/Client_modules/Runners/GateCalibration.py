@@ -130,7 +130,8 @@ P_QUBIT_OPT = {
     "num_pi_pulses": 1,
     "freq_span_mhz": 1.0,
     "freq_points": 11,
-    "gain_span_frac": 0.5,
+    "gain_min": 2000,
+    "gain_max": 9000,
     "gain_points": 11,
 }
 
@@ -338,15 +339,13 @@ def run_readout_opt(outer_folder, soc, soccfg):
 def run_qubit_opt(outer_folder, soc, soccfg):
     p = P_QUBIT_OPT
     f0 = float(BaseConfig["qubit_pi_freq"])
-    g0 = int(BaseConfig["qubit_pi_gain"])
     freqs = np.linspace(f0 - p["freq_span_mhz"] / 2.0, f0 + p["freq_span_mhz"] / 2.0,
                         int(p["freq_points"]))
-    lo = max(0, int(round(g0 * (1.0 - p["gain_span_frac"]))))
-    hi = min(32767, int(round(g0 * (1.0 + p["gain_span_frac"]))))
-    gains = np.round(np.linspace(lo, hi, int(p["gain_points"]))).astype(int)
+    gains = np.round(np.linspace(p["gain_min"], p["gain_max"],
+                                 int(p["gain_points"]))).astype(int)
     cfg = _base_cfg(p, extra={"reset_mode": "passive"})
     print(f"[qubit opt] scanning qubit freq {freqs[0]:.3f}..{freqs[-1]:.3f} MHz x gain "
-          f"{lo}..{hi} about pi_gain={g0}, {p['num_pi_pulses']}x pi (passive)")
+          f"{gains[0]}..{gains[-1]}, {p['num_pi_pulses']}x pi (passive)")
     exp = QubitPulseOptimize(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outer_folder,
                              suffix="GateCal_Qubit_Optimize", cfg=cfg,
                              freqs_mhz=freqs, gains=gains, shots=int(p["shots"]),
