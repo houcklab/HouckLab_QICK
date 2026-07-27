@@ -487,7 +487,7 @@ class _T1VsFluxBase(ExperimentClass):
             prog = FFT1Program(self.soccfg, cfg)
             i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
-        if self.reset_mode == "active":
+        if self.reset_mode in ("active", "feedback"):
             herald_calib = dict(self.calib_params)
             herald_calib["threshold"] = self.calib_params.get(
                 "ground_threshold", self.calib_params["threshold"])
