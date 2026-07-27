@@ -42,7 +42,7 @@ class RabiSSProgram(RAveragerProgram):
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
         add_qubit_gaussian(self)
-        if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+        if active_reset.uses_feedback(cfg):
             add_qubit_gaussian(
                 self, name="qubit_reset",
                 sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),
@@ -119,8 +119,7 @@ class RabiChevronSS(ExperimentClass):
 
         n_f, n_a = len(df_vec), len(gains)
         pop = np.full((n_f, n_a), np.nan)
-        reset_note = ("validated feedback reset" if str(cfg.get(
-            "reset_mode", "passive")).strip().lower() == "feedback"
+        reset_note = ("validated feedback reset" if active_reset.uses_feedback(cfg)
                       else f"passive relax {cfg['relax_delay']} us")
         print(f"[Rabi Chevron SS] {self.pulse_type} x{self.num_pi} pulses (error-amplified): "
               f"{n_f} detunings x {n_a} gains, {cfg['shots']} shots/pt; {reset_note}")

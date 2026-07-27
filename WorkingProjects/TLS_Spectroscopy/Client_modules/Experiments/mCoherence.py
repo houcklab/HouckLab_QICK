@@ -10,6 +10,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.acquisition import 
     resolve_rounds, split_reps, suppress_stdout)
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import discriminate_shots
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mT1VsFlux import FFT1Program
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 
 
 def _fit_exp_decay(t_us, pe):
@@ -127,8 +128,11 @@ class T1(_CoherenceBase):
             cfg["shots"] = int(reps)
         with suppress_stdout():
             prog = FFT1Program(self.soccfg, cfg)
-            _i0, _q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
+            i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
+        if active_reset.reset_mode_of(self.reset_mode) == "feedback_herald":
+            keep = active_reset.herald_keep(i0, q0, self.calib_params)
+            return float(np.sum(final[keep])), int(np.sum(keep))
         return float(np.sum(final)), int(final.size)
 
     def acquire(self, progress=False, plotDisp=False):

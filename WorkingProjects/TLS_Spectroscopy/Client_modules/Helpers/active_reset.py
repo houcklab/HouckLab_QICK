@@ -1,3 +1,34 @@
+import numpy as np
+
+
+RESET_MODES = ("passive", "active", "feedback", "feedback_herald")
+FEEDBACK_MODES = ("feedback", "feedback_herald")
+HERALD_MODES = ("active", "feedback_herald")
+
+
+def reset_mode_of(cfg_or_mode):
+    mode = (cfg_or_mode.get("reset_mode", "passive")
+            if hasattr(cfg_or_mode, "get") else cfg_or_mode)
+    return str("passive" if mode is None else mode).strip().lower()
+
+
+def uses_feedback(cfg_or_mode):
+    return reset_mode_of(cfg_or_mode) in FEEDBACK_MODES
+
+
+def heralds(cfg_or_mode):
+    return reset_mode_of(cfg_or_mode) in HERALD_MODES
+
+
+def herald_keep(i0, q0, calib_params):
+    from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import (
+        discriminate_shots)
+    herald_calib = dict(calib_params)
+    herald_calib["threshold"] = calib_params.get("ground_threshold",
+                                                 calib_params["threshold"])
+    return np.asarray(discriminate_shots(i0, q0, herald_calib)) == 0
+
+
 def to_signed32(v):
     v = int(v) & 0xFFFFFFFF
     return v - (1 << 32) if v >= (1 << 31) else v
@@ -165,7 +196,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
 
 
 def active_reset_readouts(cfg):
-    if str(cfg.get("reset_mode", "passive")).strip().lower() != "feedback":
+    if not uses_feedback(cfg):
         return 0
     return int(cfg.get("reset_max_iters", 3))
 

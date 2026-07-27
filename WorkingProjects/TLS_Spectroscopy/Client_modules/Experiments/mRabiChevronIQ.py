@@ -84,7 +84,7 @@ def _rabi_feedback_reset(prog):
 
 def rabi_flux_body(prog):
     cfg = prog.cfg
-    feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
+    feedback = active_reset.uses_feedback(cfg)
     if feedback:
         _rabi_feedback_reset(prog)
     hold = getattr(prog, "do_flux_hold", False)
@@ -137,7 +137,7 @@ class RabiChevronIQProgram(RAveragerProgram):
         drive_freq = self.freq2reg(cfg["rabi_drive_freq"], gen_ch=cfg["qubit_ch"])
 
         add_qubit_gaussian(self)
-        if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+        if active_reset.uses_feedback(cfg):
             add_qubit_gaussian(
                 self, name="qubit_reset",
                 sigma_us=float(cfg.get("reset_pi_sigma", cfg["sigma"])),

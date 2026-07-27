@@ -385,7 +385,7 @@ class FFT1Program(AveragerProgram):
         cfg = self.cfg
         if cfg.get("do_ff", True):
             ff_pulse.assert_park(self, self.ff_segs)
-        if str(cfg.get("reset_mode", "passive")).lower() == "feedback":
+        if active_reset.uses_feedback(cfg):
             active_reset.active_reset_block(
                 self, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
                 oper=cfg.get("reset_oper", "lower"),
@@ -439,12 +439,13 @@ class _T1VsFluxBase(ExperimentClass):
             calib_params = cfg.get("calib_params") if cfg else None
         if calib_params is None:
             raise ValueError("calib_params is required (run SingleShot1Q first).")
-        if reset_mode not in ("passive", "active", "feedback"):
-            raise ValueError(f"reset_mode must be 'passive', 'active', or 'feedback', got {reset_mode!r}")
-        if reset_mode == "feedback" and self.soccfg is not None and not \
+        if reset_mode not in active_reset.RESET_MODES:
+            raise ValueError(f"reset_mode must be one of {active_reset.RESET_MODES}, "
+                             f"got {reset_mode!r}")
+        if active_reset.uses_feedback(reset_mode) and self.soccfg is not None and not \
                 active_reset.active_reset_supported(self.soccfg, cfg["ro_chs"][0]):
             raise RuntimeError(
-                "reset_mode='feedback' needs a readout that feeds back into the tProc "
+                f"reset_mode={reset_mode!r} needs a readout that feeds back into the tProc "
                 f"(soccfg readout {cfg['ro_chs'][0]} has tproc_ch<0).  Run mActiveResetProbe "
                 "to confirm; this firmware may not support active reset -- use 'passive'.")
         self.element = str(path)
@@ -487,12 +488,8 @@ class _T1VsFluxBase(ExperimentClass):
             prog = FFT1Program(self.soccfg, cfg)
             i0, q0, i1, q1 = prog.acquire(self.soc, load_pulses=True)
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
-        if self.reset_mode == "active":
-            herald_calib = dict(self.calib_params)
-            herald_calib["threshold"] = self.calib_params.get(
-                "ground_threshold", self.calib_params["threshold"])
-            herald = np.asarray(discriminate_shots(i0, q0, herald_calib))
-            keep = herald == 0
+        if active_reset.heralds(self.reset_mode):
+            keep = active_reset.herald_keep(i0, q0, self.calib_params)
             return float(np.sum(final[keep])), int(np.sum(keep))
         return float(np.sum(final)), int(final.size)
 

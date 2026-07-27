@@ -56,13 +56,12 @@ class SingleShotProgram(RAveragerProgram):
                                    gen_ch=cfg["qubit_ch"])
 
         style = cfg.get("qubit_pulse_style", "arb")
-        if (str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
-                and style != "arb"):
+        if active_reset.uses_feedback(cfg) and style != "arb":
             raise ValueError("feedback-reset SingleShotProgram requires the canonical "
                              "arb Gaussian/DRAG pulse")
         if style == "arb":
             add_qubit_gaussian(self)
-            if str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback":
+            if active_reset.uses_feedback(cfg):
                 reset_read_freq = float(cfg.get(
                     "reset_read_pulse_freq", cfg["read_pulse_freq"]))
                 if not np.isclose(
@@ -98,7 +97,7 @@ class SingleShotProgram(RAveragerProgram):
         cfg = self.cfg
         ff_pulse.play_static_park(
             self, settle_us=cfg.get("ff_park_settle_us", 0.05))
-        feedback = str(cfg.get("reset_mode", "passive")).strip().lower() == "feedback"
+        feedback = active_reset.uses_feedback(cfg)
         if feedback:
             # The raw reset threshold is calibrated with a fixed readout drive gain.
             # Candidate scoring gain is a search coordinate and must not silently

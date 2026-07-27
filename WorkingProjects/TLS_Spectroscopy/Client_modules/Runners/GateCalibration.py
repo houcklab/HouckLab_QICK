@@ -17,6 +17,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronIQ 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mRabiChevronSS import RabiChevronSS
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mQubitSpec import QubitSpec, QubitSpecGainSweep
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mOptimize1Q import ReadoutOptimize, QubitPulseOptimize
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.progress import progress_counter
@@ -146,7 +147,7 @@ def _base_cfg(p, extra=None):
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["baseline_rearm_us"] = float(p.get("baseline_rearm_us", 0.5))
     cfg["reset_mode"] = RESET_MODE
-    if RESET_MODE == "feedback":
+    if active_reset.uses_feedback(RESET_MODE):
         if RESET_THRESHOLD_RAW is None:
             raise RuntimeError("RESET_MODE='feedback' needs a reset threshold, but the "
                                "start-of-run probe did not set one.")
@@ -362,7 +363,7 @@ def main():
     global RESET_MODE, RESET_THRESHOLD_RAW, RESET_OPER, RESET_GROUND_BELOW
     if CAL_RES_PHASE:
         calibrate_res_phase(soc, soccfg, BaseConfig, QUBIT, outer_folder, apply_config=True)
-    if RESET_MODE == "feedback" and PROBE_RESET:
+    if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder)
         if rec is None:
@@ -371,7 +372,7 @@ def main():
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
-    elif RESET_MODE == "feedback":
+    elif active_reset.uses_feedback(RESET_MODE):
         print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
 

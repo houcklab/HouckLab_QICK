@@ -9,6 +9,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import mak
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mSingleShot1Q import SingleShot1Q
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mCoherence import T1
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 
@@ -62,10 +63,10 @@ def _base_cfg(p, extra=None):
     cfg["ff_hold_gain"] = int(FF_HOLD_GAIN)
     cfg["readout_after_park"] = bool(READOUT_AFTER_PARK)
     cfg["reset_mode"] = RESET_MODE
-    if RESET_MODE == "feedback":
+    if active_reset.uses_feedback(RESET_MODE):
         if RESET_THRESHOLD_RAW is None:
-            raise RuntimeError("RESET_MODE='feedback' needs a reset threshold, but the "
-                               "start-of-run probe did not set one.")
+            raise RuntimeError(f"RESET_MODE={RESET_MODE!r} needs a reset threshold, but "
+                               "the start-of-run probe did not set one.")
         cfg["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)
         cfg["reset_oper"] = str(RESET_OPER)
         cfg["reset_ground_below"] = bool(RESET_GROUND_BELOW)
@@ -73,7 +74,7 @@ def _base_cfg(p, extra=None):
         cfg["reset_thermalization_us"] = THERMALIZATION_US
     if extra:
         cfg.update(extra)
-    cfg["relax_delay"] = (THERMALIZATION_US if str(cfg.get("reset_mode")) == "feedback"
+    cfg["relax_delay"] = (THERMALIZATION_US if active_reset.uses_feedback(cfg)
                           else PASSIVE_RESET_US)
     return cfg
 
@@ -133,7 +134,7 @@ def main():
             BaseConfig["res_phase"] = float(best)
             print(f"[res-phase] applied res_phase={best:.1f} deg for this session "
                   f"(aligns |g>/|e> on one raw quadrature; initialize.py unchanged)")
-    if RESET_MODE == "feedback" and PROBE_RESET:
+    if active_reset.uses_feedback(RESET_MODE) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder)
         if rec is None:
@@ -144,7 +145,7 @@ def main():
             RESET_THRESHOLD_RAW = int(rec["threshold_raw"])
             RESET_OPER = str(rec["oper"])
             RESET_GROUND_BELOW = bool(rec["ground_below"])
-    elif RESET_MODE == "feedback":
+    elif active_reset.uses_feedback(RESET_MODE):
         print(f"[reset] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
 

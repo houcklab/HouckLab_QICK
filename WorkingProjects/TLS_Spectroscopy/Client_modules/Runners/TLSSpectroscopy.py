@@ -16,6 +16,7 @@ import numpy as np
 
 from WorkingProjects.TLS_Spectroscopy.Client_modules.CoreLib.socProxy import makeProxy
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Calib.initialize import BaseConfig, outerFolder
+from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import active_reset
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.active_reset import probe_reset_params
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers.reset_phase import calibrate_res_phase
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mTransmissionVsFFGain import TransmissionVsFFGain
@@ -650,7 +651,7 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
     cfg["qubit_pulse_style"] = "arb"
     cfg["qubit_gain"] = BaseConfig["qubit_pi_gain"]
     cfg["reset_mode"] = str(P5_SS_CAL.get("reset_mode", "passive"))
-    if cfg["reset_mode"] == "feedback" and PROBE_RESET:
+    if active_reset.uses_feedback(cfg["reset_mode"]) and PROBE_RESET:
         rec = probe_reset_params(
             soc, soccfg, cfg, path=QUBIT, outer_folder=outer_folder,
             shots=int(P5_SS_CAL.get("reset_probe_shots", 2000)), validate=True)
@@ -668,7 +669,7 @@ def run_step5_single_shot_cal(outer_folder, soc, soccfg):
                     P5_SS_CAL.get("reset_thermalization_us", 25.0)),
                 "active_reset_post_measure_delay_us": 0.05,
             })
-    elif cfg["reset_mode"] == "feedback":
+    elif active_reset.uses_feedback(cfg["reset_mode"]):
         print(f"[5] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
         cfg.update({
@@ -740,7 +741,7 @@ def _t1_base_cfg(p, flux_tail_compensation, dc_vec):
         "relax_delay": T1_RESET_BACKSTOP_US,
         "qubit_pulse_style": "arb",
     })
-    if p.get("reset_mode") == "feedback":
+    if active_reset.uses_feedback(p.get("reset_mode")):
         if p.get("reset_threshold_raw") is None:
             raise RuntimeError("reset_mode='feedback' needs a reset threshold, but the "
                                "start-of-step-6 probe did not set one.")
@@ -758,7 +759,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
     plt.close("all")
     gc.collect()
     p = dict(P6_3PT_T1)
-    if p.get("reset_mode") == "feedback" and PROBE_RESET:
+    if active_reset.uses_feedback(p.get("reset_mode")) and PROBE_RESET:
         rec = probe_reset_params(soc, soccfg, BaseConfig, path=QUBIT,
                                  outer_folder=outer_folder,
                                  shots=int(p.get("reset_probe_shots", 2000)))
@@ -769,7 +770,7 @@ def run_step6_3pt_t1(outer_folder, soc, soccfg, calib_params, correction_json):
             p["reset_threshold_raw"] = int(rec["threshold_raw"])
             p["reset_oper"] = str(rec["oper"])
             p["reset_ground_below"] = bool(rec["ground_below"])
-    elif p.get("reset_mode") == "feedback":
+    elif active_reset.uses_feedback(p.get("reset_mode")):
         print(f"[6] PROBE_RESET=False -> reusing threshold_raw={RESET_THRESHOLD_RAW} "
               f"({RESET_OPER}) without re-probing")
         p["reset_threshold_raw"] = int(RESET_THRESHOLD_RAW)

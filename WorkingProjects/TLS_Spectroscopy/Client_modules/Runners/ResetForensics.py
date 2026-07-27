@@ -16,11 +16,11 @@ QUBIT = "q4"
 
 RUN_STAGE_0_ENV = True
 RUN_STAGE_1_REFERENCE = True
-RUN_STAGE_2_FRESHNESS = False
-RUN_STAGE_3_DECISIONS = False
+RUN_STAGE_2_FRESHNESS = True
+RUN_STAGE_3_DECISIONS = True
 RUN_STAGE_4_PI_CONTEXT = False
-RUN_STAGE_5_END_TO_END = False
-RUN_STAGE_6_READOUT_LEAKAGE = True
+RUN_STAGE_5_END_TO_END = True
+RUN_STAGE_6_READOUT_LEAKAGE = False
 
 READOUT_GAIN_SWEEP = [1000, 2000, 3000, 4000, 5000, 7000, 10000]
 READOUT_LENGTH_SWEEP_US = [2.0, 4.0, 6.0, 10.0, 16.5]
@@ -460,8 +460,8 @@ def stage6(soc, soccfg, cfg, ref):
                               pi_freq, ro_gain=ro_gain, ro_length_us=ro_len)
         e1 = pi_context_point(soc, soccfg, cfg, project, pi_gain, True, delay, pi_gain,
                               pi_freq, ro_gain=ro_gain, ro_length_us=ro_len)
-        eff_ge = (g1 - g0) / max(1.0 - g0, 1e-9)
-        eff_eg = (e0 - e1) / max(e0, 1e-9)
+        eff_ge = (g1 - g0) / (1.0 - 2.0 * g0) if abs(1.0 - 2.0 * g0) > 1e-6 else float("nan")
+        eff_eg = (e1 - e0) / (1.0 - 2.0 * e0) if abs(1.0 - 2.0 * e0) > 1e-6 else float("nan")
         sep_lo = abs(np.median(e0_lo) - np.median(g0_lo))
         sep_up = abs(np.median(e0_up) - np.median(g0_up))
         if sep_lo >= sep_up:
