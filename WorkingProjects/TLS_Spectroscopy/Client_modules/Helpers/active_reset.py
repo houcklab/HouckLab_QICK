@@ -16,11 +16,62 @@ def active_reset_supported(soccfg, ro_ch=0):
 
 _UID = [0]
 
+TRACE_WORDS_PER_ITER = 2
+
+
+def trace_word_count(max_iters):
+    return 1 + TRACE_WORDS_PER_ITER * int(max_iters)
+
+
+def reserved_registers(prog, page):
+    reserved = {0}
+    if int(page) == 0:
+        reserved.update({13, 14, 15, 31})
+    for gencfg in prog.soccfg['gens']:
+        try:
+            tproc_ch = int(gencfg['tproc_ch'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if prog._ch_page_tproc(tproc_ch) != int(page):
+            continue
+        for name in prog.pulse_registers:
+            reserved.add(prog._sreg_tproc(tproc_ch, name))
+    for rocfg in prog.soccfg['readouts']:
+        tproc_ctrl = rocfg.get('tproc_ctrl') if hasattr(rocfg, 'get') else None
+        if tproc_ctrl is None:
+            continue
+        try:
+            tproc_ctrl = int(tproc_ctrl)
+        except (TypeError, ValueError):
+            continue
+        if prog._ch_page_tproc(tproc_ctrl) != int(page):
+            continue
+        for name in prog.pulse_registers:
+            reserved.add(prog._sreg_tproc(tproc_ctrl, name))
+    return reserved
+
+
+def _assert_scratch_free(prog, page, named_regs):
+    reserved = reserved_registers(prog, page)
+    clashes = {name: reg for name, reg in named_regs.items() if int(reg) in reserved}
+    if not clashes:
+        return
+    detail = ", ".join(f"{name}=r{reg}" for name, reg in sorted(clashes.items()))
+    raise ValueError(
+        f"active_reset_block scratch registers collide with reserved tProc registers on "
+        f"page {int(page)}: {detail}.  Reserved on this page: "
+        f"{sorted(reserved)}.  Writing a threshold or read value into a pulse register "
+        f"silently retunes the drive (this caused the flat-line T1 artifact).  Pass "
+        f"reg_val/reg_thr/reg_flag from the free scratch set "
+        f"{sorted(set(range(1, 32)) - reserved)} instead.")
+
 
 def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=None,
                        ground_below=True, oper="lower", max_iters=3,
                        adc_trig_offset_us=None, settle_us=None, meas_syncdelay_us=None,
-                       thermalization_us=None, page=None, reg_val=None, reg_thr=None):
+                       thermalization_us=None, page=None, reg_val=None, reg_thr=None,
+                       read_delay_us=None, force_flip=None, trace_base_addr=None,
+                       reg_flag=None):
     if threshold_raw is None:
         raise ValueError("active_reset_block needs threshold_raw (raw accumulator units); "
                          "calibrate it with Experiments/mActiveResetProbe.py.")
@@ -29,6 +80,12 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
         settle_us = float(cfg.get("reset_settle_us", 0.05))
     if meas_syncdelay_us is None:
         meas_syncdelay_us = float(cfg.get("reset_meas_syncdelay_us", 4.0))
+    if read_delay_us is None:
+        read_delay_us = cfg.get("reset_read_delay_us", None)
+    if force_flip is None:
+        force_flip = bool(cfg.get("reset_force_flip", False))
+    if trace_base_addr is None:
+        trace_base_addr = cfg.get("reset_trace_base_addr", None)
     res_ch = cfg["res_ch"] if res_ch is None else res_ch
     qubit_ch = cfg["qubit_ch"] if qubit_ch is None else qubit_ch
     tproc_ch = feedback_channel(prog.soccfg, ro_ch)
@@ -40,6 +97,13 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     page = prog.ch_page(qubit_ch) if page is None else page
     reg_val = 1 if reg_val is None else reg_val
     reg_thr = 2 if reg_thr is None else reg_thr
+    reg_flag = 6 if reg_flag is None else reg_flag
+    named = {"reg_val": reg_val, "reg_thr": reg_thr}
+    if trace_base_addr is not None:
+        named["reg_flag"] = reg_flag
+    if len(set(named.values())) != len(named):
+        raise ValueError(f"active_reset_block scratch registers must be distinct: {named}")
+    _assert_scratch_free(prog, page, named)
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
     clear_us = (cfg.get("reset_thermalization_us", 25.0)
@@ -47,19 +111,36 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     clear_us = float(clear_us)
     if clear_us < 0:
         raise ValueError("reset_thermalization_us must be non-negative")
+    read_delay_cycles = (None if read_delay_us is None
+                         else max(int(prog.us2cycles(float(read_delay_us))), 0))
 
     _UID[0] += 1
     ground_op = "<" if ground_below else ">"
 
     prog.regwi(page, reg_thr, int(threshold_raw), "active-reset threshold (raw)")
+    if trace_base_addr is not None:
+        prog.memwi(page, reg_thr, int(trace_base_addr))
     for i in range(int(max_iters)):
         prog.measure(pulse_ch=res_ch, adcs=[ro_ch], adc_trig_offset=off,
-                     wait=True, syncdelay=prog.us2cycles(meas_syncdelay_us))
+                     wait=True, syncdelay=None)
+        if read_delay_cycles is not None:
+            prog.waiti(0, int(max(prog._adc_ts)) + read_delay_cycles)
         prog.read(tproc_ch, page, oper, reg_val)
+        prog.sync_all(prog.us2cycles(meas_syncdelay_us))
         skip = f"AR_SKIP_{_UID[0]}_{i}"
-        prog.condj(page, reg_val, ground_op, reg_thr, skip)
+        if trace_base_addr is not None:
+            prog.regwi(page, reg_flag, 0)
+        if not force_flip:
+            prog.condj(page, reg_val, ground_op, reg_thr, skip)
+        if trace_base_addr is not None:
+            prog.regwi(page, reg_flag, 1)
         prog.pulse(ch=qubit_ch)
-        prog.label(skip)
+        if not force_flip:
+            prog.label(skip)
+        if trace_base_addr is not None:
+            base = int(trace_base_addr) + 1 + TRACE_WORDS_PER_ITER * i
+            prog.memwi(page, reg_val, base)
+            prog.memwi(page, reg_flag, base + 1)
         prog.sync_all(prog.us2cycles(settle_us))
     if clear_us > 0:
         prog.sync_all(prog.us2cycles(clear_us))
