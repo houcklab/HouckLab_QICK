@@ -331,7 +331,8 @@ class ActiveResetProbe(ExperimentClass):
         print("  discrimination is " + ("CLEAN (separation now on one quadrature)" if clean
               else "still MARGINAL after alignment -- readout SNR limited, not a phase problem"))
 
-        resid = self._residual_at(best["res_phase"], thr, ground_below, int(check_shots))
+        resid = self._residual_at(best["res_phase"], thr, ground_below, int(check_shots),
+                                  oper="lower")
         self.data = {
             'tproc_ch': tproc_ch, 'supported': True,
             'best_res_phase': best["res_phase"], 'sweep': [
@@ -345,12 +346,13 @@ class ActiveResetProbe(ExperimentClass):
         self.pickle_data()
         return {'config': cfg, 'data': self.data}
 
-    def _residual_at(self, res_phase, threshold_raw, ground_below, shots):
+    def _residual_at(self, res_phase, threshold_raw, ground_below, shots, oper=None):
         cfg = dict(self.cfg)
         cfg["res_phase"] = float(res_phase)
         cfg["reps"] = cfg["shots"] = int(shots)
         cfg["tproc_ch"] = ar.feedback_channel(self.soccfg, cfg["ro_chs"][0])
-        cfg["reset_oper"] = "lower"
+        cfg["reset_oper"] = str(self.cfg.get("reset_oper", "lower")
+                                if oper is None else oper)
         cfg["reset_threshold_raw"] = int(threshold_raw)
         cfg["reset_ground_below"] = bool(ground_below)
         cfg.setdefault("reset_max_iters", 3)
