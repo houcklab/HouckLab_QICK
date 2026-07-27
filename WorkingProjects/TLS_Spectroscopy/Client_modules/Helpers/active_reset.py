@@ -18,6 +18,10 @@ _UID = [0]
 
 TRACE_WORDS_PER_ITER = 2
 
+DEFAULT_READ_DELAY_US = 2.0
+
+MIN_READ_TO_PULSE_GAP_US = 1.0
+
 
 def trace_word_count(max_iters):
     return 1 + TRACE_WORDS_PER_ITER * int(max_iters)
@@ -81,7 +85,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     if meas_syncdelay_us is None:
         meas_syncdelay_us = float(cfg.get("reset_meas_syncdelay_us", 4.0))
     if read_delay_us is None:
-        read_delay_us = cfg.get("reset_read_delay_us", None)
+        read_delay_us = cfg.get("reset_read_delay_us", DEFAULT_READ_DELAY_US)
     if force_flip is None:
         force_flip = bool(cfg.get("reset_force_flip", False))
     if trace_base_addr is None:
@@ -120,13 +124,27 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     prog.regwi(page, reg_thr, int(threshold_raw), "active-reset threshold (raw)")
     if trace_base_addr is not None:
         prog.memwi(page, reg_thr, int(trace_base_addr))
+    sync_cycles = prog.us2cycles(meas_syncdelay_us)
+    gap_cycles = prog.us2cycles(MIN_READ_TO_PULSE_GAP_US)
     for i in range(int(max_iters)):
         prog.measure(pulse_ch=res_ch, adcs=[ro_ch], adc_trig_offset=off,
                      wait=True, syncdelay=None)
         if read_delay_cycles is not None:
-            prog.waiti(0, int(max(prog._adc_ts)) + read_delay_cycles)
+            adc_end = int(max(prog._adc_ts))
+            pulse_at = int(max(prog._dac_ts + prog._adc_ts)) + sync_cycles
+            if adc_end + read_delay_cycles + gap_cycles > pulse_at:
+                room = prog.cycles2us(max(pulse_at - adc_end - gap_cycles, 0))
+                raise ValueError(
+                    f"reset_read_delay_us={float(read_delay_us):g} leaves no room before "
+                    f"the conditional pi: the ADC window closes at {adc_end} cycles and "
+                    f"the pi is scheduled at {pulse_at}, so at most {room:.2f} us of read "
+                    f"delay fits (keeping a {MIN_READ_TO_PULSE_GAP_US:g} us guard).  The "
+                    f"tProc read register is one measurement stale unless it is given "
+                    f"~0.1 us to settle, so raise reset_meas_syncdelay_us (currently "
+                    f"{float(meas_syncdelay_us):g} us) rather than dropping the delay.")
+            prog.waiti(0, adc_end + read_delay_cycles)
         prog.read(tproc_ch, page, oper, reg_val)
-        prog.sync_all(prog.us2cycles(meas_syncdelay_us))
+        prog.sync_all(sync_cycles)
         skip = f"AR_SKIP_{_UID[0]}_{i}"
         if trace_base_addr is not None:
             prog.regwi(page, reg_flag, 0)
