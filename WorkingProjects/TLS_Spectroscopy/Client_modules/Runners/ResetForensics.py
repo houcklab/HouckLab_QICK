@@ -16,12 +16,16 @@ QUBIT = "q4"
 
 RUN_STAGE_0_ENV = True
 RUN_STAGE_1_REFERENCE = True
-RUN_STAGE_2_FRESHNESS = True
-RUN_STAGE_3_DECISIONS = True
+RUN_STAGE_2_FRESHNESS = False
+RUN_STAGE_3_DECISIONS = False
 RUN_STAGE_4_PI_CONTEXT = False
-RUN_STAGE_5_END_TO_END = True
+RUN_STAGE_5_END_TO_END = False
+RUN_STAGE_6_READOUT_LEAKAGE = True
 
-RES_PHASE = None
+READOUT_GAIN_SWEEP = [1000, 2000, 3000, 4000, 5000, 7000, 10000]
+READOUT_LENGTH_SWEEP_US = [2.0, 4.0, 6.0, 10.0, 16.5]
+
+RES_PHASE = 15.0
 REFERENCE_SHOTS = 2000
 DIAG_RELAX_US = 1500.0
 
@@ -81,13 +85,18 @@ class PiContextProgram(AveragerProgram):
         if int(cfg["ctx_prep_gain"]) != 0:
             self._qubit_pulse(self.prep_freq, cfg["ctx_prep_gain"])
         delay_us = float(cfg["ctx_delay_us"])
+        probe_len = cfg.get("ctx_ro_length_us", None)
+        drive_us = (readout_drive_length_us(cfg) if probe_len is None else float(probe_len))
         if bool(cfg["ctx_do_readout"]):
+            set_readout_pulse(self, self.read_freq, gain=cfg.get("ctx_ro_gain", None),
+                              length_us=probe_len)
             self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
                          adc_trig_offset=self.us2cycles(cfg["adc_trig_offset"]),
                          wait=True, syncdelay=None)
             self.sync_all(self.us2cycles(delay_us))
+            set_readout_pulse(self, self.read_freq)
         else:
-            self.sync_all(self.us2cycles(delay_us + readout_drive_length_us(cfg)))
+            self.sync_all(self.us2cycles(delay_us + drive_us))
         if int(cfg["ctx_pi_gain"]) != 0:
             self._qubit_pulse(self.probe_freq, cfg["ctx_pi_gain"])
         self.measure(pulse_ch=cfg["res_ch"], adcs=cfg["ro_chs"],
@@ -408,17 +417,67 @@ def stage3(soc, soccfg, cfg, disc, read_delay_us):
 
 
 def pi_context_point(soc, soccfg, cfg, project, prep_gain, do_readout, delay_us,
-                     pi_gain, pi_freq):
+                     pi_gain, pi_freq, ro_gain=None, ro_length_us=None, shots=None,
+                     want_probe_shots=False):
     c = dict(cfg)
-    c["reps"] = c["shots"] = int(PI_CONTEXT_SHOTS)
+    c["reps"] = c["shots"] = int(PI_CONTEXT_SHOTS if shots is None else shots)
     c["ctx_prep_gain"] = int(prep_gain)
     c["ctx_do_readout"] = bool(do_readout)
     c["ctx_delay_us"] = float(delay_us)
     c["ctx_pi_gain"] = int(pi_gain)
     c["ctx_pi_freq"] = float(pi_freq)
+    c["ctx_ro_gain"] = None if ro_gain is None else int(ro_gain)
+    c["ctx_ro_length_us"] = None if ro_length_us is None else float(ro_length_us)
     prog = PiContextProgram(soccfg, c)
     I, Q = prog.acquire(soc, load_pulses=True, progress=False)
-    return project(I, Q)
+    resid = project(I, Q)
+    if not want_probe_shots:
+        return resid
+    lower, upper = raw_reads(prog, c["reps"], 2)
+    return resid, lower[:, 0], upper[:, 0]
+
+
+def stage6(soc, soccfg, cfg, ref):
+    banner("STAGE 6 -- DOES THE READOUT DRIVE POPULATION OUT OF {g,e}?")
+    project = make_projector(ref)
+    pi_gain = int(cfg["qubit_pi_gain"])
+    pi_freq = float(cfg.get("qubit_pi_freq", cfg["qubit_freq"]))
+    nominal_gain = int(cfg["read_pulse_gain"])
+    nominal_len = readout_drive_length_us(cfg)
+    delay = PI_CONTEXT_DELAY_US
+    print(f"  prep -> probe readout (gain G, length L) -> {delay}us -> pi -> score readout")
+    print(f"  pi_eff(e->g) must be ~1 for the reset to work; it is the whole remaining gap.")
+    print(f"  nominal: gain={nominal_gain}, drive length={nominal_len:.1f} us\n")
+
+    def row(tag, ro_gain, ro_len):
+        g0, g0_lo, g0_up = pi_context_point(soc, soccfg, cfg, project, 0, True, delay, 0,
+                                            pi_freq, ro_gain=ro_gain, ro_length_us=ro_len,
+                                            want_probe_shots=True)
+        e0, e0_lo, e0_up = pi_context_point(soc, soccfg, cfg, project, pi_gain, True,
+                                            delay, 0, pi_freq, ro_gain=ro_gain,
+                                            ro_length_us=ro_len, want_probe_shots=True)
+        g1 = pi_context_point(soc, soccfg, cfg, project, 0, True, delay, pi_gain,
+                              pi_freq, ro_gain=ro_gain, ro_length_us=ro_len)
+        e1 = pi_context_point(soc, soccfg, cfg, project, pi_gain, True, delay, pi_gain,
+                              pi_freq, ro_gain=ro_gain, ro_length_us=ro_len)
+        eff_ge = (g1 - g0) / max(1.0 - g0, 1e-9)
+        eff_eg = (e0 - e1) / max(e0, 1e-9)
+        sep_lo = abs(np.median(e0_lo) - np.median(g0_lo))
+        sep_up = abs(np.median(e0_up) - np.median(g0_up))
+        if sep_lo >= sep_up:
+            disc = fit_threshold(g0_lo[::2], e0_lo[::2])
+        else:
+            disc = fit_threshold(g0_up[::2], e0_up[::2])
+        print(f"  {tag:>16s} | {g0:6.3f} {e0:6.3f} | {g1:6.3f} {e1:6.3f} | "
+              f"{eff_ge:6.3f} {eff_eg:6.3f} | probe F={disc['fidelity']:.3f} "
+              f"P(g|e)={disc['p_g_given_e']:.3f}")
+
+    print(f"  {'probe readout':>16s} | {'g,nopi':>6s} {'e,nopi':>6s} | {'g,+pi':>6s} "
+          f"{'e,+pi':>6s} | {'ge_eff':>6s} {'eg_eff':>6s} | discrimination")
+    for g in READOUT_GAIN_SWEEP:
+        row(f"gain {g}", g, None)
+    for L in READOUT_LENGTH_SWEEP_US:
+        row(f"len {L:g}us", None, L)
 
 
 def stage4(soc, soccfg, cfg, ref):
@@ -507,6 +566,9 @@ def main():
 
     if RUN_STAGE_5_END_TO_END:
         stage5(soc, soccfg, cfg, ref, disc, best_delay)
+
+    if RUN_STAGE_6_READOUT_LEAKAGE:
+        stage6(soc, soccfg, cfg, ref)
 
     banner("forensics complete -- paste the whole log back")
 
