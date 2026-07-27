@@ -28,7 +28,7 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
     if settle_us is None:
         settle_us = float(cfg.get("reset_settle_us", 0.05))
     if meas_syncdelay_us is None:
-        meas_syncdelay_us = float(cfg.get("reset_meas_syncdelay_us", 0.2))
+        meas_syncdelay_us = float(cfg.get("reset_meas_syncdelay_us", 4.0))
     res_ch = cfg["res_ch"] if res_ch is None else res_ch
     qubit_ch = cfg["qubit_ch"] if qubit_ch is None else qubit_ch
     tproc_ch = feedback_channel(prog.soccfg, ro_ch)
