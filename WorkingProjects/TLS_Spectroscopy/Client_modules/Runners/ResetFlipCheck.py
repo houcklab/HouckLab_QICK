@@ -18,7 +18,7 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mActiveResetPro
 
 QUBIT = "q4"
 SHOTS = 2000
-BIG = 10_000_000
+BIG = 1_000_000
 
 
 def main():
@@ -31,33 +31,31 @@ def main():
         print("[flip] no feedback discrimination.")
         return
     res_phase = float(d.get("best_res_phase", BaseConfig.get("res_phase", 0.0)))
-    rec = d["recommended"]
-    thr, gb = int(rec["threshold_raw"]), bool(rec["ground_below"])
-    print(f"[flip] res_phase={res_phase:.1f} thr={thr} ground_below={gb}")
+    print(f"[flip] res_phase={res_phase:.1f}")
 
     probe.cfg["reset_max_iters"] = 1
 
-    print("\nEach uses ONE reset iteration. reset |g> resid should stay ~0 for a real reset.")
-    print(f"{'mode':34s} | reset |g> | reset |e>")
-    print("-" * 62)
+    print("\nALWAYS-FLIP (pi forced every shot) at increasing cavity-clear delay before the pi.")
+    print("If the reset pi works once photons clear: |g> -> ~1 (driven to excited), |e> -> ~0.")
+    print(f"{'mode':30s} | reset |g> | reset |e>")
+    print("-" * 58)
 
-    r = probe._residual_at(res_phase, thr, gb, SHOTS)
-    print(f"{'CONDITIONAL (calibrated thr)':34s} |  {r['reset_ground']:+.3f}  |  {r['reset_excited']:+.3f}")
-
-    r = probe._residual_at(res_phase, BIG, False, SHOTS)
-    print(f"{'ALWAYS-FLIP (thr=+1e7, tests pi)':34s} |  {r['reset_ground']:+.3f}  |  {r['reset_excited']:+.3f}")
-
+    probe.cfg["reset_meas_syncdelay_us"] = 0.2
     r = probe._residual_at(res_phase, -BIG, False, SHOTS)
-    print(f"{'NEVER-FLIP (thr=-1e7, sanity)':34s} |  {r['reset_ground']:+.3f}  |  {r['reset_excited']:+.3f}")
+    print(f"{'NEVER-FLIP (sanity)':30s} |  {r['reset_ground']:+.3f}  |  {r['reset_excited']:+.3f}")
+
+    for msync in (0.2, 1.0, 2.0, 4.0, 8.0):
+        probe.cfg["reset_meas_syncdelay_us"] = float(msync)
+        r = probe._residual_at(res_phase, BIG, False, SHOTS)
+        print(f"{'ALWAYS-FLIP msync=' + format(msync, '.1f') + 'us':30s} |  "
+              f"{r['reset_ground']:+.3f}  |  {r['reset_excited']:+.3f}")
 
     print("\n[flip] READ IT:")
-    print("  * NEVER-FLIP should give |g>~0, |e>~1 (the reset does nothing = baseline). Sanity.")
-    print("  * ALWAYS-FLIP flips every shot once: |g>-> ~1 (ground driven to excited), and")
-    print("    |e>-> ~0 IFF the conditional pi actually inverts the qubit.")
-    print("  * So: ALWAYS-FLIP grounds |e> (~0) but CONDITIONAL leaves it high -> the in-loop READ "
-          "misreads |e> as ground and skips the flip (discrimination bug, not the pi).")
-    print("       ALWAYS-FLIP ALSO leaves |e> high -> the reset pi itself does not invert "
-          "(pi gain/freq/timing in the reset path).")
+    print("  * |g> rises toward 1 and |e> falls toward 0 as msync grows -> the reset pi is being "
+          "detuned by leftover readout photons; fix = fire the conditional pi after the cavity "
+          "clears (raise reset_meas_syncdelay_us to the smallest value that flips).")
+    print("  * stays flat (|g>~0, |e> high) at every msync -> the reset pi is broken for another "
+          "reason (pi gain/freq/waveform in the reset path), not photons.")
 
 
 if __name__ == "__main__":
