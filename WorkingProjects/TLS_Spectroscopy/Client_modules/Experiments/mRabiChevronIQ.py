@@ -60,7 +60,7 @@ def _rabi_feedback_reset(prog):
     set_readout_pulse(
         prog, gain=int(cfg.get(
             "reset_read_pulse_gain", cfg["read_pulse_gain"])))
-    prog.mathi(page, 27, r_gain, "+", 0)
+    prog.mathi(page, 3, r_gain, "+", 0)
     prog.set_pulse_registers(
         ch=cfg["qubit_ch"], style="arb",
         freq=prog.freq2reg(float(reset_pi_freq),
@@ -71,14 +71,14 @@ def _rabi_feedback_reset(prog):
     active_reset.active_reset_block(
         prog, ro_ch=cfg["ro_chs"][0], threshold_raw=cfg["reset_threshold_raw"],
         oper=cfg.get("reset_oper", "lower"), ground_below=cfg.get("reset_ground_below", True),
-        max_iters=int(cfg.get("reset_max_iters", 3)), page=page, reg_val=25, reg_thr=26)
+        max_iters=int(cfg.get("reset_max_iters", 3)), page=page, reg_val=1, reg_thr=2)
     prog.set_pulse_registers(
         ch=cfg["qubit_ch"], style="arb",
         freq=prog.freq2reg(float(cfg["rabi_drive_freq"]),
                            gen_ch=cfg["qubit_ch"]),
         phase=prog.deg2reg(0, gen_ch=cfg["qubit_ch"]),
         gain=0, waveform="qubit")
-    prog.mathi(page, r_gain, 27, "+", 0)
+    prog.mathi(page, r_gain, 3, "+", 0)
     set_readout_pulse(prog)
 
 
