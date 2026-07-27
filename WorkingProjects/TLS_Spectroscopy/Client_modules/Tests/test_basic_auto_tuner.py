@@ -6803,7 +6803,15 @@ def test_runner_is_report_only_for_manual_duration_portfolio_selection():
         for target in node.targets if isinstance(target, ast.Name)
     }
     assert ast.literal_eval(assignments["APPLY_CONFIG"]) is False
-    assert ast.literal_eval(assignments["RUN_1_TO_20_US_MODE"]) is True
+    for flag in ("RUN_DISCOVERY", "RUN_GAIN_SWEEP", "RUN_1_TO_20_US_MODE"):
+        assert isinstance(ast.literal_eval(assignments[flag]), bool)
+    discovery = ast.literal_eval(assignments["DISCOVERY"])
+    for key in ("read_pulse_freq", "qubit_pi_freq", "sigma", "read_length",
+                "read_pulse_gain", "qubit_pi_gain"):
+        assert key in discovery
+    assert "_configure_stages" in source
+    assert "configure_discovery_stage" in source
+    assert "configure_gain_search_stage" in source
     assert 'not bool(result.get("final_stable", False))' in source
     assert 'bool(result.get("interrupted", False))' in source
     assert "expected_source_hash=startup_source_hash" in source
@@ -6896,6 +6904,8 @@ def test_runner_main_never_writes_a_guard_rejected_result():
     runner.config_updater = updater
     runner.makeProxy = lambda: (object(), object())
     runner.APPLY_CONFIG = True
+    runner.RUN_MODE = "full"
+    runner.P_BASIC = copy.deepcopy(runner._WRITE_CONTRACT_PARAMS)
 
     best = T._with_candidate(
         T._candidate_from_cfg(_base_config()),

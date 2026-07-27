@@ -1,12 +1,10 @@
-"""Run the single-qubit calibration in 1--20 us or fixed-readout mode.
+"""Run the single-qubit calibration in two operator-driven stages.
 
-This is intentionally a report-only entry point.  It measures the locally converged
-best held-out fidelity tuple at every requested readout duration, then reports leakage
-and coherent-control checks without reranking that winner.  Set the top-level mode flag
-false to optimize only the readout length currently loaded from ``initialize.py``.  A
-separate balanced row may identify a statistically noninferior, longer/lower-drive
-X180 pulse.  It never modifies ``BaseConfig``; the operator makes the final manual
-choice.
+Stage 1 (``RUN_DISCOVERY``) finds the resonator and the qubit transition, then stops
+and prints the values.  Paste those into the block below, flip the flags, and stage 2
+(``RUN_GAIN_SWEEP``) takes them as given and searches only readout gain and X180 gain.
+Setting both flags runs the original end-to-end pipeline.  This is a report-only entry
+point: it never modifies ``BaseConfig``.
 """
 
 import copy
@@ -25,7 +23,9 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Experiments.mBasicAutoTuner
     BASIC_DEFAULTS,
     BasicAutoTuner,
     TUNED_KEYS,
+    configure_discovery_stage,
     configure_gain_only_search,
+    configure_gain_search_stage,
     configure_readout_length_mode,
 )
 from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updater
@@ -34,24 +34,60 @@ from WorkingProjects.TLS_Spectroscopy.Client_modules.Helpers import config_updat
 QUBIT = "q4"
 LIVE_PLOTS = False
 
-# True: optimize and report one full calibration for every integer readout duration
-# from 1 through 20 us. False: keep the readout duration fixed at the exact
-# BaseConfig["read_length"] loaded from initialize.py while still optimizing readout
-# frequency/gain and the complete X180 frequency/gain/duration pulse family.
-RUN_1_TO_20_US_MODE = True
+# STAGE 1.  Find the resonator and the qubit transition, then stop and print them.
+RUN_DISCOVERY = True
+
+# STAGE 2.  Take the DISCOVERY block below as given and search only readout gain and
+# X180 gain.  Set both flags true to run the original end-to-end pipeline instead.
+RUN_GAIN_SWEEP = False
+
+# Stage 2 only.  True: one calibration at every integer readout duration 1--20 us.
+# False: use the read_length from the DISCOVERY block alone.
+RUN_1_TO_20_US_MODE = False
+
+# Paste the numbers printed by the stage-1 run here.  READ_PULSE_GAIN and
+# QUBIT_PI_GAIN are only starting points; the gain sweep is free to move them.
+DISCOVERY = {
+    "read_pulse_freq": 7248.967089,
+    "qubit_pi_freq": 2534.350291,
+    "sigma": 0.5,
+    "read_length": 10.0,
+    "read_pulse_gain": 3700,
+    "qubit_pi_gain": 2689,
+    "qubit_drag_beta": 0.0,
+}
 
 # Portfolio rows are alternatives for an operator, not one automatically selected
 # calibration.  Keep the destructive path disabled unconditionally for this runner.
 APPLY_CONFIG = False
 
-# This returns a private deep copy so mode selection cannot mutate module defaults or
-# leak into a second experiment in the same Python process.
-P_BASIC = configure_gain_only_search(
+
+def _configure_stages():
+    """Return (run_mode, params) for the flags set at the top of this file."""
+    if not RUN_DISCOVERY and not RUN_GAIN_SWEEP:
+        raise ValueError(
+            "set RUN_DISCOVERY true to locate the resonator and qubit, or "
+            "RUN_GAIN_SWEEP true to optimize gains from a pasted DISCOVERY block")
+    if RUN_DISCOVERY and not RUN_GAIN_SWEEP:
+        return "discovery", configure_discovery_stage(BASIC_DEFAULTS)
+    length = (BaseConfig["read_length"] if RUN_1_TO_20_US_MODE
+              else DISCOVERY["read_length"])
+    sigma = (BaseConfig["sigma"] if RUN_DISCOVERY and RUN_GAIN_SWEEP
+             else DISCOVERY["sigma"])
+    tuned = configure_gain_only_search(
+        configure_readout_length_mode(
+            BASIC_DEFAULTS, length, scan_1_to_20_us=RUN_1_TO_20_US_MODE),
+        sigma)
+    if RUN_DISCOVERY and RUN_GAIN_SWEEP:
+        return "full", tuned
+    return "gain_search", configure_gain_search_stage(tuned, DISCOVERY)
+
+
+RUN_MODE, P_BASIC = _configure_stages()
+
+_WRITE_CONTRACT_PARAMS = configure_gain_only_search(
     configure_readout_length_mode(
-        BASIC_DEFAULTS,
-        BaseConfig["read_length"],
-        scan_1_to_20_us=RUN_1_TO_20_US_MODE,
-    ),
+        BASIC_DEFAULTS, BaseConfig["read_length"], scan_1_to_20_us=True),
     BaseConfig["sigma"],
 )
 
@@ -238,7 +274,7 @@ def _write_contract_errors(result, eligible, startup_cfg, params=None):
     if not isinstance(startup_cfg, dict):
         return ["startup configuration snapshot is not a dictionary"]
     if params is None:
-        params = P_BASIC
+        params = _WRITE_CONTRACT_PARAMS
     if not isinstance(params, dict):
         return ["autotuner parameter snapshot is not a dictionary"]
     if not bool(result.get("final_stable", False)):
@@ -1085,6 +1121,68 @@ def _print_duration_portfolio(result):
     return True
 
 
+def _print_discovery_handoff(result):
+    handoff = result.get("discovery_handoff")
+    if not isinstance(handoff, dict):
+        print("\n[basic-auto-tune] DISCOVERY DID NOT COMPLETE -- no values to hand off")
+        gate = result.get("pre_expensive_gate", {})
+        for failure in (gate.get("failures", [])
+                        if isinstance(gate, dict) else []):
+            print("   %s" % failure)
+        return False
+    print("\n[basic-auto-tune] DISCOVERY COMPLETE -- paste this into DISCOVERY above, "
+          "then set RUN_DISCOVERY=False and RUN_GAIN_SWEEP=True")
+    print("\nDISCOVERY = {")
+    for key in ("read_pulse_freq", "qubit_pi_freq", "sigma", "read_length",
+                "read_pulse_gain", "qubit_pi_gain", "qubit_drag_beta"):
+        print("    %-22s %r," % ('"%s":' % key, handoff.get(key)))
+    print("}")
+    print("\n   resonator candidates %s MHz"
+          % handoff.get("resonator_candidates_mhz"))
+    print("   spectroscopy lines   %s MHz"
+          % handoff.get("spectroscopy_candidates_mhz"))
+    print("   qualified transitions %s MHz"
+          % handoff.get("qualified_transition_frequencies_mhz"))
+    return True
+
+
+def _print_gain_convergence(result):
+    portfolio = result.get("duration_portfolio", {})
+    entries = portfolio.get("entries", []) if isinstance(portfolio, dict) else []
+    if not entries:
+        return
+    print("\n[basic-auto-tune] GAIN CONVERGENCE")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        search = entry.get("search", {})
+        search = search if isinstance(search, dict) else {}
+        zoom = search.get("deterministic_gain_zoom", {})
+        zoom = zoom if isinstance(zoom, dict) else {}
+        vertex = search.get("gain_vertex", {})
+        vertex = vertex if isinstance(vertex, dict) else {}
+        selected = entry.get("selected")
+        if not isinstance(selected, dict):
+            continue
+        print("   %5.1f us  read %6d DAC  X180 %6d DAC  |  final step %s/%s DAC "
+              "over %s rounds%s"
+              % (_number(entry, ("read_length_us",)),
+                 _rounded_int(_number(selected, ("read_pulse_gain",))),
+                 _rounded_int(_number(selected, ("qubit_pi_gain",))),
+                 zoom.get("final_read_step_dac"),
+                 zoom.get("final_qubit_step_dac"), zoom.get("round_count"),
+                 "; stopped at the noise floor"
+                 if zoom.get("stopped_on_noise_floor") else ""))
+        for axis in ("read", "qubit"):
+            fit = vertex.get(axis)
+            if isinstance(fit, dict) and fit.get("ok"):
+                se = fit.get("vertex_se_dac")
+                print("             %-5s interpolated optimum %s DAC%s%s"
+                      % (axis, fit.get("vertex_dac"),
+                         "" if se is None else " +/- %.0f DAC statistical" % se,
+                         "" if fit.get("adopted") else " (not adopted)"))
+
+
 def _print_best(result):
     best = _best_candidate(result)
     if best is None:
@@ -1456,12 +1554,31 @@ def main():
     startup_source_hash = config_updater.baseconfig_source_hash()
     soc, soccfg = makeProxy()
     cfg = dict(BaseConfig)
+    if RUN_MODE == "gain_search":
+        cfg.update({
+            "read_pulse_freq": float(DISCOVERY["read_pulse_freq"]),
+            "read_pulse_gain": int(DISCOVERY["read_pulse_gain"]),
+            "read_length": float(DISCOVERY["read_length"]),
+            "qubit_freq": float(DISCOVERY["qubit_pi_freq"]),
+            "qubit_pi_freq": float(DISCOVERY["qubit_pi_freq"]),
+            "qubit_pi_gain": int(DISCOVERY["qubit_pi_gain"]),
+            "qubit_gain": int(DISCOVERY["qubit_pi_gain"]),
+            "sigma": float(DISCOVERY["sigma"]),
+            "qubit_drag_beta": float(DISCOVERY.get("qubit_drag_beta", 0.0)),
+        })
+    print("[basic-auto-tune] stage: %s" % {
+        "discovery": "DISCOVERY (find the resonator and qubit transition)",
+        "gain_search": "GAIN SWEEP (readout gain x X180 gain at the pasted tuple)",
+        "full": "FULL end-to-end pipeline",
+    }.get(RUN_MODE, RUN_MODE))
     experiment = BasicAutoTuner(
         soc=soc,
         soccfg=soccfg,
         path=QUBIT,
         outerFolder=outerFolder,
-        suffix="Basic_Auto_Tune",
+        suffix=("Basic_Discovery" if RUN_MODE == "discovery"
+                else "Basic_Gain_Search" if RUN_MODE == "gain_search"
+                else "Basic_Auto_Tune"),
         cfg=cfg,
         params=copy.deepcopy(P_BASIC),
     )
@@ -1481,7 +1598,20 @@ def main():
         _save_artifacts(experiment)
 
     result = _result_dict(acquired, experiment)
+    if RUN_MODE == "discovery":
+        handed_off = _print_discovery_handoff(result)
+        try:
+            config_updater.append_history(
+                _history_entry(result, {}, False, acquire_error))
+        except Exception as exc:
+            print("[basic-auto-tune] could not append calibration history: %s" % exc)
+        if getattr(experiment, "iname", None):
+            print("   Summary plot: %s" % experiment.iname)
+        print("\n[basic-auto-tune] BaseConfig is untouched.")
+        return 0 if handed_off and acquire_error is None else 1
+
     best = _print_best(result)
+    _print_gain_convergence(result)
 
     # This is deliberately the sole source of configuration writes.  Diagnostic
     # ``tuned``/``working``/``best_found`` values must never reach initialize.py.
