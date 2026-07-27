@@ -234,6 +234,7 @@ class SingleShot1Q(ExperimentClass):
             c_0_rot = -1 * c_0_rot
             c_1_rot = -1 * c_1_rot
             thresh = -1 * thresh
+            thresh_0 = -1 * thresh_0
             c_factor = -1
 
         confusion = np.zeros([2, 2])

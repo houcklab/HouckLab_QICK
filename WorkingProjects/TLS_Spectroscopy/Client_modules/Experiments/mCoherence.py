@@ -67,6 +67,8 @@ class _CoherenceBase(ExperimentClass):
         n = len(self.t_vec_us)
         exc = np.zeros(n)
         kept = np.zeros(n)
+        exc_all = np.zeros(n)
+        kept_all = np.zeros(n)
         reps_per_round = split_reps(shots, rounds)
         saved = cfg["shots"]
         total = sum(1 for r in reps_per_round if r > 0) * n
@@ -81,9 +83,13 @@ class _CoherenceBase(ExperimentClass):
             order = visit_order(n, cfg, rng)
             orders.append(order.tolist())
             for idx in order:
-                e, k = self._run_point_counts(float(self.t_vec_us[idx]), reps=reps)
+                res = self._run_point_counts(float(self.t_vec_us[idx]), reps=reps)
+                e, k = res[0], res[1]
+                ea, ka = (res[2], res[3]) if len(res) == 4 else (e, k)
                 exc[idx] += e
                 kept[idx] += k
+                exc_all[idx] += ea
+                kept_all[idx] += ka
                 attempted[idx] += reps
                 done += 1
                 if progress:
@@ -92,6 +98,7 @@ class _CoherenceBase(ExperimentClass):
         self.point_visit_orders = orders
         with np.errstate(invalid="ignore", divide="ignore"):
             self.keep_fraction = np.where(attempted > 0, kept / attempted, np.nan)
+            self.pe_unselected = np.where(kept_all > 0, exc_all / kept_all, np.nan)
             return np.where(kept > 0, exc / kept, np.nan)
 
     def _plot_decay(self, pe, fit, ylabel, title, plotDisp=False):
@@ -140,7 +147,8 @@ class T1(_CoherenceBase):
         final = np.asarray(discriminate_shots(i1, q1, self.calib_params))
         if active_reset.heralds(self.reset_mode):
             keep = active_reset.herald_keep(i0, q0, self.calib_params)
-            return float(np.sum(final[keep])), int(np.sum(keep))
+            return (float(np.sum(final[keep])), int(np.sum(keep)),
+                    float(np.sum(final)), int(final.size))
         return float(np.sum(final)), int(final.size)
 
     def acquire(self, progress=False, plotDisp=False):
@@ -154,15 +162,30 @@ class T1(_CoherenceBase):
         pe = self._sweep(progress=progress)
         fit = _fit_exp_decay(self.t_vec_us, pe)
         keep = getattr(self, "keep_fraction", None)
+        pe_all = getattr(self, "pe_unselected", None)
+        fit_all = None
         if active_reset.heralds(self.reset_mode) and keep is not None:
             print(f"[T1] herald kept {100 * np.nanmean(keep):.1f}% of shots "
                   f"(min {100 * np.nanmin(keep):.1f}%, max {100 * np.nanmax(keep):.1f}%)")
+            good = np.isfinite(keep) & np.isfinite(self.t_vec_us) & (self.t_vec_us > 0)
+            if good.sum() >= 3:
+                drift = np.polyfit(np.log10(self.t_vec_us[good]), keep[good], 1)[0]
+                print(f"[T1] herald keep-fraction slope vs log10(t): {drift:+.4f} per "
+                      f"decade (non-zero means post-selection is coupled to the delay)")
+            fit_all = _fit_exp_decay(self.t_vec_us, pe_all)
+            if fit_all is not None and fit is not None:
+                print(f"[T1] SAME shots, heralded T1 = {fit['tau_us']:.2f} +/- "
+                      f"{fit['tau_err_us']:.2f} us   vs   unselected T1 = "
+                      f"{fit_all['tau_us']:.2f} +/- {fit_all['tau_err_us']:.2f} us")
         self.data = {
             'config': dict(self.cfg), 'element': self.element, 'ff_gain': self.ff_gain,
             't_vec_us': self.t_vec_us, 'population_pe': pe,
             'T1_us': fit["tau_us"] if fit else np.nan,
             'T1_err_us': fit["tau_err_us"] if fit else np.nan,
             'herald_keep_fraction': keep,
+            'population_pe_unselected': pe_all,
+            'T1_unselected_us': fit_all["tau_us"] if fit_all else np.nan,
+            'T1_unselected_err_us': fit_all["tau_err_us"] if fit_all else np.nan,
             'point_visit_orders': getattr(self, "point_visit_orders", None),
             'randomize_point_order': bool(self.cfg.get("randomize_point_order", False)),
             'point_order_seed': self.cfg.get("point_order_seed", None),
