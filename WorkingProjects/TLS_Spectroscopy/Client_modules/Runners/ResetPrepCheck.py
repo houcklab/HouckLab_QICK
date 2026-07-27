@@ -62,6 +62,17 @@ def _stats(soc, soccfg, base, calib, mode, do_ff, iters, thr, oper, gb):
 def main():
     soc, soccfg = makeProxy()
 
+    try:
+        qch = int(BaseConfig["qubit_ch"])
+        tpc = int(soccfg['gens'][qch]['tproc_ch'])
+        clobber = "QUBIT freq (reg21) -- THIS was the bug" if tpc % 2 == 0 else \
+            "paired-channel freq (reg21); qubit uses 11-20"
+        print(f"[map] qubit gen={qch} tproc_ch={tpc} -> old reset regs 20/21 hit: {clobber}")
+        for gi, g in enumerate(soccfg['gens']):
+            print(f"[map] gen{gi} tproc_ch={g.get('tproc_ch')}")
+    except Exception as e:
+        print(f"[map] soccfg dump failed: {e}")
+
     probe = ActiveResetProbe(soc=soc, soccfg=soccfg, path=QUBIT, outerFolder=outerFolder,
                              suffix="ResetPrep_Phase", cfg=dict(BaseConfig))
     d = probe.calibrate_res_phase().get("data", {})

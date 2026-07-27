@@ -38,8 +38,8 @@ def active_reset_block(prog, ro_ch=0, res_ch=None, qubit_ch=None, threshold_raw=
             "firmware cannot do active reset.  Use reset_mode='passive'.")
 
     page = prog.ch_page(qubit_ch) if page is None else page
-    reg_val = 20 if reg_val is None else reg_val
-    reg_thr = 21 if reg_thr is None else reg_thr
+    reg_val = 1 if reg_val is None else reg_val
+    reg_thr = 2 if reg_thr is None else reg_thr
     off = (prog.us2cycles(cfg["adc_trig_offset"]) if adc_trig_offset_us is None
            else prog.us2cycles(adc_trig_offset_us))
     clear_us = (cfg.get("reset_thermalization_us", 25.0)
